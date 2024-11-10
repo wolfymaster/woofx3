@@ -1,5 +1,9 @@
-const clientId = '6t2yb74purkys2s5int8j5boyqj1oh';
-const clientSecret  = '405krobjkzvi9757nrhuz410pl2iuk';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const clientId = process.env.TWITCH_CLIENT_ID;
+const clientSecret  = process.env.TWITCH_CLIENT_SECRET;
 const tokenUrl = 'https://id.twitch.tv/oauth2/token';
 
 async function getAccessToken(): Promise<string> {

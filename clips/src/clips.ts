@@ -1,7 +1,10 @@
 import fs from 'fs/promises';
+import dotenv from 'dotenv';
 
-const clientId = '6t2yb74purkys2s5int8j5boyqj1oh';
-const accessToken = 'g747hrc7gjze2rhgz5zh6ivazkusm7';  // OAuth token
+dotenv.config();
+
+const clientId = process.env.TWITCH_CLIENT_ID;
+const accessToken = process.env.TWITCH_ACCESS_TOKEN;  // OAuth token
 const baseUrl = 'https://api.twitch.tv/helix/';
 
 /**

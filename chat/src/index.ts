@@ -2,8 +2,8 @@ import { ChatClient, ChatMessage } from '@twurple/chat';
 // import { AppTokenAuthProvider } from '@twurple/auth';
 
 // Replace with your Twitch application credentials
-const CLIENT_ID = '6t2yb74purkys2s5int8j5boyqj1oh';
-const CLIENT_SECRET = '405krobjkzvi9757nrhuz410pl2iuk';
+const CLIENT_ID = process.env.TWITCH_CLIENT_ID;
+const CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET;
 
 // Create a function to connect to Twitch chat
 async function connectToTwitchChat(channel: string) {

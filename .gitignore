@@ -13,3 +13,7 @@ transcripts
 
 node_modules
 .devbox
+.env*
+.flaskenv*
+!.env.project
+!.env.vault
