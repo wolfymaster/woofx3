@@ -1,0 +1,15 @@
+# chat
+
+# clips
+clips/downloads
+clips/out
+clips/processed
+clips/transcripts
+
+# stream
+stream/chunks
+
+transcripts
+
+node_modules
+.devbox
