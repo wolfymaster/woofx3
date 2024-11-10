@@ -1,0 +1,209 @@
+{
+  "lockfile_version": "1",
+  "packages": {
+    "bun@latest": {
+      "last_modified": "2024-09-20T22:35:44Z",
+      "resolved": "github:NixOS/nixpkgs/a1d92660c6b3b7c26fb883500a80ea9d33321be2#bun",
+      "source": "devbox-search",
+      "version": "1.1.29",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/1hn8dddmy3l99x502d0fqz901gfk74px-bun-1.1.29",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/1hn8dddmy3l99x502d0fqz901gfk74px-bun-1.1.29"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/q1k3hsk9hwsg6xllgd25pb0lrh51ym7z-bun-1.1.29",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/q1k3hsk9hwsg6xllgd25pb0lrh51ym7z-bun-1.1.29"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/0wi8b58g19k1gpvniyvax2hpb77sp0w6-bun-1.1.29",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/0wi8b58g19k1gpvniyvax2hpb77sp0w6-bun-1.1.29"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/mqzlk40bnhx54by2m4lyyc02syippzad-bun-1.1.29",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/mqzlk40bnhx54by2m4lyyc02syippzad-bun-1.1.29"
+        }
+      }
+    },
+    "inotify-tools@latest": {
+      "last_modified": "2024-09-10T15:01:03Z",
+      "resolved": "github:NixOS/nixpkgs/5ed627539ac84809c78b2dd6d26a5cebeb5ae269#inotify-tools",
+      "source": "devbox-search",
+      "version": "4.23.9.0",
+      "systems": {
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/zm3592zxg0psjgjv32ivx119vb4zdbia-inotify-tools-4.23.9.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/zm3592zxg0psjgjv32ivx119vb4zdbia-inotify-tools-4.23.9.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/c7lxmwsnnh3865advh3vj2z3qdcrkcv1-inotify-tools-4.23.9.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/c7lxmwsnnh3865advh3vj2z3qdcrkcv1-inotify-tools-4.23.9.0"
+        }
+      }
+    },
+    "openai-whisper@latest": {
+      "last_modified": "2024-10-01T10:04:10Z",
+      "resolved": "github:NixOS/nixpkgs/d78d09350ac7dfe503cf48cbc59764aef4157b9a#openai-whisper",
+      "source": "devbox-search",
+      "version": "20240930",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/i0larz1sx0swy2pj1kq11f2ccdmqcgd5-python3.12-whisper-20240930",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/xb8800s6yvs0hz69knzylggb2jg5sg30-python3.12-whisper-20240930-dist"
+            }
+          ],
+          "store_path": "/nix/store/i0larz1sx0swy2pj1kq11f2ccdmqcgd5-python3.12-whisper-20240930"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/72hnfvp5xmsirspp9iz6xrfvq112pqck-python3.12-whisper-20240930",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/w1zjbpbliazjgdpcgadvb1ssn6qcynm6-python3.12-whisper-20240930-dist"
+            }
+          ],
+          "store_path": "/nix/store/72hnfvp5xmsirspp9iz6xrfvq112pqck-python3.12-whisper-20240930"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/54h8p1vw6x09a5px4d6x780hjcm7db0i-python3.12-whisper-20240930",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/s3lpsl3gdyyr2s8n49vbxfif8yq9z2r2-python3.12-whisper-20240930-dist"
+            }
+          ],
+          "store_path": "/nix/store/54h8p1vw6x09a5px4d6x780hjcm7db0i-python3.12-whisper-20240930"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/i2xz2pj2pcqa0g2c50mqb10n9clp9is4-python3.12-whisper-20240930",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/c2d614ycwmad03gy96cp5cpzbd9d62l0-python3.12-whisper-20240930-dist"
+            }
+          ],
+          "store_path": "/nix/store/i2xz2pj2pcqa0g2c50mqb10n9clp9is4-python3.12-whisper-20240930"
+        }
+      }
+    },
+    "streamlink@latest": {
+      "last_modified": "2024-09-10T15:01:03Z",
+      "resolved": "github:NixOS/nixpkgs/5ed627539ac84809c78b2dd6d26a5cebeb5ae269#streamlink",
+      "source": "devbox-search",
+      "version": "6.10.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/9a6j4yjdz80f7p8is5vas9a4kcfxck3d-streamlink-6.10.0",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/z1g1xhn00960g6wv6vwlxjvmd5qb5kb3-streamlink-6.10.0-dist"
+            }
+          ],
+          "store_path": "/nix/store/9a6j4yjdz80f7p8is5vas9a4kcfxck3d-streamlink-6.10.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/r5s66nn5vj64z22s1wzkxg1knczn21nd-streamlink-6.10.0",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/q3hfb0k817sq5164pfa7zljqqrca15n8-streamlink-6.10.0-dist"
+            }
+          ],
+          "store_path": "/nix/store/r5s66nn5vj64z22s1wzkxg1knczn21nd-streamlink-6.10.0"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/nlnh38zm12hq01xaas5ds667vhwvsc7c-streamlink-6.10.0",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/79f5jw4v2bilkxknmvd0dj6wzqfv3brr-streamlink-6.10.0-dist"
+            }
+          ],
+          "store_path": "/nix/store/nlnh38zm12hq01xaas5ds667vhwvsc7c-streamlink-6.10.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/8p3fc95p5zv4dwndly30628kpn3fjbgr-streamlink-6.10.0",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/mw1j51d13ild7riijhc3qnm2gnjrbl2m-streamlink-6.10.0-dist"
+            }
+          ],
+          "store_path": "/nix/store/8p3fc95p5zv4dwndly30628kpn3fjbgr-streamlink-6.10.0"
+        }
+      }
+    }
+  }
+}
