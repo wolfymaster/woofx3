@@ -1,0 +1,76 @@
+{
+  "lockfile_version": "1",
+  "packages": {
+    "bun@latest": {
+      "last_modified": "2024-11-18T00:41:09Z",
+      "resolved": "github:NixOS/nixpkgs/5083ec887760adfe12af64830a66807423a859a7#bun",
+      "source": "devbox-search",
+      "version": "1.1.34",
+      "systems": {
+        "aarch64-darwin": {
+          "store_path": "/nix/store/xnj00gq1mfffvgyisghk4m9f38gc5c5c-bun-1.1.34"
+        },
+        "aarch64-linux": {
+          "store_path": "/nix/store/kccpzv8fb7swmmxbhv805qzq242rhy33-bun-1.1.34"
+        },
+        "x86_64-linux": {
+          "store_path": "/nix/store/x089g4srqw71w5jnc87vxbh7m12498i0-bun-1.1.34"
+        }
+      }
+    },
+    "inotify-tools@latest": {
+      "last_modified": "2024-11-16T04:25:12Z",
+      "resolved": "github:NixOS/nixpkgs/34a626458d686f1b58139620a8b2793e9e123bba#inotify-tools",
+      "source": "devbox-search",
+      "version": "4.23.9.0",
+      "systems": {
+        "aarch64-linux": {
+          "store_path": "/nix/store/a2mxphib13syfb6ql29zvaj1sfi9yppr-inotify-tools-4.23.9.0"
+        },
+        "x86_64-linux": {
+          "store_path": "/nix/store/00fikwlsjw3ybrml92q9xy81kbv54v40-inotify-tools-4.23.9.0"
+        }
+      }
+    },
+    "openai-whisper@latest": {
+      "last_modified": "2024-11-16T04:25:12Z",
+      "resolved": "github:NixOS/nixpkgs/34a626458d686f1b58139620a8b2793e9e123bba#openai-whisper",
+      "source": "devbox-search",
+      "version": "20240930",
+      "systems": {
+        "aarch64-darwin": {
+          "store_path": "/nix/store/gbb03bn6sjqi9s8jx28g9wszddyi6n8z-python3.12-whisper-20240930"
+        },
+        "aarch64-linux": {
+          "store_path": "/nix/store/32g784a5sabcv12mngp7n3p8f4rx8nps-python3.12-whisper-20240930"
+        },
+        "x86_64-darwin": {
+          "store_path": "/nix/store/v5rig86ff5spadzk7lx6vpa29zjms1nq-python3.12-whisper-20240930"
+        },
+        "x86_64-linux": {
+          "store_path": "/nix/store/0v2j4h48ffjb3fcmhq6mxhpdly2wjj59-python3.12-whisper-20240930"
+        }
+      }
+    },
+    "streamlink@latest": {
+      "last_modified": "2024-11-16T04:25:12Z",
+      "resolved": "github:NixOS/nixpkgs/34a626458d686f1b58139620a8b2793e9e123bba#streamlink",
+      "source": "devbox-search",
+      "version": "6.11.0",
+      "systems": {
+        "aarch64-darwin": {
+          "store_path": "/nix/store/2axk9zxibin1wzfrya24aczwf51z0znv-streamlink-6.11.0"
+        },
+        "aarch64-linux": {
+          "store_path": "/nix/store/a5m69mwqly4lzs1akndh1plil3yp7754-streamlink-6.11.0"
+        },
+        "x86_64-darwin": {
+          "store_path": "/nix/store/qwv8hi2as4s708p8h84s61j9295wzhck-streamlink-6.11.0"
+        },
+        "x86_64-linux": {
+          "store_path": "/nix/store/1zy7pwykp4v8qvx7s7qb4zvc9k2ivk85-streamlink-6.11.0"
+        }
+      }
+    }
+  }
+}
