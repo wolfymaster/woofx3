@@ -34,7 +34,10 @@ console.log(chalk.yellow('######################################################
 
 const send = makeSender(chatClient, channel);
 const commander = new Commands();
+
 commander.add('woof', 'woofwoof');
+
+commander.add('so', 'SHOUTING OUT VERY LOUD')
 
 chatClient.onMessage(async (channel: string, user: string, text: string, msg: ChatMessage) => {
     let [message, matched] = commander.process(text);
