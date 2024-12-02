@@ -37,10 +37,22 @@ const commander = new Commands();
 
 commander.add('woof', 'woofwoof');
 
-commander.add('so', 'SHOUTING OUT VERY LOUD')
+commander.add('so', async (text: string) => {
+    // sent request for shoutout with username
+    console.log(text)
+    const username = text.slice(1);
+    console.log('username: ', username);
+    try {
+        const response = await fetch(`http://localhost:9653/${username}`);
+        console.log(response);
+    } catch(err) {
+        console.error(err);
+    }
+    return '';
+})
 
 chatClient.onMessage(async (channel: string, user: string, text: string, msg: ChatMessage) => {
-    let [message, matched] = commander.process(text);
+    let [message, matched] = await commander.process(text);
 
     if(matched) {
         await send(message);

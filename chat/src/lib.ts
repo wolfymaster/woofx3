@@ -22,23 +22,34 @@ export function makeSender(client: ChatClient, channel: string) {
 
 interface Command {
     action: string;
-    response: string;
+    response: CommandResponse;
 };
+
+type CommandResponse = string | ((msg: string) => Promise<string>)
 
 export class Commands {
     commands: Command[] = [];
 
-    add(command: string, response: string) {
+    add(command: string, response: CommandResponse) {
         this.commands.push({
             action: `!${command}`,
             response,
         });
     }
 
-    process(text: string): [string, boolean] {
+    async process(text: string): Promise<[string, boolean]> {
         for(let i = 0; i < this.commands.length; ++i) {
-            if(this.commands[i].action === text) {
-                return [this.commands[i].response, true];
+            const { action, response } = this.commands[i];
+
+            if(text.startsWith(action)) {
+                if(typeof response === 'string') {
+                    return [response, true];
+                }
+                if(typeof response === 'function') {
+                    text = text.slice(action.length);
+                    const msg = await response(text.trim());
+                    return [msg, true];
+                }
             }
         }
         return ['', false];
