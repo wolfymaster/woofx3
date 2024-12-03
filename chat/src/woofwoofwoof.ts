@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import dotenv from 'dotenv';
 import { ChatClient, ChatMessage, type ChatSayMessageAttributes } from '@twurple/chat';
 import { Commands, makeSender, readTokenFromFile } from './lib';
+import NatsClient from '../lib/nats';
 
 dotenv.config();
 
@@ -25,6 +26,7 @@ let channel = 'wolfymaster';
 
 const token = await readTokenFromFile('./.wolfy_access_token');
 await authProvider.addUserForToken(token, ['chat']);
+const bus = await NatsClient();
 
 const chatClient = new ChatClient({ authProvider, channels: [channel] });
 chatClient.connect();
@@ -39,22 +41,20 @@ commander.add('woof', 'woofwoof');
 
 commander.add('so', async (text: string) => {
     // sent request for shoutout with username
-    console.log(text)
-    const username = text.slice(1);
-    console.log('username: ', username);
-    try {
-        const response = await fetch(`http://localhost:9653/${username}`);
-        console.log(response);
-    } catch(err) {
-        console.error(err);
-    }
+    const username = text.slice(1); // need to look for and remove @ sign
+
+    bus.publish('slobs', JSON.stringify({
+        command: 'shoutout',
+        args: { username }
+    }));
+
     return '';
 })
 
 chatClient.onMessage(async (channel: string, user: string, text: string, msg: ChatMessage) => {
     let [message, matched] = await commander.process(text);
 
-    if(matched) {
+    if(matched && message) {
         await send(message);
     }
 });

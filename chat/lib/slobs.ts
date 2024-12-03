@@ -27,7 +27,8 @@ export interface slobsRequest {
 
 type RequestCtx<T extends BaseSlobsResult = any> = {
     currentIdx: number;
-    request: (resourceId: string, method: string, ...args: any) => Promise<T>
+    request: (resourceId: string, method: string, ...args: any) => Promise<T>;
+    subscribe: (resourceId: string, method: string, cb: any) => void;
 }
 
 interface SlobsResponse<T extends BaseSlobsResult = BaseSlobsResult> {
@@ -37,14 +38,19 @@ interface SlobsResponse<T extends BaseSlobsResult = BaseSlobsResult> {
 }
 
 interface BaseSlobsResult {
+    emitter: string;
     _type: string;
     resourceId: string;
     id: string;
-    name: string;
+    name: string; 
 }
 
 interface SceneResult extends BaseSlobsResult {
     nodes: Source[]
+}
+
+interface SlobsEvent extends BaseSlobsResult {
+    data: unknown
 }
 
 export type Source = {
@@ -63,7 +69,9 @@ export type Scene = {
     nodes: Source[];
 }
 
-export function makeSockJSClient(ctx: Context, sockJsURL: string, queue: Queue): Promise<WebSocket> {
+export type SubscriptionMap = Record<string, any>;
+
+export function makeSockJSClient(ctx: Context, sockJsURL: string, queue: Queue, subscriptions: SubscriptionMap): Promise<WebSocket> {
     return new Promise((resolve, reject) => {
         const ws = new SockJS(sockJsURL);
 
@@ -73,8 +81,7 @@ export function makeSockJSClient(ctx: Context, sockJsURL: string, queue: Queue):
         }
 
         ws.onmessage = (message: MessageEvent) => {
-            ctx.logger(`message received`);
-            onMessageHandler(ctx, message, queue);
+            onMessageHandler(ctx, message, queue, subscriptions);
         }
 
         ws.onerror = (err) => {
@@ -88,7 +95,7 @@ export function makeSockJSClient(ctx: Context, sockJsURL: string, queue: Queue):
     })
 }
 
-export function makeRequestCtx(ws: WebSocket, queue: Queue): RequestCtx {
+export function makeRequestCtx(ws: WebSocket, queue: Queue, subscriptions: SubscriptionMap): RequestCtx {
     return {
         currentIdx: 0,
         request: function (resourceId: string, method: string, ...args: any) {
@@ -112,13 +119,17 @@ export function makeRequestCtx(ws: WebSocket, queue: Queue): RequestCtx {
                 });
                 ws.send(JSON.stringify(requestBody));
             });
-        }
+        },
+        subscribe: function (resourceId: string, method: string, cb: any) {
+            this.request(resourceId, method).then(subscriptionInfo => {
+                subscriptions[subscriptionInfo.resourceId] = cb;
+            });
+        },
     }
 }
 
 export async function authenticate(ctx: RequestCtx, token: string) {
     await ctx.request('TcpServerService', 'auth', token);
-    console.log('authed');
 }
 
 export async function getActiveScene(ctx: RequestCtx) {
@@ -129,6 +140,14 @@ export async function getScenes(ctx: RequestCtx): Promise<Scene[]> {
     return await ctx.request('ScenesService', 'getScenes');
 }
 
+export async function switchScene(ctx: RequestCtx, sceneId: string) {
+    return await ctx.request('ScenesService', 'makeSceneActive', sceneId);
+}
+
+export async function subscribeItemAdded(ctx: RequestCtx) {
+    return await ctx.request('ScenesService', 'itemAdded');
+}
+
 // https://github.com/stream-labs/desktop/blob/master/app/services/sources/sources-api.ts#L113
 export async function addBrowserSourceToScene(ctx: RequestCtx, scene: Scene, args: any) {
     const type = 'browser_source';
@@ -137,7 +156,15 @@ export async function addBrowserSourceToScene(ctx: RequestCtx, scene: Scene, arg
     return await ctx.request("ScenesService", "createAndAddSource", scene.id, name, type, args);
 }
 
-function onMessageHandler(ctx: Context, message: MessageEvent, queue: Queue) {
+export async function removeSceneItem(ctx: RequestCtx, scene: Scene, sceneItemId: string) {
+    return await ctx.request(scene.resourceId, 'removeItem', sceneItemId);
+}
+
+export async function getSceneItem(ctx: RequestCtx, scene: Scene, sceneItemId: string) {
+    return await ctx.request(scene.resourceId, 'getItem', sceneItemId);
+}
+
+function onMessageHandler(ctx: Context, message: MessageEvent, queue: Queue, subscriptions: SubscriptionMap) {
     let response: SlobsResponse = JSON.parse(message.data);
     let request = queue.get(response.id);
 
@@ -149,5 +176,12 @@ function onMessageHandler(ctx: Context, message: MessageEvent, queue: Queue) {
             request.resolve(response.result);
         }
     }
+
+    const result = response.result as SlobsEvent; 
+    if (!result) return;
+
+    if (result._type === 'EVENT' && result.emitter === 'STREAM') {
+        subscriptions[result.resourceId](result.data);
+      }
 }
 

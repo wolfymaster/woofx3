@@ -1,7 +1,11 @@
-import { addBrowserSourceToScene, authenticate, getActiveScene, getScenes, makeRequestCtx, makeSockJSClient, type Context, type Scene, type slobsRequest } from '../lib/slobs';
+import { 
+    addBrowserSourceToScene, authenticate, getScenes, makeRequestCtx, 
+    makeSockJSClient, removeSceneItem, type Context, type Scene, type slobsRequest 
+} from '../lib/slobs';
 import Queue from '../lib/queue';
 import chalk from 'chalk';
-import express from 'express';
+import NatsClient from '../lib/nats';
+import type { Msg } from '@nats-io/transport-node';
 
 interface RPCRequestBody {
     jsonrpc: string;
@@ -13,6 +17,11 @@ interface RPCRequestBody {
     }
 }
 
+interface slobsMessage {
+    command: string;
+    args: Record<string, string>
+}
+
 const PORT = 59650;
 const baseUrl = `http://172.29.160.1:${PORT}/api`;
 const token = '5e4e042c9834db74e4223861b1728424cb4de';
@@ -20,52 +29,53 @@ const clientId = process.env.TWITCH_CLIENT_ID;
 const accessToken = process.env.TWITCH_ACCESS_TOKEN;
 const twitchAPIUrl = 'https://api.twitch.tv/helix/';
 
-// request('ScenesService', 'getScenes').then( scenes => {
-//     console.log('scenes', scenes);
-//     scenes.forEach(scene => {
-//         console.log('scene: ', scene.id, scene.name);
-//     });
-// });        
+const bus = await NatsClient();
 
-// request('SourcesService', 'getSources').then (sources => {
-//     sources.forEach( source => {
-//         console.log('source:', source.id, source.name);
-//     })
-// })
+// setup a subscription that runs indefinately
+(async () => {
+    for await (const msg of bus.subscribe('slobs')) {
+        natsMessageHandler(msg);
+    }
+})();
 
-// getActiveScene().then(scene => {
-//     console.log('scene', scene);
-//     const items = scene.nodes;
+function natsMessageHandler(msg: Msg) {
+    const { command, args } = msg.json<slobsMessage>();
 
-//     const browser = items.find(item => item.name === '_browser');
-
-//     const resourceId = scene.resourceId;
-//     const itemId = browser.sceneItemId;
-
-//     console.log(resourceId, itemId);
-
-//     request(resourceId, 'getItem', itemId).then(browserItem => {
-//         request(browserItem.resourceId, 'setVisibility', 'true')
-//     })
-
-
-// });
-
-// switchScene('scene_bc24a839-126e-4bf8-a295-c7657f4b9219');
-// getSourcesForCurrentScene();
-
-
-function switchScene(sceneId: string) {
-    request('ScenesService', 'makeSceneActive', sceneId);
+    switch (command) {
+        case 'shoutout':
+            createAndShowSource(args.username);
+            break;
+        default:
+            console.error('did not match command');
+    }
 }
 
+async function createAndShowSource(username: string) {
+    // get broadcaster id
+    const broadcasterId = await getBroadcasterId(username);
 
-function getSourcesForCurrentScene() {
-    request('ScenesService', 'getSourcesForCurrentScene').then(sources => {
-        console.log(sources);
+    // get clips
+    const clips = await getClips(broadcasterId);
+
+    // pick a random clip
+    const randIdx = Math.floor(Math.random() * clips.length);
+    const randomClip = clips[randIdx];
+    const duration = randomClip.duration;
+
+    const programmingScene = scenes.find(s => s.name === "Programming")!;
+
+    // add browser source to scene
+    const sceneItemId = await addBrowserSourceToScene(requestCtx, programmingScene, {
+        name: 'shoutout',
+        url: `${randomClip.embed_url}&parent=wolfymaster.com&autoplay=true`,
+        width: 1920,
+        height: 1080,
     });
-}
 
+    setTimeout(async () => {
+        await removeSceneItem(requestCtx, programmingScene, sceneItemId);
+    }, duration * 1000);
+}
 
 function displaySceneDetails(scenes: Scene[], sceneName: string): void {
     const scene = scenes.find(s => s.name === sceneName);
@@ -92,95 +102,35 @@ const ctx: Context = {
     }
 }
 
-const app = express();
-
-
 // make a queue
 const slobsQueue = new Queue<slobsRequest>();
+const subscriptions = {};
 
 // await make the client, which connects and authenticates else, fails
-const client = await makeSockJSClient(ctx, baseUrl, slobsQueue);
+const client = await makeSockJSClient(ctx, baseUrl, slobsQueue, subscriptions);
 
 // create request ctx
-const requestCtx = makeRequestCtx(client, slobsQueue);
+const requestCtx = makeRequestCtx(client, slobsQueue, subscriptions);
 
 // auth
 await authenticate(requestCtx, token);
-console.log('we have authenticated');
-
-// get active scene
-// const activeScene = await getActiveScene(requestCtx);
-// console.log(activeScene);
 
 // get all scenes
 const scenes = await getScenes(requestCtx);
 
 displaySceneDetails(scenes, "Programming");
 
-const programmingScene = scenes.find(s => s.name === "Programming")!;
-
-// getSceneByName(ctx, "Chat") or getSceneByName("Agenda")
-
-// hideSource(ctx, scene, "source name")
-
-// showSource(ctx, scene "source name")
-
-// getSceneByName will need to make many requests using await ctx.request(resourceId, method, ...args)
-
-app.get('/:username/clip', async (req, res) => {
-    const url = req.query.url; 
-
-    res.send(`
-        <iframe
-        src="https://clips.twitch.tv/embed?clip=<slug>&parent=streamernews.example.com"
-        height="<height>"
-        width="<width>"
-        allowfullscreen>
-    </iframe>
-
-    `);
-})
-
-app.get('/:username', async (req, res) => {
-    console.log('username: ', req.params.username);
-    try {
-        // get broadcaster id
-        const broadcasterId = await getBroadcasterId(req.params.username);
-
-        // get clips
-        const clips = await getClips(broadcasterId);
-
-        // pick a random clip
-        const randIdx = Math.floor(Math.random() * clips.length);
-        const randomClip = clips[randIdx];
-
-        console.log('clip: ', randomClip);
-
-        // add browser source to scene
-        await addBrowserSourceToScene(requestCtx, programmingScene, {
-            name: 'shoutout',
-            url: `${randomClip.embed_url}&parent=wolfymaster.com&autoplay=true`
-        });
-    } catch (err) {
-        console.error(err);
-        return res.json({ status: 'error' })
-    }
-
-    res.json({ status: 'ok' })
+requestCtx.subscribe('ScenesService', 'itemAdded', (item: any) => {
+    console.log('received item added: ', item)
 });
 
 
-app.listen(9653, () => {
-    console.log('server is listening on 9653');
-})
-
-
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
     console.log('\nTerminating connection...');
     client.close();
+    await bus.drain();
     process.exit(0);
 });
-
 
 
 async function getBroadcasterId(username: string): Promise<string> {
@@ -191,8 +141,6 @@ async function getBroadcasterId(username: string): Promise<string> {
             'Authorization': `Bearer ${accessToken}`,
         }
     });
-
-    console.log('response', response)
 
     const data = await response.json();
 

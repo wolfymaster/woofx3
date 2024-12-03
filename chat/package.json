@@ -9,6 +9,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@nats-io/transport-node": "^3.0.0-31",
     "@twurple/api": "^7.1.0",
     "@twurple/chat": "^7.1.0",
     "@types/sockjs-client": "^1.5.4",
