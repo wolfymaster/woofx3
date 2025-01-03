@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "generate:ts": "bunx twirpscript",
+    "generate:go": "buf generate"
+  },
+  "dependencies": {
+    "twirp-ts": "^2.5.0"
+  }
+}
