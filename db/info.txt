@@ -1,0 +1,4 @@
+I need something that sits in front of the main app db and all the user sqlite dbs.
+uses grpc to communicate and handles all the queries. other apps just send requests for data or we subscribe to events
+
+for instance, on follow we want to receive an event and write it to that user's db. 
