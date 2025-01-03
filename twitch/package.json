@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@twurple/api": "^7.2.0",
+    "@twurple/auth": "^7.2.0",
+    "@twurple/eventsub-ws": "^7.2.0",
+    "dotenv": "^16.4.7"
+  }
+}
