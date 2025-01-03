@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<title>Document</title>
+<style>
+    :root {
+        --brand-color: hsl(6, 79%, 63%);
+    }
+
+    html {
+        padding: 0;
+        margin: 0;
+        color: #FFF;
+        font-family: "Roboto", serif;
+    }
+
+    h1 {
+        color: #FFF;
+    }
+
+    #headingContainer {
+        display: flex;
+        gap: 10px;
+    }
+
+    #headingContainer .heading {
+        font-size: 12px;
+        font-weight: 700;
+        padding: 5px 10px;
+        background: var(--brand-color);
+    }
+
+    #headingContainer .heading:hover {
+        cursor: pointer;
+        background: hsl(6, 79%, calc(63% - 5%));
+    }
+
+    .tab {
+        display: none;
+    }
+
+    .show {
+        display: block;
+    }
+</style>
+
+<div id="headingContainer">
+    <div class="heading" data-tabid="1">Commands</div>
+    <div class="heading" data-tabid="2">Sound Alerts</div>
+    <div class="heading" data-tabid="3">Rewards</div>
+</div>
+
+<div id="tab1" class="tab show">
+    <p>Tab One</p>
+
+    <button onClick="btn()">Press me</button>
+</div>
+
+<div id="tab2" class="tab">
+    <p>Tab Two</p>
+</div>
+
+<div id="tab3" class="tab">
+    <p>Tab Three</p>
+</div>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link
+    href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap"
+    rel="stylesheet">
+<script src="https://extension-files.twitch.tv/helper/v1/twitch-ext.min.js"></script>
+
+<script>
+    const container = document.getElementById('headingContainer');
+
+    const tabs = document.querySelectorAll('[id^="tab"]');
+
+    container.addEventListener('click', (evt) => {
+        // get tab id of clicked tab
+        const tabId = evt.target.dataset.tabid;
+
+        // make that tab active
+        const tab = document.getElementById(`tab${tabId}`);
+
+        Array.from(tabs).forEach(t => t.style.display = 'none');
+
+        tab.style.display = 'block';
+    })
+
+
+    let token = '';
+
+    window.Twitch.ext.onAuthorized(function (auth) {
+        console.log(auth);
+        token = auth.token;
+        console.log('The Helix JWT is ', auth.helixToken);
+    });
+
+    async function btn() {
+        const response = await fetch('http://localhost:3001/payload', {
+            method: 'post',
+            headers: {
+                authorization: token,
+            }
+        });
+
+        const payload = await response.json();
+
+        console.log('payload', payload);
+    }
+
+</script>
