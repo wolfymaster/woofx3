@@ -1,0 +1,10 @@
+auth.local.woofx3.tv {
+	reverse_proxy / http://localhost:3000
+	reverse_proxy /auth http://localhost:8080	
+	tls internal
+}
+
+wolfymaster.local.woofx3.tv {
+	reverse_proxy localhost:3000
+	tls internal
+}

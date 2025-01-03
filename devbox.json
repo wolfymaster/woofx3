@@ -4,7 +4,14 @@
     "streamlink@latest",
     "openai-whisper@latest",
     "inotify-tools@latest",
-    "natscli@0.1.5"
+    "natscli@0.1.5",
+    "ffmpeg@latest",
+    "twitch-cli@latest",
+    "oauth2c@latest",
+    "ruby@latest",
+    "protoc-gen-twirp@8.1.2",
+    "go@1.23.3",
+    "buf@1.47.2"
   ],
   "shell": {
     "init_hook": [
