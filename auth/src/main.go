@@ -13,14 +13,19 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 
 	_ "github.com/joho/godotenv/autoload"
 )
 
 func main() {
+	godotenv.Load("../.env")
+
 	apiBasePath := os.Getenv("SUPERTOKENS_API_BASEPATH")
 	websiteBasePath := os.Getenv("SUPERTOKENS_WEBSITE_BASEPATH")
 	cookieDomain := os.Getenv("SUPERTOKENS_COOKIE_DOMAIN")
+	port := os.Getenv("AUTH_PORT")
+
 	err := supertokens.Init(supertokens.TypeInput{
 		Supertokens: &supertokens.ConnectionInfo{
 			ConnectionURI: os.Getenv("SUPERTOKENS_CONNECTION_URI"),
@@ -125,5 +130,5 @@ func main() {
 	})
 
 	// start the server
-	router.Run()
+	router.Run(":" + port)
 }

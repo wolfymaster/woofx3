@@ -5,11 +5,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"github.com/joho/godotenv"
 
 	coredb "github.com/wolfymaster/wolfyttv-db/services/coredb"
 )
 
 func main() {
+	godotenv.Load("../.env")
+
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		log.Fatal("DATABASE_URL is not set")
@@ -24,5 +27,14 @@ func main() {
 	server := &coredb.RPC{}
 	twirpHandler := coredb.NewCoreDBServiceServer(server)
 
-	http.ListenAndServe(":8080", twirpHandler)
+
+	port := os.Getenv("DATABASE_PROXY_PORT")
+	if port == "" {
+		log.Fatalf("DATABASE_PROXY_PORT is not set")
+	}
+
+	err = http.ListenAndServe(":" + port, twirpHandler)
+	if err != nil {
+		log.Fatal(err)
+	 }
 }
