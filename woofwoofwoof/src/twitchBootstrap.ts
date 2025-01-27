@@ -6,7 +6,11 @@ import { GetUserToken } from './coredb.pb';
 
 type SenderFunction = (msg: string, opts?: ChatSayMessageAttributes) => Promise<void>;
 
-export default async function bootstrap(channel: string, commander: Commands): Promise<void> {
+type BootstrapArgs = {
+    databaseURL: string;
+}
+
+export default async function bootstrap(channel: string, commander: Commands, args: BootstrapArgs): Promise<void> {
     const authProvider = new RefreshingAuthProvider({
         clientId: process.env.TWITCH_WOLFY_CLIENT_ID || "",
         clientSecret: process.env.TWITCH_WOLFY_CLIENT_SECRET || "",
@@ -25,7 +29,7 @@ export default async function bootstrap(channel: string, commander: Commands): P
     // call db service to lookup token for user
     try {
         const response = await GetUserToken({ username: channel }, { 
-            baseURL: "http://localhost:8080"
+            baseURL: args.databaseURL,
         });
         const token: AccessTokenWithUserId = JSON.parse(response.token);
         await authProvider.addUserForToken(token, ['chat']);

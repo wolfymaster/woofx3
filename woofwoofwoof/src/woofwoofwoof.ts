@@ -17,7 +17,9 @@ if(!channel) {
 const commander = new Commands();
 
 // bootstrap twitch auth provider
-await TwitchBootstrap(channel, commander);
+await TwitchBootstrap(channel, commander, {
+    databaseURL: process.env.DATABASE_PROXY_URL || "",
+});
 // create NATS client
 const bus = await NatsClient();
 
