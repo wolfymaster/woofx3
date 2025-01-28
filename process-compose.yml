@@ -1,0 +1,25 @@
+version: "0.5"
+
+processes:
+  auth:
+    command: go run src/main.go
+    description: supertokens auth
+    working_dir: auth
+
+  db:
+    command: go run main.go
+    description: proxy for accessing databases
+    working_dir: db
+    ready_log_line: "Connected to the database!"
+
+  streamerui:
+    command: bun run dev
+    description: Off-Twitch UI for managing things
+    working_dir: streamerui
+
+  woofwoofwoof:
+    command: bun run woofwoofwoof/src/woofwoofwoof.ts
+    description: Twitch Chatbot
+    depends_on:
+      db:
+        condition: process_log_ready

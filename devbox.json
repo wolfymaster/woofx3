@@ -1,17 +1,19 @@
 {
   "packages": [
-    "bun@latest",
-    "streamlink@latest",
-    "openai-whisper@latest",
-    "inotify-tools@latest",
-    "natscli@0.1.5",
-    "ffmpeg@latest",
-    "twitch-cli@latest",
-    "oauth2c@latest",
-    "ruby@latest",
-    "protoc-gen-twirp@8.1.2",
+    "buf@1.47.2",
+    "bun@1.1.34",
+    "ffmpeg@7.1",
     "go@1.23.3",
-    "buf@1.47.2"
+    "inotify-tools@4.23.9.0",
+    "natscli@0.1.5",
+    "oauth2c@1.17.0",
+    "openai-whisper@20240930",
+    "process-compose@1.46.0",
+    "protoc-gen-twirp@8.1.2",
+    "pulumi-bin@3.137.0",
+    "ruby@3.3.5",
+    "streamlink@6.11.0",
+    "twitch-cli@1.1.24"
   ],
   "shell": {
     "init_hook": [
@@ -22,5 +24,8 @@
         "echo \"Error: no test specified\" && exit 1"
       ]
     }
+  },
+  "env": {
+    "CADDY_ROOT_DIR": "."
   }
 }

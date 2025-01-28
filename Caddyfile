@@ -1,10 +1,13 @@
+{
+	default_bind 127.0.0.1
+}
+
 auth.local.woofx3.tv {
-	reverse_proxy / http://localhost:3000
-	reverse_proxy /auth http://localhost:8080	
+	reverse_proxy /* http://localhost:8081
 	tls internal
 }
 
-wolfymaster.local.woofx3.tv {
+wolfy.local.woofx3.tv {
 	reverse_proxy localhost:3000
 	tls internal
 }
