@@ -34,27 +34,7 @@ func main() {
 		AppInfo: supertokens.AppInfo{
 			AppName:   "woofwoofwoof",
 			APIDomain: os.Getenv("SUPERTOKENS_API_DOMAIN"),
-			GetOrigin: func(request *http.Request, userContext supertokens.UserContext) (string, error) {
-				if request != nil {
-					origin := request.Header.Get("origin")
-					if origin == "" {
-						// this means the client is in an iframe, it's a mobile app, or
-						// there is a privacy setting on the frontend which doesn't send
-						// the origin
-					} else {
-						if origin == "https://test.example.com" {
-							// query from the test site
-							return "https://test.example.com", nil
-						} else if origin == "http://localhost:3000" {
-							// query from local development
-							return "http://localhost:3000", nil
-						}
-					}
-				}
-				// in case the origin is unknown or not set, we return a default
-				// value which will be used for this request.
-				return os.Getenv("SUPERTOKENS_WEBSITE_DOMAIN"), nil
-			},
+			WebsiteDomain: os.Getenv("SUPERTOKENS_WEBSITE_DOMAIN"),
 			APIBasePath:     &apiBasePath,
 			WebsiteBasePath: &websiteBasePath,
 		},
@@ -71,8 +51,8 @@ func main() {
 								Name:         "Twitch provider",
 								Clients: []tpmodels.ProviderClientConfig{
 									{
-										ClientID:     os.Getenv("TWITCH_CLIENT_ID"),
-										ClientSecret: os.Getenv("TWITCH_CLIENT_SECRET"),
+										ClientID:     os.Getenv("TWITCH_WOLFY_CLIENT_ID"),
+										ClientSecret: os.Getenv("TWITCH_WOLFY_CLIENT_SECRET"),
 										Scope:        []string{"openid", "user:read:email", "user:read:follows", "user:read:subscriptions"},
 									},
 								},
