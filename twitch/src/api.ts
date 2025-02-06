@@ -8,6 +8,7 @@ import dotenv from 'dotenv';
 import * as twitch from './lib';
 import { type TwitchContext } from './types';
 import NatsClient from './nats';
+import Commands from './commands';
 
 
 dotenv.config();
@@ -47,14 +48,14 @@ try {
     const userId = await twitch.getBroadcasterId(ctx, 'wolfymaster');
 
     listener.onChannelBan(userId, (event) => {
-        console.log('banned', event);
+        console.log(Commands.USER_BANNED, event);
     })
 
     listener.start();
 
     listener.onChannelFollow(userId, userId, (event: EventSubChannelFollowEvent) => {
         bus.publish('slobs', JSON.stringify({
-            command: 'follow',
+            command: Commands.FOLLOW,
             args: { username: event.userName }
         }))
     });
@@ -64,11 +65,14 @@ try {
     })
 
     listener.onChannelCheer(userId, evt => {
-        console.log('onchannelcheer', evt);
+        console.log(Commands.BIT_CHEER, evt);
     });
 
     listener.onChannelHypeTrainBegin(userId, (data) => {
-
+        bus.publish('slobs', JSON.stringify({
+            command: Commands.HYPE_TRAIN_BEGIN,
+            args: { }
+        }))
     });
 
     listener.onChannelSubscription(userId, (event) =>{
