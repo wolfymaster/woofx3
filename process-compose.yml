@@ -6,6 +6,14 @@ processes:
     description: supertokens auth
     working_dir: auth
 
+  caddy:
+    command: "caddy run"
+    description: "start caddy proxy"
+    is_elevated: true
+    shutdown:
+      command: "caddy stop"
+      signal: 15
+
   db:
     command: go run main.go
     description: proxy for accessing databases
@@ -16,6 +24,9 @@ processes:
     command: bun run dev
     description: Off-Twitch UI for managing things
     working_dir: streamerui
+    depends_on:
+      caddy:
+        condition: process_started
 
   woofwoofwoof:
     command: bun run woofwoofwoof/src/woofwoofwoof.ts
