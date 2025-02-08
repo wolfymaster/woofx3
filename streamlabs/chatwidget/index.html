@@ -1,0 +1,20 @@
+<div id="log"></div>
+<!-- item will be appended to this layout -->
+<div id="horizontal_flow_container">
+  <div id="scroll_container">
+    <div id="chat_copy" class="horizontal_flow text_outline"></div>
+    <div id="chat" class="sl__chat__layout horizontal_flow text_outline"></div>
+  </div>
+</div>
+
+<!-- chat item -->
+<script type="text/template" id="chatlist_item">
+    <div class="chat_message" data-from="{from}" data-id="{messageId}">
+        <span class="meta" style="color: {color}">
+            <span class="badges"></span>
+            <span class="name">{from}</span>
+        </span>
+
+        <span class="message">{message}</span>
+    </div>
+</script>
