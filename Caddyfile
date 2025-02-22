@@ -11,3 +11,18 @@ wolfy.local.woofx3.tv {
 	reverse_proxy localhost:3000
 	tls internal
 }
+
+extension.local.woofx3.tv {
+	reverse_proxy localhost:5174
+	tls internal
+}
+
+browsersource.local.woofx3.tv {
+	reverse_proxy localhost:5173
+	tls internal
+}
+
+timer.local.woofx3.tv {
+	reverse_proxy localhost:12000
+	tls internal
+}
