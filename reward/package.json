@@ -1,0 +1,16 @@
+{
+  "name": "reward",
+  "module": "src/index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@instantdb/admin": "^0.17.21",
+    "@nats-io/transport-node": "^3.0.0-36",
+    "dotenv": "^16.4.7"
+  }
+}
