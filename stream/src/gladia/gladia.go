@@ -37,8 +37,7 @@ type WebSocketMessage struct {
 	Data json.RawMessage `json:"data"`
 }
 
-func (m WebSocketMessage) String() string {
-	// First try to unmarshal into a map to check for utterance
+func (m WebSocketMessage) Message() string {
 	var data map[string]interface{}
 	if err := json.Unmarshal(m.Data, &data); err != nil {
 		return string(m.Data)
@@ -49,6 +48,15 @@ func (m WebSocketMessage) String() string {
 		if text, ok := utterance["text"].(string); ok {
 			return text
 		}
+	}
+
+	return ""
+}
+
+func (m WebSocketMessage) String() string {
+	var message = m.Message()
+	if message != "" {
+		return message
 	}
 
 	// Fall back to pretty printing if no utterance.text found

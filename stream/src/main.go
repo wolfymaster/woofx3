@@ -2,24 +2,33 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/wolfymaster/wolfyttv-stream/src/gladia"
+
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nkeys"
 )
 
 type Args struct {
 	url string
 }
 
+var client *nats.Conn
+
 func main() {
 	// load envvars
 	godotenv.Load("../.env")
 
 	gladia_api_key := os.Getenv("GLADIA_API_KEY")
+	userJWT := os.Getenv("NATS_USER_JWT")
+	nkeySeed := os.Getenv("NATS_NKEY_SEED")
 
 	// parse arg input
 	args := parseArgs()
@@ -62,14 +71,6 @@ func main() {
 	}
 	defer ws.Close()
 
-	// Handle messages in a goroutine
-	go func() {
-		for msg := range msgChan {
-			// Handle received messages
-			log.Printf("Received message: %v\n", msg)
-		}
-	}()
-
 	// Handle errors in a goroutine
 	go func() {
 		for err := range ws.Errors() {
@@ -91,6 +92,14 @@ func main() {
 			log.Printf("Error sending audio: %v", err)
 		}
 	}
+
+	nats_client, err := setupNATS(userJWT, nkeySeed)
+	if err != nil {
+		log.Fatalf("Failed to connect to nats: %v", err)
+	}
+
+	// Handle messages in a goroutine
+	go handleMessages(msgChan, nats_client)
 
 	// setup new stream processor
 	processor := NewStreamProcessor(args.url, videoHandler, audioHandler)
@@ -125,5 +134,80 @@ func parseArgs() Args {
 
 	return Args{
 		url: *url,
+	}
+}
+
+func setupNATS(userJWT string, nkeySeed string) (*nats.Conn, error) {
+	if client != nil {
+		return client, nil
+	}
+
+	if userJWT == "" || nkeySeed == "" {
+		return nil, fmt.Errorf("missing NATS credentials in environment")
+	}
+
+	// Create a KeyPair from the seed
+	kp, err := nkeys.FromSeed([]byte(nkeySeed))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create keypair: %w", err)
+	}
+	defer kp.Wipe() // Always wipe the keypair when done
+
+	// Setup authentication options
+	opts := []nats.Option{
+		nats.UserJWT(func() (string, error) {
+			return userJWT, nil
+		}, func(nonce []byte) ([]byte, error) {
+			sig, err := kp.Sign(nonce)
+			if err != nil {
+				return nil, err
+			}
+			return sig, nil
+		}),
+		nats.Name("NATS Service"),
+		nats.Timeout(5 * time.Second),
+		nats.RetryOnFailedConnect(true),
+		nats.MaxReconnects(-1), // Infinite reconnects
+		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
+			log.Printf("Got disconnected! Reason: %q\n", err)
+		}),
+		nats.ReconnectHandler(func(nc *nats.Conn) {
+			log.Printf("Got reconnected to %v!\n", nc.ConnectedUrl())
+		}),
+		nats.ClosedHandler(func(nc *nats.Conn) {
+			log.Printf("Connection closed. Reason: %q\n", nc.LastError())
+		}),
+	}
+
+	// Connect to NATS
+	nc, err := nats.Connect("tls://connect.ngs.global", opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
+	}
+
+	client = nc
+	return client, nil
+}
+
+func handleMessages(msgChan <-chan gladia.WebSocketMessage, nc *nats.Conn) {
+	for msg := range msgChan {
+		// Handle received messages
+
+		// parse the incoming message
+		parsed := msg.Message()
+
+		// identify if parsed message contains the wake word "mods"
+		match := SearchString(parsed, "mod")
+
+		if match.Found {
+			// start to build llm context
+			// get current chatters
+			data := make([]byte, 0)
+			msg, err := nc.Request("twitchapi", data, nats.DefaultTimeout)
+			if err != nil {
+				log.Fatal("it broke")
+			}
+			log.Printf("Received message: %v\n", msg)
+		}
 	}
 }
