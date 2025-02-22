@@ -1,51 +1,67 @@
-/// i need to setup something to listen to twitch events
-
-import { RefreshingAuthProvider } from '@twurple/auth';
+import dotenv from 'dotenv';
+import path from 'path';
 import { ApiClient } from '@twurple/api';
 import { EventSubWsListener } from '@twurple/eventsub-ws';
 import { EventSubChannelFollowEvent } from '@twurple/eventsub-base';
-import dotenv from 'dotenv';
 import * as twitch from './lib';
-import { type TwitchContext } from './types';
-import NatsClient from './nats';
+import { type TwitchContext, TwitchApiRequestMessage } from './types';
+import NatsClient, { natsMessageHandler } from './nats';
+import TwitchBootstrap from './twitchBootstrap';
 import Commands from './commands';
+import * as Handlers from './handlers';
 
+dotenv.config({
+    path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../', '.env')],
+});
 
-dotenv.config();
-
-const clientId = process.env.TWITCH_WOLFY_CLIENT_ID || '';
-const clientSecret = process.env.TWITCH_WOLFY_CLIENT_SECRET || '';
-
-const bus = await NatsClient();
-
+// logger
 const logger = twitch.makeLogger({
     level: 'info',
     defaultMeta: { service: 'twitch' },
 });
 
-const authProvider = new RefreshingAuthProvider({
-    clientId,
-    clientSecret,
-    redirectUri: `http://localhost`,
+let channel = process.env.TWITCH_CHANNEL_NAME;
+if (!channel) {
+    throw new Error('twitch channel missing. please set environment variable: TWITCH_CHANNEL_NAME.')
+}
+
+// bootstrap twitch auth provider
+const authProvider = await TwitchBootstrap(channel, {
+    databaseURL: process.env.DATABASE_PROXY_URL || "",
 });
-const token = await twitch.readTokenFromFile('./.wolfy_access_token');
-await authProvider.addUserForToken(token);
+
+// Message Bus
+const bus = await NatsClient();
 
 const mockSubscriptionURL = 'http://localhost:8080/eventsub/subscriptions';
 
 const apiClient = new ApiClient({ authProvider });
 const listener = new EventSubWsListener({ apiClient });
 
-let ctx: TwitchContext = {
-    apiUrl: 'https://api.twitch.tv/helix/',
-    clientId: process.env.TWITCH_WOLFY_CLIENT_ID || '',
-    clientSecret: process.env.TWITCH_WOLFY_CLIENT_SECRET || '',
-    accessToken: token.accessToken,
-    logger,
-};
+// let ctx: TwitchContext = {
+//     apiUrl: 'https://api.twitch.tv/helix/',
+//     clientId: process.env.TWITCH_WOLFY_CLIENT_ID || '',
+//     clientSecret: process.env.TWITCH_WOLFY_CLIENT_SECRET || '',
+//     accessToken: token.accessToken,
+//     logger,
+// };
+
+// listen on the eventbus for api calls
+(async () => {
+    for await (const msg of bus.subscribe('twitchapi')) {
+        natsMessageHandler<TwitchApiRequestMessage>(msg, twitchApiMessageHandler);
+    }
+})();
 
 try {
-    const userId = await twitch.getBroadcasterId(ctx, 'wolfymaster');
+    const broadcaster = await apiClient.users.getUserByName({ name: process.env.TWITCH_CHANNEL_NAME || '' });
+    if (!broadcaster) {
+        throw new Error('unable to resolve broadcaster');
+    }
+
+    const userId = broadcaster.id;
+
+    console.log('userId', userId);
 
     listener.onChannelBan(userId, (event) => {
         console.log(Commands.USER_BANNED, event);
@@ -66,16 +82,29 @@ try {
 
     listener.onChannelCheer(userId, evt => {
         console.log(Commands.BIT_CHEER, evt);
+
+        const { message, bits, isAnonymous, userDisplayName, userId } = evt;
+
+        bus.publish('reward', JSON.stringify({
+            type: Commands.REWARD.BITS,
+            payload: {
+                message,
+                bits,
+                isAnonymous,
+                userDisplayName,
+                userId,
+            }
+        }))
     });
 
     listener.onChannelHypeTrainBegin(userId, (data) => {
         bus.publish('slobs', JSON.stringify({
             command: Commands.HYPE_TRAIN_BEGIN,
-            args: { }
+            args: {}
         }))
     });
 
-    listener.onChannelSubscription(userId, (event) =>{
+    listener.onChannelSubscription(userId, (event) => {
 
     });
 
@@ -83,3 +112,26 @@ try {
     console.error(err.message);
     process.exit(0);
 }
+
+async function twitchApiMessageHandler(command: string, args: Record<string, string>) {
+    const handlers = {
+        chatters: () => Handlers.getChatters(apiClient),
+        update_stream: () => Handlers.updateStream(apiClient, args),
+    }
+
+    const handler = handlers[command];
+
+    if(!handler) {
+        console.log(`${command} is not a valid command`);
+        return;
+    }
+
+    const result = await handler();
+
+    if(result.error) {
+        console.log(handler.errorMsg);
+        return;
+    }
+}
+
+

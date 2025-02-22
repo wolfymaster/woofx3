@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import { jwtAuthenticator, wsconnect, type NatsConnection } from "@nats-io/transport-node";
+import { jwtAuthenticator, wsconnect, type NatsConnection, Msg } from "@nats-io/transport-node";
 
 dotenv.config();
 
@@ -12,4 +12,9 @@ export default async function NatsClient() {
     const authenticator = jwtAuthenticator(process.env.NATS_USER_JWT!, Buffer.from(process.env.NATS_NKEY_SEED!));
     client = await wsconnect({ servers: "tls://connect.ngs.global", authenticator });
     return client;
+}
+
+export async function natsMessageHandler<T>(msg: Msg, cb) {
+    const { command, args } = msg.json<T>();
+    cb(command, args);
 }

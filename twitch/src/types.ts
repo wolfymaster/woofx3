@@ -7,3 +7,14 @@ export interface TwitchContext {
     accessToken: string;
     logger: Logger;
 }
+
+export interface TwitchApiRequestMessage {
+    command: string;
+    args: Record<string, string>
+}
+
+export type HandlerResponse<T> = {
+    error: boolean;
+    errorMsg?: string;
+    payload?: T;
+}
