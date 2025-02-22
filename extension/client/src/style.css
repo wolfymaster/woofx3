@@ -1,0 +1,31 @@
+:root {
+    --brand-color: hsl(6, 79%, 63%);
+}
+
+html {
+    padding: 0;
+    margin: 0;
+    color: #FFF;
+    font-family: "Roboto", serif;
+}
+
+h1 {
+    color: #FFF;
+}
+
+#headingContainer {
+    display: flex;
+    gap: 10px;
+}
+
+#headingContainer .heading {
+    font-size: 12px;
+    font-weight: 700;
+    padding: 5px 10px;
+    background: var(--brand-color);
+}
+
+#headingContainer .heading:hover {
+    cursor: pointer;
+    background: hsl(6, 79%, calc(63% - 5%));
+}

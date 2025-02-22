@@ -56,6 +56,7 @@
 
 <div id="tab2" class="tab">
     <p>Tab Two</p>
+    <button onClick="btn2()">Press me</button>
 </div>
 
 <div id="tab3" class="tab">
@@ -68,44 +69,4 @@
     href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap"
     rel="stylesheet">
 <script src="https://extension-files.twitch.tv/helper/v1/twitch-ext.min.js"></script>
-
-<script>
-    const container = document.getElementById('headingContainer');
-
-    const tabs = document.querySelectorAll('[id^="tab"]');
-
-    container.addEventListener('click', (evt) => {
-        // get tab id of clicked tab
-        const tabId = evt.target.dataset.tabid;
-
-        // make that tab active
-        const tab = document.getElementById(`tab${tabId}`);
-
-        Array.from(tabs).forEach(t => t.style.display = 'none');
-
-        tab.style.display = 'block';
-    })
-
-
-    let token = '';
-
-    window.Twitch.ext.onAuthorized(function (auth) {
-        console.log(auth);
-        token = auth.token;
-        console.log('The Helix JWT is ', auth.helixToken);
-    });
-
-    async function btn() {
-        const response = await fetch('http://localhost:3001/payload', {
-            method: 'post',
-            headers: {
-                authorization: token,
-            }
-        });
-
-        const payload = await response.json();
-
-        console.log('payload', payload);
-    }
-
-</script>
+<script src="script.js"></script>
