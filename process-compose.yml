@@ -6,6 +6,11 @@ processes:
     description: supertokens auth
     working_dir: auth
 
+  browsersource:
+    command: bun run dev
+    description: streamlabs browser source
+    working_dir: streamlabs/browsersource
+
   caddy:
     command: "caddy run"
     description: "start caddy proxy"
@@ -20,6 +25,16 @@ processes:
     working_dir: db
     ready_log_line: "Connected to the database!"
 
+  extension-be:
+    command: bun run dev
+    description: Twitch Data Center Extension Development
+    working_dir: extension
+
+  extension-fe:
+    command: bun run dev
+    description: Twitch Data Center Extension Development
+    working_dir: extension/client
+
   streamerui:
     command: bun run dev
     description: Off-Twitch UI for managing things
@@ -27,6 +42,19 @@ processes:
     depends_on:
       caddy:
         condition: process_started
+
+  timer:
+    command: python3 -m http.server 12000
+    description: Countdown timer
+    working_dir: streamlabs/timer
+    depends_on:
+      caddy:
+        condition: process_started
+
+  twitch:
+    command: bun run src/api.ts
+    description: Twitch API + Eventbus
+    working_dir: twitch
 
   woofwoofwoof:
     command: bun run woofwoofwoof/src/woofwoofwoof.ts
