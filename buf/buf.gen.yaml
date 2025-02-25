@@ -4,13 +4,13 @@ plugins:
     out: gen
   - local: protoc-gen-twirp
     out: gen
-  - remote: buf.build/community/stephenh-ts-proto:v2.3.0
-    out: gen
-    opt:
-      - esModuleInterop=true
-      - outputClientImpl=false
-  - local: ./plugins/twirp-ts
-    out: gen
-    opt: "ts_proto"
+  # - remote: buf.build/community/stephenh-ts-proto:v2.3.0
+  #   out: gen
+  #   opt:
+  #     - esModuleInterop=true
+  #     - outputClientImpl=false
+  # - local: ./plugins/twirp-ts
+  #   out: gen
+  #   opt: "ts_proto"
 inputs:
   - directory: proto

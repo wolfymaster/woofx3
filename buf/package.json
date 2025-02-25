@@ -4,6 +4,7 @@
     "generate:go": "buf generate"
   },
   "dependencies": {
-    "twirp-ts": "^2.5.0"
+    "twirp-ts": "^2.5.0",
+    "twirpscript": "^0.0.72"
   }
 }

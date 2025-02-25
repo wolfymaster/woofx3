@@ -5,6 +5,8 @@ option go_package = "github.com/wolfymaster/wolfyttv/coredb";
 
 service CoreDBService {
     rpc GetUserToken(GetUserTokenRequest) returns (GetUserTokenResponse);
+    rpc CreateUserChatMessage(CreateUserChatMessageRequest) returns (CreateUserChatMessageResponse);
+    rpc CreateUserEvent(CreateUserEventRequest) returns (CreateUserEventResponse);
 }
 
 message GetUserTokenRequest {
@@ -13,4 +15,36 @@ message GetUserTokenRequest {
 
 message GetUserTokenResponse {
     string token = 1;    
+}
+
+message TwitchUser {
+    optional string user_id = 2;
+    optional string display_name = 3;
+}
+
+message UserEvent {
+    string event_type = 2;
+    string event_value = 3;
+}
+
+message CreateUserChatMessageRequest {
+    TwitchUser user = 1;
+    string message = 2;
+}
+
+message CreateUserChatMessageResponse {
+    TwitchUser user = 1;
+    string message = 2;
+    string created_at = 4;     // Timestamp in RFC 3339 format
+}
+
+message CreateUserEventRequest {
+    TwitchUser user = 1;
+    UserEvent event = 2;
+}
+
+message CreateUserEventResponse {
+    TwitchUser user = 1;
+    UserEvent event = 2;
+    string created_at = 5;     // Timestamp in RFC 3339 format
 }
