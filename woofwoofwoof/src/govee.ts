@@ -32,6 +32,7 @@ export default class Govee {
         indianred: [205, 92, 92],
         lightcoral: [240, 128, 128],
         maroon: [128, 0, 0],
+        ruby: [144, 12, 6],
         
         // Green variations
         darkgreen: [0, 100, 0],
@@ -41,7 +42,8 @@ export default class Govee {
         palegreen: [152, 251, 152],
         seagreen: [46, 139, 87],
         olive: [128, 128, 0],
-        
+        diarrheagreen: [63, 110, 46],
+
         // Blue variations
         navy: [0, 0, 128],
         darkblue: [0, 0, 139],
