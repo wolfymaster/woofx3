@@ -1,5 +1,5 @@
 import { AccessTokenWithUserId, RefreshingAuthProvider } from '@twurple/auth';
-import { GetUserToken } from './coredb.pb';
+import { GetUserToken } from '@client/coredb.pb';
 
 type BootstrapArgs = {
     databaseURL: string;

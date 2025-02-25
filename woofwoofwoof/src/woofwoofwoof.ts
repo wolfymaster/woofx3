@@ -183,6 +183,11 @@ commander.add('category', async (text: string) => {
                 args: { category: 'irl' }
             }));
             return 'Updating stream category to IRL';
+        case 'apex':
+            bus.publish('twitchapi', JSON.stringify({
+                command: 'update_stream',
+                args: { category: 'apex legends' }
+            }));
         default:
             console.error('INVALID TWITCH CATEGORY');
     }

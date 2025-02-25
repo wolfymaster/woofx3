@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { AccessTokenWithUserId, RefreshingAuthProvider } from '@twurple/auth';
 import { ChatClient, ChatMessage, ChatSayMessageAttributes } from '@twurple/chat';
 import { Commands } from './commands';
-import { GetUserToken } from './coredb.pb';
+import { GetUserToken } from '@client/coredb.pb';
 
 type SenderFunction = (msg: string, opts?: ChatSayMessageAttributes) => Promise<void>;
 

@@ -9,6 +9,7 @@ import NatsClient, { natsMessageHandler } from './nats';
 import TwitchBootstrap from './twitchBootstrap';
 import Commands from './commands';
 import * as Handlers from './handlers';
+import { CreateUserChatMessage, CreateUserEvent } from '@client/coredb.pb';
 
 dotenv.config({
     path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../', '.env')],
@@ -63,7 +64,7 @@ try {
 
     console.log('userId', userId);
 
-    listener.onChannelBan(userId, (event) => {
+    listener.onChannelBan(userId, (event: any) => {
         console.log(Commands.USER_BANNED, event);
     })
 
@@ -76,14 +77,29 @@ try {
         }))
     });
 
-    listener.onStreamOnline(userId, (event) => {
+    listener.onStreamOnline(userId, (event: any) => {
         console.log('event online', event);
     })
 
-    listener.onChannelCheer(userId, evt => {
+    listener.onChannelCheer(userId, async (evt: any) => {
         console.log(Commands.BIT_CHEER, evt);
 
         const { message, bits, isAnonymous, userDisplayName, userId } = evt;
+
+        if(!isAnonymous && userId) {
+            await CreateUserEvent({ 
+                user: {
+                    userId,
+                    displayName: userDisplayName,
+                },
+                event: {
+                    eventType: Commands.BIT_CHEER,
+                    eventValue: `${bits}`
+                }
+            });
+        } else {
+            console.log('assuming this was an annonymous cheer?', message, userDisplayName, userId);
+        }
 
         bus.publish('reward', JSON.stringify({
             type: Commands.REWARD.BITS,
@@ -97,18 +113,18 @@ try {
         }))
     });
 
-    listener.onChannelHypeTrainBegin(userId, (data) => {
+    listener.onChannelHypeTrainBegin(userId, (data: any) => {
         bus.publish('slobs', JSON.stringify({
             command: Commands.HYPE_TRAIN_BEGIN,
             args: {}
         }))
     });
 
-    listener.onChannelSubscription(userId, (event) => {
+    listener.onChannelSubscription(userId, (event: any) => {
 
     });
 
-} catch (err) {
+} catch (err: any) {
     console.error(err.message);
     process.exit(0);
 }

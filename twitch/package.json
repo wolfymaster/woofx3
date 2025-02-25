@@ -5,7 +5,6 @@
     "@twurple/auth": "^7.2.0",
     "@twurple/eventsub-ws": "^7.2.0",
     "dotenv": "^16.4.7",
-    "twirpscript": "^0.0.71",
     "winston": "^3.17.0"
   }
 }
