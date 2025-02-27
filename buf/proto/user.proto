@@ -5,16 +5,25 @@ option go_package = "github.com/wolfymaster/wolfyttv/coredb";
 
 service CoreDBService {
     rpc GetUserToken(GetUserTokenRequest) returns (GetUserTokenResponse);
+    rpc GetBroadcasterToken(GetBroadcasterTokenRequest) returns (GetBroadcasterTokenResponse);
     rpc CreateUserChatMessage(CreateUserChatMessageRequest) returns (CreateUserChatMessageResponse);
     rpc CreateUserEvent(CreateUserEventRequest) returns (CreateUserEventResponse);
 }
 
 message GetUserTokenRequest {
-    string username = 1;
+    string user_id = 1;
 }
 
 message GetUserTokenResponse {
     string token = 1;    
+}
+
+message GetBroadcasterTokenRequest {
+    string broadcaster_id = 1;
+}
+
+message GetBroadcasterTokenResponse {
+    string token = 1; 
 }
 
 message TwitchUser {
