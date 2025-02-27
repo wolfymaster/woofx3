@@ -20,7 +20,7 @@ processes:
       signal: 15
 
   db:
-    command: go run main.go
+    command: go run .
     description: proxy for accessing databases
     working_dir: db
     ready_log_line: "Connected to the database!"
@@ -34,6 +34,11 @@ processes:
     command: bun run dev
     description: Twitch Data Center Extension Development
     working_dir: extension/client
+
+  reward:
+    command: bun run src/index.ts
+    description: Twitch Viewer Rewards
+    working_dir: reward
 
   streamerui:
     command: bun run dev
