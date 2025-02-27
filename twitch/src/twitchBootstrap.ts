@@ -1,5 +1,5 @@
 import { AccessTokenWithUserId, RefreshingAuthProvider } from '@twurple/auth';
-import { GetUserToken } from '@client/coredb.pb';
+import { GetBroadcasterToken } from '@client/user.pb';
 
 type BootstrapArgs = {
     databaseURL: string;
@@ -23,7 +23,7 @@ export default async function bootstrap(channel: string, args: BootstrapArgs): P
     
     // call db service to lookup token for user
     try {
-        const response = await GetUserToken({ username: channel }, { 
+        const response = await GetBroadcasterToken({ broadcasterId: process.env.TWITCH_BROADCASTER_ID || '' }, { 
             baseURL: args.databaseURL,
         });
         const token: AccessTokenWithUserId = JSON.parse(response.token);

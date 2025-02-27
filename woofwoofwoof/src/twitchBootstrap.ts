@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { AccessTokenWithUserId, RefreshingAuthProvider } from '@twurple/auth';
 import { ChatClient, ChatMessage, ChatSayMessageAttributes } from '@twurple/chat';
 import { Commands } from './commands';
-import { GetUserToken } from '@client/coredb.pb';
+import { GetBroadcasterToken } from '@client/user.pb';
 
 type SenderFunction = (msg: string, opts?: ChatSayMessageAttributes) => Promise<void>;
 
@@ -28,7 +28,7 @@ export default async function bootstrap(channel: string, commander: Commands, ar
     
     // call db service to lookup token for user
     try {
-        const response = await GetUserToken({ username: channel }, { 
+        const response = await GetBroadcasterToken({ broadcasterId: process.env.TWITCH_BROADCASTER_ID || '' }, { 
             baseURL: args.databaseURL,
         });
         const token: AccessTokenWithUserId = JSON.parse(response.token);
