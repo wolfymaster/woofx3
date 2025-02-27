@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import NatsClient, { natsMessageHandler } from './nats';
-import { type RewardMessage, type BitReward, VALID_TYPES } from './types';
+import { type RewardMessage, type BitReward, VALID_TYPES, type RequestPlayMedia } from './types';
 import BitHandler from './BitHandler';
 import StreamLabsHandler from './StreamLabsHandler';
 
@@ -25,7 +25,7 @@ function rewardMessageHandler(message: RewardMessage) {
             const bitsHandler = new BitHandler();
 
             // pass the number of bits to the bits handler,
-            const response = bitsHandler.useBits(message.payload.bits);
+            const response = bitsHandler.useBits(message.payload.bits, message.payload.userDisplayName);
 
             if(!response) {
                 return;
@@ -35,7 +35,8 @@ function rewardMessageHandler(message: RewardMessage) {
             // "what to do handler" that performs the actions
             const streamLabs = new StreamLabsHandler();
 
-            streamLabs.playAudioFile(response);
+            // streamLabs.playAudioFile(response);
+            streamLabs.playMedia(response as RequestPlayMedia);
             break;
         default:
             console.log('did not match reward');
