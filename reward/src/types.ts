@@ -23,7 +23,7 @@ export type BitReward = {
 }
 
 export interface RequestPlayAudio {
-    url: string;
+    audioUrl: string;
 }
 
 export interface RequestPlayMedia {

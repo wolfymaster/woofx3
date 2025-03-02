@@ -15,7 +15,7 @@ export default class StreamLabsHandler {
         const result = await this.db.transact(
             this.db.tx.messages[id()].update({
                 type: 'play_audio',
-                url: payload.url,
+                url: payload.audioUrl,
                 done: false,
                 createdAt: Date.now(),
             })

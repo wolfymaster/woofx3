@@ -6,11 +6,6 @@ processes:
     description: supertokens auth
     working_dir: auth
 
-  browsersource:
-    command: bun run dev
-    description: streamlabs browser source
-    working_dir: streamlabs/browsersource
-
   caddy:
     command: "caddy run"
     description: "start caddy proxy"
@@ -18,6 +13,14 @@ processes:
     shutdown:
       command: "caddy stop"
       signal: 15
+
+  counter:
+    command: python3 -m http.server 12000
+    description: Counter
+    working_dir: streamlabs/counter
+    depends_on:
+      caddy:
+        condition: process_started
 
   db:
     command: go run .
@@ -40,6 +43,11 @@ processes:
     description: Twitch Viewer Rewards
     working_dir: reward
 
+  streamlabs:
+    command: PORT=5175 bun run dev
+    description: slobs
+    working_dir: streamlabs
+
   streamerui:
     command: bun run dev
     description: Off-Twitch UI for managing things
@@ -60,6 +68,9 @@ processes:
     command: bun run src/api.ts
     description: Twitch API + Eventbus
     working_dir: twitch
+    depends_on:
+      db:
+        condition: process_log_ready
 
   woofwoofwoof:
     command: bun run woofwoofwoof/src/woofwoofwoof.ts

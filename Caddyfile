@@ -17,8 +17,15 @@ extension.local.woofx3.tv {
 	tls internal
 }
 
-browsersource.local.woofx3.tv {
-	reverse_proxy localhost:5173
+streamlabs.local.woofx3.tv {
+	# Devserver websocket
+	@websockets {
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	reverse_proxy @websockets localhost:24678
+
+	reverse_proxy localhost:5175
 	tls internal
 }
 
