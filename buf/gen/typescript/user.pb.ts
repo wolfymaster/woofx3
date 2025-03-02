@@ -31,40 +31,19 @@ export interface GetBroadcasterTokenResponse {
   token: string;
 }
 
-export interface TwitchUser {
-  userId?: string | null | undefined;
-  displayName?: string | null | undefined;
-}
-
-export interface UserEvent {
-  eventType: string;
-  eventValue: string;
-}
-
 export interface CreateUserChatMessageRequest {
-  user: TwitchUser;
+  userId: string;
   message: string;
 }
 
 export interface CreateUserChatMessageResponse {
-  user: TwitchUser;
+  userId: string;
   message: string;
   createdAt: string;
 }
 
-export interface CreateUserEventRequest {
-  user: TwitchUser;
-  event: UserEvent;
-}
-
-export interface CreateUserEventResponse {
-  user: TwitchUser;
-  event: UserEvent;
-  createdAt: string;
-}
-
 //========================================//
-//     CoreDBService Protobuf Client      //
+//      UserService Protobuf Client       //
 //========================================//
 
 export async function GetUserToken(
@@ -72,7 +51,7 @@ export async function GetUserToken(
   config?: ClientConfiguration,
 ): Promise<GetUserTokenResponse> {
   const response = await PBrequest(
-    "/wolfyttv.coredb.CoreDBService/GetUserToken",
+    "/wolfyttv.user.UserService/GetUserToken",
     GetUserTokenRequest.encode(getUserTokenRequest),
     config,
   );
@@ -84,39 +63,15 @@ export async function GetBroadcasterToken(
   config?: ClientConfiguration,
 ): Promise<GetBroadcasterTokenResponse> {
   const response = await PBrequest(
-    "/wolfyttv.coredb.CoreDBService/GetBroadcasterToken",
+    "/wolfyttv.user.UserService/GetBroadcasterToken",
     GetBroadcasterTokenRequest.encode(getBroadcasterTokenRequest),
     config,
   );
   return GetBroadcasterTokenResponse.decode(response);
 }
 
-export async function CreateUserChatMessage(
-  createUserChatMessageRequest: CreateUserChatMessageRequest,
-  config?: ClientConfiguration,
-): Promise<CreateUserChatMessageResponse> {
-  const response = await PBrequest(
-    "/wolfyttv.coredb.CoreDBService/CreateUserChatMessage",
-    CreateUserChatMessageRequest.encode(createUserChatMessageRequest),
-    config,
-  );
-  return CreateUserChatMessageResponse.decode(response);
-}
-
-export async function CreateUserEvent(
-  createUserEventRequest: CreateUserEventRequest,
-  config?: ClientConfiguration,
-): Promise<CreateUserEventResponse> {
-  const response = await PBrequest(
-    "/wolfyttv.coredb.CoreDBService/CreateUserEvent",
-    CreateUserEventRequest.encode(createUserEventRequest),
-    config,
-  );
-  return CreateUserEventResponse.decode(response);
-}
-
 //========================================//
-//       CoreDBService JSON Client        //
+//        UserService JSON Client         //
 //========================================//
 
 export async function GetUserTokenJSON(
@@ -124,7 +79,7 @@ export async function GetUserTokenJSON(
   config?: ClientConfiguration,
 ): Promise<GetUserTokenResponse> {
   const response = await JSONrequest(
-    "/wolfyttv.coredb.CoreDBService/GetUserToken",
+    "/wolfyttv.user.UserService/GetUserToken",
     GetUserTokenRequestJSON.encode(getUserTokenRequest),
     config,
   );
@@ -136,42 +91,18 @@ export async function GetBroadcasterTokenJSON(
   config?: ClientConfiguration,
 ): Promise<GetBroadcasterTokenResponse> {
   const response = await JSONrequest(
-    "/wolfyttv.coredb.CoreDBService/GetBroadcasterToken",
+    "/wolfyttv.user.UserService/GetBroadcasterToken",
     GetBroadcasterTokenRequestJSON.encode(getBroadcasterTokenRequest),
     config,
   );
   return GetBroadcasterTokenResponseJSON.decode(response);
 }
 
-export async function CreateUserChatMessageJSON(
-  createUserChatMessageRequest: CreateUserChatMessageRequest,
-  config?: ClientConfiguration,
-): Promise<CreateUserChatMessageResponse> {
-  const response = await JSONrequest(
-    "/wolfyttv.coredb.CoreDBService/CreateUserChatMessage",
-    CreateUserChatMessageRequestJSON.encode(createUserChatMessageRequest),
-    config,
-  );
-  return CreateUserChatMessageResponseJSON.decode(response);
-}
-
-export async function CreateUserEventJSON(
-  createUserEventRequest: CreateUserEventRequest,
-  config?: ClientConfiguration,
-): Promise<CreateUserEventResponse> {
-  const response = await JSONrequest(
-    "/wolfyttv.coredb.CoreDBService/CreateUserEvent",
-    CreateUserEventRequestJSON.encode(createUserEventRequest),
-    config,
-  );
-  return CreateUserEventResponseJSON.decode(response);
-}
-
 //========================================//
-//             CoreDBService              //
+//              UserService               //
 //========================================//
 
-export interface CoreDBService<Context = unknown> {
+export interface UserService<Context = unknown> {
   GetUserToken: (
     getUserTokenRequest: GetUserTokenRequest,
     context: Context,
@@ -180,19 +111,11 @@ export interface CoreDBService<Context = unknown> {
     getBroadcasterTokenRequest: GetBroadcasterTokenRequest,
     context: Context,
   ) => Promise<GetBroadcasterTokenResponse> | GetBroadcasterTokenResponse;
-  CreateUserChatMessage: (
-    createUserChatMessageRequest: CreateUserChatMessageRequest,
-    context: Context,
-  ) => Promise<CreateUserChatMessageResponse> | CreateUserChatMessageResponse;
-  CreateUserEvent: (
-    createUserEventRequest: CreateUserEventRequest,
-    context: Context,
-  ) => Promise<CreateUserEventResponse> | CreateUserEventResponse;
 }
 
-export function createCoreDBService<Context>(service: CoreDBService<Context>) {
+export function createUserService<Context>(service: UserService<Context>) {
   return {
-    name: "wolfyttv.coredb.CoreDBService",
+    name: "wolfyttv.user.UserService",
     methods: {
       GetUserToken: {
         name: "GetUserToken",
@@ -213,30 +136,6 @@ export function createCoreDBService<Context>(service: CoreDBService<Context>) {
         output: {
           protobuf: GetBroadcasterTokenResponse,
           json: GetBroadcasterTokenResponseJSON,
-        },
-      },
-      CreateUserChatMessage: {
-        name: "CreateUserChatMessage",
-        handler: service.CreateUserChatMessage,
-        input: {
-          protobuf: CreateUserChatMessageRequest,
-          json: CreateUserChatMessageRequestJSON,
-        },
-        output: {
-          protobuf: CreateUserChatMessageResponse,
-          json: CreateUserChatMessageResponseJSON,
-        },
-      },
-      CreateUserEvent: {
-        name: "CreateUserEvent",
-        handler: service.CreateUserEvent,
-        input: {
-          protobuf: CreateUserEventRequest,
-          json: CreateUserEventRequestJSON,
-        },
-        output: {
-          protobuf: CreateUserEventResponse,
-          json: CreateUserEventResponseJSON,
         },
       },
     },
@@ -527,158 +426,6 @@ export const GetBroadcasterTokenResponse = {
   },
 };
 
-export const TwitchUser = {
-  /**
-   * Serializes TwitchUser to protobuf.
-   */
-  encode: function (msg: PartialDeep<TwitchUser>): Uint8Array {
-    return TwitchUser._writeMessage(
-      msg,
-      new protoscript.BinaryWriter(),
-    ).getResultBuffer();
-  },
-
-  /**
-   * Deserializes TwitchUser from protobuf.
-   */
-  decode: function (bytes: ByteSource): TwitchUser {
-    return TwitchUser._readMessage(
-      TwitchUser.initialize(),
-      new protoscript.BinaryReader(bytes),
-    );
-  },
-
-  /**
-   * Initializes TwitchUser with all fields set to their default value.
-   */
-  initialize: function (msg?: Partial<TwitchUser>): TwitchUser {
-    return {
-      userId: undefined,
-      displayName: undefined,
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<TwitchUser>,
-    writer: protoscript.BinaryWriter,
-  ): protoscript.BinaryWriter {
-    if (msg.userId != undefined) {
-      writer.writeString(2, msg.userId);
-    }
-    if (msg.displayName != undefined) {
-      writer.writeString(3, msg.displayName);
-    }
-    return writer;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (
-    msg: TwitchUser,
-    reader: protoscript.BinaryReader,
-  ): TwitchUser {
-    while (reader.nextField()) {
-      const field = reader.getFieldNumber();
-      switch (field) {
-        case 2: {
-          msg.userId = reader.readString();
-          break;
-        }
-        case 3: {
-          msg.displayName = reader.readString();
-          break;
-        }
-        default: {
-          reader.skipField();
-          break;
-        }
-      }
-    }
-    return msg;
-  },
-};
-
-export const UserEvent = {
-  /**
-   * Serializes UserEvent to protobuf.
-   */
-  encode: function (msg: PartialDeep<UserEvent>): Uint8Array {
-    return UserEvent._writeMessage(
-      msg,
-      new protoscript.BinaryWriter(),
-    ).getResultBuffer();
-  },
-
-  /**
-   * Deserializes UserEvent from protobuf.
-   */
-  decode: function (bytes: ByteSource): UserEvent {
-    return UserEvent._readMessage(
-      UserEvent.initialize(),
-      new protoscript.BinaryReader(bytes),
-    );
-  },
-
-  /**
-   * Initializes UserEvent with all fields set to their default value.
-   */
-  initialize: function (msg?: Partial<UserEvent>): UserEvent {
-    return {
-      eventType: "",
-      eventValue: "",
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<UserEvent>,
-    writer: protoscript.BinaryWriter,
-  ): protoscript.BinaryWriter {
-    if (msg.eventType) {
-      writer.writeString(2, msg.eventType);
-    }
-    if (msg.eventValue) {
-      writer.writeString(3, msg.eventValue);
-    }
-    return writer;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (
-    msg: UserEvent,
-    reader: protoscript.BinaryReader,
-  ): UserEvent {
-    while (reader.nextField()) {
-      const field = reader.getFieldNumber();
-      switch (field) {
-        case 2: {
-          msg.eventType = reader.readString();
-          break;
-        }
-        case 3: {
-          msg.eventValue = reader.readString();
-          break;
-        }
-        default: {
-          reader.skipField();
-          break;
-        }
-      }
-    }
-    return msg;
-  },
-};
-
 export const CreateUserChatMessageRequest = {
   /**
    * Serializes CreateUserChatMessageRequest to protobuf.
@@ -709,7 +456,7 @@ export const CreateUserChatMessageRequest = {
     msg?: Partial<CreateUserChatMessageRequest>,
   ): CreateUserChatMessageRequest {
     return {
-      user: TwitchUser.initialize(),
+      userId: "",
       message: "",
       ...msg,
     };
@@ -722,8 +469,8 @@ export const CreateUserChatMessageRequest = {
     msg: PartialDeep<CreateUserChatMessageRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.user) {
-      writer.writeMessage(1, msg.user, TwitchUser._writeMessage);
+    if (msg.userId) {
+      writer.writeString(1, msg.userId);
     }
     if (msg.message) {
       writer.writeString(2, msg.message);
@@ -742,7 +489,7 @@ export const CreateUserChatMessageRequest = {
       const field = reader.getFieldNumber();
       switch (field) {
         case 1: {
-          reader.readMessage(msg.user, TwitchUser._readMessage);
+          msg.userId = reader.readString();
           break;
         }
         case 2: {
@@ -789,7 +536,7 @@ export const CreateUserChatMessageResponse = {
     msg?: Partial<CreateUserChatMessageResponse>,
   ): CreateUserChatMessageResponse {
     return {
-      user: TwitchUser.initialize(),
+      userId: "",
       message: "",
       createdAt: "",
       ...msg,
@@ -803,8 +550,8 @@ export const CreateUserChatMessageResponse = {
     msg: PartialDeep<CreateUserChatMessageResponse>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.user) {
-      writer.writeMessage(1, msg.user, TwitchUser._writeMessage);
+    if (msg.userId) {
+      writer.writeString(1, msg.userId);
     }
     if (msg.message) {
       writer.writeString(2, msg.message);
@@ -826,7 +573,7 @@ export const CreateUserChatMessageResponse = {
       const field = reader.getFieldNumber();
       switch (field) {
         case 1: {
-          reader.readMessage(msg.user, TwitchUser._readMessage);
+          msg.userId = reader.readString();
           break;
         }
         case 2: {
@@ -834,170 +581,6 @@ export const CreateUserChatMessageResponse = {
           break;
         }
         case 4: {
-          msg.createdAt = reader.readString();
-          break;
-        }
-        default: {
-          reader.skipField();
-          break;
-        }
-      }
-    }
-    return msg;
-  },
-};
-
-export const CreateUserEventRequest = {
-  /**
-   * Serializes CreateUserEventRequest to protobuf.
-   */
-  encode: function (msg: PartialDeep<CreateUserEventRequest>): Uint8Array {
-    return CreateUserEventRequest._writeMessage(
-      msg,
-      new protoscript.BinaryWriter(),
-    ).getResultBuffer();
-  },
-
-  /**
-   * Deserializes CreateUserEventRequest from protobuf.
-   */
-  decode: function (bytes: ByteSource): CreateUserEventRequest {
-    return CreateUserEventRequest._readMessage(
-      CreateUserEventRequest.initialize(),
-      new protoscript.BinaryReader(bytes),
-    );
-  },
-
-  /**
-   * Initializes CreateUserEventRequest with all fields set to their default value.
-   */
-  initialize: function (
-    msg?: Partial<CreateUserEventRequest>,
-  ): CreateUserEventRequest {
-    return {
-      user: TwitchUser.initialize(),
-      event: UserEvent.initialize(),
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<CreateUserEventRequest>,
-    writer: protoscript.BinaryWriter,
-  ): protoscript.BinaryWriter {
-    if (msg.user) {
-      writer.writeMessage(1, msg.user, TwitchUser._writeMessage);
-    }
-    if (msg.event) {
-      writer.writeMessage(2, msg.event, UserEvent._writeMessage);
-    }
-    return writer;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (
-    msg: CreateUserEventRequest,
-    reader: protoscript.BinaryReader,
-  ): CreateUserEventRequest {
-    while (reader.nextField()) {
-      const field = reader.getFieldNumber();
-      switch (field) {
-        case 1: {
-          reader.readMessage(msg.user, TwitchUser._readMessage);
-          break;
-        }
-        case 2: {
-          reader.readMessage(msg.event, UserEvent._readMessage);
-          break;
-        }
-        default: {
-          reader.skipField();
-          break;
-        }
-      }
-    }
-    return msg;
-  },
-};
-
-export const CreateUserEventResponse = {
-  /**
-   * Serializes CreateUserEventResponse to protobuf.
-   */
-  encode: function (msg: PartialDeep<CreateUserEventResponse>): Uint8Array {
-    return CreateUserEventResponse._writeMessage(
-      msg,
-      new protoscript.BinaryWriter(),
-    ).getResultBuffer();
-  },
-
-  /**
-   * Deserializes CreateUserEventResponse from protobuf.
-   */
-  decode: function (bytes: ByteSource): CreateUserEventResponse {
-    return CreateUserEventResponse._readMessage(
-      CreateUserEventResponse.initialize(),
-      new protoscript.BinaryReader(bytes),
-    );
-  },
-
-  /**
-   * Initializes CreateUserEventResponse with all fields set to their default value.
-   */
-  initialize: function (
-    msg?: Partial<CreateUserEventResponse>,
-  ): CreateUserEventResponse {
-    return {
-      user: TwitchUser.initialize(),
-      event: UserEvent.initialize(),
-      createdAt: "",
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<CreateUserEventResponse>,
-    writer: protoscript.BinaryWriter,
-  ): protoscript.BinaryWriter {
-    if (msg.user) {
-      writer.writeMessage(1, msg.user, TwitchUser._writeMessage);
-    }
-    if (msg.event) {
-      writer.writeMessage(2, msg.event, UserEvent._writeMessage);
-    }
-    if (msg.createdAt) {
-      writer.writeString(5, msg.createdAt);
-    }
-    return writer;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (
-    msg: CreateUserEventResponse,
-    reader: protoscript.BinaryReader,
-  ): CreateUserEventResponse {
-    while (reader.nextField()) {
-      const field = reader.getFieldNumber();
-      switch (field) {
-        case 1: {
-          reader.readMessage(msg.user, TwitchUser._readMessage);
-          break;
-        }
-        case 2: {
-          reader.readMessage(msg.event, UserEvent._readMessage);
-          break;
-        }
-        case 5: {
           msg.createdAt = reader.readString();
           break;
         }
@@ -1247,128 +830,6 @@ export const GetBroadcasterTokenResponseJSON = {
   },
 };
 
-export const TwitchUserJSON = {
-  /**
-   * Serializes TwitchUser to JSON.
-   */
-  encode: function (msg: PartialDeep<TwitchUser>): string {
-    return JSON.stringify(TwitchUserJSON._writeMessage(msg));
-  },
-
-  /**
-   * Deserializes TwitchUser from JSON.
-   */
-  decode: function (json: string): TwitchUser {
-    return TwitchUserJSON._readMessage(
-      TwitchUserJSON.initialize(),
-      JSON.parse(json),
-    );
-  },
-
-  /**
-   * Initializes TwitchUser with all fields set to their default value.
-   */
-  initialize: function (msg?: Partial<TwitchUser>): TwitchUser {
-    return {
-      userId: undefined,
-      displayName: undefined,
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<TwitchUser>,
-  ): Record<string, unknown> {
-    const json: Record<string, unknown> = {};
-    if (msg.userId != undefined) {
-      json["userId"] = msg.userId;
-    }
-    if (msg.displayName != undefined) {
-      json["displayName"] = msg.displayName;
-    }
-    return json;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (msg: TwitchUser, json: any): TwitchUser {
-    const _userId_ = json["userId"] ?? json["user_id"];
-    if (_userId_) {
-      msg.userId = _userId_;
-    }
-    const _displayName_ = json["displayName"] ?? json["display_name"];
-    if (_displayName_) {
-      msg.displayName = _displayName_;
-    }
-    return msg;
-  },
-};
-
-export const UserEventJSON = {
-  /**
-   * Serializes UserEvent to JSON.
-   */
-  encode: function (msg: PartialDeep<UserEvent>): string {
-    return JSON.stringify(UserEventJSON._writeMessage(msg));
-  },
-
-  /**
-   * Deserializes UserEvent from JSON.
-   */
-  decode: function (json: string): UserEvent {
-    return UserEventJSON._readMessage(
-      UserEventJSON.initialize(),
-      JSON.parse(json),
-    );
-  },
-
-  /**
-   * Initializes UserEvent with all fields set to their default value.
-   */
-  initialize: function (msg?: Partial<UserEvent>): UserEvent {
-    return {
-      eventType: "",
-      eventValue: "",
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<UserEvent>,
-  ): Record<string, unknown> {
-    const json: Record<string, unknown> = {};
-    if (msg.eventType) {
-      json["eventType"] = msg.eventType;
-    }
-    if (msg.eventValue) {
-      json["eventValue"] = msg.eventValue;
-    }
-    return json;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (msg: UserEvent, json: any): UserEvent {
-    const _eventType_ = json["eventType"] ?? json["event_type"];
-    if (_eventType_) {
-      msg.eventType = _eventType_;
-    }
-    const _eventValue_ = json["eventValue"] ?? json["event_value"];
-    if (_eventValue_) {
-      msg.eventValue = _eventValue_;
-    }
-    return msg;
-  },
-};
-
 export const CreateUserChatMessageRequestJSON = {
   /**
    * Serializes CreateUserChatMessageRequest to JSON.
@@ -1394,7 +855,7 @@ export const CreateUserChatMessageRequestJSON = {
     msg?: Partial<CreateUserChatMessageRequest>,
   ): CreateUserChatMessageRequest {
     return {
-      user: TwitchUserJSON.initialize(),
+      userId: "",
       message: "",
       ...msg,
     };
@@ -1407,11 +868,8 @@ export const CreateUserChatMessageRequestJSON = {
     msg: PartialDeep<CreateUserChatMessageRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.user) {
-      const _user_ = TwitchUserJSON._writeMessage(msg.user);
-      if (Object.keys(_user_).length > 0) {
-        json["user"] = _user_;
-      }
+    if (msg.userId) {
+      json["userId"] = msg.userId;
     }
     if (msg.message) {
       json["message"] = msg.message;
@@ -1426,9 +884,9 @@ export const CreateUserChatMessageRequestJSON = {
     msg: CreateUserChatMessageRequest,
     json: any,
   ): CreateUserChatMessageRequest {
-    const _user_ = json["user"];
-    if (_user_) {
-      TwitchUserJSON._readMessage(msg.user, _user_);
+    const _userId_ = json["userId"] ?? json["user_id"];
+    if (_userId_) {
+      msg.userId = _userId_;
     }
     const _message_ = json["message"];
     if (_message_) {
@@ -1463,7 +921,7 @@ export const CreateUserChatMessageResponseJSON = {
     msg?: Partial<CreateUserChatMessageResponse>,
   ): CreateUserChatMessageResponse {
     return {
-      user: TwitchUserJSON.initialize(),
+      userId: "",
       message: "",
       createdAt: "",
       ...msg,
@@ -1477,11 +935,8 @@ export const CreateUserChatMessageResponseJSON = {
     msg: PartialDeep<CreateUserChatMessageResponse>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.user) {
-      const _user_ = TwitchUserJSON._writeMessage(msg.user);
-      if (Object.keys(_user_).length > 0) {
-        json["user"] = _user_;
-      }
+    if (msg.userId) {
+      json["userId"] = msg.userId;
     }
     if (msg.message) {
       json["message"] = msg.message;
@@ -1499,165 +954,13 @@ export const CreateUserChatMessageResponseJSON = {
     msg: CreateUserChatMessageResponse,
     json: any,
   ): CreateUserChatMessageResponse {
-    const _user_ = json["user"];
-    if (_user_) {
-      TwitchUserJSON._readMessage(msg.user, _user_);
+    const _userId_ = json["userId"] ?? json["user_id"];
+    if (_userId_) {
+      msg.userId = _userId_;
     }
     const _message_ = json["message"];
     if (_message_) {
       msg.message = _message_;
-    }
-    const _createdAt_ = json["createdAt"] ?? json["created_at"];
-    if (_createdAt_) {
-      msg.createdAt = _createdAt_;
-    }
-    return msg;
-  },
-};
-
-export const CreateUserEventRequestJSON = {
-  /**
-   * Serializes CreateUserEventRequest to JSON.
-   */
-  encode: function (msg: PartialDeep<CreateUserEventRequest>): string {
-    return JSON.stringify(CreateUserEventRequestJSON._writeMessage(msg));
-  },
-
-  /**
-   * Deserializes CreateUserEventRequest from JSON.
-   */
-  decode: function (json: string): CreateUserEventRequest {
-    return CreateUserEventRequestJSON._readMessage(
-      CreateUserEventRequestJSON.initialize(),
-      JSON.parse(json),
-    );
-  },
-
-  /**
-   * Initializes CreateUserEventRequest with all fields set to their default value.
-   */
-  initialize: function (
-    msg?: Partial<CreateUserEventRequest>,
-  ): CreateUserEventRequest {
-    return {
-      user: TwitchUserJSON.initialize(),
-      event: UserEventJSON.initialize(),
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<CreateUserEventRequest>,
-  ): Record<string, unknown> {
-    const json: Record<string, unknown> = {};
-    if (msg.user) {
-      const _user_ = TwitchUserJSON._writeMessage(msg.user);
-      if (Object.keys(_user_).length > 0) {
-        json["user"] = _user_;
-      }
-    }
-    if (msg.event) {
-      const _event_ = UserEventJSON._writeMessage(msg.event);
-      if (Object.keys(_event_).length > 0) {
-        json["event"] = _event_;
-      }
-    }
-    return json;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (
-    msg: CreateUserEventRequest,
-    json: any,
-  ): CreateUserEventRequest {
-    const _user_ = json["user"];
-    if (_user_) {
-      TwitchUserJSON._readMessage(msg.user, _user_);
-    }
-    const _event_ = json["event"];
-    if (_event_) {
-      UserEventJSON._readMessage(msg.event, _event_);
-    }
-    return msg;
-  },
-};
-
-export const CreateUserEventResponseJSON = {
-  /**
-   * Serializes CreateUserEventResponse to JSON.
-   */
-  encode: function (msg: PartialDeep<CreateUserEventResponse>): string {
-    return JSON.stringify(CreateUserEventResponseJSON._writeMessage(msg));
-  },
-
-  /**
-   * Deserializes CreateUserEventResponse from JSON.
-   */
-  decode: function (json: string): CreateUserEventResponse {
-    return CreateUserEventResponseJSON._readMessage(
-      CreateUserEventResponseJSON.initialize(),
-      JSON.parse(json),
-    );
-  },
-
-  /**
-   * Initializes CreateUserEventResponse with all fields set to their default value.
-   */
-  initialize: function (
-    msg?: Partial<CreateUserEventResponse>,
-  ): CreateUserEventResponse {
-    return {
-      user: TwitchUserJSON.initialize(),
-      event: UserEventJSON.initialize(),
-      createdAt: "",
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<CreateUserEventResponse>,
-  ): Record<string, unknown> {
-    const json: Record<string, unknown> = {};
-    if (msg.user) {
-      const _user_ = TwitchUserJSON._writeMessage(msg.user);
-      if (Object.keys(_user_).length > 0) {
-        json["user"] = _user_;
-      }
-    }
-    if (msg.event) {
-      const _event_ = UserEventJSON._writeMessage(msg.event);
-      if (Object.keys(_event_).length > 0) {
-        json["event"] = _event_;
-      }
-    }
-    if (msg.createdAt) {
-      json["createdAt"] = msg.createdAt;
-    }
-    return json;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (
-    msg: CreateUserEventResponse,
-    json: any,
-  ): CreateUserEventResponse {
-    const _user_ = json["user"];
-    if (_user_) {
-      TwitchUserJSON._readMessage(msg.user, _user_);
-    }
-    const _event_ = json["event"];
-    if (_event_) {
-      UserEventJSON._readMessage(msg.event, _event_);
     }
     const _createdAt_ = json["createdAt"] ?? json["created_at"];
     if (_createdAt_) {

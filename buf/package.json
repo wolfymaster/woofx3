@@ -1,7 +1,8 @@
 {
   "scripts": {
     "generate:ts": "bunx twirpscript",
-    "generate:go": "buf generate"
+    "generate:go": "buf generate",
+    "generate": "npm run generate:go && npm run generate:ts"
   },
   "dependencies": {
     "twirp-ts": "^2.5.0",
