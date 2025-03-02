@@ -5,12 +5,14 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 
 	svc "github.com/wolfymaster/wolfyttv-db/services"
-	"github.com/wolfymaster/wolfyttv-db/services/user"
-	rpc "github.com/wolfymaster/wolfyttv/coredb"
+	rpc "github.com/wolfymaster/wolfyttv/buf"
 )
 
 func main() {
@@ -29,27 +31,76 @@ func main() {
 	slog.SetDefault(logger)
 
 	// initialize the database
-	db, err := InitializeDB(ctx, dsn)
+	db, err := InitializeDB(dsn, logger)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to initialize database", "error", err)
 	}
 
-	// RPC server instance
-	server := &svc.RPC{
-		Db:          db,
-		UserService: user.NewUserService(db),
-	}
-	twirpHandler := rpc.NewCoreDBServiceServer(server)
+	slog.Info("Connected to the database!")
+
+	// services
+	userService := svc.NewUserService(db)
+	eventService := svc.NewEventService(db)
+
+	// http mux
+	mux := http.NewServeMux()
+
+	// service handlers
+	userHandler := rpc.NewUserServiceServer(userService)
+	mux.Handle(userHandler.PathPrefix(), userHandler)
+
+	eventHandler := rpc.NewEventServiceServer(eventService)
+	mux.Handle(eventHandler.PathPrefix(), eventHandler)
 
 	// get the correct port
 	port := os.Getenv("DATABASE_PROXY_PORT")
 	if port == "" {
 		slog.ErrorContext(ctx, "DATABASE_PROXY_PORT is not set")
+		os.Exit(1)
 	}
 
-	// start the server
-	err = http.ListenAndServe(":"+port, twirpHandler)
+	// create server
+	server := &http.Server{
+		Addr:    ":" + port,
+		Handler: mux,
+	}
+
+	sqlDB, err := db.DB()
 	if err != nil {
+		slog.Error("Failed to get database connection", "error", err)
+	}
+
+	go func() {
+		// Listen for interrupt signals
+		stop := make(chan os.Signal, 1)
+		signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+		<-stop
+
+		slog.Info("Shutting down server...")
+
+		// Create a shutdown timeout context
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// Shutdown HTTP server
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			slog.Error("Error shutting down HTTP server", "error", err)
+		}
+
+		// Close database connections
+		if err := sqlDB.Close(); err != nil {
+			slog.Error("Error closing database connection", "error", err)
+		}
+
+		slog.Info("Shutdown complete")
+	}()
+
+	slog.Info("Starting server", "port", port)
+
+	// Start the server
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		slog.ErrorContext(ctx, "Failed to start server", "error", err)
+		sqlDB.Close()
+		os.Exit(1)
 	}
 }
