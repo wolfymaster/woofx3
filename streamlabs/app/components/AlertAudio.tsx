@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { OnDoneCallback } from './types';
+import { OnDoneCallback } from '~/types';
 
 export default function AlertAudio({ id, url, duration, onDone }: AlertAudioProps) {
     const [done, setDone] = useState(false);
@@ -18,7 +18,7 @@ export default function AlertAudio({ id, url, duration, onDone }: AlertAudioProp
     }, [done]);
 
     useEffect(() => {
-        let audioTimeout: number;
+        let audioTimeout: NodeJS.Timeout;
 
         const audio = new Audio(url);
         audio.addEventListener('ended', function () {
@@ -37,6 +37,7 @@ export default function AlertAudio({ id, url, duration, onDone }: AlertAudioProp
                 }
             })
             .catch(error => {
+                setDone(true);
                 setError(error);
             })
 

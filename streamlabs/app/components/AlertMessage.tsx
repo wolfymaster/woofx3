@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { OnDoneCallback } from "./types";
+import { OnDoneCallback } from "~/types";
 import AlertAudio from "./AlertAudio";
 
 function createMediaComponent(mediaUrl: string) {

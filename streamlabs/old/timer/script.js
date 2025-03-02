@@ -87,5 +87,5 @@ seconds.style.display = 'none';
 reset.style.display = 'none';
 
 if (false) {
-    timer.setDuration(60 * 60 * 1/2);
+    timer.setDuration(60 * 90);
 }

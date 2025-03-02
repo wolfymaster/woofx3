@@ -1,8 +1,17 @@
-import { id, i, init, InstaQLEntity } from "@instantdb/react";
-import AlertAudio from './AlertAudio';
-import { TaskCompleted } from './types';
 import { useEffect, useState } from "react";
-import { AlertMessage } from "./AlertMessage";
+import type { MetaFunction } from "@remix-run/node";
+import { id, i, init, InstaQLEntity } from "@instantdb/react";
+import AlertAudio from '~/components/AlertAudio';
+import { AlertMessage } from "~/components/AlertMessage";
+import { TaskCompleted } from '~/types';
+
+
+export const meta: MetaFunction = () => {
+  return [
+    { title: "woofx x streamlabs" },
+    { name: "description", content: "woofx3 x streamlabs" },
+  ];
+};
 
 const APP_ID = "8c28dd52-4859-4560-8d45-2408b064b248";
 
@@ -24,7 +33,7 @@ type Message = InstaQLEntity<typeof schema, "messages">;
 
 const db = init({ appId: APP_ID, schema });
 
-function App() {
+export default function Index() {
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null);
 
   // get anything that is not completed
@@ -75,23 +84,21 @@ function App() {
 
   return (
     <>
-      {message.type === 'play_audio' &&
-        <AlertAudio
-          id={message.id}
-          url={message.audioUrl}
-          onDone={onDone}
-        />}
-      {message.type === 'alert_message' &&
-        <AlertMessage
-          id={message.id}
-          onDone={onDone}
-          audioUrl={message.audioUrl}
-          mediaUrl={message.mediaUrl}
-          textPattern={message.text}
-          duration={message.duration}
-        />}
-    </>
+    {message.type === 'play_audio' &&
+      <AlertAudio
+        id={message.id}
+        url={message.audioUrl}
+        onDone={onDone}
+      />}
+    {message.type === 'alert_message' &&
+      <AlertMessage
+        id={message.id}
+        onDone={onDone}
+        audioUrl={message.audioUrl}
+        mediaUrl={message.mediaUrl}
+        textPattern={message.text}
+        duration={message.duration}
+      />}
+  </>
   );
 }
-
-export default App
