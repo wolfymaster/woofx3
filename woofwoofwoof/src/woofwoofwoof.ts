@@ -15,15 +15,16 @@ if (!channel) {
     throw new Error('twitch channel missing. please set environment variable: TWITCH_CHANNEL_NAME.')
 }
 
+// create NATS client
+const bus = await NatsClient();
+
 // new Commands instance
-const commander = new Commands();
+const commander = new Commands(bus);
 
 // bootstrap twitch auth provider
 await TwitchBootstrap(channel, commander, {
     databaseURL: process.env.DATABASE_PROXY_URL || "",
 });
-// create NATS client
-const bus = await NatsClient();
 
 commander.add('woof', 'woofwoof');
 
@@ -31,13 +32,22 @@ commander.add('socials', '🐺 FOLLOW WOLFY 🐺 Instagram: https://instagram.co
 
 commander.add('raid', '🔥🐺 🐺🔥 🐺🔥 🐺 IT\'S RAID O\'CLOCK! 🐺🔥 🐺🔥 🐺🔥WolfyMaster and the unstoppable Wolf Pack are HERE! We DO IT LIVE, MAKE IT EPIC, and BREAK THE INTERNET!💥 PACK ASSEMBLED, HOWL MODE ACTIVATED! Bringing the energy, the chaos, and the HOWLS: AWOOOOOOOOOOOOOOOOOO! 🐺🐺🐺🐺🐺🐺 #WolfPackRaid | wolfym7HYPE wolfym7HYPE wolfym7HYPE | #UnleashThePack');
 
-commander.add('today', 'GOAL: Gift 1 bit, plays a song');
+commander.add('today', 'Kill sound alerts');
 
 commander.add('fart', '/me @cyburdial farted');
 
 commander.add('lockin', 'Flow State Engaged');
 
 commander.add('skizz', 'WOOOOOOOOOO');
+
+commander.add('discord', async (text: string, user?: string) => {
+    // check if the user is currently following
+
+    // if not following, encourage them to follow
+
+    // provide discord link if following
+    return '';
+});
 
 // TODO: FIX - THIS IS MATCHING THE !SONG COMMAND
 // commander.add('so', async (text: string) => {
@@ -188,6 +198,7 @@ commander.add('category', async (text: string) => {
                 command: 'update_stream',
                 args: { category: 'apex legends' }
             }));
+            return 'Updating stream category to Apex';
         default:
             console.error('INVALID TWITCH CATEGORY');
     }
@@ -196,7 +207,10 @@ commander.add('category', async (text: string) => {
 });
 
 // UPDATE STREAM TITLE
-commander.add('title', async (text: string) => {
+commander.add('title', async (text: string, user?: string) => {
+    if(!user || user.toLowerCase() !== 'wolfymaster') {
+        return 'Sorry, @cyburdial ruined this for everyone.'
+    }
     bus.publish('twitchapi', JSON.stringify({
         command: 'update_stream',
         args: { title: text }
@@ -204,3 +218,28 @@ commander.add('title', async (text: string) => {
 
     return `Stream title updated to: ${text}`;
 });
+
+commander.add('kitty', async (text: string, user?: string) => {
+    if(!user || user.toLowerCase() !== 'kittyclemente') {
+        return 'Sorry, You are not kitty!!'
+    }
+    bus.publish('slobs', JSON.stringify({
+        command: 'alert_message',
+        args: { 
+            audioUrl: 'https://streamlabs.local.woofx3.tv/goodkittykitty.mp3',
+        }
+    }));
+    return '';
+})
+
+commander.add('wedidit', async () => {
+    bus.publish('slobs', JSON.stringify({
+        command: 'alert_message',
+        args: { 
+            audioUrl: 'https://streamlabs.local.woofx3.tv/wedidit.mp3',
+            duration: 10,
+        }
+    }));
+
+    return 'WE DID IT!';
+})

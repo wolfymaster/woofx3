@@ -3,10 +3,12 @@ export interface Command {
     response: CommandResponse;
 };
 
-export type CommandResponse = string | ((msg: string) => Promise<string>)
+export type CommandResponse = string | ((msg: string, user?: string) => Promise<string>)
 
 export class Commands {
     commands: Command[] = [];
+
+    constructor(private natsClient) {}
 
     add(command: string, response: CommandResponse) {
         this.commands.push({
@@ -15,7 +17,15 @@ export class Commands {
         });
     }
 
-    async process(text: string): Promise<[string, boolean]> {
+    async process(text: string, user: string): Promise<[string, boolean]> {
+        this.natsClient.publish('twitchapi', JSON.stringify({
+            command: 'chatMessage',
+            args: { 
+                user,
+                message: text.trim(),
+            }
+        }));
+
         for(let i = 0; i < this.commands.length; ++i) {
             const { action, response } = this.commands[i];
 
@@ -25,7 +35,7 @@ export class Commands {
                 }
                 if(typeof response === 'function') {
                     text = text.slice(action.length);
-                    const msg = await response(text.trim());
+                    const msg = await response(text.trim(), user.trim());
                     return [msg, true];
                 }
             }

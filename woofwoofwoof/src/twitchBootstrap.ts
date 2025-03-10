@@ -49,7 +49,7 @@ export default async function bootstrap(channel: string, commander: Commands, ar
     const send = makeSender(chatClient, channel);
 
     chatClient.onMessage(async (channel: string, user: string, text: string, msg: ChatMessage) => {
-        let [message, matched] = await commander.process(text);
+        let [message, matched] = await commander.process(text, user);
     
         if(matched && message) {
             await send(message);
