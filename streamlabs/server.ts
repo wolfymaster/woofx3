@@ -76,6 +76,7 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
               type: 'alert_message',
               done: false,
               createdAt: Date.now(),
+              woofx3Key: process.env.WOOFX3_KEY,
           })
       );
   }
@@ -98,10 +99,18 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
 
       console.log(countId, query.counts[0]);
 
+      let newCount = query.counts[0].count;
+
+      if(args.reset) {
+        newCount = 0;
+      } else {
+        newCount += args.value;
+      }
+
 
       await db.transact(
           db.tx.counts[countId].update({
-              count: query.counts[0].count + 1,
+              count: newCount,
           })
       )
   }

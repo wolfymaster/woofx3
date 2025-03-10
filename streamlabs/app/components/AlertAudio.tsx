@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { OnDoneCallback } from '~/types';
 
 export default function AlertAudio({ id, url, duration, onDone }: AlertAudioProps) {
     const [done, setDone] = useState(false);
     const [error, setError] = useState();
+    const audio = useRef(new Audio());
 
-    if(url === "") {
-        onDone({ id, error: true, errorMsg: 'url is empty'});
+    if (url === "") {
+        onDone({ id, error: true, errorMsg: 'url is empty' });
         return;
     }
 
@@ -19,33 +20,45 @@ export default function AlertAudio({ id, url, duration, onDone }: AlertAudioProp
 
     useEffect(() => {
         let audioTimeout: NodeJS.Timeout;
+        let player = audio.current
 
-        const audio = new Audio(url);
-        audio.addEventListener('ended', function () {
+        function handleEnded() {
             setDone(true);
-            if(audioTimeout) {
+            if (audioTimeout) {
                 clearTimeout(audioTimeout);
             }
-        });
-        audio.play()
-            .then(() => {
-                if(duration) {
-                    audioTimeout = setTimeout(() => {
-                        audio.pause();
-                        setDone(true);
-                    }, duration * 1000);
-                }
-            })
-            .catch(error => {
-                setDone(true);
-                setError(error);
-            })
+        }
+
+        function handleCanPlayThrough() {
+            player.play()
+                .then(() => {
+                    if (duration) {
+                        audioTimeout = setTimeout(() => {
+                            player.pause();
+                            setDone(true);
+                        }, duration * 1000);
+                    }
+                })
+                .catch(error => {
+                    console.log('error', error);
+                    setDone(true);
+                    setError(error);
+                })
+        };
+
+        console.log(url);
+        player.src = url;
+        player.addEventListener('ended', handleEnded);
+        player.addEventListener('canplaythrough', handleCanPlayThrough);
 
         return () => {
-            if(audioTimeout) {
+            if (audioTimeout) {
                 clearTimeout(audioTimeout);
             }
-            audio.pause();
+            player.removeEventListener('ended', handleEnded);
+            player.removeEventListener('canplaythrough', handleCanPlayThrough);
+            player.pause();
+            player.src = '';
         }
     }, [id]);
 

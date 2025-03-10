@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { MetaFunction } from "@remix-run/node";
+import { useSearchParams } from "@remix-run/react";
 import { id, i, init, InstaQLEntity } from "@instantdb/react";
 import AlertAudio from '~/components/AlertAudio';
 import { AlertMessage } from "~/components/AlertMessage";
@@ -35,13 +36,15 @@ const db = init({ appId: APP_ID, schema });
 
 export default function Index() {
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
 
   // get anything that is not completed
   const { isLoading, error, data } = db.useQuery({
     messages: {
       $: {
         where: {
-          done: false
+          done: false,
+          woofx3Key: searchParams.get('woofx3Key') || '',
         }
       }
     }
@@ -56,6 +59,7 @@ export default function Index() {
   const message: Message|null = data?.messages?.find(msg => msg.id === currentMessageId) || null;
 
   function onDone(task: TaskCompleted) {
+    console.log('all done');
     try {
       if (task.error) {
         console.error(`Error processing message ${task.id}:`, task.errorMsg);
