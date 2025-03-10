@@ -1,15 +1,34 @@
+import path from 'path';
 import { RefreshingAuthProvider } from '@twurple/auth';
 import express from 'express';
+import dotenv from 'dotenv';
 import fs from 'fs/promises';
 import open from 'open';
 import { encodeScopes } from './lib';
+
+dotenv.config({
+    path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../', '.env')],
+});
 
 const app = express();
 const port = 9000;
 const auth_base_url = 'https://id.twitch.tv/oauth2/authorize';
 const redirect_uri = `http://localhost:${port}/auth/twitch/callback`;
 const scopes = ['user:read:email', 'user:bot', 'user:write:chat', 'chat:read', 'chat:edit'];
-const adminScopes = ['moderator:read:followers', 'channel:read:subscriptions', 'channel:read:hype_train', 'channel:read:polls', 'channel:read:predictions', 'channel:read:redemptions', 'moderator:manage:shoutouts', 'channel:moderate']
+const adminScopes = [
+    'bits:read',
+    'channel:manage:broadcast',
+    'channel:moderate',
+    'channel:read:hype_train', 
+    'channel:read:polls', 
+    'channel:read:predictions', 
+    'channel:read:redemptions', 
+    'channel:read:subscriptions', 
+    'moderator:manage:shoutouts', 
+    'moderator:manage:banned_users',
+    'moderator:read:chatters',
+    'moderator:read:followers',
+]
 
 const clientId = process.env.TWITCH_WOLFY_CLIENT_ID || "";
 const clientSecret = process.env.TWITCH_WOLFY_CLIENT_SECRET || "";

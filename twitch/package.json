@@ -1,10 +1,15 @@
 {
   "dependencies": {
+    "@langchain/anthropic": "^0.3.15",
+    "@langchain/langgraph": "^0.2.54",
     "@nats-io/transport-node": "^3.0.0-35",
     "@twurple/api": "^7.2.0",
     "@twurple/auth": "^7.2.0",
     "@twurple/eventsub-ws": "^7.2.0",
     "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "langchain": "^0.3.19",
+    "open": "^10.1.0",
     "winston": "^3.17.0"
   }
 }

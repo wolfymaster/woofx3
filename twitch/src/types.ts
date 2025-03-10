@@ -13,8 +13,14 @@ export interface TwitchApiRequestMessage {
     args: Record<string, string>
 }
 
-export type HandlerResponse<T> = {
-    error: boolean;
-    errorMsg?: string;
+export type HandlerResponse<T> = SuccessHandlerResponse<T> | ErrorHandlerResponse<T>;
+
+export type SuccessHandlerResponse<T> = {
+    error: false;
     payload?: T;
+}
+
+export type ErrorHandlerResponse<T> = {
+    error: true;
+    errorMsg: string;
 }
