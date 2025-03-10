@@ -25,18 +25,17 @@ export default class StreamLabsHandler {
     }
 
     async playMedia(payload: RequestPlayMedia) {
-        const result = await this.db.transact(
-            this.db.tx.messages[id()].update({
-                type: 'alert_message',
+        return {
+            command: 'alert_message',
+            args: {
                 audioUrl: payload.audioUrl,
                 mediaUrl: payload.mediaUrl,
                 text: payload.text,
                 duration: payload.duration,
                 done: false,
                 createdAt: Date.now(),
-            })
-        );
+             }
+        }
 
-        console.log('result: ', result);
     }
 }

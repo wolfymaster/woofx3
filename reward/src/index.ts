@@ -31,12 +31,17 @@ function rewardMessageHandler(message: RewardMessage) {
                 return;
             }
 
-            // it should return a payload describing what to do
-            // "what to do handler" that performs the actions
-            const streamLabs = new StreamLabsHandler();
-
-            // streamLabs.playAudioFile(response);
-            streamLabs.playMedia(response as RequestPlayMedia);
+            bus.publish('slobs', JSON.stringify({
+                command: 'alert_message',
+                args: {
+                    audioUrl: response.audioUrl,
+                    mediaUrl: response.mediaUrl,
+                    text: response.text,
+                    duration: response.duration,
+                    done: false,
+                    createdAt: Date.now(),
+                 }
+            }))
             break;
         default:
             console.log('did not match reward');
