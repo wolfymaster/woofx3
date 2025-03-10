@@ -37,7 +37,7 @@ func main() {
 
 	// handle video callback
 	videoHandler := func(data []byte) {
-		file, err := os.OpenFile("video.h264", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		// file, err := os.OpenFile("video.h264", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			log.Printf("Error opening video file: %v", err)
 			return
@@ -81,7 +81,7 @@ func main() {
 
 	// handle audio callback
 	audioHandler := func(data []byte) {
-		file, err := os.OpenFile("audio.aac", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		// file, err := os.OpenFile("audio.aac", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			log.Printf("Error opening audio file: %v", err)
 			return
