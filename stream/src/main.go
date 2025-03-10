@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -196,16 +197,25 @@ func handleMessages(msgChan <-chan gladia.WebSocketMessage, nc *nats.Conn) {
 		// parse the incoming message
 		parsed := msg.Message()
 
+		log.Printf("Received message: %v\n", parsed)
+
 		// identify if parsed message contains the wake word "mods"
 		match := SearchString(parsed, "mod")
 
 		if match.Found {
-			// start to build llm context
-			// get current chatters
-			data := make([]byte, 0)
-			msg, err := nc.Request("twitchapi", data, nats.DefaultTimeout)
+			payload := map[string]interface{}{
+				"command": "moderate",
+				"args": map[string]interface{}{
+					"message": parsed,
+				},
+			}
+			data, err := json.Marshal(payload)
 			if err != nil {
-				log.Fatal("it broke")
+				log.Fatal("it did not marshal")
+			}
+			err = nc.Publish("twitchapi", data)
+			if err != nil {
+				log.Fatal("it broke", err)
 			}
 			log.Printf("Received message: %v\n", msg)
 		}
