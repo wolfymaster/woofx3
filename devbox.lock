@@ -97,6 +97,54 @@
         }
       }
     },
+    "extism-cli@1.6.2": {
+      "last_modified": "2025-03-23T05:31:05Z",
+      "resolved": "github:NixOS/nixpkgs/dd613136ee91f67e5dba3f3f41ac99ae89c5406b#extism-cli",
+      "source": "devbox-search",
+      "version": "1.6.2",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/w0xf1907zcpyd7b4hk4y388cg2lcvgp6-extism-cli-1.6.2",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/w0xf1907zcpyd7b4hk4y388cg2lcvgp6-extism-cli-1.6.2"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/v5hll24v4qzsrr3g96ywz1xs3jlf9imc-extism-cli-1.6.2",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/v5hll24v4qzsrr3g96ywz1xs3jlf9imc-extism-cli-1.6.2"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/31w9ji3b2401nxqbh8zhmm69bli1k0fh-extism-cli-1.6.2",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/31w9ji3b2401nxqbh8zhmm69bli1k0fh-extism-cli-1.6.2"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/23m81czp1kkb76yfg2lrjb1jhwpjalzs-extism-cli-1.6.2",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/23m81czp1kkb76yfg2lrjb1jhwpjalzs-extism-cli-1.6.2"
+        }
+      }
+    },
     "ffmpeg@7.1": {
       "last_modified": "2025-01-24T11:25:45Z",
       "resolved": "github:NixOS/nixpkgs/ecd26a469ac56357fd333946a99086e992452b6a#ffmpeg",
@@ -414,6 +462,54 @@
             }
           ],
           "store_path": "/nix/store/4sbrkv6ajqvcihr0qlyqi9b70nizpshc-oauth2c-1.17.0"
+        }
+      }
+    },
+    "openai-whisper-cpp@latest": {
+      "last_modified": "2025-01-19T08:16:51Z",
+      "resolved": "github:NixOS/nixpkgs/50165c4f7eb48ce82bd063e1fb8047a0f515f8ce#openai-whisper-cpp",
+      "source": "devbox-search",
+      "version": "1.7.2",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/dqnngqyq0qdc2mxm4dqzcpzw7s6z3f4d-whisper-cpp-1.7.2",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/dqnngqyq0qdc2mxm4dqzcpzw7s6z3f4d-whisper-cpp-1.7.2"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/4hfjjz9lbg5idvm3c0igqd71bwkliaka-whisper-cpp-1.7.2",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/4hfjjz9lbg5idvm3c0igqd71bwkliaka-whisper-cpp-1.7.2"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/zbyxc2m2j022bfkcp269rr3wjssw5z5p-whisper-cpp-1.7.2",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/zbyxc2m2j022bfkcp269rr3wjssw5z5p-whisper-cpp-1.7.2"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/ds1a9scx3lmny54nfzak7dkvhyl9flcn-whisper-cpp-1.7.2",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/ds1a9scx3lmny54nfzak7dkvhyl9flcn-whisper-cpp-1.7.2"
         }
       }
     },
@@ -754,9 +850,9 @@
         }
       }
     },
-    "twitch-cli@1.1.24": {
-      "last_modified": "2024-12-23T21:10:33Z",
-      "resolved": "github:NixOS/nixpkgs/de1864217bfa9b5845f465e771e0ecb48b30e02d#twitch-cli",
+    "twitch-cli@latest": {
+      "last_modified": "2025-03-11T17:52:14Z",
+      "resolved": "github:NixOS/nixpkgs/0d534853a55b5d02a4ababa1d71921ce8f0aee4c#twitch-cli",
       "source": "devbox-search",
       "version": "1.1.24",
       "systems": {
@@ -764,41 +860,89 @@
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/dxmjrivjkqzw176csn0nqxr4zd3xasv0-twitch-cli-1.1.24",
+              "path": "/nix/store/sr3rrxr9j2b8d3wmz6mvr2qs253qzf19-twitch-cli-1.1.24",
               "default": true
             }
           ],
-          "store_path": "/nix/store/dxmjrivjkqzw176csn0nqxr4zd3xasv0-twitch-cli-1.1.24"
+          "store_path": "/nix/store/sr3rrxr9j2b8d3wmz6mvr2qs253qzf19-twitch-cli-1.1.24"
         },
         "aarch64-linux": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/vcalmi6mr8k4w762kncbw6bb33m97dzy-twitch-cli-1.1.24",
+              "path": "/nix/store/gjp5h4m9gkf23saakgc2nfi0mz279c74-twitch-cli-1.1.24",
               "default": true
             }
           ],
-          "store_path": "/nix/store/vcalmi6mr8k4w762kncbw6bb33m97dzy-twitch-cli-1.1.24"
+          "store_path": "/nix/store/gjp5h4m9gkf23saakgc2nfi0mz279c74-twitch-cli-1.1.24"
         },
         "x86_64-darwin": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/0q49ac4fmbinjr4gvjs24bxy46ssh4hd-twitch-cli-1.1.24",
+              "path": "/nix/store/qxr56qz11mx0srarwn0rm3kzgnknyv5z-twitch-cli-1.1.24",
               "default": true
             }
           ],
-          "store_path": "/nix/store/0q49ac4fmbinjr4gvjs24bxy46ssh4hd-twitch-cli-1.1.24"
+          "store_path": "/nix/store/qxr56qz11mx0srarwn0rm3kzgnknyv5z-twitch-cli-1.1.24"
         },
         "x86_64-linux": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/zypjabzl0yyk8jiqdbm3z2hbb1sx12ig-twitch-cli-1.1.24",
+              "path": "/nix/store/l4znqwmzcw391df00lh4c95d4kw9wf5y-twitch-cli-1.1.24",
               "default": true
             }
           ],
-          "store_path": "/nix/store/zypjabzl0yyk8jiqdbm3z2hbb1sx12ig-twitch-cli-1.1.24"
+          "store_path": "/nix/store/l4znqwmzcw391df00lh4c95d4kw9wf5y-twitch-cli-1.1.24"
+        }
+      }
+    },
+    "uv@latest": {
+      "last_modified": "2025-03-13T11:38:39Z",
+      "resolved": "github:NixOS/nixpkgs/573c650e8a14b2faa0041645ab18aed7e60f0c9a#uv",
+      "source": "devbox-search",
+      "version": "0.6.6",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/lqnkdyvl5zll2fq5a5ph17mqznms78xy-uv-0.6.6",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/lqnkdyvl5zll2fq5a5ph17mqznms78xy-uv-0.6.6"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/lspam7dhns0rh2q7gsyq40z8ly76gmcb-uv-0.6.6",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/lspam7dhns0rh2q7gsyq40z8ly76gmcb-uv-0.6.6"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/nf8isgl8kgny907z7461xbm76lwqn5lc-uv-0.6.6",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/nf8isgl8kgny907z7461xbm76lwqn5lc-uv-0.6.6"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/w2r38hkwz7f9h0f3pdyzfb2ds7z9sygs-uv-0.6.6",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/w2r38hkwz7f9h0f3pdyzfb2ds7z9sygs-uv-0.6.6"
         }
       }
     }

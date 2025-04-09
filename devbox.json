@@ -13,7 +13,10 @@
     "pulumi-bin@3.137.0",
     "ruby@3.3.5",
     "streamlink@6.11.0",
-    "twitch-cli@1.1.24"
+    "uv@latest",
+    "openai-whisper-cpp@latest",
+    "twitch-cli@latest",
+    "extism-cli@1.6.2"
   ],
   "shell": {
     "init_hook": [
