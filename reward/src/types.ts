@@ -26,9 +26,28 @@ export interface RequestPlayAudio {
     audioUrl: string;
 }
 
+
+type RequestPayloadTypeMap = {
+    'alert_message': RequestPlayMedia,
+    'source_blur': SourceBlurArgs
+}
+
+export type RequestPayload = {
+    [K in keyof RequestPayloadTypeMap]: {
+        command: string;
+        args: RequestPayloadTypeMap[K]
+    }
+}[keyof RequestPayloadTypeMap];
+
+interface SourceBlurArgs {
+    sceneName: string; 
+    sourceName: string;
+    value: number;
+}
+
 export interface RequestPlayMedia {
-    audioUrl: string;
-    mediaUrl: string;
-    text: string;
-    duration: number;
+    audioUrl?: string;
+    mediaUrl?: string;
+    text?: string;
+    duration?: number;
 }

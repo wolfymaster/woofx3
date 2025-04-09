@@ -3,7 +3,7 @@ import path from 'path';
 import NatsClient, { natsMessageHandler } from './nats';
 import { type RewardMessage, type BitReward, VALID_TYPES, type RequestPlayMedia } from './types';
 import BitHandler from './BitHandler';
-import StreamLabsHandler from './StreamLabsHandler';
+import BitSinger from './BitSinger';
 
 dotenv.config({
     path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../', '.env')],
@@ -19,29 +19,38 @@ const bus = await NatsClient();
     }
 })();
 
+// bit handler
+const bitsHandler = new BitHandler();
+
+// audio generators
+const bitSinger = new BitSinger({
+    templates: [
+        { pattern: 'https://streamlabs.local.woofx3.tv/internet/internet_{n}.mp3', numClips: 15, padding: 3 },
+        { pattern: 'https://streamlabs.local.woofx3.tv/mario/mario_{n}.mp3', numClips: 37, padding: 0 },
+    ],
+    random: false,
+})
+
 function rewardMessageHandler(message: RewardMessage) {
     switch(message.type) {
         case VALID_TYPES.bits:
-            const bitsHandler = new BitHandler();
-
             // pass the number of bits to the bits handler,
             const response = bitsHandler.useBits(message.payload.bits, message.payload.userDisplayName);
 
+            // if we don't find an exact match, do something else....
             if(!response) {
+                // play bitsinger
+                let clip = bitSinger.play();
+                bus.publish('slobs', JSON.stringify({
+                    command: 'alert_message',
+                    args: {
+                        audioUrl: clip.audioUrl,
+                     }
+                }))
                 return;
             }
 
-            bus.publish('slobs', JSON.stringify({
-                command: 'alert_message',
-                args: {
-                    audioUrl: response.audioUrl,
-                    mediaUrl: response.mediaUrl,
-                    text: response.text,
-                    duration: response.duration,
-                    done: false,
-                    createdAt: Date.now(),
-                 }
-            }))
+            bus.publish('slobs', JSON.stringify(response))
             break;
         default:
             console.log('did not match reward');
