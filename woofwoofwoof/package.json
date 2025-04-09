@@ -1,10 +1,12 @@
 {
   "dependencies": {
     "@nats-io/transport-node": "^3.0.0-33",
+    "@spotify/web-api-ts-sdk": "^1.2.0",
     "@twurple/auth": "^7.2.1",
     "@twurple/chat": "^7.2.1",
     "chalk": "^5.4.1",
     "dotenv": "^16.4.7",
+    "nats": "^2.29.3",
     "twirpscript": "^0.0.69",
     "yargs": "^17.7.2"
   },

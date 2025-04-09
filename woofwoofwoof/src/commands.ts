@@ -1,14 +1,19 @@
+import { NatsConnection  } from "nats";
+
 export interface Command {
     action: string;
     response: CommandResponse;
 };
 
+export type ChatWatcherFunction = (msg: string, user?: string) => Promise<void>
+
 export type CommandResponse = string | ((msg: string, user?: string) => Promise<string>)
 
 export class Commands {
     commands: Command[] = [];
+    watchers: ChatWatcherFunction[] = [];
 
-    constructor(private natsClient) {}
+    constructor(private natsClient: NatsConnection) {}
 
     add(command: string, response: CommandResponse) {
         this.commands.push({
@@ -17,29 +22,62 @@ export class Commands {
         });
     }
 
+    every(cb: ChatWatcherFunction) {
+        this.watchers.push(cb);
+    }
+
     async process(text: string, user: string): Promise<[string, boolean]> {
+        const chatMsg = text.trim();
+
         this.natsClient.publish('twitchapi', JSON.stringify({
             command: 'chatMessage',
             args: { 
                 user,
-                message: text.trim(),
+                message: chatMsg,
             }
         }));
 
+        this.watchers.forEach(w => this.try(() => w(chatMsg, user)));
+
         for(let i = 0; i < this.commands.length; ++i) {
             const { action, response } = this.commands[i];
+            if(!text.length || text[0] != '!') {
+                return ['', false];
+            }
+            
+            let msg = this.parseAction(text);
 
-            if(text.startsWith(action)) {
+            if(msg.cmd === action) {
                 if(typeof response === 'string') {
                     return [response, true];
                 }
                 if(typeof response === 'function') {
-                    text = text.slice(action.length);
-                    const msg = await response(text.trim(), user.trim());
-                    return [msg, true];
+                    const res = await response(msg.text, user.trim());
+                    return [res, true];
                 }
             }
         }
         return ['', false];
+    }
+
+    parseAction(text: string) {
+        const spaceidx = text.indexOf(' ');
+        if(spaceidx === -1) {
+            return {
+                cmd: text.trim(),
+                text: '',
+            }
+        } 
+
+        return {
+            cmd: text.slice(0, spaceidx).trim(),
+            text: text.slice(spaceidx + 1).trim(),
+        };
+    }
+
+    try(f: any) {
+        try {
+            f();
+        } catch(err) {}
     }
 }

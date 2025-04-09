@@ -13,3 +13,8 @@ export default async function NatsClient() {
     client = await wsconnect({ servers: "tls://connect.ngs.global", authenticator });
     return client;
 }
+
+export async function natsMessageHandler<T>(msg: Msg, cb) {
+    const { command, args } = msg.json<T>();
+    cb(command, args);
+}

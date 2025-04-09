@@ -1,10 +1,18 @@
 import dotenv from 'dotenv';
 import path from 'path';
-import NatsClient from './nats';
+import NatsClient, { natsMessageHandler } from './nats';
 import TwitchBootstrap from './twitchBootstrap';
 import { Commands } from './commands';
 import Spotify from './spotify';
 import Govee from './govee';
+import { kasaLightsOn, kasaLightsOff } from './kasa';
+import * as util from './util';
+import { GetCommands } from '@client/command.pb';
+
+export interface WoofWoofWoofRequestMessage {
+    command: string;
+    args: Record<string, string>
+}
 
 dotenv.config({
     path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../', '.env')],
@@ -18,27 +26,70 @@ if (!channel) {
 // create NATS client
 const bus = await NatsClient();
 
+// listen on the eventbus for api calls
+(async () => {
+    for await (const msg of bus.subscribe('woofwoofwoof')) {
+        natsMessageHandler<WoofWoofWoofRequestMessage>(msg, woofwoofwoofMessageHandler);
+    }
+})();
+
 // new Commands instance
 const commander = new Commands(bus);
 
 // bootstrap twitch auth provider
-await TwitchBootstrap(channel, commander, {
+const send = await TwitchBootstrap(channel, commander, {
     databaseURL: process.env.DATABASE_PROXY_URL || "",
 });
 
-commander.add('woof', 'woofwoof');
+function woofwoofwoofMessageHandler(command: string, args: Record<string, string>) {
+    if (command === 'write_message') {
+        send(args.message);
+    }
+}
 
-commander.add('socials', '🐺 FOLLOW WOLFY 🐺 Instagram: https://instagram.com/wolfymaster Twitch: https://twitch.tv/wolfymaster ⠀⠀ YouTube: https://youtube.com/wolfymaster');
+const commands = await GetCommands({ broadcasterId: process.env.TWITCH_BROADCASTER_ID || '' }, { 
+    baseURL: process.env.DATABASE_PROXY_URL || "",
+});
 
-commander.add('raid', '🔥🐺 🐺🔥 🐺🔥 🐺 IT\'S RAID O\'CLOCK! 🐺🔥 🐺🔥 🐺🔥WolfyMaster and the unstoppable Wolf Pack are HERE! We DO IT LIVE, MAKE IT EPIC, and BREAK THE INTERNET!💥 PACK ASSEMBLED, HOWL MODE ACTIVATED! Bringing the energy, the chaos, and the HOWLS: AWOOOOOOOOOOOOOOOOOO! 🐺🐺🐺🐺🐺🐺 #WolfPackRaid | wolfym7HYPE wolfym7HYPE wolfym7HYPE | #UnleashThePack');
+if(commands.status.code !== "OK") {
+    console.error('Failed to load commands', commands.status.message);
+    process.exit();
+}
 
-commander.add('today', 'Kill sound alerts');
+// TODO: Handle hot reloading of commands
 
-commander.add('fart', '/me @cyburdial farted');
+for(let i = 0; i < commands.commands.length; ++i) {
+    const cmd = commands.commands[i];
+    commander.add(cmd.command, cmd.typeValue);
+}
 
-commander.add('lockin', 'Flow State Engaged');
+commander.add('woof', async (text: string) => {
+    const sounds = ['woof1', 'woof2']
+    const rng = Math.floor(Math.random() * sounds.length);
 
-commander.add('skizz', 'WOOOOOOOOOO');
+    bus.publish('slobs', JSON.stringify({
+        command: 'alert_message',
+        args: {
+            audioUrl: `https://streamlabs.local.woofx3.tv/${sounds[rng]}.mp3`,
+        }
+    }));
+
+    return 'woofwoof';
+});
+
+// commander.add('socials', '🐺 FOLLOW WOLFY 🐺 Instagram: https://instagram.com/wolfymaster Twitter: https://twitter.com/wolfymaster YouTube: https://youtube.com/wolfymaster');
+
+// commander.add('raid', '🔥🐺 🐺🔥 🐺🔥 🐺 IT\'S RAID O\'CLOCK! 🐺🔥 🐺🔥 🐺🔥WolfyMaster and the unstoppable Wolf Pack are HERE! We DO IT LIVE, MAKE IT EPIC, and BREAK THE INTERNET!💥 PACK ASSEMBLED, HOWL MODE ACTIVATED! Bringing the energy, the chaos, and the HOWLS: AWOOOOOOOOOOOOOOOOOO! 🐺🐺🐺🐺🐺🐺 #WolfPackRaid | wolfym7HYPE wolfym7HYPE wolfym7HYPE | #UnleashThePack');
+
+// commander.add('today', 'MVP Modules for woofx3 - Part 1');
+
+// commander.add('fart', '/me @cyburdial farted');
+
+commander.add('lockin', async (text: string, user?: string) => {
+    return `@${user} has engaged flow state`;
+});
+
+// commander.add('skizz', 'WOOOOOOOOOO');
 
 commander.add('discord', async (text: string, user?: string) => {
     // check if the user is currently following
@@ -48,6 +99,23 @@ commander.add('discord', async (text: string, user?: string) => {
     // provide discord link if following
     return '';
 });
+
+commander.add('vanish', async (text: string, user?: string) => {
+    bus.publish('twitchapi', JSON.stringify({
+        command: 'timeout',
+        args: {
+            user: user,
+            duration: Math.floor(Math.random() * 600),
+        }
+    }));
+    return `/me *poof* @${user} is gone`;
+});
+
+commander.add('lurk', async (text: string, user?: string) => {
+    return '';
+});
+
+// commander.add('github', 'https://www.github.com/wolfymaster/woofx3');
 
 // TODO: FIX - THIS IS MATCHING THE !SONG COMMAND
 // commander.add('so', async (text: string) => {
@@ -208,7 +276,7 @@ commander.add('category', async (text: string) => {
 
 // UPDATE STREAM TITLE
 commander.add('title', async (text: string, user?: string) => {
-    if(!user || user.toLowerCase() !== 'wolfymaster') {
+    if (!user || user.toLowerCase() !== 'wolfymaster') {
         return 'Sorry, @cyburdial ruined this for everyone.'
     }
     bus.publish('twitchapi', JSON.stringify({
@@ -220,26 +288,293 @@ commander.add('title', async (text: string, user?: string) => {
 });
 
 commander.add('kitty', async (text: string, user?: string) => {
-    if(!user || user.toLowerCase() !== 'kittyclemente') {
+    if (!user || user.toLowerCase() !== 'kittyclemente') {
         return 'Sorry, You are not kitty!!'
     }
     bus.publish('slobs', JSON.stringify({
         command: 'alert_message',
-        args: { 
+        args: {
             audioUrl: 'https://streamlabs.local.woofx3.tv/goodkittykitty.mp3',
         }
     }));
     return '';
-})
+});
+
+commander.add('pixy', async (text: string, user?: string) => {
+    if (!user || user.toLowerCase() !== 'pixyroux') {
+        return 'Sorry, You are not pixyroux!!'
+    }
+    bus.publish('slobs', JSON.stringify({
+        command: 'alert_message',
+        args: {
+            audioUrl: 'https://streamlabs.local.woofx3.tv/beautiful-things.mp3',
+        }
+    }));
+    return '';
+});
 
 commander.add('wedidit', async () => {
     bus.publish('slobs', JSON.stringify({
         command: 'alert_message',
-        args: { 
+        args: {
             audioUrl: 'https://streamlabs.local.woofx3.tv/wedidit.mp3',
+            mediaUrl: 'https://streamlabs.local.woofx3.tv/confetti.gif',
             duration: 10,
+            options: {
+                view: {
+                    fullScreen: true,
+                }
+            }
         }
     }));
 
     return 'WE DID IT!';
+});
+
+commander.add('sc', async (text: string) => {
+    let sceneName = '';
+    switch (text) {
+        case '1':
+            sceneName = 'Chat';
+            break;
+        case '2':
+            sceneName = 'Programming';
+            break;
+        case '3':
+            sceneName = 'StreamTogether';
+            break;
+        case '4':
+            sceneName = '';
+            break;
+    }
+
+    if (!sceneName) {
+        return 'Scene does not exist';
+    }
+
+    bus.publish('slobs', JSON.stringify({
+        command: 'scene_change',
+        args: {
+            sceneName,
+        }
+    }));
+
+
+    return 'Updated Scene';
+});
+
+commander.add('src', async (text: string) => {
+    if (!text) {
+        return '';
+    }
+
+    let visibility = false;
+    const [sourceName, onoff] = text.split(' ');
+
+    if (onoff === 'on' || onoff === '1') {
+        visibility = true;
+    }
+
+    bus.publish('slobs', JSON.stringify({
+        command: 'source_change',
+        args: {
+            sourceName,
+            value: visibility ? 'on' : 'off',
+        }
+    }));
+
+    return `Updating source: ${sourceName}`;
+});
+
+commander.add('office', async (text: string) => {
+    if (text === 'on') {
+        kasaLightsOn();
+    } else {
+        kasaLightsOff();
+    }
+
+    return '';
+});
+
+// PAINT GAME COMMADNS
+commander.every(async (msg: string, user?: string) => {
+    // only run if we are playing the game
+    const playing = true;
+
+    if (!playing) {
+        return;
+    }
+
+    const points = util.parsePoints(msg);
+
+    console.log('points', points);
+
+    if (!points.length) {
+        return;
+    }
+
+    let x, y, xlength, ylength = 0;
+
+    if (points.length === 1) {
+        x = points[0].x;
+        y = points[0].y;
+        xlength = 1;
+        ylength = 1;
+    } else {
+        const absx = Math.abs(points[0].x - points[1].x);
+        const absy = Math.abs(points[0].y - points[1].y);
+
+        if (absx === 0) {
+            x = points[0].x
+            y = Math.min(points[0].y, points[1].y);
+            xlength = 1;
+            ylength = absy + 1;
+        }
+
+        if (absy === 0) {
+            x = Math.min(points[0].x, points[1].x);
+            y = points[0].y
+            xlength = absx + 1;
+            ylength = 1;
+        }
+    }
+
+    bus.publish('slobs', JSON.stringify({
+        command: 'paint',
+        args: {
+            action: 'draw',
+            x,
+            y,
+            xlength,
+            ylength,
+            user
+        }
+    }));
 })
+
+// PAINT GAME PEN COLOR
+commander.add('color', async (msg: string, user?: string) => {
+    bus.publish('slobs', JSON.stringify({
+        command: 'paint',
+        args: {
+            action: 'pencolor',
+            color: msg,
+            user
+        }
+    }));
+
+    return '';
+})
+
+commander.add('confetti', async (msg: string) => {
+    bus.publish('slobs', JSON.stringify({
+        command: 'alert_message',
+        args: {
+            // audioUrl: 'https://streamlabs.local.woofx3.tv/wolf-hype.mp3',
+            mediaUrl: 'https://streamlabs.local.woofx3.tv/confetti.gif',
+            // text: `<3  {primary}${userDisplayName}{primary} subscribed <3`,
+            options: {
+                view: {
+                    fullScreen: true,
+                }
+            }
+        }
+    }));
+
+    return '';
+})
+
+// add a command for updating the timer
+commander.add('time', async (msg: string) => {
+    const time = msg;
+
+    console.log('update timer', parseTime(time));
+
+    bus.publish('slobs', JSON.stringify({
+        command: 'setTime',
+        args: {
+            timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
+            valueInSeconds: parseTime(time),
+        }
+    }));
+
+    return 'Timer updated';
+});
+
+
+commander.add('partymode', async (msg: string) => {
+    partyMode();
+    return 'party mode activated';
+})
+
+function sleep(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function partyMode() {
+    let onoff = true;
+    while (true) {
+        const rnd = Math.random() * 2;
+        const milliseconds = rnd * 1000;
+
+        const combos = [
+            [true, true],
+            [false, true],
+            [false, false]
+        ]
+
+        const randomCombo = Math.floor(Math.random() * combos.length);
+
+        const [mobileState, maincamState] = combos[randomCombo]
+
+        console.log('mobile', mobileState, 'maincam', maincamState);
+
+        bus.publish('slobs', JSON.stringify({
+            command: 'source_change',
+            args: {
+                sourceName: 'maincam',
+                value: maincamState ? 'on' : 'off',
+            }
+        }));
+
+        bus.publish('slobs', JSON.stringify({
+            command: 'source_change',
+            args: {
+                sourceName: 'mobile',
+                value: mobileState ? 'on' : 'off',
+            }
+        }));
+
+        onoff = !onoff;
+
+        await sleep(milliseconds);
+    }
+}
+
+// function that parses string into seconds with format 2m 30s
+function parseTime(duration: string): number {
+    // Initialize variables for storing parsed values
+    let minutes = 0;
+    let seconds = 0;
+
+    // Use a RegExp to match one or more digits before 'm' or 's', optionally followed by spaces.
+    const matches = duration.match(/(\d+)\s*[ms]/g);
+
+    if (matches) {
+        for (const match of matches) {
+            // Get the number part and the unit from each match.
+            const num = parseInt(match);
+            const unit = match.includes('m') ? 'm' : 's';
+            
+            // Add to the respective variable based on the unit.
+            if (unit === 'm') {
+                minutes += num;
+            } else {
+                seconds += num;
+            }
+        }
+    }
+    
+    // Convert minutes and seconds to total seconds
+    return minutes * 60 + seconds;
+}
