@@ -41,6 +41,7 @@ func main() {
 	// services
 	userService := svc.NewUserService(db)
 	eventService := svc.NewEventService(db)
+	commandService := svc.NewCommandService(db)
 
 	// http mux
 	mux := http.NewServeMux()
@@ -51,6 +52,9 @@ func main() {
 
 	eventHandler := rpc.NewEventServiceServer(eventService)
 	mux.Handle(eventHandler.PathPrefix(), eventHandler)
+
+	commandHandler := rpc.NewCommandServiceServer(commandService)
+	mux.Handle(commandHandler.PathPrefix(), commandHandler)
 
 	// get the correct port
 	port := os.Getenv("DATABASE_PROXY_PORT")

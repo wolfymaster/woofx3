@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package wolfyttv.event;
+option go_package = "github.com/wolfymaster/wolfyttv/buf";
+
+import "common.proto";
+
+service CommandService {
+    rpc GetCommands(GetCommandsRequest) returns (GetCommandsResponse);
+}
+
+message Command {
+    string broadcaster_id = 1;
+    string command = 2;
+    string type = 3;
+    string type_value = 4;
+}
+
+message GetCommandsRequest {
+    string broadcaster_id = 1;
+}
+
+message GetCommandsResponse {
+    common.ResponseStatus status = 1;
+    repeated Command commands = 2;
+}

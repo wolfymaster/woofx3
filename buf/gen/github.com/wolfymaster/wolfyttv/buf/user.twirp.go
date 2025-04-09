@@ -781,7 +781,7 @@ func (s *userServiceServer) serveGetBroadcasterTokenProtobuf(ctx context.Context
 }
 
 func (s *userServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor1, 0
+	return twirpFileDescriptor2, 0
 }
 
 func (s *userServiceServer) ProtocGenTwirpVersion() string {
@@ -795,7 +795,7 @@ func (s *userServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "wolfyttv.user", "UserService")
 }
 
-var twirpFileDescriptor1 = []byte{
+var twirpFileDescriptor2 = []byte{
 	// 309 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x52, 0x5f, 0x4b, 0x3a, 0x41,
 	0x14, 0xc5, 0x1f, 0xbf, 0x14, 0x6f, 0xd9, 0xc3, 0x24, 0xb4, 0x58, 0x42, 0x8c, 0x08, 0x15, 0x31,
