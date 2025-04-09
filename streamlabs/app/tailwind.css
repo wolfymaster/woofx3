@@ -18,3 +18,36 @@ body {
   flex: 1;
   min-height: 100%;
 }
+
+#alertBox.fullscreen {
+  width: 100%;
+  height: auto;
+  background-color: rgba(0,0,0,0);
+}
+
+.transparentBlack {
+  mix-blend-mode: screen;
+}
+
+.pixelBox {
+  width: 1px;
+  height: 1px;
+  background-color: orange;
+}
+
+.pixelRow {
+  display: flex;
+  flex-direction: row;
+}
+
+#timer {
+  font-size: 40px;
+  /* font-family: "Space Mono", serif; */
+  font-family: 'Roboto';
+  font-weight: bold;
+  text-shadow: 0 0 5px rgba(255, 255, 255, 0.8),
+  0 0 10px rgba(255, 255, 255, 0.7),
+  0 0 15px rgba(255, 255, 255, 0.6),
+  0 0 20px rgba(255, 255, 255, 0.5);
+  padding: 10px;
+}

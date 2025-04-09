@@ -24,6 +24,7 @@ const schema = i.schema({
       audioUrl: i.string(),
       text: i.string(),
       duration: i.number(),
+      options: i.json(),
       createdAt: i.number(),
       done: i.boolean(),
     }),
@@ -86,6 +87,8 @@ export default function Index() {
     return <></>;
   }
 
+  console.log(message.options);
+
   return (
     <>
     {message.type === 'play_audio' &&
@@ -102,6 +105,7 @@ export default function Index() {
         mediaUrl={message.mediaUrl}
         textPattern={message.text}
         duration={message.duration}
+        options={message.options}
       />}
   </>
   );
