@@ -193,11 +193,11 @@ export async function moderate(apiClient: ApiClient, args, messageQueue) {
         const aiResponse = await app.invoke({ messages });
         try {
             return JSON.parse(aiResponse.messages[aiResponse.messages.length - 1].content as string);
-        } catch(err) {
+        } catch (err) {
             console.error(err);
             return error('unable to parse aiResponse as JSON');
         }
-    } catch(err) {
+    } catch (err) {
         console.error(err);
         return error('could not generate command');
     }
@@ -215,15 +215,21 @@ export async function chatMessage(queue, args) {
 export async function timeoutUser(apiClient: ApiClient, args, broadcaster: HelixUser) {
     const userResolvable = await apiClient.users.getUserByName(args.user);
 
-    if(!userResolvable) {
+    if (!userResolvable) {
         return;
     }
 
-    await apiClient.moderation.banUser(broadcaster, {
-        reason: '',
-        user: userResolvable,
-        duration: 10,
-    });
+    console.log(`${args.user} is being timed out for ${args.duration} seconds`);
+
+    try {
+        await apiClient.moderation.banUser(broadcaster, {
+            reason: '',
+            user: userResolvable,
+            duration: args.duration || 10,
+        });
+    } catch (err) {
+        console.error(err);
+    }
 
     return success();
 }
@@ -231,7 +237,7 @@ export async function timeoutUser(apiClient: ApiClient, args, broadcaster: Helix
 export async function shoutoutUser(apiClient: ApiClient, args, broadcaster: HelixUser) {
     const userResolvable = await apiClient.users.getUserByName(args.user);
 
-    if(!userResolvable) {
+    if (!userResolvable) {
         return;
     }
 
@@ -265,12 +271,12 @@ export async function complement(apiClient: ApiClient, args) {
 
 export async function userInfo(apiClient: ApiClient, args, broadcaster: HelixUser) {
     const user = await apiClient.users.getUserByName(args.username);
-    if(!user) {
+    if (!user) {
         return false;
     }
     const follows = await apiClient.channels.getChannelFollowers(broadcaster, user);
 
-    if(follows.data.length < 1) {
+    if (follows.data.length < 1) {
         return false;
     }
 

@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { ApiClient, HelixUser } from '@twurple/api';
 import { EventSubWsListener } from '@twurple/eventsub-ws';
-import { EventSubChannelCheerEvent, EventSubChannelBanEvent, EventSubChannelFollowEvent, EventSubChannelRedemptionAddEvent, EventSubChannelSubscriptionEvent, EventSubChannelSubscriptionGiftEvent } from '@twurple/eventsub-base';
+import { EventSubChannelCheerEvent, EventSubChannelBanEvent, EventSubChannelFollowEvent, EventSubChannelRedemptionAddEvent, EventSubChannelSubscriptionEvent, EventSubChannelSubscriptionGiftEvent, EventSubChannelSubscriptionMessageEvent, EventSubChannelRaidEvent } from '@twurple/eventsub-base';
 import * as twitch from './lib';
 import { type TwitchContext, TwitchApiRequestMessage } from './types';
 import NatsClient, { natsMessageHandler } from './nats';
@@ -34,7 +34,7 @@ const authProvider = await TwitchBootstrap(channel, {
 // Message Bus
 const bus = await NatsClient();
 
-const mockSubscriptionURL = 'http://localhost:8080/eventsub/subscriptions';
+// const mockSubscriptionURL = 'http://localhost:44748/eventsub/subscriptions';
 
 const apiClient = new ApiClient({ authProvider });
 const listener = new EventSubWsListener({ apiClient });
@@ -72,6 +72,8 @@ try {
     const userId = broadcaster.id;
 
     console.log('userId', userId);
+
+    listener.onChannelSubscription
 
     listener.onChannelBan(userId, (event: EventSubChannelBanEvent) => {
         let { reason, isPermanent, userDisplayName, userId  } = event;
@@ -114,7 +116,15 @@ try {
                 id: 'ac39613d-4f48-459c-9f4e-6f3fb0df65e0',
                 value: 1,
             }
-        }))
+        }));
+
+        bus.publish('slobs', JSON.stringify({
+            command: 'updateTime',
+            args: { 
+                timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
+                valueInSeconds: 60,
+            }
+        }));
     });
 
     listener.onStreamOnline(userId, (event: any) => {
@@ -176,6 +186,14 @@ try {
                 userId,
             }
         }))
+
+        bus.publish('slobs', JSON.stringify({
+            command: 'updateTime',
+            args: { 
+                timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
+                valueInSeconds: bits,
+            }
+        }));
     });
 
     listener.onChannelHypeTrainBegin(userId, (data: any) => {
@@ -183,6 +201,14 @@ try {
             command: Commands.HYPE_TRAIN_BEGIN,
             args: {}
         }))
+
+        bus.publish('slobs', JSON.stringify({
+            command: 'updateTime',
+            args: { 
+                timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
+                valueInSeconds: 600,
+            }
+        }));
     });
 
     listener.onChannelSubscriptionGift(userId, async (evt: EventSubChannelSubscriptionGiftEvent) => {
@@ -248,6 +274,14 @@ try {
             console.error(err);
         }
 
+        bus.publish('slobs', JSON.stringify({
+            command: 'updateTime',
+            args: { 
+                timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
+                valueInSeconds: 120,
+            }
+        }));
+
         if(!isGift) {
             bus.publish('slobs', JSON.stringify({
                 command: 'alert_message',
@@ -266,6 +300,47 @@ try {
                 }
             }))
         }
+    });
+
+    listener.onChannelSubscriptionMessage(userId, async (event: EventSubChannelSubscriptionMessageEvent) => {
+        const { userId, userDisplayName, tier } = event;
+
+        console.log(Commands.USER_SUBSCRIBE, userDisplayName, tier);
+
+        try {
+            await CreateUserEvent({
+                event: {
+                    userId,
+                    displayName: userDisplayName,
+                    eventType: Commands.USER_SUBSCRIBE,
+                    subscribe: {
+                        gift: false,
+                        tier,
+                    }
+                }
+            }, {
+                baseURL: process.env.DATABASE_PROXY_URL || "",
+            });
+        } catch(err) {
+            console.error(err);
+        }
+
+        bus.publish('slobs', JSON.stringify({
+            command: 'alert_message',
+            args: { 
+                audioUrl: 'https://streamlabs.local.woofx3.tv/wolf-hype.mp3',
+                mediaUrl: 'https://media.tenor.com/bj2uMQRTdSEAAAPo/dog-husky.mp4',
+                text: `<3  {primary}${userDisplayName}{primary} subscribed <3`,
+            }
+        }));
+
+        bus.publish('slobs', JSON.stringify({
+            command: 'count', // TODO: Is there a better name?
+            args: {
+                id: 'a2e8385b-5688-4ec2-92a1-f4bf3e3d53a4',
+                value: 1,
+            }
+        }));
     });
 
     listener.onChannelRedemptionAdd(userId, async (evt: EventSubChannelRedemptionAddEvent) => {
@@ -322,8 +397,6 @@ try {
 
                 const data = await response.json();
 
-                console.log('received data: ', data)
-
                 bus.publish('slobs', JSON.stringify({
                     command: 'alert_message',
                     args: { 
@@ -331,6 +404,20 @@ try {
                     }
                 }));
             break;
+
+            case 'eb053955-a188-4b84-a79f-b8d80ce22caf': 
+                const targetUser = input.trim().replace(/[^a-zA-Z0-9\s]/g, '');
+                console.log('timeout user for 5 minutes: ', targetUser);
+                
+                bus.publish('twitchapi', JSON.stringify({
+                    command: 'timeout',
+                    args: {
+                        user: targetUser,
+                        duration: 300,
+                    }
+                }));
+            break;
+
             default:
                 console.log('nothing to do for rewardId: ', rewardId)
         }
@@ -338,11 +425,26 @@ try {
         console.log( rewardId, rewardCost, rewardPrompt, rewardTitle, userId, userDisplayName, input)
     });
 
+    listener.onChannelRaidTo(userId, async (evt: EventSubChannelRaidEvent) => {
+        console.log('incoming raid');
+    })
+
+    listener.onChannelRaidFrom(userId, async (evt: EventSubChannelRaidEvent) => {
+        console.log('raiding out')
+        
+        bus.publish('woofwoofwoof', JSON.stringify({
+            command: 'write_message',
+            args: { 
+                message: '!raid'
+            }
+        }))   
+    })
+
     listener.start();
     console.log('listener started');
 
 } catch (err: any) {
-    console.error(err.message);
+    console.error('error:', err.message);
     process.exit(0);
 }
 
@@ -367,8 +469,6 @@ async function twitchApiMessageHandler(command: string, args: Record<string, str
     }
 
     const result = await handler();
-
-    console.log('recived result: ', result);
 
     if(result.error) {
         console.log(handler.errorMsg);
