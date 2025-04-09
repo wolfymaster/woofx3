@@ -1,0 +1,135 @@
+#!/bin/bash
+# Update system and install essential packages
+apt-get update
+apt-get install -y curl wget net-tools ufw sudo wireguard
+
+# Create wolfy user with sudo privileges
+useradd -m -s /bin/bash wolfy
+echo "wolfy ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/wolfy
+chmod 0440 /etc/sudoers.d/wolfy
+
+# Set up authorized_keys for wolfy user
+mkdir -p /home/wolfy/.ssh
+cp /root/.ssh/authorized_keys /home/wolfy/.ssh/
+chown -R wolfy:wolfy /home/wolfy/.ssh
+chmod 700 /home/wolfy/.ssh
+chmod 600 /home/wolfy/.ssh/authorized_keys
+
+# Setup firewall
+ufw allow 22/tcp
+ufw allow ${vpn_port}/udp
+ufw allow 11434/tcp  # Ollama API port
+ufw --force enable
+
+# Create directory for ollama data with proper permissions
+mkdir -p /opt/ollama
+chown wolfy:wolfy /opt/ollama
+
+# Create script to be run as wolfy
+cat > /home/wolfy/setup.sh << 'SETUPEOF'
+#!/bin/bash
+set -e
+
+echo "Setting up environment as wolfy user..."
+
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sudo sh
+
+# Create WireGuard directories with proper permissions
+sudo mkdir -p /etc/wireguard
+sudo chmod 700 /etc/wireguard
+
+# Generate WireGuard server keys
+sudo wg genkey | sudo tee /etc/wireguard/server_private_key | sudo wg pubkey | sudo tee /etc/wireguard/server_public_key > /dev/null
+
+# Create server config
+sudo bash -c "cat > /etc/wireguard/wg0.conf << WGEOF
+[Interface]
+Address = 10.8.0.1/24
+ListenPort = ${vpn_port}
+PrivateKey = \$(cat /etc/wireguard/server_private_key)
+
+# Enable IP forwarding
+PostUp = sysctl -w net.ipv4.ip_forward=1
+PostUp = iptables -A FORWARD -i %i -j ACCEPT
+PostUp = iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+
+PostDown = iptables -D FORWARD -i %i -j ACCEPT
+PostDown = iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+# Client configuration will be added here
+[Peer]
+PublicKey = CLIENT_PUBLIC_KEY_PLACEHOLDER
+AllowedIPs = 10.8.0.2/32
+WGEOF"
+
+# Generate client keys
+sudo wg genkey | sudo tee /etc/wireguard/client_private_key | sudo wg pubkey | sudo tee /etc/wireguard/client_public_key > /dev/null
+
+# Update server config with client public key
+PUBLIC_KEY=$(sudo cat /etc/wireguard/client_public_key)
+sudo sed -i "s|CLIENT_PUBLIC_KEY_PLACEHOLDER|$PUBLIC_KEY|g" /etc/wireguard/wg0.conf
+
+# Create client config template
+sudo bash -c "cat > /etc/wireguard/client.conf << CLIENTEOF
+[Interface]
+PrivateKey = \$(cat /etc/wireguard/client_private_key)
+Address = 10.8.0.2/24
+DNS = 1.1.1.1, 8.8.8.8
+
+[Peer]
+PublicKey = \$(cat /etc/wireguard/server_public_key)
+Endpoint = SERVER_IP:${vpn_port}
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25
+CLIENTEOF"
+
+# Enable and start WireGuard
+sudo systemctl enable wg-quick@wg0
+sudo systemctl start wg-quick@wg0
+
+# Create a systemd override directory
+sudo mkdir -p /etc/systemd/system/ollama.service.d/
+
+# Create an environment override file
+sudo bash -c 'cat > /etc/systemd/system/ollama.service.d/override.conf << EOF
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0"
+EOF'
+
+# Reload systemd to apply the changes
+systemctl daemon-reload
+
+# Start Ollama
+sudo systemctl enable ollama
+sudo systemctl start ollama
+
+# Wait for Ollama service to initialize fully
+echo "Waiting for Ollama service to fully initialize..."
+sleep 30
+
+# Pull the model
+echo "Pulling deepseek-coder-v2 model..."
+ollama pull deepseek-coder-v2
+
+# Create script to update client config with server IP
+cat > ~/generate_client_config.sh << SCRIPTEOF
+#!/bin/bash
+SERVER_IP=\$(curl -s ifconfig.me)
+sudo sed "s|SERVER_IP|\$SERVER_IP|g" /etc/wireguard/client.conf > ~/wireguard-client.conf
+echo "WireGuard client configuration saved to ~/wireguard-client.conf"
+cat ~/wireguard-client.conf
+SCRIPTEOF
+
+chmod +x ~/generate_client_config.sh
+~/generate_client_config.sh
+
+echo "Setup completed successfully!"
+SETUPEOF
+
+# Make the script executable and owned by wolfy
+chmod +x /home/wolfy/setup.sh
+chown wolfy:wolfy /home/wolfy/setup.sh
+
+# Run the setup script as wolfy
+su - wolfy -c "/home/wolfy/setup.sh"
