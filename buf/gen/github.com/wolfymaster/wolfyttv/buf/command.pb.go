@@ -185,6 +185,58 @@ func (x *GetCommandsResponse) GetCommands() []*Command {
 	return nil
 }
 
+type SetCommandResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Command       *Command               `protobuf:"bytes,2,opt,name=command,proto3" json:"command,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetCommandResponse) Reset() {
+	*x = SetCommandResponse{}
+	mi := &file_command_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetCommandResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetCommandResponse) ProtoMessage() {}
+
+func (x *SetCommandResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_command_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetCommandResponse.ProtoReflect.Descriptor instead.
+func (*SetCommandResponse) Descriptor() ([]byte, []int) {
+	return file_command_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SetCommandResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *SetCommandResponse) GetCommand() *Command {
+	if x != nil {
+		return x.Command
+	}
+	return nil
+}
+
 var File_command_proto protoreflect.FileDescriptor
 
 const file_command_proto_rawDesc = "" +
@@ -200,9 +252,14 @@ const file_command_proto_rawDesc = "" +
 	"\x0ebroadcaster_id\x18\x01 \x01(\tR\rbroadcasterId\"z\n" +
 	"\x13GetCommandsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x123\n" +
-	"\bcommands\x18\x02 \x03(\v2\x17.wolfyttv.event.CommandR\bcommands2h\n" +
+	"\bcommands\x18\x02 \x03(\v2\x17.wolfyttv.event.CommandR\bcommands\"w\n" +
+	"\x12SetCommandResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x121\n" +
+	"\acommand\x18\x02 \x01(\v2\x17.wolfyttv.event.CommandR\acommand2\xb3\x01\n" +
 	"\x0eCommandService\x12V\n" +
-	"\vGetCommands\x12\".wolfyttv.event.GetCommandsRequest\x1a#.wolfyttv.event.GetCommandsResponseB%Z#github.com/wolfymaster/wolfyttv/bufb\x06proto3"
+	"\vGetCommands\x12\".wolfyttv.event.GetCommandsRequest\x1a#.wolfyttv.event.GetCommandsResponse\x12I\n" +
+	"\n" +
+	"SetCommand\x12\x17.wolfyttv.event.Command\x1a\".wolfyttv.event.SetCommandResponseB%Z#github.com/wolfymaster/wolfyttv/bufb\x06proto3"
 
 var (
 	file_command_proto_rawDescOnce sync.Once
@@ -216,23 +273,28 @@ func file_command_proto_rawDescGZIP() []byte {
 	return file_command_proto_rawDescData
 }
 
-var file_command_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_command_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_command_proto_goTypes = []any{
 	(*Command)(nil),             // 0: wolfyttv.event.Command
 	(*GetCommandsRequest)(nil),  // 1: wolfyttv.event.GetCommandsRequest
 	(*GetCommandsResponse)(nil), // 2: wolfyttv.event.GetCommandsResponse
-	(*ResponseStatus)(nil),      // 3: common.ResponseStatus
+	(*SetCommandResponse)(nil),  // 3: wolfyttv.event.SetCommandResponse
+	(*ResponseStatus)(nil),      // 4: common.ResponseStatus
 }
 var file_command_proto_depIdxs = []int32{
-	3, // 0: wolfyttv.event.GetCommandsResponse.status:type_name -> common.ResponseStatus
+	4, // 0: wolfyttv.event.GetCommandsResponse.status:type_name -> common.ResponseStatus
 	0, // 1: wolfyttv.event.GetCommandsResponse.commands:type_name -> wolfyttv.event.Command
-	1, // 2: wolfyttv.event.CommandService.GetCommands:input_type -> wolfyttv.event.GetCommandsRequest
-	2, // 3: wolfyttv.event.CommandService.GetCommands:output_type -> wolfyttv.event.GetCommandsResponse
-	3, // [3:4] is the sub-list for method output_type
-	2, // [2:3] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	4, // 2: wolfyttv.event.SetCommandResponse.status:type_name -> common.ResponseStatus
+	0, // 3: wolfyttv.event.SetCommandResponse.command:type_name -> wolfyttv.event.Command
+	1, // 4: wolfyttv.event.CommandService.GetCommands:input_type -> wolfyttv.event.GetCommandsRequest
+	0, // 5: wolfyttv.event.CommandService.SetCommand:input_type -> wolfyttv.event.Command
+	2, // 6: wolfyttv.event.CommandService.GetCommands:output_type -> wolfyttv.event.GetCommandsResponse
+	3, // 7: wolfyttv.event.CommandService.SetCommand:output_type -> wolfyttv.event.SetCommandResponse
+	6, // [6:8] is the sub-list for method output_type
+	4, // [4:6] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_command_proto_init() }
@@ -247,7 +309,7 @@ func file_command_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_command_proto_rawDesc), len(file_command_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

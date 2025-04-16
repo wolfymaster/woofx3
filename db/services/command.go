@@ -50,3 +50,70 @@ func (s *CommandService) GetCommands(ctx context.Context, req *rpc.GetCommandsRe
 		Commands: protoCommands,
 	}, nil
 }
+
+func (s *CommandService) SetCommand(ctx context.Context, req *rpc.Command) (*rpc.SetCommandResponse, error) {
+	s.db.Config.Logger.Info(ctx, "Setting command")
+
+	// Convert broadcaster ID from string to int
+	broadcasterID, err := strconv.Atoi(req.BroadcasterId)
+	if err != nil {
+		return &rpc.SetCommandResponse{
+			Status: &rpc.ResponseStatus{
+				Code:    rpc.ResponseStatus_INVALID_ARGUMENT,
+				Message: "Invalid broadcaster ID",
+			},
+		}, err
+	}
+
+	// Find existing command or create a new one
+	var command models.Command
+	result := s.db.Where("broadcaster_id = ? AND command = ?", broadcasterID, req.Command).First(&command)
+	
+	if result.Error != nil {
+		// Command not found, create a new one
+		command = models.Command{
+			BroadcasterID: broadcasterID,
+			Command:       req.Command,
+		}
+	}
+
+	// Update Type if provided
+	if req.Type != "" {
+		command.Type = req.Type
+	}
+
+	// Update TypeValue if provided
+	if req.TypeValue != "" {
+		command.TypeValue = req.TypeValue
+	}
+
+	// Save the command (creates or updates)
+	if result.Error != nil {
+		// Create new record
+		if err := s.db.Create(&command).Error; err != nil {
+			return &rpc.SetCommandResponse{
+				Status: &rpc.ResponseStatus{
+					Code:    rpc.ResponseStatus_INTERNAL,
+					Message: "Failed to create command",
+				},
+			}, err
+		}
+	} else {
+		// Update existing record
+		if err := s.db.Save(&command).Error; err != nil {
+			return &rpc.SetCommandResponse{
+				Status: &rpc.ResponseStatus{
+					Code:    rpc.ResponseStatus_INTERNAL,
+					Message: "Failed to update command",
+				},
+			}, err
+		}
+	}
+
+	return &rpc.SetCommandResponse{
+		Status: &rpc.ResponseStatus{
+			Code: rpc.ResponseStatus_OK,
+		},
+		Command: ToProto(command),
+	}, nil
+}

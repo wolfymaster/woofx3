@@ -32,6 +32,11 @@ export interface GetCommandsResponse {
   commands: Command[];
 }
 
+export interface SetCommandResponse {
+  status: common.ResponseStatus;
+  command: Command;
+}
+
 //========================================//
 //     CommandService Protobuf Client     //
 //========================================//
@@ -46,6 +51,18 @@ export async function GetCommands(
     config,
   );
   return GetCommandsResponse.decode(response);
+}
+
+export async function SetCommand(
+  command: Command,
+  config?: ClientConfiguration,
+): Promise<SetCommandResponse> {
+  const response = await PBrequest(
+    "/wolfyttv.event.CommandService/SetCommand",
+    Command.encode(command),
+    config,
+  );
+  return SetCommandResponse.decode(response);
 }
 
 //========================================//
@@ -64,6 +81,18 @@ export async function GetCommandsJSON(
   return GetCommandsResponseJSON.decode(response);
 }
 
+export async function SetCommandJSON(
+  command: Command,
+  config?: ClientConfiguration,
+): Promise<SetCommandResponse> {
+  const response = await JSONrequest(
+    "/wolfyttv.event.CommandService/SetCommand",
+    CommandJSON.encode(command),
+    config,
+  );
+  return SetCommandResponseJSON.decode(response);
+}
+
 //========================================//
 //             CommandService             //
 //========================================//
@@ -73,6 +102,10 @@ export interface CommandService<Context = unknown> {
     getCommandsRequest: GetCommandsRequest,
     context: Context,
   ) => Promise<GetCommandsResponse> | GetCommandsResponse;
+  SetCommand: (
+    command: Command,
+    context: Context,
+  ) => Promise<SetCommandResponse> | SetCommandResponse;
 }
 
 export function createCommandService<Context>(
@@ -89,6 +122,12 @@ export function createCommandService<Context>(
           protobuf: GetCommandsResponse,
           json: GetCommandsResponseJSON,
         },
+      },
+      SetCommand: {
+        name: "SetCommand",
+        handler: service.SetCommand,
+        input: { protobuf: Command, json: CommandJSON },
+        output: { protobuf: SetCommandResponse, json: SetCommandResponseJSON },
       },
     },
   } as const;
@@ -342,6 +381,82 @@ export const GetCommandsResponse = {
   },
 };
 
+export const SetCommandResponse = {
+  /**
+   * Serializes SetCommandResponse to protobuf.
+   */
+  encode: function (msg: PartialDeep<SetCommandResponse>): Uint8Array {
+    return SetCommandResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes SetCommandResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): SetCommandResponse {
+    return SetCommandResponse._readMessage(
+      SetCommandResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes SetCommandResponse with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<SetCommandResponse>): SetCommandResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      command: Command.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<SetCommandResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.command) {
+      writer.writeMessage(2, msg.command, Command._writeMessage);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: SetCommandResponse,
+    reader: protoscript.BinaryReader,
+  ): SetCommandResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          reader.readMessage(msg.command, Command._readMessage);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -542,6 +657,76 @@ export const GetCommandsResponseJSON = {
         CommandJSON._readMessage(m, item);
         msg.commands.push(m);
       }
+    }
+    return msg;
+  },
+};
+
+export const SetCommandResponseJSON = {
+  /**
+   * Serializes SetCommandResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<SetCommandResponse>): string {
+    return JSON.stringify(SetCommandResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes SetCommandResponse from JSON.
+   */
+  decode: function (json: string): SetCommandResponse {
+    return SetCommandResponseJSON._readMessage(
+      SetCommandResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes SetCommandResponse with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<SetCommandResponse>): SetCommandResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      command: CommandJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<SetCommandResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.command) {
+      const _command_ = CommandJSON._writeMessage(msg.command);
+      if (Object.keys(_command_).length > 0) {
+        json["command"] = _command_;
+      }
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: SetCommandResponse,
+    json: any,
+  ): SetCommandResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _command_ = json["command"];
+    if (_command_) {
+      CommandJSON._readMessage(msg.command, _command_);
     }
     return msg;
   },
