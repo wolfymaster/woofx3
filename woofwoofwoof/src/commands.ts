@@ -2,6 +2,7 @@ import { NatsConnection  } from "nats";
 
 export interface Command {
     action: string;
+    command: string;
     response: CommandResponse;
 };
 
@@ -16,8 +17,16 @@ export class Commands {
     constructor(private natsClient: NatsConnection) {}
 
     add(command: string, response: CommandResponse) {
+        const cmd = this.commands.find(cmd => cmd.command === command);
+
+        if(cmd) {
+            cmd.response = response;
+            return;
+        }
+
         this.commands.push({
             action: `!${command}`,
+            command,
             response,
         });
     }

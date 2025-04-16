@@ -10,7 +10,7 @@ type BootstrapArgs = {
     databaseURL: string;
 }
 
-export default async function bootstrap(channel: string, commander: Commands, args: BootstrapArgs): Promise<(msg: string, opts?: ChatSayMessageAttributes) => Promise<void>> {
+export default async function bootstrap(channel: string, commander: Commands, args: BootstrapArgs): Promise<(msg: string, opts?: ChatSayMessageAttributes, parseCommand?: boolean) => Promise<void>> {
     const authProvider = new RefreshingAuthProvider({
         clientId: process.env.TWITCH_WOLFY_CLIENT_ID || "",
         clientSecret: process.env.TWITCH_WOLFY_CLIENT_SECRET || "",
@@ -56,9 +56,13 @@ export default async function bootstrap(channel: string, commander: Commands, ar
         }
     });
 
-    return async (msg: string, opts?: ChatSayMessageAttributes) => {
-        let [message, matched] = await commander.process(msg, channel);
-        send(message);
+    return async (msg: string, opts: ChatSayMessageAttributes = {}, parseCommand = true) => {
+        if(parseCommand) {
+            let [message, matched] = await commander.process(msg, channel);
+            send(message);
+        } else {
+            send(msg);
+        }
     };
 }
 

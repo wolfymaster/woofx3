@@ -14,6 +14,12 @@ export interface WoofWoofWoofRequestMessage {
     args: Record<string, string>
 }
 
+interface Command {
+    command: string;
+    type: string;
+    typeValue: string;
+}
+
 dotenv.config({
     path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../', '.env')],
 });
@@ -45,37 +51,91 @@ function woofwoofwoofMessageHandler(command: string, args: Record<string, string
     if (command === 'write_message') {
         send(args.message);
     }
+
+    if(command === 'add_command') {
+        const { command, type, typeValue } = args;
+        addCommand({
+            command,
+            type,
+            typeValue,
+        });
+    }
 }
 
-const commands = await GetCommands({ broadcasterId: process.env.TWITCH_BROADCASTER_ID || '' }, { 
+// Barkloader websocket
+const socket = new WebSocket("ws://localhost:3005");
+socket.addEventListener("message", event => {
+    console.log('recived on socket', event.data);
+    try {
+        const { error, command, args, message } = JSON.parse(event.data);
+        if(error) {
+            console.error(message);
+            return;
+        }
+        if(command) {
+            send(args.message, {}, false);
+        }
+    } catch (err) {
+        console.log('failed to parse websocket message as json');
+    }
+});
+socket.addEventListener("open", event => {
+    console.log('socket opened')
+});
+socket.addEventListener("close", event => {
+    console.log('socket closed')
+});
+socket.addEventListener("error", event => {
+    console.log('socket error', event)
+});
+
+const commands = await GetCommands({ broadcasterId: process.env.TWITCH_BROADCASTER_ID || '' }, {
     baseURL: process.env.DATABASE_PROXY_URL || "",
 });
 
-if(commands.status.code !== "OK") {
+if (commands.status.code !== "OK") {
     console.error('Failed to load commands', commands.status.message);
     process.exit();
 }
 
 // TODO: Handle hot reloading of commands
 
-for(let i = 0; i < commands.commands.length; ++i) {
-    const cmd = commands.commands[i];
-    commander.add(cmd.command, cmd.typeValue);
+for (let i = 0; i < commands.commands.length; ++i) {
+    addCommand(commands.commands[i]);
 }
 
-commander.add('woof', async (text: string) => {
-    const sounds = ['woof1', 'woof2']
-    const rng = Math.floor(Math.random() * sounds.length);
+// Add a new command
+function addCommand(command: Command) {
+    console.log('adding command', command.command);
+    if(command.type === 'function') {
+        commander.add(command.command, async (text: string, user?: string) => {
+            socket.send(JSON.stringify({
+                type: 'invoke',
+                data: {
+                    func: command.command,
+                    args: [text, user],
+                }
+            }));
+            return '';
+        });
+        return;
+    }
+    commander.add(command.command, command.typeValue);
+}
 
-    bus.publish('slobs', JSON.stringify({
-        command: 'alert_message',
-        args: {
-            audioUrl: `https://streamlabs.local.woofx3.tv/${sounds[rng]}.mp3`,
-        }
-    }));
+// commander.add('woof', async (text: string) => {
+//     const sounds = ['woof1', 'woof2']
+//     const rng = Math.floor(Math.random() * sounds.length);
 
-    return 'woofwoof';
-});
+//     bus.publish('slobs', JSON.stringify({
+//         command: 'alert_message',
+//         args: {
+//             audioUrl: `https://streamlabs.local.woofx3.tv/${sounds[rng]}.mp3`,
+//         }
+//     }));
+
+//     return 'woofwoof';
+// });
 
 // commander.add('socials', '🐺 FOLLOW WOLFY 🐺 Instagram: https://instagram.com/wolfymaster Twitter: https://twitter.com/wolfymaster YouTube: https://youtube.com/wolfymaster');
 
@@ -85,9 +145,9 @@ commander.add('woof', async (text: string) => {
 
 // commander.add('fart', '/me @cyburdial farted');
 
-commander.add('lockin', async (text: string, user?: string) => {
-    return `@${user} has engaged flow state`;
-});
+// commander.add('lockin', async (text: string, user?: string) => {
+//     return `@${user} has engaged flow state`;
+// });
 
 // commander.add('skizz', 'WOOOOOOOOOO');
 
@@ -210,35 +270,35 @@ commander.add('sr', async (text: string) => {
 });
 
 // GOVEE CONTROL
-commander.add('light', async (text: string) => {
-    console.log(text);
+// commander.add('light', async (text: string) => {
+//     console.log(text);
 
-    const govee = new Govee();
+//     const govee = new Govee();
 
-    // check for reset
-    if (text === 'reset') {
-        await govee.reset();
-        return '';
-    }
+//     // check for reset
+//     if (text === 'reset') {
+//         await govee.reset();
+//         return '';
+//     }
 
-    // parse text for rbg values
-    if (text.includes(',')) {
-        const rgb = text.split(',');
-        if (rgb.length === 3) {
-            await govee.setColor(+rgb[0].trim(), +rgb[1].trim(), +rgb[2].trim());
-            return ''
-        }
-    }
+//     // parse text for rbg values
+//     if (text.includes(',')) {
+//         const rgb = text.split(',');
+//         if (rgb.length === 3) {
+//             await govee.setColor(+rgb[0].trim(), +rgb[1].trim(), +rgb[2].trim());
+//             return ''
+//         }
+//     }
 
-    // lookup color if given color name
-    const rgb = govee.lookupColor(text);
+//     // lookup color if given color name
+//     const rgb = govee.lookupColor(text);
 
-    if (rgb) {
-        await govee.setColor(rgb[0], rgb[1], rgb[2]);
-    }
+//     if (rgb) {
+//         await govee.setColor(rgb[0], rgb[1], rgb[2]);
+//     }
 
-    return '';
-})
+//     return '';
+// })
 
 // UPDATE STREAM CATEGORY
 commander.add('category', async (text: string) => {
@@ -287,49 +347,49 @@ commander.add('title', async (text: string, user?: string) => {
     return `Stream title updated to: ${text}`;
 });
 
-commander.add('kitty', async (text: string, user?: string) => {
-    if (!user || user.toLowerCase() !== 'kittyclemente') {
-        return 'Sorry, You are not kitty!!'
-    }
-    bus.publish('slobs', JSON.stringify({
-        command: 'alert_message',
-        args: {
-            audioUrl: 'https://streamlabs.local.woofx3.tv/goodkittykitty.mp3',
-        }
-    }));
-    return '';
-});
+// commander.add('kitty', async (text: string, user?: string) => {
+//     if (!user || user.toLowerCase() !== 'kittyclemente') {
+//         return 'Sorry, You are not kitty!!'
+//     }
+//     bus.publish('slobs', JSON.stringify({
+//         command: 'alert_message',
+//         args: {
+//             audioUrl: 'https://streamlabs.local.woofx3.tv/goodkittykitty.mp3',
+//         }
+//     }));
+//     return '';
+// });
 
-commander.add('pixy', async (text: string, user?: string) => {
-    if (!user || user.toLowerCase() !== 'pixyroux') {
-        return 'Sorry, You are not pixyroux!!'
-    }
-    bus.publish('slobs', JSON.stringify({
-        command: 'alert_message',
-        args: {
-            audioUrl: 'https://streamlabs.local.woofx3.tv/beautiful-things.mp3',
-        }
-    }));
-    return '';
-});
+// commander.add('pixy', async (text: string, user?: string) => {
+//     if (!user || user.toLowerCase() !== 'pixyroux') {
+//         return 'Sorry, You are not pixyroux!!'
+//     }
+//     bus.publish('slobs', JSON.stringify({
+//         command: 'alert_message',
+//         args: {
+//             audioUrl: 'https://streamlabs.local.woofx3.tv/beautiful-things.mp3',
+//         }
+//     }));
+//     return '';
+// });
 
-commander.add('wedidit', async () => {
-    bus.publish('slobs', JSON.stringify({
-        command: 'alert_message',
-        args: {
-            audioUrl: 'https://streamlabs.local.woofx3.tv/wedidit.mp3',
-            mediaUrl: 'https://streamlabs.local.woofx3.tv/confetti.gif',
-            duration: 10,
-            options: {
-                view: {
-                    fullScreen: true,
-                }
-            }
-        }
-    }));
+// commander.add('wedidit', async () => {
+//     bus.publish('slobs', JSON.stringify({
+//         command: 'alert_message',
+//         args: {
+//             audioUrl: 'https://streamlabs.local.woofx3.tv/wedidit.mp3',
+//             mediaUrl: 'https://streamlabs.local.woofx3.tv/confetti.gif',
+//             duration: 10,
+//             options: {
+//                 view: {
+//                     fullScreen: true,
+//                 }
+//             }
+//         }
+//     }));
 
-    return 'WE DID IT!';
-});
+//     return 'WE DID IT!';
+// });
 
 commander.add('sc', async (text: string) => {
     let sceneName = '';
@@ -466,23 +526,23 @@ commander.add('color', async (msg: string, user?: string) => {
     return '';
 })
 
-commander.add('confetti', async (msg: string) => {
-    bus.publish('slobs', JSON.stringify({
-        command: 'alert_message',
-        args: {
-            // audioUrl: 'https://streamlabs.local.woofx3.tv/wolf-hype.mp3',
-            mediaUrl: 'https://streamlabs.local.woofx3.tv/confetti.gif',
-            // text: `<3  {primary}${userDisplayName}{primary} subscribed <3`,
-            options: {
-                view: {
-                    fullScreen: true,
-                }
-            }
-        }
-    }));
+// commander.add('confetti', async (msg: string) => {
+//     bus.publish('slobs', JSON.stringify({
+//         command: 'alert_message',
+//         args: {
+//             // audioUrl: 'https://streamlabs.local.woofx3.tv/wolf-hype.mp3',
+//             mediaUrl: 'https://streamlabs.local.woofx3.tv/confetti.gif',
+//             // text: `<3  {primary}${userDisplayName}{primary} subscribed <3`,
+//             options: {
+//                 view: {
+//                     fullScreen: true,
+//                 }
+//             }
+//         }
+//     }));
 
-    return '';
-})
+//     return '';
+// })
 
 // add a command for updating the timer
 commander.add('time', async (msg: string) => {
@@ -500,7 +560,6 @@ commander.add('time', async (msg: string) => {
 
     return 'Timer updated';
 });
-
 
 commander.add('partymode', async (msg: string) => {
     partyMode();
@@ -565,7 +624,7 @@ function parseTime(duration: string): number {
             // Get the number part and the unit from each match.
             const num = parseInt(match);
             const unit = match.includes('m') ? 'm' : 's';
-            
+
             // Add to the respective variable based on the unit.
             if (unit === 'm') {
                 minutes += num;
@@ -574,7 +633,7 @@ function parseTime(duration: string): number {
             }
         }
     }
-    
+
     // Convert minutes and seconds to total seconds
     return minutes * 60 + seconds;
 }
