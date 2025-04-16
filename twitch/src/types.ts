@@ -1,5 +1,9 @@
 import { Logger } from 'winston';
 
+export interface Context {
+    logger: Logger;
+}
+
 export interface TwitchContext {
     apiUrl: string;
     clientId: string;

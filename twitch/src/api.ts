@@ -4,7 +4,7 @@ import { ApiClient, HelixUser } from '@twurple/api';
 import { EventSubWsListener } from '@twurple/eventsub-ws';
 import { EventSubChannelCheerEvent, EventSubChannelBanEvent, EventSubChannelFollowEvent, EventSubChannelRedemptionAddEvent, EventSubChannelSubscriptionEvent, EventSubChannelSubscriptionGiftEvent, EventSubChannelSubscriptionMessageEvent, EventSubChannelRaidEvent } from '@twurple/eventsub-base';
 import * as twitch from './lib';
-import { type TwitchContext, TwitchApiRequestMessage } from './types';
+import { type Context, TwitchApiRequestMessage } from './types';
 import NatsClient, { natsMessageHandler } from './nats';
 import TwitchBootstrap from './twitchBootstrap';
 import Commands from './commands';
@@ -48,13 +48,9 @@ console.log(`===================== STARTING TWITCH ===========================  
 
 const chatMessagesQueue = [];
 
-// let ctx: TwitchContext = {
-//     apiUrl: 'https://api.twitch.tv/helix/',
-//     clientId: process.env.TWITCH_WOLFY_CLIENT_ID || '',
-//     clientSecret: process.env.TWITCH_WOLFY_CLIENT_SECRET || '',
-//     accessToken: token.accessToken,
-//     logger,
-// };
+let ctx: Context = {
+    logger,
+};
 
 
 const twitchApiMessageHandlerWithBroadcaster = (command: string, args: Record<string, string>) => {
@@ -71,14 +67,14 @@ const twitchApiMessageHandlerWithBroadcaster = (command: string, args: Record<st
 try {
     const userId = broadcaster.id;
 
-    console.log('userId', userId);
+    ctx.logger.info('userId', { userId });
 
     listener.onChannelSubscription
 
     listener.onChannelBan(userId, (event: EventSubChannelBanEvent) => {
         let { reason, isPermanent, userDisplayName, userId  } = event;
 
-        console.log(Commands.USER_BANNED, reason, isPermanent, userDisplayName, userId );
+        ctx.logger.info(Commands.USER_BANNED, reason, isPermanent, userDisplayName, userId );
     });
 
     listener.onChannelFollow(userId, userId, async (event: EventSubChannelFollowEvent) => {
@@ -441,20 +437,20 @@ try {
     })
 
     listener.start();
-    console.log('listener started');
+    ctx.logger.info('listener started');
 
 } catch (err: any) {
-    console.error('error:', err.message);
+    ctx.logger.error('error:', err.message);
     process.exit(0);
 }
 
 async function twitchApiMessageHandler(command: string, args: Record<string, string>, broadcaster: HelixUser) {
-    console.log('twitchapi', command, args);
+    ctx.logger.info('twitchapi', { command, args });
 
     const handlers = {
         chatters: () => Handlers.getChatters(apiClient),
         update_stream: () => Handlers.updateStream(apiClient, args),
-        moderate: () => Handlers.moderate(apiClient, args, chatMessagesQueue),
+        moderate: () => Handlers.moderate(ctx, apiClient, args, chatMessagesQueue),
         chatMessage: () => Handlers.chatMessage(chatMessagesQueue, args),
         timeout: () => Handlers.timeoutUser(apiClient, args, broadcaster),
         shoutout: () => Handlers.shoutoutUser(apiClient, args, broadcaster),
@@ -464,14 +460,14 @@ async function twitchApiMessageHandler(command: string, args: Record<string, str
     const handler = handlers[command];
 
     if(!handler) {
-        console.log(`${command} is not a valid command`);
+        ctx.logger.error(`${command} is not a valid command`);
         return;
     }
 
     const result = await handler();
 
     if(result.error) {
-        console.log(handler.errorMsg);
+        ctx.logger.error(handler.errorMsg);
         return;
     }
 

@@ -2,7 +2,7 @@ import { ApiClient, HelixChatChatter, HelixPaginatedResultWithTotal, HelixUser }
 import { ChatAnthropic } from "@langchain/anthropic";
 import { HumanMessage, SystemMessage, AIMessage } from "@langchain/core/messages";
 import { PromptTemplate } from "@langchain/core/prompts";
-import { ErrorHandlerResponse, HandlerResponse, SuccessHandlerResponse } from "./types";
+import { Context, ErrorHandlerResponse, HandlerResponse, SuccessHandlerResponse } from "./types";
 import { tool } from '@langchain/core/tools';
 import { ToolNode } from '@langchain/langgraph/prebuilt';
 import { z } from 'zod';
@@ -53,8 +53,8 @@ export async function updateStream(apiClient: ApiClient, args: { category?: stri
     return success();
 }
 
-export async function moderate(apiClient: ApiClient, args, messageQueue) {
-    console.log('invoking moderate');
+export async function moderate(ctx: Context, apiClient: ApiClient, args, messageQueue) {
+    ctx.logger.info('invoking moderate');
 
     const parser = new JsonOutputParser();
 
@@ -106,13 +106,14 @@ export async function moderate(apiClient: ApiClient, args, messageQueue) {
     });
 
     const userModerationTool = tool((input) => {
-        const { action, username } = input;
+        const { action, username, duration } = input;
         const lowercaseAction = action.toLowerCase();
 
         return JSON.stringify({
             command: lowercaseAction,
             args: {
-                user: username
+                user: username,
+                duration: duration || 10,
             }
         });
     }, {
@@ -120,7 +121,8 @@ export async function moderate(apiClient: ApiClient, args, messageQueue) {
         description: 'perform user moderation tasks',
         schema: z.object({
             username: z.string().describe("The username of the user"),
-            action: z.enum(["TIMEOUT", "BAN", "SHOUTOUT"])
+            action: z.enum(["TIMEOUT", "BAN", "SHOUTOUT"]),
+            duration: z.number().describe("The length of a TIMEOUT in seconds"),
         })
     })
 
@@ -194,11 +196,11 @@ export async function moderate(apiClient: ApiClient, args, messageQueue) {
         try {
             return JSON.parse(aiResponse.messages[aiResponse.messages.length - 1].content as string);
         } catch (err) {
-            console.error(err);
+            ctx.logger.error(err);
             return error('unable to parse aiResponse as JSON');
         }
     } catch (err) {
-        console.error(err);
+        ctx.logger.error(err);
         return error('could not generate command');
     }
 }

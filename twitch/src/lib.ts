@@ -13,6 +13,11 @@ export function makeLogger(opts?: LoggerOptions): winston.Logger {
         return info;
     });
     const logger = winston.createLogger({
+        format: combine(
+            winston.format.timestamp({
+                format: 'YYYY-MM-DD HH:mm:ss'
+            })
+        ),
         transports: [
             new winston.transports.Console({ format: combine(filterCtx(), winston.format.json(), prettyPrint()) }),
         ],
