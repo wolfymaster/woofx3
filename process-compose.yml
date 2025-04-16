@@ -6,6 +6,11 @@ processes:
     description: supertokens auth
     working_dir: auth
 
+  barkloader:
+    command: bun run start
+    description: Plugin Module System
+    working_dir: barkloader
+
   caddy:
     command: "caddy run"
     description: "start caddy proxy"
@@ -13,14 +18,6 @@ processes:
     shutdown:
       command: "caddy stop"
       signal: 15
-
-  counter:
-    command: python3 -m http.server 12000
-    description: Counter
-    working_dir: streamlabs/counter
-    depends_on:
-      caddy:
-        condition: process_started
 
   db:
     command: go run .
@@ -56,14 +53,6 @@ processes:
       caddy:
         condition: process_started
 
-  timer:
-    command: python3 -m http.server 12000
-    description: Countdown timer
-    working_dir: streamlabs/timer
-    depends_on:
-      caddy:
-        condition: process_started
-
   twitch:
     command: bun run src/api.ts
     description: Twitch API + Eventbus
@@ -71,6 +60,11 @@ processes:
     depends_on:
       db:
         condition: process_log_ready
+
+  voice:
+    command: go run ./src --url https://www.twitch.tv/wolfymaster
+    description: Voice control stream
+    working_dir: stream        
 
   woofwoofwoof:
     command: bun run woofwoofwoof/src/woofwoofwoof.ts
