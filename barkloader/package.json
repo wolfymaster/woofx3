@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "start": "bun run index.ts"
+  },
+  "dependencies": {
+    "@nats-io/transport-node": "^3.0.2",
+    "dotenv": "^16.5.0",
+    "nats": "^2.29.3",
+    "wasmoon": "^1.16.0"
+  }
+}
