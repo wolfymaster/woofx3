@@ -1,0 +1,9 @@
+[package]
+name = "barkloader-rust"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+mlua = {  features = ["lua54", "serialize", "vendored"], version = "0.10.3" }
+serde_json = "1.0.140"
+thiserror = "2.0.12"
