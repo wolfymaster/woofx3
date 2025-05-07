@@ -1,0 +1,11 @@
+[package]
+name = "lib_sandbox"
+edition = "2024"
+
+[dependencies]
+mlua = {  features = ["lua54", "serialize", "vendored"], version = "0.10.3" }
+quick-js = "0.4.1"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+tempfile = "3.19.1"
+thiserror = "2.0.12"

@@ -17,7 +17,7 @@ fn main() -> Result<(), error::Error> {
     
     // Create an example invoke request (in a real app, this would come from external input)
     let request = InvokeRequest {
-        function: "module_name/function_name".to_string(),
+        function: "example/main".to_string(),
         args: serde_json::json!({ "key": "value" }),
     };
     
@@ -29,8 +29,6 @@ fn main() -> Result<(), error::Error> {
 }
 
 fn parse_config() -> Result<application::Config, error::Error> {
-    // Parse command line arguments or config file
-    // For MVP, could just return a default config
     Ok(application::Config {
         modules_dir: "modules".into(),
     })

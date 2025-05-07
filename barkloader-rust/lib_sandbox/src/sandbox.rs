@@ -10,12 +10,12 @@ pub struct Config {
     pub modules_dir: PathBuf,
 }
 
-pub struct Application {
+pub struct Sandbox {
     module_manager: ModuleManager,
     function_executor: FunctionExecutor,
 }
 
-impl Application {
+impl Sandbox {
     pub fn new(config: Config) -> Result<Self, Error> {
         Ok(Self {
             module_manager: ModuleManager::new(config.modules_dir)?,
@@ -24,13 +24,8 @@ impl Application {
     }
     
     pub fn invoke(&self, request: InvokeRequest) -> Result<Value, Error> {
-        // Get function from module manager
         let (module, function) = self.module_manager.get_function(&request.function)?;
-        
-        // Execute function
         let result = self.function_executor.execute(&function, request.args)?;
-        
-        // Post-process result
         let processed_result = module.post_process(result)?;
         
         Ok(processed_result)

@@ -11,6 +11,9 @@ pub enum Error {
     #[error("Lua error: {0}")]
     LuaError(#[from] mlua::Error),
     
+    #[error("QuickJS error: {0}")]
+    QuickJSAdapterError(#[from] quick_js::ContextError),
+
     #[error("Modules directory not found")]
     ModulesDirNotFound,
     
