@@ -46,4 +46,7 @@ pub enum Error {
     
     #[error("Execution timeout")]
     ExecutionTimeout,
+
+    #[error("QuickJS execution error: {0}")]
+    QuickJSExecutionError(#[from] quick_js::ExecutionError),
 }

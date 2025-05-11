@@ -3,4 +3,6 @@ mod function_executor;
 pub mod models;
 mod module_manager;
 mod runtime;
-pub mod sandbox;
+mod sandbox;
+
+pub use sandbox::{Config, Sandbox, SandboxFactory};

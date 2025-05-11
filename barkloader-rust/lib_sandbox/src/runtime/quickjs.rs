@@ -1,9 +1,8 @@
-use std::collections::HashMap;
-
 use crate::error::Error;
 use crate::runtime::RuntimeAdapter;
 use quick_js::{Context, JsValue};
 use serde_json::Value;
+use std::collections::HashMap;
 
 pub struct QuickJSAdapter {
     context: Context,
@@ -18,6 +17,11 @@ impl QuickJSAdapter {
     }
 
     fn json_value_to_js_hashmap(&self, value: Value) -> Result<HashMap<String, JsValue>, Box<dyn std::error::Error>> {
+        // if args is null, set it to an empty object
+        if value.is_null() {
+            return Ok(HashMap::new());
+        }
+                
         match value {
             Value::Object(map) => {
                 let mut result = HashMap::new();
@@ -91,17 +95,11 @@ impl QuickJSAdapter {
 
 impl RuntimeAdapter for QuickJSAdapter {
     fn execute(&self, code: &str, args: Value) -> Result<Value, Error> {
-        let js_args = self.json_value_to_js_hashmap(args).unwrap();
-
-        self.context
-            .eval(code)
-            .map_err(|e| Error::QuickJSAdapterError(quick_js::ContextError::Execution(e)))?;
-
+        let js_args = self.json_value_to_js_hashmap(args).unwrap();       
+        self.context.eval(code)?;
         let result = self
             .context
-            .call_function("main", [js_args])
-            .map_err(|e| Error::QuickJSAdapterError(quick_js::ContextError::Execution(e)))?;
-
+            .call_function("main", [js_args])?;
         self.js_to_json(result)
     }
 

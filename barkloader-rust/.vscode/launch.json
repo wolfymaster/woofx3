@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceRoot}/target/debug/barkloader",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "MODULES_DIR": "${workspaceRoot}/lib_sandbox/tests/modules",
+                "REPOSITORY_TYPE": "file"
+            },
+            "console": "externalTerminal"
+        }
+    ]
+}

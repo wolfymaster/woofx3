@@ -2,3 +2,25 @@
 name = "barkloader"
 version = "0.1.0"
 edition = "2024"
+
+[dependencies]
+actix-web = "4.10"
+actix-ws = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+env_logger = "0.10"
+anyhow = "1.0.98"
+futures-util = "0.3.31"
+log = "0.4.27"
+actix-multipart = "0.7.2"
+futures = "0.3.31"
+uuid = "1.16.0"
+
+[dependencies.lib_repository]
+path = "../lib_repository"
+
+[dependencies.lib_sandbox]
+path = "../lib_sandbox"
