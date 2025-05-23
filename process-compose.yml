@@ -53,6 +53,10 @@ processes:
       caddy:
         condition: process_started
 
+  temporal-server:
+    command: temporal server start-dev
+    description: Temporal Server
+
   twitch:
     command: bun run src/api.ts
     description: Twitch API + Eventbus

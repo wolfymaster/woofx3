@@ -156,6 +156,36 @@ func MediaAlert(ctx context.Context, params map[string]any) (ExecuteActionResult
 	}, nil
 }
 
+func RunFunction(ctx context.Context, params map[string]any) (ExecuteActionResult, error) {
+
+}
+
+// map the action to a topic, command, params validator function, and an activity
+// check that the action is valid (in the map)
+// pass the args to the params validator function (fail if invalid)
+// call the activity, passing in the topic and the params
+// 	- we can have a generic activity that just returns a ExecuteActionResult and exports the params
+//	- For more special activities we can invoke the activity with the same params, but have our own logic
+// This should allow us to have a long list of activities that are mostly generic
+// Special ones might be like RunFunction where we want to export the return value of the function as well
+
+// obs and streamlabs should really just be calls to slobs
+func Obs(ctx context.Context, params map[string]any) (ExecuteActionResult, error) {
+
+}
+
+func StreamLabs(ctx context.Context, params map[string]any) (ExecuteActionResult, error) {
+
+}
+
+func SendChat(ctx context.Context, params map[string]any) (ExecuteActionResult, error) {
+
+}
+
+func Twitch(ctx context.Context, params map[string]any) (ExecuteActionResult, error) {
+
+}
+
 // resolveParameterReferences resolves parameter references in the workflow
 func resolveParameterReferences(params map[string]any, context *WorkflowContext) (map[string]any, error) {
 	resolved := make(map[string]any)
