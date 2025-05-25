@@ -6,7 +6,7 @@ import (
 
 	"maps"
 
-	"github.com/wolfymaster/woofx3/workflow/internal/core"
+	"github.com/wolfymaster/woofx3/wooflow/internal/core"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -140,14 +140,29 @@ func executeAggregationWait(ctx workflow.Context, wfCtx *WorkflowContext, step c
 		return fmt.Errorf("invalid time window: %w", err)
 	}
 
+	sum := 0.0
+	var result core.Event
+
+	selector := workflow.NewSelector(ctx)
+
 	// Create a channel for aggregation updates
 	aggCh := workflow.GetSignalChannel(ctx, agg.EventType)
 
-	sum := 0.0
+	// Set timeout
+	timeoutCh := workflow.NewChannel(ctx)
+	selector.AddFuture(workflow.NewTimer(ctx, timeWindow), func(f workflow.Future) {
+		// Time window expired - terminate workflow
+		workflow.GetLogger(ctx).Info("Aggregation time window expired - terminating workflow")
+		timeoutCh.Send(ctx, fmt.Errorf("aggregation time window expired"))
+	})
 
-	// Wait for aggregation to reach threshold
-	selector := workflow.NewSelector(ctx)
+	// Receive event
 	selector.AddReceive(aggCh, func(ch workflow.ReceiveChannel, more bool) {
+		workflow.GetLogger(ctx).Info("Running AddRecieve")
+		if !more {
+			wfCtx.Logger.Info("there is no more")
+		}
+
 		var result core.Event
 		ch.Receive(ctx, &result)
 		aggregationField := "value"
@@ -160,44 +175,24 @@ func executeAggregationWait(ctx workflow.Context, wfCtx *WorkflowContext, step c
 		wfCtx.Logger.Info("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", "aggregationField", aggregationField)
 
 		sum += result.Payload[aggregationField].(float64)
+	})
 
-		wfCtx.Logger.Info("sum is", "sum", sum)
+	for {
+		// Wait for either aggregation completion or timeout
+		selector.Select(ctx)
 
+		// Check if we timed out
+		var timeoutErr error
+		if timeoutCh.ReceiveAsync(&timeoutErr); timeoutErr != nil {
+			return timeoutErr
+		}
+
+		// Aggregation Threshold is met
 		if sum >= float64(agg.Threshold) {
 			wfCtx.StepResults[step.ID] = result
+			return nil
 		}
-	})
-
-	// Set timeout
-	timeoutCh := workflow.NewChannel(ctx)
-	selector.AddFuture(workflow.NewTimer(ctx, timeWindow), func(f workflow.Future) {
-		// Time window expired - terminate workflow
-		workflow.GetLogger(ctx).Info("Aggregation time window expired - terminating workflow")
-		timeoutCh.Send(ctx, fmt.Errorf("aggregation time window expired"))
-	})
-
-	// Wait for either aggregation completion or timeout
-	selector.Select(ctx)
-
-	err = workflow.ExecuteActivity(
-		workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-			StartToCloseTimeout: time.Minute,
-		}),
-		RemoveWaitingWorkflow,
-		workflow.GetInfo(ctx).WorkflowExecution.ID,
-		agg.EventType,
-	).Get(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to register waiting workflow: %w", err)
 	}
-
-	// Check if we timed out
-	var timeoutErr error
-	if timeoutCh.Receive(ctx, &timeoutErr); timeoutErr != nil {
-		return timeoutErr
-	}
-
-	return nil
 }
 
 // executeConditionWait waits for a condition to be met
