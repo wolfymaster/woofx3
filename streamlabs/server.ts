@@ -19,16 +19,6 @@ const host = process.env.SLOBS_HOST || '127.0.0.1';
 const baseUrl = `http://${host}:${PORT}/api`;
 const slobsToken = process.env.SLOBS_RPC_TOKEN || '';
 
-// Message Bus
-const bus = await NatsClient();
-
-// listen on the eventbus for api calls
-(async () => {
-  for await (const msg of bus.subscribe('slobs')) {
-    natsMessageHandler<SlobsRequestMessage>(msg, slobsMessageHander);
-  }
-})();
-
 const APP_ID = "8c28dd52-4859-4560-8d45-2408b064b248";
 const db = init({ appId: APP_ID, adminToken: process.env.INSTANTDB_ADMIN_TOKEN || '' });
 
@@ -68,6 +58,16 @@ const manager = await Manager.New(ctx, obs);
 await manager.init();
 
 const inMemoryStorageKV = {};
+
+// Message Bus
+const bus = await NatsClient();
+
+// listen on the eventbus for api calls
+(async () => {
+  for await (const msg of bus.subscribe('slobs')) {
+    natsMessageHandler<SlobsRequestMessage>(msg, slobsMessageHander);
+  }
+})();
 
 // Express middleware
 app.use(
