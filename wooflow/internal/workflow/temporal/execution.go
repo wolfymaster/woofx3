@@ -141,38 +141,26 @@ func executeAggregationWait(ctx workflow.Context, wfCtx *WorkflowContext, step c
 	}
 
 	sum := 0.0
-	var result core.Event
+	timeout := false
 
 	selector := workflow.NewSelector(ctx)
 
-	// Create a channel for aggregation updates
-	aggCh := workflow.GetSignalChannel(ctx, agg.EventType)
-
 	// Set timeout
-	timeoutCh := workflow.NewChannel(ctx)
 	selector.AddFuture(workflow.NewTimer(ctx, timeWindow), func(f workflow.Future) {
 		// Time window expired - terminate workflow
 		workflow.GetLogger(ctx).Info("Aggregation time window expired - terminating workflow")
-		timeoutCh.Send(ctx, fmt.Errorf("aggregation time window expired"))
+		timeout = true
 	})
 
 	// Receive event
+	var result core.Event
+	aggCh := workflow.GetSignalChannel(ctx, agg.EventType)
 	selector.AddReceive(aggCh, func(ch workflow.ReceiveChannel, more bool) {
-		workflow.GetLogger(ctx).Info("Running AddRecieve")
-		if !more {
-			wfCtx.Logger.Info("there is no more")
-		}
-
-		var result core.Event
 		ch.Receive(ctx, &result)
 		aggregationField := "value"
 		if agg.Field != "" {
 			aggregationField = agg.Field
 		}
-
-		wfCtx.Logger.Info("*******************************", "Payload", result.Payload)
-		wfCtx.Logger.Info("*******************************", "amount", result.Payload["amount"])
-		wfCtx.Logger.Info("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", "aggregationField", aggregationField)
 
 		sum += result.Payload[aggregationField].(float64)
 	})
@@ -182,9 +170,8 @@ func executeAggregationWait(ctx workflow.Context, wfCtx *WorkflowContext, step c
 		selector.Select(ctx)
 
 		// Check if we timed out
-		var timeoutErr error
-		if timeoutCh.ReceiveAsync(&timeoutErr); timeoutErr != nil {
-			return timeoutErr
+		if timeout {
+			return fmt.Errorf("aggregation time window expired")
 		}
 
 		// Aggregation Threshold is met
