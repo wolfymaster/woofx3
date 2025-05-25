@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { ApiClient, HelixUser } from '@twurple/api';
 import { EventSubWsListener } from '@twurple/eventsub-ws';
-import { EventSubChannelCheerEvent, EventSubChannelBanEvent, EventSubChannelFollowEvent, EventSubChannelRedemptionAddEvent, EventSubChannelSubscriptionEvent, EventSubChannelSubscriptionGiftEvent, EventSubChannelSubscriptionMessageEvent, EventSubChannelRaidEvent } from '@twurple/eventsub-base';
+import { EventSubChannelCheerEvent, EventSubChannelBanEvent, EventSubChannelFollowEvent, EventSubChannelRedemptionAddEvent, EventSubChannelSubscriptionEvent, EventSubChannelSubscriptionGiftEvent, EventSubChannelSubscriptionMessageEvent, EventSubChannelRaidEvent, EventSubChannelChatNotificationEvent, EventSubChannelModerationEvent } from '@twurple/eventsub-base';
 import * as twitch from './lib';
 import { type Context, TwitchApiRequestMessage } from './types';
 import NatsClient, { natsMessageHandler } from './nats';
@@ -69,12 +69,10 @@ try {
 
     ctx.logger.info('userId', { userId });
 
-    listener.onChannelSubscription
-
     listener.onChannelBan(userId, (event: EventSubChannelBanEvent) => {
-        let { reason, isPermanent, userDisplayName, userId  } = event;
+        let { reason, isPermanent, userDisplayName, userId } = event;
 
-        ctx.logger.info(Commands.USER_BANNED, reason, isPermanent, userDisplayName, userId );
+        ctx.logger.info(Commands.USER_BANNED, reason, isPermanent, userDisplayName, userId);
     });
 
     listener.onChannelFollow(userId, userId, async (event: EventSubChannelFollowEvent) => {
@@ -92,13 +90,13 @@ try {
             }, {
                 baseURL: process.env.DATABASE_PROXY_URL || "",
             });
-        } catch(err) {
+        } catch (err) {
             console.error(err);
         }
 
         bus.publish('slobs', JSON.stringify({
             command: 'alert_message',
-            args: { 
+            args: {
                 audioUrl: 'https://streamlabs.local.woofx3.tv/pleasure.mp3',
                 mediaUrl: 'https://media.tenor.com/LdHGHWDh0Y8AAAPo/look-at-you-i-see-you.mp4',
                 text: `<3  {primary}${userDisplayName}{primary} followed <3`,
@@ -116,7 +114,7 @@ try {
 
         bus.publish('slobs', JSON.stringify({
             command: 'updateTime',
-            args: { 
+            args: {
                 timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
                 valueInSeconds: 60,
             }
@@ -150,7 +148,7 @@ try {
 
         const { message, bits, isAnonymous, userDisplayName, userId } = evt;
 
-        if(!isAnonymous && userId) {
+        if (!isAnonymous && userId) {
             try {
                 await CreateUserEvent({
                     event: {
@@ -164,10 +162,10 @@ try {
                 }, {
                     baseURL: process.env.DATABASE_PROXY_URL || "",
                 });
-            } catch(err) {
+            } catch (err) {
                 console.error(err);
             }
-            
+
         } else {
             console.log('assuming this was an annonymous cheer?', message, userDisplayName, userId);
         }
@@ -185,7 +183,7 @@ try {
 
         bus.publish('slobs', JSON.stringify({
             command: 'updateTime',
-            args: { 
+            args: {
                 timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
                 valueInSeconds: bits,
             }
@@ -200,7 +198,7 @@ try {
 
         bus.publish('slobs', JSON.stringify({
             command: 'updateTime',
-            args: { 
+            args: {
                 timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
                 valueInSeconds: 600,
             }
@@ -223,15 +221,15 @@ try {
             }, {
                 baseURL: process.env.DATABASE_PROXY_URL || "",
             });
-        } catch(err) {
+        } catch (err) {
             console.error(err);
         }
 
-        const suborsubs = amount > 1 ? 'subscriptions': 'subscription';
+        const suborsubs = amount > 1 ? 'subscriptions' : 'subscription';
 
         bus.publish('slobs', JSON.stringify({
             command: 'alert_message',
-            args: { 
+            args: {
                 audioUrl: 'https://streamlabs.local.woofx3.tv/allinthistogether.mp3',
                 mediaUrl: 'https://media.tenor.com/MojW2yr1vFoAAAPo/money-money-money.mp4',
                 text: `$$ {primary}${gifterDisplayName}{primary} gifted {primary}${amount}{primary} ${suborsubs} $$`,
@@ -266,22 +264,22 @@ try {
             }, {
                 baseURL: process.env.DATABASE_PROXY_URL || "",
             });
-        } catch(err) {
+        } catch (err) {
             console.error(err);
         }
 
         bus.publish('slobs', JSON.stringify({
             command: 'updateTime',
-            args: { 
+            args: {
                 timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
                 valueInSeconds: 120,
             }
         }));
 
-        if(!isGift) {
+        if (!isGift) {
             bus.publish('slobs', JSON.stringify({
                 command: 'alert_message',
-                args: { 
+                args: {
                     audioUrl: 'https://streamlabs.local.woofx3.tv/wolf-hype.mp3',
                     mediaUrl: 'https://media.tenor.com/bj2uMQRTdSEAAAPo/dog-husky.mp4',
                     text: `<3  {primary}${userDisplayName}{primary} subscribed <3`,
@@ -317,13 +315,13 @@ try {
             }, {
                 baseURL: process.env.DATABASE_PROXY_URL || "",
             });
-        } catch(err) {
+        } catch (err) {
             console.error(err);
         }
 
         bus.publish('slobs', JSON.stringify({
             command: 'alert_message',
-            args: { 
+            args: {
                 audioUrl: 'https://streamlabs.local.woofx3.tv/wolf-hype.mp3',
                 mediaUrl: 'https://media.tenor.com/bj2uMQRTdSEAAAPo/dog-husky.mp4',
                 text: `<3  {primary}${userDisplayName}{primary} subscribed <3`,
@@ -342,7 +340,7 @@ try {
     listener.onChannelRedemptionAdd(userId, async (evt: EventSubChannelRedemptionAddEvent) => {
         const { rewardId, rewardCost, rewardPrompt, rewardTitle, userId, userDisplayName, input } = evt;
 
-        switch(rewardId) {
+        switch (rewardId) {
             case '7e9e40e6-1ee4-43ec-be38-252bec1f89d4':
                 try {
                     const response = await fetch('https://api.console.tts.monster/generate', {
@@ -355,29 +353,29 @@ try {
                             "message": input
                         })
                     });
-    
+
                     const data = await response.json();
-    
+
                     bus.publish('slobs', JSON.stringify({
                         command: 'alert_message',
-                        args: { 
+                        args: {
                             audioUrl: data.url,
                             // mediaUrl: 'https://media.tenor.com/LdHGHWDh0Y8AAAPo/look-at-you-i-see-you.mp4',
                             // text: `{primary}${userDisplayName}{primary} followed <3`,
                             // duration: 6,
                         }
-                    }))    
+                    }))
                 } catch (err) {
                     console.error(err);
                 }
-                
-            break;
 
-            case '42c021b1-5ed3-4ff4-9c38-d8a3ec50867f': 
+                break;
+
+            case '42c021b1-5ed3-4ff4-9c38-d8a3ec50867f':
                 console.log('generating complement for: ', userDisplayName);
                 // go get a complement
                 const complement = await Handlers.complement(apiClient, { user: userDisplayName });
-                
+
                 console.log('generated complement: ', complement);
 
                 const response = await fetch('https://api.console.tts.monster/generate', {
@@ -395,16 +393,16 @@ try {
 
                 bus.publish('slobs', JSON.stringify({
                     command: 'alert_message',
-                    args: { 
+                    args: {
                         audioUrl: data.url,
                     }
                 }));
-            break;
+                break;
 
-            case 'eb053955-a188-4b84-a79f-b8d80ce22caf': 
+            case 'eb053955-a188-4b84-a79f-b8d80ce22caf':
                 const targetUser = input.trim().replace(/[^a-zA-Z0-9\s]/g, '');
                 console.log('timeout user for 5 minutes: ', targetUser);
-                
+
                 bus.publish('twitchapi', JSON.stringify({
                     command: 'timeout',
                     args: {
@@ -412,29 +410,52 @@ try {
                         duration: 300,
                     }
                 }));
-            break;
+                break;
 
             default:
                 console.log('nothing to do for rewardId: ', rewardId)
         }
 
-        console.log( rewardId, rewardCost, rewardPrompt, rewardTitle, userId, userDisplayName, input)
+        console.log(rewardId, rewardCost, rewardPrompt, rewardTitle, userId, userDisplayName, input)
     });
 
-    listener.onChannelRaidTo(userId, async (evt: EventSubChannelRaidEvent) => {
-        console.log('incoming raid');
+    // need to use moderate to get moderator actions which includes raid
+    listener.onChannelModerate(userId, userId, (evt: EventSubChannelModerationEvent) => {
+        const { moderationAction, moderatorDisplayName } = evt;
+
+        ctx.logger.info(`moderation action: ${moderationAction} by ${moderatorDisplayName}`);
+
+        switch(moderationAction) {
+            case 'raid':
+                bus.publish('woofwoofwoof', JSON.stringify({
+                    command: 'write_message',
+                    args: {
+                        message: '!raid'
+                    }
+                }));
+            break;
+        }        
     })
 
+    // when receiving a raid to my channel
+    listener.onChannelRaidTo(userId, async (evt: EventSubChannelRaidEvent) => {
+        const { viewers, raidingBroadcasterName, raidingBroadcasterId } = evt;
+        ctx.logger.info(`incoming raid from ${raidingBroadcasterName} with ${viewers} viewers`);
+    });
+
+    // when raiding out to another channel is complete
     listener.onChannelRaidFrom(userId, async (evt: EventSubChannelRaidEvent) => {
-        console.log('raiding out')
-        
-        bus.publish('woofwoofwoof', JSON.stringify({
-            command: 'write_message',
-            args: { 
-                message: '!raid'
-            }
-        }))   
-    })
+        const { raidedBroadcasterName, viewers } = evt;
+
+        ctx.logger.info(`raiding out to ${raidedBroadcasterName} with ${viewers} viewers`);
+    });
+
+    // special chat notifications like announcements, raid, unraid, ect
+    listener.onChannelChatNotification(broadcaster, broadcaster, (evt: EventSubChannelChatNotificationEvent) => {
+        let { messageText, type } = evt;
+
+        ctx.logger.info('received chat notification', { messageText, type });
+    });
 
     listener.start();
     ctx.logger.info('listener started');
@@ -459,20 +480,20 @@ async function twitchApiMessageHandler(command: string, args: Record<string, str
 
     const handler = handlers[command];
 
-    if(!handler) {
+    if (!handler) {
         ctx.logger.error(`${command} is not a valid command`);
         return;
     }
 
     const result = await handler();
 
-    if(result.error) {
+    if (result.error) {
         ctx.logger.error(handler.errorMsg);
         return;
     }
 
     // if a command was returned, we want to reprocess
-    if(result.command) {
+    if (result.command) {
         await twitchApiMessageHandler(result.command, result.args, broadcaster);
     }
 }

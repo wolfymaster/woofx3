@@ -14,7 +14,7 @@ const app = express();
 const port = 9000;
 const auth_base_url = 'https://id.twitch.tv/oauth2/authorize';
 const redirect_uri = `http://localhost:${port}/auth/twitch/callback`;
-const scopes = ['user:read:email', 'user:bot', 'user:write:chat', 'chat:read', 'chat:edit'];
+const scopes = ['user:read:email', 'user:bot', 'user:write:chat', 'user:read:chat', 'chat:read', 'chat:edit'];
 const adminScopes = [
     'bits:read',
     'channel:manage:broadcast',
@@ -24,11 +24,18 @@ const adminScopes = [
     'channel:read:predictions', 
     'channel:read:redemptions', 
     'channel:read:subscriptions', 
+    'moderator:manage:blocked_terms',
     'moderator:manage:shoutouts', 
     'moderator:manage:banned_users',
     'moderator:read:chatters',
+    'moderator:read:chat_messages',
+    'moderator:read:chat_settings',
     'moderator:read:followers',
-]
+    'moderator:read:moderators',
+    'moderator:read:unban_requests',
+    'moderator:read:warnings',
+    'moderator:read:vips',
+];
 
 const clientId = process.env.TWITCH_WOLFY_CLIENT_ID || "";
 const clientSecret = process.env.TWITCH_WOLFY_CLIENT_SECRET || "";
