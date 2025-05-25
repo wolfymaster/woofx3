@@ -241,6 +241,9 @@ commander.add('sr', async (text: string) => {
 
     await spotify.refresh();
 
+    // select a song and play it via spotify
+    const deviceId = 'bbf76ad22cd4cafc8f15af3376bbfa88fb408dcf' // computer device id
+
     // if url, attempt to parse
     if (text.includes('open.spotify.com/track')) {
         const regex = /(?:https?:\/\/)?open\.spotify\.com\/track\/([a-zA-Z0-9]+)(?:\?|$)/;
@@ -251,7 +254,8 @@ commander.add('sr', async (text: string) => {
 
         const song = await spotify.getTrack(trackId);
 
-        await spotify.addToPlaylist(song);
+        // await spotify.addToPlaylist(song);
+        await spotify.play(song, deviceId);
 
         return `Added to queue: ${song.name} by ${song.artist}`;
     }
@@ -261,8 +265,6 @@ commander.add('sr', async (text: string) => {
     // search spotify "smartly"
     const firstResult = results[0];
 
-    // select a song and play it via spotify
-    const deviceId = 'bbf76ad22cd4cafc8f15af3376bbfa88fb408dcf' // computer device id
     // await spotify.addToPlaylist(firstResult);
     await spotify.play(firstResult, deviceId);
 
