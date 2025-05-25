@@ -6,9 +6,10 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/wolfymaster/woofx3/workflow/internal/core"
-	"github.com/wolfymaster/woofx3/workflow/internal/ports"
+	"github.com/wolfymaster/woofx3/wooflow/internal/core"
+	"github.com/wolfymaster/woofx3/wooflow/internal/ports"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/worker"
 )
 
@@ -22,6 +23,7 @@ type Client struct {
 	taskQueue    string
 	nc           *nats.Conn
 	activities   map[string]func(context.Context, map[string]any) (ExecuteActionResult, error)
+	logger       log.Logger
 }
 
 // NewClient creates a new Temporal client
@@ -32,6 +34,7 @@ func NewClient(
 	eventRepo ports.EventRepository,
 	workflowRepo ports.WorkflowDefinitionRepository,
 	nc *nats.Conn,
+	logger log.Logger,
 ) (*Client, error) {
 	// Create Temporal client
 	c, err := client.Dial(client.Options{
@@ -58,6 +61,7 @@ func NewClient(
 		taskQueue:    taskQueue,
 		nc:           nc,
 		activities:   make(map[string]func(context.Context, map[string]any) (ExecuteActionResult, error)),
+		logger:       logger,
 	}
 
 	// Set global client instance
@@ -104,7 +108,7 @@ func (c *Client) HandleEvent(ctx context.Context, event *core.Event) error {
 
 	// 3. Start new workflow instances
 	for _, def := range definitions {
-		if def.Trigger != nil && def.Trigger.Event == event.Type {
+		if def.Trigger != nil && def.Trigger.Event == event.Type && EvaluateConditions(event.Payload, def.Trigger.Condition) {
 			// Start workflow
 			workflowID := fmt.Sprintf("%s-%s", def.ID, event.ID)
 			_, err := c.client.ExecuteWorkflow(
@@ -129,7 +133,10 @@ func (c *Client) HandleEvent(ctx context.Context, event *core.Event) error {
 	waitingWorkflows := c.state.GetWaitingWorkflows(event.Type)
 	for _, workflowID := range waitingWorkflows {
 		if err := c.client.SignalWorkflow(ctx, workflowID, "", event.Type, event); err != nil {
-			return fmt.Errorf("failed to signal workflow %s: %w", workflowID, err)
+			// log that we couldn't send the signal, log the error
+			c.logger.Error("failed to signal workflow", "workflowId", workflowID, "error", err)
+			// remove workfow from waiting
+			c.state.RemoveWaitingWorkflow(event.Type, workflowID)
 		}
 	}
 
