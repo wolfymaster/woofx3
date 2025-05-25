@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/wolfymaster/woofx3/workflow/internal/core"
+	"github.com/wolfymaster/woofx3/wooflow/internal/core"
 )
 
 // PostgresWorkflowDefinitionRepository implements the WorkflowDefinitionRepository interface using PostgreSQL

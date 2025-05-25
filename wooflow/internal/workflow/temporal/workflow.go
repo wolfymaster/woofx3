@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wolfymaster/woofx3/workflow/internal/core"
+	"github.com/wolfymaster/woofx3/wooflow/internal/core"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/workflow"
 )
@@ -183,7 +183,7 @@ func DynamicWorkflow(ctx workflow.Context, input DynamicWorkflowInput) (*Workflo
 		}),
 		UpdateWorkflowState,
 		workflow.GetInfo(ctx).WorkflowExecution.ID,
-		map[string]interface{}{
+		map[string]any{
 			"status": "completed",
 		},
 	).Get(ctx, nil)

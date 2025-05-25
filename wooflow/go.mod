@@ -1,4 +1,4 @@
-module github.com/wolfymaster/woofx3/workflow
+module github.com/wolfymaster/woofx3/wooflow
 
 go 1.23.0
 

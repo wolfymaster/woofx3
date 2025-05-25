@@ -10,20 +10,20 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/spf13/viper"
 
-	"github.com/wolfymaster/woofx3/workflow/internal/adapters/sqlite"
-	"github.com/wolfymaster/woofx3/workflow/internal/core"
+	"github.com/wolfymaster/woofx3/wooflow/internal/adapters/sqlite"
+	"github.com/wolfymaster/woofx3/wooflow/internal/core"
 )
 
 func main() {
+	// Setup logger
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
 	// Load configuration
 	viper.SetConfigFile("config.yaml")
 	if err := viper.ReadInConfig(); err != nil {
 		slog.Error("failed to read config", "error", err)
 		os.Exit(1)
 	}
-
-	// Setup logger
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	// Initialize SQLite repository
 	workflowRepo := sqlite.NewWorkflowDefinitionRepository()

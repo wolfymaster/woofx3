@@ -15,9 +15,9 @@ import (
 	"github.com/nats-io/nkeys"
 	"github.com/spf13/viper"
 
-	"github.com/wolfymaster/woofx3/workflow/internal/adapters/sqlite"
-	"github.com/wolfymaster/woofx3/workflow/internal/core"
-	"github.com/wolfymaster/woofx3/workflow/internal/workflow/temporal"
+	"github.com/wolfymaster/woofx3/wooflow/internal/adapters/sqlite"
+	"github.com/wolfymaster/woofx3/wooflow/internal/core"
+	"github.com/wolfymaster/woofx3/wooflow/internal/workflow/temporal"
 )
 
 func main() {
@@ -51,6 +51,7 @@ func main() {
 		eventRepo,
 		workflowRepo,
 		nc,
+		logger,
 	)
 	if err != nil {
 		logger.Error("failed to create Temporal client", "error", err)

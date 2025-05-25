@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"github.com/wolfymaster/woofx3/workflow/internal/core"
+	"github.com/wolfymaster/woofx3/wooflow/internal/core"
 )
 
 // WorkflowEngine defines the interface for workflow execution

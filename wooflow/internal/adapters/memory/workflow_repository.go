@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/wolfymaster/woofx3/workflow/internal/core"
-	"github.com/wolfymaster/woofx3/workflow/internal/ports"
+	"github.com/wolfymaster/woofx3/wooflow/internal/core"
+	"github.com/wolfymaster/woofx3/wooflow/internal/ports"
 )
 
 // WorkflowDefinitionRepository implements the WorkflowDefinitionRepository interface using in-memory storage

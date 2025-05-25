@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"github.com/wolfymaster/woofx3/workflow/internal/core"
+	"github.com/wolfymaster/woofx3/wooflow/internal/core"
 )
 
 // WorkflowDefinitionRepository defines the interface for workflow definition storage

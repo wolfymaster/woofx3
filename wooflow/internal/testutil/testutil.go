@@ -12,11 +12,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	gnats "github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/require"
-	"github.com/wolfymaster/woofx3/workflow/internal/adapters/nats"
-	"github.com/wolfymaster/woofx3/workflow/internal/adapters/temporal"
-	"github.com/wolfymaster/woofx3/workflow/internal/core"
-	"github.com/wolfymaster/woofx3/workflow/internal/domain"
-	"github.com/wolfymaster/woofx3/workflow/internal/ports"
+	"github.com/wolfymaster/woofx3/wooflow/internal/adapters/nats"
+	"github.com/wolfymaster/woofx3/wooflow/internal/adapters/temporal"
+	"github.com/wolfymaster/woofx3/wooflow/internal/core"
+	"github.com/wolfymaster/woofx3/wooflow/internal/domain"
+	"github.com/wolfymaster/woofx3/wooflow/internal/ports"
 	"go.temporal.io/sdk/client"
 )
 

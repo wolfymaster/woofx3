@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/wolfymaster/woofx3/workflow/internal/adapters/postgres"
-	"github.com/wolfymaster/woofx3/workflow/internal/core"
-	"github.com/wolfymaster/woofx3/workflow/internal/testutil"
+	"github.com/wolfymaster/woofx3/wooflow/internal/adapters/postgres"
+	"github.com/wolfymaster/woofx3/wooflow/internal/core"
+	"github.com/wolfymaster/woofx3/wooflow/internal/testutil"
 )
 
 func TestWorkflowDefinitionRepository(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 
 	gnats "github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/require"
-	"github.com/wolfymaster/woofx3/workflow/internal/core"
-	"github.com/wolfymaster/woofx3/workflow/internal/testutil"
+	"github.com/wolfymaster/woofx3/wooflow/internal/core"
+	"github.com/wolfymaster/woofx3/wooflow/internal/testutil"
 )
 
 func TestConsumer_HandleEvent(t *testing.T) {

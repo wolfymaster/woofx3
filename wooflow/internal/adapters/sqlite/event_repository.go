@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/wolfymaster/woofx3/workflow/internal/core"
+	"github.com/wolfymaster/woofx3/wooflow/internal/core"
 )
 
 // EventRepository implements core.EventRepository using SQLite

@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/nats-io/nats.go"
-	"github.com/wolfymaster/woofx3/workflow/internal/core"
-	"github.com/wolfymaster/woofx3/workflow/internal/ports"
-	"github.com/wolfymaster/woofx3/workflow/internal/workflow/temporal"
+	"github.com/wolfymaster/woofx3/wooflow/internal/core"
+	"github.com/wolfymaster/woofx3/wooflow/internal/ports"
+	"github.com/wolfymaster/woofx3/wooflow/internal/workflow/temporal"
 )
 
 // SubscriptionConfig defines the configuration for a NATS subscription
