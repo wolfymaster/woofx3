@@ -786,6 +786,130 @@
         }
       }
     },
+    "sqlite@latest": {
+      "last_modified": "2025-05-06T08:06:31Z",
+      "resolved": "github:NixOS/nixpkgs/1cb1c02a6b1b7cf67e3d7731cbbf327a53da9679#sqlite",
+      "source": "devbox-search",
+      "version": "3.48.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "bin",
+              "path": "/nix/store/7mn788vvz8284lilc3g51nsg82ip1lnk-sqlite-3.48.0-bin",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/nh3vk8k2m0zxf6dg644aq6a4ymbigzjn-sqlite-3.48.0-man",
+              "default": true
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/q7a9niv9bgbws3d0gd0ccsn2zr9s9nxv-sqlite-3.48.0-doc"
+            },
+            {
+              "name": "out",
+              "path": "/nix/store/n2lq6c20vcrmgqcbkjzwip654jz1dmn8-sqlite-3.48.0"
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/2q2spc1h7mi1r5llz6qn1qcbfl56pca8-sqlite-3.48.0-dev"
+            }
+          ],
+          "store_path": "/nix/store/7mn788vvz8284lilc3g51nsg82ip1lnk-sqlite-3.48.0-bin"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "bin",
+              "path": "/nix/store/laamcffmxha9ihi08rnmm6p3bivjla6a-sqlite-3.48.0-bin",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/y345n40khcnznf7bcp1f24rim6qi5f6d-sqlite-3.48.0-man",
+              "default": true
+            },
+            {
+              "name": "debug",
+              "path": "/nix/store/h61vq35f8rp66xy9m64mqz9ic5d0aam6-sqlite-3.48.0-debug"
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/pmdq1pwk4j6cj90nsfcn5r3s1y6pkiwv-sqlite-3.48.0-dev"
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/scziwdf7x4xyc6zqlw15rl0k207vq8jy-sqlite-3.48.0-doc"
+            },
+            {
+              "name": "out",
+              "path": "/nix/store/h1q0fl84nd9fh5rrf3b9ssrrrb6cqb27-sqlite-3.48.0"
+            }
+          ],
+          "store_path": "/nix/store/laamcffmxha9ihi08rnmm6p3bivjla6a-sqlite-3.48.0-bin"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "bin",
+              "path": "/nix/store/dyf5qibksww3am4lajabvwapmsc6hd78-sqlite-3.48.0-bin",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/gx342d8zkjng4qmxy5svmng138bdy00q-sqlite-3.48.0-man",
+              "default": true
+            },
+            {
+              "name": "out",
+              "path": "/nix/store/bnq6sdbk3fpid44la2jcrx6rr6fz6ws2-sqlite-3.48.0"
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/wxaw1jhv9jas5dm0p30vv68jwjmldcnx-sqlite-3.48.0-dev"
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/nrlm1l5yx2zq46gbph2j3jgzwfl0ganr-sqlite-3.48.0-doc"
+            }
+          ],
+          "store_path": "/nix/store/dyf5qibksww3am4lajabvwapmsc6hd78-sqlite-3.48.0-bin"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "bin",
+              "path": "/nix/store/gblaq1haiq65g86y4w2ps8fq172z8jyb-sqlite-3.48.0-bin",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/cgsjnwcdz71ckh88sg3y0sjycf114d6a-sqlite-3.48.0-man",
+              "default": true
+            },
+            {
+              "name": "debug",
+              "path": "/nix/store/qsni03xai5vw9kxdxg0hz61q9kl7w7sy-sqlite-3.48.0-debug"
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/k84yn4jchmms84cic4zh5z6rp68qarjs-sqlite-3.48.0-dev"
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/fj9phkzp72y09jiah18w5ghb2ssy1qli-sqlite-3.48.0-doc"
+            },
+            {
+              "name": "out",
+              "path": "/nix/store/nff52xidq9f2qf93x5r5sr8zc8iwwa5j-sqlite-3.48.0"
+            }
+          ],
+          "store_path": "/nix/store/gblaq1haiq65g86y4w2ps8fq172z8jyb-sqlite-3.48.0-bin"
+        }
+      }
+    },
     "streamlink@6.11.0": {
       "last_modified": "2024-11-28T07:51:56Z",
       "resolved": "github:NixOS/nixpkgs/226216574ada4c3ecefcbbec41f39ce4655f78ef#streamlink",
@@ -847,6 +971,54 @@
             }
           ],
           "store_path": "/nix/store/1zy7pwykp4v8qvx7s7qb4zvc9k2ivk85-streamlink-6.11.0"
+        }
+      }
+    },
+    "temporal-cli@latest": {
+      "last_modified": "2025-05-16T20:19:48Z",
+      "resolved": "github:NixOS/nixpkgs/12a55407652e04dcf2309436eb06fef0d3713ef3#temporal-cli",
+      "source": "devbox-search",
+      "version": "1.3.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/ydmzwqqfhxvvk00s9wga2njwvcig4kgj-temporal-cli-1.3.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/ydmzwqqfhxvvk00s9wga2njwvcig4kgj-temporal-cli-1.3.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/1xih2yamaqwg793wvplxf0lhaw79bb66-temporal-cli-1.3.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/1xih2yamaqwg793wvplxf0lhaw79bb66-temporal-cli-1.3.0"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/x51351zh68cx9l145x5fms8jqm3b5lpj-temporal-cli-1.3.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/x51351zh68cx9l145x5fms8jqm3b5lpj-temporal-cli-1.3.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/lgpqdyd00r0fnk1qkvb0wlzqg91pvq6n-temporal-cli-1.3.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/lgpqdyd00r0fnk1qkvb0wlzqg91pvq6n-temporal-cli-1.3.0"
         }
       }
     },
