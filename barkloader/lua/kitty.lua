@@ -1,5 +1,5 @@
 function main(text, user)
-    if not user or string.lower(user) ~= "pixyroux" then
+    if not user or string.lower(user) ~= "kittyclemente" then
         return "Sorry, You are not kitty!!"
     end
 

@@ -151,7 +151,7 @@ function main(text)
     -- check for reset
     if text == 'reset' then
         local x = govee:reset()
-        return x
+        return ''
     end
     
     -- parse text for rgb values
