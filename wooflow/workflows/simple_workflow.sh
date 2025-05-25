@@ -13,7 +13,7 @@ WORKFLOW_DEF='{
     "event": "bits",
     "condition": {
       "amount": {
-        "gte": 100
+        "gte": 500
       }
     }
   },
@@ -39,7 +39,7 @@ WORKFLOW_DEF='{
           "eventType": "bits",
           "field": "amount",
           "threshold": 100,
-          "timeWindow": "5m"
+          "timeWindow": "1m"
         }
       }
     },

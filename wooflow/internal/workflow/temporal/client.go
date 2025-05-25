@@ -17,7 +17,7 @@ import (
 type Client struct {
 	client       client.Client
 	worker       worker.Worker
-	eventRepo    ports.EventRepository
+	eventRepo    core.EventRepository
 	workflowRepo ports.WorkflowDefinitionRepository
 	state        *WorkflowState
 	taskQueue    string
@@ -31,7 +31,7 @@ func NewClient(
 	host string,
 	namespace string,
 	taskQueue string,
-	eventRepo ports.EventRepository,
+	eventRepo core.EventRepository,
 	workflowRepo ports.WorkflowDefinitionRepository,
 	nc *nats.Conn,
 	logger log.Logger,
