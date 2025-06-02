@@ -1,16 +1,20 @@
-use actix_multipart::Multipart;
+use actix_multipart::{Field, Multipart};
 use actix_web::Error;
+use anyhow::Result;
 use futures::{StreamExt, TryStreamExt};
-use serde::{Deserialize, Serialize};
+use lib_repository::{CreateFileRequest, Repository, RepositoryImpl};
+use log::{error, info};
+use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UploadResult {
-    file_id: String,
-    filename: String,
-    size: usize,
+#[derive(Debug)]
+pub struct FileMetadata {
+    pub file_extension: Option<String>,
+    pub file_name: String,
+    pub temp_dir_path: PathBuf,
+    pub upload_dir_path: PathBuf,
 }
 
 pub struct FileService {
@@ -20,102 +24,37 @@ pub struct FileService {
 impl FileService {
     pub fn new(upload_dir: &str) -> Self {
         // Create directory if it doesn't exist
-        std::fs::create_dir_all(upload_dir).expect("Failed to create upload directory");
+        fs::create_dir_all(upload_dir).expect("Failed to create upload directory");
 
         Self {
             upload_dir: upload_dir.to_string(),
         }
     }
 
-    pub async fn process_upload(&self, mut payload: Multipart) -> Result<UploadResult, Error> {
-        // Create uploads directory if it doesn't exist
-        fs::create_dir_all("./uploads").map_err(|e| {
+    pub async fn process_upload(&self, mut payload: Multipart) -> Result<FileMetadata, Error> {
+        // Todo: Move this into some setup so it's only invoked once
+        fs::create_dir_all(&self.upload_dir).map_err(|e| {
             eprintln!("Failed to create uploads directory: {}", e);
             actix_web::error::ErrorInternalServerError("Storage error")
         })?;
 
-        let mut metadata = FileMetadata {
-            original_filename: None,
-            override_filename: None,
-            file_id: Uuid::new_v4().to_string(),
-            size_bytes: 0,
-        };
-
-        // Process multipart fields
+        let mut metadata: Option<FileMetadata> = None;
         while let Ok(Some(mut field)) = payload.try_next().await {
-            let content_disposition = field.content_disposition();
+            let Some(content_disposition) = field.content_disposition() else {
+                return Err(actix_web::error::ErrorBadRequest(
+                    "Missing content disposition",
+                ));
+            };
+
             let field_name = content_disposition.get_name().unwrap_or("");
-
             match field_name {
-                // File field
                 "file" => {
-                    // Get filename from content-disposition if available
-                    if let Some(filename) = content_disposition.get_filename() {
-                        metadata.override_filename = Some(sanitize_filename::sanitize(filename));
-                    }
-
-                    // Generate a unique filename for storage
-                    let storage_filename = format!(
-                        "{}{}",
-                        metadata.file_id,
-                        if let Some(ref fname) = metadata.override_filename {
-                            if let Some(ext) = Path::new(fname).extension() {
-                                format!(".{}", ext.to_string_lossy())
-                            } else {
-                                String::new()
-                            }
-                        } else {
-                            String::new()
-                        }
-                    );
-
-                    let filepath = format!("./uploads/{}", storage_filename);
-
-                    // Create file
-                    let mut file = fs::File::create(filepath).map_err(|e| {
-                        eprintln!("Failed to create file: {}", e);
-                        actix_web::error::ErrorInternalServerError("Failed to store file")
-                    })?;
-
-                    // Stream data to file
-                    let mut total_bytes = 0;
-                    while let Some(chunk) = field.next().await {
-                        let data = chunk.map_err(|e| {
-                            eprintln!("Error reading chunk: {}", e);
-                            actix_web::error::ErrorInternalServerError("Upload error")
-                        })?;
-                        total_bytes += data.len();
-                        file.write_all(&data).map_err(|e| {
-                            eprintln!("Error writing to file: {}", e);
-                            actix_web::error::ErrorInternalServerError("Failed to store file")
-                        })?;
-                    }
-
-                    metadata.size_bytes = total_bytes;
+                    let file_name = content_disposition
+                        .get_filename()
+                        .map(|s| s.to_string())
+                        .ok_or_else(|| actix_web::error::ErrorBadRequest("File missing file name"))?;
+                    metadata = Some(self.handle_file_field(&mut field, file_name).await?)
                 }
-
-                // Custom filename field
-                "filename" => {
-                    // Read the field data
-                    let mut filename_data = Vec::new();
-                    while let Some(chunk) = field.next().await {
-                        let data = chunk.map_err(|e| {
-                            eprintln!("Error reading filename field: {}", e);
-                            actix_web::error::ErrorInternalServerError("Upload error")
-                        })?;
-                        filename_data.extend_from_slice(&data);
-                    }
-
-                    // Convert to string
-                    let filename = String::from_utf8(filename_data).map_err(|e| {
-                        eprintln!("Invalid filename encoding: {}", e);
-                        actix_web::error::ErrorBadRequest("Invalid filename encoding")
-                    })?;
-
-                    metadata.original_filename = Some(sanitize_filename::sanitize(&filename));
-                }
-
-                // Other fields (can be expanded for additional metadata)
                 _ => {
                     // Consume the field data but don't use it
                     while let Some(chunk) = field.next().await {
@@ -125,29 +64,44 @@ impl FileService {
             }
         }
 
-        Ok(UploadResult {
-            file_id: "example-id".to_string(),
-            filename: "example.txt".to_string(),
-            size: 1024,
-        })
+        metadata.ok_or_else(|| actix_web::error::ErrorBadRequest("No file field found"))
     }
 
-    pub async fn get_file(&self, file_id: &str) -> Result<UploadResult, Error> {
-        // Get file metadata
-        // ...
+    pub async fn process_uploaded_file(&self, metadata: FileMetadata) -> Result<Vec<FileMetadata>> {
+        let mut metadatas = Vec::<FileMetadata>::new();
 
-        Ok(UploadResult {
-            file_id: file_id.to_string(),
-            filename: "example.txt".to_string(),
-            size: 1024,
-        })
-    }
+        match metadata.file_extension.as_deref() {
+            Some("zip") => {
+                // extract zip to folder
+                let dir_path = metadata
+                    .temp_dir_path
+                    .to_str()
+                    .expect("Temporary file path should always be set");
+                let archive_file = format!("{}/{}", &dir_path, &metadata.file_name);
+                Self::decompress_file(&archive_file, "zip")?;
+                // create metadata for every extracted file
+                let entries = fs::read_dir(dir_path)?;
+                for entry in entries {
+                    let entry = entry?;
+                    let original_file_name = entry.file_name().to_string_lossy().to_string();
+                    let temp_file_path = entry.path();
+                    let file_extension = temp_file_path
+                        .extension()
+                        .and_then(|ext| Some(String::from(ext.to_str().unwrap())));
+                    metadatas.push(FileMetadata {
+                        temp_dir_path: metadata.temp_dir_path.clone(),
+                        file_extension,
+                        file_name:original_file_name.clone(),
+                        upload_dir_path: metadata.upload_dir_path.clone(),
+                    });
+                }
+            }
+            _ => {
+                metadatas.push(metadata);
+            }
+        };
 
-    pub async fn delete_file(&self, file_id: &str) -> Result<(), Error> {
-        // Delete file
-        // ...
-
-        Ok(())
+        Ok(metadatas)
     }
 
     fn decompress_file(file_path: &str, compression_type: &str) -> Result<String, std::io::Error> {
@@ -175,5 +129,54 @@ impl FileService {
         }
 
         Ok(output_path.to_string())
+    }
+
+    async fn handle_file_field(
+        &self,
+        field: &mut Field,
+        file_name: String,
+    ) -> Result<FileMetadata, Error> {
+        let temp_dir_name = Uuid::new_v4().to_string();
+                
+        // Get filename
+        let mut file_extension = None;
+        let sanitized = sanitize_filename::sanitize(file_name);        
+        let upload_dir_path = PathBuf::from(&self.upload_dir);
+        let temp_dir_path = upload_dir_path.join(&temp_dir_name);
+        
+        if let Some(ext) = Path::new(&sanitized).extension() {
+            file_extension = Some(ext.to_str().unwrap_or("").to_string());
+        }
+
+        // ensure temp directory exists
+        fs::create_dir_all(&temp_dir_path).map_err(|e| {
+            eprintln!("Failed to create uploads directory: {}", e);
+            actix_web::error::ErrorInternalServerError("Storage error")
+        })?;
+        
+        // Create file
+        let mut file = fs::File::create(temp_dir_path.join(&sanitized)).map_err(|e| {
+            error!("Failed to create file: {}", e);
+            actix_web::error::ErrorInternalServerError("Failed to store file")
+        })?;
+
+        // Stream data to file
+        while let Some(chunk) = field.next().await {
+            let data = chunk.map_err(|e| {
+                error!("Error reading chunk: {}", e);
+                actix_web::error::ErrorInternalServerError("Upload error")
+            })?;
+            file.write_all(&data).map_err(|e| {
+                error!("Error writing to file: {}", e);
+                actix_web::error::ErrorInternalServerError("Failed to store file")
+            })?;
+        }
+
+        Ok(FileMetadata {
+            file_name: sanitized,
+            file_extension,
+            upload_dir_path,
+            temp_dir_path,
+        })
     }
 }
