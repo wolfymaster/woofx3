@@ -11,6 +11,11 @@ processes:
     description: Plugin Module System
     working_dir: barkloader
 
+  barkloader-rust:
+    command: cargo run .
+    description: Plugin Module System
+    working_dir: barkloader-rust
+
   caddy:
     command: "caddy run"
     description: "start caddy proxy"

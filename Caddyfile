@@ -7,6 +7,11 @@ auth.local.woofx3.tv {
 	tls internal
 }
 
+barkloader.local.woofx3.tv {
+	reverse_proxy http://localhost:9653
+	tls internal
+}
+
 wolfy.local.woofx3.tv {
 	reverse_proxy localhost:3000
 	tls internal
