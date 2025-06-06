@@ -7,7 +7,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/nats-io/nats.go"
-	"github.com/wolfymaster/woofx3/wooflow/internal/workflow/temporal"
+	"github.com/wolfymaster/woofx3/wooflow/activities"
 )
 
 type NATSHandler = func(msg *nats.Msg)
@@ -21,7 +21,8 @@ func main() {
 	defer app.cleanup()
 
 	// Register custom activities
-	app.temporalClient.RegisterActivity("media_alert", temporal.MediaAlert)
+	app.temporalClient.RegisterActivity("media_alert", activities.MediaAlert)
+	app.temporalClient.RegisterActivity("update_timer", activities.UpdateTimer)
 
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)

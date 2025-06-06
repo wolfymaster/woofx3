@@ -29,7 +29,7 @@ const (
 
 // EvaluateConditions evaluates an event against a condition map
 // Returns true if all conditions pass, false otherwise
-func EvaluateConditions(event map[string]interface{}, conditions map[string]interface{}) bool {
+func EvaluateConditions(event map[string]any, conditions map[string]any) bool {
 	for fieldName, conditionDef := range conditions {
 		if !evaluateFieldCondition(event, fieldName, conditionDef) {
 			return false

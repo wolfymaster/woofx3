@@ -138,24 +138,6 @@ func HandleWaitStep(ctx context.Context, step core.Step, context *WorkflowContex
 	return nil, fmt.Errorf("not implemented")
 }
 
-func MediaAlert(ctx context.Context, params map[string]any) (ExecuteActionResult, error) {
-	logger := activity.GetLogger(ctx)
-	logger.Info("running Media Alert")
-
-	return ExecuteActionResult{
-		Publish: true,
-		PublishData: map[string]any{
-			"command": "alert_message",
-			"args":    params,
-		},
-		PublishTopic: PublishTopic{
-			Value: "slobs",
-			Valid: true,
-		},
-		Exports: params,
-	}, nil
-}
-
 // resolveParameterReferences resolves parameter references in the workflow
 func resolveParameterReferences(params map[string]any, context *WorkflowContext) (map[string]any, error) {
 	resolved := make(map[string]any)

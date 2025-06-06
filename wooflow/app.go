@@ -72,7 +72,7 @@ func (app *App) handleNATSMessage(msg *nats.Msg) error {
 	// Extract event type from subject
 	eventType := strings.TrimPrefix(msg.Subject, "workflow.")
 
-	app.Logger.Info("handling event %s", eventType)
+	app.Logger.Info("handling event", "eventType", eventType)
 
 	// Parse event payload
 	var event *core.Event
@@ -87,7 +87,7 @@ func (app *App) handleNATSMessage(msg *nats.Msg) error {
 
 	// Handle event
 	if err := app.temporalClient.HandleEvent(context.Background(), event); err != nil {
-		app.Logger.Error("failed to handle event", "error", err, "event_type", eventType)
+		app.Logger.Error("failed to handle event", "error", err, "eventType", eventType)
 	}
 
 	return nil

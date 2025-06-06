@@ -94,31 +94,39 @@ try {
             console.error(err);
         }
 
-        bus.publish('slobs', JSON.stringify({
-            command: 'alert_message',
-            args: {
-                audioUrl: 'https://streamlabs.local.woofx3.tv/pleasure.mp3',
-                mediaUrl: 'https://media.tenor.com/LdHGHWDh0Y8AAAPo/look-at-you-i-see-you.mp4',
-                text: `<3  {primary}${userDisplayName}{primary} followed <3`,
-                duration: 6,
-            }
-        }))
-
-        bus.publish('slobs', JSON.stringify({
-            command: 'count', // TODO: Is there a better name?
-            args: {
-                id: 'ac39613d-4f48-459c-9f4e-6f3fb0df65e0',
-                value: 1,
+        // publish the follow event to workflow
+        bus.publish('workflow.follow', JSON.stringify({
+            type: 'follow',
+            payload: {
+                userDisplayName
             }
         }));
 
-        bus.publish('slobs', JSON.stringify({
-            command: 'updateTime',
-            args: {
-                timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
-                valueInSeconds: 60,
-            }
-        }));
+        // bus.publish('slobs', JSON.stringify({
+        //     command: 'alert_message',
+        //     args: {
+        //         audioUrl: 'https://streamlabs.local.woofx3.tv/pleasure.mp3',
+        //         mediaUrl: 'https://media.tenor.com/LdHGHWDh0Y8AAAPo/look-at-you-i-see-you.mp4',
+        //         text: `<3  {primary}${userDisplayName}{primary} followed <3`,
+        //         duration: 6,
+        //     }
+        // }))
+
+        // bus.publish('slobs', JSON.stringify({
+        //     command: 'count', // TODO: Is there a better name?
+        //     args: {
+        //         id: 'ac39613d-4f48-459c-9f4e-6f3fb0df65e0',
+        //         value: 1,
+        //     }
+        // }));
+
+        // bus.publish('slobs', JSON.stringify({
+        //     command: 'updateTime',
+        //     args: {
+        //         timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
+        //         valueInSeconds: 60,
+        //     }
+        // }));
     });
 
     listener.onStreamOnline(userId, (event: any) => {

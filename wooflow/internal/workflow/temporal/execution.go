@@ -30,6 +30,9 @@ func executeActionStep(ctx workflow.Context, wfCtx *WorkflowContext, step core.S
 		},
 	}
 
+	// update params with trigger payload
+	maps.Copy(input.Params, wfCtx.TriggeredBy.Payload)
+
 	// Execute action
 	var result *ExecuteActionResult
 	err = workflow.ExecuteActivity(
