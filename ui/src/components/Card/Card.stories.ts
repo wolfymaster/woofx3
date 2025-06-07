@@ -1,0 +1,68 @@
+import type { Meta, StoryObj } from '@storybook/vue3-vite';
+import Card from './Card.vue';
+
+// More on how to set up stories at: https://storybook.js.org/docs/writing-stories
+const meta = {
+    title: 'Card',
+    component: Card,
+    // This component will have an automatically generated docsPage entry: https://storybook.js.org/docs/writing-docs/autodocs
+    tags: ['autodocs'],
+    argTypes: {
+        type: { control: 'select', options: ['workflow', 'module', 'trigger'] },
+        enabled: { control: 'boolean' },
+        title: { control: 'text' },
+        showConfig: { control: 'boolean' },
+        height: { control: 'number' },
+        width: { control: 'number' },
+    },
+    args: {
+        type: 'workflow',
+        enabled: false,
+        title: 'Card Title',
+        showConfig: false,
+    },
+} satisfies Meta<typeof Card>;
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+/*
+ *👇 Render functions are a framework specific feature to allow you control on how the component renders.
+ * See https://storybook.js.org/docs/api/csf
+ * to learn how to use render functions.
+ */
+export const WorkflowEnabled: Story = {
+    args: {
+        type: 'workflow',
+        enabled: true,
+        title: '100 Bits',
+        showConfig: true
+
+    },
+};
+
+export const WorkFlowDisabled: Story = {
+    args: {
+        type: 'workflow',
+        enabled: false,
+        title: '100 Bits',
+        showConfig: true
+    },
+};
+
+export const Module: Story = {
+    args: {
+        type: 'module',
+        enabled: false,
+        title: 'Spotify Song Requests',
+        showConfig: true
+    },
+};
+
+export const Trigger: Story = {
+    args: {
+        type: 'trigger',
+        enabled: false,
+        title: 'Chat Command',
+        showConfig: false
+    },
+};
