@@ -8,6 +8,10 @@ const props = defineProps({
   showConfig: { type: Boolean, required: true },
   height: { type: String, default: '200px' },
   width: { type: String, default: '400px' },
+  tags: {
+    type: Array as () => Array<{ title: string; color?: string }>,
+    default: () => []
+  },
 });
 const isEnabled = ref(props.enabled);
 const emit = defineEmits<{
@@ -23,7 +27,15 @@ const updateCheckboxValue = (checked: boolean) => {
 <template>
   <div class="card" :style="{ height: props.height, width: props.width }">
     <div class="card-header">
-      <h3>{{ props.title }}</h3>
+      <h2>{{ props.title }}</h2>
+    </div>
+    <div class="card-content">
+     <p> Default Description here </p>
+      <div v-if="props.type === 'module'" class="tag-section">
+        <div v-for="tag in props.tags" class="tag" :style="{ backgroundColor: tag.color || '#e0e0e0' }" :key="tag.title">
+          {{ tag.title }}
+        </div>
+      </div>
     </div>
     <div class="card-footer">
       <button v-if="props.showConfig" class="config-button">Configure</button>
@@ -71,9 +83,23 @@ const updateCheckboxValue = (checked: boolean) => {
 
 .card-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   margin-bottom: 8px;
+}
+.card-content{
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+}
+.tag-section{
+  display: flex;
+  flex-direction: row;
+}
+.tag{
+  margin: 0 8px;
+  padding: 8px;
+  border-radius: 8px;
 }
 .card-footer {
   display: flex;

@@ -14,12 +14,14 @@ const meta = {
         showConfig: { control: 'boolean' },
         height: { control: 'number' },
         width: { control: 'number' },
+        tags: { control: 'object' },
     },
     args: {
         type: 'workflow',
         enabled: false,
         title: 'Card Title',
         showConfig: false,
+        tags: [],
     },
 } satisfies Meta<typeof Card>;
 
@@ -35,8 +37,8 @@ export const WorkflowEnabled: Story = {
         type: 'workflow',
         enabled: true,
         title: '100 Bits',
-        showConfig: true
-
+        showConfig: true,
+        tags: [],
     },
 };
 
@@ -45,7 +47,8 @@ export const WorkFlowDisabled: Story = {
         type: 'workflow',
         enabled: false,
         title: '100 Bits',
-        showConfig: true
+        showConfig: true,
+        tags: [],
     },
 };
 
@@ -54,7 +57,8 @@ export const Module: Story = {
         type: 'module',
         enabled: false,
         title: 'Spotify Song Requests',
-        showConfig: true
+        showConfig: true,
+        tags: [{ title: 'Music', color: 'blue' }, { title: 'Command', color: 'green' }],
     },
 };
 
@@ -63,6 +67,7 @@ export const Trigger: Story = {
         type: 'trigger',
         enabled: false,
         title: 'Chat Command',
-        showConfig: false
+        showConfig: false,
+        tags: [],
     },
 };
