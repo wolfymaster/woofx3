@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router';
 import Header from "@/components/Header/Header.vue";
+
+document.documentElement.setAttribute('data-theme', 'light');
 </script>
 
 <template>
@@ -21,13 +23,11 @@ import Header from "@/components/Header/Header.vue";
 </template>
 
 <style>
-header {
-  width: 100%;
-}
 
 .app-container {
   display: flex;
   height: calc(100vh - 60px);
+  background: var(--color-background);
 }
 
 .sideNav {

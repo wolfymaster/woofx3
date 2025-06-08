@@ -6,7 +6,8 @@ const props = defineProps({
   enabled: { type: Boolean, required: true },
   title: { type: String, required: true },
   showConfig: { type: Boolean, required: true },
-  height: { type: String, default: '200px' },
+  description: { type: String, default: '' },
+  height: { type: String, default: 'auto' },
   width: { type: String, default: '400px' },
   tags: {
     type: Array as () => Array<{ title: string; color?: string }>,
@@ -26,12 +27,12 @@ const updateCheckboxValue = (checked: boolean) => {
 
 <template>
   <div class="card" :style="{ height: props.height, width: props.width }">
-    <div class="card-header">
+    <div class="card-header" :class="{ 'full-height-header': props.type !== 'module' }">
       <h2>{{ props.title }}</h2>
     </div>
-    <div class="card-content">
-     <p> Default Description here </p>
-      <div v-if="props.type === 'module'" class="tag-section">
+    <div class="card-content" v-if="props.type === 'module'">
+     <p v-if="props.description.length"> {{ props.description }} </p>
+      <div class="tag-section">
         <div v-for="tag in props.tags" class="tag" :style="{ backgroundColor: tag.color || '#e0e0e0' }" :key="tag.title">
           {{ tag.title }}
         </div>
@@ -66,60 +67,86 @@ const updateCheckboxValue = (checked: boolean) => {
 .card {
   display: flex;
   flex-direction: column;
-  justify-content: space-between; /* Ensures the footer stays at the bottom */
-  background-color: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  padding: 16px;
+  justify-content: space-between;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06);
+  padding: 20px;
   margin: 16px;
   cursor: pointer;
-  transition: box-shadow 0.3s ease;
-  height: 100%;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 .card:hover {
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  transform: translateY(-5px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15), 0 3px 6px rgba(0, 0, 0, 0.1);
+}
+.full-height-header {
+  flex: 1;
 }
 
 .card-header {
   display: flex;
   justify-content: center;
   align-items: center;
-  margin-bottom: 8px;
+  text-align: center;
 }
-.card-content{
+
+.card-header h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.card-content p {
+  font-size: 1rem;
+  color: #555;
+  line-height: 1.5;
+}
+
+.tag-section {
   display: flex;
-  align-items: flex-start;
-  flex-direction: column;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
 }
-.tag-section{
-  display: flex;
-  flex-direction: row;
-}
-.tag{
-  margin: 0 8px;
-  padding: 8px;
+
+.tag {
+  padding: 6px 12px;
   border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #fff;
+  background-color: #007bff;
+  transition: background-color 0.3s ease;
 }
+
+.tag:hover {
+  background-color: #0056b3;
+}
+
 .card-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-top: auto;
 }
+
 .config-button {
-  background-color: #ffffff;
+  background-color: #007bff;
+  color: #fff;
   border: none;
-  color: #6c757d; /* Light gray text */
   border-radius: 8px;
-  padding: 8px 12px;
+  padding: 8px 16px;
+  font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: background-color 0.3s ease;
 }
 
 .config-button:hover {
-  background-color: #f8f9fa; /* Slightly darker white on hover */
-  color: #5a6268; /* Slightly darker gray on hover */
+  background-color: #0056b3;
 }
+
 .switch {
   position: relative;
   display: inline-block;

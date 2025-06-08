@@ -6,6 +6,38 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  --color-primary: #007bff;
+  --color-primary-hover: #0056b3;
+  --color-secondary: #2c3e50;
+  --color-text: #333;
+  --color-text-light: #555;
+  --color-background: #ffffff;
+  --color-card-background: #f9f9f9;
+  --color-border: #e0e0e0;
+
+  --font-size-large: 1.5rem;
+  --font-size-medium: 1rem;
+  --font-size-small: 0.875rem;
+
+  --spacing-small: 8px;
+  --spacing-medium: 16px;
+  --spacing-large: 20px;
+
+  --border-radius: 8px;
+  --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme='dark'] {
+  --color-primary: #1e90ff;
+  --color-primary-hover: #1c86ee;
+  --color-secondary: #1c1c1c;
+  --color-text: #e0e0e0;
+  --color-text-light: #b0b0b0;
+  --color-background: #121212;
+  --color-card-background: #1e1e1e;
+  --color-border: #333333;
+
+  --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 a {

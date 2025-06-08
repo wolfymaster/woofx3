@@ -1,17 +1,22 @@
 <script lang="ts" setup>
 import MyButton from '../Button/Button.vue';
-import './header.css';
+import { ref } from 'vue';
 import { useStore } from '@nanostores/vue'
 import { onLogin, onLogout, onCreateAccount} from "@/features/LandingPage/store/landingPageStore.ts";
 import { $defaultUserStore } from "@/features/LandingPage/store/landingPageStore.ts";
 const userStore = useStore($defaultUserStore);
+const currentTheme = ref('light');
 
+const toggleTheme = () => {
+  currentTheme.value = currentTheme.value === 'light' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', currentTheme.value);
+};
 </script>
 
 <template>
   <header>
     <div class="storybook-header">
-      <div>
+      <div class="logo-container">
         <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
           <g fill="none" fill-rule="evenodd">
             <path
@@ -28,8 +33,26 @@ const userStore = useStore($defaultUserStore);
             />
           </g>
         </svg>
-        <h1>Woof X3</h1>
+        <div @click="toggleTheme" class="theme-toggle">
+          <div v-if="currentTheme === 'light'">
+            <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="16" cy="16" r="10" fill="#FFD700" />
+            </svg>
+          </div>
+          <div v-else>
+            <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+              <path
+                  d="M16 2a14 14 0 1014 14A14 14 0 0016 2zm0 24a10 10 0 110-20 10 10 0 010 20z"
+                  fill="#1E90FF"
+              />
+            </svg>
+          </div>
       </div>
+        <div>
+          <h1>Woof X3</h1>
+        </div>
+      </div>
+
       <div>
         <span class="welcome" v-if="userStore.user"
           >Welcome, <b>{{ userStore.user.name }}</b
@@ -48,5 +71,46 @@ const userStore = useStore($defaultUserStore);
     </div>
   </header>
 </template>
+
+<style>
+.storybook-header {
+  display: flex;
+  background: var(--color-background);
+  color: var(--color-text);
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 15px 20px;
+  font-family: 'Nunito Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+.logo-container{
+  display: flex;
+  align-items: flex-start;
+}
+
+.storybook-header svg {
+  display: inline-block;
+  vertical-align: top;
+}
+
+.storybook-header h1 {
+  display: inline-block;
+  vertical-align: top;
+  margin: 6px 0 6px 10px;
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.storybook-header button + button {
+  margin-left: 10px;
+}
+
+.storybook-header .welcome {
+  margin-right: 10px;
+  color: #333;
+  font-size: 14px;
+}
+</style>
 
 

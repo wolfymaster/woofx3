@@ -12,6 +12,7 @@ const meta = {
         enabled: { control: 'boolean' },
         title: { control: 'text' },
         showConfig: { control: 'boolean' },
+        description: { control: 'text' },
         height: { control: 'number' },
         width: { control: 'number' },
         tags: { control: 'object' },
@@ -20,6 +21,7 @@ const meta = {
         type: 'workflow',
         enabled: false,
         title: 'Card Title',
+        description: '',
         showConfig: false,
         tags: [],
     },
@@ -42,7 +44,7 @@ export const WorkflowEnabled: Story = {
     },
 };
 
-export const WorkFlowDisabled: Story = {
+export const WorkflowDisabled: Story = {
     args: {
         type: 'workflow',
         enabled: false,
@@ -58,6 +60,7 @@ export const Module: Story = {
         enabled: false,
         title: 'Spotify Song Requests',
         showConfig: true,
+        description: 'Adds song request support for Spotify urls and search. Provides overlay for viewing currently playing song.',
         tags: [{ title: 'Music', color: 'blue' }, { title: 'Command', color: 'green' }],
     },
 };
