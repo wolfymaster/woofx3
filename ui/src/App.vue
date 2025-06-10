@@ -42,7 +42,7 @@ document.documentElement.setAttribute('data-theme', 'light');
             <router-link to="/settings">Settings</router-link>
           </li>
           <li>
-            <router-link to="/about">Submit Feedback</router-link>
+            <router-link to="/feedback">Submit Feedback</router-link>
           </li>
         </ul>
       </div>
