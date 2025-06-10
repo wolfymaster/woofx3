@@ -11,29 +11,42 @@ document.documentElement.setAttribute('data-theme', 'light');
   <Header />
   <div class="app-container">
     <nav class="sideNav">
-      <ul>
-        <li>
-          <router-link to="/">Onboarding</router-link>
-        </li>
-        <li>
-          <router-link to="/workflows">Workflows</router-link>
-        </li>
-        <li>
-          <router-link to="/triggers">Triggers</router-link>
-        </li>
-        <li>
-          <router-link to="/rewards/base">Rewards</router-link>
-        </li>
-        <li>
-          <router-link to="/rewards/list">Rewards List</router-link>
-        </li>
-        <li>
-          <router-link to="/modules/base">Modules</router-link>
-        </li>
-        <li>
-          <router-link to="/modules/marketplace">Modules Marketplace</router-link>
-        </li>
-      </ul>
+      <div>
+        <ul>
+          <li>
+            <router-link to="/">Onboarding</router-link>
+          </li>
+          <li>
+            <router-link to="/workflows">Workflows</router-link>
+          </li>
+          <li>
+            <router-link to="/triggers">Triggers</router-link>
+          </li>
+          <li>
+            <router-link to="/rewards/base">Rewards</router-link>
+          </li>
+          <li>
+            <router-link to="/rewards/list">Rewards List</router-link>
+          </li>
+          <li>
+            <router-link to="/modules/base">Modules</router-link>
+          </li>
+          <li>
+            <router-link to="/modules/marketplace">Modules Marketplace</router-link>
+          </li>
+        </ul>
+      </div>
+      <div>
+        <ul>
+          <li>
+            <router-link to="/settings">Settings</router-link>
+          </li>
+          <li>
+            <router-link to="/about">Submit Feedback</router-link>
+          </li>
+        </ul>
+      </div>
+
     </nav>
     <div class="content">
 

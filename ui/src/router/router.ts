@@ -6,6 +6,8 @@ import Rewards from "../features/Rewards/views/Rewards.vue";
 import ListRewards from "../features/Rewards/views/ListRewards.vue";
 import Workflows from "../features/Workflows/views/Workflows.vue";
 import Triggers from "../features/Triggers/views/Triggers.vue";
+import Settings from "../features/Settings/views/Settings.vue";
+import SubmitFeedback from "../features/Feedback/views/SubmitFeedback.vue";
 
 const router = createRouter({
     history: createWebHistory(),
@@ -39,6 +41,16 @@ const router = createRouter({
             path: '/triggers',
             name: 'Triggers',
             component: Triggers
+        },
+        {
+            path: '/settings',
+            name: 'Settings',
+            component: Settings
+        },
+        {
+            path: '/feedback',
+            name: 'Submit Feedback',
+            component: SubmitFeedback
         },
         {
             path: '/:pathMatch(.*)*',
