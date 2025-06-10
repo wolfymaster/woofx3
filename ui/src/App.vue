@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { RouterView } from 'vue-router';
+import { RouterView, RouterLink } from 'vue-router';
 import Header from "@/components/Header/Header.vue";
 
+
 document.documentElement.setAttribute('data-theme', 'light');
+
 </script>
 
 <template>
@@ -10,9 +12,27 @@ document.documentElement.setAttribute('data-theme', 'light');
   <div class="app-container">
     <nav class="sideNav">
       <ul>
-        <li>onboarding</li>
-        <li>workflows</li>
-        <li>triggers</li>
+        <li>
+          <router-link to="/">Onboarding</router-link>
+        </li>
+        <li>
+          <router-link to="/workflows">Workflows</router-link>
+        </li>
+        <li>
+          <router-link to="/triggers">Triggers</router-link>
+        </li>
+        <li>
+          <router-link to="/rewards/base">Rewards</router-link>
+        </li>
+        <li>
+          <router-link to="/rewards/list">Rewards List</router-link>
+        </li>
+        <li>
+          <router-link to="/modules/base">Modules</router-link>
+        </li>
+        <li>
+          <router-link to="/modules/marketplace">Modules Marketplace</router-link>
+        </li>
       </ul>
     </nav>
     <div class="content">
