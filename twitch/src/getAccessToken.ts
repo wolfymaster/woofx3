@@ -10,10 +10,13 @@ dotenv.config({
     path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../', '.env')],
 });
 
+const PUBLIC_CLOUDFLARED_HOST = null;
+
 const app = express();
 const port = 9000;
 const auth_base_url = 'https://id.twitch.tv/oauth2/authorize';
-const redirect_uri = `http://localhost:${port}/auth/twitch/callback`;
+const redirectHost = PUBLIC_CLOUDFLARED_HOST || `http://localhost:${port}`
+const redirectUri = `${redirectHost}/auth/twitch/callback`;
 const scopes = ['user:read:email', 'user:bot', 'user:write:chat', 'user:read:chat', 'chat:read', 'chat:edit'];
 const adminScopes = [
     'bits:read',
@@ -43,7 +46,7 @@ const clientSecret = process.env.TWITCH_WOLFY_CLIENT_SECRET || "";
 const authProvider = new RefreshingAuthProvider({
     clientId,
     clientSecret,
-    redirectUri: `http://localhost`,
+    redirectUri,
     appImpliedScopes: ['chat:read', 'chat:edit']
 })
 
@@ -68,7 +71,8 @@ app.get('/auth/twitch/callback', async (req, res) => {
 
 async function run() {
     const encodedScopes = encodeScopes(scopes.concat(adminScopes));
-    const authUrl = `${auth_base_url}?client_id=${clientId}&redirect_uri=${redirect_uri}&response_type=code&scope=${encodedScopes}&state`;
+    const authUrl = `${auth_base_url}?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${encodedScopes}&state`;
+    console.log("Auth URL: ", authUrl);
     open(authUrl);
 }
 
