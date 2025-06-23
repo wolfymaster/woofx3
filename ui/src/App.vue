@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterView, RouterLink } from 'vue-router';
 import Header from "@/components/Header/Header.vue";
+import "@/style.css";
 
 
 document.documentElement.setAttribute('data-theme', 'light');
@@ -59,7 +60,7 @@ document.documentElement.setAttribute('data-theme', 'light');
 
 .app-container {
   display: flex;
-  height: calc(100vh - 60px);
+  /* height: calc(100vh - 60px); */
   background: var(--color-background);
 }
 
@@ -74,7 +75,7 @@ document.documentElement.setAttribute('data-theme', 'light');
 
 .content {
   flex: 1;
-  padding: 1rem;
+  /* padding: 1rem; */
 }
 </style>
 

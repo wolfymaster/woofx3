@@ -8,7 +8,8 @@ const props = defineProps({
   showConfig: { type: Boolean, required: true },
   description: { type: String, default: '' },
   height: { type: String, default: 'auto' },
-  width: { type: String, default: '400px' },
+  width: { type: String, default: '300px' },
+  logo: { type: String, default: '' },
   tags: {
     type: Array as () => Array<{ title: string; color?: string }>,
     default: () => []
@@ -28,12 +29,13 @@ const updateCheckboxValue = (checked: boolean) => {
 <template>
   <div class="card" :style="{ height: props.height, width: props.width }">
     <div class="card-header" :class="{ 'full-height-header': props.type !== 'module' }">
+      <img v-if="props.logo" :src="props.logo" alt="Module logo" class="module-logo" />
       <h2>{{ props.title }}</h2>
     </div>
     <div class="card-content" v-if="props.type === 'module'">
      <p v-if="props.description.length"> {{ props.description }} </p>
       <div class="tag-section">
-        <div v-for="tag in props.tags" class="tag" :style="{ backgroundColor: tag.color || '#e0e0e0' }" :key="tag.title">
+        <div v-for="tag in props.tags" class="tag"  :key="tag.title">
           {{ tag.title }}
         </div>
       </div>
@@ -68,150 +70,142 @@ const updateCheckboxValue = (checked: boolean) => {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  border-radius: 12px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06);
-  padding: 20px;
+  background-color: var(--color-card-background);
+  border-radius: 16px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+  padding: 24px;
   margin: 16px;
-  cursor: pointer;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  width: 300px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15), 0 3px 6px rgba(0, 0, 0, 0.1);
-}
-.full-height-header {
-  flex: 1;
+  transform: translateY(-4px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
 }
 
 .card-header {
   display: flex;
-  justify-content: center;
   align-items: center;
-  text-align: center;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .card-header h2 {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #333;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(white);
+  margin: 0;
+}
+
+.card-content {
+  margin-bottom: 16px;
 }
 
 .card-content p {
-  font-size: 1rem;
-  color: #555;
+  font-size: 0.95rem;
+  color: var(--color-body-text);
+  margin: 0;
   line-height: 1.5;
 }
 
 .tag-section {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 12px 0;
+  gap: 6px;
+  margin-top: 12px;
 }
 
 .tag {
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   font-weight: 500;
-  color: #fff;
-  background-color: #007bff;
-  transition: background-color 0.3s ease;
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: #9333ea;
+  background-color: #f3ebfd;
 }
 
-.tag:hover {
-  background-color: #0056b3;
+.config-button {
+  background-color: #9333ea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
 }
 
 .card-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: auto;
 }
 
-.config-button {
-  background-color: #007bff;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  padding: 8px 16px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.3s ease;
-}
 
-.config-button:hover {
-  background-color: #0056b3;
-}
-
+/* Hide default HTML checkbox */
 .switch {
   position: relative;
   display: inline-block;
-  width: 50px;
-  height: 26px;
+  width: 44px;
+  height: 24px;
 }
 
-/* Hide default HTML checkbox */
 .switch input {
   opacity: 0;
   width: 0;
   height: 0;
 }
 
-/* The slider */
 .slider {
   position: absolute;
-  cursor: pointer;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  -webkit-transition: 0.5s;
-  transition: 0.5s;
-  border: solid 1px #cacfd3;
+  background-color: #e0e0e0;
+  transition: 0.4s;
+  border-radius: 34px;
 }
 
 .slider:before {
   position: absolute;
-  content: '';
+  content: "";
   height: 18px;
   width: 18px;
-  left: 4px;
+  left: 3px;
   bottom: 3px;
-  -webkit-transition: 0.5s;
-  transition: 0.5s;
+  background-color: #9333ea;
+  transition: 0.4s;
+  border-radius: 50%;
 }
 
 input:checked + .slider {
-  background-color: #2c3e50;
-}
-
-input:focus + .slider {
-  box-shadow: 0 0 1px #2196f3;
+  background-color: #e9d5ff;
 }
 
 input:checked + .slider:before {
-  -webkit-transform: translateX(23px);
-  -ms-transform: translateX(23px);
-  transform: translateX(23px);
-  background-color: #ffffff;
+  transform: translateX(20px);
+  background-color: #9333ea;
 }
 
-/* Rounded sliders */
-.slider.round {
-  border-radius: 34px;
+.toggle-switch-container span {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #9333ea;
 }
 
-.slider.round:before {
-  border-radius: 50%;
-  background-color: #2c3e50;
+.module-logo {
+  width: 40px;
+  height: 40px;
+  margin-right: 10px;
+  border-radius: 8px;
+  object-fit: cover;
 }
-.toggle-switch-container {
+.card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
+
 </style>

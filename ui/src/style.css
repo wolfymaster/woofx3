@@ -6,16 +6,24 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  --color-primary: #007bff;
+  --color-primary: #7E22CE;
   --color-primary-hover: #0056b3;
   --color-secondary: #2c3e50;
-  --color-text: #333;
+  --color-text: #7E22CE;
   --color-text-light: #555;
+  --color-button-background: #9333EA;
   --color-background: #ffffff;
-  --color-card-background: #f9f9f9;
+  --color-card-background: #ffffff;
   --color-border: #e0e0e0;
+  --color-badge-background: #e9daf9;
+  --color-badge-text: #7E22CE;
+  --color-placeholder: #7E22CE;
+  --plugin-row-light: #f7f6f8;
+  --plugin-row-dark: #f3ebfd
+ 
+;
 
-  --font-size-large: 1.5rem;
+  --font-size-large: 1.5rem; 
   --font-size-medium: 1rem;
   --font-size-small: 0.875rem;
 
@@ -28,12 +36,22 @@
 }
 
 [data-theme='dark'] {
-  --color-primary: #1e90ff;
-  --color-primary-hover: #1c86ee;
+  --color-primary: #7E22CE;
+  --color-primary-hover: #555ab9;
   --color-secondary: #1c1c1c;
   --color-text: #e0e0e0;
   --color-text-light: #b0b0b0;
-  --color-background: #121212;
+  --color-background: #1e1b2e;
+  --color-button-background: #7E22CE;
+  --color-badge-background: #7E22CE4D;
+  --card-background-color: #7E22CE;
+  --color-placeholder: #e0e0e0;
+  --plugin-row-light: #1e1b2e;
+  --plugin-row-dark: #2a2340
+ 
+;
+  --color-badge-text: #e0e0e0;
+  
   --color-card-background: #1e1e1e;
   --color-border: #333333;
 
@@ -42,7 +60,7 @@
 
 a {
   font-weight: 500;
-  color: #646cff;
+  color: #555ab9;
   text-decoration: inherit;
 }
 a:hover {
