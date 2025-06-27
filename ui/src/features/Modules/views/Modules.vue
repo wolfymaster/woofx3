@@ -14,7 +14,7 @@
         :tags="module.tags"
         :enabled="false"
         :show-config="true"
-        logo="https://placehold.co/40x40?text=MC"
+        :logo="module.logo"
       />
     </div>
   </div>
@@ -67,7 +67,8 @@ const rawModules = [
 const processedModules = rawModules.map((m) => ({
   title: m.name,
   description: m.description,
-  tags: m.tags.map((tag) => ({ title: tag }))
+  tags: m.tags.map((tag) => ({ title: tag })),
+  logo: m.logo || 'https://placehold.co/40x40?text=MC'
 }));
 </script>
 

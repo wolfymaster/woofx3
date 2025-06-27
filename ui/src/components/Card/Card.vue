@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineProps, ref } from 'vue';
+import { defineProps, ref, watch } from 'vue';
 
 const props = defineProps({
   type: { type: String, required: true },
@@ -15,13 +15,16 @@ const props = defineProps({
     default: () => []
   },
 });
-const isEnabled = ref(props.enabled);
 const emit = defineEmits<{
   (e: 'update:enabled', value: boolean): void;
 }>();
+const isEnabled = ref(props.enabled);
+watch(() => props.enabled, (newVal) => {
+  isEnabled.value = newVal;
+});
 
 const updateCheckboxValue = (checked: boolean) => {
-  isEnabled.value = !checked;
+  isEnabled.value = checked;
   emit('update:enabled', checked);
 };
 </script>
@@ -45,18 +48,15 @@ const updateCheckboxValue = (checked: boolean) => {
       <div v-if="!props.showConfig"></div>
       <div>
         <div class="toggle-switch-container">
-          <div>
-            <span v-if="props.enabled">Enabled</span>
-            <span v-if="!props.enabled">Disabled</span>
-          </div>
-        <label class="switch">
-          <input
-              id="default-payout-radio"
-              :value="props.enabled"
-              :checked="props.enabled"
-              type="checkbox"
-              @input="updateCheckboxValue($event.target.checked)"
-          />
+   <div>
+    <span>{{ isEnabled ? 'Enabled' : 'Disabled' }}</span>
+  </div>
+  <label class="switch">
+    <input
+      type="checkbox"
+      :checked="isEnabled"
+      @input="updateCheckboxValue($event.target.checked)"
+    />
           <span class="slider round"></span>
         </label>
         </div>
