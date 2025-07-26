@@ -1,0 +1,6 @@
+// see: https://github.com/coder/envbuilder/blob/main/docs/devcontainer-spec-support.md
+{
+    "name": "woofx3",
+    "image": "wolfymaster/woofx3-development",
+    "workspaceFolder": "/home/woofx3/code"
+}
