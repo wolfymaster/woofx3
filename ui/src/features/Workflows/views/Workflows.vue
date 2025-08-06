@@ -42,9 +42,33 @@
       />
     </div>
 
-    <!-- Table View -->
-    <div v-if="viewMode === 'table'" class="table-container">
-      <table class="workflows-table">
+         <!-- Table View -->
+     <div v-if="viewMode === 'table'" class="table-container">
+       <!-- Search and Filter Bar -->
+       <div class="search-filter-bar">
+         <div class="search-section">
+           <input 
+             v-model="searchQuery"
+             type="text" 
+             placeholder="Search workflows..."
+             class="search-input"/>
+         </div>
+         <div class="filter-section">
+           <select v-model="statusFilter" class="filter-select">
+             <option value="">All Status</option>
+             <option value="enabled">Active</option>
+             <option value="disabled">Inactive</option>
+           </select>
+           <select v-model="tagFilter" class="filter-select">
+             <option value="">All Tags</option>
+             <option v-for="tag in availableTags" :key="tag" :value="tag">
+               {{ tag }}
+             </option>
+           </select>
+         </div>
+       </div>
+       
+       <table class="workflows-table">
         <thead>
           <tr>
             <th class="checkbox-column">
@@ -52,16 +76,15 @@
                 type="checkbox" 
                 :checked="allSelected"
                 @change="toggleSelectAll"
-                class="select-all-checkbox"
-              />
+                class="select-all-checkbox"/>
             </th>
-                         <th>Workflow Name</th>
-             <th>Description</th>
-             <th>Status</th>
+            <th>Workflow Name</th>
+            <th>Description</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="workflow in processedWorkflows" :key="workflow.title" class="workflow-row">
+                     <tr v-for="workflow in filteredWorkflows" :key="workflow.title" class="workflow-row">
             <td class="checkbox-column">
               <input 
                 type="checkbox" 
@@ -92,8 +115,11 @@
                      <button @click="configureWorkflow(workflow.title)" class="dropdown-item">
                        Configure
                      </button>
-                     <button @click="configureWorkflow(workflow.title)" class="dropdown-item">
-                       Star
+                     <button @click="togglePinned(workflow.title)" class="dropdown-item">
+                       <span :class="['paw-icon', workflow.pinned ? 'pinned' : 'unpinned']">
+                         {{ workflow.pinned ? '🐾' : '🐾' }}
+                       </span>
+                       {{ workflow.pinned ? 'Unpin' : 'Pin' }}
                      </button>
                      <button @click="configureWorkflow(workflow.title)" class="dropdown-item">
                        Archive
@@ -155,7 +181,8 @@ const processedWorkflows = ref(rawWorkflows.map((w) => ({
   description: w.description,
   tags: w.tags.map((tag: string) => ({ title: tag })),
   logo: w.logo || 'https://placehold.co/40x40?text=MC',
-  enabled: w.enabled
+  enabled: w.enabled,
+  pinned: false
 })));
 
 // Selection state
@@ -164,10 +191,54 @@ const selectedWorkflows = ref<string[]>([]);
 // Dropdown state
 const openDropdown = ref<string | null>(null);
 
+// Search and filter state
+const searchQuery = ref('');
+const statusFilter = ref('');
+const tagFilter = ref('');
+
 // Computed properties
 const allSelected = computed(() => {
-  return processedWorkflows.value.length > 0 && 
-         selectedWorkflows.value.length === processedWorkflows.value.length;
+  return filteredWorkflows.value.length > 0 && 
+         selectedWorkflows.value.length === filteredWorkflows.value.length;
+});
+
+const availableTags = computed(() => {
+  const tags = new Set<string>();
+  processedWorkflows.value.forEach(workflow => {
+    workflow.tags.forEach(tag => tags.add(tag.title));
+  });
+  return Array.from(tags).sort();
+});
+
+const filteredWorkflows = computed(() => {
+  let filtered = processedWorkflows.value;
+
+  // Search filter
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase();
+    filtered = filtered.filter(workflow => 
+      workflow.title.toLowerCase().includes(query) ||
+      workflow.description.toLowerCase().includes(query)
+    );
+  }
+
+  // Status filter
+  if (statusFilter.value) {
+    filtered = filtered.filter(workflow => {
+      if (statusFilter.value === 'enabled') return workflow.enabled;
+      if (statusFilter.value === 'disabled') return !workflow.enabled;
+      return true;
+    });
+  }
+
+  // Tag filter
+  if (tagFilter.value) {
+    filtered = filtered.filter(workflow => 
+      workflow.tags.some(tag => tag.title === tagFilter.value)
+    );
+  }
+
+  return filtered;
 });
 
 // Methods
@@ -191,13 +262,21 @@ const toggleSelectAll = () => {
   if (allSelected.value) {
     selectedWorkflows.value = [];
   } else {
-    selectedWorkflows.value = processedWorkflows.value.map(w => w.title);
+    selectedWorkflows.value = filteredWorkflows.value.map(w => w.title);
   }
 };
 
 const configureWorkflow = (title: string) => {
   console.log(`Configuring workflow: ${title}`);
   // Add your configuration logic here
+  openDropdown.value = null;
+};
+
+const togglePinned = (title: string) => {
+  const workflow = processedWorkflows.value.find(w => w.title === title);
+  if (workflow) {
+    workflow.pinned = !workflow.pinned;
+  }
   openDropdown.value = null;
 };
 
@@ -345,6 +424,68 @@ const deleteSelected = () => {
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
 }
 
+.search-filter-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid var(--color-border);
+  gap: 1rem;
+}
+
+.search-section {
+  position: relative;
+  flex: 1;
+  max-width: 400px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.5rem 2.5rem 0.5rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  background: white;
+  transition: border-color 0.2s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.1);
+}
+
+.search-icon {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  pointer-events: none;
+}
+
+.filter-section {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.filter-select {
+  padding: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  background: white;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.1);
+}
+
 .workflows-table {
   width: 100%;
   border-collapse: collapse;
@@ -483,6 +624,23 @@ const deleteSelected = () => {
 .dropdown-item:hover {
   background: rgba(147, 51, 234, 0.1);
   color: var(--color-primary);
+}
+
+.paw-icon {
+  margin-right: 0.5rem;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+}
+
+.paw-icon.unpinned {
+  opacity: 0.6;
+  filter: grayscale(1);
+}
+
+.paw-icon.pinned {
+  opacity: 1;
+  filter: none;
+  transform: scale(1.1);
 }
 
 .configure-btn,
