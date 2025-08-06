@@ -8,6 +8,7 @@ import Workflows from "../features/Workflows/views/Workflows.vue";
 import Triggers from "../features/Triggers/views/Triggers.vue";
 import Settings from "../features/Settings/views/Settings.vue";
 import SubmitFeedback from "../features/Feedback/views/SubmitFeedback.vue";
+import Home from "../features/Home/views/Home.vue";
 
 const router = createRouter({
     history: createWebHistory(),
@@ -51,6 +52,11 @@ const router = createRouter({
             path: '/feedback',
             name: 'Submit Feedback',
             component: SubmitFeedback
+        },
+        {
+            path: '/home',
+            name: 'Home',
+            component: Home
         },
         {
             path: '/:pathMatch(.*)*',

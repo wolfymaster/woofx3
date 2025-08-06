@@ -15,6 +15,9 @@ document.documentElement.setAttribute('data-theme', 'light');
       <div>
         <ul>
           <li>
+            <router-link to="/home">Home</router-link>
+          </li>
+          <li>
             <router-link to="/">Onboarding</router-link>
           </li>
           <li>
