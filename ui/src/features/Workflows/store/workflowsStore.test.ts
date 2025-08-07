@@ -1,18 +1,24 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { workflowsStore,
-    selectedWorkflowsStore,
-    searchQueryStore,
-    statusFilterStore,
-    tagFilterStore,
-    viewModeStore,
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as workflowsStoreFile from './workflowsStore';
+
+const {
+    workflowsStore, 
+    selectedWorkflowsStore, 
+    searchQueryStore, 
+    statusFilterStore, 
+    tagFilterStore, 
+    viewModeStore, 
     openDropdownStore,
-    updateWorkflowStatus } from './workflowsStore';
+    updateWorkflowStatus    
+} = workflowsStoreFile;
+
+const updateStatusSpy = vi.fn(updateWorkflowStatus);
 
 describe('WorkflowsStore', () => {
   beforeEach(() => {
     workflowsStore.set([
         {
-            title: 'Follow Alert Workflow',
+            name: 'Follow Alert Workflow',
             description: 'Automated workflow that triggers custom alerts...',
             tags: [{ title: 'Alerts' }, { title: 'Automation' }],
             logo: 'https://placehold.co/40x40?text=FA',
@@ -20,7 +26,7 @@ describe('WorkflowsStore', () => {
             pinned: false
           },
           {
-            title: 'Subscriber Welcome Flow', 
+            name: 'Subscriber Welcome Flow', 
             description: 'Multi-step workflow for new subscribers...',
             tags: [{ title: 'Subscribers' }, { title: 'Welcome' }],
             logo: 'https://placehold.co/40x40?text=SW',
@@ -28,7 +34,7 @@ describe('WorkflowsStore', () => {
             pinned: false
           },
           {
-            title: 'Donation Celebration',
+            name: 'Donation Celebration',
             description: 'Dynamic workflow that scales celebrations...',
             tags: [{ title: 'Donations' }, { title: 'Celebration' }],
             logo: 'https://placehold.co/40x40?text=DC', 
@@ -54,8 +60,15 @@ describe('WorkflowsStore', () => {
       });
 
     it('should update workflow status', () => {
-      // TODO: Test enabling/disabling workflows
-      updateWorkflowStatus()
+        const updatedFollow = workflowsStore.get()[0]
+        const updatedSub = workflowsStore.get()[1]
+
+        updateStatusSpy('Follow Alert Workflow', false)
+        updateStatusSpy('Subscriber Welcome Flow', true)
+        
+        expect(updateStatusSpy).toBeCalledTimes(2);
+        expect(updatedFollow.enabled).toBe(false);
+        expect(updatedSub.enabled).toBe(true);
     });
 
     it('should toggle workflow pinned status', () => {

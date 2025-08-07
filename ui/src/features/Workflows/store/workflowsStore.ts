@@ -83,6 +83,7 @@ export const updateWorkflowStatus = (name: string, enabled: boolean) => {
   const found = wf.find(w => w.name === name);
   if(found){
     found.enabled = enabled;
+    workflowsStore.set([...wf]);
   }
 };
 
