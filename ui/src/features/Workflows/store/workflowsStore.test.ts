@@ -1,9 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import workflowsStore from './workflowsStore';
+import { workflowsStore,
+    selectedWorkflowsStore,
+    searchQueryStore,
+    statusFilterStore,
+    tagFilterStore,
+    viewModeStore,
+    openDropdownStore,
+    updateWorkflowStatus } from './workflowsStore';
 
 describe('WorkflowsStore', () => {
   beforeEach(() => {
-    // TODO: Setup test data and reset store state
     workflowsStore.set([
         {
             title: 'Follow Alert Workflow',
@@ -30,7 +36,12 @@ describe('WorkflowsStore', () => {
             pinned: false
           }
     ]);
-
+    selectedWorkflowsStore.set([]);
+    searchQueryStore.set('');
+    statusFilterStore.set('');
+    tagFilterStore.set('');
+    viewModeStore.set('cards');
+    openDropdownStore.set(null);
   });
 
   describe('Workflow Management', () => {
@@ -44,6 +55,7 @@ describe('WorkflowsStore', () => {
 
     it('should update workflow status', () => {
       // TODO: Test enabling/disabling workflows
+      updateWorkflowStatus()
     });
 
     it('should toggle workflow pinned status', () => {

@@ -137,6 +137,7 @@
 
 <script setup lang="ts">
 import { useStore } from '@nanostores/vue';
+import { computed } from 'vue';
 import wfCard from '@/components/Card/Card.vue';
 import {
   workflowsStore,
@@ -145,7 +146,10 @@ import {
   statusFilterStore,
   tagFilterStore,
   viewModeStore,
-  openDropdownStore
+  openDropdownStore,
+  filteredWorkflows,
+  allSelected,
+  availableTags
 } from '../store/workflowsStore';
 
 //TODO: move logic to store
@@ -159,6 +163,9 @@ const searchQuery = useStore(searchQueryStore);
 const statusFilter = useStore(statusFilterStore);
 const tagFilter = useStore(tagFilterStore);
 const openDropdown = useStore(openDropdownStore);
+// const filteredwfs = useStore(filteredWorkflows);
+// const allSelectedRef = useStore(allSelected);
+const availableTagsRef = useStore(availableTags);
 
 // Computed properties
 const allSelected = computed(() => {
@@ -166,7 +173,7 @@ const allSelected = computed(() => {
          selectedWorkflows.value.length === filteredWorkflows.value.length;
 });
 
-const availableTags = computed(() => {
+const availableTags2 = computed(() => {
   const tags = new Set<string>();
   workflows.value.forEach(workflow => {
     workflow.tags.forEach(tag => tags.add(tag.title));
@@ -206,13 +213,6 @@ const filteredWorkflows = computed(() => {
 });
 
 // Methods
-const updateWorkflowStatus = (title: string, enabled: boolean) => {
-  const workflow = processedWorkflows.value.find(w => w.title === title);
-  if (workflow) {
-    workflow.enabled = enabled;
-  }
-};
-
 const toggleWorkflowSelection = (title: string) => {
   const index = selectedWorkflows.value.indexOf(title);
   if (index > -1) {
@@ -223,7 +223,7 @@ const toggleWorkflowSelection = (title: string) => {
 };
 
 const toggleSelectAll = () => {
-  if (allSelected.value) {
+  if (allSelectedRef.value) {
     selectedWorkflows.value = [];
   } else {
     selectedWorkflows.value = filteredWorkflows.value.map(w => w.title);
