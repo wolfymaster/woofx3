@@ -64,6 +64,7 @@ export const availableTags = atom<string[]>([]);
 
 // Actions
 workflowsStore.set(rawWorkflows); //only temporary until api call is implemented
+const workflows = workflowsStore.get();
 
 export const processWorkflows = () => {
 const raw = workflowsStore.get();
@@ -95,8 +96,11 @@ export const toggleSelectAll = () => {
   // TODO: Implement select all/deselect all
 };
 
-export const togglePinned = (title: string) => {
-  // TODO: Implement pin/unpin workflow
+export const togglePinned = (name: string) => {
+    const wfPin = workflows.find(w => w.name === name);
+    if(wfPin){
+        wfPin.pinned = !wfPin.pinned;
+    }
 };
 
 export const toggleDropdown = (title: string) => {

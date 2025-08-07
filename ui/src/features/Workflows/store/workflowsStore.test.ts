@@ -9,10 +9,15 @@ const {
     tagFilterStore, 
     viewModeStore, 
     openDropdownStore,
-    updateWorkflowStatus    
+    updateWorkflowStatus,
+    togglePinned,
+    deleteSelected,
+    allSelected
 } = workflowsStoreFile;
 
 const updateStatusSpy = vi.fn(updateWorkflowStatus);
+const togglePinSpy = vi.fn(togglePinned);
+const deleteSelectedSpy = vi.fn(deleteSelected);
 
 describe('WorkflowsStore', () => {
   beforeEach(() => {
@@ -52,11 +57,31 @@ describe('WorkflowsStore', () => {
 
   describe('Workflow Management', () => {
     it('should initialize with default workflows', () => {
-      // TODO: Test store initialization
+      const workflows = workflowsStore.get();
+
+      expect(workflows).toHaveLength(3);
+      expect(workflows).toBeInstanceOf(Array);
+
+      workflows.forEach(wf => {
+        expect(wf.name).toBeTruthy();
+        expect(wf.description).toBeTruthy();
+        expect(Array.isArray(wf.tags)).toBe(true);
+      })
+
     });
 
     it('should add newly created workflow to all workflows', () => {
         // TODO: Test workflow creation success
+        const wfCreated = {
+            name: 'Dora the Explora',
+            description: 'Awesome Description of this workflow',
+            tags: [{ title: 'Alerts' }, { title: 'Celebration' }],
+            logo: 'https://placehold.co/40x40?text=MC',
+            enabled: false,
+            pinned: false
+        }
+
+
       });
 
     it('should update workflow status', () => {
@@ -72,11 +97,25 @@ describe('WorkflowsStore', () => {
     });
 
     it('should toggle workflow pinned status', () => {
-      // TODO: Test pinning/unpinning workflows
+        const workflows = workflowsStore.get();
+        const follow = workflows[0];
+        const disabledWorkflows = workflows.filter(wf => wf.enabled === false);
+
+        togglePinSpy('Follow Alert Workflow');
+
+        expect(follow.enabled).toBe(false);
+        expect(disabledWorkflows).toHaveLength(2);
+
     });
 
     it('should delete selected workflows', () => {
-      // TODO: Test bulk deletion
+        const selected = selectedWorkflowsStore.get();
+
+        deleteSelectedSpy();
+
+        expect(selected).toHaveLength(0);
+        expect(allSelected).toBe(false);
+
     });
   });
 
