@@ -8,7 +8,7 @@
            @click="viewMode = 'cards'" 
            :class="{ active: viewMode === 'cards' }"
            class="tab-btn">
-            Starred
+            Pinned
          </button>
          <button 
            @click="viewMode = 'table'" 
@@ -136,65 +136,29 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { useStore } from '@nanostores/vue';
 import wfCard from '@/components/Card/Card.vue';
+import {
+  workflowsStore,
+  selectedWorkflowsStore,
+  searchQueryStore,
+  statusFilterStore,
+  tagFilterStore,
+  viewModeStore,
+  openDropdownStore
+} from '../store/workflowsStore';
 
 //TODO: move logic to store
-// View mode state
-const viewMode = ref<'cards' | 'table'>('cards');
+//TODO: update workflow views to show and hide cards on pinned 
 
-// Workflow data with status
-const rawWorkflows = [
-  {
-    name: 'Follow Alert Workflow',
-    description: 'Automated workflow that triggers custom alerts, chat messages, and overlay animations when someone follows your channel.',
-    tags: ['Alerts', 'Automation', 'Engagement'],
-    logo: 'https://placehold.co/40x40?text=FA',
-    enabled: true
-  },
-  {
-    name: 'Subscriber Welcome Flow',
-    description: 'Multi-step workflow for new subscribers including welcome messages, special role assignment, and exclusive content access.',
-    tags: ['Subscribers', 'Welcome', 'Roles'],
-    logo: 'https://placehold.co/40x40?text=SW',
-    enabled: false
-  },
-  {
-    name: 'Donation Celebration',
-    description: 'Dynamic workflow that scales celebrations based on donation amount, from simple thank yous to elaborate animations.',
-    tags: ['Donations', 'Celebration', 'Dynamic'],
-    logo: 'https://placehold.co/40x40?text=DC',
-    enabled: true
-  },
-  {
-    name: 'Raid Response System',
-    description: 'Automated raid handling with welcome messages, follower goals, and special raid-only commands for incoming viewers.',
-    tags: ['Raids', 'Welcome', 'Goals'],
-    logo: 'https://placehold.co/40x40?text=RR',
-    enabled: false
-  }
-];
-
-// Converting to structure for wfCard.vue
-const processedWorkflows = ref(rawWorkflows.map((w) => ({
-  title: w.name,
-  description: w.description,
-  tags: w.tags.map((tag: string) => ({ title: tag })),
-  logo: w.logo || 'https://placehold.co/40x40?text=MC',
-  enabled: w.enabled,
-  pinned: false
-})));
-
-// Selection state
-const selectedWorkflows = ref<string[]>([]);
-
-// Dropdown state
-const openDropdown = ref<string | null>(null);
-
-// Search and filter state
-const searchQuery = ref('');
-const statusFilter = ref('');
-const tagFilter = ref('');
+//atoms to vue Refs
+const viewMode = useStore(viewModeStore);
+const workflows = useStore(workflowsStore);
+const selectedWorkflows = useStore(selectedWorkflowsStore);
+const searchQuery = useStore(searchQueryStore);
+const statusFilter = useStore(statusFilterStore);
+const tagFilter = useStore(tagFilterStore);
+const openDropdown = useStore(openDropdownStore);
 
 // Computed properties
 const allSelected = computed(() => {
@@ -204,20 +168,20 @@ const allSelected = computed(() => {
 
 const availableTags = computed(() => {
   const tags = new Set<string>();
-  processedWorkflows.value.forEach(workflow => {
+  workflows.value.forEach(workflow => {
     workflow.tags.forEach(tag => tags.add(tag.title));
   });
   return Array.from(tags).sort();
 });
 
 const filteredWorkflows = computed(() => {
-  let filtered = processedWorkflows.value;
+  let filtered = workflows.value;
 
   // Search filter
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase();
     filtered = filtered.filter(workflow => 
-      workflow.title.toLowerCase().includes(query) ||
+      workflow.name.toLowerCase().includes(query) ||
       workflow.description.toLowerCase().includes(query)
     );
   }
