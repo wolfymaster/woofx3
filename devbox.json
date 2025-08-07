@@ -15,10 +15,11 @@
     "streamlink@6.11.0",
     "uv@latest",
     "openai-whisper-cpp@latest",
-    "twitch-cli@latest",
     "extism-cli@1.6.2",
     "sqlite@latest",
-    "temporal-cli@latest"
+    "temporal-cli@latest",
+    "gopls@latest",
+    "twitch-cli@1.1.25"
   ],
   "shell": {
     "init_hook": [

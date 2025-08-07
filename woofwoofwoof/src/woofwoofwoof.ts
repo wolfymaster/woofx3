@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import NatsClient, { natsMessageHandler } from './nats';
 import TwitchBootstrap from './twitchBootstrap';
-import { Commands } from './commands';
+import { AuthorizationResponse, Commands } from './commands';
 import Spotify from './spotify';
 import Govee from './govee';
 import { kasaLightsOn, kasaLightsOff } from './kasa';
@@ -41,6 +41,11 @@ const bus = await NatsClient();
 
 // new Commands instance
 const commander = new Commands(bus);
+
+// add permissions check to commander
+commander.setAuth(async (user: string, cmd: string) => {
+    return await canUse(user, `command/${cmd}`, 'read');
+});
 
 // bootstrap twitch auth provider
 const send = await TwitchBootstrap(channel, commander, {
@@ -638,4 +643,15 @@ function parseTime(duration: string): number {
 
     // Convert minutes and seconds to total seconds
     return minutes * 60 + seconds;
+}
+
+async function canUse(sub: string, obj: string, act: string): Promise<AuthorizationResponse> {
+    const url = `https://access.local.woofx3.tv/policy?sub=${sub}&obj=${obj}&act=${act}`;
+    const response = await fetch(url);
+    const json = await response.json();
+
+    return {
+        granted: json.granted,
+        message: json.granted ? '' : `${sub}.... YOU CAN'T DO THAT`,
+    }
 }

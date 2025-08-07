@@ -1,5 +1,6 @@
 {
   "go.alternateTools": {
-    "go": "/home/wolfy/code/wolfymaster/woofx3/.devbox/nix/profile/default/bin/go"
+    "go": "/home/wolfy/code/wolfymaster/woofx3/.devbox/nix/profile/default/bin/go",
+    "gopls": "/home/wolfy/code/wolfymaster/woofx3/.devbox/nix/profile/default/bin/gopls"
   }
 }

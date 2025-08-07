@@ -1,5 +1,27 @@
-p, wolfymaster, command/*, read, allow
-p, cozytink, command/cookie, read, allow
-p, cozytink, command/sr, read, allow
-p, gboyz, command/woof, read, allow
-p, jessimahcah8, command/*, read, allow
+# p, user/role, resource/group, action, permission
+# g, user, resource, role
+# g2, resource, group
+
+# Anonymoose can read public group
+p, anonymoose, public_command, read, allow
+
+# Everyone has anonymoose role on everything 
+g, *, *, anonymoose
+
+# Command cookie is a public command
+g2, command/cookie, public_command
+g2, command/light, public_command
+
+# Admin can read mod group
+p, moderator, command_group_A, read, allow
+g, wolfymaster, command/*, moderator
+g2, command/*, command_group_A
+
+g, tiffcobabe, command/*, moderator
+g, jesswillcodee, command/*, moderator
+g, fishing4fun123, command/*, moderator
+g, kittyclemente, command/*, moderator
+
+# override and remove wolfymaster access
+# p, wolfymaster, command/*, read, deny
+p, fishing4fun123, command/time, read, deny

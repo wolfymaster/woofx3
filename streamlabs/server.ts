@@ -69,6 +69,9 @@ const bus = await NatsClient();
   }
 })();
 
+// json bodyparser
+app.use(express.json());
+
 // Express middleware
 app.use(
   viteDevServer
@@ -83,6 +86,12 @@ const build = viteDevServer
       "virtual:remix/server-build"
     )
   : await import("./build/server/index.js");
+
+// sls stats
+app.post('/sls/stat', (req, res) => {
+  console.log('SLS STATS: ', req.body)
+  return res.sendStatus(200);
+})
 
 // Remix request handler
 app.all(

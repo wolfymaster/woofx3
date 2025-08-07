@@ -30,33 +30,33 @@ processes:
     working_dir: db
     ready_log_line: "Connected to the database!"
 
-  extension-be:
-    command: bun run dev
-    description: Twitch Data Center Extension Development
-    working_dir: extension
+  # extension-be:
+  #   command: bun run dev
+  #   description: Twitch Data Center Extension Development
+  #   working_dir: extension
 
-  extension-fe:
-    command: bun run dev
-    description: Twitch Data Center Extension Development
-    working_dir: extension/client
+  # extension-fe:
+  #   command: bun run dev
+  #   description: Twitch Data Center Extension Development
+  #   working_dir: extension/client
 
-  reward:
-    command: bun run src/index.ts
-    description: Twitch Viewer Rewards
-    working_dir: reward
+  # reward:
+  #   command: bun run src/index.ts
+  #   description: Twitch Viewer Rewards
+  #   working_dir: reward
 
   streamlabs:
     command: PORT=5175 bun run dev
     description: slobs
     working_dir: streamlabs
 
-  streamerui:
-    command: bun run dev
-    description: Off-Twitch UI for managing things
-    working_dir: streamerui
-    depends_on:
-      caddy:
-        condition: process_started
+  # streamerui:
+  #   command: bun run dev
+  #   description: Off-Twitch UI for managing things
+  #   working_dir: streamerui
+  #   depends_on:
+  #     caddy:
+  #       condition: process_started
 
   temporal-server:
     command: temporal server start-dev
@@ -70,10 +70,10 @@ processes:
       db:
         condition: process_log_ready
 
-  voice:
-    command: go run ./src --url https://www.twitch.tv/wolfymaster
-    description: Voice control stream
-    working_dir: stream        
+  # voice:
+  #   command: go run ./src --url https://www.twitch.tv/wolfymaster
+  #   description: Voice control stream
+  #   working_dir: stream        
 
   wooflow:
     command: go run .

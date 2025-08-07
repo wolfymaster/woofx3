@@ -76,6 +76,7 @@ try {
     });
 
     listener.onChannelFollow(userId, userId, async (event: EventSubChannelFollowEvent) => {
+        console.log(`triggered follow`);
         const { followDate, userDisplayName, userId } = event;
         try {
             await CreateUserEvent({
@@ -101,32 +102,6 @@ try {
                 userDisplayName
             }
         }));
-
-        // bus.publish('slobs', JSON.stringify({
-        //     command: 'alert_message',
-        //     args: {
-        //         audioUrl: 'https://streamlabs.local.woofx3.tv/pleasure.mp3',
-        //         mediaUrl: 'https://media.tenor.com/LdHGHWDh0Y8AAAPo/look-at-you-i-see-you.mp4',
-        //         text: `<3  {primary}${userDisplayName}{primary} followed <3`,
-        //         duration: 6,
-        //     }
-        // }))
-
-        // bus.publish('slobs', JSON.stringify({
-        //     command: 'count', // TODO: Is there a better name?
-        //     args: {
-        //         id: 'ac39613d-4f48-459c-9f4e-6f3fb0df65e0',
-        //         value: 1,
-        //     }
-        // }));
-
-        // bus.publish('slobs', JSON.stringify({
-        //     command: 'updateTime',
-        //     args: {
-        //         timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
-        //         valueInSeconds: 60,
-        //     }
-        // }));
     });
 
     listener.onStreamOnline(userId, (event: any) => {
@@ -216,13 +191,15 @@ try {
     listener.onChannelSubscriptionGift(userId, async (evt: EventSubChannelSubscriptionGiftEvent) => {
         const { gifterId, gifterDisplayName, amount, tier, isAnonymous } = evt;
 
+        const gifterName = isAnonymous ? 'Anonymoose' : gifterDisplayName;
+
         console.log(Commands.USER_GIFT_SUBSCRIPTION, gifterDisplayName, amount, tier, isAnonymous);
 
         try {
             await CreateUserEvent({
                 event: {
                     userId,
-                    displayName: gifterDisplayName,
+                    displayName: gifterName,
                     eventType: Commands.USER_GIFT_SUBSCRIPTION,
                     // TODO: Add gift subscription event
                 }
@@ -235,22 +212,23 @@ try {
 
         const suborsubs = amount > 1 ? 'subscriptions' : 'subscription';
 
-        bus.publish('slobs', JSON.stringify({
-            command: 'alert_message',
-            args: {
+        // publish the follow event to workflow
+        bus.publish('workflow.subscription', JSON.stringify({
+            type: 'subscription',
+            payload: {
                 audioUrl: 'https://streamlabs.local.woofx3.tv/allinthistogether.mp3',
                 mediaUrl: 'https://media.tenor.com/MojW2yr1vFoAAAPo/money-money-money.mp4',
-                text: `$$ {primary}${gifterDisplayName}{primary} gifted {primary}${amount}{primary} ${suborsubs} $$`,
+                text: `$$ {primary}${gifterName}{primary} gifted {primary}${amount}{primary} ${suborsubs} $$`,
             }
         }));
 
-        bus.publish('slobs', JSON.stringify({
-            command: 'count', // TODO: Is there a better name?
-            args: {
-                id: 'a2e8385b-5688-4ec2-92a1-f4bf3e3d53a4',
-                value: amount,
-            }
-        }))
+        // bus.publish('slobs', JSON.stringify({
+        //     command: 'count', // TODO: Is there a better name?
+        //     args: {
+        //         id: 'a2e8385b-5688-4ec2-92a1-f4bf3e3d53a4',
+        //         value: amount,
+        //     }
+        // }))
     })
 
     listener.onChannelSubscription(userId, async (event: EventSubChannelSubscriptionEvent) => {
@@ -304,6 +282,7 @@ try {
         }
     });
 
+    // I think this is resubs - when it is announced in chat
     listener.onChannelSubscriptionMessage(userId, async (event: EventSubChannelSubscriptionMessageEvent) => {
         const { userId, userDisplayName, tier } = event;
 
@@ -419,7 +398,44 @@ try {
                     }
                 }));
                 break;
-
+            // "Face Cam" Redeem - change to Chat scene
+            case '2d231ccc-79ba-4853-bd07-1b1cb7a24da2':
+                bus.publish('slobs', JSON.stringify({
+                    command: 'scene_change',
+                    args: {
+                        sceneName: 'Chat',
+                    }
+                }));
+                break;
+            // "Code Cam" Redeem - swap to programming scene
+            case 'c86fb5e5-c4f2-481d-b332-d8c6764df083':
+                bus.publish('slobs', JSON.stringify({
+                    command: 'scene_change',
+                    args: {
+                        sceneName: 'Programming',
+                    }
+                }));
+                break;
+            // "Main Cam" Redeem - turn on main cam
+            case 'e0b303e0-a28c-42aa-9c02-cd356e86a87e':
+                bus.publish('slobs', JSON.stringify({
+                    command: 'source_change',
+                    args: {
+                        sourceName: 'maincam',
+                        value: 'on',
+                    }
+                }));
+                break;
+                // swap to moo cam
+            // "Moo Cam" Redeem - change to Moo Cam scene
+            case 'b670ddcb-6024-4941-ad5c-fab4105f6ad3':             
+                bus.publish('slobs', JSON.stringify({
+                    command: 'scene_change',
+                    args: {
+                        sceneName: 'Moo Cam',
+                    }
+                }));
+                break;
             default:
                 console.log('nothing to do for rewardId: ', rewardId)
         }

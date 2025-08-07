@@ -2,6 +2,11 @@
 	default_bind 127.0.0.1
 }
 
+access.local.woofx3.tv {
+	reverse_proxy http://localhost:9005
+	tls internal
+}
+
 auth.local.woofx3.tv {
 	reverse_proxy /* http://localhost:8081
 	tls internal

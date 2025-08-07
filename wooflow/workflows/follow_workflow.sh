@@ -16,7 +16,7 @@ WORKFLOW_DEF='{
     {
       "id": "step1",
       "type": "action",
-      "name": "someone subscribed",
+      "name": "someone followed",
       "action": "media_alert",
       "parameters": {
             "audioUrl": "https://streamlabs.local.woofx3.tv/pleasure.mp3",
