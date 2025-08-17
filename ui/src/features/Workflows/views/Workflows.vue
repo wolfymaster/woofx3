@@ -30,15 +30,16 @@
     <!-- Card View -->
     <div v-if="viewMode === 'cards'" class="workflows-grid">
       <wfCard
-        v-for="workflow in processedWorkflows"
-        :key="workflow.title"
+        v-for="workflow in workflowsStore"
+        :key="workflow.name"
         type="module"
-        :title="workflow.title"
+        :name="workflow.name"
         :description="workflow.description"
         :tags="workflow.tags"
         :enabled="workflow.enabled"
+        :pinned="workflow.pinned"
         :show-config="true"
-        @update:enabled="updateWorkflowStatus(workflow.title, $event)"
+        @update:enabled="updateWorkflowStatus(workflow.name, $event)"
       />
     </div>
 
@@ -147,9 +148,8 @@ import {
   tagFilterStore,
   viewModeStore,
   openDropdownStore,
-  filteredWorkflows,
-  allSelected,
-  availableTags
+  availableTags,
+  updateWorkflowStatus
 } from '../store/workflowsStore';
 
 //TODO: move logic to store
@@ -165,7 +165,7 @@ const tagFilter = useStore(tagFilterStore);
 const openDropdown = useStore(openDropdownStore);
 // const filteredwfs = useStore(filteredWorkflows);
 // const allSelectedRef = useStore(allSelected);
-const availableTagsRef = useStore(availableTags);
+// const availableTagsRef = useStore(availableTags);
 
 // Computed properties
 const allSelected = computed(() => {
@@ -173,13 +173,13 @@ const allSelected = computed(() => {
          selectedWorkflows.value.length === filteredWorkflows.value.length;
 });
 
-const availableTags2 = computed(() => {
-  const tags = new Set<string>();
-  workflows.value.forEach(workflow => {
-    workflow.tags.forEach(tag => tags.add(tag.title));
-  });
-  return Array.from(tags).sort();
-});
+// const availableTags2 = computed(() => {
+//   const tags = new Set<string>();
+//   workflows.value.forEach(workflow => {
+//     workflow.tags.forEach(tag => tags.add(tag.title));
+//   });
+//   return Array.from(tags).sort();
+// });
 
 const filteredWorkflows = computed(() => {
   let filtered = workflows.value;
@@ -213,67 +213,52 @@ const filteredWorkflows = computed(() => {
 });
 
 // Methods
-const toggleWorkflowSelection = (title: string) => {
-  const index = selectedWorkflows.value.indexOf(title);
-  if (index > -1) {
-    selectedWorkflows.value.splice(index, 1);
-  } else {
-    selectedWorkflows.value.push(title);
-  }
-};
 
-const toggleSelectAll = () => {
-  if (allSelectedRef.value) {
-    selectedWorkflows.value = [];
-  } else {
-    selectedWorkflows.value = filteredWorkflows.value.map(w => w.title);
-  }
-};
 
-const configureWorkflow = (title: string) => {
-  console.log(`Configuring workflow: ${title}`);
-  // Add your configuration logic here
-  openDropdown.value = null;
-};
+// const toggleSelectAll = () => {
+//   if (allSelectedRef.value) {
+//     selectedWorkflows.value = [];
+//   } else {
+//     selectedWorkflows.value = filteredWorkflows.value.map(w => w.title);
+//   }
+// };
 
-const togglePinned = (title: string) => {
-  const workflow = processedWorkflows.value.find(w => w.title === title);
-  if (workflow) {
-    workflow.pinned = !workflow.pinned;
-  }
-  openDropdown.value = null;
-};
+// const configureWorkflow = (title: string) => {
+//   console.log(`Configuring workflow: ${title}`);
+//   // Add your configuration logic here
+//   openDropdown.value = null;
+// };
 
-const toggleDropdown = (title: string) => {
-  if (openDropdown.value === title) {
-    openDropdown.value = null;
-  } else {
-    openDropdown.value = title;
-  }
-};
+// const toggleDropdown = (title: string) => {
+//   if (openDropdown.value === title) {
+//     openDropdown.value = null;
+//   } else {
+//     openDropdown.value = title;
+//   }
+// };
 
 const enableSelected = () => {
   selectedWorkflows.value.forEach(title => {
     updateWorkflowStatus(title, true);
   });
-  selectedWorkflows.value = [];
+  selectedWorkflows;+
 };
 
-const disableSelected = () => {
-  selectedWorkflows.value.forEach(title => {
-    updateWorkflowStatus(title, false);
-  });
-  selectedWorkflows.value = [];
-};
+// const disableSelected = () => {
+//   selectedWorkflows.value.forEach(title => {
+//     updateWorkflowStatus(title, false);
+//   });
+//   selectedWorkflows.value = [];
+// };
 
-const deleteSelected = () => {
-  if (confirm(`Are you sure you want to delete ${selectedWorkflows.value.length} workflow(s)?`)) {
-    processedWorkflows.value = processedWorkflows.value.filter(
-      w => !selectedWorkflows.value.includes(w.title)
-    );
-    selectedWorkflows.value = [];
-  }
-};
+// const deleteSelected = () => {
+//   if (confirm(`Are you sure you want to delete ${selectedWorkflows.value.length} workflow(s)?`)) {
+//     processedWorkflows.value = processedWorkflows.value.filter(
+//       w => !selectedWorkflows.value.includes(w.title)
+//     );
+//     selectedWorkflows.value = [];
+//   }
+// };
 </script>
 
 <style scoped>

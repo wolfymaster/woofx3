@@ -90,6 +90,12 @@ export const updateWorkflowStatus = (name: string, enabled: boolean) => {
 
 export const toggleWorkflowSelection = (title: string) => {
   // TODO: Implement individual workflow selection toggle
+    const index = selectedWorkflowsStore.value.indexOf(title);
+    if (index > -1) {
+      selectedWorkflowsStore.value.splice(index, 1);
+    } else {
+      selectedWorkflowsStore.value.push(title);
+    }
 };
 
 export const toggleSelectAll = () => {
