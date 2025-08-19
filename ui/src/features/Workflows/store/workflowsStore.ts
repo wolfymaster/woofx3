@@ -89,17 +89,25 @@ export const updateWorkflowStatus = (name: string, enabled: boolean) => {
 };
 
 export const toggleWorkflowSelection = (title: string) => {
-  // TODO: Implement individual workflow selection toggle
-    const index = selectedWorkflowsStore.value.indexOf(title);
-    if (index > -1) {
-      selectedWorkflowsStore.value.splice(index, 1);
-    } else {
-      selectedWorkflowsStore.value.push(title);
-    }
+  const selected = selectedWorkflowsStore.get();
+  const index = selected.indexOf(title);
+  const next = index > -1
+    ? [...selected.slice(0, index), ...selected.slice(index + 1)]
+    : [...selected, title];
+  selectedWorkflowsStore.set(next);
 };
 
 export const toggleSelectAll = () => {
-  // TODO: Implement select all/deselect all
+  const isAllSelected = allSelected.get();
+  if (isAllSelected) {
+    selectedWorkflowsStore.set([]);
+    allSelected.set(false);
+  } else {
+    const source = filteredWorkflows.get();
+    const names = (source.length ? source : workflowsStore.get()).map(w => w.name);
+    selectedWorkflowsStore.set(names);
+    allSelected.set(true);
+  }
 };
 
 export const togglePinned = (name: string) => {
@@ -110,19 +118,34 @@ export const togglePinned = (name: string) => {
 };
 
 export const toggleDropdown = (title: string) => {
-  // TODO: Implement dropdown toggle
+  const current = openDropdownStore.get();
+  openDropdownStore.set(current === title ? null : title);
 };
 
 export const enableSelected = () => {
-  // TODO: Implement bulk enable
+  const selected = selectedWorkflowsStore.get();
+  selected.forEach(title => {
+    updateWorkflowStatus(title, true);
+  });
 };
 
 export const disableSelected = () => {
-  // TODO: Implement bulk disable
+  const selected = selectedWorkflowsStore.get();
+  selected.forEach(title => {
+    updateWorkflowStatus(title, false);
+  });
+  selectedWorkflowsStore.set([]);
 };
 
 export const deleteSelected = () => {
-  // TODO: Implement bulk delete
+  const count = selectedWorkflowsStore.get().length;
+  if (confirm(`Are you sure you want to delete ${count} workflow(s)?`)) {
+    const selected = selectedWorkflowsStore.get();
+    const current = workflowsStore.get();
+    const filtered = current.filter(w => !selected.includes(w.name));
+    workflowsStore.set(filtered);
+    selectedWorkflowsStore.set([]);
+  }
 };
 
 export const addWorkflow = (workflow: Workflow) => {

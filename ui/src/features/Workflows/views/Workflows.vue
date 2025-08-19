@@ -208,56 +208,15 @@ const filteredWorkflows = computed(() => {
       workflow.tags.some(tag => tag.title === tagFilter.value)
     );
   }
-
   return filtered;
 });
 
 // Methods
 
-
-// const toggleSelectAll = () => {
-//   if (allSelectedRef.value) {
-//     selectedWorkflows.value = [];
-//   } else {
-//     selectedWorkflows.value = filteredWorkflows.value.map(w => w.title);
-//   }
-// };
-
 // const configureWorkflow = (title: string) => {
 //   console.log(`Configuring workflow: ${title}`);
 //   // Add your configuration logic here
 //   openDropdown.value = null;
-// };
-
-// const toggleDropdown = (title: string) => {
-//   if (openDropdown.value === title) {
-//     openDropdown.value = null;
-//   } else {
-//     openDropdown.value = title;
-//   }
-// };
-
-const enableSelected = () => {
-  selectedWorkflows.value.forEach(title => {
-    updateWorkflowStatus(title, true);
-  });
-  selectedWorkflows;+
-};
-
-// const disableSelected = () => {
-//   selectedWorkflows.value.forEach(title => {
-//     updateWorkflowStatus(title, false);
-//   });
-//   selectedWorkflows.value = [];
-// };
-
-// const deleteSelected = () => {
-//   if (confirm(`Are you sure you want to delete ${selectedWorkflows.value.length} workflow(s)?`)) {
-//     processedWorkflows.value = processedWorkflows.value.filter(
-//       w => !selectedWorkflows.value.includes(w.title)
-//     );
-//     selectedWorkflows.value = [];
-//   }
 // };
 </script>
 

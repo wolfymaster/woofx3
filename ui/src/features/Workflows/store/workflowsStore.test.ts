@@ -12,7 +12,6 @@ const {
     updateWorkflowStatus,
     togglePinned,
     deleteSelected,
-    allSelected,
     toggleWorkflowSelection,
     toggleSelectAll,
     toggleDropdown,
