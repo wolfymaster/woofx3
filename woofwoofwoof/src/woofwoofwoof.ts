@@ -1,17 +1,18 @@
-import dotenv from 'dotenv';
-import path from 'path';
-import NatsClient, { natsMessageHandler } from './nats';
-import TwitchBootstrap from './twitchBootstrap';
-import { AuthorizationResponse, Commands } from './commands';
-import Spotify from './spotify';
-import Govee from './govee';
-import { kasaLightsOn, kasaLightsOff } from './kasa';
-import * as util from './util';
-import { GetCommands } from '@client/command.pb';
+import dotenv from "dotenv";
+import path from "path";
+import NatsClient, { natsMessageHandler } from "./nats";
+import TwitchBootstrap from "./twitchBootstrap";
+import { AuthorizationResponse, Commands } from "./commands";
+import Spotify from "./spotify";
+import Govee from "./govee";
+import { kasaLightsOff, kasaLightsOn } from "./kasa";
+import * as util from "./util";
+import { GetCommands } from "@client/command.pb";
+import BarkloaderClient, { BarkloaderMessageResponse } from "@woofx3/barkloader";
 
 export interface WoofWoofWoofRequestMessage {
     command: string;
-    args: Record<string, string>
+    args: Record<string, string>;
 }
 
 interface Command {
@@ -21,12 +22,17 @@ interface Command {
 }
 
 dotenv.config({
-    path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../', '.env')],
+    path: [
+        path.resolve(process.cwd(), ".env"),
+        path.resolve(process.cwd(), "../", ".env"),
+    ],
 });
 
 let channel = process.env.TWITCH_CHANNEL_NAME;
 if (!channel) {
-    throw new Error('twitch channel missing. please set environment variable: TWITCH_CHANNEL_NAME.')
+    throw new Error(
+        "twitch channel missing. please set environment variable: TWITCH_CHANNEL_NAME.",
+    );
 }
 
 // create NATS client
@@ -34,8 +40,11 @@ const bus = await NatsClient();
 
 // listen on the eventbus for api calls
 (async () => {
-    for await (const msg of bus.subscribe('woofwoofwoof')) {
-        natsMessageHandler<WoofWoofWoofRequestMessage>(msg, woofwoofwoofMessageHandler);
+    for await (const msg of bus.subscribe("woofwoofwoof")) {
+        natsMessageHandler<WoofWoofWoofRequestMessage>(
+            msg,
+            woofwoofwoofMessageHandler,
+        );
     }
 })();
 
@@ -44,7 +53,7 @@ const commander = new Commands(bus);
 
 // add permissions check to commander
 commander.setAuth(async (user: string, cmd: string) => {
-    return await canUse(user, `command/${cmd}`, 'read');
+    return await canUse(user, `command/${cmd}`, "read");
 });
 
 // bootstrap twitch auth provider
@@ -52,12 +61,17 @@ const send = await TwitchBootstrap(channel, commander, {
     databaseURL: process.env.DATABASE_PROXY_URL || "",
 });
 
-function woofwoofwoofMessageHandler(command: string, args: Record<string, string>) {
-    if (command === 'write_message') {
-        send(args.message);
+function woofwoofwoofMessageHandler(
+    command: string,
+    args: Record<string, string>,
+) {
+    console.log("received message from nats: ", command, args.message);
+    if (command === "write_message") {
+        console.log("writing message");
+        send(args.message, {}, false);
     }
 
-    if(command === 'add_command') {
+    if (command === "add_command") {
         const { command, type, typeValue } = args;
         addCommand({
             command,
@@ -68,38 +82,48 @@ function woofwoofwoofMessageHandler(command: string, args: Record<string, string
 }
 
 // Barkloader websocket
-const socket = new WebSocket("ws://localhost:3005");
-socket.addEventListener("message", event => {
-    console.log('recived on socket', event.data);
-    try {
-        const { error, command, args, message } = JSON.parse(event.data);
-        if(error) {
-            console.error(message);
-            return;
+const barkloaderClient = new BarkloaderClient({
+    wsUrl: "ws://localhost:3005",
+    onMessage: (message: BarkloaderMessageResponse) => {
+        console.log("recived on socket", message);
+        try {
+            if (message.error) {
+                console.error(message);
+                return;
+            }
+            if (message.command) {
+                send(message.args.message, {}, false);
+            }
+        } catch (err) {
+            console.log("failed to parse websocket message as json");
         }
-        if(command) {
-            send(args.message, {}, false);
-        }
-    } catch (err) {
-        console.log('failed to parse websocket message as json');
-    }
-});
-socket.addEventListener("open", event => {
-    console.log('socket opened')
-});
-socket.addEventListener("close", event => {
-    console.log('socket closed')
-});
-socket.addEventListener("error", event => {
-    console.log('socket error', event)
+    },
+    onOpen: (event) => {
+        console.log("socket opened");
+    },
+    onClose: (event) => {
+        console.log("socket closed");
+    },
+    onError: (event) => {
+        console.log("socket error", event);
+    },
+    maxRetries: Infinity,
+    onReconnectAttempt: () => {
+        console.log("disconnecting.. attempting to reconnect");
+    },
+    reconnectTimeout: 5000, // 5 seconds
 });
 
-const commands = await GetCommands({ broadcasterId: process.env.TWITCH_BROADCASTER_ID || '' }, {
+barkloaderClient.connect();
+
+const commands = await GetCommands({
+    broadcasterId: process.env.TWITCH_BROADCASTER_ID || "",
+}, {
     baseURL: process.env.DATABASE_PROXY_URL || "",
 });
 
 if (commands.status.code !== "OK") {
-    console.error('Failed to load commands', commands.status.message);
+    console.error("Failed to load commands", commands.status.message);
     process.exit();
 }
 
@@ -111,22 +135,27 @@ for (let i = 0; i < commands.commands.length; ++i) {
 
 // Add a new command
 function addCommand(command: Command) {
-    console.log('adding command', command.command);
-    if(command.type === 'function') {
+    console.log("adding command", command.command);
+    if (command.type === "function") {
         commander.add(command.command, async (text: string, user?: string) => {
-            socket.send(JSON.stringify({
-                type: 'invoke',
+            barkloaderClient.send(JSON.stringify({
+                type: "invoke",
                 data: {
                     func: command.command,
                     args: [text, user],
-                }
+                },
             }));
-            return '';
+            return "";
         });
         return;
     }
     commander.add(command.command, command.typeValue);
 }
+
+// log every message
+commander.every(async (msg: string, user?: string) => {
+    console.log(`${user} says: ${msg}`);
+});
 
 // commander.add('woof', async (text: string) => {
 //     const sounds = ['woof1', 'woof2']
@@ -156,28 +185,31 @@ function addCommand(command: Command) {
 
 // commander.add('skizz', 'WOOOOOOOOOO');
 
-commander.add('discord', async (text: string, user?: string) => {
+commander.add("discord", async (text: string, user?: string) => {
     // check if the user is currently following
 
     // if not following, encourage them to follow
 
     // provide discord link if following
-    return '';
+    return "";
 });
 
-commander.add('vanish', async (text: string, user?: string) => {
-    bus.publish('twitchapi', JSON.stringify({
-        command: 'timeout',
-        args: {
-            user: user,
-            duration: Math.floor(Math.random() * 600),
-        }
-    }));
+commander.add("vanish", async (text: string, user?: string) => {
+    bus.publish(
+        "twitchapi",
+        JSON.stringify({
+            command: "timeout",
+            args: {
+                user: user,
+                duration: Math.floor(Math.random() * 600),
+            },
+        }),
+    );
     return `/me *poof* @${user} is gone`;
 });
 
-commander.add('lurk', async (text: string, user?: string) => {
-    return '';
+commander.add("lurk", async (text: string, user?: string) => {
+    return "";
 });
 
 // commander.add('github', 'https://www.github.com/wolfymaster/woofx3');
@@ -197,27 +229,30 @@ commander.add('lurk', async (text: string, user?: string) => {
 //     return '';
 // })
 
-commander.add('follow', async (text: string) => {
+commander.add("follow", async (text: string) => {
     // sent request for shoutout with username
-    const username = text.replace('@', '').trim();
+    const username = text.replace("@", "").trim();
 
     console.log(username);
 
-    bus.publish('slobs', JSON.stringify({
-        command: 'follow',
-        args: { username }
-    }));
+    bus.publish(
+        "slobs",
+        JSON.stringify({
+            command: "follow",
+            args: { username },
+        }),
+    );
 
-    return '';
-})
+    return "";
+});
 
-commander.add('song', async (text: string) => {
+commander.add("song", async (text: string) => {
     // setup spotify client
     const spotify = new Spotify(
-        process.env.SPOTIFY_CLIENT_ID || '',
-        process.env.SPOTIFY_CLIENT_SECRET || '',
-        process.env.SPOTIFY_ACCESS_TOKEN || '',
-        process.env.SPOTIFY_REFRESH_TOKEN || ''
+        process.env.SPOTIFY_CLIENT_ID || "",
+        process.env.SPOTIFY_CLIENT_SECRET || "",
+        process.env.SPOTIFY_ACCESS_TOKEN || "",
+        process.env.SPOTIFY_REFRESH_TOKEN || "",
     );
 
     await spotify.refresh();
@@ -225,18 +260,18 @@ commander.add('song', async (text: string) => {
     const track = await spotify.currentTrack();
 
     return `Currently Playing: ${track.name} by ${track.artist}`;
-})
+});
 
 // SONG REQUESTS
-commander.add('sr', async (text: string) => {
+commander.add("sr", async (text: string) => {
     console.log(text);
 
     // setup spotify client
     const spotify = new Spotify(
-        process.env.SPOTIFY_CLIENT_ID || '',
-        process.env.SPOTIFY_CLIENT_SECRET || '',
-        process.env.SPOTIFY_ACCESS_TOKEN || '',
-        process.env.SPOTIFY_REFRESH_TOKEN || ''
+        process.env.SPOTIFY_CLIENT_ID || "",
+        process.env.SPOTIFY_CLIENT_SECRET || "",
+        process.env.SPOTIFY_ACCESS_TOKEN || "",
+        process.env.SPOTIFY_REFRESH_TOKEN || "",
     );
 
     // await spotify.refresh();
@@ -246,16 +281,25 @@ commander.add('sr', async (text: string) => {
 
     await spotify.refresh();
 
+    // const devices = await spotify.devices();
+    // console.log('devices', devices);
+
     // select a song and play it via spotify
-    const deviceId = 'bbf76ad22cd4cafc8f15af3376bbfa88fb408dcf' // computer device id
+    const deviceId = "02e7cb6b8d5bae01eeb82eb2af0e32e22e044d43"; // computer device id
 
     // if url, attempt to parse
-    if (text.includes('open.spotify.com/track')) {
-        const regex = /(?:https?:\/\/)?open\.spotify\.com\/track\/([a-zA-Z0-9]+)(?:\?|$)/;
+    if (text.includes("open.spotify.com/track")) {
+        const regex =
+            /(?:https?:\/\/)?open\.spotify\.com\/track\/([a-zA-Z0-9]+)(?:\?|$)/;
 
-        const trackId = text.match(regex)[1];
+        const matches = text.match(regex);
+        if (!matches || matches.length < 2) {
+            return "";
+        }
 
-        console.log('trackId', trackId);
+        const trackId = matches[1];
+
+        console.log("trackId", trackId);
 
         const song = await spotify.getTrack(trackId);
 
@@ -308,48 +352,63 @@ commander.add('sr', async (text: string) => {
 // })
 
 // UPDATE STREAM CATEGORY
-commander.add('category', async (text: string) => {
+commander.add("category", async (text: string) => {
     switch (text) {
-        case 'sgd':
-            bus.publish('twitchapi', JSON.stringify({
-                command: 'update_stream',
-                args: { category: 'software and game development' }
-            }));
-            return 'Updating stream category to Software and Game Development';
-        case 'jc':
-            bus.publish('twitchapi', JSON.stringify({
-                command: 'update_stream',
-                args: { category: 'just chatting' }
-            }));
-            return 'Updating stream category to Just Chatting';
-        case 'irl':
-            bus.publish('twitchapi', JSON.stringify({
-                command: 'update_stream',
-                args: { category: 'irl' }
-            }));
-            return 'Updating stream category to IRL';
-        case 'apex':
-            bus.publish('twitchapi', JSON.stringify({
-                command: 'update_stream',
-                args: { category: 'apex legends' }
-            }));
-            return 'Updating stream category to Apex';
+        case "sgd":
+            bus.publish(
+                "twitchapi",
+                JSON.stringify({
+                    command: "update_stream",
+                    args: { category: "software and game development" },
+                }),
+            );
+            return "Updating stream category to Software and Game Development";
+        case "jc":
+            bus.publish(
+                "twitchapi",
+                JSON.stringify({
+                    command: "update_stream",
+                    args: { category: "just chatting" },
+                }),
+            );
+            return "Updating stream category to Just Chatting";
+        case "irl":
+            bus.publish(
+                "twitchapi",
+                JSON.stringify({
+                    command: "update_stream",
+                    args: { category: "irl" },
+                }),
+            );
+            return "Updating stream category to IRL";
+        case "apex":
+            bus.publish(
+                "twitchapi",
+                JSON.stringify({
+                    command: "update_stream",
+                    args: { category: "apex legends" },
+                }),
+            );
+            return "Updating stream category to Apex";
         default:
-            console.error('INVALID TWITCH CATEGORY');
+            console.error("INVALID TWITCH CATEGORY");
     }
 
-    return '';
+    return "";
 });
 
 // UPDATE STREAM TITLE
-commander.add('title', async (text: string, user?: string) => {
-    if (!user || user.toLowerCase() !== 'wolfymaster') {
-        return 'Sorry, @cyburdial ruined this for everyone.'
+commander.add("title", async (text: string, user?: string) => {
+    if (!user || user.toLowerCase() !== "wolfymaster") {
+        return "Sorry, @cyburdial ruined this for everyone.";
     }
-    bus.publish('twitchapi', JSON.stringify({
-        command: 'update_stream',
-        args: { title: text }
-    }));
+    bus.publish(
+        "twitchapi",
+        JSON.stringify({
+            command: "update_stream",
+            args: { title: text },
+        }),
+    );
 
     return `Stream title updated to: ${text}`;
 });
@@ -398,140 +457,148 @@ commander.add('title', async (text: string, user?: string) => {
 //     return 'WE DID IT!';
 // });
 
-commander.add('sc', async (text: string) => {
-    let sceneName = '';
+commander.add("sc", async (text: string) => {
+    let sceneName = "";
     switch (text) {
-        case '1':
-            sceneName = 'Chat';
+        case "1":
+            sceneName = "Chat";
             break;
-        case '2':
-            sceneName = 'Programming';
+        case "2":
+            sceneName = "Programming";
             break;
-        case '3':
-            sceneName = 'StreamTogether';
+        case "3":
+            sceneName = "StreamTogether";
             break;
-        case '4':
-            sceneName = '';
+        case "4":
+            sceneName = "";
             break;
     }
 
     if (!sceneName) {
-        return 'Scene does not exist';
+        return "Scene does not exist";
     }
 
-    bus.publish('slobs', JSON.stringify({
-        command: 'scene_change',
-        args: {
-            sceneName,
-        }
-    }));
+    bus.publish(
+        "slobs",
+        JSON.stringify({
+            command: "scene_change",
+            args: {
+                sceneName,
+            },
+        }),
+    );
 
-
-    return 'Updated Scene';
+    return "Updated Scene";
 });
 
-commander.add('src', async (text: string) => {
+commander.add("src", async (text: string) => {
     if (!text) {
-        return '';
+        return "";
     }
 
     let visibility = false;
-    const [sourceName, onoff] = text.split(' ');
+    const [sourceName, onoff] = text.split(" ");
 
-    if (onoff === 'on' || onoff === '1') {
+    if (onoff === "on" || onoff === "1") {
         visibility = true;
     }
 
-    bus.publish('slobs', JSON.stringify({
-        command: 'source_change',
-        args: {
-            sourceName,
-            value: visibility ? 'on' : 'off',
-        }
-    }));
+    bus.publish(
+        "slobs",
+        JSON.stringify({
+            command: "source_change",
+            args: {
+                sourceName,
+                value: visibility ? "on" : "off",
+            },
+        }),
+    );
 
     return `Updating source: ${sourceName}`;
 });
 
-commander.add('office', async (text: string) => {
-    if (text === 'on') {
+commander.add("office", async (text: string) => {
+    if (text === "on") {
         kasaLightsOn();
     } else {
         kasaLightsOff();
     }
 
-    return '';
+    return "";
 });
 
 // PAINT GAME COMMADNS
-commander.every(async (msg: string, user?: string) => {
-    // only run if we are playing the game
-    const playing = true;
+// commander.every(async (msg: string, user?: string) => {
+//     // only run if we are playing the game
+//     const playing = true;
 
-    if (!playing) {
-        return;
-    }
+//     if (!playing) {
+//         return;
+//     }
 
-    const points = util.parsePoints(msg);
+//     const points = util.parsePoints(msg);
 
-    console.log('points', points);
+//     console.log('points', points);
 
-    if (!points.length) {
-        return;
-    }
+//     if (!points.length) {
+//         return;
+//     }
 
-    let x, y, xlength, ylength = 0;
+//     let x, y, xlength, ylength = 0;
 
-    if (points.length === 1) {
-        x = points[0].x;
-        y = points[0].y;
-        xlength = 1;
-        ylength = 1;
-    } else {
-        const absx = Math.abs(points[0].x - points[1].x);
-        const absy = Math.abs(points[0].y - points[1].y);
+//     if (points.length === 1) {
+//         x = points[0].x;
+//         y = points[0].y;
+//         xlength = 1;
+//         ylength = 1;
+//     } else {
+//         const absx = Math.abs(points[0].x - points[1].x);
+//         const absy = Math.abs(points[0].y - points[1].y);
 
-        if (absx === 0) {
-            x = points[0].x
-            y = Math.min(points[0].y, points[1].y);
-            xlength = 1;
-            ylength = absy + 1;
-        }
+//         if (absx === 0) {
+//             x = points[0].x
+//             y = Math.min(points[0].y, points[1].y);
+//             xlength = 1;
+//             ylength = absy + 1;
+//         }
 
-        if (absy === 0) {
-            x = Math.min(points[0].x, points[1].x);
-            y = points[0].y
-            xlength = absx + 1;
-            ylength = 1;
-        }
-    }
+//         if (absy === 0) {
+//             x = Math.min(points[0].x, points[1].x);
+//             y = points[0].y
+//             xlength = absx + 1;
+//             ylength = 1;
+//         }
+//     }
 
-    bus.publish('slobs', JSON.stringify({
-        command: 'paint',
-        args: {
-            action: 'draw',
-            x,
-            y,
-            xlength,
-            ylength,
-            user
-        }
-    }));
-})
+//     bus.publish('slobs', JSON.stringify({
+//         command: 'paint',
+//         args: {
+//             action: 'draw',
+//             x,
+//             y,
+//             xlength,
+//             ylength,
+//             user
+//         }
+//     }));
+// })
 
 // PAINT GAME PEN COLOR
-commander.add('color', async (msg: string, user?: string) => {
-    bus.publish('slobs', JSON.stringify({
-        command: 'paint',
-        args: {
-            action: 'pencolor',
-            color: msg,
-            user
-        }
-    }));
+commander.add("color", async (msg: string, user?: string) => {
+    bus.publish(
+        "slobs",
+        JSON.stringify({
+            command: "paint",
+            args: {
+                action: "pencolor",
+                color: msg,
+                user,
+            },
+        }),
+    );
 
-    return '';
-})
+    return "";
+});
 
 // commander.add('confetti', async (msg: string) => {
 //     bus.publish('slobs', JSON.stringify({
@@ -552,29 +619,32 @@ commander.add('color', async (msg: string, user?: string) => {
 // })
 
 // add a command for updating the timer
-commander.add('time', async (msg: string) => {
+commander.add("time", async (msg: string) => {
     const time = msg;
 
-    console.log('update timer', parseTime(time));
+    console.log("update timer", parseTime(time));
 
-    bus.publish('slobs', JSON.stringify({
-        command: 'setTime',
-        args: {
-            timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
-            valueInSeconds: parseTime(time),
-        }
-    }));
+    bus.publish(
+        "slobs",
+        JSON.stringify({
+            command: "setTime",
+            args: {
+                timerId: "49b3fa3b-5eeb-40c3-bdc2-4d0e97192391",
+                valueInSeconds: parseTime(time),
+            },
+        }),
+    );
 
-    return 'Timer updated';
+    return "Timer updated";
 });
 
-commander.add('partymode', async (msg: string) => {
+commander.add("partymode", async (msg: string) => {
     partyMode();
-    return 'party mode activated';
-})
+    return "party mode activated";
+});
 
 function sleep(ms: number) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function partyMode() {
@@ -586,30 +656,36 @@ async function partyMode() {
         const combos = [
             [true, true],
             [false, true],
-            [false, false]
-        ]
+            [false, false],
+        ];
 
         const randomCombo = Math.floor(Math.random() * combos.length);
 
-        const [mobileState, maincamState] = combos[randomCombo]
+        const [mobileState, maincamState] = combos[randomCombo];
 
-        console.log('mobile', mobileState, 'maincam', maincamState);
+        console.log("mobile", mobileState, "maincam", maincamState);
 
-        bus.publish('slobs', JSON.stringify({
-            command: 'source_change',
-            args: {
-                sourceName: 'maincam',
-                value: maincamState ? 'on' : 'off',
-            }
-        }));
+        bus.publish(
+            "slobs",
+            JSON.stringify({
+                command: "source_change",
+                args: {
+                    sourceName: "maincam",
+                    value: maincamState ? "on" : "off",
+                },
+            }),
+        );
 
-        bus.publish('slobs', JSON.stringify({
-            command: 'source_change',
-            args: {
-                sourceName: 'mobile',
-                value: mobileState ? 'on' : 'off',
-            }
-        }));
+        bus.publish(
+            "slobs",
+            JSON.stringify({
+                command: "source_change",
+                args: {
+                    sourceName: "mobile",
+                    value: mobileState ? "on" : "off",
+                },
+            }),
+        );
 
         onoff = !onoff;
 
@@ -630,10 +706,10 @@ function parseTime(duration: string): number {
         for (const match of matches) {
             // Get the number part and the unit from each match.
             const num = parseInt(match);
-            const unit = match.includes('m') ? 'm' : 's';
+            const unit = match.includes("m") ? "m" : "s";
 
             // Add to the respective variable based on the unit.
-            if (unit === 'm') {
+            if (unit === "m") {
                 minutes += num;
             } else {
                 seconds += num;
@@ -645,13 +721,43 @@ function parseTime(duration: string): number {
     return minutes * 60 + seconds;
 }
 
-async function canUse(sub: string, obj: string, act: string): Promise<AuthorizationResponse> {
-    const url = `https://access.local.woofx3.tv/policy?sub=${sub}&obj=${obj}&act=${act}`;
+async function canUse(
+    sub: string,
+    obj: string,
+    act: string,
+): Promise<AuthorizationResponse> {
+    const url =
+        `https://access.local.woofx3.tv/policy?sub=${sub}&obj=${obj}&act=${act}`;
     const response = await fetch(url);
     const json = await response.json();
 
     return {
         granted: json.granted,
-        message: json.granted ? '' : `${sub}.... YOU CAN'T DO THAT`,
+        message: json.granted ? "" : `${sub}.... YOU CAN'T DO THAT`,
+    };
+}
+
+async function gracefulShutdown(signal: string): Promise<void> {
+    console.log(`\n🛑 Received ${signal}, starting graceful shutdown...`);
+
+    try {
+        barkloaderClient.destroy();
+        console.log("✅ Graceful shutdown completed");
+        process.exit(0);
+    } catch (error) {
+        console.error("❌ Error during graceful shutdown:", error);
+        process.exit(1);
     }
 }
+
+// graceful shutdown
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("uncaughtException", (error) => {
+    console.error("💥 Uncaught Exception:", error);
+    gracefulShutdown("uncaughtException");
+});
+process.on("unhandledRejection", (reason, promise) => {
+    console.error("🚫 Unhandled Rejection at:", promise, "reason:", reason);
+    gracefulShutdown("unhandledRejection");
+});

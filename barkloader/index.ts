@@ -1,10 +1,11 @@
+import chalk from 'chalk';
 import { serve } from "bun";
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
 import { LuaFactory } from 'wasmoon';
 import NatsClient, { natsMessageHandler } from './nats';
-import { InvokeRequest, WebSocketMessage, CommandArgs, TimerArgs, StreamAlertArgs } from "./types";
+import { InvokeRequest, WebSocketMessage, TimerArgs, StreamAlertArgs, TwitchArgs } from "./types";
 import { Command, SetCommand } from '@client/command.pb';
 
 // receive message
@@ -26,6 +27,9 @@ dotenv.config({
     path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../', '.env')],
 });
 
+// set port
+const port = process.env.PORT || 3005;
+
 // create NATS client
 const bus = await NatsClient();
 
@@ -35,13 +39,14 @@ let clientId = 0;
 
 const broadcasterId = process.env.TWITCH_BROADCASTER_ID || '';
 
-console.log('===================================');
-console.log('STARTING BARKLOADER')
-console.log(new Date());
-console.log('===================================');
+console.log(chalk.yellow('==================================='));
+console.log(chalk.blue('STARTING BARKLOADER'))
+console.log(chalk.blue(new Date()));
+console.log(chalk.blue(`PORT: ${port}`));
+console.log(chalk.yellow('==================================='));
 
 const server = serve({
-    port: 3005,
+    port,
     fetch(req, server) {
         // Handle WebSocket upgrade requests
         if (req.headers.get("upgrade") === "websocket") {
@@ -105,6 +110,14 @@ const server = serve({
                         }));
                     })
 
+                    lua.global.set('twitch', (args: TwitchArgs) => {
+                        bus.publish('twitchapi', JSON.stringify({
+                            command: 'clip',
+                            args
+                        }));
+                    });
+                    
+
                     lua.global.set('setTimer', async (args: TimerArgs) => {
                         bus.publish('slobs', JSON.stringify({
                             command: 'setTime',
@@ -163,7 +176,7 @@ const server = serve({
                 // Handle non-JSON messages
                 ws.send(JSON.stringify({
                     error: true,
-                    message: e.message(),
+                    message: e,
                     received: message.toString()
                 }));
             }
