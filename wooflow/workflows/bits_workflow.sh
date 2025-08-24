@@ -10,66 +10,26 @@ WORKFLOW_DEF='{
   "active": true,
   "trigger": {
     "type": "event",
-    "event": "bits"
+    "event": "bits",
+    "condition": {
+      "amount": {
+        "gte": 1
+      }
+    }
   },
   "steps": [
     {
-      "id": "step_trigger_100_bit_workflow",
-      "type": "workflow_trigger",
-      "name": "Trigger 100 bits",
-      "workflow": "workflow_1",
-      "condition": {
-        "trigger.amount": {
-            "eq": 100
-        }
-      }      
-    },
-    {
-      "id": "step_trigger_500_bit_workflow",
-      "type": "workflow_trigger",
-      "name": "Trigger 500 bits",
-      "workflow": "workflow_2",
-      "condition": {
-        "trigger.amount": {
-            "eq": 500
-        }
-      },   
-    },
-
-    {
-        "id": "workflow_1",
-        "type": "workflow",
-        "name": "100 bits workflow",
-        "steps": [
-            {
-                "id": "step_100_bits",
-                "type": "action",
-                "name": "100 bits",
-                "action": "media_alert",
-                "parameters": {
-                    "audioUrl": "https://streamlabs.local.woofx3.tv/pleasure.mp3"
-                }      
-            }
-        ]
-    },
-
-    {
-        "id": "workflow_2",
-        "type": "workflow",
-        "name": "500 bits workflow",
-        "steps": [
-            {
-                "id": "step_500_bits",
-                "type": "action",
-                "name": "500 bits",
-                "action": "media_alert",
-                "parameters": {
-                    "audioUrl": "https://streamlabs.local.woofx3.tv/pleasure.mp3"
-                }  
-            }
-        ]
+      "id": "step1",
+      "type": "action",
+      "name": "Trigger confetti",
+      "action": "media_alert",
+      "parameters": {
+          "mediaUrl": ["https://streamlabs.local.woofx3.tv/bit_overlay.json", "https://streamlabs.local.woofx3.tv/confetti2.gif"],
+          "audioUrl": "https://streamlabs.local.woofx3.tv/goinsane-pinkpony.mp3",
+          "duration": 10,
+          "options": [{ "view": { "fullScreen": true, "positionAbsolute": true }, "animation": { "path": ["assets", 0, "layers", 0, "t", "d", "k", 0, "s", "t"], "value": "{amount} BITS" } }, { "view": { "fullScreen": true, "positionAbsolute": true } }]
+      }
     }
-
   ]
 }'
 

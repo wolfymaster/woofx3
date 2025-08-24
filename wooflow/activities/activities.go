@@ -2,8 +2,6 @@ package activities
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
 	t "github.com/wolfymaster/woofx3/wooflow/internal/workflow/temporal"
 	"github.com/wolfymaster/woofx3/wooflow/topics"
@@ -29,16 +27,18 @@ func PerformSystemCommand(ctx context.Context, name string, topic string, comman
 }
 
 func MediaAlert(ctx context.Context, params map[string]any) (t.ExecuteActionResult, error) {
-	text, exists := params["text"]
-	if exists {
-		// check for substitution
-		for key, value := range params {
-			placeholder := "{" + key + "}"
-			text = strings.ReplaceAll(text.(string), placeholder, fmt.Sprintf("%v", value))
-		}
-	}
-	params["text"] = text
-	return PerformSystemCommand(ctx, "Media Alert", topics.Slobs, "alert_message", params)
+	// text, exists := params["text"]
+	// if exists {
+	// 	// check for substitution
+	// 	for key, value := range params {
+	// 		placeholder := "{" + key + "}"
+	// 		text = strings.ReplaceAll(text.(string), placeholder, fmt.Sprintf("%v", value))
+	// 	}
+	// }
+	// params["text"] = text
+
+	substitutedParams := processPlaceholders(params, params).(map[string]any)
+	return PerformSystemCommand(ctx, "Media Alert", topics.Slobs, "alert_message", substitutedParams)
 }
 
 func SendChatCommand(ctx context.Context, params map[string]any) (t.ExecuteActionResult, error) {

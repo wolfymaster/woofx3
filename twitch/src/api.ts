@@ -50,7 +50,6 @@ const twitchApi = new TwitchApi(apiClient, broadcaster);
 
 console.log(`===================== STARTING TWITCH ===========================  `);
 
-const chatMessagesQueue = [];
 
 let ctx: Context = {
     logger,
@@ -168,13 +167,24 @@ try {
             }
         }))
 
-        bus.publish('slobs', JSON.stringify({
-            command: 'updateTime',
-            args: {
-                timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
-                valueInSeconds: bits,
+        // publish the cheer event to workflow
+        bus.publish('workflow.bits', JSON.stringify({
+            type: 'bits',
+            payload: {
+                message,
+                isAnonymous,
+                amount: bits,
+                user: userDisplayName,
             }
         }));
+
+        // bus.publish('slobs', JSON.stringify({
+        //     command: 'updateTime',
+        //     args: {
+        //         timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
+        //         valueInSeconds: bits,
+        //     }
+        // }));
     });
 
     listener.onChannelHypeTrainBegin(userId, (data: any) => {
@@ -183,13 +193,13 @@ try {
             args: {}
         }))
 
-        bus.publish('slobs', JSON.stringify({
-            command: 'updateTime',
-            args: {
-                timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
-                valueInSeconds: 600,
-            }
-        }));
+        // bus.publish('slobs', JSON.stringify({
+        //     command: 'updateTime',
+        //     args: {
+        //         timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
+        //         valueInSeconds: 600,
+        //     }
+        // }));
     });
 
     listener.onChannelSubscriptionGift(userId, async (evt: EventSubChannelSubscriptionGiftEvent) => {
@@ -216,7 +226,7 @@ try {
 
         const suborsubs = amount > 1 ? 'subscriptions' : 'subscription';
 
-        // publish the follow event to workflow
+        // publish the subscription gift event to workflow
         bus.publish('workflow.subscription', JSON.stringify({
             type: 'subscription',
             payload: {
@@ -258,13 +268,13 @@ try {
             console.error(err);
         }
 
-        bus.publish('slobs', JSON.stringify({
-            command: 'updateTime',
-            args: {
-                timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
-                valueInSeconds: 120,
-            }
-        }));
+        // bus.publish('slobs', JSON.stringify({
+        //     command: 'updateTime',
+        //     args: {
+        //         timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
+        //         valueInSeconds: 120,
+        //     }
+        // }));
 
         if (!isGift) {
             bus.publish('slobs', JSON.stringify({
