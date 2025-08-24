@@ -5,6 +5,8 @@ import { id, i, init, InstaQLEntity } from "@instantdb/react";
 import AlertAudio from '~/components/AlertAudio';
 import { AlertMessage } from "~/components/AlertMessage";
 import { TaskCompleted } from '~/types';
+import Animation from "~/components/Animation";
+import AlertMessageWrapper from "~/components/AlertWrapper";
 
 
 export const meta: MetaFunction = () => {
@@ -87,8 +89,6 @@ export default function Index() {
     return <></>;
   }
 
-  console.log(message.options);
-
   return (
     <>
     {message.type === 'play_audio' &&
@@ -98,15 +98,7 @@ export default function Index() {
         onDone={onDone}
       />}
     {message.type === 'alert_message' &&
-      <AlertMessage
-        id={message.id}
-        onDone={onDone}
-        audioUrl={message.audioUrl}
-        mediaUrl={message.mediaUrl}
-        textPattern={message.text}
-        duration={message.duration}
-        options={message.options}
-      />}
+      <AlertMessageWrapper message={message} onDone={onDone} />}
   </>
   );
 }

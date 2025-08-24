@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { OnDoneCallback } from "~/types";
 import AlertAudio from "./AlertAudio";
 import { Message } from "postcss";
+import Animation from "./Animation";
 
 function createMediaComponent(mediaUrl: string, options: MessageOptions = {}) {
     const classnames = [];
@@ -20,6 +21,17 @@ function createMediaComponent(mediaUrl: string, options: MessageOptions = {}) {
             return <video className={classnames.join(' ')} width={width} autoPlay={true} loop={true}>
                 <source src={mediaUrl} type="video/mp4"></source>
             </video>
+        case 'json':
+            if(!options?.animation?.path) {
+                return '';
+            }
+            return <Animation 
+                src={mediaUrl} 
+                path={options.animation.path} 
+                value={options.animation.value} 
+                width={width}
+                loop={true} 
+            />
         default:
             return '';
     }
@@ -101,6 +113,7 @@ export function AlertMessage({ id, textPattern, mediaUrl, audioUrl, duration, op
     // set additional classnames
     const classnames = [];
     options?.view?.fullScreen && classnames.push('fullscreen');
+    options?.view?.positionAbsolute && classnames.push('absolute');
 
     return (
         <div id="alertBox" className={classnames.join(' ')}>
@@ -124,9 +137,14 @@ type AlertMessageProps = {
 type MessageOptions = {
     view?: {
         fullScreen?: boolean;
+        positionAbsolute?: boolean;
     },
     media?: {
         transparentBlack?: boolean;
         transparentWhite?: boolean;
+    },
+    animation?: {
+        path: (string | number)[],
+        value: string,
     }
 }

@@ -46,7 +46,6 @@ export default function AlertAudio({ id, url, duration, onDone }: AlertAudioProp
                 })
         };
 
-        console.log(url);
         player.src = url;
         player.addEventListener('ended', handleEnded);
         player.addEventListener('canplaythrough', handleCanPlayThrough);
