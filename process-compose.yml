@@ -30,6 +30,12 @@ processes:
     working_dir: db
     ready_log_line: "Connected to the database!"
 
+  permissions:
+    command: go run . 
+    description: viewer permissions
+    working_dir: permissions/src
+
+
   # extension-be:
   #   command: bun run dev
   #   description: Twitch Data Center Extension Development
