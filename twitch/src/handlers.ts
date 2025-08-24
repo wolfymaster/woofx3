@@ -285,6 +285,24 @@ export async function userInfo(apiClient: ApiClient, args, broadcaster: HelixUse
     return true;
 }
 
+export async function clip(apiClient: ApiClient, args, broadcaster: HelixUser) {
+    const clipId = await apiClient.clips.createClip({
+        channel: broadcaster,
+    })
+
+    // const clip = await apiClient.clips.getClipById(clipId);
+
+    // if(!clip) {
+    //     return;
+    // }
+
+    return {
+        command: 'woofwoofwoof',
+        message: `https://clips.twitch.tv/${clipId}`,
+    }
+
+}
+
 function getLatestChatMessages(numMessages: number) {
 
 }

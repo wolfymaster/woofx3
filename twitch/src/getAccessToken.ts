@@ -27,6 +27,7 @@ const adminScopes = [
     'channel:read:predictions', 
     'channel:read:redemptions', 
     'channel:read:subscriptions', 
+    'clips:edit',
     'moderator:manage:blocked_terms',
     'moderator:manage:shoutouts', 
     'moderator:manage:banned_users',

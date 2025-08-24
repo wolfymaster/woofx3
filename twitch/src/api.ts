@@ -10,6 +10,7 @@ import TwitchBootstrap from './twitchBootstrap';
 import Commands from './commands';
 import * as Handlers from './handlers';
 import { CreateUserEvent } from '@client/event.pb';
+import TwitchApi, { CommandResponse } from './lib/twitch';
 
 dotenv.config({
     path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../', '.env')],
@@ -43,6 +44,9 @@ const broadcaster = await apiClient.users.getUserByName({ name: process.env.TWIT
 if (!broadcaster) {
     throw new Error('unable to resolve broadcaster');
 }
+
+// Twitch Api instance
+const twitchApi = new TwitchApi(apiClient, broadcaster);
 
 console.log(`===================== STARTING TWITCH ===========================  `);
 
@@ -489,35 +493,69 @@ try {
     process.exit(0);
 }
 
-async function twitchApiMessageHandler(command: string, args: Record<string, string>, broadcaster: HelixUser) {
-    ctx.logger.info('twitchapi', { command, args });
-
-    const handlers = {
-        chatters: () => Handlers.getChatters(apiClient),
-        update_stream: () => Handlers.updateStream(apiClient, args),
-        moderate: () => Handlers.moderate(ctx, apiClient, args, chatMessagesQueue),
-        chatMessage: () => Handlers.chatMessage(chatMessagesQueue, args),
-        timeout: () => Handlers.timeoutUser(apiClient, args, broadcaster),
-        shoutout: () => Handlers.shoutoutUser(apiClient, args, broadcaster),
-        userinfo: () => Handlers.userInfo(apiClient, args, broadcaster),
+async function twitchApiMessageHandler(command: string, args: Record<string, string>) {
+    // command does not exist
+    if(!(command in twitchApi)) {
+        return false;
     }
 
-    const handler = handlers[command];
+    // invoke twitch api
+    const result: CommandResponse = await (twitchApi as any)[command](args);
 
-    if (!handler) {
-        ctx.logger.error(`${command} is not a valid command`);
-        return;
+    // do we need to send out a new message
+    if(result.command) {
+        bus.publish(result.command.topic, JSON.stringify({
+            command: result.command.command,
+            args: result.command.args,
+        }));
     }
 
-    const result = await handler();
-
-    if (result.error) {
-        ctx.logger.error(handler.errorMsg);
-        return;
+    if(result.error) {
+        // handle the error
+        logger.error(result.message);
     }
 
-    // if a command was returned, we want to reprocess
-    if (result.command) {
-        await twitchApiMessageHandler(result.command, result.args, broadcaster);
-    }
+    return true;
 }
+
+// async function twitchApiMessageHandler(command: string, args: Record<string, string>, broadcaster: HelixUser) {
+//     ctx.logger.info('twitchapi', { command, args });
+
+//     const handlers: Record<string, () => Promise<any>> = {
+//         chatters: () => Handlers.getChatters(apiClient),
+//         update_stream: () => Handlers.updateStream(apiClient, args),
+//         moderate: () => Handlers.moderate(ctx, apiClient, args, chatMessagesQueue),
+//         chatMessage: () => Handlers.chatMessage(chatMessagesQueue, args),
+//         timeout: () => Handlers.timeoutUser(apiClient, args, broadcaster),
+//         shoutout: () => Handlers.shoutoutUser(apiClient, args, broadcaster),
+//         userinfo: () => Handlers.userInfo(apiClient, args, broadcaster),
+//         clip: () => Handlers.clip(apiClient, args, broadcaster),
+//     }
+
+//     const handler = handlers[command];
+
+//     if (!handler) {
+//         ctx.logger.error(`${command} is not a valid command`);
+//         return;
+//     }
+
+//     const result = await handler();
+
+//     if (result.error) {
+//         ctx.logger.error(result.errorMsg);
+//         return;
+//     }
+
+//     // if a command was returned, we want to reprocess
+//     if (result.command) {
+//         if(result.command === 'woofwoofwoof') {
+//             bus.publish('woofwoofwoof', JSON.stringify({
+//                command: 'write_message',
+//                args: {
+//                 message: result.message
+//                } 
+//             }));
+//         }
+//         await twitchApiMessageHandler(result.command, result.args, broadcaster);
+//     }
+// }
