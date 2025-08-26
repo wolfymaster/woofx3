@@ -19,6 +19,11 @@ const router = createRouter({
             component: Workflows
         },
         {
+            path: '/workflows/:id/configure',
+            name: 'Workflow Configuration',
+            component: () => import('../features/Workflows/views/WorkflowConfiguration.vue')
+        },
+        {
             path: '/modules/base',
             name: 'Modules',
             component: Modules

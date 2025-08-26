@@ -2,20 +2,20 @@
   <div class="workflows-page">
     <h2 class="workflows-title">Workflows</h2>
     <div class="workflows-header">
-             <!-- View Toggle (TODO: add option to default a specific view in settings) -->
+             <!-- View Toggle -->
                <div class="view-toggle">
-          <button 
-            @click="viewModeStore.set('cards')" 
-            :class="{ active: viewMode === 'cards' }"
-            class="tab-btn">
-             Pinned
-          </button>
-          <button 
-            @click="viewModeStore.set('table')" 
-            :class="{ active: viewMode === 'table' }"
-            class="tab-btn">
-             All Workflows
-          </button>
+                     <button 
+             @click="viewModeStore.set('cards')" 
+             :class="{ active: viewMode === 'cards' }"
+             class="tab-btn">
+              Pinned Workflows
+           </button>
+           <button 
+             @click="viewModeStore.set('table')" 
+             :class="{ active: viewMode === 'table' }"
+             class="tab-btn">
+              All Workflows
+           </button>
         </div>
     </div>
 
@@ -139,6 +139,8 @@
 
 <script setup lang="ts">
 import { useStore } from '@nanostores/vue';
+import { useRouter } from 'vue-router';
+import { onMounted } from 'vue';
 import wfCard from '../../../components/Card/Card.vue';
 import {
   workflowsStore,
@@ -161,11 +163,19 @@ import {
   togglePinned
 } from '../store/workflowsStore';
 
-//TODO: move logic to store
-//TODO: update workflow views to show and hide cards on pinned 
+// Workflow views now automatically show/hide cards based on pinned status 
 
 //atoms to vue Refs
+const router = useRouter();
 const viewMode = useStore(viewModeStore);
+
+// Load default view from settings on component mount
+onMounted(() => {
+  const savedDefaultView = localStorage.getItem('workflowDefaultView');
+  if (savedDefaultView && (savedDefaultView === 'cards' || savedDefaultView === 'table')) {
+    viewModeStore.set(savedDefaultView);
+  }
+});
 const workflows = useStore(workflowsStore);
 const selectedWorkflows = useStore(selectedWorkflowsStore);
 const searchQuery = useStore(searchQueryStore);
@@ -179,8 +189,7 @@ const availableTagsList = useStore(availableTags);
 // Methods
 
 const configureWorkflow = (name: string) => {
-  console.log(`Configuring workflow: ${name}`);
-  // Add your configuration logic here
+  router.push(`/workflows/${encodeURIComponent(name)}/configure`);
   openDropdownStore.set(null);
 };
 </script>

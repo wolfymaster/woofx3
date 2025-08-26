@@ -106,6 +106,12 @@ workflowsStore.listen(() => {
   updateAllSelected();
 });
 
+// Update filtered workflows when view mode changes
+viewModeStore.listen(() => {
+  updateFilteredWorkflows();
+  updateAllSelected();
+});
+
 // Update all selected when selection changes
 selectedWorkflowsStore.listen(() => {
   updateAllSelected();
@@ -206,8 +212,14 @@ export const updateFilteredWorkflows = () => {
   const searchQuery = searchQueryStore.get();
   const statusFilter = statusFilterStore.get();
   const tagFilter = tagFilterStore.get();
+  const viewMode = viewModeStore.get();
 
   let filtered = workflows;
+
+  // View mode filter (pinned vs all)
+  if (viewMode === 'cards') {
+    filtered = filtered.filter(workflow => workflow.pinned);
+  }
 
   // Search filter
   if (searchQuery) {
