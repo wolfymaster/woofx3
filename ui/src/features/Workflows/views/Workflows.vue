@@ -40,6 +40,7 @@
          :pinned="workflow.pinned"
          :show-config="true"
          @update:enabled="updateWorkflowStatus(workflow.name, $event)"
+         @click="configureWorkflow(workflow.name)"
        />
      </div>
 
