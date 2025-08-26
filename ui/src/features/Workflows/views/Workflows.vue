@@ -3,143 +3,143 @@
     <h2 class="workflows-title">Workflows</h2>
     <div class="workflows-header">
              <!-- View Toggle (TODO: add option to default a specific view in settings) -->
-       <div class="view-toggle">
-         <button 
-           @click="viewMode = 'cards'" 
-           :class="{ active: viewMode === 'cards' }"
-           class="tab-btn">
-            Pinned
-         </button>
-         <button 
-           @click="viewMode = 'table'" 
-           :class="{ active: viewMode === 'table' }"
-           class="tab-btn">
-            All Workflows
-         </button>
-       </div>
+               <div class="view-toggle">
+          <button 
+            @click="viewModeStore.set('cards')" 
+            :class="{ active: viewMode === 'cards' }"
+            class="tab-btn">
+             Pinned
+          </button>
+          <button 
+            @click="viewModeStore.set('table')" 
+            :class="{ active: viewMode === 'table' }"
+            class="tab-btn">
+             All Workflows
+          </button>
+        </div>
     </div>
 
-    <!-- Bulk Actions (only visible in table mode) -->
-    <div v-if="viewMode === 'table' && selectedWorkflows.length > 0" class="bulk-actions">
-      <span>{{ selectedWorkflows.length }} workflow(s) selected</span>
-      <button @click="enableSelected" class="bulk-btn enable">Enable Selected</button>
-      <button @click="disableSelected" class="bulk-btn disable">Disable Selected</button>
-      <button @click="deleteSelected" class="bulk-btn delete">Delete Selected</button>
-    </div>
+         <!-- Bulk Actions (only visible in table mode) -->
+     <div v-if="viewMode === 'table' && selectedWorkflows.length > 0" class="bulk-actions">
+       <span>{{ selectedWorkflows.length }} workflow(s) selected</span>
+       <button @click="enableSelected" class="bulk-btn enable">Enable Selected</button>
+       <button @click="disableSelected" class="bulk-btn disable">Disable Selected</button>
+       <button @click="deleteSelected" class="bulk-btn delete">Delete Selected</button>
+     </div>
 
-    <!-- Card View -->
-    <div v-if="viewMode === 'cards'" class="workflows-grid">
-      <wfCard
-        v-for="workflow in workflowsStore"
-        :key="workflow.name"
-        type="module"
-        :name="workflow.name"
-        :description="workflow.description"
-        :tags="workflow.tags"
-        :enabled="workflow.enabled"
-        :pinned="workflow.pinned"
-        :show-config="true"
-        @update:enabled="updateWorkflowStatus(workflow.name, $event)"
-      />
-    </div>
+     <!-- Card View -->
+     <div v-if="viewMode === 'cards'" class="workflows-grid">
+       <wfCard
+         v-for="workflow in filteredWorkflowsList"
+         :key="workflow.name"
+         type="module"
+         :title="workflow.name"
+         :description="workflow.description"
+         :tags="[...workflow.tags]"
+         :enabled="workflow.enabled"
+         :pinned="workflow.pinned"
+         :show-config="true"
+         @update:enabled="updateWorkflowStatus(workflow.name, $event)"
+       />
+     </div>
 
          <!-- Table View -->
      <div v-if="viewMode === 'table'" class="table-container">
        <!-- Search and Filter Bar -->
        <div class="search-filter-bar">
          <div class="search-section">
-           <input 
-             v-model="searchQuery"
-             type="text" 
-             placeholder="Search workflows..."
-             class="search-input"/>
+                       <input 
+              :value="searchQuery"
+              @input="(event) => searchQueryStore.set((event.target as HTMLInputElement).value)"
+              type="text" 
+              placeholder="Search workflows..."
+              class="search-input"/>
          </div>
          <div class="filter-section">
-           <select v-model="statusFilter" class="filter-select">
-             <option value="">All Status</option>
-             <option value="enabled">Active</option>
-             <option value="disabled">Inactive</option>
-           </select>
-           <select v-model="tagFilter" class="filter-select">
-             <option value="">All Tags</option>
-             <option v-for="tag in availableTags" :key="tag" :value="tag">
-               {{ tag }}
-             </option>
-           </select>
+                       <select :value="statusFilter" @change="(event) => statusFilterStore.set((event.target as HTMLSelectElement).value)" class="filter-select">
+              <option value="">All Status</option>
+              <option value="enabled">Active</option>
+              <option value="disabled">Inactive</option>
+            </select>
+                        <select :value="tagFilter" @change="(event) => tagFilterStore.set((event.target as HTMLSelectElement).value)" class="filter-select">
+               <option value="">All Tags</option>
+               <option v-for="tag in availableTagsList" :key="String(tag)" :value="tag">
+                 {{ tag }}
+               </option>
+             </select>
          </div>
        </div>
        
-       <table class="workflows-table">
-        <thead>
-          <tr>
-            <th class="checkbox-column">
-              <input 
-                type="checkbox" 
-                :checked="allSelected"
-                @change="toggleSelectAll"
-                class="select-all-checkbox"/>
-            </th>
-            <th>Workflow Name</th>
-            <th>Description</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-                     <tr v-for="workflow in filteredWorkflows" :key="workflow.title" class="workflow-row">
-            <td class="checkbox-column">
-              <input 
-                type="checkbox" 
-                :checked="selectedWorkflows.includes(workflow.title)"
-                @change="toggleWorkflowSelection(workflow.title)"
-                class="workflow-checkbox"
-              />
-            </td>
-            <td class="workflow-name">
-              <div class="name-cell">
-                <span>{{ workflow.title }}</span>
-              </div>
-            </td>
-            <td class="workflow-description">{{ workflow.description }}</td>
-                         <td class="workflow-status">
-               <div class="status-cell">
-                 <button 
-                   @click="updateWorkflowStatus(workflow.title, !workflow.enabled)"
-                   :class="['status-badge', 'clickable', workflow.enabled ? 'enabled' : 'disabled']"
-                 >
-                   {{ workflow.enabled ? 'Active' : 'Inactive' }}
-                 </button>
-                 <div class="action-dropdown">
-                   <button @click="toggleDropdown(workflow.title)" class="dropdown-btn">
-                     ⋯
-                   </button>
-                   <div v-if="openDropdown === workflow.title" class="dropdown-menu">
-                     <button @click="configureWorkflow(workflow.title)" class="dropdown-item">
-                       Configure
-                     </button>
-                     <button @click="togglePinned(workflow.title)" class="dropdown-item">
-                       <span :class="['paw-icon', workflow.pinned ? 'pinned' : 'unpinned']">
-                         {{ workflow.pinned ? '🐾' : '🐾' }}
-                       </span>
-                       {{ workflow.pinned ? 'Unpin' : 'Pin' }}
-                     </button>
-                     <button @click="configureWorkflow(workflow.title)" class="dropdown-item">
-                       Archive
-                     </button>
-                   </div>
-                 </div>
+               <table class="workflows-table">
+         <thead>
+           <tr>
+                           <th class="checkbox-column">
+                <input 
+                  type="checkbox" 
+                  :checked="allSelectedState"
+                  @change="toggleSelectAll"
+                  class="select-all-checkbox"/>
+              </th>
+             <th>Workflow Name</th>
+             <th>Description</th>
+             <th>Status</th>
+           </tr>
+         </thead>
+                     <tbody>
+                       <tr v-for="workflow in filteredWorkflowsList" :key="workflow.name" class="workflow-row">
+             <td class="checkbox-column">
+               <input 
+                 type="checkbox" 
+                 :checked="selectedWorkflows.includes(workflow.name)"
+                 @change="toggleWorkflowSelection(workflow.name)"
+                 class="workflow-checkbox"
+               />
+             </td>
+             <td class="workflow-name">
+               <div class="name-cell">
+                 <span>{{ workflow.name }}</span>
                </div>
              </td>
-          </tr>
-        </tbody>
-      </table>
+             <td class="workflow-description">{{ workflow.description }}</td>
+                          <td class="workflow-status">
+                <div class="status-cell">
+                  <button 
+                    @click="updateWorkflowStatus(workflow.name, !workflow.enabled)"
+                    :class="['status-badge', 'clickable', workflow.enabled ? 'enabled' : 'disabled']"
+                  >
+                    {{ workflow.enabled ? 'Active' : 'Inactive' }}
+                  </button>
+                  <div class="action-dropdown">
+                    <button @click="toggleDropdown(workflow.name)" class="dropdown-btn">
+                      ⋯
+                    </button>
+                    <div v-if="openDropdown === workflow.name" class="dropdown-menu">
+                      <button @click="configureWorkflow(workflow.name)" class="dropdown-item">
+                        Configure
+                      </button>
+                      <button @click="togglePinned(workflow.name)" class="dropdown-item">
+                        <span :class="['paw-icon', workflow.pinned ? 'pinned' : 'unpinned']">
+                          {{ workflow.pinned ? '🐾' : '🐾' }}
+                        </span>
+                        {{ workflow.pinned ? 'Unpin' : 'Pin' }}
+                      </button>
+                      <button @click="configureWorkflow(workflow.name)" class="dropdown-item">
+                        Archive
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </td>
+           </tr>
+         </tbody>
+       </table>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useStore } from '@nanostores/vue';
-import { computed } from 'vue';
-import wfCard from '@/components/Card/Card.vue';
+import wfCard from '../../../components/Card/Card.vue';
 import {
   workflowsStore,
   selectedWorkflowsStore,
@@ -149,7 +149,16 @@ import {
   viewModeStore,
   openDropdownStore,
   availableTags,
-  updateWorkflowStatus
+  filteredWorkflows,
+  allSelected,
+  updateWorkflowStatus,
+  enableSelected,
+  disableSelected,
+  deleteSelected,
+  toggleWorkflowSelection,
+  toggleSelectAll,
+  toggleDropdown,
+  togglePinned
 } from '../store/workflowsStore';
 
 //TODO: move logic to store
@@ -163,61 +172,17 @@ const searchQuery = useStore(searchQueryStore);
 const statusFilter = useStore(statusFilterStore);
 const tagFilter = useStore(tagFilterStore);
 const openDropdown = useStore(openDropdownStore);
-// const filteredwfs = useStore(filteredWorkflows);
-// const allSelectedRef = useStore(allSelected);
-// const availableTagsRef = useStore(availableTags);
-
-// Computed properties
-const allSelected = computed(() => {
-  return filteredWorkflows.value.length > 0 && 
-         selectedWorkflows.value.length === filteredWorkflows.value.length;
-});
-
-// const availableTags2 = computed(() => {
-//   const tags = new Set<string>();
-//   workflows.value.forEach(workflow => {
-//     workflow.tags.forEach(tag => tags.add(tag.title));
-//   });
-//   return Array.from(tags).sort();
-// });
-
-const filteredWorkflows = computed(() => {
-  let filtered = workflows.value;
-
-  // Search filter
-  if (searchQuery.value) {
-    const query = searchQuery.value.toLowerCase();
-    filtered = filtered.filter(workflow => 
-      workflow.name.toLowerCase().includes(query) ||
-      workflow.description.toLowerCase().includes(query)
-    );
-  }
-
-  // Status filter
-  if (statusFilter.value) {
-    filtered = filtered.filter(workflow => {
-      if (statusFilter.value === 'enabled') return workflow.enabled;
-      if (statusFilter.value === 'disabled') return !workflow.enabled;
-      return true;
-    });
-  }
-
-  // Tag filter
-  if (tagFilter.value) {
-    filtered = filtered.filter(workflow => 
-      workflow.tags.some(tag => tag.title === tagFilter.value)
-    );
-  }
-  return filtered;
-});
+const filteredWorkflowsList = useStore(filteredWorkflows);
+const allSelectedState = useStore(allSelected);
+const availableTagsList = useStore(availableTags);
 
 // Methods
 
-// const configureWorkflow = (title: string) => {
-//   console.log(`Configuring workflow: ${title}`);
-//   // Add your configuration logic here
-//   openDropdown.value = null;
-// };
+const configureWorkflow = (name: string) => {
+  console.log(`Configuring workflow: ${name}`);
+  // Add your configuration logic here
+  openDropdownStore.set(null);
+};
 </script>
 
 <style scoped>
@@ -327,8 +292,8 @@ const filteredWorkflows = computed(() => {
 
 .table-container {
   background: var(--color-card-background);
+  width: 100%;
   border-radius: 12px;
-  overflow: hidden;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
 }
 
@@ -399,6 +364,8 @@ const filteredWorkflows = computed(() => {
   border-collapse: collapse;
 }
 
+
+
 .workflows-table th,
 .workflows-table td {
   padding: 1rem;
@@ -413,8 +380,13 @@ const filteredWorkflows = computed(() => {
 }
 
 .checkbox-column {
-  width: 50px;
+  width: 5%;
   text-align: center;
+}
+
+.workflow-description {
+  max-width: 30%;
+  color: var(--color-body-text);
 }
 
 .workflow-row:hover {
@@ -432,11 +404,6 @@ const filteredWorkflows = computed(() => {
   height: 32px;
   border-radius: 6px;
   object-fit: cover;
-}
-
-.workflow-description {
-  max-width: 300px;
-  color: var(--color-body-text);
 }
 
 .status-badge {
@@ -584,19 +551,170 @@ const filteredWorkflows = computed(() => {
   cursor: pointer;
 }
 
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .workflows-grid {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+  
+  .search-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+  
+  .filter-section {
+    justify-content: space-between;
+  }
+}
+
 @media (max-width: 768px) {
+  .workflows-page {
+    padding: 1rem;
+  }
+  
+  .workflows-title {
+    font-size: 2rem;
+  }
+  
   .workflows-header {
     flex-direction: column;
     gap: 1rem;
     align-items: stretch;
   }
   
+  .view-toggle {
+    justify-content: center;
+  }
+  
+  .bulk-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+  
+  .bulk-actions span {
+    text-align: center;
+  }
+  
+  .workflows-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  
+  .search-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+  
+  .search-section {
+    max-width: none;
+  }
+  
+  .filter-section {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  /* Table Responsive Styles */
+  .table-container {
+    border-radius: 8px;
+  }
+  
   .workflows-table {
     font-size: 0.875rem;
   }
   
-  .workflow-description {
-    max-width: 200px;
+  .workflows-table th,
+  .workflows-table td {
+    padding: 0.75rem 0.5rem;
+  }
+  
+  .status-cell {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+  
+  .dropdown-menu {
+    right: -50px;
+    min-width: 140px;
+  }
+}
+
+@media (max-width: 480px) {
+  .workflows-page {
+    padding: 0.5rem;
+  }
+  
+  .workflows-title {
+    font-size: 1.5rem;
+  }
+  
+  .tab-btn {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+  }
+  
+  .bulk-actions {
+    padding: 0.75rem;
+  }
+  
+  .bulk-btn {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.8rem;
+  }
+  
+  .search-input {
+    padding: 0.4rem 1rem;
+    font-size: 0.8rem;
+  }
+  
+  .filter-select {
+    padding: 0.4rem;
+    font-size: 0.8rem;
+  }
+  
+  /* Table Responsive for Mobile */
+  .table-container {
+    margin: 0 -0.5rem; /* Negative margin to extend to edges */
+    border-radius: 0;
+  }
+  
+  .workflows-table {
+    font-size: 0.75rem;
+  }
+  
+  .workflows-table th,
+  .workflows-table td {
+    padding: 0.5rem 0.25rem;
+  }
+  
+  .status-badge {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.7rem;
+  }
+  
+  .dropdown-btn {
+    font-size: 0.9rem;
+    padding: 0.2rem;
+  }
+  
+  .dropdown-item {
+    padding: 0.4rem 0.5rem;
+    font-size: 0.75rem;
+  }
+  
+  .checkbox-column {
+    width: 30px;
+  }
+  
+  .select-all-checkbox,
+  .workflow-checkbox {
+    width: 16px;
+    height: 16px;
   }
 }
 </style>

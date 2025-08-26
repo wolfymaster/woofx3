@@ -355,9 +355,6 @@ describe('WorkflowsStore', () => {
 
   describe('Store Integration', () => {
     it('should maintain store consistency across operations', () => {
-        const initialWorkflows = workflowsStore.get();
-        const initialSelected = selectedWorkflowsStore.get();
-        
         // Perform operations
         updateStatusSpy('Follow Alert Workflow', false);
         toggleSelectionSpy('Follow Alert Workflow');
