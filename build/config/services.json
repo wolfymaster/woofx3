@@ -1,0 +1,56 @@
+{
+    "services": [
+        {
+            "name": "barkloader",
+            "type": "bun",
+            "path": "../barkloader",
+            "enabled": true,
+            "entry": "index.ts",
+            "output": "barkloader"
+        },
+        {
+            "name": "db-proxy",
+            "type": "go",
+            "path": "../db",
+            "enabled": true,
+            "output": "db-proxy"
+        },
+        {
+            "name": "permissions",
+            "type": "go",
+            "path": "../permissions",
+            "enabled": true,
+            "output": "permissions"
+        },
+        {
+            "name": "twitch",
+            "type": "bun",
+            "path": "../twitch",
+            "enabled": true,
+            "entry": "src/api.ts",
+            "output": "twitch"
+        },
+        {
+            "name": "wooflow",
+            "type": "go",
+            "path": "../wooflow",
+            "enabled": true,
+            "output": "wooflow"
+        },
+        {
+            "name": "woofwoofwoof",
+            "type": "bun",
+            "path": "../woofwoofwoof",
+            "enabled": true,
+            "entry": "src/woofwoofwoof.ts",
+            "output": "woofwoofwoof"
+        }
+    ],
+    "build": {
+        "output_dir": "./dist",
+        "targets": [
+            "linux-amd64",
+            "windows-amd64"
+        ]
+    }
+}

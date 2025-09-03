@@ -41,3 +41,13 @@ crash.*.log
 # CLI configuration files
 .terraformrc
 terraform.rc
+
+# Build dist
+build/dist
+
+# wolfy tmp cleanup
+ai/*
+auth/*
+boardModule/*
+dvr/*
+stream/*
