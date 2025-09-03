@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import chalk from 'chalk';
 import { ApiClient, HelixUser } from '@twurple/api';
 import { EventSubWsListener } from '@twurple/eventsub-ws';
 import { EventSubChannelCheerEvent, EventSubChannelBanEvent, EventSubChannelFollowEvent, EventSubChannelRedemptionAddEvent, EventSubChannelSubscriptionEvent, EventSubChannelSubscriptionGiftEvent, EventSubChannelSubscriptionMessageEvent, EventSubChannelRaidEvent, EventSubChannelChatNotificationEvent, EventSubChannelModerationEvent } from '@twurple/eventsub-base';
@@ -48,8 +49,8 @@ if (!broadcaster) {
 // Twitch Api instance
 const twitchApi = new TwitchApi(apiClient, broadcaster);
 
-console.log(`===================== STARTING TWITCH ===========================  `);
-
+console.log(chalk.redBright(`===================== STARTING TWITCH ===========================  `));
+console.log(chalk.redBright(`Broadcaster Id: ${broadcaster.id}`));
 
 let ctx: Context = {
     logger,
@@ -69,8 +70,6 @@ const twitchApiMessageHandlerWithBroadcaster = (command: string, args: Record<st
 
 try {
     const userId = broadcaster.id;
-
-    ctx.logger.info('userId', { userId });
 
     listener.onChannelBan(userId, (event: EventSubChannelBanEvent) => {
         let { reason, isPermanent, userDisplayName, userId } = event;
@@ -490,9 +489,22 @@ try {
 
     // special chat notifications like announcements, raid, unraid, ect
     listener.onChannelChatNotification(broadcaster, broadcaster, (evt: EventSubChannelChatNotificationEvent) => {
-        let { messageText, type } = evt;
+        let { messageText, type, sourceBroadcasterId } = evt;
+        ctx.logger.info('received chat notification', { messageText, type, sourceBroadcasterId });
+    });
 
-        ctx.logger.info('received chat notification', { messageText, type });
+    // on socket connection
+    listener.onUserSocketConnect(() => {
+        console.log(chalk.cyan("~~~~~~~~~~~~~~~~~~~~~"));
+        console.log(chalk.cyan("User socket connected"));
+        console.log(chalk.cyan("~~~~~~~~~~~~~~~~~~~~~"));
+    });
+
+    // on socket disconnect
+    listener.onUserSocketDisconnect(() => {
+        console.log(chalk.cyan("~~~~~~~~~~~~~~~~~~~~~"));
+        console.log(chalk.cyan("User socket disconnected"));
+        console.log(chalk.cyan("~~~~~~~~~~~~~~~~~~~~~"));
     });
 
     listener.start();

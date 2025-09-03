@@ -1,5 +1,8 @@
 version: "0.5"
 
+environment:
+  - "FORCE_COLOR=1"
+
 processes:
   auth:
     command: go run src/main.go
