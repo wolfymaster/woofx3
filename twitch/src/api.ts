@@ -3,7 +3,7 @@ import path from 'path';
 import chalk from 'chalk';
 import { ApiClient, HelixUser } from '@twurple/api';
 import { EventSubWsListener } from '@twurple/eventsub-ws';
-import { EventSubChannelCheerEvent, EventSubChannelBanEvent, EventSubChannelFollowEvent, EventSubChannelRedemptionAddEvent, EventSubChannelSubscriptionEvent, EventSubChannelSubscriptionGiftEvent, EventSubChannelSubscriptionMessageEvent, EventSubChannelRaidEvent, EventSubChannelChatNotificationEvent, EventSubChannelModerationEvent } from '@twurple/eventsub-base';
+import { EventSubChannelCheerEvent, EventSubChannelBanEvent, EventSubChannelFollowEvent, EventSubChannelRedemptionAddEvent, EventSubChannelSubscriptionEvent, EventSubChannelSubscriptionGiftEvent, EventSubChannelSubscriptionMessageEvent, EventSubChannelRaidEvent, EventSubChannelChatNotificationEvent, EventSubChannelModerationEvent, EventSubChannelChatMessageEvent } from '@twurple/eventsub-base';
 import * as twitch from './lib';
 import { type Context, TwitchApiRequestMessage } from './types';
 import NatsClient, { natsMessageHandler } from './nats';
@@ -56,9 +56,8 @@ let ctx: Context = {
     logger,
 };
 
-
 const twitchApiMessageHandlerWithBroadcaster = (command: string, args: Record<string, string>) => {
-    return twitchApiMessageHandler(command, args, broadcaster)
+    return twitchApiMessageHandler(command, args);
 }
 
 // listen on the eventbus for api calls
@@ -487,6 +486,12 @@ try {
         ctx.logger.info(`raiding out to ${raidedBroadcasterName} with ${viewers} viewers`);
     });
 
+    // chat messages
+    listener.onChannelChatMessage(broadcaster, broadcaster, (evt: EventSubChannelChatMessageEvent) => {
+        let { sourceBroadcasterName, sourceBroadcasterId, messageText } = evt;
+        ctx.logger.info('received channel chat message', { sourceBroadcasterId, sourceBroadcasterName, messageText })
+    });
+
     // special chat notifications like announcements, raid, unraid, ect
     listener.onChannelChatNotification(broadcaster, broadcaster, (evt: EventSubChannelChatNotificationEvent) => {
         let { messageText, type, sourceBroadcasterId } = evt;
@@ -540,44 +545,28 @@ async function twitchApiMessageHandler(command: string, args: Record<string, str
     return true;
 }
 
-// async function twitchApiMessageHandler(command: string, args: Record<string, string>, broadcaster: HelixUser) {
-//     ctx.logger.info('twitchapi', { command, args });
+async function gracefulShutdown(signal: string): Promise<void> {
+    console.log(`\n🛑 Received ${signal}, starting graceful shutdown...`);
 
-//     const handlers: Record<string, () => Promise<any>> = {
-//         chatters: () => Handlers.getChatters(apiClient),
-//         update_stream: () => Handlers.updateStream(apiClient, args),
-//         moderate: () => Handlers.moderate(ctx, apiClient, args, chatMessagesQueue),
-//         chatMessage: () => Handlers.chatMessage(chatMessagesQueue, args),
-//         timeout: () => Handlers.timeoutUser(apiClient, args, broadcaster),
-//         shoutout: () => Handlers.shoutoutUser(apiClient, args, broadcaster),
-//         userinfo: () => Handlers.userInfo(apiClient, args, broadcaster),
-//         clip: () => Handlers.clip(apiClient, args, broadcaster),
-//     }
+    try {
+        listener.stop();
+        console.log("✅ Graceful shutdown completed");
+        process.exit(0);
+    } catch (error) {
+        console.error("❌ Error during graceful shutdown:", error);
+        process.exit(1);
+    }
+}
 
-//     const handler = handlers[command];
+// graceful shutdown
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("uncaughtException", (error) => {
+    ctx.logger.error("Uncaught Exception", { error })
+    gracefulShutdown("uncaughtException");
+});
+process.on("unhandledRejection", (reason, promise) => {
+    ctx.logger.error("Unhandled Rejection", { promise, reason })
+    gracefulShutdown("unhandledRejection");
+});
 
-//     if (!handler) {
-//         ctx.logger.error(`${command} is not a valid command`);
-//         return;
-//     }
-
-//     const result = await handler();
-
-//     if (result.error) {
-//         ctx.logger.error(result.errorMsg);
-//         return;
-//     }
-
-//     // if a command was returned, we want to reprocess
-//     if (result.command) {
-//         if(result.command === 'woofwoofwoof') {
-//             bus.publish('woofwoofwoof', JSON.stringify({
-//                command: 'write_message',
-//                args: {
-//                 message: result.message
-//                } 
-//             }));
-//         }
-//         await twitchApiMessageHandler(result.command, result.args, broadcaster);
-//     }
-// }
