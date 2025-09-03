@@ -1,0 +1,41 @@
+config:
+  target: "ws://localhost:9653/ws"
+  phases:
+    - name: "Light"
+      duration: 10
+      arrivalRate: 5
+    - name: "Medium"
+      duration: 30
+      arrivalRate: 100
+    - name: "Heavy"
+      duration: 30
+      arrivalRate: 1000
+  websocket:
+    pingInterval: 10000
+    maxSockets: 2000
+  ensure:
+    maxErrorRate: 5
+
+scenarios:
+  - name: "Run Function (JS)"
+    engine: "ws"
+    flow:
+      - send:
+          type: "invoke"
+          data:
+            function: example/sayhello
+            args:
+              name: wolfy
+      - wait:
+          for: message
+          capture:
+            - json: "$.type"
+              as: "responseType"
+            - json: "$.data.result.response"
+              as: "resultMessage"
+          match:
+            - json: "$.type"
+              value: "result"
+            - json: "$.data.result.response"
+              value: "Hello wolfy"
+          timeout: 10

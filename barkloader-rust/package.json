@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@types/bun": "^1.2.20",
+    "@types/node": "^24.3.0",
+    "form-data": "^4.0.2"
+  }
+}
