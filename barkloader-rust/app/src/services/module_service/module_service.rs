@@ -1,14 +1,21 @@
 use anyhow::{anyhow, Result};
+use lib_repository::Repository;
 use super::module_plan::ModulePlan;
 use super::module_file::{ModuleFile, ModuleFileKind};
 
-pub struct ModuleService {
+pub struct ModuleService<R> {
     files: Vec<ModuleFile>,
+    pub repository: R,
 }
 
-impl ModuleService {
-    pub fn new() -> Self {
-        ModuleService { files: Vec::new() }
+pub struct ModuleServiceConfig<R> {
+    pub repository: R,
+}
+
+impl<R> ModuleService<R>
+where R: Repository {
+    pub fn new(config: ModuleServiceConfig<R>) -> Self {
+        ModuleService { files: Vec::new(), repository: config.repository }
     }
 
     pub fn create_plan(&self) -> Result<ModulePlan> {
@@ -18,6 +25,7 @@ impl ModuleService {
         // parse manifest as a module manifest
         let manifest = manifest_file.parse_as_manifest()?;
 
+        // use the manifest file to generate a plan
         let plan = ModulePlan::new(Some(manifest));
         
         // returns a ModulePlan
@@ -33,10 +41,10 @@ impl ModuleService {
         self.files.push(ModuleFile::new(name.into(), kind, contents));
     }
 
-    pub fn execute_plan(&self, plan: &ModulePlan) {
+    pub async fn execute_plan(&self, plan: &ModulePlan) {
         // walk the list by iterating
         for item in plan.iter() {
-            item.process(&self);
+            item.process(&self.files, &self.repository).await;
         }
     }
 }

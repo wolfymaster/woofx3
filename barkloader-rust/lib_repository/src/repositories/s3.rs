@@ -14,7 +14,9 @@ pub struct S3RepositoryConfig {
 
 #[derive(Debug, Clone)]
 pub struct S3Repository {
+     #[allow(dead_code)]
     config: S3RepositoryConfig,
+     #[allow(dead_code)]
     client: Arc<Client>,
 }
 
@@ -25,6 +27,7 @@ impl S3Repository {
         Self { config, client }
     }
 
+     #[allow(dead_code)]
     async fn download_object(&self, bucket: &str, key: &str, destination: &PathBuf) -> Result<()> {
         let response = self.client
             .get_object()
@@ -55,7 +58,7 @@ impl Repository for S3Repository {
         Ok(())
     }
 
-    async fn list<P: AsRef<Path> + Send>(&self, path: P) -> Result<()> {
+    async fn list<P: AsRef<Path> + Send>(&self, _path: P) -> Result<()> {
         // let file_path = path.as_ref();
         // 
         // // Parse the S3 path (format: bucket/key)
@@ -79,7 +82,11 @@ impl Repository for S3Repository {
         Ok(())
     }
 
-    async fn create<I: IntoIterator<Item = CreateFileRequest> + Send>(&self, req: I) -> Result<()> {
+    async fn create<I: IntoIterator<Item = CreateFileRequest> + Send>(&self, req: I, _failed: &mut Vec<String>) -> Result<()> {
+        for create_request in req {
+            
+        }
+        
         Ok(())
     }
 }

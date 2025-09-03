@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use tokio::task;
 
 use crate::services::file_service::FileService;
-use crate::services::module_service::{ModuleFileKind, ModuleService};
+use crate::services::module_service::{ModuleFileKind, ModuleService, ModuleServiceConfig};
 use crate::types::{AppContext, SafeTempDir};
 
 #[derive(Serialize)]
@@ -21,7 +21,7 @@ struct UploadResponse {
 
 #[post("/functions")]
 async fn upload_handler(
-    _ctx: Data<AppContext>,
+    ctx: Data<AppContext>,
     multipart: Multipart,
 ) -> Result<HttpResponse, Error> {
     /*
@@ -66,7 +66,10 @@ async fn upload_handler(
         // hand list of metadata to be processed by module service
         let file_metadata = metadatas.ok().unwrap();
 
-        let mut module = ModuleService::new();
+        let module_config = ModuleServiceConfig {
+            repository: ctx.repository.clone(),
+        };
+        let mut module = ModuleService::new(module_config);
 
         // loop the file meta and add files to module
         // skip the original zip folder in the directory
@@ -107,7 +110,7 @@ async fn upload_handler(
         };
 
         // execute plan
-        module.execute_plan(&module_plan);
+        module.execute_plan(&module_plan).await;
     });
 
     Ok(HttpResponse::Ok().json(response))

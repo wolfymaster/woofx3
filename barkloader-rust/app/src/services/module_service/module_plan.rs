@@ -1,4 +1,6 @@
-use super::module_service::ModuleService;
+use lib_repository::Repository;
+
+use super::module_file::ModuleFile;
 use super::module_manifest::{ModuleCommand, ModuleFunction, ModuleStorage, ModuleWorkflow};
 use super::module_manifest::ModuleManifest;
  
@@ -10,13 +12,14 @@ pub enum NodeKind {
 }
 
 impl NodeKind {
-    pub fn process(&self, _module: &ModuleService) {
-        match self {
+    pub async fn process<R>(&self, files: &Vec<ModuleFile>, repository: &R)
+    where R: Repository {
+        let _result = match self {
             NodeKind::Command(cmd) => cmd.process(),
-            NodeKind::Function(func) => func.process(),
+            NodeKind::Function(func) => func.process(files, repository).await,
             NodeKind::Storage(storage) => storage.process(),
             NodeKind::Workflow(workflow) => workflow.process(),
-        }
+        };
     }
 }
 

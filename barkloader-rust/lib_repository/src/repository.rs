@@ -1,5 +1,5 @@
 use anyhow::Result;
-use std::path::{Path, PathBuf};
+use std::path::{Path};
 use async_trait::async_trait;
 use enum_dispatch::enum_dispatch;
 use crate::repositories::file::{FileRepository, FileRepositoryConfig};
@@ -11,24 +11,14 @@ pub enum RepositoryConfig {
     S3(S3RepositoryConfig),
 }
 
-#[derive(Debug, Clone)]
-// pub enum CreateFileRequest {
-//     File {
-//         content: Option<Vec<u8>>,
-//         file_name: String,
-//         extension: Option<String>,
-//     },
-//     Directory {
-//         directory_path: PathBuf,
-//     },
-// }
-
+ #[allow(dead_code)]
 pub struct CreateFileRequest {
-    content: Option<Vec<u8>>,
-    file_name: String,
-    extension: Option<String>,
+    pub content: Option<Vec<u8>>,
+    pub file_name: String,
+    pub extension: Option<String>,
 }
 
+ #[allow(dead_code)]
 struct Module {
     module_name: String,
     function_name: String,
@@ -36,16 +26,12 @@ struct Module {
     
 }
 
-pub struct Idk {
-    module: Module,
-}
-
 #[async_trait]
 #[enum_dispatch(RepositoryImpl)]
 pub trait Repository {
     fn setup(&self) -> Result<()>;
     async fn list<P: AsRef<Path> + Send>(&self, path: P) -> Result<()>;
-    async fn create<I: IntoIterator<Item = CreateFileRequest> + Send>(&self, req: I) -> Result<()>;
+    async fn create<I: IntoIterator<Item = CreateFileRequest> + Send>(&self, req: I, failed: &mut Vec<String>) -> Result<()>;
 }
 
 #[enum_dispatch]
@@ -62,7 +48,7 @@ impl RepositoryFactory {
             RepositoryConfig::File(file_config) => RepositoryImpl::File(FileRepository::new(FileRepositoryConfig {
                 destination: file_config.destination.clone(),
             })),
-            RepositoryConfig::S3(s3_config) => RepositoryImpl::S3(S3Repository::new(S3RepositoryConfig {}).await),
+            RepositoryConfig::S3(_s3_config) => RepositoryImpl::S3(S3Repository::new(S3RepositoryConfig {}).await),
         }
     }
 }

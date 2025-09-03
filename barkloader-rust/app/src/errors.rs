@@ -8,6 +8,7 @@ pub struct ErrorResponse {
     message: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum AppError {
     FileNotFound(String),

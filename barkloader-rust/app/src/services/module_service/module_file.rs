@@ -2,20 +2,20 @@ use std::str::FromStr;
 use anyhow::{anyhow, Result, Error};
 use super::module_manifest::ModuleManifest;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ModuleValidProgramKind {
     JS,
     LUA,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ModuleValidManifestKind {
     JSON,
     YAML,
 }
 
  #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ModuleFileKind {
     MANIFEST(ModuleValidManifestKind),
     PROGRAM(ModuleValidProgramKind),
@@ -27,6 +27,15 @@ impl ModuleFileKind {
             ModuleFileKind::MANIFEST(_) => true,
             _ => false,
         }
+    }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            ModuleFileKind::PROGRAM(ModuleValidProgramKind::JS) => "js",
+            ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA) => "lua",
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON) => "json",
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::YAML) => "yaml",
+        }.to_string()
     }
 
     // pub fn is_json_manifest(&self) -> bool {
@@ -55,6 +64,17 @@ impl FromStr for ModuleFileKind {
             "yml" => Ok(ModuleFileKind::MANIFEST(ModuleValidManifestKind::YAML)),
             _ => Err(anyhow!("Invalid file kind")),
         }
+    }
+}
+
+impl Into<String> for &ModuleFileKind {
+    fn into(self) -> String {
+        match self {
+            ModuleFileKind::PROGRAM(ModuleValidProgramKind::JS) => "js",
+            ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA) => "lua",
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON) => "json",
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::YAML) => "yaml",
+        }.to_string()
     }
 }
 
