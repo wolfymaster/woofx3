@@ -13,30 +13,39 @@ processes:
     command: bun run start
     description: Plugin Module System
     working_dir: barkloader
+    depends_on:
+      wooflow:
+        condition: process_started
 
   barkloader-rust:
     command: cargo run .
     description: Plugin Module System
     working_dir: barkloader-rust
+    depends_on:
+      wooflow:
+        condition: process_started
 
-  caddy:
-    command: "caddy run"
-    description: "start caddy proxy"
-    is_elevated: true
-    shutdown:
-      command: "caddy stop"
-      signal: 15
+  # caddy:
+  #   command: "caddy run"
+  #   description: "start caddy proxy"
+  #   is_elevated: true
+  #   shutdown:
+  #     command: "caddy stop"
+  #     signal: 15
 
   db:
     command: go run .
     description: proxy for accessing databases
-    working_dir: db
-    ready_log_line: "Connected to the database!"
+    working_dir: db/cmd/server
+    ready_log_line: "Starting server"
 
   permissions:
     command: go run . 
     description: viewer permissions
     working_dir: permissions/src
+    depends_on:
+      db:
+        condition: process_log_ready
 
 
   # extension-be:
@@ -58,6 +67,9 @@ processes:
     command: PORT=5175 bun run dev
     description: slobs
     working_dir: streamlabs
+    depends_on:
+      woofwoofwoof:
+        condition: process_started
 
   # streamerui:
   #   command: bun run dev
@@ -78,6 +90,10 @@ processes:
     depends_on:
       db:
         condition: process_log_ready
+      barkloader-rust:
+        condition: process_started
+      wooflow:
+        condition: process_started
 
   # voice:
   #   command: go run ./src --url https://www.twitch.tv/wolfymaster
@@ -98,3 +114,5 @@ processes:
     depends_on:
       db:
         condition: process_log_ready
+      twitch:
+        condition: process_started

@@ -3,7 +3,7 @@
     "buf@1.47.2",
     "bun@1.1.34",
     "ffmpeg@7.1",
-    "go@1.23.3",
+    "go@1.24.0",
     "inotify-tools@4.23.9.0",
     "natscli@0.1.5",
     "oauth2c@1.17.0",
