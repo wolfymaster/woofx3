@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package setting;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+service SettingService {
+    // Get a setting by key
+    rpc GetSetting(GetSettingRequest) returns (SettingResponse);
+    
+    // Get multiple settings by keys
+    rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
+    
+    // Set a setting value
+    rpc SetSetting(SetSettingRequest) returns (SettingResponse);
+    
+    // Set multiple settings at once
+    rpc SetSettings(SetSettingsRequest) returns (SetSettingsResponse);
+    
+    // Delete a setting
+    rpc DeleteSetting(DeleteSettingRequest) returns (common.ResponseStatus);
+}
+
+// Setting represents a configuration setting
+message Setting {
+    string id = 1;                     // Unique identifier
+    string key = 2;                    // Setting key (unique within scope)
+    google.protobuf.Value value = 3;   // Setting value (can be any JSON-serializable type)
+    string value_type = 4;             // Value type (e.g., "string", "number", "boolean", "object")
+    string application_id = 5;         // ID of the application this setting belongs to (for app settings)
+    google.protobuf.Timestamp created_at = 14;
+    google.protobuf.Timestamp updated_at = 15;
+}
+
+// Request to get a setting by key
+message GetSettingRequest {
+    string key = 1;            // Setting key
+    string application_id = 2; // Optional: Application ID for app-specific settings
+}
+
+// Response containing a single setting
+message SettingResponse {
+    common.ResponseStatus status = 1;
+    Setting setting = 2;
+}
+
+// Request to get multiple settings by keys
+message GetSettingsRequest {
+    repeated string keys = 1;  // Keys of the settings to retrieve
+    string application_id = 2; // Optional: Application ID for app-specific settings
+}
+
+// Response containing multiple settings
+message GetSettingsResponse {
+    common.ResponseStatus status = 1;
+    repeated Setting settings = 2;
+}
+
+// Request to set a setting value
+message SetSettingRequest {
+    string key = 1;            // Setting key
+    google.protobuf.Value value = 2; // New value for the setting
+    string application_id = 4; // Application ID for app-specific settings
+}
+
+// Request to set multiple settings at once
+message SetSettingsRequest {
+    message SettingUpdate {
+        string key = 1;
+        google.protobuf.Value value = 2;
+    }
+    
+    repeated SettingUpdate settings = 1;
+    string application_id = 2; // Application ID for app-specific settings
+}
+
+// Response from setting multiple settings
+message SetSettingsResponse {
+    common.ResponseStatus status = 1;
+    repeated Setting settings = 2; // List of updated settings
+}
+
+// Request to delete a setting
+message DeleteSettingRequest {
+    string key = 1;            // Key of the setting to delete
+    string application_id = 2; // Optional: Application ID for app-specific settings
+}

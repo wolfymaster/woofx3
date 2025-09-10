@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package common;
+
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+message ResponseStatus {
+  enum Code {
+    OK = 0;
+    INVALID_ARGUMENT = 1;
+    NOT_FOUND = 2;
+    PERMISSION_DENIED = 3;
+    INTERNAL = 4;
+  }
+  
+  Code code = 1;
+  string message = 2;
+}

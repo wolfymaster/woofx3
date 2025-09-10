@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package command;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+service CommandService {
+    // Get a command by ID
+    rpc GetCommand(GetCommandRequest) returns (CommandResponse);
+    
+    // List commands with optional filters
+    rpc ListCommands(ListCommandsRequest) returns (ListCommandsResponse);
+    
+    // Create a new command
+    rpc CreateCommand(CreateCommandRequest) returns (CommandResponse);
+    
+    // Update an existing command
+    rpc UpdateCommand(UpdateCommandRequest) returns (CommandResponse);
+    
+    // Delete a command
+    rpc DeleteCommand(DeleteCommandRequest) returns (common.ResponseStatus);
+}
+
+// Command represents a chat command that can be executed
+message Command {
+    string id = 1;                  // Unique identifier for the command
+    string application_id = 2;      // ID of the application this command belongs to
+    string command = 3;             // Name of the command (without the prefix)
+    string type = 4;                // Type of command (e.g., "text", "function", "eval")
+    string type_value = 5;          // Value of the command type
+    int32 cooldown = 6;             // Cooldown between command uses in seconds
+    int32 priority = 7;             // Priority of the command
+    
+    bool enabled = 13;               // Whether the command is enabled
+    string created_by = 14;         // User ID who created this command
+    google.protobuf.Timestamp created_at = 15;
+}
+
+// Request to get a single command by ID
+message GetCommandRequest {
+    string command = 1;
+    string application_id = 2;
+    optional string username = 3;
+}
+
+// Response containing a single command
+message CommandResponse {
+    common.ResponseStatus status = 1;
+    Command command = 2;
+}
+
+// Request to list commands with optional filters
+message ListCommandsRequest {
+    string application_id = 1;
+    bool include_disabled = 2;
+}
+
+// Response containing a list of commands
+message ListCommandsResponse {
+    common.ResponseStatus status = 1;
+    repeated Command commands = 2;
+}
+
+// Request to create a new command
+message CreateCommandRequest {
+    string application_id = 1;
+    string command = 2;
+    bool enabled = 3;
+    int32 cooldown = 4;
+    string type = 5;
+    string type_value = 6;
+    int32 priority = 7;
+    string created_by = 8;
+}
+
+// Request to update an existing command
+message UpdateCommandRequest {
+    string id = 1;
+    string command = 2;
+    bool enabled = 3;
+    int32 cooldown = 4;
+    string type = 5;
+    string type_value = 6;
+    int32 priority = 7;
+}
+
+// Request to delete a command
+message DeleteCommandRequest {
+    string id = 1;
+}

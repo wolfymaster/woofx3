@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package permission;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+
+service PermissionService {
+    rpc HasPermission(HasPermissionRequest) returns (common.ResponseStatus);
+
+    rpc AddPermission(PermissionRequest) returns (common.ResponseStatus);
+    
+    rpc AddUserToResource(UserResourceRoleRequest)  returns (common.ResponseStatus);
+    rpc AddUserToGroup(UserResourceRoleRequest) returns (common.ResponseStatus);
+    rpc AddUserToRole(UserResourceRoleRequest) returns (common.ResponseStatus);
+
+    rpc AddRoleToGroup(UserResourceRoleRequest) returns (common.ResponseStatus);
+    rpc AddGroupToResource(UserResourceRoleRequest) returns (common.ResponseStatus);
+    
+    rpc RemovePermission(PermissionRequest) returns (common.ResponseStatus);
+
+    rpc RemoveUserFromResource(UserResourceRoleRequest) returns (common.ResponseStatus);
+    rpc RemoveUserFromGroup(UserResourceRoleRequest) returns (common.ResponseStatus);
+    
+    rpc RemoveRoleFromGroup(UserResourceRoleRequest) returns (common.ResponseStatus);
+    rpc RemoveGroupFromResource(UserResourceRoleRequest) returns (common.ResponseStatus);
+}
+
+message HasPermissionRequest {
+    string username = 1;
+    string resource = 2;
+    string action = 3;
+}
+
+message PermissionRequest {
+    string application_id = 1;
+    string subject = 2;
+    string object = 3;
+    string action = 4;
+    string permission = 5;
+}
+
+message UserResourceRoleRequest {
+    string application_id = 1;
+    string username = 2;
+    string resource = 3;
+    string role = 4;
+}

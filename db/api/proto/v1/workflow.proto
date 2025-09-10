@@ -1,0 +1,223 @@
+syntax = "proto3";
+
+package workflow;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+service WorkflowService {
+    // Create a new workflow definition
+    rpc CreateWorkflow(CreateWorkflowRequest) returns (WorkflowResponse);
+    
+    // Get a workflow by ID
+    rpc GetWorkflow(GetWorkflowRequest) returns (WorkflowResponse);
+    
+    // Update an existing workflow
+    rpc UpdateWorkflow(UpdateWorkflowRequest) returns (WorkflowResponse);
+    
+    // Delete a workflow
+    rpc DeleteWorkflow(DeleteWorkflowRequest) returns (common.ResponseStatus);
+    
+    // List workflows with optional filtering
+    rpc ListWorkflows(ListWorkflowsRequest) returns (ListWorkflowsResponse);
+    
+    // Execute a workflow
+    rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse);
+    
+    // Get workflow execution status
+    rpc GetWorkflowExecution(GetWorkflowExecutionRequest) returns (WorkflowExecutionResponse);
+    
+    // List workflow executions
+    rpc ListWorkflowExecutions(ListWorkflowExecutionsRequest) returns (ListWorkflowExecutionsResponse);
+    
+    // Cancel a running workflow execution
+    rpc CancelWorkflowExecution(CancelWorkflowExecutionRequest) returns (common.ResponseStatus);
+}
+
+// Workflow definition
+message Workflow {
+    string id = 1;                     // Unique identifier
+    string name = 2;                   // Human-readable name
+    string description = 3;            // Description of the workflow
+    string application_id = 4;         // ID of the application this workflow belongs to
+    string created_by = 5;             // User ID who created the workflow
+    bool enabled = 6;                  // Whether the workflow is enabled
+    repeated WorkflowStep steps = 7;   // Steps in the workflow
+    map<string, string> variables = 8; // Default variables for the workflow
+    string on_success = 9;             // ID of the next workflow to execute on success
+    string on_failure = 10;            // ID of the next workflow to execute on failure
+    int32 max_retries = 11;            // Maximum number of retries for failed steps
+    int32 timeout_seconds = 12;        // Global timeout for the workflow in seconds
+    google.protobuf.Timestamp created_at = 13;
+    google.protobuf.Timestamp updated_at = 14;
+}
+
+// A single step in a workflow
+message WorkflowStep {
+    string id = 1;                     // Unique identifier for the step
+    string name = 2;                   // Human-readable name
+    string description = 3;            // Description of the step
+    string type = 4;                   // Type of step (e.g., "command", "http", "condition")
+    map<string, string> parameters = 5; // Step-specific parameters
+    string on_success = 6;             // ID of the next step on success
+    string on_failure = 7;             // ID of the next step on failure
+    int32 timeout_seconds = 8;         // Step-specific timeout in seconds
+    int32 retry_attempts = 9;          // Number of retry attempts for this step
+    bool async = 10;                   // Whether to execute this step asynchronously
+    map<string, string> outputs = 11;  // Output variable mappings
+}
+
+// Workflow execution
+message WorkflowExecution {
+    string id = 1;                     // Unique identifier for the execution
+    string workflow_id = 2;            // ID of the workflow being executed
+    string status = 3;                 // Current status (pending, running, completed, failed, cancelled)
+    string started_by = 4;             // User ID who triggered the execution
+    string application_id = 5;         // ID of the application
+    map<string, string> inputs = 6;    // Input variables for the workflow
+    map<string, string> outputs = 7;   // Output variables from the workflow
+    string error = 8;                  // Error message if the execution failed
+    google.protobuf.Timestamp started_at = 9;
+    google.protobuf.Timestamp completed_at = 10;
+    google.protobuf.Timestamp created_at = 11;
+    google.protobuf.Timestamp updated_at = 12;
+    repeated ExecutionStep steps = 13;  // Execution details for each step
+}
+
+// Execution details for a single step
+message ExecutionStep {
+    string step_id = 1;                // ID of the workflow step
+    string name = 2;                   // Name of the step
+    string status = 3;                 // Current status (pending, running, completed, failed, skipped)
+    int32 attempt = 4;                 // Current attempt number (1-based)
+    string error = 5;                  // Error message if the step failed
+    map<string, string> inputs = 6;    // Input variables for the step
+    map<string, string> outputs = 7;   // Output variables from the step
+    google.protobuf.Timestamp started_at = 8;
+    google.protobuf.Timestamp completed_at = 9;
+    int64 duration_ms = 10;            // Duration in milliseconds
+}
+
+// Request to create a new workflow
+message CreateWorkflowRequest {
+    string name = 1;
+    string description = 2;
+    string application_id = 3;
+    string created_by = 4;
+    bool enabled = 5;
+    repeated WorkflowStep steps = 6;
+    map<string, string> variables = 7;
+    string on_success = 8;
+    string on_failure = 9;
+    int32 max_retries = 10;
+    int32 timeout_seconds = 11;
+}
+
+// Request to get a workflow by ID
+message GetWorkflowRequest {
+    string id = 1;
+}
+
+// Response containing a single workflow
+message WorkflowResponse {
+    common.ResponseStatus status = 1;
+    Workflow workflow = 2;
+}
+
+// Request to update an existing workflow
+message UpdateWorkflowRequest {
+    string id = 1;
+    string name = 2;
+    string description = 3;
+    bool enabled = 4;
+    repeated WorkflowStep steps = 5;
+    map<string, string> variables = 6;
+    string on_success = 7;
+    string on_failure = 8;
+    int32 max_retries = 9;
+    int32 timeout_seconds = 10;
+}
+
+// Request to delete a workflow
+message DeleteWorkflowRequest {
+    string id = 1;
+}
+
+// Request to list workflows
+message ListWorkflowsRequest {
+    string application_id = 1;
+    bool include_disabled = 2;
+    int32 page = 3;
+    int32 page_size = 4;
+    string sort_by = 5;  // Field to sort by (e.g., "name", "created_at")
+    bool sort_desc = 6;  // Whether to sort in descending order
+}
+
+// Response containing a list of workflows
+message ListWorkflowsResponse {
+    common.ResponseStatus status = 1;
+    repeated Workflow workflows = 2;
+    int32 total_count = 3;
+    int32 page = 4;
+    int32 page_size = 5;
+}
+
+// Request to execute a workflow
+message ExecuteWorkflowRequest {
+    string workflow_id = 1;           // ID of the workflow to execute
+    string application_id = 2;        // ID of the application
+    string started_by = 3;            // User ID who triggered the execution
+    map<string, string> inputs = 4;   // Input variables for the workflow
+    bool async = 5;                   // Whether to execute asynchronously
+    string correlation_id = 6;        // Correlation ID for tracing
+}
+
+// Response from executing a workflow
+message ExecuteWorkflowResponse {
+    common.ResponseStatus status = 1;
+    string execution_id = 2;          // ID of the workflow execution
+    bool async = 3;                   // Whether the execution is running asynchronously
+    string status_url = 4;            // URL to check the status of the execution
+    map<string, string> outputs = 5;  // Output variables (if execution completed synchronously)
+}
+
+// Request to get a workflow execution
+message GetWorkflowExecutionRequest {
+    string id = 1;  // Execution ID
+}
+
+// Response containing workflow execution details
+message WorkflowExecutionResponse {
+    common.ResponseStatus status = 1;
+    WorkflowExecution execution = 2;
+}
+
+// Request to list workflow executions
+message ListWorkflowExecutionsRequest {
+    string workflow_id = 1;          // Filter by workflow ID
+    string application_id = 2;       // Filter by application ID
+    string status = 3;               // Filter by status
+    string started_by = 4;           // Filter by user who started the execution
+    google.protobuf.Timestamp from = 5;  // Filter by start time (inclusive)
+    google.protobuf.Timestamp to = 6;    // Filter by end time (inclusive)
+    int32 page = 7;
+    int32 page_size = 8;
+    string sort_by = 9;              // Field to sort by (e.g., "started_at", "completed_at")
+    bool sort_desc = 10;             // Whether to sort in descending order
+}
+
+// Response containing a list of workflow executions
+message ListWorkflowExecutionsResponse {
+    common.ResponseStatus status = 1;
+    repeated WorkflowExecution executions = 2;
+    int32 total_count = 3;
+    int32 page = 4;
+    int32 page_size = 5;
+}
+
+// Request to cancel a workflow execution
+message CancelWorkflowExecutionRequest {
+    string id = 1;  // Execution ID
+    string reason = 2;  // Optional reason for cancellation
+}

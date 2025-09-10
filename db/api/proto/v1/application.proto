@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package application;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+service ApplicationService {
+    // Create a new application
+    rpc CreateApplication(CreateApplicationRequest) returns (ApplicationResponse);
+    
+    // Get an application by ID
+    rpc GetApplication(GetApplicationRequest) returns (ApplicationResponse);
+    
+    // Update an existing application
+    rpc UpdateApplication(UpdateApplicationRequest) returns (ApplicationResponse);
+    
+    // Delete an application
+    rpc DeleteApplication(DeleteApplicationRequest) returns (common.ResponseStatus);
+    
+    // List applications with optional filtering
+    rpc ListApplications(ListApplicationsRequest) returns (ListApplicationsResponse);
+}
+
+message Application {
+    string id = 1;
+    string name = 2; 
+    string owner_id = 4; 
+    repeated Client clients = 5;
+    bool enabled = 6;
+    google.protobuf.Timestamp created_at = 15;
+}
+
+message Client {
+    string client_id = 1;
+    string client_secret = 2;  
+}
+
+// Requests and Responses
+
+// Create a new application
+message CreateApplicationRequest {
+    string name = 1;
+    string owner_id = 2;
+}
+
+// Get an application by ID or client ID
+message GetApplicationRequest {
+    string id = 1;
+}
+
+// Update an existing application
+message UpdateApplicationRequest {
+    string id = 1;
+    string name = 2;
+    bool enabled = 3;
+}
+
+// Delete an application
+message DeleteApplicationRequest {
+    string id = 1;
+}
+
+// List applications with optional filtering
+message ListApplicationsRequest {
+    string owner_id = 1;
+    bool include_inactive = 2;
+    string query = 3;
+}
+
+// Response containing a single application
+message ApplicationResponse {
+    common.ResponseStatus status = 1;
+    Application application = 2;
+}
+
+// Response containing a list of applications
+message ListApplicationsResponse {
+    common.ResponseStatus status = 1;
+    repeated Application applications = 2;
+}

@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package user;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+service UserService {
+    rpc CreateUser(CreateUserRequest) returns (UserResponse);
+    rpc GetUser(GetUserRequest) returns (UserResponse);
+    rpc UpdateUser(UpdateUserRequest) returns (UserResponse);
+    rpc DeleteUser(DeleteUserRequest) returns (common.ResponseStatus);
+}
+
+message User {
+    string id = 1;  // Unique identifier in our application
+    string username = 2;
+    string user_id = 3;  // External platform user ID
+    string platform = 4;  // Platform identifier (e.g., 'twitch', 'youtube')
+    google.protobuf.Timestamp created_at = 5;
+    google.protobuf.Timestamp updated_at = 6;
+}
+
+// Requests and Responses
+message CreateUserRequest {
+    string username = 1;
+    string user_id = 2;  // External platform user ID
+    string platform = 3;  // Platform identifier (e.g., 'twitch', 'youtube')
+}
+
+message GetUserRequest {
+    string id = 1;  // Our application's user ID
+}
+
+message UpdateUserRequest {
+    string id = 1;  // Our application's user ID
+    string username = 2;
+    string platform = 3;  // Platform identifier (e.g., 'twitch', 'youtube')
+}
+
+message DeleteUserRequest {
+    string id = 1;  // Our application's user ID
+}
+
+message UserResponse {
+    common.ResponseStatus status = 1;
+    User user = 2;
+}
+
+message GetUserTokenRequest {
+    string user_id = 1;
+    string client_id = 2;
+}
+
+message GetUserTokenResponse {
+    common.ResponseStatus status = 1;
+    string token = 2;
+    string refresh_token = 3;
+    int64 expires_in = 4;
+    string token_type = 5;
+}
+
+message GetBroadcasterTokenRequest {
+    string broadcaster_id = 1;
+}
+
+message GetBroadcasterTokenResponse {
+    common.ResponseStatus status = 1;
+    string token = 2;
+    int64 expires_in = 3; 
+    string token_type = 4;
+}

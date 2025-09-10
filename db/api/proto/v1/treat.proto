@@ -1,0 +1,173 @@
+syntax = "proto3";
+
+package treat;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+service TreatService {
+    // Award a treat to a user
+    rpc AwardTreat(AwardTreatRequest) returns (TreatResponse);
+    
+    // Get a treat by ID
+    rpc GetTreat(GetTreatRequest) returns (TreatResponse);
+    
+    // Update a treat
+    rpc UpdateTreat(UpdateTreatRequest) returns (TreatResponse);
+    
+    // Delete a treat
+    rpc DeleteTreat(DeleteTreatRequest) returns (common.ResponseStatus);
+    
+    // List treats with filtering
+    rpc ListTreats(ListTreatsRequest) returns (ListTreatsResponse);
+    
+    // Get a summary of treats for a user
+    rpc GetUserTreatsSummary(GetUserTreatsSummaryRequest) returns (TreatsSummaryResponse);
+    
+    // Get treat statistics
+    rpc GetTreatStats(GetTreatStatsRequest) returns (TreatStatsResponse);
+}
+
+// Treat represents a reward or treat given to a user
+message Treat {
+    string id = 1;                     // Unique identifier
+    string user_id = 2;                // ID of the user who received the treat
+    string treat_type = 3;             // Type/category of the treat
+    string title = 4;                  // Human-readable title
+    string description = 5;            // Description of the treat
+    int32 points = 6;                  // Point value of the treat
+    string image_url = 7;              // Optional image URL
+    string awarded_by = 8;             // User ID who awarded the treat (empty for system)
+    string application_id = 9;         // ID of the application this treat is associated with
+    map<string, string> metadata = 10; // Additional metadata
+    google.protobuf.Timestamp awarded_at = 11;
+    google.protobuf.Timestamp expires_at = 12; // Optional expiration time
+    google.protobuf.Timestamp created_at = 13;
+    google.protobuf.Timestamp updated_at = 14;
+}
+
+// Request to award a treat to a user
+message AwardTreatRequest {
+    string user_id = 1;                // ID of the user to award the treat to
+    string treat_type = 2;             // Type/category of the treat
+    string title = 3;                  // Human-readable title
+    string description = 4;            // Description of the treat
+    int32 points = 5;                  // Point value of the treat
+    string image_url = 6;              // Optional image URL
+    string awarded_by = 7;             // User ID who is awarding the treat (empty for system)
+    string application_id = 8;         // ID of the application this treat is associated with
+    map<string, string> metadata = 9;  // Additional metadata
+    google.protobuf.Timestamp expires_at = 10; // Optional expiration time
+}
+
+// Response containing a single treat
+message TreatResponse {
+    common.ResponseStatus status = 1;
+    Treat treat = 2;
+}
+
+// Request to get a treat by ID
+message GetTreatRequest {
+    string id = 1;  // Treat ID
+}
+
+// Request to update a treat
+message UpdateTreatRequest {
+    string id = 1;                     // Treat ID
+    string title = 2;                  // Updated title
+    string description = 3;            // Updated description
+    int32 points = 4;                  // Updated point value
+    string image_url = 5;              // Updated image URL
+    map<string, string> metadata = 6;  // Updated metadata
+    google.protobuf.Timestamp expires_at = 7; // Updated expiration time
+}
+
+// Request to delete a treat
+message DeleteTreatRequest {
+    string id = 1;  // Treat ID
+}
+
+// Request to list treats with filtering
+message ListTreatsRequest {
+    string user_id = 1;                // Filter by user ID
+    string treat_type = 2;             // Filter by treat type
+    string application_id = 3;         // Filter by application ID
+    google.protobuf.Timestamp from_date = 4;  // Filter by award date (inclusive)
+    google.protobuf.Timestamp to_date = 5;    // Filter by award date (inclusive)
+    bool include_expired = 6;          // Whether to include expired treats
+    int32 min_points = 7;              // Minimum point value
+    int32 max_points = 8;              // Maximum point value
+    int32 page = 9;                    // Page number for pagination (1-based)
+    int32 page_size = 10;              // Number of items per page
+    string sort_by = 11;               // Field to sort by (e.g., "awarded_at", "points")
+    bool sort_desc = 12;               // Whether to sort in descending order
+}
+
+// Response containing a list of treats
+message ListTreatsResponse {
+    common.ResponseStatus status = 1;
+    repeated Treat treats = 2;
+    int32 total_count = 3;
+    int32 page = 4;
+    int32 page_size = 5;
+}
+
+// Request to get a summary of treats for a user
+message GetUserTreatsSummaryRequest {
+    string user_id = 1;                // User ID
+    string application_id = 2;         // Optional: Filter by application ID
+    google.protobuf.Timestamp from_date = 3;  // Optional: Start date for the summary period
+    google.protobuf.Timestamp to_date = 4;    // Optional: End date for the summary period
+}
+
+// Summary of treats for a user
+message TreatsSummary {
+    string user_id = 1;                // User ID
+    int32 total_treats = 2;            // Total number of treats
+    int32 total_points = 3;            // Total points from all treats
+    map<string, int32> points_by_type = 4;  // Points grouped by treat type
+    repeated Treat recent_treats = 5;  // Most recent treats
+    google.protobuf.Timestamp from_date = 6; // Start of the summary period
+    google.protobuf.Timestamp to_date = 7;   // End of the summary period
+}
+
+// Response containing a treats summary
+message TreatsSummaryResponse {
+    common.ResponseStatus status = 1;
+    TreatsSummary summary = 2;
+}
+
+// Request to get treat statistics
+message GetTreatStatsRequest {
+    string application_id = 1;         // Optional: Filter by application ID
+    google.protobuf.Timestamp from_date = 2;  // Start date for the stats period
+    google.protobuf.Timestamp to_date = 3;    // End date for the stats period
+    string group_by = 4;               // How to group the stats (e.g., "day", "week", "month", "treat_type")
+    repeated string user_ids = 5;       // Optional: Filter by user IDs
+    repeated string treat_types = 6;    // Optional: Filter by treat types
+}
+
+// Statistics about treats
+message TreatStats {
+    message DataPoint {
+        string label = 1;               // Label for the data point (e.g., date, treat type)
+        int32 count = 2;                // Number of treats
+        int32 total_points = 3;         // Total points
+        map<string, int32> points_by_type = 4;  // Points by treat type
+    }
+    
+    repeated DataPoint data_points = 1;  // Data points for the stats
+    int32 total_treats = 2;              // Total number of treats
+    int32 total_points = 3;              // Total points
+    int32 unique_users = 4;              // Number of unique users with treats
+    map<string, int32> points_by_type = 5;  // Points grouped by treat type
+    google.protobuf.Timestamp from_date = 6; // Start of the stats period
+    google.protobuf.Timestamp to_date = 7;   // End of the stats period
+}
+
+// Response containing treat statistics
+message TreatStatsResponse {
+    common.ResponseStatus status = 1;
+    TreatStats stats = 2;
+}

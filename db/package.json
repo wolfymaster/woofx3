@@ -1,0 +1,12 @@
+{
+  "scripts": {
+    "generate:ts": "bunx twirpscript",
+    "generate:go": "buf generate",
+    "generate": "bun run generate:go && bun run generate:ts"
+  },
+  "dependencies": {
+    "protoscript": "^0.0.23",
+    "twirp-ts": "^2.5.0",
+    "twirpscript": "^0.0.72"
+  }
+}

@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package storage;
+
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+// Storage service for managing key-value storage with TTL and namespacing
+service StorageService {
+  // Get a value by key
+  rpc Get(GetRequest) returns (GetResponse) {}
+  
+  // Set a key-value pair
+  rpc Set(SetRequest) returns (SetResponse) {}
+  
+  // Delete a key
+  rpc Delete(DeleteRequest) returns (DeleteResponse) {}
+  
+  // Clear all keys in a namespace
+  rpc ClearNamespace(ClearNamespaceRequest) returns (ClearNamespaceResponse) {}
+  
+  // Clear all expired keys
+  rpc ClearExpired(ClearExpiredRequest) returns (ClearExpiredResponse) {}
+  
+  // Clear all keys for an application
+  rpc ClearAllForApplication(ClearAllForApplicationRequest) returns (ClearAllForApplicationResponse) {}
+}
+
+// Storage item with metadata
+message StorageItem {
+  string key = 1;
+  string value = 2;
+  int64 created_at = 3;  // Unix timestamp in seconds
+  int64 expires_at = 4;  // 0 means never expires
+  string namespace = 5;
+  string application_id = 6;
+  bool clear_on_stream_end = 7;
+}
+
+// Get a value by key
+message GetRequest {
+  string key = 1;
+  string application_id = 2;
+}
+
+message GetResponse {
+  StorageItem item = 1;
+}
+
+// Set a key-value pair
+message SetRequest {
+  StorageItem item = 1;
+}
+
+message SetResponse {}
+
+// Delete a key
+message DeleteRequest {
+  string key = 1;
+  string application_id = 2;
+}
+
+message DeleteResponse {}
+
+// Clear all keys in a namespace
+message ClearNamespaceRequest {
+  string namespace = 1;
+  string application_id = 2;
+}
+
+message ClearNamespaceResponse {}
+
+// Clear all expired keys
+message ClearExpiredRequest {
+  string application_id = 1;
+}
+
+message ClearExpiredResponse {}
+
+// Clear all keys for an application
+message ClearAllForApplicationRequest {
+  string application_id = 1;
+}
+
+message ClearAllForApplicationResponse {}
