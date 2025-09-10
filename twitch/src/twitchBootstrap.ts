@@ -1,8 +1,16 @@
 import { AccessTokenWithUserId, RefreshingAuthProvider } from '@twurple/auth';
-import { GetBroadcasterToken } from '@client/user.pb';
+import { GetSetting } from '@client/setting.pb';
 
 type BootstrapArgs = {
     databaseURL: string;
+}
+
+async function GetBroadcasterToken(dbUrl: string): Promise<AccessTokenWithUserId> {
+    const response = await GetSetting({ 
+        applicationId: process.env.APPLICATION_ID || "", 
+        key: 'twitch_token'
+    }, { baseURL: dbUrl });
+    return JSON.parse(response.setting.value.stringValue || '') satisfies AccessTokenWithUserId;
 }
 
 export default async function bootstrap(channel: string, args: BootstrapArgs): Promise<RefreshingAuthProvider> {
@@ -23,11 +31,8 @@ export default async function bootstrap(channel: string, args: BootstrapArgs): P
     
     // call db service to lookup token for user
     try {
-        const response = await GetBroadcasterToken({ broadcasterId: process.env.TWITCH_BROADCASTER_ID || '' }, { 
-            baseURL: args.databaseURL,
-        });
-        const token: AccessTokenWithUserId = JSON.parse(response.token);
-        await authProvider.addUserForToken(token, ['chat']);
+        const response = await GetBroadcasterToken(args.databaseURL);
+        await authProvider.addUserForToken(response, ['chat']);
     } catch(err) {
         console.error("rpc failed: ", err);
     }

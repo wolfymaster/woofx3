@@ -7,8 +7,9 @@ import Spotify from "./spotify";
 import Govee from "./govee";
 import { kasaLightsOff, kasaLightsOn } from "./kasa";
 import * as util from "./util";
-import { GetCommands } from "@client/command.pb";
+import { ListCommands } from "@client/command.pb";
 import BarkloaderClient, { BarkloaderMessageResponse } from "@woofx3/barkloader";
+import { AddUserToResource, HasPermission, RemoveUserFromResource } from "@client/permission.pb";
 
 export interface WoofWoofWoofRequestMessage {
     command: string;
@@ -53,7 +54,7 @@ const commander = new Commands(bus);
 
 // add permissions check to commander
 commander.setAuth(async (user: string, cmd: string) => {
-    return await canUse(user, `command/${cmd}`, "read");
+    return await canUse(user, cmd);
 });
 
 // bootstrap twitch auth provider
@@ -116,8 +117,9 @@ const barkloaderClient = new BarkloaderClient({
 
 barkloaderClient.connect();
 
-const commands = await GetCommands({
-    broadcasterId: process.env.TWITCH_BROADCASTER_ID || "",
+const commands = await ListCommands({
+    applicationId: process.env.APPLICATION_ID || "",
+    includeDisabled: false,
 }, {
     baseURL: process.env.DATABASE_PROXY_URL || "",
 });
@@ -135,6 +137,9 @@ for (let i = 0; i < commands.commands.length; ++i) {
 
 // Add a new command
 function addCommand(command: Command) {
+    // TODO: add "eval" type for inline evaluation like: 
+    //      - !setcommand hello eval {caller} says hello to {targetUser[0]}!
+    // need to be able to eval the caller or any number of tagged users: !hello @userA @userB
     console.log("adding command", command.command);
     if (command.type === "function") {
         commander.add(command.command, async (text: string, user?: string) => {
@@ -184,6 +189,30 @@ commander.every(async (msg: string, user?: string) => {
 // });
 
 // commander.add('skizz', 'WOOOOOOOOOO');
+
+commander.add('grantcommands', async (text: string, user?: string) => {
+    await AddUserToResource({
+        applicationId: process.env.APPLICATION_ID || "",
+        username: text,
+        resource: "command/*",
+        role: "moderator",
+    }, {
+        baseURL: process.env.DATABASE_PROXY_URL || "",
+    })
+    return ""
+});
+
+commander.add('revokecommands', async (text: string, user?: string) => {
+    await RemoveUserFromResource({
+        applicationId: process.env.APPLICATION_ID || "",
+        username: text,
+        resource: "command/*",
+        role: "moderator",
+    }, {
+        baseURL: process.env.DATABASE_PROXY_URL || "",
+    })
+    return ""
+});
 
 commander.add("discord", async (text: string, user?: string) => {
     // check if the user is currently following
@@ -722,18 +751,20 @@ function parseTime(duration: string): number {
 }
 
 async function canUse(
-    sub: string,
-    obj: string,
-    act: string,
+    user: string,
+    cmd: string,
 ): Promise<AuthorizationResponse> {
-    const url =
-        `https://access.local.woofx3.tv/policy?sub=${sub}&obj=${obj}&act=${act}`;
-    const response = await fetch(url);
-    const json = await response.json();
+    const hasPermission = await HasPermission({
+        username: user.trim(),
+        resource: `command/${cmd}`,
+        action: "read",
+    }, {
+        baseURL: process.env.DATABASE_PROXY_URL || "",
+    });
 
     return {
-        granted: json.granted,
-        message: json.granted ? "" : `${sub}.... YOU CAN'T DO THAT`,
+        granted: hasPermission.code === "OK",
+        message: hasPermission.code === "OK" ? "" : `${user}.... YOU CAN'T DO THAT`,
     };
 }
 

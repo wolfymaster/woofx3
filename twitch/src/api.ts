@@ -10,7 +10,6 @@ import NatsClient, { natsMessageHandler } from './nats';
 import TwitchBootstrap from './twitchBootstrap';
 import Commands from './commands';
 import * as Handlers from './handlers';
-import { CreateUserEvent } from '@client/event.pb';
 import TwitchApi, { CommandResponse } from './lib/twitch';
 
 dotenv.config({
@@ -80,18 +79,18 @@ try {
         console.log(`triggered follow`);
         const { followDate, userDisplayName, userId } = event;
         try {
-            await CreateUserEvent({
-                event: {
-                    userId,
-                    displayName: userDisplayName,
-                    eventType: Commands.USER_FOLLOW,
-                    follow: {
-                        followDate: followDate.toISOString(),
-                    }
-                }
-            }, {
-                baseURL: process.env.DATABASE_PROXY_URL || "",
-            });
+            // await CreateUserEvent({
+            //     event: {
+            //         userId,
+            //         displayName: userDisplayName,
+            //         eventType: Commands.USER_FOLLOW,
+            //         follow: {
+            //             followDate: followDate.toISOString(),
+            //         }
+            //     }
+            // }, {
+            //     baseURL: process.env.DATABASE_PROXY_URL || "",
+            // });
         } catch (err) {
             console.error(err);
         }
@@ -134,18 +133,18 @@ try {
 
         if (!isAnonymous && userId) {
             try {
-                await CreateUserEvent({
-                    event: {
-                        userId,
-                        displayName: userDisplayName || '',
-                        eventType: Commands.BIT_CHEER,
-                        bitCheer: {
-                            amount: bits,
-                        }
-                    }
-                }, {
-                    baseURL: process.env.DATABASE_PROXY_URL || "",
-                });
+                // await CreateUserEvent({
+                //     event: {
+                //         userId,
+                //         displayName: userDisplayName || '',
+                //         eventType: Commands.BIT_CHEER,
+                //         bitCheer: {
+                //             amount: bits,
+                //         }
+                //     }
+                // }, {
+                //     baseURL: process.env.DATABASE_PROXY_URL || "",
+                // });
             } catch (err) {
                 console.error(err);
             }
@@ -208,16 +207,16 @@ try {
         console.log(Commands.USER_GIFT_SUBSCRIPTION, gifterDisplayName, amount, tier, isAnonymous);
 
         try {
-            await CreateUserEvent({
-                event: {
-                    userId,
-                    displayName: gifterName,
-                    eventType: Commands.USER_GIFT_SUBSCRIPTION,
-                    // TODO: Add gift subscription event
-                }
-            }, {
-                baseURL: process.env.DATABASE_PROXY_URL || "",
-            });
+            // await CreateUserEvent({
+            //     event: {
+            //         userId,
+            //         displayName: gifterName,
+            //         eventType: Commands.USER_GIFT_SUBSCRIPTION,
+            //         // TODO: Add gift subscription event
+            //     }
+            // }, {
+            //     baseURL: process.env.DATABASE_PROXY_URL || "",
+            // });
         } catch (err) {
             console.error(err);
         }
@@ -249,19 +248,19 @@ try {
         console.log(Commands.USER_SUBSCRIBE, userDisplayName, tier, isGift);
 
         try {
-            await CreateUserEvent({
-                event: {
-                    userId,
-                    displayName: userDisplayName,
-                    eventType: Commands.USER_SUBSCRIBE,
-                    subscribe: {
-                        gift: isGift,
-                        tier,
-                    }
-                }
-            }, {
-                baseURL: process.env.DATABASE_PROXY_URL || "",
-            });
+            // await CreateUserEvent({
+            //     event: {
+            //         userId,
+            //         displayName: userDisplayName,
+            //         eventType: Commands.USER_SUBSCRIBE,
+            //         subscribe: {
+            //             gift: isGift,
+            //             tier,
+            //         }
+            //     }
+            // }, {
+            //     baseURL: process.env.DATABASE_PROXY_URL || "",
+            // });
         } catch (err) {
             console.error(err);
         }
@@ -301,19 +300,19 @@ try {
         console.log(Commands.USER_SUBSCRIBE, userDisplayName, tier);
 
         try {
-            await CreateUserEvent({
-                event: {
-                    userId,
-                    displayName: userDisplayName,
-                    eventType: Commands.USER_SUBSCRIBE,
-                    subscribe: {
-                        gift: false,
-                        tier,
-                    }
-                }
-            }, {
-                baseURL: process.env.DATABASE_PROXY_URL || "",
-            });
+            // await CreateUserEvent({
+            //     event: {
+            //         userId,
+            //         displayName: userDisplayName,
+            //         eventType: Commands.USER_SUBSCRIBE,
+            //         subscribe: {
+            //             gift: false,
+            //             tier,
+            //         }
+            //     }
+            // }, {
+            //     baseURL: process.env.DATABASE_PROXY_URL || "",
+            // });
         } catch (err) {
             console.error(err);
         }

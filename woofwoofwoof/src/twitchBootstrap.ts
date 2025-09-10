@@ -2,13 +2,22 @@ import chalk from 'chalk';
 import { AccessTokenWithUserId, RefreshingAuthProvider } from '@twurple/auth';
 import { ChatClient, ChatMessage, ChatSayMessageAttributes } from '@twurple/chat';
 import { Commands } from './commands';
-import { GetBroadcasterToken } from '@client/user.pb';
+import { GetSetting } from '@client/setting.pb';
 
 type SenderFunction = (msg: string, opts?: ChatSayMessageAttributes) => Promise<void>;
 
 type BootstrapArgs = {
     databaseURL: string;
 }
+
+async function GetBroadcasterToken(dbUrl: string): Promise<AccessTokenWithUserId> {
+    const response = await GetSetting({ 
+        applicationId: process.env.APPLICATION_ID || "", 
+        key: 'twitch_token'
+    }, { baseURL: dbUrl });
+    return JSON.parse(response.setting.value.stringValue || '') satisfies AccessTokenWithUserId;
+}
+
 
 export default async function bootstrap(channel: string, commander: Commands, args: BootstrapArgs): Promise<(msg: string, opts?: ChatSayMessageAttributes, parseCommand?: boolean) => Promise<void>> {
     const authProvider = new RefreshingAuthProvider({
@@ -28,10 +37,7 @@ export default async function bootstrap(channel: string, commander: Commands, ar
     
     // call db service to lookup token for user
     try {
-        const response = await GetBroadcasterToken({ broadcasterId: process.env.TWITCH_BROADCASTER_ID || '' }, { 
-            baseURL: args.databaseURL,
-        });
-        const token: AccessTokenWithUserId = JSON.parse(response.token);
+        const token = await GetBroadcasterToken(args.databaseURL);
         await authProvider.addUserForToken(token, ['chat']);
     } catch(err) {
         console.error("rpc failed: ", err);

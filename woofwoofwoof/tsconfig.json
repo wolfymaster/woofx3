@@ -5,7 +5,7 @@
       "module": "esnext",
       "moduleResolution": "node",
       "paths": {
-        "@client/*": ["../buf/gen/typescript/*"],
+        "@client/*": ["../db/gen/typescript/*"],
         "@woofx3/*": ["../shared/clients/typescript/*"]
       },
       "strict": true,
