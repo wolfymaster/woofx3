@@ -20,9 +20,9 @@ func main() {
         }
         defer app.cleanup()
 
-        // Register custom activities
-        app.workflowEngine.RegisterActivity("media_alert", activities.MediaAlert)
-        app.workflowEngine.RegisterActivity("update_timer", activities.UpdateTimer)
+        // Register custom activities using adapters for api compatibility
+        app.workflowEngine.RegisterActivity("media_alert", activities.MediaAlertAdapter)
+        app.workflowEngine.RegisterActivity("update_timer", activities.UpdateTimerAdapter)
 
         // Start workflow engine
         if err := app.workflowEngine.Start(context.Background()); err != nil {

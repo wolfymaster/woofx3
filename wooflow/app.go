@@ -15,13 +15,14 @@ import (
         "github.com/nats-io/nkeys"
         "github.com/wolfymaster/woofx3/wooflow/internal/adapters/sqlite"
         "github.com/wolfymaster/woofx3/wooflow/internal/core"
-        "github.com/wolfymaster/woofx3/wooflow/internal/workflow/engine"
+        "github.com/wolfymaster/woofx3/wooflow/internal/workflow/api"
+        "github.com/wolfymaster/woofx3/wooflow/internal/workflow/runtime"
 )
 
 type App struct {
         Logger          *slog.Logger
         nc              *nats.Conn
-        workflowEngine  engine.WorkflowEngine
+        workflowEngine  api.WorkflowEngine
         workflowService *core.WorkflowService
         eventRepo       core.EventRepository
         workflowRepo    core.WorkflowDefinitionRepository
@@ -129,7 +130,7 @@ func NewApp() (*App, error) {
         temporalLogger := &TemporalLoggerAdapter{logger: app.Logger}
 
         // Initialize workflow engine (will auto-detect backend based on environment)
-        workflowEngine, err := engine.FromEnv(context.Background(), app.eventRepo, app.workflowRepo, app.nc, temporalLogger)
+        workflowEngine, err := runtime.FromEnv(context.Background(), app.eventRepo, app.workflowRepo, app.nc, temporalLogger)
         if err != nil {
                 return nil, fmt.Errorf("failed to create workflow engine: %w", err)
         }

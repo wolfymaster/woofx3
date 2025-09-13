@@ -9,13 +9,14 @@ import (
         "github.com/nats-io/nats.go"
         "github.com/wolfymaster/woofx3/wooflow/internal/core"
         "github.com/wolfymaster/woofx3/wooflow/internal/ports"
+        "github.com/wolfymaster/woofx3/wooflow/internal/workflow/api"
         "go.temporal.io/sdk/log"
 )
 
 // Engine is a local implementation of the workflow engine
 type Engine struct {
         config       Config
-        activities   map[string]ActivityFunc
+        activities   map[string]api.ActivityFunc
         workflows    map[string]*WorkflowInstance
         waitingList  map[string][]string // event type -> workflow IDs
         state        *EngineState
@@ -37,15 +38,9 @@ type Config struct {
         NatsConn               *nats.Conn
 }
 
-// ActivityFunc defines the signature for local workflow activities
-type ActivityFunc func(ctx context.Context, params map[string]any) (ExecuteActionResult, error)
-
-// ExecuteActionResult represents the result of executing an action
-type ExecuteActionResult struct {
-        Success bool                   `json:"success"`
-        Exports map[string]interface{} `json:"exports,omitempty"`
-        Error   string                 `json:"error,omitempty"`
-}
+// Use the api types
+type ActivityFunc = api.ActivityFunc
+type ExecuteActionResult = api.ExecuteActionResult
 
 // WorkflowInstance represents a running workflow instance
 type WorkflowInstance struct {
@@ -102,7 +97,7 @@ func NewEngine(config Config) (*Engine, error) {
 
         engine := &Engine{
                 config:       config,
-                activities:   make(map[string]ActivityFunc),
+                activities:   make(map[string]api.ActivityFunc),
                 workflows:    make(map[string]*WorkflowInstance),
                 waitingList:  make(map[string][]string),
                 state:        &EngineState{StartedAt: time.Now()},
@@ -209,7 +204,7 @@ func (e *Engine) HandleEvent(ctx context.Context, event *core.Event) error {
 }
 
 // RegisterActivity registers a custom activity with the engine
-func (e *Engine) RegisterActivity(name string, activity ActivityFunc) error {
+func (e *Engine) RegisterActivity(name string, activity api.ActivityFunc) error {
         e.mu.Lock()
         defer e.mu.Unlock()
 
