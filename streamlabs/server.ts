@@ -109,6 +109,15 @@ app.post('/sls/stat', (req, res) => {
   return res.sendStatus(200);
 })
 
+// Basic API stub to handle frontend API calls
+app.get('/api', (req, res) => {
+  res.json({ ok: true, message: 'Streamlabs API is running' });
+});
+
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ error: 'API endpoint not implemented' });
+});
+
 // Remix request handler
 app.all(
   "*",
