@@ -40,7 +40,11 @@ func newTemporalEngine(ctx context.Context, config api.WorkflowEngineConfig, nc 
                 return nil, fmt.Errorf("failed to create Temporal client: %w", err)
         }
 
-        return &TemporalEngineAdapter{client: client}, nil
+        return &TemporalEngineAdapter{
+                client:    client,
+                isHealthy: false, // Will be set to true in Start()
+                started:   false,
+        }, nil
 }
 
 // newLocalEngine creates a new local workflow engine
@@ -51,7 +55,7 @@ func newLocalEngine(ctx context.Context, config api.WorkflowEngineConfig, nc *na
                 TaskQueue:             config.TaskQueue,
                 Logger:                config.Logger,
                 EventRepo:             config.EventRepo,
-                WorkflowRepo:          config.WorkflowRepo.(ports.WorkflowDefinitionRepository),
+                WorkflowRepo:          config.WorkflowRepo,
                 NatsConn:              nc,
         })
         if err != nil {
