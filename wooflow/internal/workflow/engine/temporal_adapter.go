@@ -31,15 +31,19 @@ func (t *TemporalEngineAdapter) HandleEvent(ctx context.Context, event *core.Eve
 
 // RegisterActivity registers an activity with the Temporal client
 func (t *TemporalEngineAdapter) RegisterActivity(name string, activity ActivityFunc) error {
-        // Convert ActivityFunc to temporal ActivityFunc format
-        temporalActivity := func(ctx context.Context, params map[string]any) (temporal.ExecuteActionResult, error) {
-                result, err := activity(ctx, params)
-                return temporal.ExecuteActionResult{
-                        Exports: result.Exports,
-                }, err
+        // Convert ActivityFunc to temporal ActivityFunc format - use type assertion
+        if temporalActivity, ok := activity.(func(context.Context, map[string]any) (temporal.ExecuteActionResult, error)); ok {
+                t.client.RegisterActivity(name, temporalActivity)
+        } else {
+                // If it's not temporal format, wrap it
+                wrappedActivity := func(ctx context.Context, params map[string]any) (temporal.ExecuteActionResult, error) {
+                        result, err := activity(ctx, params)
+                        return temporal.ExecuteActionResult{
+                                Exports: result.Exports,
+                        }, err
+                }
+                t.client.RegisterActivity(name, wrappedActivity)
         }
-        
-        t.client.RegisterActivity(name, temporalActivity)
         return nil
 }
 

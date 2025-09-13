@@ -28,7 +28,7 @@ func (e *Engine) fetchWorkflowDefinitionActivity(ctx context.Context, params map
 }
 
 // registerWaitingWorkflowActivity registers a workflow as waiting for an event
-func (e *Engine) registerWaitingWorkflowActivity(ctx context.Context, params map[string]any) (ExecuteActionResult, error) {
+func (e *Engine) registerWaitingWorkflowActivity(ctx context.Context, params map[string]any) (engine.ExecuteActionResult, error) {
         workflowID, ok := params["workflow_id"].(string)
         if !ok {
                 return ExecuteActionResult{Success: false, Error: "workflow_id parameter required"}, nil
