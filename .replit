@@ -1,0 +1,6 @@
+modules = ["nodejs-20", "rust-stable", "go-1.21", "bash", "go-1.24"]
+[agent]
+expertMode = true
+
+[nix]
+channel = "stable-25_05"
