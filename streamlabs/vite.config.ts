@@ -16,15 +16,10 @@ export default defineConfig({
     tsconfigPaths(),
   ],
   server: {
-    allowedHosts: [
-      'data-themes-uni-plasma.trycloudflare.com',
-      'streamlabs.local.woofx3.tv'
-    ],
+    host: "0.0.0.0",
+    port: 5000,
     hmr: {
-      protocol: 'wss',
       port: 24678,
-      clientPort:443,
-      host: "streamlabs.local.woofx3.tv",
     }
   }
 });

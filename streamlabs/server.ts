@@ -32,7 +32,12 @@ const viteDevServer =
     );
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = Number(process.env.PORT) || 5000;
+
+// Define Context interface
+interface Context {
+  logger: (msg: string) => void;
+}
 
 // make context
 const ctx: Context = {
@@ -41,33 +46,44 @@ const ctx: Context = {
   }
 }
 
-// TODO: Prolly want a timeout on the socket connection. Will hang if 
-// await make the client, which connects and authenticates else, fails
-// const client = await makeSockJSClient(baseUrl).catch(err => {
-//   throw new Error(err);
-// });
-// const manager = await Manager.New(ctx, client, slobsToken);
-// await manager.init();
+// Initialize OBS and Manager with error handling
+let manager: any = null;
+try {
+  const obs = new OBSWebSocket();
+  const connectionString = `ws://${process.env.OBS_HOST || 'localhost'}:${process.env.OBS_PORT || '4444'}`;
+  const token = process.env.OBS_RPC_TOKEN;
+  
+  if (process.env.OBS_HOST && process.env.OBS_PORT) {
+    await obs.connect(connectionString, token);
+    manager = await Manager.New(ctx, obs);
+    await manager.init();
+    console.log('OBS connection established');
+  } else {
+    console.log('OBS connection skipped - no host/port configured');
+  }
+} catch (error) {
+  console.log('OBS connection failed, continuing without OBS:', error);
+}
 
+const inMemoryStorageKV: Record<string, any> = {};
 
-const obs = new OBSWebSocket();
-const connectionString = `ws://${process.env.OBS_HOST}:${process.env.OBS_PORT}`;
-const token = process.env.OBS_RPC_TOKEN;
-await obs.connect(connectionString, token);
-const manager = await Manager.New(ctx, obs);
-await manager.init();
-
-const inMemoryStorageKV = {};
-
-// Message Bus
-const bus = await NatsClient();
+// Message Bus with error handling
+let bus: any = null;
+try {
+  bus = await NatsClient();
+  console.log('NATS connection established');
+} catch (error) {
+  console.log('NATS connection failed, continuing without message bus:', error);
+}
 
 // listen on the eventbus for api calls
-(async () => {
-  for await (const msg of bus.subscribe('slobs')) {
-    natsMessageHandler<SlobsRequestMessage>(msg, slobsMessageHander);
-  }
-})();
+if (bus) {
+  (async () => {
+    for await (const msg of bus.subscribe('slobs')) {
+      natsMessageHandler<SlobsRequestMessage>(msg, slobsMessageHander);
+    }
+  })();
+}
 
 // json bodyparser
 app.use(express.json());
@@ -103,7 +119,7 @@ app.all(
 );
 
 // Start server
-app.listen(port, () => {
+app.listen(port, "0.0.0.0", () => {
   console.log(`Express server listening on port ${port}`);
 });
 
@@ -148,7 +164,7 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
     if (args.reset) {
       newCount = 0;
     } else {
-      newCount += args.value;
+      newCount += Number(args.value);
     }
 
 
@@ -183,7 +199,7 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
       return;
     }
 
-    const sourceMap = {
+    const sourceMap: Record<string, any> = {
       'cams': { scene: currentScene, source: '[NS] Main Cam' },
       'maincam': { scene: camScene, source: 'main cam' },
       'insta': { scene: camScene, source: 'insta360' },
@@ -269,7 +285,7 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
 
     let now = new Date();
 
-    now.setTime(now.getTime() + (valueInSeconds * 1000));
+    now.setTime(now.getTime() + (Number(valueInSeconds) * 1000));
 
     console.log('updating timer to ', timerId,  now.toISOString())
     try {
@@ -278,7 +294,7 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
           expirationDate: now,
         })
       );
-    } catch(err) {
+    } catch(err: any) {
       console.error(err);
       console.error(JSON.stringify(err.body));
     }   
@@ -306,7 +322,7 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
 
     let newDate = new Date(newExpiration);
 
-    newDate.setTime(newDate.getTime() + (valueInSeconds * 1000));
+    newDate.setTime(newDate.getTime() + (Number(valueInSeconds) * 1000));
 
     console.log('updating timer to ', timerId,  newDate.toISOString())
     try {
@@ -315,7 +331,7 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
           expirationDate: newDate,
         })
       );
-    } catch(err) {
+    } catch(err: any) {
       console.error(err);
       console.error(JSON.stringify(err.body));
     }    
@@ -330,7 +346,7 @@ function makeSockJSClient(sockJsURL: string): Promise<WebSocket> {
       resolve(ws);
     }
 
-    ws.onerror = (err) => {
+    ws.onerror = (err: any) => {
       reject(err);
     }
   })
