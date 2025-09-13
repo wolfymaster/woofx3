@@ -33,7 +33,7 @@ export async function fromEnv(logger?: Console): Promise<MessageBus> {
     backend: 'http', // default
     logger: logger || console,
     nats: {
-      url: process.env.NATS_URL || 'tls://connect.ngs.global',
+      url: process.env.NATS_URL || 'wss://connect.ngs.global',
       name: process.env.NATS_NAME || 'messagebus-client',
       jwt: process.env.NATS_USER_JWT,
       nkeySeed: process.env.NATS_NKEY_SEED,

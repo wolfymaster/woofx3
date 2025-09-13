@@ -24,7 +24,7 @@ export class NATSBackend implements MessageBus {
     try {
       const options: any = {
         name: this.config.name || 'messagebus-client',
-        servers: this.config.url || 'tls://connect.ngs.global'
+        servers: this.config.url || 'wss://connect.ngs.global'
       };
 
       // Add JWT authentication if provided
@@ -66,14 +66,21 @@ export class NATSBackend implements MessageBus {
       throw new Error('NATS connection not available');
     }
 
-    // Wrap the handler to convert NATS messages to our interface
-    const natsHandler = (msg: NatsMsg) => {
-      const wrappedMsg = new MessageImpl(msg.subject, msg.data);
-      handler(wrappedMsg);
-    };
-
-    const subscription = this.connection.subscribe(subject, natsHandler);
+    // Create subscription using correct NATS API
+    const subscription = this.connection.subscribe(subject);
     this.logger.debug?.('Subscribed to subject', { subject });
+
+    // Start consuming messages asynchronously
+    (async () => {
+      try {
+        for await (const msg of subscription) {
+          const wrappedMsg = new MessageImpl(msg.subject, msg.data);
+          handler(wrappedMsg);
+        }
+      } catch (error) {
+        this.logger.error?.('Subscription error:', error);
+      }
+    })();
 
     return new NATSSubscription(subscription, this.logger);
   }

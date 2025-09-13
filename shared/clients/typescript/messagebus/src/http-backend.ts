@@ -91,8 +91,10 @@ export class HTTPBackend implements MessageBus {
   }
 
   private handleMessage(message: any): void {
-    if (message.type === 'message' && message.subject && message.data) {
+    if (message.type === 'message' && message.subject && message.data !== undefined) {
       const handlers = this.subscriptions.get(message.subject) || new Set();
+      
+      // createMessage now handles string, Uint8Array, and number[] formats
       const msg = createMessage(message.subject, message.data);
       
       handlers.forEach(handler => {

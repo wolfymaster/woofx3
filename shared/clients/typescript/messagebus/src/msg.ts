@@ -19,12 +19,21 @@ export class MessageImpl implements Msg {
 }
 
 /**
- * Create a message from string data
+ * Create a message from various data formats
  */
-export function createMessage(subject: string, data: string | Uint8Array): Msg {
-  const bytes = typeof data === 'string' 
-    ? new TextEncoder().encode(data)
-    : data;
+export function createMessage(subject: string, data: string | Uint8Array | number[]): Msg {
+  let bytes: Uint8Array;
+  
+  if (typeof data === 'string') {
+    bytes = new TextEncoder().encode(data);
+  } else if (data instanceof Uint8Array) {
+    bytes = data;
+  } else if (Array.isArray(data)) {
+    // Handle number[] from HTTP backend JSON serialization
+    bytes = new Uint8Array(data);
+  } else {
+    throw new Error('Unsupported data format');
+  }
   
   return new MessageImpl(subject, bytes);
 }
