@@ -116,3 +116,9 @@ processes:
         condition: process_log_ready
       twitch:
         condition: process_started
+
+  messagebus-gateway:
+    command: go run .
+    description: Message Bus Gateway (WebSocket to NATS bridge)
+    working_dir: services/messagebus-gateway
+    ready_log_line: "Server starting"
