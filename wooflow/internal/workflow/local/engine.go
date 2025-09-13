@@ -8,7 +8,6 @@ import (
 
         "github.com/nats-io/nats.go"
         "github.com/wolfymaster/woofx3/wooflow/internal/core"
-        "github.com/wolfymaster/woofx3/wooflow/internal/ports"
         "github.com/wolfymaster/woofx3/wooflow/internal/workflow/api"
         "go.temporal.io/sdk/log"
 )
@@ -34,7 +33,7 @@ type Config struct {
         TaskQueue              string
         Logger                 log.Logger
         EventRepo              core.EventRepository
-        WorkflowRepo           ports.WorkflowDefinitionRepository
+        WorkflowRepo           core.WorkflowDefinitionRepository
         NatsConn               *nats.Conn
 }
 
