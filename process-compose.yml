@@ -4,11 +4,6 @@ environment:
   - "FORCE_COLOR=1"
 
 processes:
-  auth:
-    command: go run src/main.go
-    description: supertokens auth
-    working_dir: auth
-
   barkloader:
     command: bun run start
     description: Plugin Module System
@@ -25,43 +20,11 @@ processes:
       wooflow:
         condition: process_started
 
-  # caddy:
-  #   command: "caddy run"
-  #   description: "start caddy proxy"
-  #   is_elevated: true
-  #   shutdown:
-  #     command: "caddy stop"
-  #     signal: 15
-
   db:
     command: go run .
     description: proxy for accessing databases
     working_dir: db/cmd/server
     ready_log_line: "Starting server"
-
-  permissions:
-    command: go run . 
-    description: viewer permissions
-    working_dir: permissions/src
-    depends_on:
-      db:
-        condition: process_log_ready
-
-
-  # extension-be:
-  #   command: bun run dev
-  #   description: Twitch Data Center Extension Development
-  #   working_dir: extension
-
-  # extension-fe:
-  #   command: bun run dev
-  #   description: Twitch Data Center Extension Development
-  #   working_dir: extension/client
-
-  # reward:
-  #   command: bun run src/index.ts
-  #   description: Twitch Viewer Rewards
-  #   working_dir: reward
 
   streamlabs:
     command: PORT=5175 bun run dev
@@ -70,14 +33,6 @@ processes:
     depends_on:
       woofwoofwoof:
         condition: process_started
-
-  # streamerui:
-  #   command: bun run dev
-  #   description: Off-Twitch UI for managing things
-  #   working_dir: streamerui
-  #   depends_on:
-  #     caddy:
-  #       condition: process_started
 
   temporal-server:
     command: temporal server start-dev
@@ -94,11 +49,6 @@ processes:
         condition: process_started
       wooflow:
         condition: process_started
-
-  # voice:
-  #   command: go run ./src --url https://www.twitch.tv/wolfymaster
-  #   description: Voice control stream
-  #   working_dir: stream        
 
   wooflow:
     command: go run .
