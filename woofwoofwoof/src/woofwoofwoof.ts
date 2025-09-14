@@ -1,15 +1,14 @@
 import dotenv from "dotenv";
 import path from "path";
+import chalk from 'chalk';
 import NatsClient, { natsMessageHandler } from "./nats";
-import TwitchBootstrap from "./twitchBootstrap";
 import { AuthorizationResponse, Commands } from "./commands";
 import Spotify from "./spotify";
-import Govee from "./govee";
 import { kasaLightsOff, kasaLightsOn } from "./kasa";
-import * as util from "./util";
-import { ListCommands } from "@client/command.pb";
+import { ListCommands } from "@woofx3/db/command.pb";
 import BarkloaderClient, { BarkloaderMessageResponse } from "@woofx3/barkloader";
-import { AddUserToResource, HasPermission, RemoveUserFromResource } from "@client/permission.pb";
+import { AddUserToResource, HasPermission, RemoveUserFromResource } from "@woofx3/db/permission.pb";
+import TwitchClient, { type ChatMessage } from '@woofx3/twitch';
 
 export interface WoofWoofWoofRequestMessage {
     command: string;
@@ -49,27 +48,51 @@ const bus = await NatsClient();
     }
 })();
 
+// Get Twitch Client
+const twitchClient = await new TwitchClient({
+    applicationId: process.env.APPLICATION_ID || '',
+    channel,
+    databaseURL: process.env.DATABASE_PROXY_URL || '',
+})
+
+await twitchClient.init({
+    clientId: process.env.TWITCH_WOLFY_CLIENT_ID || '',
+    clientSecret: process.env.TWITCH_WOLFY_CLIENT_SECRET || '',
+    redirectUri: process.env.TWITCH_REDIRECT_URL || 'http://localhost',
+});
+
+// create Twitch chat client
+const chatClient = twitchClient.ChatClient();
+
 // new Commands instance
-const commander = new Commands(bus);
+const commander = new Commands(channel, chatClient, bus);
 
 // add permissions check to commander
 commander.setAuth(async (user: string, cmd: string) => {
     return await canUse(user, cmd);
 });
 
-// bootstrap twitch auth provider
-const send = await TwitchBootstrap(channel, commander, {
-    databaseURL: process.env.DATABASE_PROXY_URL || "",
+chatClient.onMessage(async (_channel: string, user: string, text: string, _msg: ChatMessage) => {
+    let [message, matched] = await commander.process(text, user);
+
+    if(matched && message) {
+        await commander.send(message);
+    }
 });
+
+// connect client
+chatClient.connect();
+
+console.log(chalk.yellow('#######################################################'));
+console.log(chalk.yellow.bold(`Connected to Twitch chat for channel: ${channel}`));
+console.log(chalk.yellow('####################################################### \n'));
 
 function woofwoofwoofMessageHandler(
     command: string,
     args: Record<string, string>,
 ) {
-    console.log("received message from nats: ", command, args.message);
     if (command === "write_message") {
-        console.log("writing message");
-        send(args.message, {}, false);
+        commander.send(args.message, {}, false);
     }
 
     if (command === "add_command") {
@@ -93,7 +116,7 @@ const barkloaderClient = new BarkloaderClient({
                 return;
             }
             if (message.command) {
-                send(message.args.message, {}, false);
+                commander.send(message.args.message, {}, false);
             }
         } catch (err) {
             console.log("failed to parse websocket message as json");

@@ -1,4 +1,6 @@
 import { NatsConnection  } from "nats";
+import { ChatSayMessageAttributes } from "@twurple/chat";
+import { ChatClient } from "@woofx3/twitch";
 
 export interface Command {
     action: string;
@@ -22,7 +24,7 @@ export class Commands {
     watchers: ChatWatcherFunction[] = [];
     auth: AuthorizationFunction;
 
-    constructor(private natsClient: NatsConnection) {
+    constructor(private channel: string, private chatClient: ChatClient, private natsClient: NatsConnection) {
         this.auth = async (_user, _cmd) => ({ granted: true });
     }
 
@@ -101,6 +103,17 @@ export class Commands {
             cmd: text.slice(1, spaceidx).trim(), // command (wihout !)
             text: text.slice(spaceidx + 1).trim(), // text following command
         };
+    }
+
+    async send(msg: string, opts?: ChatSayMessageAttributes, parseCommand = true)  {
+        if(parseCommand) {
+            let [message, matched] = await this.process(msg, this.channel);
+            if(matched && message) {
+                await this.chatClient.say(this.channel, msg, opts);
+            }
+        } else {
+            await this.chatClient.say(this.channel, msg, opts);
+        }    
     }
 
     try(f: any) {

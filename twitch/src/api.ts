@@ -1,13 +1,23 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import chalk from 'chalk';
-import { ApiClient, HelixUser } from '@twurple/api';
-import { EventSubWsListener } from '@twurple/eventsub-ws';
-import { EventSubChannelCheerEvent, EventSubChannelBanEvent, EventSubChannelFollowEvent, EventSubChannelRedemptionAddEvent, EventSubChannelSubscriptionEvent, EventSubChannelSubscriptionGiftEvent, EventSubChannelSubscriptionMessageEvent, EventSubChannelRaidEvent, EventSubChannelChatNotificationEvent, EventSubChannelModerationEvent, EventSubChannelChatMessageEvent } from '@twurple/eventsub-base';
+import { 
+    EventSubChannelCheerEvent, 
+    EventSubChannelBanEvent,
+    EventSubChannelFollowEvent, 
+    EventSubChannelRedemptionAddEvent, 
+    EventSubChannelSubscriptionEvent, 
+    EventSubChannelSubscriptionGiftEvent, 
+    EventSubChannelSubscriptionMessageEvent, 
+    EventSubChannelRaidEvent, 
+    EventSubChannelChatNotificationEvent, 
+    EventSubChannelModerationEvent, 
+    EventSubChannelChatMessageEvent 
+} from '@twurple/eventsub-base';
 import * as twitch from './lib';
 import { type Context, TwitchApiRequestMessage } from './types';
 import NatsClient, { natsMessageHandler } from './nats';
-import TwitchBootstrap from './twitchBootstrap';
+import TwitchClient from '@woofx3/twitch';
 import Commands from './commands';
 import * as Handlers from './handlers';
 import TwitchApi, { CommandResponse } from './lib/twitch';
@@ -22,28 +32,31 @@ const logger = twitch.makeLogger({
     defaultMeta: { service: 'twitch' },
 });
 
-let channel = process.env.TWITCH_CHANNEL_NAME;
-if (!channel) {
-    throw new Error('twitch channel missing. please set environment variable: TWITCH_CHANNEL_NAME.')
-}
-
-// bootstrap twitch auth provider
-const authProvider = await TwitchBootstrap(channel, {
-    databaseURL: process.env.DATABASE_PROXY_URL || "",
-});
-
 // Message Bus
 const bus = await NatsClient();
 
-// const mockSubscriptionURL = 'http://localhost:44748/eventsub/subscriptions';
-
-const apiClient = new ApiClient({ authProvider });
-const listener = new EventSubWsListener({ apiClient });
-
-const broadcaster = await apiClient.users.getUserByName({ name: process.env.TWITCH_CHANNEL_NAME || '' });
-if (!broadcaster) {
-    throw new Error('unable to resolve broadcaster');
+// Bootstrap Twitch
+let channel = process.env.TWITCH_CHANNEL_NAME;
+if (!channel) {
+    throw new Error('Twitch channel missing. please set environment variable: TWITCH_CHANNEL_NAME.')
 }
+
+// Twitch client
+const twitchClient = new TwitchClient({
+    applicationId: process.env.APPLICATION_ID || '',
+    channel,
+    databaseURL: process.env.DATABASE_PROXY_URL || '',
+});
+
+await twitchClient.init({
+    clientId: process.env.TWITCH_WOLFY_CLIENT_ID || '',
+    clientSecret: process.env.TWITCH_WOLFY_CLIENT_SECRET || '',
+    redirectUri: process.env.TWITCH_REDIRECT_URL || 'http://localhost',
+});
+
+const apiClient = twitchClient.ApiClient();
+const listener = twitchClient.EventBusListener();
+const broadcaster = await twitchClient.broadcaster();
 
 // Twitch Api instance
 const twitchApi = new TwitchApi(apiClient, broadcaster);

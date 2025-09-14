@@ -5,7 +5,7 @@
       "module": "esnext",
       "moduleResolution": "node",
       "paths": {
-        "@woofx3/*": ["../shared/clients/typescript/*"]
+        "@client/*": ["../db/*"],
       },
       "strict": true,
       "target": "es2022",

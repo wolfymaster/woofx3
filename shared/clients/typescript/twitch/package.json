@@ -1,0 +1,20 @@
+{
+  "name": "woofx3-twitch-client",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/express": "^5.0.3"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@twurple/api": "^7.4.0",
+    "@twurple/auth": "^7.4.0",
+    "@twurple/chat": "^7.4.0",
+    "@twurple/eventsub-ws": "^7.4.0",
+    "express": "^5.1.0",
+    "open": "^10.2.0"
+  }
+}

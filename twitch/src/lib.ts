@@ -50,7 +50,3 @@ export async function readTokenFromFile(fileName: string): Promise<AccessTokenWi
     const token: AccessTokenWithUserId = JSON.parse(contents);
     return token;
 }
-
-export function encodeScopes(scopes: string[]) {
-    return scopes.map(encodeURIComponent).join('+');
-}

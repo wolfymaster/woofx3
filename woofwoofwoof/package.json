@@ -7,7 +7,6 @@
     "chalk": "^5.4.1",
     "dotenv": "^16.4.7",
     "nats": "^2.29.3",
-    "twirpscript": "^0.0.69",
     "yargs": "^17.7.2"
   },
   "scripts": {

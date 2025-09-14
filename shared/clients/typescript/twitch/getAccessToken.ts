@@ -4,7 +4,10 @@ import express from 'express';
 import dotenv from 'dotenv';
 import fs from 'fs/promises';
 import open from 'open';
-import { encodeScopes } from './lib';
+
+function encodeScopes(scopes: string[]) {
+    return scopes.map(encodeURIComponent).join('+');
+}
 
 dotenv.config({
     path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../', '.env')],
