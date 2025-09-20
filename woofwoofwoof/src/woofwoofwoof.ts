@@ -9,6 +9,8 @@ import { ListCommands } from "@woofx3/db/command.pb";
 import BarkloaderClient, { BarkloaderMessageResponse } from "@woofx3/barkloader";
 import { AddUserToResource, HasPermission, RemoveUserFromResource } from "@woofx3/db/permission.pb";
 import TwitchClient, { type ChatMessage } from '@woofx3/twitch';
+import MessageBus from '@woofx3/messagebus';
+import { EventType } from '@woofx3/cloudevents/Twitch/events';
 
 export interface WoofWoofWoofRequestMessage {
     command: string;
@@ -36,17 +38,23 @@ if (!channel) {
 }
 
 // create NATS client
-const bus = await NatsClient();
+// const bus = await NatsClient();
+const bus = await MessageBus.createMessageBus({
+    backend: 'http',
+    http: {
+        url:'ws://localhost:9000/ws'
+    }
+});
 
 // listen on the eventbus for api calls
-(async () => {
-    for await (const msg of bus.subscribe("woofwoofwoof")) {
-        natsMessageHandler<WoofWoofWoofRequestMessage>(
-            msg,
-            woofwoofwoofMessageHandler,
-        );
-    }
-})();
+// (async () => {
+//     for await (const msg of bus.subscribe("woofwoofwoof")) {
+//         natsMessageHandler<WoofWoofWoofRequestMessage>(
+//             msg,
+//             woofwoofwoofMessageHandler,
+//         );
+//     }
+// })();
 
 // Get Twitch Client
 const twitchClient = await new TwitchClient({
@@ -82,6 +90,11 @@ chatClient.onMessage(async (_channel: string, user: string, text: string, _msg: 
 
 // connect client
 chatClient.connect();
+
+bus.subscribe(EventType.ChatMessage, (msg: MessageBus.Msg) => {
+    const payload = msg.json();
+    console.log('payload', payload);
+});
 
 console.log(chalk.yellow('#######################################################'));
 console.log(chalk.yellow.bold(`Connected to Twitch chat for channel: ${channel}`));
@@ -138,7 +151,7 @@ const barkloaderClient = new BarkloaderClient({
     reconnectTimeout: 5000, // 5 seconds
 });
 
-barkloaderClient.connect();
+// barkloaderClient.connect();
 
 const commands = await ListCommands({
     applicationId: process.env.APPLICATION_ID || "",

@@ -1,6 +1,7 @@
 import { NatsConnection  } from "nats";
 import { ChatSayMessageAttributes } from "@twurple/chat";
 import { ChatClient } from "@woofx3/twitch";
+import { MessageBus } from "@woofx3/messagebus/src";
 
 export interface Command {
     action: string;
@@ -24,7 +25,7 @@ export class Commands {
     watchers: ChatWatcherFunction[] = [];
     auth: AuthorizationFunction;
 
-    constructor(private channel: string, private chatClient: ChatClient, private natsClient: NatsConnection) {
+    constructor(private channel: string, private chatClient: ChatClient, private messageBus: MessageBus) {
         this.auth = async (_user, _cmd) => ({ granted: true });
     }
 
@@ -50,13 +51,14 @@ export class Commands {
     async process(text: string, user: string): Promise<[string, boolean]> {
         const chatMsg = text.trim();
 
-        this.natsClient.publish('twitchapi', JSON.stringify({
-            command: 'chatMessage',
-            args: { 
-                user,
-                message: chatMsg,
-            }
-        }));
+        // Don't need to notify twitch anymore since messages originate there
+        // this.natsClient.publish('twitchapi', JSON.stringify({
+        //     command: 'chatMessage',
+        //     args: { 
+        //         user,
+        //         message: chatMsg,
+        //     }
+        // }));
 
         this.watchers.forEach(w => this.try(() => w(chatMsg, user)));
 
