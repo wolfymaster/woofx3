@@ -2,25 +2,22 @@ import dotenv from 'dotenv';
 import path from 'path';
 import chalk from 'chalk';
 import { 
-    EventSubChannelCheerEvent, 
-    EventSubChannelBanEvent,
-    EventSubChannelFollowEvent, 
     EventSubChannelRedemptionAddEvent, 
-    EventSubChannelSubscriptionEvent, 
-    EventSubChannelSubscriptionGiftEvent, 
     EventSubChannelSubscriptionMessageEvent, 
     EventSubChannelRaidEvent, 
     EventSubChannelChatNotificationEvent, 
-    EventSubChannelModerationEvent, 
-    EventSubChannelChatMessageEvent 
+    EventSubChannelModerationEvent
 } from '@twurple/eventsub-base';
 import * as twitch from './lib';
 import { type Context, TwitchApiRequestMessage } from './types';
 import NatsClient, { natsMessageHandler } from './nats';
 import TwitchClient from '@woofx3/twitch';
-import Commands from './commands';
+import Commands from './lib/commands';
 import * as Handlers from './handlers';
 import TwitchApi, { CommandResponse } from './lib/twitch';
+import MessageBus from '@woofx3/messagebus';
+import EventFactory from '@woofx3/cloudevents/EventFactory';
+import TwitchEventBus from './lib/twitchEventBus';
 
 dotenv.config({
     path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../', '.env')],
@@ -33,7 +30,14 @@ const logger = twitch.makeLogger({
 });
 
 // Message Bus
-const bus = await NatsClient();
+// const bus = await NatsClient();
+const bus = await MessageBus.createMessageBus({
+    backend: 'http',
+    http: {
+        url:'ws://localhost:9000/ws'
+    },
+    logger
+})
 
 // Bootstrap Twitch
 let channel = process.env.TWITCH_CHANNEL_NAME;
@@ -58,256 +62,266 @@ const apiClient = twitchClient.ApiClient();
 const listener = twitchClient.EventBusListener();
 const broadcaster = await twitchClient.broadcaster();
 
+let ctx: Context = {
+    broadcaster,
+    logger,
+    messageBus: bus,
+    events: new EventFactory({ source: 'twitch' }),
+};
+
 // Twitch Api instance
 const twitchApi = new TwitchApi(apiClient, broadcaster);
+// Twitch event bus
+const twitchEventBus = new TwitchEventBus(ctx, listener);
 
 console.log(chalk.redBright(`===================== STARTING TWITCH ===========================  `));
 console.log(chalk.redBright(`Broadcaster Id: ${broadcaster.id}`));
-
-let ctx: Context = {
-    logger,
-};
 
 const twitchApiMessageHandlerWithBroadcaster = (command: string, args: Record<string, string>) => {
     return twitchApiMessageHandler(command, args);
 }
 
 // listen on the eventbus for api calls
-(async () => {
-    for await (const msg of bus.subscribe('twitchapi')) {
-        natsMessageHandler<TwitchApiRequestMessage>(msg, twitchApiMessageHandlerWithBroadcaster);
-    }
-})();
+await bus.subscribe('twitchapi', (msg: MessageBus.Msg) => {
+    natsMessageHandler<TwitchApiRequestMessage>(msg, twitchApiMessageHandlerWithBroadcaster);
+});
+// (async () => {
+//     for await (const msg of bus.subscribe('twitchapi')) {
+//         natsMessageHandler<TwitchApiRequestMessage>(msg, twitchApiMessageHandlerWithBroadcaster);
+//     }
+// })();
+
+twitchEventBus.subscribe();
 
 try {
     const userId = broadcaster.id;
 
-    listener.onChannelBan(userId, (event: EventSubChannelBanEvent) => {
-        let { reason, isPermanent, userDisplayName, userId } = event;
+    // const onChannelBan = listener.onChannelBan(userId, (event: EventSubChannelBanEvent) => {
+    //     let { reason, isPermanent, userDisplayName, userId } = event;
 
-        ctx.logger.info(Commands.USER_BANNED, reason, isPermanent, userDisplayName, userId);
-    });
+    //     ctx.logger.info(Commands.USER_BANNED, reason, isPermanent, userDisplayName, userId);
+    // });
 
-    listener.onChannelFollow(userId, userId, async (event: EventSubChannelFollowEvent) => {
-        console.log(`triggered follow`);
-        const { followDate, userDisplayName, userId } = event;
-        try {
-            // await CreateUserEvent({
-            //     event: {
-            //         userId,
-            //         displayName: userDisplayName,
-            //         eventType: Commands.USER_FOLLOW,
-            //         follow: {
-            //             followDate: followDate.toISOString(),
-            //         }
-            //     }
-            // }, {
-            //     baseURL: process.env.DATABASE_PROXY_URL || "",
-            // });
-        } catch (err) {
-            console.error(err);
-        }
+    // const onChannelFollow = listener.onChannelFollow(userId, userId, async (event: EventSubChannelFollowEvent) => {
+    //     console.log(`triggered follow`);
+    //     const { followDate, userDisplayName, userId } = event;
+    //     try {
+    //         // await CreateUserEvent({
+    //         //     event: {
+    //         //         userId,
+    //         //         displayName: userDisplayName,
+    //         //         eventType: Commands.USER_FOLLOW,
+    //         //         follow: {
+    //         //             followDate: followDate.toISOString(),
+    //         //         }
+    //         //     }
+    //         // }, {
+    //         //     baseURL: process.env.DATABASE_PROXY_URL || "",
+    //         // });
+    //     } catch (err) {
+    //         console.error(err);
+    //     }
 
-        // publish the follow event to workflow
-        bus.publish('workflow.follow', JSON.stringify({
-            type: 'follow',
-            payload: {
-                userDisplayName
-            }
-        }));
-    });
+    //     // publish the follow event to workflow
+    //     bus.publish('workflow.follow', JSON.stringify({
+    //         type: 'follow',
+    //         payload: {
+    //             userDisplayName
+    //         }
+    //     }));
+    // });
 
-    listener.onStreamOnline(userId, (event: any) => {
-        console.log('event online', event);
+    // const onStreamOnline = listener.onStreamOnline(userId, (event: any) => {
+    //     console.log('event online', event);
 
-        // Reset Daily Sub Count
-        bus.publish('slobs', JSON.stringify({
-            command: 'count', // TODO: Is there a better name?
-            args: {
-                id: 'a2e8385b-5688-4ec2-92a1-f4bf3e3d53a4',
-                reset: true,
-            }
-        }))
+    //     // Reset Daily Sub Count
+    //     bus.publish('slobs', JSON.stringify({
+    //         command: 'count', // TODO: Is there a better name?
+    //         args: {
+    //             id: 'a2e8385b-5688-4ec2-92a1-f4bf3e3d53a4',
+    //             reset: true,
+    //         }
+    //     }))
 
-        // Reset Daily Follow Count
-        bus.publish('slobs', JSON.stringify({
-            command: 'count', // TODO: Is there a better name?
-            args: {
-                id: 'ac39613d-4f48-459c-9f4e-6f3fb0df65e0',
-                reset: true,
-            }
-        }))
-    })
+    //     // Reset Daily Follow Count
+    //     bus.publish('slobs', JSON.stringify({
+    //         command: 'count', // TODO: Is there a better name?
+    //         args: {
+    //             id: 'ac39613d-4f48-459c-9f4e-6f3fb0df65e0',
+    //             reset: true,
+    //         }
+    //     }))
+    // })
 
-    listener.onChannelCheer(userId, async (evt: EventSubChannelCheerEvent) => {
-        console.log(Commands.BIT_CHEER, evt.bits, evt.message);
+    // const onChannelCheer = listener.onChannelCheer(userId, async (evt: EventSubChannelCheerEvent) => {
+    //     console.log(Commands.BIT_CHEER, evt.bits, evt.message);
 
-        const { message, bits, isAnonymous, userDisplayName, userId } = evt;
+    //     const { message, bits, isAnonymous, userDisplayName, userId } = evt;
 
-        if (!isAnonymous && userId) {
-            try {
-                // await CreateUserEvent({
-                //     event: {
-                //         userId,
-                //         displayName: userDisplayName || '',
-                //         eventType: Commands.BIT_CHEER,
-                //         bitCheer: {
-                //             amount: bits,
-                //         }
-                //     }
-                // }, {
-                //     baseURL: process.env.DATABASE_PROXY_URL || "",
-                // });
-            } catch (err) {
-                console.error(err);
-            }
+    //     if (!isAnonymous && userId) {
+    //         try {
+    //             // await CreateUserEvent({
+    //             //     event: {
+    //             //         userId,
+    //             //         displayName: userDisplayName || '',
+    //             //         eventType: Commands.BIT_CHEER,
+    //             //         bitCheer: {
+    //             //             amount: bits,
+    //             //         }
+    //             //     }
+    //             // }, {
+    //             //     baseURL: process.env.DATABASE_PROXY_URL || "",
+    //             // });
+    //         } catch (err) {
+    //             console.error(err);
+    //         }
 
-        } else {
-            console.log('assuming this was an annonymous cheer?', message, userDisplayName, userId);
-        }
+    //     } else {
+    //         console.log('assuming this was an annonymous cheer?', message, userDisplayName, userId);
+    //     }
 
-        bus.publish('reward', JSON.stringify({
-            type: Commands.REWARD.BITS,
-            payload: {
-                message,
-                bits,
-                isAnonymous,
-                userDisplayName,
-                userId,
-            }
-        }))
+    //     bus.publish('reward', JSON.stringify({
+    //         type: Commands.REWARD.BITS,
+    //         payload: {
+    //             message,
+    //             bits,
+    //             isAnonymous,
+    //             userDisplayName,
+    //             userId,
+    //         }
+    //     }))
 
-        // publish the cheer event to workflow
-        bus.publish('workflow.bits', JSON.stringify({
-            type: 'bits',
-            payload: {
-                message,
-                isAnonymous,
-                amount: bits,
-                user: userDisplayName,
-            }
-        }));
+    //     // publish the cheer event to workflow
+    //     bus.publish('workflow.bits', JSON.stringify({
+    //         type: 'bits',
+    //         payload: {
+    //             message,
+    //             isAnonymous,
+    //             amount: bits,
+    //             user: userDisplayName,
+    //         }
+    //     }));
 
-        // bus.publish('slobs', JSON.stringify({
-        //     command: 'updateTime',
-        //     args: {
-        //         timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
-        //         valueInSeconds: bits,
-        //     }
-        // }));
-    });
+    //     // bus.publish('slobs', JSON.stringify({
+    //     //     command: 'updateTime',
+    //     //     args: {
+    //     //         timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
+    //     //         valueInSeconds: bits,
+    //     //     }
+    //     // }));
+    // });
 
-    listener.onChannelHypeTrainBegin(userId, (data: any) => {
-        bus.publish('slobs', JSON.stringify({
-            command: Commands.HYPE_TRAIN_BEGIN,
-            args: {}
-        }))
+    // const onChannelHypeTrainBegin = listener.onChannelHypeTrainBegin(userId, (data: any) => {
+    //     bus.publish('slobs', JSON.stringify({
+    //         command: Commands.HYPE_TRAIN_BEGIN,
+    //         args: {}
+    //     }))
 
-        // bus.publish('slobs', JSON.stringify({
-        //     command: 'updateTime',
-        //     args: {
-        //         timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
-        //         valueInSeconds: 600,
-        //     }
-        // }));
-    });
+    //     // bus.publish('slobs', JSON.stringify({
+    //     //     command: 'updateTime',
+    //     //     args: {
+    //     //         timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
+    //     //         valueInSeconds: 600,
+    //     //     }
+    //     // }));
+    // });
 
-    listener.onChannelSubscriptionGift(userId, async (evt: EventSubChannelSubscriptionGiftEvent) => {
-        const { gifterId, gifterDisplayName, amount, tier, isAnonymous } = evt;
+    // const onChannelSubscriptionGift = listener.onChannelSubscriptionGift(userId, async (evt: EventSubChannelSubscriptionGiftEvent) => {
+    //     const { gifterId, gifterDisplayName, amount, tier, isAnonymous } = evt;
 
-        const gifterName = isAnonymous ? 'Anonymoose' : gifterDisplayName;
+    //     const gifterName = isAnonymous ? 'Anonymoose' : gifterDisplayName;
 
-        console.log(Commands.USER_GIFT_SUBSCRIPTION, gifterDisplayName, amount, tier, isAnonymous);
+    //     console.log(Commands.USER_GIFT_SUBSCRIPTION, gifterDisplayName, amount, tier, isAnonymous);
 
-        try {
-            // await CreateUserEvent({
-            //     event: {
-            //         userId,
-            //         displayName: gifterName,
-            //         eventType: Commands.USER_GIFT_SUBSCRIPTION,
-            //         // TODO: Add gift subscription event
-            //     }
-            // }, {
-            //     baseURL: process.env.DATABASE_PROXY_URL || "",
-            // });
-        } catch (err) {
-            console.error(err);
-        }
+    //     try {
+    //         // await CreateUserEvent({
+    //         //     event: {
+    //         //         userId,
+    //         //         displayName: gifterName,
+    //         //         eventType: Commands.USER_GIFT_SUBSCRIPTION,
+    //         //         // TODO: Add gift subscription event
+    //         //     }
+    //         // }, {
+    //         //     baseURL: process.env.DATABASE_PROXY_URL || "",
+    //         // });
+    //     } catch (err) {
+    //         console.error(err);
+    //     }
 
-        const suborsubs = amount > 1 ? 'subscriptions' : 'subscription';
+    //     const suborsubs = amount > 1 ? 'subscriptions' : 'subscription';
 
-        // publish the subscription gift event to workflow
-        bus.publish('workflow.subscription', JSON.stringify({
-            type: 'subscription',
-            payload: {
-                audioUrl: 'https://streamlabs.local.woofx3.tv/allinthistogether.mp3',
-                mediaUrl: 'https://media.tenor.com/MojW2yr1vFoAAAPo/money-money-money.mp4',
-                text: `$$ {primary}${gifterName}{primary} gifted {primary}${amount}{primary} ${suborsubs} $$`,
-            }
-        }));
+    //     // publish the subscription gift event to workflow
+    //     bus.publish('workflow.subscription', JSON.stringify({
+    //         type: 'subscription',
+    //         payload: {
+    //             audioUrl: 'https://streamlabs.local.woofx3.tv/allinthistogether.mp3',
+    //             mediaUrl: 'https://media.tenor.com/MojW2yr1vFoAAAPo/money-money-money.mp4',
+    //             text: `$$ {primary}${gifterName}{primary} gifted {primary}${amount}{primary} ${suborsubs} $$`,
+    //         }
+    //     }));
 
-        // bus.publish('slobs', JSON.stringify({
-        //     command: 'count', // TODO: Is there a better name?
-        //     args: {
-        //         id: 'a2e8385b-5688-4ec2-92a1-f4bf3e3d53a4',
-        //         value: amount,
-        //     }
-        // }))
-    })
+    //     // bus.publish('slobs', JSON.stringify({
+    //     //     command: 'count', // TODO: Is there a better name?
+    //     //     args: {
+    //     //         id: 'a2e8385b-5688-4ec2-92a1-f4bf3e3d53a4',
+    //     //         value: amount,
+    //     //     }
+    //     // }))
+    // })
 
-    listener.onChannelSubscription(userId, async (event: EventSubChannelSubscriptionEvent) => {
-        const { userId, userDisplayName, isGift, tier } = event;
+    // const onChannelSubscription = listener.onChannelSubscription(userId, async (event: EventSubChannelSubscriptionEvent) => {
+    //     const { userId, userDisplayName, isGift, tier } = event;
 
-        console.log(Commands.USER_SUBSCRIBE, userDisplayName, tier, isGift);
+    //     console.log(Commands.USER_SUBSCRIBE, userDisplayName, tier, isGift);
 
-        try {
-            // await CreateUserEvent({
-            //     event: {
-            //         userId,
-            //         displayName: userDisplayName,
-            //         eventType: Commands.USER_SUBSCRIBE,
-            //         subscribe: {
-            //             gift: isGift,
-            //             tier,
-            //         }
-            //     }
-            // }, {
-            //     baseURL: process.env.DATABASE_PROXY_URL || "",
-            // });
-        } catch (err) {
-            console.error(err);
-        }
+    //     try {
+    //         // await CreateUserEvent({
+    //         //     event: {
+    //         //         userId,
+    //         //         displayName: userDisplayName,
+    //         //         eventType: Commands.USER_SUBSCRIBE,
+    //         //         subscribe: {
+    //         //             gift: isGift,
+    //         //             tier,
+    //         //         }
+    //         //     }
+    //         // }, {
+    //         //     baseURL: process.env.DATABASE_PROXY_URL || "",
+    //         // });
+    //     } catch (err) {
+    //         console.error(err);
+    //     }
 
-        // bus.publish('slobs', JSON.stringify({
-        //     command: 'updateTime',
-        //     args: {
-        //         timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
-        //         valueInSeconds: 120,
-        //     }
-        // }));
+    //     // bus.publish('slobs', JSON.stringify({
+    //     //     command: 'updateTime',
+    //     //     args: {
+    //     //         timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
+    //     //         valueInSeconds: 120,
+    //     //     }
+    //     // }));
 
-        if (!isGift) {
-            bus.publish('slobs', JSON.stringify({
-                command: 'alert_message',
-                args: {
-                    audioUrl: 'https://streamlabs.local.woofx3.tv/wolf-hype.mp3',
-                    mediaUrl: 'https://media.tenor.com/bj2uMQRTdSEAAAPo/dog-husky.mp4',
-                    text: `<3  {primary}${userDisplayName}{primary} subscribed <3`,
-                }
-            }));
+    //     if (!isGift) {
+    //         bus.publish('slobs', JSON.stringify({
+    //             command: 'alert_message',
+    //             args: {
+    //                 audioUrl: 'https://streamlabs.local.woofx3.tv/wolf-hype.mp3',
+    //                 mediaUrl: 'https://media.tenor.com/bj2uMQRTdSEAAAPo/dog-husky.mp4',
+    //                 text: `<3  {primary}${userDisplayName}{primary} subscribed <3`,
+    //             }
+    //         }));
 
-            bus.publish('slobs', JSON.stringify({
-                command: 'count', // TODO: Is there a better name?
-                args: {
-                    id: 'a2e8385b-5688-4ec2-92a1-f4bf3e3d53a4',
-                    value: 1,
-                }
-            }))
-        }
-    });
+    //         bus.publish('slobs', JSON.stringify({
+    //             command: 'count', // TODO: Is there a better name?
+    //             args: {
+    //                 id: 'a2e8385b-5688-4ec2-92a1-f4bf3e3d53a4',
+    //                 value: 1,
+    //             }
+    //         }))
+    //     }
+    // });
 
     // I think this is resubs - when it is announced in chat
-    listener.onChannelSubscriptionMessage(userId, async (event: EventSubChannelSubscriptionMessageEvent) => {
+    const onChannelSubscriptionMessage = listener.onChannelSubscriptionMessage(userId, async (event: EventSubChannelSubscriptionMessageEvent) => {
         const { userId, userDisplayName, tier } = event;
 
         console.log(Commands.USER_SUBSCRIBE, userDisplayName, tier);
@@ -348,7 +362,7 @@ try {
         }));
     });
 
-    listener.onChannelRedemptionAdd(userId, async (evt: EventSubChannelRedemptionAddEvent) => {
+    const onChannelRedemptionAdd = listener.onChannelRedemptionAdd(userId, async (evt: EventSubChannelRedemptionAddEvent) => {
         const { rewardId, rewardCost, rewardPrompt, rewardTitle, userId, userDisplayName, input } = evt;
 
         switch (rewardId) {
@@ -468,7 +482,7 @@ try {
     });
 
     // need to use moderate to get moderator actions which includes raid
-    listener.onChannelModerate(userId, userId, (evt: EventSubChannelModerationEvent) => {
+    const onChannelModerate = listener.onChannelModerate(userId, userId, (evt: EventSubChannelModerationEvent) => {
         const { moderationAction, moderatorDisplayName } = evt;
 
         ctx.logger.info(`moderation action: ${moderationAction} by ${moderatorDisplayName}`);
@@ -486,47 +500,46 @@ try {
     })
 
     // when receiving a raid to my channel
-    listener.onChannelRaidTo(userId, async (evt: EventSubChannelRaidEvent) => {
+    const onChannelRaidTo = listener.onChannelRaidTo(userId, async (evt: EventSubChannelRaidEvent) => {
         const { viewers, raidingBroadcasterName, raidingBroadcasterId } = evt;
         ctx.logger.info(`incoming raid from ${raidingBroadcasterName} with ${viewers} viewers`);
     });
 
     // when raiding out to another channel is complete
-    listener.onChannelRaidFrom(userId, async (evt: EventSubChannelRaidEvent) => {
+    const onChannelRaidFrom = listener.onChannelRaidFrom(userId, async (evt: EventSubChannelRaidEvent) => {
         const { raidedBroadcasterName, viewers } = evt;
 
         ctx.logger.info(`raiding out to ${raidedBroadcasterName} with ${viewers} viewers`);
     });
 
     // chat messages
-    listener.onChannelChatMessage(broadcaster, broadcaster, (evt: EventSubChannelChatMessageEvent) => {
-        let { sourceBroadcasterName, sourceBroadcasterId, messageText } = evt;
-        ctx.logger.info('received channel chat message', { sourceBroadcasterId, sourceBroadcasterName, messageText })
-    });
+    // const onChannelChatMessage = listener.onChannelChatMessage(broadcaster, broadcaster, (evt: EventSubChannelChatMessageEvent) => {
+    //     let { sourceBroadcasterName, sourceBroadcasterId, messageText } = evt;
+    //     ctx.logger.info('received channel chat message', { sourceBroadcasterId, sourceBroadcasterName, messageText })
+    // });
 
     // special chat notifications like announcements, raid, unraid, ect
-    listener.onChannelChatNotification(broadcaster, broadcaster, (evt: EventSubChannelChatNotificationEvent) => {
+    const onChannelChatNotification = listener.onChannelChatNotification(broadcaster, broadcaster, (evt: EventSubChannelChatNotificationEvent) => {
         let { messageText, type, sourceBroadcasterId } = evt;
         ctx.logger.info('received chat notification', { messageText, type, sourceBroadcasterId });
     });
 
     // on socket connection
-    listener.onUserSocketConnect(() => {
-        console.log(chalk.cyan("~~~~~~~~~~~~~~~~~~~~~"));
-        console.log(chalk.cyan("User socket connected"));
-        console.log(chalk.cyan("~~~~~~~~~~~~~~~~~~~~~"));
-    });
+    // listener.onUserSocketConnect(() => {
+    //     console.log(chalk.cyan("~~~~~~~~~~~~~~~~~~~~~"));
+    //     console.log(chalk.cyan("User socket connected"));
+    //     console.log(chalk.cyan("~~~~~~~~~~~~~~~~~~~~~"));
+    // });
 
-    // on socket disconnect
-    listener.onUserSocketDisconnect(() => {
-        console.log(chalk.cyan("~~~~~~~~~~~~~~~~~~~~~"));
-        console.log(chalk.cyan("User socket disconnected"));
-        console.log(chalk.cyan("~~~~~~~~~~~~~~~~~~~~~"));
-    });
+    // // on socket disconnect
+    // listener.onUserSocketDisconnect(() => {
+    //     console.log(chalk.cyan("~~~~~~~~~~~~~~~~~~~~~"));
+    //     console.log(chalk.cyan("User socket disconnected"));
+    //     console.log(chalk.cyan("~~~~~~~~~~~~~~~~~~~~~"));
+    // });
 
-    listener.start();
+    twitchEventBus.connect();
     ctx.logger.info('listener started');
-
 } catch (err: any) {
     ctx.logger.error('error:', err.message);
     process.exit(0);
@@ -561,7 +574,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
     console.log(`\n🛑 Received ${signal}, starting graceful shutdown...`);
 
     try {
-        listener.stop();
+        twitchEventBus.disconnect();
         console.log("✅ Graceful shutdown completed");
         process.exit(0);
     } catch (error) {

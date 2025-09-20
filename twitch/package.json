@@ -12,5 +12,8 @@
     "langchain": "^0.3.19",
     "open": "^10.1.0",
     "winston": "^3.17.0"
+  },
+  "scripts": {
+    "start": "bun run src/api.ts"
   }
 }
