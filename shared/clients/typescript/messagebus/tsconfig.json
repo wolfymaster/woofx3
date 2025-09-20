@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "paths": {
+      "@woofx3/*": ["../*"],
+    },
+    "strict": true,
+    "target": "es2022",
+  }
+}
