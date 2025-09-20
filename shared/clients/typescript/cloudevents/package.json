@@ -1,0 +1,12 @@
+{
+  "name": "@woofx3/cloudevents",
+  "version": "1.0.0",
+  "description": "Standardized topics and events",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
