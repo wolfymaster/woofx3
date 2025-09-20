@@ -1,16 +1,15 @@
 import dotenv from "dotenv";
 import path from "path";
 import chalk from 'chalk';
-import NatsClient, { natsMessageHandler } from "./nats";
 import { AuthorizationResponse, Commands } from "./commands";
 import Spotify from "./spotify";
 import { kasaLightsOff, kasaLightsOn } from "./kasa";
 import { ListCommands } from "@woofx3/db/command.pb";
 import BarkloaderClient, { BarkloaderMessageResponse } from "@woofx3/barkloader";
 import { AddUserToResource, HasPermission, RemoveUserFromResource } from "@woofx3/db/permission.pb";
-import TwitchClient, { type ChatMessage } from '@woofx3/twitch';
+import TwitchClient from '@woofx3/twitch';
 import MessageBus from '@woofx3/messagebus';
-import { EventType } from '@woofx3/cloudevents/Twitch/events';
+import { EventType, ChatMessageMessage } from '@woofx3/cloudevents/Twitch';
 
 export interface WoofWoofWoofRequestMessage {
     command: string;
@@ -37,24 +36,12 @@ if (!channel) {
     );
 }
 
-// create NATS client
-// const bus = await NatsClient();
 const bus = await MessageBus.createMessageBus({
     backend: 'http',
     http: {
         url:'ws://localhost:9000/ws'
     }
 });
-
-// listen on the eventbus for api calls
-// (async () => {
-//     for await (const msg of bus.subscribe("woofwoofwoof")) {
-//         natsMessageHandler<WoofWoofWoofRequestMessage>(
-//             msg,
-//             woofwoofwoofMessageHandler,
-//         );
-//     }
-// })();
 
 // Get Twitch Client
 const twitchClient = await new TwitchClient({
@@ -73,27 +60,22 @@ await twitchClient.init({
 const chatClient = twitchClient.ChatClient();
 
 // new Commands instance
-const commander = new Commands(channel, chatClient, bus);
+const commander = new Commands(channel, chatClient);
 
 // add permissions check to commander
 commander.setAuth(async (user: string, cmd: string) => {
     return await canUse(user, cmd);
 });
 
-chatClient.onMessage(async (_channel: string, user: string, text: string, _msg: ChatMessage) => {
-    let [message, matched] = await commander.process(text, user);
-
-    if(matched && message) {
-        await commander.send(message);
-    }
-});
-
 // connect client
 chatClient.connect();
 
-bus.subscribe(EventType.ChatMessage, (msg: MessageBus.Msg) => {
-    const payload = msg.json();
-    console.log('payload', payload);
+bus.subscribe(EventType.ChatMessage, async (msg: MessageBus.Msg) => {
+    const payload = msg.json<ChatMessageMessage>();
+    let [message, matched] = await commander.process(payload.data.message, payload.data.chatterName);
+    if(matched && message) {
+        await commander.send(message);
+    }
 });
 
 console.log(chalk.yellow('#######################################################'));
@@ -120,7 +102,7 @@ function woofwoofwoofMessageHandler(
 
 // Barkloader websocket
 const barkloaderClient = new BarkloaderClient({
-    wsUrl: "ws://localhost:3005",
+    wsUrl: process.env.WOOFX3_BARKLOADER_WS_URL || "",
     onMessage: (message: BarkloaderMessageResponse) => {
         console.log("recived on socket", message);
         try {
@@ -151,7 +133,7 @@ const barkloaderClient = new BarkloaderClient({
     reconnectTimeout: 5000, // 5 seconds
 });
 
-// barkloaderClient.connect();
+barkloaderClient.connect();
 
 const commands = await ListCommands({
     applicationId: process.env.APPLICATION_ID || "",
@@ -179,14 +161,19 @@ function addCommand(command: Command) {
     console.log("adding command", command.command);
     if (command.type === "function") {
         commander.add(command.command, async (text: string, user?: string) => {
-            barkloaderClient.send(JSON.stringify({
-                type: "invoke",
-                data: {
-                    func: command.command,
-                    args: [text, user],
-                },
-            }));
-            return "";
+            try {
+                barkloaderClient.send(JSON.stringify({
+                    type: "invoke",
+                    data: {
+                        func: command.command,
+                        args: [text, user],
+                    },
+                }));
+            } catch (err: any) {
+                console.error("Failed to send message to Barkloader", err.message);
+            } finally {
+                return "";
+            }     
         });
         return;
     }
@@ -197,34 +184,6 @@ function addCommand(command: Command) {
 commander.every(async (msg: string, user?: string) => {
     console.log(`${user} says: ${msg}`);
 });
-
-// commander.add('woof', async (text: string) => {
-//     const sounds = ['woof1', 'woof2']
-//     const rng = Math.floor(Math.random() * sounds.length);
-
-//     bus.publish('slobs', JSON.stringify({
-//         command: 'alert_message',
-//         args: {
-//             audioUrl: `https://streamlabs.local.woofx3.tv/${sounds[rng]}.mp3`,
-//         }
-//     }));
-
-//     return 'woofwoof';
-// });
-
-// commander.add('socials', '🐺 FOLLOW WOLFY 🐺 Instagram: https://instagram.com/wolfymaster Twitter: https://twitter.com/wolfymaster YouTube: https://youtube.com/wolfymaster');
-
-// commander.add('raid', '🔥🐺 🐺🔥 🐺🔥 🐺 IT\'S RAID O\'CLOCK! 🐺🔥 🐺🔥 🐺🔥WolfyMaster and the unstoppable Wolf Pack are HERE! We DO IT LIVE, MAKE IT EPIC, and BREAK THE INTERNET!💥 PACK ASSEMBLED, HOWL MODE ACTIVATED! Bringing the energy, the chaos, and the HOWLS: AWOOOOOOOOOOOOOOOOOO! 🐺🐺🐺🐺🐺🐺 #WolfPackRaid | wolfym7HYPE wolfym7HYPE wolfym7HYPE | #UnleashThePack');
-
-// commander.add('today', 'MVP Modules for woofx3 - Part 1');
-
-// commander.add('fart', '/me @cyburdial farted');
-
-// commander.add('lockin', async (text: string, user?: string) => {
-//     return `@${user} has engaged flow state`;
-// });
-
-// commander.add('skizz', 'WOOOOOOOOOO');
 
 commander.add('grantcommands', async (text: string, user?: string) => {
     await AddUserToResource({
@@ -276,23 +235,6 @@ commander.add("vanish", async (text: string, user?: string) => {
 commander.add("lurk", async (text: string, user?: string) => {
     return "";
 });
-
-// commander.add('github', 'https://www.github.com/wolfymaster/woofx3');
-
-// TODO: FIX - THIS IS MATCHING THE !SONG COMMAND
-// commander.add('so', async (text: string) => {
-//     // sent request for shoutout with username
-//     const username = text.replace('@', '').trim();
-
-//     console.log(username);
-
-//     bus.publish('slobs', JSON.stringify({
-//         command: 'shoutout',
-//         args: { username }
-//     }));
-
-//     return '';
-// })
 
 commander.add("follow", async (text: string) => {
     // sent request for shoutout with username
@@ -385,37 +327,6 @@ commander.add("sr", async (text: string) => {
     return `Added to queue: ${firstResult.name} by ${firstResult.artist}`;
 });
 
-// GOVEE CONTROL
-// commander.add('light', async (text: string) => {
-//     console.log(text);
-
-//     const govee = new Govee();
-
-//     // check for reset
-//     if (text === 'reset') {
-//         await govee.reset();
-//         return '';
-//     }
-
-//     // parse text for rbg values
-//     if (text.includes(',')) {
-//         const rgb = text.split(',');
-//         if (rgb.length === 3) {
-//             await govee.setColor(+rgb[0].trim(), +rgb[1].trim(), +rgb[2].trim());
-//             return ''
-//         }
-//     }
-
-//     // lookup color if given color name
-//     const rgb = govee.lookupColor(text);
-
-//     if (rgb) {
-//         await govee.setColor(rgb[0], rgb[1], rgb[2]);
-//     }
-
-//     return '';
-// })
-
 // UPDATE STREAM CATEGORY
 commander.add("category", async (text: string) => {
     switch (text) {
@@ -477,50 +388,6 @@ commander.add("title", async (text: string, user?: string) => {
 
     return `Stream title updated to: ${text}`;
 });
-
-// commander.add('kitty', async (text: string, user?: string) => {
-//     if (!user || user.toLowerCase() !== 'kittyclemente') {
-//         return 'Sorry, You are not kitty!!'
-//     }
-//     bus.publish('slobs', JSON.stringify({
-//         command: 'alert_message',
-//         args: {
-//             audioUrl: 'https://streamlabs.local.woofx3.tv/goodkittykitty.mp3',
-//         }
-//     }));
-//     return '';
-// });
-
-// commander.add('pixy', async (text: string, user?: string) => {
-//     if (!user || user.toLowerCase() !== 'pixyroux') {
-//         return 'Sorry, You are not pixyroux!!'
-//     }
-//     bus.publish('slobs', JSON.stringify({
-//         command: 'alert_message',
-//         args: {
-//             audioUrl: 'https://streamlabs.local.woofx3.tv/beautiful-things.mp3',
-//         }
-//     }));
-//     return '';
-// });
-
-// commander.add('wedidit', async () => {
-//     bus.publish('slobs', JSON.stringify({
-//         command: 'alert_message',
-//         args: {
-//             audioUrl: 'https://streamlabs.local.woofx3.tv/wedidit.mp3',
-//             mediaUrl: 'https://streamlabs.local.woofx3.tv/confetti.gif',
-//             duration: 10,
-//             options: {
-//                 view: {
-//                     fullScreen: true,
-//                 }
-//             }
-//         }
-//     }));
-
-//     return 'WE DID IT!';
-// });
 
 commander.add("sc", async (text: string) => {
     let sceneName = "";
@@ -591,97 +458,6 @@ commander.add("office", async (text: string) => {
 
     return "";
 });
-
-// PAINT GAME COMMADNS
-// commander.every(async (msg: string, user?: string) => {
-//     // only run if we are playing the game
-//     const playing = true;
-
-//     if (!playing) {
-//         return;
-//     }
-
-//     const points = util.parsePoints(msg);
-
-//     console.log('points', points);
-
-//     if (!points.length) {
-//         return;
-//     }
-
-//     let x, y, xlength, ylength = 0;
-
-//     if (points.length === 1) {
-//         x = points[0].x;
-//         y = points[0].y;
-//         xlength = 1;
-//         ylength = 1;
-//     } else {
-//         const absx = Math.abs(points[0].x - points[1].x);
-//         const absy = Math.abs(points[0].y - points[1].y);
-
-//         if (absx === 0) {
-//             x = points[0].x
-//             y = Math.min(points[0].y, points[1].y);
-//             xlength = 1;
-//             ylength = absy + 1;
-//         }
-
-//         if (absy === 0) {
-//             x = Math.min(points[0].x, points[1].x);
-//             y = points[0].y
-//             xlength = absx + 1;
-//             ylength = 1;
-//         }
-//     }
-
-//     bus.publish('slobs', JSON.stringify({
-//         command: 'paint',
-//         args: {
-//             action: 'draw',
-//             x,
-//             y,
-//             xlength,
-//             ylength,
-//             user
-//         }
-//     }));
-// })
-
-// PAINT GAME PEN COLOR
-commander.add("color", async (msg: string, user?: string) => {
-    bus.publish(
-        "slobs",
-        JSON.stringify({
-            command: "paint",
-            args: {
-                action: "pencolor",
-                color: msg,
-                user,
-            },
-        }),
-    );
-
-    return "";
-});
-
-// commander.add('confetti', async (msg: string) => {
-//     bus.publish('slobs', JSON.stringify({
-//         command: 'alert_message',
-//         args: {
-//             // audioUrl: 'https://streamlabs.local.woofx3.tv/wolf-hype.mp3',
-//             mediaUrl: 'https://streamlabs.local.woofx3.tv/confetti.gif',
-//             // text: `<3  {primary}${userDisplayName}{primary} subscribed <3`,
-//             options: {
-//                 view: {
-//                     fullScreen: true,
-//                 }
-//             }
-//         }
-//     }));
-
-//     return '';
-// })
 
 // add a command for updating the timer
 commander.add("time", async (msg: string) => {
