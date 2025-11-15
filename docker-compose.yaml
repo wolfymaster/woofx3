@@ -1,0 +1,24 @@
+services:
+  woofx3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: woofx3
+    restart: unless-stopped
+    user: "1000:1000"  # Run as woofx3 user (UID 1000)
+    volumes:
+      - ./.env:/app/.env:ro
+      # Add any additional volumes here if needed for development
+      # For example, to mount source code for live reload:
+      # - ./:/app
+    ports:
+      - "80:80"  # Example port mapping, adjust according to your needs
+      - "443:443"  # For HTTPS if needed
+    environment:
+      - NODE_ENV=production
+    working_dir: /app
+    # Uncomment the following if you need to run in development mode with file watching
+    # command: ["devbox", "run", "--", "process-compose", "up"]
+    # Uncomment the following if you need to debug the container
+    # tty: true
+    # stdin_open: true

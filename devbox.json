@@ -19,7 +19,8 @@
     "sqlite@latest",
     "temporal-cli@latest",
     "gopls@latest",
-    "twitch-cli@1.1.25"
+    "twitch-cli@1.1.25",
+    "go-task@latest"
   ],
   "shell": {
     "init_hook": [
