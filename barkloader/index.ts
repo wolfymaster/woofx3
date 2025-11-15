@@ -4,9 +4,9 @@ import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
 import { LuaFactory } from 'wasmoon';
-import NatsClient, { natsMessageHandler } from './nats';
-import { InvokeRequest, WebSocketMessage, TimerArgs, StreamAlertArgs, TwitchArgs } from "./types";
-import { Command, SetCommand } from '@client/command.pb';
+import NatsClient from './nats';
+import type { InvokeRequest, WebSocketMessage, TimerArgs, StreamAlertArgs, TwitchArgs } from "./types";
+import { type Command, CreateCommand } from '@woofx3/command.pb';
 
 // receive message
 // invokeRequest
@@ -39,11 +39,11 @@ let clientId = 0;
 
 const broadcasterId = process.env.TWITCH_BROADCASTER_ID || '';
 
-console.log(chalk.yellow('==================================='));
-console.log(chalk.blue('STARTING BARKLOADER'))
-console.log(chalk.blue(new Date()));
-console.log(chalk.blue(`PORT: ${port}`));
-console.log(chalk.yellow('==================================='));
+console.log(chalk.yellow('###################################'));
+console.log(chalk.yellow.bold('STARTING BARKLOADER'))
+console.log(chalk.yellow.bold(new Date()));
+console.log(chalk.yellow.bold(`PORT: ${port}`));
+console.log(chalk.yellowBright('###################################'));
 
 const server = serve({
     port,
@@ -141,7 +141,7 @@ const server = serve({
                         };
                     
                         const command = {  ...args, broadcasterId };
-                        await SetCommand(command,  {
+                        await CreateCommand(command,  {
                             baseURL: process.env.DATABASE_PROXY_URL || "",
                         })
 
