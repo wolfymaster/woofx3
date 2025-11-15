@@ -45,6 +45,10 @@ terraform.rc
 # Build dist
 build/dist
 
+# DB Badger files
+db/cmd/badger
+
+
 # wolfy tmp cleanup
 ai/*
 auth/*

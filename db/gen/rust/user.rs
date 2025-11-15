@@ -106,4 +106,5 @@ pub struct GetBroadcasterTokenResponse {
     pub token_type: ::prost::alloc::string::String,
 }
 include!("user.serde.rs");
+include!("user.tonic.rs");
 // @@protoc_insertion_point(module)

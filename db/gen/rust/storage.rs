@@ -95,4 +95,5 @@ pub struct ClearAllForApplicationRequest {
 pub struct ClearAllForApplicationResponse {
 }
 include!("storage.serde.rs");
+include!("storage.tonic.rs");
 // @@protoc_insertion_point(module)

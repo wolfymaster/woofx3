@@ -315,4 +315,5 @@ pub struct TreatStatsResponse {
     pub stats: ::core::option::Option<TreatStats>,
 }
 include!("treat.serde.rs");
+include!("treat.tonic.rs");
 // @@protoc_insertion_point(module)

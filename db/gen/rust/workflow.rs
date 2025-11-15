@@ -383,4 +383,5 @@ pub struct CancelWorkflowExecutionRequest {
     pub reason: ::prost::alloc::string::String,
 }
 include!("workflow.serde.rs");
+include!("workflow.tonic.rs");
 // @@protoc_insertion_point(module)

@@ -20,5 +20,9 @@ plugins:
   - remote: buf.build/community/neoeinstein-prost-serde:v0.2.3
     out: gen/rust
 
+  # Generate gRPC client code
+  - remote: buf.build/community/neoeinstein-tonic:v0.4.0
+    out: gen/rust
+
 inputs:
   - directory: api
