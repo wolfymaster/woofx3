@@ -11,15 +11,15 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/nats-io/nats.go"
-	"github.com/wolfymaster/streamlabs/services/messagebus-gateway/internal/config"
-	"github.com/wolfymaster/streamlabs/shared/clients/messagebus"
+	"github.com/wolfymaster/woofx3/clients/messagebus"
+	"github.com/wolfymaster/woofx3/messagebus/internal/config"
 )
 
 // Gateway handles WebSocket connections and bridges them to NATS
 type Gateway struct {
 	config   *config.Config
 	logger   *slog.Logger
-	bus      messagebus.Bus
+	bus      messagebus.MessageBus
 	upgrader websocket.Upgrader
 	clients  map[*Client]bool
 	mutex    sync.RWMutex
@@ -50,10 +50,10 @@ func New(cfg *config.Config, logger *slog.Logger) (*Gateway, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Create message bus connection
-	busConfig := messagebus.Config{
+	busConfig := messagebus.MessageBusConfig{
 		Backend: messagebus.BackendNATS,
 		Logger:  logger,
-		NATS: messagebus.NATSConfig{
+		NATS: &messagebus.NATSConfig{
 			URL:      cfg.NATS.URL,
 			Name:     cfg.NATS.Name,
 			JWT:      cfg.NATS.JWT,
@@ -63,7 +63,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*Gateway, error) {
 
 	// Try NATS first, fallback to memory if no credentials
 	if cfg.NATS.JWT == "" || cfg.NATS.NKeySeed == "" {
-		busConfig.Backend = messagebus.BackendMemory
+		busConfig.Backend = messagebus.BackendHTTP
 		logger.Info("Using memory backend (NATS credentials not provided)")
 	}
 

@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/wolfymaster/streamlabs/services/messagebus-gateway/internal/config"
-	"github.com/wolfymaster/streamlabs/services/messagebus-gateway/internal/gateway"
-	"github.com/wolfymaster/streamlabs/services/messagebus-gateway/internal/health"
+	"github.com/wolfymaster/woofx3/messagebus/internal/config"
+	"github.com/wolfymaster/woofx3/messagebus/internal/gateway"
+	"github.com/wolfymaster/woofx3/messagebus/internal/health"
 )
 
 func main() {
