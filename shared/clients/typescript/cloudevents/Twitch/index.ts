@@ -2,6 +2,9 @@ import * as TwitchEvent from './events';
 import { encode } from '../utils';
 import Event from '../BaseEvent';
 
+export * from './events';
+export * from './messages';
+
 type EventTuple = [string, Uint8Array];
 
 export default class TwitchEvents {

@@ -1,4 +1,4 @@
-interface BaseEvent<T> {
+export interface BaseEvent<T> {
     specversion: string;
     type: string;
     source: string;

@@ -18,6 +18,8 @@ import TwitchApi, { CommandResponse } from './lib/twitch';
 import MessageBus from '@woofx3/messagebus';
 import EventFactory from '@woofx3/cloudevents/EventFactory';
 import TwitchEventBus from './lib/twitchEventBus';
+import { Service, ServiceDiscovery } from '@woofx3/servicediscovery';
+import MessageBusServiceHandler from '@woofx3/servicediscovery/ServiceHandlers/messagebus';
 
 dotenv.config({
     path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../', '.env')],
@@ -29,12 +31,37 @@ const logger = twitch.makeLogger({
     defaultMeta: { service: 'twitch' },
 });
 
+// Service Discovery
+const serviceDiscovery = new ServiceDiscovery({
+    serviceName: 'twitch',
+    serviceType: '_twitch._tcp',
+    port: 8080,
+    callbacks: {
+        onServiceFound: async (service: Service) => {
+            console.log(`👋 Discovered: ${service.name}`);
+
+            if(service.name === MessageBusServiceHandler.name) {
+                await MessageBusServiceHandler.onServiceFound(service);
+            }
+        },
+        onServiceLost: (service: Service) => {
+            console.log(`💔 Lost connection to: ${service.name}`);
+        }
+    }
+});
+
+await serviceDiscovery.start({});
+
+const messageBusService = await serviceDiscovery.waitForService(MessageBusServiceHandler.name);
+
+console.log('messageBusService', messageBusService);
+
 // Message Bus
 // const bus = await NatsClient();
 const bus = await MessageBus.createMessageBus({
     backend: 'http',
     http: {
-        url:'ws://localhost:9000/ws'
+        url: messageBusService.txt['url'] || 'ws://localhost:9000/ws'
     },
     logger
 })
