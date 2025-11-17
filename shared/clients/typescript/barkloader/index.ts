@@ -3,7 +3,6 @@ export type ReconnectAttemptHandler = (attempt: number, maxRetries: number | typ
 
 export interface BarkloaderClientConfig {
     wsUrl: string;
-    onMessage: MessageHandler;
     onOpen: EventListener;
     onClose: EventListener;
     onError: EventListener;
@@ -33,7 +32,7 @@ export default class BarkloaderClient {
     private isManualClose: boolean = false;
 
     constructor(private config: BarkloaderClientConfig) {
-        this.onMessage = config.onMessage;
+        this.onMessage = () => {};
         this.reconnectTimeout = config.reconnectTimeout ?? 5000;
         this.maxRetries = config.maxRetries ?? Infinity;
         this.onReconnectAttempt = config.onReconnectAttempt;
@@ -85,6 +84,15 @@ export default class BarkloaderClient {
             this.socket.send(data);
         } else {
             throw new Error('WebSocket is not connected');
+        }
+    }
+
+    public registerHandler(event: string, cb: MessageHandler) {
+        switch(event) {
+            case 'onMessage': {
+                this.onMessage = cb;
+                break;
+            }
         }
     }
 
