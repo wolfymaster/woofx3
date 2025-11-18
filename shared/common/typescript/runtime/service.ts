@@ -13,6 +13,8 @@ export interface Service<T> {
    */
   disconnect(): Promise<void>;
 
+  healthcheck: boolean;
+
   name: string;
 
   type: string;

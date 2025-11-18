@@ -85,7 +85,7 @@ export function createNATSHealthCheck(
     }
 
     // Check if all dependencies are healthy
-    const dependencyNames = Object.values(services).filter(d => d.type !== 'nats').map((d) => d.name);
+    const dependencyNames = Object.values(services).filter(d => d.healthcheck).map((d) => d.name);
     const allHealthy = dependencyNames.every((dep) => readyByApp[dep] === true);
     return allHealthy;
   };

@@ -2,12 +2,14 @@ import type { Service } from "@woofx3/common/runtime";
 import type NATSClient from "@woofx3/nats/src/client";
 
 export default class MessageBusService implements Service<NATSClient> {
+  healthcheck: boolean;
   name: string;
   type: string;
   client: NATSClient;
   connected: boolean;
 
   constructor(client: NATSClient) {
+    this.healthcheck = false;
     this.name = 'messageBus';
     this.type = 'nats';
     this.client = client;
