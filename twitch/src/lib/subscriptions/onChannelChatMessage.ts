@@ -1,6 +1,6 @@
-import { EventSubChannelChatMessageEvent, EventSubSubscription } from "@twurple/eventsub-base";
-import { EventSubWsListener } from "@twurple/eventsub-ws";
-import { Context } from "src/types";
+import type { EventSubChannelChatMessageEvent, EventSubSubscription } from "@twurple/eventsub-base";
+import type { EventSubWsListener } from "@twurple/eventsub-ws";
+import type { Context } from "src/types";
 
 export default function onChannelChatmessage(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
     return listener.onChannelChatMessage(ctx.broadcaster.id, ctx.broadcaster.id, async (event: EventSubChannelChatMessageEvent) => {

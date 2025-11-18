@@ -31,6 +31,12 @@ export default defineConfig({
                 TWITCH_WOLFY_CLIENT_SECRET: envVars.TWITCH_WOLFY_CLIENT_SECRET
             }
         }),
+        twitch: env({
+            path: 'twitch/.env',
+            variables: {
+                WOOFX3_TWITCH_CHANNEL_NAME: envVars.TWITCH_CHANNEL_NAME,
+            }
+        }),
         woofwoofwoof: env({
            path: 'woofwoofwoof/.env',
            variables: {
