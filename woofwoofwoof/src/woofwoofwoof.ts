@@ -52,7 +52,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   console.log(`\n🛑 Received ${signal}, starting graceful shutdown...`);
 
   try {
-    runtime.stop();
+    await runtime.stop();
     // app.barkloaderClient.destroy();
     console.log("✅ Graceful shutdown completed");
     process.exit(0);

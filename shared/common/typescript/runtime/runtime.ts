@@ -1,4 +1,4 @@
-import { type ActorRefFrom, assign, createActor, fromPromise, raise, setup } from "xstate";
+import { type ActorRefFrom, assign, createActor, fromCallback, fromPromise, raise, setup } from "xstate";
 import type { Application, ServicesRegistry } from "./application";
 
 /**
@@ -51,9 +51,7 @@ function calculateNextBackoffDelay(currentDelay: number | undefined): number {
 /**
  * Create the runtime state machine
  */
-export function createRuntimeMachine<TContext extends { services: ServicesRegistry }>(
-  config: RuntimeConfig<TContext>
-) {
+export function createRuntimeMachine<TContext extends { services: ServicesRegistry }>(config: RuntimeConfig<TContext>) {
   return setup({
     types: {
       context: {} as RuntimeContext<TContext>,
@@ -97,9 +95,11 @@ export function createRuntimeMachine<TContext extends { services: ServicesRegist
         await input.application.init();
       }),
 
-      applicationRunActor: fromPromise(async ({ input }: { input: RuntimeContext<TContext> }) => {
-        await input.application.run();
-      }),
+      applicationRunActor: fromCallback(
+        ({ input, sendBack }: { input: RuntimeContext<TContext>; sendBack: (evt: RuntimeEvent) => void }) => {
+          input.application.run();
+        }
+      ),
 
       applicationTerminateActor: fromPromise(async ({ input }: { input: RuntimeContext<TContext> }) => {
         await input.application.terminate();
@@ -232,15 +232,6 @@ export function createRuntimeMachine<TContext extends { services: ServicesRegist
                 invoke: {
                   src: "applicationRunActor",
                   input: ({ context }) => context,
-                  onDone: {
-                    target: "application_terminating",
-                  },
-                  onError: {
-                    target: "application_terminating",
-                    actions: ({ event }) => {
-                      console.error("Application run failed:", event.error);
-                    },
-                  },
                 },
                 on: {
                   SHUTDOWN: {
@@ -352,8 +343,9 @@ export class Runtime<TContext extends { services: ServicesRegistry }> {
     return this;
   }
 
-  stop() {
+  async stop() {
     this.actor.send({ type: "SHUTDOWN" });
+    await this.waitForEvent('done');
   }
 
   getState() {
@@ -362,6 +354,18 @@ export class Runtime<TContext extends { services: ServicesRegistry }> {
 
   subscribe(callback: (state: any) => void) {
     return this.actor.subscribe(callback);
+  }
+
+  private waitForEvent(event: string) {
+    return new Promise<void>((resolve) => {
+      const subscription = this.actor.subscribe((snapshot) => {
+        // Check if we've reached the final state
+        if (snapshot.status === event) {
+          subscription.unsubscribe();
+          resolve();
+        }
+      });
+    });
   }
 }
 
