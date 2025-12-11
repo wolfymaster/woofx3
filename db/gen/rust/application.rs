@@ -89,4 +89,5 @@ pub struct ListApplicationsResponse {
     pub applications: ::prost::alloc::vec::Vec<Application>,
 }
 include!("application.serde.rs");
+include!("application.tonic.rs");
 // @@protoc_insertion_point(module)

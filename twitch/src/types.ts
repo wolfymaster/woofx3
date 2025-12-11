@@ -1,7 +1,13 @@
+import { HelixUser } from '@twurple/api';
 import { Logger } from 'winston';
+import MessageBus from '@woofx3/messagebus';
+import EventFactory from '@woofx3/cloudevents/EventFactory'
 
 export interface Context {
+    broadcaster: HelixUser;
     logger: Logger;
+    messageBus: MessageBus.MessageBus;
+    events: EventFactory;
 }
 
 export interface TwitchContext {

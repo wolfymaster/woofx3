@@ -1,4 +1,4 @@
-import { SpotifyApi, Track } from '@spotify/web-api-ts-sdk';
+import { SpotifyApi, type Track } from '@spotify/web-api-ts-sdk';
 
 export type Song = {
     id: string;

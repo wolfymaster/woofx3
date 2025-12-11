@@ -1,5 +1,5 @@
 export default {
     root: "api/proto/v1",
-    dest: "gen/typescript",
+    dest: "../shared/clients/typescript/db",
     language: "typescript"
 }

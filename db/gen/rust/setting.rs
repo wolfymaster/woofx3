@@ -120,4 +120,5 @@ pub struct DeleteSettingRequest {
     pub application_id: ::prost::alloc::string::String,
 }
 include!("setting.serde.rs");
+include!("setting.tonic.rs");
 // @@protoc_insertion_point(module)

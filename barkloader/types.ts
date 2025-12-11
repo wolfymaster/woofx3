@@ -27,6 +27,10 @@ export interface StreamAlertArgs {
     audioUrl?: string;
 }
 
+export interface TwitchArgs {
+    time?: string;
+}
+
 export interface TimerArgs {
     id: string;
     valueInSeconds: string;

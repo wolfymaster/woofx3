@@ -26,6 +26,11 @@ processes:
     working_dir: db/cmd/server
     ready_log_line: "Starting server"
 
+  messagebus:
+    command: go run .
+    description: communication message bus
+    working_dir: services/messagebus-gateway
+
   streamlabs:
     command: PORT=5175 bun run dev
     description: slobs
@@ -45,10 +50,12 @@ processes:
     depends_on:
       db:
         condition: process_log_ready
-      barkloader-rust:
+      messagebus:
         condition: process_started
-      wooflow:
-        condition: process_started
+      # barkloader-rust:
+        # condition: process_started
+      # wooflow:
+        # condition: process_started
 
   wooflow:
     command: go run .

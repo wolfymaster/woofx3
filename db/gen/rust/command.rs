@@ -119,4 +119,5 @@ pub struct DeleteCommandRequest {
     pub id: ::prost::alloc::string::String,
 }
 include!("command.serde.rs");
+include!("command.tonic.rs");
 // @@protoc_insertion_point(module)

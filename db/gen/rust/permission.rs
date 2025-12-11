@@ -36,4 +36,5 @@ pub struct UserResourceRoleRequest {
     pub role: ::prost::alloc::string::String,
 }
 include!("permission.serde.rs");
+include!("permission.tonic.rs");
 // @@protoc_insertion_point(module)

@@ -1,71 +1,52 @@
-interface Point {
-    x: number;
-    y: number;
+import { HasPermission } from "@woofx3/db/permission.pb";
+import type { AuthorizationResponse } from "./commands";
+
+export async function canUse(user: string, cmd: string): Promise<AuthorizationResponse> {
+  const hasPermission = await HasPermission(
+    {
+      username: user.trim(),
+      resource: `command/${cmd}`,
+      action: "read",
+    },
+    {
+      baseURL: process.env.DATABASE_PROXY_URL || "",
+    }
+  );
+
+  return {
+    granted: hasPermission.code === "OK",
+    message: hasPermission.code === "OK" ? "" : `${user}.... YOU CAN'T DO THAT`,
+  };
 }
 
-// export function parsePoints(input: string): Point[] {
-//     const segments = input.trim().split(/(?<!,)\s+/);
-//     const points: Point[] = [];
+// function that parses string into seconds with format 2m 30s
+export function parseTime(duration: string): number {
+  // Initialize variables for storing parsed values
+  let minutes = 0;
+  let seconds = 0;
 
-//     for (const segment of segments) {
-//         if (segment.includes(',')) {
-//             const [x, y] = segment.split(',').map(Number);
-//             points.push({ x, y });
-//         }
-//     }
+  // Use a RegExp to match one or more digits before 'm' or 's', optionally followed by spaces.
+  const matches = duration.match(/(\d+)\s*[ms]/g);
 
-//     if (points.length === 0 && segments.length >= 2) {
-//         for (let i = 0; i < segments.length; i += 2) {
-//             if (i + 1 < segments.length) {
-//                 points.push({
-//                     x: Number(segments[i]),
-//                     y: Number(segments[i + 1])
-//                 });
-//             }
-//         }
-//     }
+  if (matches) {
+    for (const match of matches) {
+      // Get the number part and the unit from each match.
+      const num = parseInt(match, 10);
+      const unit = match.includes("m") ? "m" : "s";
 
-//     if(points.length == 0) {
-//         return [];
-//     }
-
-//     if (points.length === 1) {
-//         return points;
-//     }
-
-//     const [p1, p2] = points;
-
-//     if (p1.x === p2.x && p1.y === p2.y) {
-//         points.pop();
-//     } else if (p1.x !== p2.x && p1.y !== p2.y) {
-//         return [];
-//     }
-
-//     return points;
-// }
-
-export function parsePoints(input: string): Point[] {
-    const values = input.trim().replaceAll(',', '');
-
-    const coords = values.split(' ');
-
-    if(coords.length == 2) {
-        return [
-            { x: +coords[0], y: +coords[1] }
-        ]
+      // Add to the respective variable based on the unit.
+      if (unit === "m") {
+        minutes += num;
+      } else {
+        seconds += num;
+      }
     }
+  }
 
-    if(coords.length == 4) {
-        const p1 =  { x: +coords[0], y: +coords[1] };
-        const p2 = { x: +coords[2], y: +coords[3] };
+  // Convert minutes and seconds to total seconds
+  return minutes * 60 + seconds;
+}
 
-        if (p1.x === p2.x && p1.y === p2.y) {
-            return [p1];
-        } else if (p1.x !== p2.x && p1.y !== p2.y) {
-            return [];
-        }
-        return [p1, p2];
-    }
-
-    return [];
+export function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
