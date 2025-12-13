@@ -9,7 +9,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@instantdb/admin": "^0.17.21",
+    "@instantdb/admin": "^0.22.68",
     "@nats-io/transport-node": "^3.0.0-36",
     "dotenv": "^16.4.7"
   }
