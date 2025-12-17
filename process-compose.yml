@@ -27,9 +27,9 @@ processes:
     ready_log_line: "Starting server"
 
   messagebus:
-    command: go run .
+    command: GO_ENV=development go run .
     description: communication message bus
-    working_dir: services/messagebus-gateway
+    working_dir: services/nats
 
   streamlabs:
     command: PORT=5175 bun run dev
