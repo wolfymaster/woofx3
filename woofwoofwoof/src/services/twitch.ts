@@ -9,7 +9,7 @@ export default class TwitchService implements Service<TwitchClient> {
   connected: boolean;
 
   constructor(client: TwitchClient) {
-    this.healthcheck = false;
+    this.healthcheck = true;
     this.name = 'messageBus';
     this.type = 'nats';
     this.client = client;

@@ -66,8 +66,9 @@ processes:
         condition: process_started
 
   woofwoofwoof:
-    command: bun run woofwoofwoof/src/woofwoofwoof.ts
+    command: bun run src/woofwoofwoof.ts
     description: Twitch Chatbot
+    working_dir: woofwoofwoof
     depends_on:
       db:
         condition: process_log_ready
