@@ -4,7 +4,7 @@ import type { AuthorizationResponse } from "./commands";
 export async function canUse(user: string, cmd: string): Promise<AuthorizationResponse> {
   const hasPermission = await HasPermission(
     {
-      username: user.trim(),
+      username: user.trim().toLowerCase(),
       resource: `command/${cmd}`,
       action: "read",
     },

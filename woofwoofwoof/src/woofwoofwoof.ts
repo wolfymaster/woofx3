@@ -1,4 +1,5 @@
 import path from "node:path";
+import EventFactory from '@woofx3/cloudevents/EventFactory';
 import { createApplication, createNATSHealthCheck, createNATSHeartbeat, createRuntime } from "@woofx3/common/runtime";
 import dotenv from "dotenv";
 import WoofWoofWoof, { type WoofWoofWoofApplication } from './application';
@@ -29,9 +30,13 @@ commander.setAuth(async (user: string, cmd: string) => {
   return await canUse(user, cmd);
 });
 
+// Events
+const eventFactory = new EventFactory({ source: "woofwoofwoof" });
+
 const ctx = {
   channelName: appConfig.channelName,
   commander,
+  events: eventFactory,
 };
 
 const runtime = createRuntime({

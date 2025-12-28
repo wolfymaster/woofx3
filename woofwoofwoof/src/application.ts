@@ -11,6 +11,7 @@ import type MessageBusService from "./services/messageBus";
 import type TwitchChatClientService from "./services/twitchChat";
 import Spotify from "./spotify";
 import { parseTime } from "./util";
+import type EventFactory from "@woofx3/cloudevents/EventFactory";
 
 export type WoofWoofWoofServices = {
   barkloader: BarkloaderClientService;
@@ -23,6 +24,7 @@ export type WoofWoofWoofContextArgs = {
   channelName: string;
   commander: Commands;
   services: ServicesRegistry;
+  events: EventFactory;
 };
 
 // Full context type - with typed services
@@ -30,6 +32,7 @@ export type WoofWoofWoofContext = {
   channelName: string;
   commander: Commands;
   services: WoofWoofWoofServices;
+  events: EventFactory;
 };
 
 export type WoofWoofWoofApplication = Application<WoofWoofWoofContext>;
@@ -366,16 +369,16 @@ export default class WoofWoofWoof implements ApplicationClass<WoofWoofWoofContex
 
       console.log("update timer", parseTime(time));
 
-      ctx.services.messageBus.client.publish(
-        "slobs",
-        JSON.stringify({
-          command: "setTime",
-          args: {
-            timerId: "49b3fa3b-5eeb-40c3-bdc2-4d0e97192391",
-            valueInSeconds: parseTime(time),
-          },
-        })
-      );
+      const [topic, data] = ctx.events.Slobs().notifyWidget({
+        widgetId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
+        message: 'setTime',
+        data: {
+          timerId: "49b3fa3b-5eeb-40c3-bdc2-4d0e97192391",
+          valueInSeconds: parseTime(time),
+        }
+      });
+
+      ctx.services.messageBus.client.publish(topic, data);
 
       return "Timer updated";
     });
