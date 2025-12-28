@@ -41,35 +41,6 @@ runtime.start();
 //   //     ctx.logger.info(Commands.USER_BANNED, reason, isPermanent, userDisplayName, userId);
 //   // });
 
-//   // const onChannelFollow = listener.onChannelFollow(userId, userId, async (event: EventSubChannelFollowEvent) => {
-//   //     console.log(`triggered follow`);
-//   //     const { followDate, userDisplayName, userId } = event;
-//   //     try {
-//   //         // await CreateUserEvent({
-//   //         //     event: {
-//   //         //         userId,
-//   //         //         displayName: userDisplayName,
-//   //         //         eventType: Commands.USER_FOLLOW,
-//   //         //         follow: {
-//   //         //             followDate: followDate.toISOString(),
-//   //         //         }
-//   //         //     }
-//   //         // }, {
-//   //         //     baseURL: process.env.DATABASE_PROXY_URL || "",
-//   //         // });
-//   //     } catch (err) {
-//   //         console.error(err);
-//   //     }
-
-//   //     // publish the follow event to workflow
-//   //     bus.publish('workflow.follow', JSON.stringify({
-//   //         type: 'follow',
-//   //         payload: {
-//   //             userDisplayName
-//   //         }
-//   //     }));
-//   // });
-
 //   // const onStreamOnline = listener.onStreamOnline(userId, (event: any) => {
 //   //     console.log('event online', event);
 
@@ -91,64 +62,6 @@ runtime.start();
 //   //         }
 //   //     }))
 //   // })
-
-//   // const onChannelCheer = listener.onChannelCheer(userId, async (evt: EventSubChannelCheerEvent) => {
-//   //     console.log(Commands.BIT_CHEER, evt.bits, evt.message);
-
-//   //     const { message, bits, isAnonymous, userDisplayName, userId } = evt;
-
-//   //     if (!isAnonymous && userId) {
-//   //         try {
-//   //             // await CreateUserEvent({
-//   //             //     event: {
-//   //             //         userId,
-//   //             //         displayName: userDisplayName || '',
-//   //             //         eventType: Commands.BIT_CHEER,
-//   //             //         bitCheer: {
-//   //             //             amount: bits,
-//   //             //         }
-//   //             //     }
-//   //             // }, {
-//   //             //     baseURL: process.env.DATABASE_PROXY_URL || "",
-//   //             // });
-//   //         } catch (err) {
-//   //             console.error(err);
-//   //         }
-
-//   //     } else {
-//   //         console.log('assuming this was an annonymous cheer?', message, userDisplayName, userId);
-//   //     }
-
-//   //     bus.publish('reward', JSON.stringify({
-//   //         type: Commands.REWARD.BITS,
-//   //         payload: {
-//   //             message,
-//   //             bits,
-//   //             isAnonymous,
-//   //             userDisplayName,
-//   //             userId,
-//   //         }
-//   //     }))
-
-//   //     // publish the cheer event to workflow
-//   //     bus.publish('workflow.bits', JSON.stringify({
-//   //         type: 'bits',
-//   //         payload: {
-//   //             message,
-//   //             isAnonymous,
-//   //             amount: bits,
-//   //             user: userDisplayName,
-//   //         }
-//   //     }));
-
-//   //     // bus.publish('slobs', JSON.stringify({
-//   //     //     command: 'updateTime',
-//   //     //     args: {
-//   //     //         timerId: '49b3fa3b-5eeb-40c3-bdc2-4d0e97192391',
-//   //     //         valueInSeconds: bits,
-//   //     //     }
-//   //     // }));
-//   // });
 
 //   // const onChannelHypeTrainBegin = listener.onChannelHypeTrainBegin(userId, (data: any) => {
 //   //     bus.publish('slobs', JSON.stringify({
