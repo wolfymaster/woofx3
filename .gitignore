@@ -48,6 +48,11 @@ build/dist
 # DB Badger files
 db/cmd/badger
 
+# pids
+pids
+
+# workflow
+workflow/workflow
 
 # wolfy tmp cleanup
 ai/*
