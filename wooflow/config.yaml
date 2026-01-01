@@ -1,0 +1,22 @@
+# NATS configuration
+nats:
+  url: "tls://connect.ngs.global"
+  user_jwt: "eyJ0eXAiOiJKV1QiLCJhbGciOiJlZDI1NTE5LW5rZXkifQ.eyJqdGkiOiJQQVFJTlpNUE9XQkpGTE9RQkZFR0xJTUpNQk1EUVZEVVZKTTJYQk1PRVdGS0RCWFY3R1hBIiwiaWF0IjoxNzMzMTgyMzcxLCJpc3MiOiJBQjdGM1BZMzZKR0kyVDQ0UVdBVTVKTk5VRTJZQ0VBUjNVUEVUNjMyN1lPMldSNU43NUdLRVFJWiIsIm5hbWUiOiJ0d2l0Y2gtYnVzIiwic3ViIjoiVUFBTFo1SjdLTk83S0ZVT001QkVTVk9HRkVKUk9VUE03TlZQRUc3REJGVzVFSlZKWEhZM0ZZN1MiLCJuYXRzIjp7InB1YiI6e30sInN1YiI6e30sInN1YnMiOi0xLCJkYXRhIjotMSwicGF5bG9hZCI6LTEsImlzc3Vlcl9hY2NvdW50IjoiQUI3TUtHWlREMkRGRFhVMktGQkZGSlBZTkc3NldIWkk2UktYU0NNR01PTUo1VlFHN01WUkNCNU4iLCJ0eXBlIjoidXNlciIsInZlcnNpb24iOjJ9fQ.GTIpAyANL4PCNFDJhyRRe_sEwvATFagKcWLaGwqDTmM6wOCdaRKlzdn1Ok8iE4qW3JfYyoFonJzWjSxGmnNnAg"
+  nkey_seed: "SUANEJVRTL2P2PVTTBEUNN522CFVLLZZWTIKCDE7JVKG3PLJXDMWVNX6GQ"
+  subjects:
+    - "events.*"
+    - "workflow.*"
+
+# Temporal configuration
+temporal:
+  host: "localhost:7233"
+  namespace: "default"
+  task_queue: "workflow"
+
+# Logging configuration
+logging:
+  level: "info"
+  format: "json"
+
+server:
+  port: 9000 
