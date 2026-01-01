@@ -1,8 +1,11 @@
 package nats
 
-import "os"
+import (
+	"log/slog"
+	"os"
+)
 
-func CreateMessageBus(config Config, logger Logger) (*Client, error) {
+func CreateMessageBus(config Config, logger *slog.Logger) (*Client, error) {
 	client := NewClient(config, logger)
 	if err := client.Connect(); err != nil {
 		return nil, err
@@ -10,7 +13,7 @@ func CreateMessageBus(config Config, logger Logger) (*Client, error) {
 	return client, nil
 }
 
-func FromEnv(logger Logger) (*Client, error) {
+func FromEnv(logger *slog.Logger) (*Client, error) {
 	url := os.Getenv("NATS_URL")
 	if url == "" {
 		url = "nats://localhost:4222"

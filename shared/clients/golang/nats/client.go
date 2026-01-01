@@ -2,40 +2,22 @@ package nats
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 
 	"github.com/nats-io/nats.go"
 )
 
-type defaultLogger struct{}
-
-func (l *defaultLogger) Info(message string, args ...interface{}) {
-	log.Printf("[INFO] "+message, args...)
-}
-
-func (l *defaultLogger) Error(message string, args ...interface{}) {
-	log.Printf("[ERROR] "+message, args...)
-}
-
-func (l *defaultLogger) Warn(message string, args ...interface{}) {
-	log.Printf("[WARN] "+message, args...)
-}
-
-func (l *defaultLogger) Debug(message string, args ...interface{}) {
-	log.Printf("[DEBUG] "+message, args...)
-}
-
 type Client struct {
 	config     Config
-	logger     Logger
+	logger     *slog.Logger
 	connection *nats.Conn
 	mu         sync.Mutex
 }
 
-func NewClient(config Config, logger Logger) *Client {
+func NewClient(config Config, logger *slog.Logger) *Client {
 	if logger == nil {
-		logger = &defaultLogger{}
+		logger = slog.Default()
 	}
 	return &Client{
 		config: config,
