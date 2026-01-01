@@ -2,27 +2,39 @@ version: v2
 plugins:
   # Generate the Go Twirp server code (HTTP-based RPC, not GRPC)
   - local: protoc-gen-twirp
-    out: gen/go
+    out: app/server
+    opt:
+      - paths=source_relative
+
+  # Generate Go protobuf types (local for db)
+  - remote: buf.build/protocolbuffers/go
+    out: app/server
     opt:
       - paths=source_relative
 
   # Generate Go protobuf types
   - remote: buf.build/protocolbuffers/go
-    out: gen/go
+    out: ../shared/clients/golang/db
     opt:
       - paths=source_relative
 
   # Generate Rust protobuf types
-  - remote: buf.build/community/neoeinstein-prost:v0.2.3
-    out: gen/rust
+  - remote: buf.build/community/neoeinstein-prost:v0.5.0
+    out: ../shared/clients/rust/db/src
+    opt:
+      - compile_well_known_types
+      - extern_path=.google.protobuf=::pbjson_types
 
   # Add Serde support to Rust types
-  - remote: buf.build/community/neoeinstein-prost-serde:v0.2.3
-    out: gen/rust
+  - remote: buf.build/community/neoeinstein-prost-serde:v0.4.0
+    out: ../shared/clients/rust/db/src
 
   # Generate gRPC client code
-  - remote: buf.build/community/neoeinstein-tonic:v0.4.0
-    out: gen/rust
+  - remote: buf.build/community/neoeinstein-tonic:v0.5.0
+    out: ../shared/clients/rust/db/src
+    opt:
+      - compile_well_known_types
+      - extern_path=.google.protobuf=::pbjson_types
 
 inputs:
-  - directory: api
+  - directory: proto/v1

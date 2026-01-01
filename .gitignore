@@ -46,7 +46,7 @@ terraform.rc
 build/dist
 
 # DB Badger files
-db/cmd/badger
+db/badger
 
 # pids
 pids
