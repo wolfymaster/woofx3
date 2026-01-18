@@ -11,6 +11,7 @@ func Migrate(db *gorm.DB) error {
 	m := gormigrate.New(db, gormigrate.DefaultOptions, []*gormigrate.Migration{
 		migrations.CreateInitialSchema(),
 		migrations.CreateWorkerEventsTable(),
+		migrations.CreateWorkflowTables(),
 	})
 
 	return m.Migrate()

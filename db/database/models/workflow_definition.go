@@ -13,7 +13,7 @@ type WorkflowDefinition struct {
 	Trigger       string    `gorm:"type:jsonb"`
 
 	// Relationships
-	// Application Application `gorm:"foreignKey:ApplicationID;references:ID"`
+	Application Application `gorm:"foreignKey:ApplicationID;references:ID"`
 }
 
 func (WorkflowDefinition) TableName() string {

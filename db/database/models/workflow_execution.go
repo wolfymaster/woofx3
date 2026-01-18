@@ -39,9 +39,9 @@ type WorkflowExecution struct {
 	UpdatedAt     time.Time               `gorm:"not null;default:now()" json:"updated_at"`
 
 	// Relationships
-	// Workflow    *WorkflowDefinition `gorm:"foreignKey:WorkflowID" json:"workflow,omitempty"`
-	// Application *Application        `gorm:"foreignKey:ApplicationID" json:"application,omitempty"`
-	// User        *User               `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Workflow    *WorkflowDefinition `gorm:"foreignKey:WorkflowID" json:"workflow,omitempty"`
+	Application *Application        `gorm:"foreignKey:ApplicationID" json:"application,omitempty"`
+	User        *User               `gorm:"foreignKey:UserID" json:"user,omitempty"`
 }
 
 // TableName specifies the table name for the WorkflowExecution model

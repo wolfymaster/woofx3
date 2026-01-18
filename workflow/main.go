@@ -53,15 +53,14 @@ func (s *SlogAdapter) Warn(message string, args ...interface{}) {
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	adapter := &SlogAdapter{logger: logger}
 
-	bus, err := natsclient.FromEnv(adapter)
+	bus, err := natsclient.FromEnv(logger)
 	if err != nil {
 		logger.Error("Failed to create NATS client", "error", err)
 		os.Exit(1)
 	}
 
-	app := NewWorkflowApp(adapter)
+	app := NewWorkflowApp(logger)
 
 	rt := runtime.NewRuntime(&runtime.RuntimeConfig{
 		Application: app,
@@ -77,33 +76,33 @@ func main() {
 			// Note: barkloader registration disabled for testing
 			// To enable, uncomment the following:
 			/*
-			barkloaderWSURL := os.Getenv("BARKLOADER_WS_URL")
-			if barkloaderWSURL == "" {
-				barkloaderWSURL = "ws://localhost:24678"
-			}
+				barkloaderWSURL := os.Getenv("BARKLOADER_WS_URL")
+				if barkloaderWSURL == "" {
+					barkloaderWSURL = "ws://localhost:24678"
+				}
 
-			barkloaderClient := barkloader.New(barkloader.Config{
-				WSURL: barkloaderWSURL,
-				OnOpen: func() {
-					logger.Info("Barkloader client connected")
-				},
-				OnClose: func() {
-					logger.Info("Barkloader client disconnected")
-				},
-				OnError: func(err error) {
-					logger.Error("Barkloader client error", "error", err)
-				},
-				ReconnectTimeout: 5 * time.Second,
-				MaxRetries:       0, // Infinite retries
-			})
+				barkloaderClient := barkloader.New(barkloader.Config{
+					WSURL: barkloaderWSURL,
+					OnOpen: func() {
+						logger.Info("Barkloader client connected")
+					},
+					OnClose: func() {
+						logger.Info("Barkloader client disconnected")
+					},
+					OnError: func(err error) {
+						logger.Error("Barkloader client error", "error", err)
+					},
+					ReconnectTimeout: 5 * time.Second,
+					MaxRetries:       0, // Infinite retries
+				})
 
-			barkloaderSvc := &BarkloaderService{
-				BaseService: runtime.NewBaseService("barkloader", "barkloader", barkloaderClient, false),
-				client:      barkloaderClient,
-			}
-			if err := application.Register("barkloader", barkloaderSvc); err != nil {
-				return err
-			}
+				barkloaderSvc := &BarkloaderService{
+					BaseService: runtime.NewBaseService("barkloader", "barkloader", barkloaderClient, false),
+					client:      barkloaderClient,
+				}
+				if err := application.Register("barkloader", barkloaderSvc); err != nil {
+					return err
+				}
 			*/
 
 			return nil

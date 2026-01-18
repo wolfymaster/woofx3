@@ -38,6 +38,7 @@ func main() {
 	routes.UserRoutes(mux, app)
 	routes.SettingsRoutes(mux, app)
 	routes.PermissionRoutes(mux, app)
+	routes.WorkflowRoutes(mux, app, casbinMiddleware)
 
 	// get the correct port
 	port := os.Getenv("DATABASE_PROXY_PORT")

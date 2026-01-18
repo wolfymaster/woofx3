@@ -97,6 +97,14 @@ func (e *Engine[TServices]) RegisterWorkflow(def *types.WorkflowDefinition) erro
 	return e.workflowRegistry.Register(def)
 }
 
+func (e *Engine[TServices]) UnregisterWorkflow(id string) error {
+	return e.workflowRegistry.Remove(id)
+}
+
+func (e *Engine[TServices]) GetWorkflow(id string) (*types.WorkflowDefinition, error) {
+	return e.workflowRegistry.Get(id)
+}
+
 func (e *Engine[TServices]) RegisterAction(name string, action tasks.ActionFunc[TServices]) error {
 	return e.actionRegistry.Register(name, action)
 }
