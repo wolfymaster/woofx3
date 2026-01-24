@@ -181,6 +181,9 @@ func (r *Runtime) handleEvent(event Event) {
 	case StateServicesConnect:
 		r.handleServicesConnect()
 
+	case StateServicesConnectWaiting:
+		r.handleServicesConnectWaiting()
+
 	case StateServicesConnected:
 		r.handleServicesConnected()
 
@@ -242,6 +245,16 @@ func (r *Runtime) handleHealthHeartbeatWaiting() {
 	})
 }
 
+func (r *Runtime) handleServicesConnectWaiting() {
+	delay := r.backoff.Current()
+	r.logger.Info("Service connection failed, backing off", "delay", delay)
+
+	time.AfterFunc(r.backoff.Next(), func() {
+		r.transitionTo(StateServicesConnect)
+		r.handleServicesConnect()
+	})
+}
+
 func (r *Runtime) handleServicesConnect() {
 	r.transitionTo(StateServicesConnect)
 
@@ -268,11 +281,13 @@ func (r *Runtime) handleServicesConnect() {
 	for err := range errChan {
 		if err != nil {
 			r.logger.Error("Service connection failed", "error", err)
-			r.stateChan <- EventShutdown
+			r.transitionTo(StateServicesConnectWaiting)
+			r.handleServicesConnectWaiting()
 			return
 		}
 	}
 
+	r.backoff.Reset()
 	r.transitionTo(StateServicesConnected)
 	r.handleServicesConnected()
 }

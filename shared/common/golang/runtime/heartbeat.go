@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/wolfymaster/woofx3/clients/cloudevents"
 	natsclient "github.com/wolfymaster/woofx3/clients/nats"
+	"github.com/wolfymaster/woofx3/common/cloudevents"
 )
 
 type HeartbeatFunc func(ctx context.Context) error
@@ -27,7 +27,11 @@ func CreateNATSHeartbeat(bus NATSClient, appName, subject string, readyFn func()
 			ready = readyFn()
 		}
 
-		event := cloudevents.NewHeartbeatEvent(appName, ready)
+		event, err := cloudevents.ApplicationEvent.HeartbeatEvent(appName, ready)
+		if err != nil {
+			return err
+		}
+
 		data, err := cloudevents.Encode(event)
 		if err != nil {
 			return err
@@ -49,13 +53,19 @@ func CreateNATSHealthCheck(bus NATSClient, subject string) HealthCheckFunc {
 	return func(ctx context.Context, services ServicesRegistry) (bool, error) {
 		if !subscribed {
 			_, err := bus.Subscribe(subject, func(msg natsclient.Msg) {
-				var event cloudevents.BaseEvent[cloudevents.HeartbeatData]
+
+				var event cloudevents.Heartbeat
 				if err := msg.JSON(&event); err != nil {
 					return
 				}
 
+				data, err := event.Data()
+				if err != nil {
+					return
+				}
+
 				mu.Lock()
-				readyByApp[event.Data.Application] = event.Data.Ready
+				readyByApp[data.Application] = data.Ready
 				mu.Unlock()
 			})
 

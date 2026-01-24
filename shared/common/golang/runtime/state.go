@@ -7,6 +7,7 @@ const (
 	StateHealthHeartbeat        State = "health_heartbeat"
 	StateHealthHeartbeatWaiting State = "health_heartbeat_waiting"
 	StateServicesConnect        State = "services_connect"
+	StateServicesConnectWaiting State = "services_connect_waiting"
 	StateServicesConnected      State = "services_connected"
 	StateApplicationInit        State = "application_init"
 	StateApplicationRunning     State = "application_running"
