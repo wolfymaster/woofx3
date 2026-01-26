@@ -7,6 +7,7 @@ require (
 	github.com/wolfymaster/woofx3/clients/barkloader v0.0.0
 	github.com/wolfymaster/woofx3/clients/db v0.0.0-00010101000000-000000000000
 	github.com/wolfymaster/woofx3/clients/nats v0.0.0
+	github.com/wolfymaster/woofx3/common/cloudevents v0.0.0
 	github.com/wolfymaster/woofx3/common/runtime v0.0.0
 )
 
@@ -31,8 +32,8 @@ require (
 
 replace (
 	github.com/wolfymaster/woofx3/clients/barkloader => ../shared/clients/golang/barkloader
-	github.com/wolfymaster/woofx3/clients/cloudevents => ../shared/clients/golang/cloudevents
 	github.com/wolfymaster/woofx3/clients/db => ../shared/clients/golang/db
 	github.com/wolfymaster/woofx3/clients/nats => ../shared/clients/golang/nats
+	github.com/wolfymaster/woofx3/common/cloudevents => ../shared/common/golang/cloudevents
 	github.com/wolfymaster/woofx3/common/runtime => ../shared/common/golang/runtime
 )

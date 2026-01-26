@@ -2,38 +2,84 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
+	barkloader "github.com/wolfymaster/woofx3/clients/barkloader"
+	dbv1 "github.com/wolfymaster/woofx3/clients/db"
 	natsclient "github.com/wolfymaster/woofx3/clients/nats"
 	"github.com/wolfymaster/woofx3/common/runtime"
-	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
+
+type Config struct {
+	BarkloaderWsURL  string `json:"barkloaderWsUrl"`
+	DatabaseProxyURL string `json:"databaseProxyUrl"`
+}
+
+func loadConfiguration() (*Config, error) {
+	config := &Config{}
+
+	// Try to load from JSON file
+	// First check current directory
+	configFile := "conf.json"
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		// Try parent directory
+		configFile = filepath.Join("..", "conf.json")
+		if _, err := os.Stat(configFile); os.IsNotExist(err) {
+			configFile = "" // No config file found
+		}
+	}
+
+	if configFile != "" {
+		data, err := os.ReadFile(configFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read config file %s: %w", configFile, err)
+		}
+
+		if err := json.Unmarshal(data, config); err != nil {
+			return nil, fmt.Errorf("failed to parse config file %s: %w", configFile, err)
+		}
+	}
+
+	// Override with environment variables (take precedence)
+	if envVal := os.Getenv("BARKLOADER_WS_URL"); envVal != "" {
+		config.BarkloaderWsURL = envVal
+	}
+	if envVal := os.Getenv("DATABASE_PROXY_URL"); envVal != "" {
+		config.DatabaseProxyURL = envVal
+	}
+
+	return config, nil
+}
 
 type SlogAdapter struct {
 	logger *slog.Logger
 }
 
-// Note: BarkloaderService commented out for testing
-// type BarkloaderService struct {
-// 	*runtime.BaseService
-// 	client *barkloader.Client
-// }
-//
-// func (s *BarkloaderService) Connect(ctx context.Context) error {
-// 	if err := s.client.Connect(); err != nil {
-// 		return err
-// 	}
-// 	return s.BaseService.Connect(ctx)
-// }
-//
-// func (s *BarkloaderService) Disconnect(ctx context.Context) error {
-// 	s.client.Disconnect()
-// 	return s.BaseService.Disconnect(ctx)
-// }
+type BarkloaderService struct {
+	*runtime.BaseService
+	client *barkloader.Client
+}
+
+func (s *BarkloaderService) Connect(ctx context.Context, appCtx *runtime.ApplicationContext) error {
+	if err := s.client.Connect(); err != nil {
+		return err
+	}
+	return s.BaseService.Connect(ctx, appCtx)
+}
+
+func (s *BarkloaderService) Disconnect(ctx context.Context) error {
+	s.client.Disconnect()
+	return s.BaseService.Disconnect(ctx)
+}
 
 func (s *SlogAdapter) Info(message string, args ...interface{}) {
 	s.logger.Info(message, args...)
@@ -52,6 +98,12 @@ func (s *SlogAdapter) Warn(message string, args ...interface{}) {
 }
 
 func main() {
+	config, err := loadConfiguration()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
+		os.Exit(1)
+	}
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	bus, err := natsclient.FromEnv(logger)
@@ -60,7 +112,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	app := NewWorkflowApp(logger)
+	// Create DB client if configured
+	var dbClient dbv1.WorkflowService
+	if config.DatabaseProxyURL != "" {
+		httpClient := &http.Client{}
+		dbClient = dbv1.NewWorkflowServiceProtobufClient(config.DatabaseProxyURL, httpClient)
+		logger.Info("Database client configured", "url", config.DatabaseProxyURL)
+	} else {
+		logger.Warn("Database proxy URL not configured, workflow loading from DB will be disabled")
+	}
+
+	app := NewWorkflowApp(logger, dbClient)
 
 	rt := runtime.NewRuntime(&runtime.RuntimeConfig{
 		Application: app,
@@ -73,37 +135,36 @@ func main() {
 				return err
 			}
 
-			// Note: barkloader registration disabled for testing
-			// To enable, uncomment the following:
-			/*
-				barkloaderWSURL := os.Getenv("BARKLOADER_WS_URL")
-				if barkloaderWSURL == "" {
-					barkloaderWSURL = "ws://localhost:24678"
-				}
+			// TODO: Register database service
 
-				barkloaderClient := barkloader.New(barkloader.Config{
-					WSURL: barkloaderWSURL,
-					OnOpen: func() {
-						logger.Info("Barkloader client connected")
-					},
-					OnClose: func() {
-						logger.Info("Barkloader client disconnected")
-					},
-					OnError: func(err error) {
-						logger.Error("Barkloader client error", "error", err)
-					},
-					ReconnectTimeout: 5 * time.Second,
-					MaxRetries:       0, // Infinite retries
-				})
+			barkloaderWSURL := config.BarkloaderWsURL
+			if barkloaderWSURL == "" {
+				logger.Error("Missing barkloader WS Url")
+				return errors.New("Missing barkloader WS Url")
+			}
 
-				barkloaderSvc := &BarkloaderService{
-					BaseService: runtime.NewBaseService("barkloader", "barkloader", barkloaderClient, false),
-					client:      barkloaderClient,
-				}
-				if err := application.Register("barkloader", barkloaderSvc); err != nil {
-					return err
-				}
-			*/
+			barkloaderClient := barkloader.New(barkloader.Config{
+				WSURL: barkloaderWSURL,
+				OnOpen: func() {
+					logger.Info("Barkloader client connected")
+				},
+				OnClose: func() {
+					logger.Info("Barkloader client disconnected")
+				},
+				OnError: func(err error) {
+					logger.Error("Barkloader client error", "error", err)
+				},
+				ReconnectTimeout: 5 * time.Second,
+				MaxRetries:       0, // Infinite retries
+			})
+
+			barkloaderSvc := &BarkloaderService{
+				BaseService: runtime.NewBaseService("barkloader", "barkloader", barkloaderClient, false),
+				client:      barkloaderClient,
+			}
+			if err := application.Register("barkloader", barkloaderSvc); err != nil {
+				return err
+			}
 
 			return nil
 		},
@@ -117,120 +178,6 @@ func main() {
 	})
 
 	rt.Start()
-
-	// Wait for runtime to initialize (health check runs every 5 seconds)
-	time.Sleep(7 * time.Second)
-
-	logger.Info("Triggering VIP follow event")
-	event1 := &types.Event{
-		ID:     "test-1",
-		Type:   "follow.user.twitch",
-		Source: "test",
-		Time:   time.Now(),
-		Data: map[string]interface{}{
-			"user_name": "VIPUser",
-			"is_vip":    true,
-		},
-	}
-
-	if err := app.Engine().HandleEvent(event1); err != nil {
-		logger.Error("Failed to handle event", "error", err)
-	}
-
-	time.Sleep(1 * time.Second)
-
-	logger.Info("Triggering regular follow event")
-	event2 := &types.Event{
-		ID:     "test-2",
-		Type:   "follow.user.twitch",
-		Source: "test",
-		Time:   time.Now(),
-		Data: map[string]interface{}{
-			"user_name": "RegularUser",
-			"is_vip":    false,
-		},
-	}
-
-	if err := app.Engine().HandleEvent(event2); err != nil {
-		logger.Error("Failed to handle event", "error", err)
-	}
-
-	time.Sleep(500 * time.Millisecond)
-
-	// Test donation workflow with different scenarios
-	logger.Info("Testing donation workflow - small donation ($5)")
-	donationSmall := &types.Event{
-		ID:     "donation-1",
-		Type:   "donation.received",
-		Source: "test",
-		Time:   time.Now(),
-		Data: map[string]interface{}{
-			"amount":        5,
-			"donor_name":    "SmallDonor",
-			"is_first_time": false,
-			"has_message":   false,
-		},
-	}
-	if err := app.Engine().HandleEvent(donationSmall); err != nil {
-		logger.Error("Failed to handle event", "error", err)
-	}
-
-	time.Sleep(500 * time.Millisecond)
-
-	logger.Info("Testing donation workflow - mid-tier donation ($25)")
-	donationMid := &types.Event{
-		ID:     "donation-2",
-		Type:   "donation.received",
-		Source: "test",
-		Time:   time.Now(),
-		Data: map[string]interface{}{
-			"amount":        25,
-			"donor_name":    "MidTierDonor",
-			"is_first_time": false,
-			"has_message":   false,
-		},
-	}
-	if err := app.Engine().HandleEvent(donationMid); err != nil {
-		logger.Error("Failed to handle event", "error", err)
-	}
-
-	time.Sleep(500 * time.Millisecond)
-
-	logger.Info("Testing donation workflow - high tier ($75) with message (OR logic)")
-	donationHigh := &types.Event{
-		ID:     "donation-3",
-		Type:   "donation.received",
-		Source: "test",
-		Time:   time.Now(),
-		Data: map[string]interface{}{
-			"amount":        75,
-			"donor_name":    "HighTierDonor",
-			"is_first_time": false,
-			"has_message":   true,
-		},
-	}
-	if err := app.Engine().HandleEvent(donationHigh); err != nil {
-		logger.Error("Failed to handle event", "error", err)
-	}
-
-	time.Sleep(500 * time.Millisecond)
-
-	logger.Info("Testing donation workflow - mega first-time donation ($150, AND logic)")
-	donationMega := &types.Event{
-		ID:     "donation-4",
-		Type:   "donation.received",
-		Source: "test",
-		Time:   time.Now(),
-		Data: map[string]interface{}{
-			"amount":        150,
-			"donor_name":    "MegaDonor",
-			"is_first_time": true,
-			"has_message":   true,
-		},
-	}
-	if err := app.Engine().HandleEvent(donationMega); err != nil {
-		logger.Error("Failed to handle event", "error", err)
-	}
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)

@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	cloudevents "github.com/cloudevents/sdk-go/v2"
 	"github.com/wolfymaster/woofx3/clients/barkloader"
+	dbv1 "github.com/wolfymaster/woofx3/clients/db"
 	natsclient "github.com/wolfymaster/woofx3/clients/nats"
+	"github.com/wolfymaster/woofx3/common/cloudevents"
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/workflow/internal/engine"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
@@ -61,7 +62,7 @@ type WorkflowApp struct {
 	manager *WorkflowManager
 }
 
-func NewWorkflowApp(logger tasks.Logger) *WorkflowApp {
+func NewWorkflowApp(logger tasks.Logger, dbClient dbv1.WorkflowService) *WorkflowApp {
 	engine := engine.New[Services](logger)
 	app := &WorkflowApp{
 		BaseApplication: runtime.NewBaseApplication(),
@@ -70,7 +71,8 @@ func NewWorkflowApp(logger tasks.Logger) *WorkflowApp {
 	}
 
 	// Create manager with app's engine as the registry (engine implements WorkflowRegistry interface)
-	app.manager = NewWorkflowManager(logger, app.engine)
+	// dbClient can be nil if not configured
+	app.manager = NewWorkflowManager(logger, app.engine, dbClient)
 
 	return app
 }
@@ -88,47 +90,41 @@ func (a *WorkflowApp) Init(ctx context.Context) error {
 }
 
 // subscribeToWorkflowEvents subscribes to workflow CRUD events from the DB proxy
-func (a *WorkflowApp) subscribeToWorkflowEvents(natsClient *natsclient.Client) error {
-	// Subscribe to all workflow events using wildcard
-	// Subject format: db.workflow.<operation>.<application_id>
-	_, err := natsClient.Subscribe("db.workflow.>", func(msg natsclient.Msg) {
+func (a *WorkflowApp) subscribeToWorkflowEvents(natsClient *natsclient.Client, subjectPattern string) error {
+	_, err := natsClient.Subscribe(subjectPattern, func(msg natsclient.Msg) {
 		a.handleWorkflowEvent(msg)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to workflow events: %w", err)
 	}
 
-	a.logger.Info("Subscribed to workflow events", "subject", "db.workflow.>")
+	a.logger.Info("Subscribed to workflow events", "subject", subjectPattern)
 	return nil
 }
 
-// handleWorkflowEvent processes incoming workflow CRUD events
+// handleWorkflowEvent processes incoming workflow change events
 func (a *WorkflowApp) handleWorkflowEvent(msg natsclient.Msg) {
-	// Parse the CloudEvent
-	var ce cloudevents.Event
-	if err := json.Unmarshal(msg.Data(), &ce); err != nil {
-		a.logger.Error("Failed to parse CloudEvent", "error", err, "subject", msg.Subject())
+	var evt cloudevents.WorkflowChangeEvent
+	err := evt.Decode(msg.Data())
+	if err != nil {
+		a.logger.Error("Failed to parse workflow change event", "error", err, "subject", msg.Subject())
 		return
 	}
 
-	// Extract operation from CloudEvent extensions
-	operation, ok := ce.Extensions()["operation"].(string)
-	if !ok {
-		a.logger.Error("Missing operation in CloudEvent", "subject", msg.Subject())
+	changeData, err := evt.Data()
+	if err != nil {
+		a.logger.Error("Failed to extract workflow change data", "error", err)
 		return
 	}
 
-	entityID, _ := ce.Extensions()["entity_id"].(string)
+	a.logger.Info("Received workflow event", "operation", changeData.Operation, "entity_id", changeData.EntityID, "type", evt.Type())
 
-	a.logger.Info("Received workflow event", "operation", operation, "entity_id", entityID, "type", ce.Type())
-
-	switch operation {
-	case "created", "updated":
-		a.manager.HandleWorkflowCreateOrUpdate(&ce, entityID)
-	case "deleted":
-		a.manager.HandleWorkflowDelete(entityID)
-	default:
-		a.logger.Warn("Unknown workflow operation", "operation", operation)
+	if changeData.IsCreateOrUpdate() {
+		a.manager.HandleWorkflowCreateOrUpdate(&evt)
+	} else if changeData.IsDeleted() {
+		a.manager.HandleWorkflowDelete(changeData.EntityID)
+	} else {
+		a.logger.Warn("Unknown workflow operation", "operation", changeData.Operation)
 	}
 }
 
@@ -176,8 +172,7 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 					a.engine.SetPublisher(publisher)
 					a.logger.Info("Event publisher configured with NATS")
 
-					// Subscribe to workflow CRUD events from DB proxy
-					if err := a.subscribeToWorkflowEvents(natsClient); err != nil {
+					if err := a.subscribeToWorkflowEvents(natsClient, string(cloudevents.SubjectWorkflowChange)); err != nil {
 						a.logger.Error("Failed to subscribe to workflow events", "error", err)
 					}
 				}
@@ -193,8 +188,6 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 		a.logger.Info("Action: print", "params", params)
 		return params, nil
 	})
-
-	a.logger.Info("Registered workflows: vip-special-effects, follow-alert, donation-alert")
 
 	return a.engine.Start(ctx)
 }

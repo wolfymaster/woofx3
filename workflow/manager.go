@@ -4,12 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"os"
 	"time"
 
-	cloudevents "github.com/cloudevents/sdk-go/v2"
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/common/cloudevents"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
@@ -25,27 +23,24 @@ type WorkflowRegistry interface {
 type WorkflowManager struct {
 	logger   tasks.Logger
 	registry WorkflowRegistry
+	dbClient dbv1.WorkflowService
 }
 
 // NewWorkflowManager creates a new WorkflowManager instance
-func NewWorkflowManager(logger tasks.Logger, registry WorkflowRegistry) *WorkflowManager {
+func NewWorkflowManager(logger tasks.Logger, registry WorkflowRegistry, dbClient dbv1.WorkflowService) *WorkflowManager {
 	return &WorkflowManager{
 		logger:   logger,
 		registry: registry,
+		dbClient: dbClient,
 	}
 }
 
 // LoadWorkflowsFromDB loads all enabled workflows from the database
 func (m *WorkflowManager) LoadWorkflowsFromDB(ctx context.Context) error {
-	dbURL := os.Getenv("DATABASE_PROXY_URL")
-	if dbURL == "" {
-		m.logger.Warn("DATABASE_PROXY_URL not set, skipping workflow loading from database")
+	if m.dbClient == nil {
+		m.logger.Warn("Database client not configured, skipping workflow loading from database")
 		return nil
 	}
-
-	// Create DB client
-	httpClient := &http.Client{}
-	workflowClient := dbv1.NewWorkflowServiceProtobufClient(dbURL, httpClient)
 
 	// Fetch all enabled workflows
 	req := &dbv1.ListWorkflowsRequest{
@@ -53,7 +48,7 @@ func (m *WorkflowManager) LoadWorkflowsFromDB(ctx context.Context) error {
 		PageSize:        1000, // Fetch a large batch
 	}
 
-	resp, err := workflowClient.ListWorkflows(ctx, req)
+	resp, err := m.dbClient.ListWorkflows(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to list workflows: %w", err)
 	}
@@ -89,28 +84,47 @@ func (m *WorkflowManager) LoadWorkflowsFromDB(ctx context.Context) error {
 	return nil
 }
 
-// DBWorkflowEvent represents the workflow data structure from the DB proxy events
-type DBWorkflowEvent struct {
-	ID            string `json:"ID"`
-	ApplicationID string `json:"ApplicationID"`
-	Name          string `json:"Name"`
-	Steps         string `json:"Steps"`
-	Trigger       string `json:"Trigger"`
-}
-
 // HandleWorkflowCreateOrUpdate registers or updates a workflow in memory
-func (m *WorkflowManager) HandleWorkflowCreateOrUpdate(ce *cloudevents.Event, entityID string) {
-	// Parse the workflow data from CloudEvent
-	var dbWorkflow DBWorkflowEvent
-	if err := ce.DataAs(&dbWorkflow); err != nil {
-		m.logger.Error("Failed to parse workflow data", "error", err, "entity_id", entityID)
+// Note: The event only contains operation and entityID - workflow data must be fetched separately
+func (m *WorkflowManager) HandleWorkflowCreateOrUpdate(evt *cloudevents.WorkflowChangeEvent) {
+	changeData, err := evt.Data()
+	if err != nil {
+		m.logger.Error("Failed to extract workflow change data", "error", err)
 		return
 	}
 
-	// Convert to engine workflow definition
-	workflowDef, err := m.convertEventWorkflowToEngineWorkflow(&dbWorkflow)
+	// Fetch workflow data from DB using entityID
+	ctx := context.Background()
+	if m.dbClient == nil {
+		m.logger.Warn("Database client not configured, cannot fetch workflow data", "entity_id", changeData.EntityID)
+		return
+	}
+
+	// Fetch the workflow by ID
+	req := &dbv1.GetWorkflowRequest{
+		Id: changeData.EntityID,
+	}
+
+	resp, err := m.dbClient.GetWorkflow(ctx, req)
 	if err != nil {
-		m.logger.Error("Failed to convert workflow", "error", err, "entity_id", entityID)
+		m.logger.Error("Failed to fetch workflow from DB", "error", err, "entity_id", changeData.EntityID)
+		return
+	}
+
+	if resp.Status != nil && resp.Status.Code != 0 {
+		m.logger.Error("Workflow service returned error", "error", resp.Status.Message, "entity_id", changeData.EntityID)
+		return
+	}
+
+	if resp.Workflow == nil {
+		m.logger.Warn("Workflow not found in database", "entity_id", changeData.EntityID)
+		return
+	}
+
+	// Convert DB workflow to engine workflow definition
+	workflowDef, err := convertDBWorkflowToEngineWorkflow(resp.Workflow)
+	if err != nil {
+		m.logger.Error("Failed to convert workflow", "error", err, "entity_id", changeData.EntityID)
 		return
 	}
 
@@ -138,49 +152,6 @@ func (m *WorkflowManager) HandleWorkflowDelete(entityID string) {
 		}
 		m.logger.Info("Workflow unregistered from event", "workflow_id", entityID)
 	}
-}
-
-// convertEventWorkflowToEngineWorkflow converts a DB workflow event to an engine workflow definition
-func (m *WorkflowManager) convertEventWorkflowToEngineWorkflow(dbWorkflow *DBWorkflowEvent) (*types.WorkflowDefinition, error) {
-	// Parse steps from JSON
-	var steps []types.TaskDefinition
-	if dbWorkflow.Steps != "" {
-		// The Steps field may be in the DB workflow step format, need to convert
-		var dbSteps []dbv1.WorkflowStep
-		if err := json.Unmarshal([]byte(dbWorkflow.Steps), &dbSteps); err != nil {
-			// Try parsing as raw task definitions
-			if err := json.Unmarshal([]byte(dbWorkflow.Steps), &steps); err != nil {
-				return nil, fmt.Errorf("failed to parse steps: %w", err)
-			}
-		} else {
-			// Convert DB steps to task definitions
-			for i := range dbSteps {
-				task, err := convertDBStepToTask(&dbSteps[i])
-				if err != nil {
-					return nil, fmt.Errorf("failed to convert step %s: %w", dbSteps[i].GetId(), err)
-				}
-				steps = append(steps, *task)
-			}
-		}
-	}
-
-	// Parse trigger from JSON
-	var trigger *types.TriggerConfig
-	if dbWorkflow.Trigger != "" && dbWorkflow.Trigger != "{}" {
-		if err := json.Unmarshal([]byte(dbWorkflow.Trigger), &trigger); err != nil {
-			m.logger.Warn("Failed to parse trigger", "error", err, "workflow_id", dbWorkflow.ID)
-			// Continue without trigger
-		}
-	}
-
-	workflowDef := &types.WorkflowDefinition{
-		ID:      dbWorkflow.ID,
-		Name:    dbWorkflow.Name,
-		Tasks:   steps,
-		Trigger: trigger,
-	}
-
-	return workflowDef, nil
 }
 
 // convertDBWorkflowToEngineWorkflow converts a DB workflow proto to an engine workflow definition
