@@ -7,15 +7,19 @@ import (
 )
 
 type Config struct {
-	PollInterval     time.Duration
-	RetryInterval    time.Duration
-	DefaultTTL       time.Duration
-	BatchSize        int
-	CleanupInterval  time.Duration
-	RetentionPeriod  time.Duration
+	PollInterval    time.Duration
+	RetryInterval   time.Duration
+	DefaultTTL      time.Duration
+	BatchSize       int
+	CleanupInterval time.Duration
+	RetentionPeriod time.Duration
 }
 
 func LoadConfig() Config {
+	return DefaultConfig()
+}
+
+func DefaultConfig() Config {
 	return Config{
 		PollInterval:    parseDuration("OUTBOX_POLL_INTERVAL", 500*time.Millisecond),
 		RetryInterval:   parseDuration("OUTBOX_RETRY_INTERVAL", 100*time.Millisecond),
