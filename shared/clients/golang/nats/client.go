@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/nats-io/nats.go"
 )
@@ -110,6 +111,58 @@ func (c *Client) Close() error {
 		c.logger.Info("NATS connection closed")
 	}
 	return nil
+}
+
+func (c *Client) Request(subject string, data []byte, timeout time.Duration) ([]byte, error) {
+	if c.connection == nil || !c.connection.IsConnected() {
+		if err := c.Connect(); err != nil {
+			return nil, err
+		}
+	}
+
+	if c.connection == nil {
+		return nil, fmt.Errorf("NATS connection not available")
+	}
+
+	msg, err := c.connection.Request(subject, data, timeout)
+	if err != nil {
+		c.logger.Error("Failed to send request: %v", err)
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+
+	c.logger.Debug("Received response", "subject", subject, "size", len(msg.Data))
+	return msg.Data, nil
+}
+
+func (c *Client) SubscribeWithReply(subject string, handler func(Msg) []byte) (Subscription, error) {
+	if c.connection == nil || !c.connection.IsConnected() {
+		if err := c.Connect(); err != nil {
+			return nil, err
+		}
+	}
+
+	if c.connection == nil {
+		return nil, fmt.Errorf("NATS connection not available")
+	}
+
+	sub, err := c.connection.Subscribe(subject, func(msg *nats.Msg) {
+		wrappedMsg := &MessageImpl{
+			subject: msg.Subject,
+			data:    msg.Data,
+		}
+		response := handler(wrappedMsg)
+		if response != nil && msg.Reply != "" {
+			msg.Respond(response)
+		}
+	})
+
+	if err != nil {
+		c.logger.Error("Failed to subscribe with reply: %v", err)
+		return nil, fmt.Errorf("failed to subscribe with reply: %w", err)
+	}
+
+	c.logger.Debug("Subscribed to subject with reply handler", "subject", subject)
+	return sub, nil
 }
 
 func (c *Client) AsNATS() *nats.Conn {
