@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	natsclient "github.com/wolfymaster/woofx3/clients/nats"
 	"github.com/wolfymaster/woofx3/common/runtime"
@@ -56,6 +57,8 @@ func main() {
 			logger.Info("Runtime terminating")
 			return nil
 		},
+		HealthMonitor: runtime.NewNATSHealthMonitor(bus, "example-app", "HEARTBEAT", 15*time.Second),
+		// Keep legacy functions for backward compatibility
 		Heartbeat:   runtime.CreateNATSHeartbeat(bus, "example-app", "HEARTBEAT", nil),
 		HealthCheck: runtime.CreateNATSHealthCheck(bus, "HEARTBEAT"),
 		Logger:      logger,

@@ -9,7 +9,7 @@ type Backoff struct {
 	factor  float64
 }
 
-func NewBackoff() *Backoff {
+var NewBackoff = func() *Backoff {
 	return &Backoff{
 		current: 1 * time.Second,
 		min:     1 * time.Second,

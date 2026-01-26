@@ -350,7 +350,7 @@ func (m *mockService) Healthcheck() bool {
 	return m.healthcheck
 }
 
-func (m *mockService) Connect(ctx context.Context) error {
+func (m *mockService) Connect(ctx context.Context, appCtx *ApplicationContext) error {
 	return nil
 }
 
@@ -362,6 +362,10 @@ func (m *mockService) Connected() bool {
 	return true
 }
 
-func (m *mockService) Client() interface{} {
+func (m *mockService) Client() any {
 	return nil
+}
+
+func (m *mockService) Dependencies() []string {
+	return []string{}
 }
