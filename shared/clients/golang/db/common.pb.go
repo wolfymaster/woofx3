@@ -128,6 +128,88 @@ func (x *ResponseStatus) GetMessage() string {
 	return ""
 }
 
+// PingRequest is an empty request for the ping endpoint
+type PingRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PingRequest) Reset() {
+	*x = PingRequest{}
+	mi := &file_common_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PingRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PingRequest) ProtoMessage() {}
+
+func (x *PingRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_common_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PingRequest.ProtoReflect.Descriptor instead.
+func (*PingRequest) Descriptor() ([]byte, []int) {
+	return file_common_proto_rawDescGZIP(), []int{1}
+}
+
+// PingResponse returns a success status indicating the service is accessible
+type PingResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PingResponse) Reset() {
+	*x = PingResponse{}
+	mi := &file_common_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PingResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PingResponse) ProtoMessage() {}
+
+func (x *PingResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_common_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PingResponse.ProtoReflect.Descriptor instead.
+func (*PingResponse) Descriptor() ([]byte, []int) {
+	return file_common_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *PingResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
 var File_common_proto protoreflect.FileDescriptor
 
 const file_common_proto_rawDesc = "" +
@@ -141,7 +223,12 @@ const file_common_proto_rawDesc = "" +
 	"\x10INVALID_ARGUMENT\x10\x01\x12\r\n" +
 	"\tNOT_FOUND\x10\x02\x12\x15\n" +
 	"\x11PERMISSION_DENIED\x10\x03\x12\f\n" +
-	"\bINTERNAL\x10\x04B)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"\bINTERNAL\x10\x04\"\r\n" +
+	"\vPingRequest\">\n" +
+	"\fPingResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status2B\n" +
+	"\rCommonService\x121\n" +
+	"\x04Ping\x12\x13.common.PingRequest\x1a\x14.common.PingResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_common_proto_rawDescOnce sync.Once
@@ -156,18 +243,23 @@ func file_common_proto_rawDescGZIP() []byte {
 }
 
 var file_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_common_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_common_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_common_proto_goTypes = []any{
 	(ResponseStatus_Code)(0), // 0: common.ResponseStatus.Code
 	(*ResponseStatus)(nil),   // 1: common.ResponseStatus
+	(*PingRequest)(nil),      // 2: common.PingRequest
+	(*PingResponse)(nil),     // 3: common.PingResponse
 }
 var file_common_proto_depIdxs = []int32{
 	0, // 0: common.ResponseStatus.code:type_name -> common.ResponseStatus.Code
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	1, // 1: common.PingResponse.status:type_name -> common.ResponseStatus
+	2, // 2: common.CommonService.Ping:input_type -> common.PingRequest
+	3, // 3: common.CommonService.Ping:output_type -> common.PingResponse
+	3, // [3:4] is the sub-list for method output_type
+	2, // [2:3] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_common_proto_init() }
@@ -181,9 +273,9 @@ func file_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_common_proto_rawDesc), len(file_common_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   1,
+			NumMessages:   3,
 			NumExtensions: 0,
-			NumServices:   0,
+			NumServices:   1,
 		},
 		GoTypes:           file_common_proto_goTypes,
 		DependencyIndexes: file_common_proto_depIdxs,
