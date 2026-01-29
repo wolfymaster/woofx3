@@ -14,7 +14,7 @@ require (
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/wolfymaster/woofx3/clients/nats v0.0.0
 	github.com/wolfymaster/woofx3/common/runtime v0.0.0
-	google.golang.org/protobuf v1.36.8
+	google.golang.org/protobuf v1.36.11
 	gorm.io/driver/postgres v1.5.11
 	gorm.io/gorm v1.26.1
 )

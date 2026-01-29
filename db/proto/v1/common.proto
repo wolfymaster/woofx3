@@ -16,3 +16,17 @@ message ResponseStatus {
   Code code = 1;
   string message = 2;
 }
+
+// PingRequest is an empty request for the ping endpoint
+message PingRequest {}
+
+// PingResponse returns a success status indicating the service is accessible
+message PingResponse {
+  ResponseStatus status = 1;
+}
+
+// CommonService provides common utility endpoints
+service CommonService {
+  // Ping checks if the service is accessible and returns a success response
+  rpc Ping(PingRequest) returns (PingResponse);
+}

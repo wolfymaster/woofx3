@@ -2743,7 +2743,7 @@ func (s *workflowServiceServer) serveCancelWorkflowExecutionProtobuf(ctx context
 }
 
 func (s *workflowServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor7, 0
+	return twirpFileDescriptor8, 0
 }
 
 func (s *workflowServiceServer) ProtocGenTwirpVersion() string {
@@ -2757,7 +2757,7 @@ func (s *workflowServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "workflow", "WorkflowService")
 }
 
-var twirpFileDescriptor7 = []byte{
+var twirpFileDescriptor8 = []byte{
 	// 1573 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xc4, 0x57, 0xcd, 0x72, 0xdb, 0x54,
 	0x14, 0x1e, 0xd9, 0x96, 0x7f, 0x8e, 0x12, 0xa7, 0xdc, 0x69, 0x12, 0xa1, 0xd2, 0x26, 0x75, 0x1b,

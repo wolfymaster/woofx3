@@ -10,6 +10,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/wolfymaster/woofx3/common/runtime"
+	"github.com/wolfymaster/woofx3/db/app/routes"
 	"github.com/wolfymaster/woofx3/db/app/services"
 
 	"github.com/wolfymaster/woofx3/db/config"
@@ -170,7 +171,7 @@ func main() {
 				return err
 			}
 
-			httpSvc := services.NewHTTPServerService(nil, config, logger)
+			httpSvc := services.NewHTTPServerService(app, config, logger, routes.SetupAllRoutes)
 			if err := application.Register("http", httpSvc); err != nil {
 				return err
 			}
