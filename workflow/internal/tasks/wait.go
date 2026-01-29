@@ -13,7 +13,7 @@ type WaitTask struct {
 }
 
 func NewWaitTask() TaskFactory {
-	return func(params map[string]interface{}) (Task, error) {
+	return func(params map[string]any) (Task, error) {
 		return &WaitTask{}, nil
 	}
 }
@@ -25,7 +25,7 @@ func (t *WaitTask) Type() string {
 func (t *WaitTask) Execute(ctx *TaskContext) (*types.TaskResult, error) {
 	return &types.TaskResult{
 		Status: types.TaskStatusWaiting,
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"waiting": true,
 		},
 	}, nil
@@ -100,7 +100,7 @@ func (t *WaitTask) matchesConditions(event *types.Event, conditions []types.Cond
 	}
 
 	eventResolver := expression.NewResolver()
-	eventResolver.AddSource("event", map[string]interface{}{
+	eventResolver.AddSource("event", map[string]any{
 		"id":     event.ID,
 		"type":   event.Type,
 		"source": event.Source,
@@ -169,7 +169,7 @@ func (t *WaitTask) extractNumericValue(event *types.Event, waitState *types.Wait
 		return 0, fmt.Errorf("no aggregation config")
 	}
 
-	eventData := map[string]interface{}{
+	eventData := map[string]any{
 		"data": event.Data,
 	}
 
@@ -189,7 +189,7 @@ func (t *WaitTask) extractNumericValue(event *types.Event, waitState *types.Wait
 	return toFloat64(value)
 }
 
-func toFloat64(v interface{}) (float64, error) {
+func toFloat64(v any) (float64, error) {
 	switch val := v.(type) {
 	case int:
 		return float64(val), nil
@@ -210,8 +210,8 @@ func (t *WaitTask) CheckTimeout(waitState *types.WaitState) bool {
 	return time.Now().After(waitState.Timeout)
 }
 
-func (t *WaitTask) GetExports(waitState *types.WaitState) map[string]interface{} {
-	exports := map[string]interface{}{
+func (t *WaitTask) GetExports(waitState *types.WaitState) map[string]any {
+	exports := map[string]any{
 		"satisfied": waitState.Satisfied,
 		"events":    waitState.ReceivedEvents,
 	}

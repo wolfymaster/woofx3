@@ -207,11 +207,11 @@ func convertDBWorkflowToEngineWorkflow(dbWorkflow *dbv1.Workflow) (*types.Workfl
 
 // convertDBStepToTask converts a DB workflow step proto to a task definition
 func convertDBStepToTask(dbStep *dbv1.WorkflowStep) (*types.TaskDefinition, error) {
-	// Convert parameters from map[string]string to map[string]interface{}
-	parameters := make(map[string]interface{})
+	// Convert parameters from map[string]string to map[string]any
+	parameters := make(map[string]any)
 	for k, v := range dbStep.GetParameters() {
 		// Try to parse JSON values if they're JSON strings
-		var jsonValue interface{}
+		var jsonValue any
 		if err := json.Unmarshal([]byte(v), &jsonValue); err == nil {
 			parameters[k] = jsonValue
 		} else {

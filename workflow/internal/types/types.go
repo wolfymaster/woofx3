@@ -22,16 +22,16 @@ type TriggerConfig struct {
 }
 
 type ConditionConfig struct {
-	Field    string      `json:"field" yaml:"field"`
-	Operator string      `json:"operator" yaml:"operator"`
-	Value    interface{} `json:"value" yaml:"value"`
+	Field    string `json:"field" yaml:"field"`
+	Operator string `json:"operator" yaml:"operator"`
+	Value    any    `json:"value" yaml:"value"`
 }
 
 type TaskDefinition struct {
 	ID             string                 `json:"id" yaml:"id"`
 	Type           string                 `json:"type" yaml:"type"`
 	DependsOn      []string               `json:"dependsOn,omitempty" yaml:"dependsOn,omitempty"`
-	Parameters     map[string]interface{} `json:"parameters" yaml:"parameters"`
+	Parameters     map[string]any `json:"parameters" yaml:"parameters"`
 	Exports        map[string]string      `json:"exports,omitempty" yaml:"exports,omitempty"`
 	OnError        string                 `json:"onError,omitempty" yaml:"onError,omitempty"`
 	Timeout        *Duration              `json:"timeout,omitempty" yaml:"timeout,omitempty"`
@@ -57,7 +57,7 @@ type WorkflowConfig struct {
 	WorkflowID          string                 `json:"workflowId" yaml:"workflowId"`                   // ID of the workflow to trigger
 	WaitUntilCompletion bool                   `json:"waitUntilCompletion" yaml:"waitUntilCompletion"` // Whether to wait for completion
 	EventType           string                 `json:"eventType,omitempty" yaml:"eventType,omitempty"` // Event type to trigger the workflow
-	EventData           map[string]interface{} `json:"eventData,omitempty" yaml:"eventData,omitempty"` // Data to pass to the workflow
+	EventData           map[string]any `json:"eventData,omitempty" yaml:"eventData,omitempty"` // Data to pass to the workflow
 	Timeout             *Duration              `json:"timeout,omitempty" yaml:"timeout,omitempty"`     // Timeout when waiting for completion
 }
 
@@ -73,7 +73,7 @@ type Duration struct {
 }
 
 func (d *Duration) UnmarshalJSON(b []byte) error {
-	var v interface{}
+	var v any
 	if err := json.Unmarshal(b, &v); err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 	}
 }
 
-func (d *Duration) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (d *Duration) UnmarshalYAML(unmarshal func(any) error) error {
 	var v string
 	if err := unmarshal(&v); err != nil {
 		return err
@@ -110,7 +110,7 @@ type Event struct {
 	Type    string                 `json:"type"`
 	Source  string                 `json:"source"`
 	Time    time.Time              `json:"time"`
-	Data    map[string]interface{} `json:"data"`
+	Data    map[string]any `json:"data"`
 	Subject string                 `json:"subject,omitempty"`
 }
 
@@ -127,8 +127,8 @@ const (
 
 type TaskResult struct {
 	Status  TaskStatus             `json:"status"`
-	Data    map[string]interface{} `json:"data,omitempty"`
-	Exports map[string]interface{} `json:"exports,omitempty"`
+	Data    map[string]any `json:"data,omitempty"`
+	Exports map[string]any `json:"exports,omitempty"`
 	Error   string                 `json:"error,omitempty"`
 }
 
@@ -149,7 +149,7 @@ type WorkflowExecution struct {
 	StartedAt    time.Time
 	CompletedAt  *time.Time
 	Tasks        map[string]*TaskExecution
-	Variables    map[string]interface{}
+	Variables    map[string]any
 	Error        string
 }
 
@@ -189,5 +189,5 @@ type WorkflowState struct {
 	WaitUntilCompletion bool                   `json:"waitUntilCompletion"`   // Whether waiting for completion
 	Timeout             time.Time              `json:"timeout"`               // Timeout for waiting
 	Completed           bool                   `json:"completed"`             // Whether the sub-workflow has completed
-	Result              map[string]interface{} `json:"result,omitempty"`      // Result from the sub-workflow (variables)
+	Result              map[string]any `json:"result,omitempty"`      // Result from the sub-workflow (variables)
 }

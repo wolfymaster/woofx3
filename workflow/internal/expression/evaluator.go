@@ -9,7 +9,7 @@ import (
 type Condition struct {
 	Field    string
 	Operator string
-	Value    interface{}
+	Value    any
 }
 
 func Evaluate(condition *Condition, resolver *Resolver) (bool, error) {
@@ -62,7 +62,7 @@ func EvaluateMultiple(conditions []Condition, logic string, resolver *Resolver) 
 	return !useOr, nil
 }
 
-func evaluateOperator(op string, actual, expected interface{}) (bool, error) {
+func evaluateOperator(op string, actual, expected any) (bool, error) {
 	switch op {
 	case "eq", "==", "equals":
 		return equals(actual, expected), nil
@@ -99,7 +99,7 @@ func evaluateOperator(op string, actual, expected interface{}) (bool, error) {
 	}
 }
 
-func equals(a, b interface{}) bool {
+func equals(a, b any) bool {
 	if a == nil && b == nil {
 		return true
 	}
@@ -116,7 +116,7 @@ func equals(a, b interface{}) bool {
 	return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
 }
 
-func compare(a, b interface{}) int {
+func compare(a, b any) int {
 	aNum, aIsNum := toFloat64(a)
 	bNum, bIsNum := toFloat64(b)
 
@@ -134,26 +134,26 @@ func compare(a, b interface{}) int {
 	return strings.Compare(aStr, bStr)
 }
 
-func containsCheck(actual, expected interface{}) bool {
+func containsCheck(actual, expected any) bool {
 	actualStr := fmt.Sprintf("%v", actual)
 	expectedStr := fmt.Sprintf("%v", expected)
 	return strings.Contains(actualStr, expectedStr)
 }
 
-func startsWithCheck(actual, expected interface{}) bool {
+func startsWithCheck(actual, expected any) bool {
 	actualStr := fmt.Sprintf("%v", actual)
 	expectedStr := fmt.Sprintf("%v", expected)
 	return strings.HasPrefix(actualStr, expectedStr)
 }
 
-func endsWithCheck(actual, expected interface{}) bool {
+func endsWithCheck(actual, expected any) bool {
 	actualStr := fmt.Sprintf("%v", actual)
 	expectedStr := fmt.Sprintf("%v", expected)
 	return strings.HasSuffix(actualStr, expectedStr)
 }
 
-func inCheck(actual, expected interface{}) bool {
-	arr, ok := expected.([]interface{})
+func inCheck(actual, expected any) bool {
+	arr, ok := expected.([]any)
 	if !ok {
 		return false
 	}
@@ -166,7 +166,7 @@ func inCheck(actual, expected interface{}) bool {
 	return false
 }
 
-func regexCheck(actual, expected interface{}) (bool, error) {
+func regexCheck(actual, expected any) (bool, error) {
 	pattern := fmt.Sprintf("%v", expected)
 	re, err := regexp.Compile(pattern)
 	if err != nil {
@@ -177,8 +177,8 @@ func regexCheck(actual, expected interface{}) (bool, error) {
 	return re.MatchString(actualStr), nil
 }
 
-func betweenCheck(actual, expected interface{}) (bool, error) {
-	bounds, ok := expected.([]interface{})
+func betweenCheck(actual, expected any) (bool, error) {
+	bounds, ok := expected.([]any)
 	if !ok {
 		return false, fmt.Errorf("between operator requires [min, max] array, got %T", expected)
 	}
@@ -205,7 +205,7 @@ func betweenCheck(actual, expected interface{}) (bool, error) {
 	return actualStr >= minStr && actualStr <= maxStr, nil
 }
 
-func toFloat64(v interface{}) (float64, bool) {
+func toFloat64(v any) (float64, bool) {
 	switch val := v.(type) {
 	case int:
 		return float64(val), true

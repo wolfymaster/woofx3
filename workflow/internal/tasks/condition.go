@@ -8,7 +8,7 @@ import (
 type ConditionTask struct{}
 
 func NewConditionTask() TaskFactory {
-	return func(params map[string]interface{}) (Task, error) {
+	return func(params map[string]any) (Task, error) {
 		return &ConditionTask{}, nil
 	}
 }
@@ -20,7 +20,7 @@ func (t *ConditionTask) Type() string {
 func (t *ConditionTask) Execute(ctx *TaskContext) (*types.TaskResult, error) {
 	return &types.TaskResult{
 		Status: types.TaskStatusSuccess,
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"evaluated": true,
 		},
 	}, nil

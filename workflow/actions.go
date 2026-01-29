@@ -7,8 +7,8 @@ import (
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 )
 
-func NewBarkloaderAction() tasks.ActionFunc[Services] {
-	return func(ctx tasks.ActionContext[Services], params map[string]interface{}) (map[string]interface{}, error) {
+func NewBarkloaderAction() tasks.ActionFunc[AppServices] {
+	return func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
 		// Get functionName parameter
 		functionName, ok := params["functionName"].(string)
 		if !ok {
@@ -16,25 +16,20 @@ func NewBarkloaderAction() tasks.ActionFunc[Services] {
 		}
 
 		// Get params parameter (can be nil)
-		var args []interface{}
+		var args []any
 		if paramsVal, exists := params["params"]; exists {
-			if paramsSlice, ok := paramsVal.([]interface{}); ok {
+			if paramsSlice, ok := paramsVal.([]any); ok {
 				args = paramsSlice
 			} else {
 				// If it's not a slice, wrap it in a slice
-				args = []interface{}{paramsVal}
+				args = []any{paramsVal}
 			}
 		}
 
 		// Get barkloader client from context
-		barkloaderFn := ctx.Services.Barkloader
-		if barkloaderFn == nil {
-			return nil, fmt.Errorf("barkloader service not available")
-		}
-
-		client := barkloaderFn()
+		client := ctx.Services.Barkloader()
 		if client == nil {
-			return nil, fmt.Errorf("barkloader service not found")
+			return nil, fmt.Errorf("barkloader service not available")
 		}
 
 		// Ensure we're using the barkloader.Client type

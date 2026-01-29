@@ -30,8 +30,6 @@ type Engine[TServices any] struct {
 	logger               tasks.Logger
 	ctx                  context.Context
 	cancel               context.CancelFunc
-	servicesBuilder      tasks.ServicesBuilder[TServices]
-	appContext           interface{}
 }
 
 type SubWorkflowWaiter struct {
@@ -41,7 +39,7 @@ type SubWorkflowWaiter struct {
 	TaskDef           *types.TaskDefinition
 	ExecutionOrder    []*types.TaskDefinition
 	CurrentIndex      int
-	TaskExports       map[string]map[string]interface{}
+	TaskExports       map[string]map[string]any
 	TriggerEvent      *types.Event
 }
 
@@ -52,7 +50,7 @@ type WaitingExecution struct {
 	TaskDef        *types.TaskDefinition
 	ExecutionOrder []*types.TaskDefinition
 	CurrentIndex   int
-	TaskExports    map[string]map[string]interface{}
+	TaskExports    map[string]map[string]any
 	TriggerEvent   *types.Event
 }
 
@@ -78,19 +76,12 @@ func New[TServices any](logger tasks.Logger) *Engine[TServices] {
 
 func (e *Engine[TServices]) registerBuiltInTasks() {
 	e.taskRegistry.Register("log", tasks.NewLogTask())
-	// Create a factory that closes over the engine to get the current servicesBuilder
-	e.taskRegistry.Register("action", func(params map[string]interface{}) (tasks.Task, error) {
-		return tasks.NewActionTask(e.actionRegistry, e.servicesBuilder, e.appContext)(params)
+	e.taskRegistry.Register("action", func(params map[string]any) (tasks.Task, error) {
+		return tasks.NewActionTask(e.actionRegistry)(params)
 	})
 	e.taskRegistry.Register("wait", tasks.NewWaitTask())
 	e.taskRegistry.Register("condition", tasks.NewConditionTask())
 	e.taskRegistry.Register("workflow", tasks.NewWorkflowTask())
-}
-
-func (e *Engine[TServices]) SetServices(builder tasks.ServicesBuilder[TServices], appContext interface{}) {
-	e.servicesBuilder = builder
-	e.appContext = appContext
-	e.registerBuiltInTasks() // Re-register to update action task with new builder
 }
 
 func (e *Engine[TServices]) RegisterWorkflow(def *types.WorkflowDefinition) error {
@@ -115,7 +106,7 @@ func (e *Engine[TServices]) SetPublisher(publisher EventPublisher) {
 }
 
 func (e *Engine[TServices]) registerPublishAction() {
-	e.actionRegistry.Register("publish_event", func(ctx tasks.ActionContext[TServices], params map[string]interface{}) (map[string]interface{}, error) {
+	e.actionRegistry.Register("publish_event", func(ctx tasks.ActionContext[TServices], params map[string]any) (map[string]any, error) {
 		if e.publisher == nil {
 			return nil, fmt.Errorf("no event publisher configured")
 		}
@@ -130,10 +121,10 @@ func (e *Engine[TServices]) registerPublishAction() {
 			Type:   eventType,
 			Source: "workflow",
 			Time:   time.Now(),
-			Data:   make(map[string]interface{}),
+			Data:   make(map[string]any),
 		}
 
-		if data, ok := params["data"].(map[string]interface{}); ok {
+		if data, ok := params["data"].(map[string]any); ok {
 			event.Data = data
 		}
 
@@ -147,7 +138,7 @@ func (e *Engine[TServices]) registerPublishAction() {
 
 		e.logger.Info("Published event", "type", eventType, "id", event.ID)
 
-		return map[string]interface{}{
+		return map[string]any{
 			"eventId":   event.ID,
 			"eventType": eventType,
 			"published": true,
@@ -245,10 +236,10 @@ func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event 
 		TriggerEvent: event,
 		StartedAt:    time.Now(),
 		Tasks:        make(map[string]*types.TaskExecution),
-		Variables:    make(map[string]interface{}),
+		Variables:    make(map[string]any),
 	}
 
-	taskExports := make(map[string]map[string]interface{})
+	taskExports := make(map[string]map[string]any)
 
 	e.executionsMu.Lock()
 	e.executions[executionID] = execution
@@ -279,7 +270,7 @@ func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event 
 	e.executeTasksFromIndex(execution, executionOrder, 0, taskExports, event)
 }
 
-func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecution, executionOrder []*types.TaskDefinition, startIndex int, taskExports map[string]map[string]interface{}, triggerEvent *types.Event) {
+func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecution, executionOrder []*types.TaskDefinition, startIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event) {
 	skippedTasks := make(map[string]bool)
 
 	for i := startIndex; i < len(executionOrder); i++ {
@@ -336,7 +327,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 				taskExec.CompletedAt = &now
 				taskExec.Result = &types.TaskResult{
 					Status: types.TaskStatusSkipped,
-					Data: map[string]interface{}{
+					Data: map[string]any{
 						"skipped": true,
 						"reason":  "condition evaluated to false",
 					},
@@ -376,12 +367,12 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 			taskExec.CompletedAt = &now
 			taskExec.Result = &types.TaskResult{
 				Status: types.TaskStatusSuccess,
-				Data: map[string]interface{}{
+				Data: map[string]any{
 					"result":        result,
 					"branchTaken":   branchTasks,
 					"branchSkipped": skippedBranch,
 				},
-				Exports: map[string]interface{}{
+				Exports: map[string]any{
 					"result": result,
 				},
 			}
@@ -432,7 +423,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 				resolver := e.buildResolver(triggerEvent, taskExports)
 				resolvedParams, err := resolver.Resolve(taskDef.Parameters)
 				if err == nil {
-					if params, ok := resolvedParams.(map[string]interface{}); ok {
+					if params, ok := resolvedParams.(map[string]any); ok {
 						workflowConfig = &types.WorkflowConfig{}
 						if workflowID, ok := params["workflowId"].(string); ok {
 							workflowConfig.WorkflowID = workflowID
@@ -443,7 +434,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 						if eventType, ok := params["eventType"].(string); ok {
 							workflowConfig.EventType = eventType
 						}
-						if eventData, ok := params["eventData"].(map[string]interface{}); ok {
+						if eventData, ok := params["eventData"].(map[string]any); ok {
 							workflowConfig.EventData = eventData
 						}
 					}
@@ -483,7 +474,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 			// Workflow task completed (either immediately or after waiting)
 			if taskExec.WorkflowState != nil && taskExec.WorkflowState.Completed {
 				// Export the sub-workflow result
-				exports := make(map[string]interface{})
+				exports := make(map[string]any)
 				exports["executionId"] = taskExec.WorkflowState.ExecutionID
 				exports["completed"] = true
 				if taskExec.WorkflowState.Result != nil {
@@ -493,7 +484,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 				taskExports[taskDef.ID] = exports
 			} else {
 				// Task completed immediately without waiting
-				exports := make(map[string]interface{})
+				exports := make(map[string]any)
 				if taskExec.WorkflowState != nil {
 					exports["executionId"] = taskExec.WorkflowState.ExecutionID
 				}
@@ -544,10 +535,10 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 	e.checkSubWorkflowCompletion(execution.ID)
 }
 
-func (e *Engine[TServices]) buildResolver(triggerEvent *types.Event, taskExports map[string]map[string]interface{}) *expression.Resolver {
+func (e *Engine[TServices]) buildResolver(triggerEvent *types.Event, taskExports map[string]map[string]any) *expression.Resolver {
 	resolver := expression.NewResolver()
 
-	triggerData := map[string]interface{}{
+	triggerData := map[string]any{
 		"id":     triggerEvent.ID,
 		"type":   triggerEvent.Type,
 		"source": triggerEvent.Source,
@@ -563,7 +554,7 @@ func (e *Engine[TServices]) buildResolver(triggerEvent *types.Event, taskExports
 	return resolver
 }
 
-func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, taskDef *types.TaskDefinition, taskExec *types.TaskExecution, executionOrder []*types.TaskDefinition, currentIndex int, taskExports map[string]map[string]interface{}, triggerEvent *types.Event) string {
+func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, taskDef *types.TaskDefinition, taskExec *types.TaskExecution, executionOrder []*types.TaskDefinition, currentIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event) string {
 	if taskExec.WaitState == nil {
 		waitTask := &tasks.WaitTask{}
 		taskExec.WaitState = waitTask.InitWaitState(taskDef, execution)
@@ -600,7 +591,7 @@ func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, t
 	return "waiting"
 }
 
-func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecution, taskDef *types.TaskDefinition, taskExec *types.TaskExecution, executionOrder []*types.TaskDefinition, currentIndex int, taskExports map[string]map[string]interface{}, triggerEvent *types.Event) string {
+func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecution, taskDef *types.TaskDefinition, taskExec *types.TaskExecution, executionOrder []*types.TaskDefinition, currentIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event) string {
 	if taskExec.WorkflowState == nil {
 		// Resolve workflow config parameters
 		resolver := e.buildResolver(triggerEvent, taskExports)
@@ -637,12 +628,12 @@ func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecutio
 		}
 
 		// Create event data for the sub-workflow
-		eventData := make(map[string]interface{})
+		eventData := make(map[string]any)
 		if taskDef.Workflow.EventData != nil {
 			// Resolve event data using resolver
 			resolvedData, err := resolver.Resolve(taskDef.Workflow.EventData)
 			if err == nil {
-				if dataMap, ok := resolvedData.(map[string]interface{}); ok {
+				if dataMap, ok := resolvedData.(map[string]any); ok {
 					eventData = dataMap
 				}
 			}
@@ -757,7 +748,7 @@ func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, ev
 		TriggerEvent: event,
 		StartedAt:    time.Now(),
 		Tasks:        make(map[string]*types.TaskExecution),
-		Variables:    make(map[string]interface{}),
+		Variables:    make(map[string]any),
 	}
 
 	e.executionsMu.Lock()
@@ -773,7 +764,7 @@ func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, ev
 }
 
 func (e *Engine[TServices]) executeWorkflowInternal(wf *types.WorkflowDefinition, execution *types.WorkflowExecution, event *types.Event) {
-	taskExports := make(map[string]map[string]interface{})
+	taskExports := make(map[string]map[string]any)
 
 	graph, err := NewDependencyGraph(wf.Tasks)
 	if err != nil {
@@ -839,14 +830,15 @@ func (e *Engine[TServices]) resumeSubWorkflowExecution(waiter *SubWorkflowWaiter
 	taskExec := execution.Tasks[waiter.TaskID]
 	if taskExec != nil && taskExec.WorkflowState != nil {
 		taskExec.WorkflowState.Completed = true
-		if subExecution.Status == types.ExecutionStatusCompleted {
+		switch subExecution.Status {
+		case types.ExecutionStatusCompleted:
 			taskExec.WorkflowState.Result = subExecution.Variables
 			taskExec.Status = types.TaskStatusSuccess
-		} else if subExecution.Status == types.ExecutionStatusFailed {
+		case types.ExecutionStatusFailed:
 			// Sub-workflow failed, fail the parent task
 			taskExec.Status = types.TaskStatusFailed
 			taskExec.Error = fmt.Sprintf("sub-workflow execution failed: %s", subExecution.Error)
-		} else {
+		default:
 			// Shouldn't happen, but handle it
 			taskExec.Status = types.TaskStatusFailed
 			taskExec.Error = "sub-workflow execution status unknown"
@@ -898,10 +890,10 @@ func (e *Engine[TServices]) resumeExecution(w *WaitingExecution) {
 	e.executeTasksFromIndex(execution, w.ExecutionOrder, w.CurrentIndex+1, w.TaskExports, w.TriggerEvent)
 }
 
-func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution *types.WorkflowExecution, event *types.Event, taskExports map[string]map[string]interface{}) (*types.TaskResult, error) {
+func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution *types.WorkflowExecution, event *types.Event, taskExports map[string]map[string]any) (*types.TaskResult, error) {
 	resolver := expression.NewResolver()
 
-	triggerData := map[string]interface{}{
+	triggerData := map[string]any{
 		"id":     event.ID,
 		"type":   event.Type,
 		"source": event.Source,
@@ -919,7 +911,7 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 		return nil, fmt.Errorf("failed to resolve parameters: %w", err)
 	}
 
-	params, ok := resolvedParams.(map[string]interface{})
+	params, ok := resolvedParams.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("resolved parameters must be a map")
 	}
@@ -945,7 +937,7 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 
 	if result != nil && taskDef.Exports != nil && result.Data != nil {
 		if result.Exports == nil {
-			result.Exports = make(map[string]interface{})
+			result.Exports = make(map[string]any)
 		}
 		for exportName, dataPath := range taskDef.Exports {
 			value, pathErr := expression.ResolvePath(result.Data, dataPath)

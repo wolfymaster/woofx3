@@ -11,33 +11,33 @@ import (
 var expressionPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 
 type Resolver struct {
-	sources map[string]interface{}
+	sources map[string]any
 }
 
 func NewResolver() *Resolver {
 	return &Resolver{
-		sources: make(map[string]interface{}),
+		sources: make(map[string]any),
 	}
 }
 
-func (r *Resolver) AddSource(name string, data interface{}) {
+func (r *Resolver) AddSource(name string, data any) {
 	r.sources[name] = data
 }
 
-func (r *Resolver) Resolve(value interface{}) (interface{}, error) {
+func (r *Resolver) Resolve(value any) (any, error) {
 	switch v := value.(type) {
 	case string:
 		return r.ResolveString(v)
-	case map[string]interface{}:
+	case map[string]any:
 		return r.resolveMap(v)
-	case []interface{}:
+	case []any:
 		return r.resolveSlice(v)
 	default:
 		return value, nil
 	}
 }
 
-func (r *Resolver) ResolveString(s string) (interface{}, error) {
+func (r *Resolver) ResolveString(s string) (any, error) {
 	if !strings.Contains(s, "${") {
 		return s, nil
 	}
@@ -78,7 +78,7 @@ func isFullExpression(s string) bool {
 	return true
 }
 
-func (r *Resolver) evaluateExpression(expr string) (interface{}, error) {
+func (r *Resolver) evaluateExpression(expr string) (any, error) {
 	parts := strings.SplitN(expr, ".", 2)
 	if len(parts) == 0 {
 		return nil, fmt.Errorf("empty expression")
@@ -109,7 +109,7 @@ func (r *Resolver) evaluateExpression(expr string) (interface{}, error) {
 	return ResolvePath(data, path)
 }
 
-func ResolvePath(data interface{}, path string) (interface{}, error) {
+func ResolvePath(data any, path string) (any, error) {
 	if path == "" {
 		return data, nil
 	}
@@ -123,7 +123,7 @@ func ResolvePath(data interface{}, path string) (interface{}, error) {
 		}
 
 		if idx, isIndex := parseArrayIndex(part); isIndex {
-			slice, ok := current.([]interface{})
+			slice, ok := current.([]any)
 			if !ok {
 				return nil, fmt.Errorf("cannot index non-array with [%d]", idx)
 			}
@@ -135,7 +135,7 @@ func ResolvePath(data interface{}, path string) (interface{}, error) {
 		}
 
 		switch v := current.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			val, ok := v[part]
 			if !ok {
 				return nil, fmt.Errorf("key not found: %s", part)
@@ -195,8 +195,8 @@ func parseArrayIndex(s string) (int, bool) {
 	return idx, true
 }
 
-func (r *Resolver) resolveMap(m map[string]interface{}) (map[string]interface{}, error) {
-	result := make(map[string]interface{}, len(m))
+func (r *Resolver) resolveMap(m map[string]any) (map[string]any, error) {
+	result := make(map[string]any, len(m))
 	for k, v := range m {
 		resolved, err := r.Resolve(v)
 		if err != nil {
@@ -207,8 +207,8 @@ func (r *Resolver) resolveMap(m map[string]interface{}) (map[string]interface{},
 	return result, nil
 }
 
-func (r *Resolver) resolveSlice(s []interface{}) ([]interface{}, error) {
-	result := make([]interface{}, len(s))
+func (r *Resolver) resolveSlice(s []any) ([]any, error) {
+	result := make([]any, len(s))
 	for i, v := range s {
 		resolved, err := r.Resolve(v)
 		if err != nil {
@@ -219,7 +219,7 @@ func (r *Resolver) resolveSlice(s []interface{}) ([]interface{}, error) {
 	return result, nil
 }
 
-func toString(v interface{}) string {
+func toString(v any) string {
 	switch val := v.(type) {
 	case string:
 		return val

@@ -49,21 +49,15 @@ func (p *NATSEventPublisher) Publish(event *types.Event) error {
 	return p.client.Publish(subject, data)
 }
 
-// Services defines the available services for actions
-type Services struct {
-	Barkloader func() *barkloader.Client // Returns the barkloader client or nil if not registered
-	MessageBus func() *natsclient.Client // Returns the message bus client or nil if not registered
-}
-
 type WorkflowApp struct {
 	*runtime.BaseApplication
-	engine  *engine.Engine[Services]
+	engine  *engine.Engine[AppServices]
 	logger  tasks.Logger
 	manager *WorkflowManager
 }
 
 func NewWorkflowApp(logger tasks.Logger, dbClient dbv1.WorkflowService) *WorkflowApp {
-	engine := engine.New[Services](logger)
+	engine := engine.New[AppServices](logger)
 	app := &WorkflowApp{
 		BaseApplication: runtime.NewBaseApplication(),
 		engine:          engine,
@@ -87,6 +81,69 @@ func (a *WorkflowApp) Init(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (a *WorkflowApp) Run(ctx context.Context) error {
+	a.logger.Info("Running workflow application")
+
+	appCtx := a.Context()
+	if appCtx != nil {
+		if svc, ok := runtime.GetServiceTyped[*barkloader.Client](appCtx, "barkloader"); ok {
+			registerService("barkloader", func() *barkloader.Client {
+				return svc.Client()
+			})
+		}
+
+		if svc, ok := runtime.GetServiceTyped[*natsclient.Client](appCtx, "messageBus"); ok {
+			natsClient := svc.Client()
+			registerService("messageBus", func() *natsclient.Client {
+				return natsClient
+			})
+			publisher := NewNATSEventPublisher(natsClient, a.logger)
+			a.engine.SetPublisher(publisher)
+			a.logger.Info("Event publisher configured with NATS")
+
+			// workflow change events
+			if err := a.subscribeToWorkflowEvents(natsClient, string(cloudevents.SubjectWorkflowChange)); err != nil {
+				a.logger.Error("Failed to subscribe to workflow events", "error", err)
+			}
+
+			// workflow execute events
+			if err := a.subscribeToWorkflowEvents(natsClient, string(cloudevents.SubjectWorkflowExecute)); err != nil {
+				a.logger.Error("Failed to subscribe to workflow events", "error", err)
+			}
+
+			// NEW: Subscribe to trigger events - FAIL STARTUP IF THIS FAILS
+			patternRegistry := NewEventPatternRegistry()
+			if err := a.subscribeToTriggerEvents(natsClient, patternRegistry.GetPatterns()); err != nil {
+				a.logger.Error("Failed to subscribe to trigger events", "error", err)
+				return fmt.Errorf("workflow service cannot start without trigger event subscriptions: %w", err)
+			}
+		}
+	}
+
+	appServices := buildAppServices()
+
+	// Register barkloader action
+	a.engine.RegisterAction("function", WithServices(appServices, NewBarkloaderAction()))
+
+	// Register print action for debugging
+	a.engine.RegisterAction("print", func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
+		a.logger.Info("Action: print", "params", params)
+		return params, nil
+	})
+
+	return a.engine.Start(ctx)
+}
+
+func (a *WorkflowApp) Terminate(ctx context.Context) error {
+	a.logger.Info("Terminating workflow application")
+
+	return a.engine.Stop()
+}
+
+func (a *WorkflowApp) Engine() *engine.Engine[AppServices] {
+	return a.engine
 }
 
 // subscribeToWorkflowEvents subscribes to workflow CRUD events from the DB proxy
@@ -128,76 +185,66 @@ func (a *WorkflowApp) handleWorkflowEvent(msg natsclient.Msg) {
 	}
 }
 
-func (a *WorkflowApp) Run(ctx context.Context) error {
-	a.logger.Info("Running workflow application")
-
-	// Set up services builder for engine
-	a.engine.SetServices(func(appContext interface{}) Services {
-		ctx, ok := appContext.(*runtime.ApplicationContext)
-		if !ok {
-			return Services{}
-		}
-
-		var barkloaderClient func() *barkloader.Client
-		if svc, ok := ctx.GetService("barkloader"); ok {
-			barkloaderClient = func() *barkloader.Client {
-				if client := svc.Client(); client != nil {
-					if bc, ok := client.(*barkloader.Client); ok {
-						return bc
-					}
-				}
-				return nil
-			}
-		}
-
-		var messageBusClient func() *natsclient.Client
-		if svc, ok := ctx.GetService("messageBus"); ok {
-			messageBusClient = func() *natsclient.Client {
-				return svc.Client().(*natsclient.Client)
-			}
-		}
-
-		return Services{
-			Barkloader: barkloaderClient,
-			MessageBus: messageBusClient,
-		}
-	}, a.Context())
-
-	// Set up event publisher and subscribe to workflow events using NATS
-	if appCtx := a.Context(); appCtx != nil {
-		if svc, ok := appCtx.GetService("messageBus"); ok {
-			if client := svc.Client(); client != nil {
-				if natsClient, ok := client.(*natsclient.Client); ok {
-					publisher := NewNATSEventPublisher(natsClient, a.logger)
-					a.engine.SetPublisher(publisher)
-					a.logger.Info("Event publisher configured with NATS")
-
-					if err := a.subscribeToWorkflowEvents(natsClient, string(cloudevents.SubjectWorkflowChange)); err != nil {
-						a.logger.Error("Failed to subscribe to workflow events", "error", err)
-					}
-				}
-			}
-		}
+// validateCloudEvent validates that incoming data conforms to CloudEvents spec
+func (a *WorkflowApp) validateCloudEvent(data []byte) (*types.Event, error) {
+	var event types.Event
+	if err := json.Unmarshal(data, &event); err != nil {
+		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 
-	// Register barkloader action
-	a.engine.RegisterAction("function", NewBarkloaderAction())
+	// CloudEvents required fields validation
+	if event.ID == "" {
+		return nil, fmt.Errorf("event missing required field: id")
+	}
+	if event.Type == "" {
+		return nil, fmt.Errorf("event missing required field: type")
+	}
+	if event.Source == "" {
+		return nil, fmt.Errorf("event missing required field: source")
+	}
 
-	// Register print action for debugging
-	a.engine.RegisterAction("print", func(ctx tasks.ActionContext[Services], params map[string]interface{}) (map[string]interface{}, error) {
-		a.logger.Info("Action: print", "params", params)
-		return params, nil
-	})
-
-	return a.engine.Start(ctx)
+	return &event, nil
 }
 
-func (a *WorkflowApp) Terminate(ctx context.Context) error {
-	a.logger.Info("Terminating workflow application")
+// handleTriggerEvent processes incoming events that may trigger workflows
+func (a *WorkflowApp) handleTriggerEvent(msg natsclient.Msg) {
+	// Validate CloudEvents format
+	event, err := a.validateCloudEvent(msg.Data())
+	if err != nil {
+		a.logger.Error("Invalid event format",
+			"error", err,
+			"subject", msg.Subject(),
+			"raw_data", string(msg.Data()))
+		return
+	}
 
-	return a.engine.Stop()
+	// Debug level logging for high-frequency events
+	a.logger.Debug("Received trigger event",
+		"type", event.Type,
+		"id", event.ID,
+		"subject", msg.Subject())
+
+	// Route to engine for workflow matching and execution
+	if err := a.engine.HandleEvent(event); err != nil {
+		a.logger.Error("Failed to handle trigger event",
+			"error", err,
+			"type", event.Type,
+			"id", event.ID)
+		// Continue processing other events (fail fast per event)
+	}
 }
 
-func (a *WorkflowApp) Engine() *engine.Engine[Services] {
-	return a.engine
+// subscribeToTriggerEvents subscribes to events that can trigger workflows
+func (a *WorkflowApp) subscribeToTriggerEvents(natsClient *natsclient.Client, patterns []string) error {
+	for _, pattern := range patterns {
+		capturedPattern := pattern // Capture for closure
+		_, err := natsClient.Subscribe(pattern, func(msg natsclient.Msg) {
+			a.handleTriggerEvent(msg)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to subscribe to pattern %s: %w", pattern, err)
+		}
+		a.logger.Info("Subscribed to trigger events", "pattern", capturedPattern)
+	}
+	return nil
 }

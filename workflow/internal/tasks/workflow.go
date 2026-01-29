@@ -7,7 +7,7 @@ import (
 type WorkflowTask struct{}
 
 func NewWorkflowTask() TaskFactory {
-	return func(params map[string]interface{}) (Task, error) {
+	return func(params map[string]any) (Task, error) {
 		return &WorkflowTask{}, nil
 	}
 }
@@ -23,7 +23,7 @@ func (t *WorkflowTask) Execute(ctx *TaskContext) (*types.TaskResult, error) {
 	// is handled in the engine's executeTasksFromIndex method.
 	return &types.TaskResult{
 		Status: types.TaskStatusSuccess,
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"workflow": "executed",
 		},
 	}, nil

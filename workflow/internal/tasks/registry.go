@@ -1,7 +1,6 @@
 package tasks
 
 import (
-	"context"
 	"fmt"
 	"sync"
 
@@ -17,19 +16,19 @@ type TaskContext struct {
 	WorkflowID   string
 	TaskID       string
 	TriggerEvent *types.Event
-	Variables    map[string]interface{}
-	TaskExports  map[string]map[string]interface{} // task ID -> exports
+	Variables    map[string]any
+	TaskExports  map[string]map[string]any // task ID -> exports
 	Logger       Logger
 }
 
 type Logger interface {
-	Info(message string, args ...interface{})
-	Warn(message string, args ...interface{})
-	Error(message string, args ...interface{})
-	Debug(message string, args ...interface{})
+	Info(message string, args ...any)
+	Warn(message string, args ...any)
+	Error(message string, args ...any)
+	Debug(message string, args ...any)
 }
 
-type TaskFactory func(params map[string]interface{}) (Task, error)
+type TaskFactory func(params map[string]any) (Task, error)
 
 type TaskRegistry struct {
 	mu        sync.RWMutex
@@ -54,7 +53,7 @@ func (r *TaskRegistry) Register(taskType string, factory TaskFactory) error {
 	return nil
 }
 
-func (r *TaskRegistry) Create(taskType string, params map[string]interface{}) (Task, error) {
+func (r *TaskRegistry) Create(taskType string, params map[string]any) (Task, error) {
 	r.mu.RLock()
 	factory, ok := r.factories[taskType]
 	r.mu.RUnlock()
@@ -77,16 +76,11 @@ func (r *TaskRegistry) List() []string {
 	return types
 }
 
-// ServicesBuilder is a function that creates a Services struct from an application context
-// TServices is the application-defined Services type
-type ServicesBuilder[TServices any] func(appContext interface{}) TServices
-
 type ActionContext[TServices any] struct {
-	Context  context.Context
 	Services TServices
 }
 
-type ActionFunc[TServices any] func(ctx ActionContext[TServices], params map[string]interface{}) (map[string]interface{}, error)
+type ActionFunc[TServices any] func(ctx ActionContext[TServices], params map[string]any) (map[string]any, error)
 
 type ActionRegistry[TServices any] struct {
 	mu      sync.RWMutex
