@@ -44,7 +44,19 @@ func (a *ApplicationContext) GetService(serviceType string) (any, bool) {
 	return svc, ok
 }
 
-
+// GetServiceTyped retrieves a service with type safety. Returns Service[T] where T is the client type.
+// This eliminates the need for type assertions when accessing the client.
+func GetServiceTyped[T any](a *ApplicationContext, serviceType string) (Service[T], bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	svc, ok := a.Services[serviceType]
+	if !ok {
+		var zero Service[T]
+		return zero, false
+	}
+	typedSvc, ok := svc.(Service[T])
+	return typedSvc, ok
+}
 
 func (a *ApplicationContext) GetServiceBatches() ([][]any, error) {
 	a.mu.RLock()
@@ -104,8 +116,6 @@ type Service[T any] interface {
 	Client() T
 	Dependencies() []string
 }
-
-
 
 type BaseService[T any] struct {
 	mu           sync.RWMutex
