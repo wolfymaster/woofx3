@@ -12,16 +12,6 @@ import (
 type MessageHandler func(msg MessageResponse)
 type ReconnectAttemptHandler func(attempt int, maxRetries int)
 
-type Config struct {
-	WSURL              string
-	OnOpen             func()
-	OnClose            func()
-	OnError            func(error)
-	ReconnectTimeout   time.Duration
-	MaxRetries         int // Use 0 for infinite retries
-	OnReconnectAttempt ReconnectAttemptHandler
-}
-
 type MessageResponse struct {
 	Args    map[string]interface{} `json:"args"`
 	Command string                 `json:"command"`
