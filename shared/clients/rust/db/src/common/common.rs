@@ -45,5 +45,16 @@ pub mod response_status {
         }
     }
 }
+/// PingRequest is an empty request for the ping endpoint
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PingRequest {
+}
+/// PingResponse returns a success status indicating the service is accessible
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PingResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<ResponseStatus>,
+}
 include!("common.serde.rs");
+include!("common.tonic.rs");
 // @@protoc_insertion_point(module)

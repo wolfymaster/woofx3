@@ -10,4 +10,8 @@ pub mod db {
     pub mod common {
         include!("common/common.rs");
     }
+
+    pub mod workflow {
+        include!("workflow/workflow.rs");
+    }
 }
