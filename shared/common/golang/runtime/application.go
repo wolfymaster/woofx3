@@ -12,6 +12,7 @@ type ApplicationContext struct {
 	mu       sync.RWMutex
 	Services ServicesRegistry
 	depGraph *DependencyGraph
+	Config   any
 }
 
 func (a *ApplicationContext) Register(serviceType string, service any) error {
@@ -62,6 +63,32 @@ func (a *ApplicationContext) GetServiceBatches() ([][]any, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.depGraph.GetServiceBatches()
+}
+
+// SetConfig sets the resolved env config struct. Called by the runtime after FillEnvConfig.
+func (a *ApplicationContext) SetConfig(cfg any) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.Config = cfg
+}
+
+// GetConfig returns the application's env config struct. Use a type assertion to get the concrete type.
+func (a *ApplicationContext) GetConfig() any {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.Config
+}
+
+// GetConfigT returns the application's env config as type T. If config is nil or not assignable to T, returns the zero value of T.
+func GetConfig[T any](a *ApplicationContext) T {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.Config == nil {
+		var zero T
+		return zero
+	}
+	v, _ := a.Config.(T)
+	return v
 }
 
 type Application interface {

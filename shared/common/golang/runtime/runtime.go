@@ -8,18 +8,18 @@ import (
 )
 
 type Logger interface {
-	Info(message string, args ...interface{})
-	Error(message string, args ...interface{})
-	Warn(message string, args ...interface{})
-	Debug(message string, args ...interface{})
+	Info(message string, args ...any)
+	Error(message string, args ...any)
+	Warn(message string, args ...any)
+	Debug(message string, args ...any)
 }
 
 type noOpLogger struct{}
 
-func (l *noOpLogger) Info(message string, args ...interface{})  {}
-func (l *noOpLogger) Error(message string, args ...interface{}) {}
-func (l *noOpLogger) Warn(message string, args ...interface{})  {}
-func (l *noOpLogger) Debug(message string, args ...interface{}) {}
+func (l *noOpLogger) Info(message string, args ...any)  {}
+func (l *noOpLogger) Error(message string, args ...any) {}
+func (l *noOpLogger) Warn(message string, args ...any)  {}
+func (l *noOpLogger) Debug(message string, args ...any) {}
 
 type StateSubscriber func(State)
 
@@ -27,10 +27,10 @@ type RuntimeConfig struct {
 	Application      Application
 	RuntimeInit      func(context.Context, Application) error
 	RuntimeTerminate func(context.Context, Application) error
-	HealthMonitor    HealthMonitor   // NEW: Unified health monitor
-	Heartbeat        HeartbeatFunc   // DEPRECATED: Use HealthMonitor
-	HealthCheck      HealthCheckFunc // DEPRECATED: Use HealthMonitor
+	HealthMonitor    HealthMonitor
 	Logger           Logger
+	RootDir          string
+	EnvConfig        any
 }
 
 type ServiceConnectionState struct {
@@ -61,6 +61,18 @@ type Runtime struct {
 }
 
 func NewRuntime(config *RuntimeConfig) *Runtime {
+	env, err := LoadRuntimeEnv(&LoadRuntimeEnvOptions{RootDir: config.RootDir})
+	if err != nil {
+		panic("LoadRuntimeEnv failed: " + err.Error())
+	}
+	appCtx := config.Application.Context()
+	if config.EnvConfig != nil {
+		if err := FillEnvConfig(env, config.EnvConfig); err != nil {
+			panic("EnvConfig fill failed: " + err.Error())
+		}
+		appCtx.SetConfig(config.EnvConfig)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	logger := config.Logger
@@ -291,14 +303,14 @@ func (r *Runtime) handleEvent(event Event) {
 		r.handleRuntimeInit()
 
 	case StateHealthMonitorInit:
-		if event == EventServicesReady {
+		switch event {
+		case EventServicesReady:
 			r.handleHealthMonitorInit()
-		} else if event == EventHealthMonitorReady {
+		case EventHealthMonitorReady:
 			r.handleHealthMonitorReady()
 		}
 
 	case StateHealthMonitorReady:
-		// This state should handle transition events to services connect
 		if event == EventServicesReady {
 			r.transitionTo(StateServicesConnect)
 			r.handleServicesConnect()
@@ -306,7 +318,6 @@ func (r *Runtime) handleEvent(event Event) {
 
 	case StateHealthMonitorWaiting:
 		if event == EventServicesReady {
-			// Retry health monitor initialization
 			r.logger.Info("Retrying health monitor initialization after backoff")
 			r.transitionTo(StateHealthMonitorInit)
 			r.handleHealthMonitorInit()
@@ -314,14 +325,10 @@ func (r *Runtime) handleEvent(event Event) {
 			r.handleHealthMonitorWaiting()
 		}
 
-	case StateHealthHeartbeat:
-		r.handleHealthHeartbeat(event)
-
-	case StateHealthHeartbeatWaiting:
-		r.handleHealthHeartbeatWaiting()
-
 	case StateServicesConnect:
-		r.handleServicesConnect()
+		if event == EventServicesReady {
+			r.handleServicesConnect()
+		}
 
 	case StateServicesConnectWaiting:
 		r.handleServicesConnectWaiting()
@@ -358,34 +365,6 @@ func (r *Runtime) handleRuntimeInit() {
 
 	r.transitionTo(StateHealthMonitorInit)
 	r.stateChan <- EventServicesReady
-}
-
-func (r *Runtime) handleHealthHeartbeat(event Event) {
-	if event == EventHealthCheckPassed {
-		r.backoff.Reset()
-		r.transitionTo(StateServicesConnect)
-		r.handleServicesConnect()
-		return
-	}
-
-	if event == EventHealthCheckFailed {
-		r.transitionTo(StateHealthHeartbeatWaiting)
-		r.handleHealthHeartbeatWaiting()
-		return
-	}
-
-	r.startHeartbeat(r.ctx)
-	r.startHealthCheck(r.ctx)
-}
-
-func (r *Runtime) handleHealthHeartbeatWaiting() {
-	delay := r.backoff.Current()
-	r.logger.Info("Health check failed, backing off", "delay", delay)
-
-	time.AfterFunc(r.backoff.Next(), func() {
-		r.transitionTo(StateHealthHeartbeat)
-		r.handleHealthHeartbeat(EventServicesReady)
-	})
 }
 
 func (r *Runtime) handleServicesConnectWaiting() {
@@ -543,6 +522,7 @@ func (r *Runtime) handleServicesConnect() {
 }
 
 func (r *Runtime) handleServicesConnected() {
+	r.transitionTo(StateServicesConnected)
 	r.transitionTo(StateApplicationInit)
 	r.handleApplicationInit()
 }
@@ -580,6 +560,11 @@ func (r *Runtime) handleApplicationTerminating() {
 }
 
 func (r *Runtime) handleRuntimeTerminating() {
+	if r.config.HealthMonitor != nil {
+		r.logger.Info("Stopping health monitor")
+		r.config.HealthMonitor.Stop()
+	}
+
 	serviceBatches, err := r.application.Context().GetServiceBatches()
 	if err != nil {
 		r.logger.Error("Failed to resolve service dependencies for shutdown", "error", err)
@@ -625,26 +610,51 @@ func (r *Runtime) handleRuntimeTerminating() {
 func (r *Runtime) handleHealthMonitorInit() {
 	r.transitionTo(StateHealthMonitorInit)
 
-	// Prefer new HealthMonitor interface, fall back to legacy functions
-	if r.config.HealthMonitor != nil {
-		r.logger.Info("Starting health monitor")
-		if err := r.config.HealthMonitor.Start(r.ctx); err != nil {
-			r.logger.Error("Health monitor failed to start", "error", err)
+	monitor := r.config.HealthMonitor
+	if monitor == nil {
+		r.logger.Info("No health monitor configured, passing")
+		r.stateChan <- EventHealthMonitorReady
+		return
+	}
+
+	appCtx := r.application.Context()
+	if req, ok := monitor.(RequiredServicesProvider); ok {
+		for _, name := range req.RequiredServices() {
+			svc, ok := appCtx.GetService(name)
+			if !ok {
+				r.logger.Error("Health monitor required service not registered", "service", name)
+				r.stateChan <- EventHealthMonitorFailed
+				return
+			}
+			if conn, ok := svc.(interface {
+				Connect(context.Context, *ApplicationContext) error
+			}); ok {
+				r.logger.Info("Connecting required service for health monitor", "service", name)
+				if err := conn.Connect(r.ctx, appCtx); err != nil {
+					r.logger.Error("Failed to connect required service for health monitor", "service", name, "error", err)
+					r.stateChan <- EventHealthMonitorFailed
+					return
+				}
+			}
+		}
+	}
+
+	if hm, ok := monitor.(HealthMonitorService); ok {
+		r.logger.Info("Connecting health monitor service")
+		if err := hm.Connect(r.ctx, appCtx); err != nil {
+			r.logger.Error("Health monitor connect failed", "error", err)
 			r.stateChan <- EventHealthMonitorFailed
 			return
 		}
-		r.logger.Info("Health monitor started successfully")
-		r.stateChan <- EventHealthMonitorReady
-		return
 	}
 
-	// Fallback to legacy health check/heartbeat approach
-	if r.config.HealthCheck == nil {
-		r.logger.Info("No health check configured, passing")
-		r.stateChan <- EventHealthMonitorReady
+	r.logger.Info("Starting health monitor")
+	if err := monitor.Start(r.ctx); err != nil {
+		r.logger.Error("Health monitor failed to start", "error", err)
+		r.stateChan <- EventHealthMonitorFailed
 		return
 	}
-
+	r.logger.Info("Health monitor started successfully")
 	r.stateChan <- EventHealthMonitorReady
 }
 
@@ -654,13 +664,6 @@ func (r *Runtime) handleHealthMonitorReady() {
 	// Start health monitor liveness checking
 	r.logger.Info("Starting health monitor liveness checking")
 	r.startHealthMonitorLiveness(r.healthMonitorLivenessCtx)
-
-	// Start traditional health check if configured
-	if r.config.HealthMonitor == nil && r.config.HealthCheck != nil {
-		r.logger.Info("Starting traditional health check and heartbeat")
-		r.startHealthCheck(r.ctx)
-		r.startHeartbeat(r.ctx)
-	}
 
 	// Move to services connection phase
 	r.logger.Info("Health monitor ready, proceeding to services connection")
@@ -678,15 +681,16 @@ func (r *Runtime) handleHealthMonitorWaiting() {
 }
 
 func (r *Runtime) startHealthMonitorLiveness(ctx context.Context) {
-	if r.config.HealthMonitor == nil {
-		return // No liveness checking for legacy mode
+	monitor := r.config.HealthMonitor
+	if monitor == nil {
+		return
 	}
 
 	// Start liveness checker
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
-		ticker := time.NewTicker(3 * time.Second) // Check health monitor every 3 seconds
+		ticker := time.NewTicker(3 * time.Second)
 		defer ticker.Stop()
 
 		for {
@@ -695,7 +699,7 @@ func (r *Runtime) startHealthMonitorLiveness(ctx context.Context) {
 				return
 			case <-ticker.C:
 				r.logger.Debug("Performing health monitor liveness check")
-				if err := r.config.HealthMonitor.Liveness(); err != nil {
+				if err := monitor.Liveness(); err != nil {
 					r.logger.Error("Health monitor liveness failed", "error", err)
 					r.stateChan <- EventHealthMonitorFailed
 					return
@@ -705,37 +709,51 @@ func (r *Runtime) startHealthMonitorLiveness(ctx context.Context) {
 		}
 	}()
 
-	// Start periodic health checking if the monitor supports it
-	if combinedMonitor, ok := r.config.HealthMonitor.(CombinedHealthMonitor); ok {
-		r.logger.Info("Starting periodic health checks")
-		r.wg.Add(1)
-		go func() {
-			defer r.wg.Done()
-			ticker := time.NewTicker(5 * time.Second) // Check health every 5 seconds
-			defer ticker.Stop()
-
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					r.logger.Debug("Running health check")
-					healthy, err := combinedMonitor.HealthCheck(ctx, r.application.Context().Services)
-					if err != nil {
-						r.logger.Error("Health check failed with error", "error", err)
-						r.stateChan <- EventHealthCheckFailed
-						continue
-					}
-					if !healthy {
-						r.logger.Warn("Health check failed - system unhealthy")
-						r.stateChan <- EventHealthCheckFailed
-						continue
-					}
-					r.logger.Debug("Health check passed - system healthy")
+	// Runtime drives heartbeat and health check on an interval
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := monitor.Heartbeat(ctx); err != nil {
+					r.logger.Error("Health monitor heartbeat failed", "error", err)
 				}
 			}
-		}()
-	}
+		}
+	}()
+
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		r.logger.Info("Starting periodic health checks")
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				r.logger.Debug("Running health check")
+				healthy, err := monitor.HealthCheck(ctx, r.application.Context().Services)
+				if err != nil {
+					r.logger.Error("Health check failed with error", "error", err)
+					r.stateChan <- EventHealthCheckFailed
+					continue
+				}
+				if !healthy {
+					r.logger.Warn("Health check failed - system unhealthy")
+					r.stateChan <- EventHealthCheckFailed
+					continue
+				}
+				r.logger.Debug("Health check passed - system healthy")
+			}
+		}
+	}()
 }
 
 func (r *Runtime) disconnectAllServices() error {
@@ -787,63 +805,4 @@ func (r *Runtime) handleShutdown() {
 		r.transitionTo(StateRuntimeTerminating)
 		r.handleRuntimeTerminating()
 	}
-}
-
-func (r *Runtime) startHeartbeat(ctx context.Context) {
-	if r.config.Heartbeat == nil {
-		r.logger.Info("No heartbeat configured, skipping")
-		return
-	}
-
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := r.config.Heartbeat(ctx); err != nil {
-					r.logger.Error("Heartbeat failed", "error", err)
-				}
-			}
-		}
-	}()
-}
-
-func (r *Runtime) startHealthCheck(ctx context.Context) {
-	if r.config.HealthCheck == nil {
-		r.logger.Info("No health check configured, passing")
-		r.stateChan <- EventHealthCheckPassed
-		return
-	}
-
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				healthy, err := r.config.HealthCheck(ctx, r.application.Context().Services)
-				if err != nil || !healthy {
-					r.logger.Debug("Health check failed", "healthy", healthy, "error", err)
-					r.stateChan <- EventHealthCheckFailed
-					// Don't return - continue monitoring
-					continue
-				}
-
-				r.logger.Debug("Health check passed")
-				// Don't send success event after initial startup, just continue monitoring
-				// Initial success is handled in handleHealthHeartbeat
-			}
-		}
-	}()
 }
