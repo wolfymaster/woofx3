@@ -44,7 +44,7 @@ func (c *Client) Connect() error {
 
 	conn, err := nats.Connect(c.config.URL, opts...)
 	if err != nil {
-		c.logger.Error("Failed to connect to NATS: %v", err)
+		c.logger.Error("Failed to connect to NATS", "error", err)
 		return fmt.Errorf("failed to connect to NATS: %w", err)
 	}
 
