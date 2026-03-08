@@ -4,8 +4,8 @@ import (
 	"net/http"
 
 	"github.com/twitchtv/twirp"
+	client "github.com/wolfymaster/woofx3/clients/db"
 	middleware "github.com/wolfymaster/woofx3/db/app/middleware"
-	rpc "github.com/wolfymaster/woofx3/db/app/server"
 	svc "github.com/wolfymaster/woofx3/db/app/services"
 	types "github.com/wolfymaster/woofx3/db/app/types"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -14,7 +14,7 @@ import (
 func WorkflowRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middleware.CasbinMiddleware) {
 	workflowRepository := repo.NewWorkflowRepository(app.Db)
 	workflowService := svc.NewWorkflowService(workflowRepository, app.Db, app.EventPublisher)
-	workflowHandler := rpc.NewWorkflowServiceServer(
+	workflowHandler := client.NewWorkflowServiceServer(
 		workflowService,
 		twirp.WithServerHooks(twirp.ChainHooks(
 		// TODO: Add casbin middleware wrapper if needed

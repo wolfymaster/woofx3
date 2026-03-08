@@ -6,7 +6,7 @@ import (
 
 	"github.com/casbin/casbin/v2"
 	"github.com/google/uuid"
-	rpc "github.com/wolfymaster/woofx3/db/app/server"
+	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"google.golang.org/protobuf/proto"
@@ -23,7 +23,7 @@ func NewCommandService(repo *repo.CommandRepository) *commandService {
 	}
 }
 
-func (s *commandService) CreateCommand(ctx context.Context, cmd *rpc.CreateCommandRequest) (*rpc.CommandResponse, error) {
+func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCommandRequest) (*client.CommandResponse, error) {
 	applicationID, err := uuid.Parse(cmd.ApplicationId)
 	if err != nil {
 		return nil, err
@@ -39,12 +39,12 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *rpc.CreateComma
 		return nil, err
 	}
 
-	res := &rpc.CommandResponse{
-		Status: &rpc.ResponseStatus{
-			Code:    rpc.ResponseStatus_OK,
+	res := &client.CommandResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
 			Message: "Command created successfully",
 		},
-		Command: &rpc.Command{
+		Command: &client.Command{
 			Id:            m.ID.String(),
 			ApplicationId: m.ApplicationID.String(),
 			Command:       m.Command,
@@ -54,7 +54,7 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *rpc.CreateComma
 	return res, nil
 }
 
-func (s *commandService) GetCommand(ctx context.Context, req *rpc.GetCommandRequest) (*rpc.CommandResponse, error) {
+func (s *commandService) GetCommand(ctx context.Context, req *client.GetCommandRequest) (*client.CommandResponse, error) {
 	applicationID, err := uuid.Parse(req.ApplicationId)
 	if err != nil {
 		return nil, err
@@ -65,12 +65,12 @@ func (s *commandService) GetCommand(ctx context.Context, req *rpc.GetCommandRequ
 		return nil, err
 	}
 
-	res := &rpc.CommandResponse{
-		Status: &rpc.ResponseStatus{
-			Code:    rpc.ResponseStatus_OK,
+	res := &client.CommandResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
 			Message: "Command retrieved successfully",
 		},
-		Command: &rpc.Command{
+		Command: &client.Command{
 			Id:            cmd.ID.String(),
 			ApplicationId: cmd.ApplicationID.String(),
 			Command:       cmd.Command,
@@ -87,15 +87,15 @@ func (s *commandService) GetCommand(ctx context.Context, req *rpc.GetCommandRequ
 	return res, nil
 }
 
-func (s *commandService) ListCommands(ctx context.Context, req *rpc.ListCommandsRequest) (*rpc.ListCommandsResponse, error) {
+func (s *commandService) ListCommands(ctx context.Context, req *client.ListCommandsRequest) (*client.ListCommandsResponse, error) {
 	commands, err := s.repo.GetAll()
 	if err != nil {
 		return nil, err
 	}
 
-	protoCommands := make([]*rpc.Command, len(commands))
+	protoCommands := make([]*client.Command, len(commands))
 	for i, cmd := range commands {
-		protoCommands[i] = &rpc.Command{
+		protoCommands[i] = &client.Command{
 			Id:            cmd.ID.String(),
 			ApplicationId: cmd.ApplicationID.String(),
 			Command:       cmd.Command,
@@ -109,9 +109,9 @@ func (s *commandService) ListCommands(ctx context.Context, req *rpc.ListCommands
 		}
 	}
 
-	res := &rpc.ListCommandsResponse{
-		Status: &rpc.ResponseStatus{
-			Code:    rpc.ResponseStatus_OK,
+	res := &client.ListCommandsResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
 			Message: "Commands retrieved successfully",
 		},
 		Commands: protoCommands,
@@ -120,7 +120,7 @@ func (s *commandService) ListCommands(ctx context.Context, req *rpc.ListCommands
 	return res, nil
 }
 
-func (s *commandService) UpdateCommand(ctx context.Context, req *rpc.UpdateCommandRequest) (*rpc.CommandResponse, error) {
+func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCommandRequest) (*client.CommandResponse, error) {
 	commandId, err := uuid.Parse(req.Id)
 	if err != nil {
 		return nil, err
@@ -138,12 +138,12 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *rpc.UpdateComma
 		return nil, err
 	}
 
-	res := &rpc.CommandResponse{
-		Status: &rpc.ResponseStatus{
-			Code:    rpc.ResponseStatus_OK,
+	res := &client.CommandResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
 			Message: "Command updated successfully",
 		},
-		Command: &rpc.Command{
+		Command: &client.Command{
 			Id:            m.ID.String(),
 			ApplicationId: m.ApplicationID.String(),
 			Command:       m.Command,
@@ -153,7 +153,7 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *rpc.UpdateComma
 	return res, nil
 }
 
-func (s *commandService) DeleteCommand(ctx context.Context, req *rpc.DeleteCommandRequest) (*rpc.ResponseStatus, error) {
+func (s *commandService) DeleteCommand(ctx context.Context, req *client.DeleteCommandRequest) (*client.ResponseStatus, error) {
 	commandId, err := uuid.Parse(req.Id)
 	if err != nil {
 		return nil, err
@@ -169,8 +169,8 @@ func (s *commandService) DeleteCommand(ctx context.Context, req *rpc.DeleteComma
 		return nil, err
 	}
 
-	res := &rpc.ResponseStatus{
-		Code:    rpc.ResponseStatus_OK,
+	res := &client.ResponseStatus{
+		Code:    client.ResponseStatus_OK,
 		Message: "Command deleted successfully",
 	}
 
@@ -180,7 +180,7 @@ func (s *commandService) DeleteCommand(ctx context.Context, req *rpc.DeleteComma
 func (s *commandService) HasPermission(ctx context.Context, enforcer *casbin.Enforcer, method string, request any) (bool, error) {
 	switch method {
 	case "GetCommand":
-		var req rpc.GetCommandRequest
+		var req client.GetCommandRequest
 		if err := proto.Unmarshal(request.([]byte), &req); err != nil {
 			return false, err
 		}

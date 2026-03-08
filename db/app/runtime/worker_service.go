@@ -68,7 +68,7 @@ func (s *WorkerService) initializeWorkers() error {
 
 	workersRepo := repository.NewDbEventRepository(s.db)
 	eventCache := workers.NewEventCache()
-	eventPublisher := workers.NewEventPublisher(workersRepo)
+	eventPublisher := workers.NewEventPublisher(workersRepo, s.logger)
 	workersConfig := workers.LoadConfig()
 
 	s.publisherWorker = workers.NewPublisherWorker(workersRepo, s.natsConn, eventCache, s.logger, workersConfig)
@@ -142,4 +142,8 @@ func (s *WorkerService) Disconnect(ctx context.Context) error {
 
 func (s *WorkerService) EventCache() *workers.EventCache {
 	return s.eventCache
+}
+
+func (s *WorkerService) EventPublisher() *workers.EventPublisher {
+	return s.eventPublisher
 }

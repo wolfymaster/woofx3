@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
-	rpc "github.com/wolfymaster/woofx3/db/app/server"
+	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -21,7 +21,7 @@ type workflowService struct {
 	publisher     *workers.EventPublisher
 }
 
-func NewWorkflowService(workflowRepo *repo.WorkflowRepository, db interface{}, publisher *workers.EventPublisher) rpc.WorkflowService {
+func NewWorkflowService(workflowRepo *repo.WorkflowRepository, db interface{}, publisher *workers.EventPublisher) client.WorkflowService {
 	var dbConn *gorm.DB
 	if gormDB, ok := db.(*gorm.DB); ok {
 		dbConn = gormDB
@@ -34,7 +34,7 @@ func NewWorkflowService(workflowRepo *repo.WorkflowRepository, db interface{}, p
 	}
 }
 
-func (s *workflowService) CreateWorkflow(ctx context.Context, req *rpc.CreateWorkflowRequest) (*rpc.WorkflowResponse, error) {
+func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.CreateWorkflowRequest) (*client.WorkflowResponse, error) {
 	applicationID, err := uuid.Parse(req.ApplicationId)
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
@@ -58,25 +58,27 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *rpc.CreateWor
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create workflow: %w", err))
 	}
 
-	s.publisher.Publish(workers.PublishOptions{
-		ApplicationID:   req.ApplicationId,
-		EntityType:      "workflow",
-		EntityID:        wf.ID.String(),
-		Operation:       "created",
-		Data:            wf,
-		AutoAcknowledge: true,
-	})
+	if s.publisher != nil {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   req.ApplicationId,
+			EntityType:      "workflow",
+			EntityID:        wf.ID.String(),
+			Operation:       "created",
+			Data:            wf,
+			AutoAcknowledge: true,
+		})
+	}
 
-	return &rpc.WorkflowResponse{
-		Status: &rpc.ResponseStatus{
-			Code:    rpc.ResponseStatus_OK,
+	return &client.WorkflowResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
 			Message: "Workflow created successfully",
 		},
 		Workflow: s.workflowToProto(wf),
 	}, nil
 }
 
-func (s *workflowService) GetWorkflow(ctx context.Context, req *rpc.GetWorkflowRequest) (*rpc.WorkflowResponse, error) {
+func (s *workflowService) GetWorkflow(ctx context.Context, req *client.GetWorkflowRequest) (*client.WorkflowResponse, error) {
 	id, err := uuid.Parse(req.Id)
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
@@ -87,16 +89,16 @@ func (s *workflowService) GetWorkflow(ctx context.Context, req *rpc.GetWorkflowR
 		return nil, twirp.NotFoundError("workflow not found")
 	}
 
-	return &rpc.WorkflowResponse{
-		Status: &rpc.ResponseStatus{
-			Code:    rpc.ResponseStatus_OK,
+	return &client.WorkflowResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
 			Message: "Workflow retrieved successfully",
 		},
 		Workflow: s.workflowToProto(wf),
 	}, nil
 }
 
-func (s *workflowService) UpdateWorkflow(ctx context.Context, req *rpc.UpdateWorkflowRequest) (*rpc.WorkflowResponse, error) {
+func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.UpdateWorkflowRequest) (*client.WorkflowResponse, error) {
 	id, err := uuid.Parse(req.Id)
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
@@ -126,25 +128,27 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *rpc.UpdateWor
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update workflow: %w", err))
 	}
 
-	s.publisher.Publish(workers.PublishOptions{
-		ApplicationID:   wf.ApplicationID.String(),
-		EntityType:      "workflow",
-		EntityID:        wf.ID.String(),
-		Operation:       "updated",
-		Data:            wf,
-		AutoAcknowledge: true,
-	})
+	if s.publisher != nil {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   wf.ApplicationID.String(),
+			EntityType:      "workflow",
+			EntityID:        wf.ID.String(),
+			Operation:       "updated",
+			Data:            wf,
+			AutoAcknowledge: true,
+		})
+	}
 
-	return &rpc.WorkflowResponse{
-		Status: &rpc.ResponseStatus{
-			Code:    rpc.ResponseStatus_OK,
+	return &client.WorkflowResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
 			Message: "Workflow updated successfully",
 		},
 		Workflow: s.workflowToProto(wf),
 	}, nil
 }
 
-func (s *workflowService) DeleteWorkflow(ctx context.Context, req *rpc.DeleteWorkflowRequest) (*rpc.ResponseStatus, error) {
+func (s *workflowService) DeleteWorkflow(ctx context.Context, req *client.DeleteWorkflowRequest) (*client.ResponseStatus, error) {
 	id, err := uuid.Parse(req.Id)
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
@@ -163,22 +167,24 @@ func (s *workflowService) DeleteWorkflow(ctx context.Context, req *rpc.DeleteWor
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to delete workflow: %w", err))
 	}
 
-	s.publisher.Publish(workers.PublishOptions{
-		ApplicationID:   applicationID,
-		EntityType:      "workflow",
-		EntityID:        workflowID,
-		Operation:       "deleted",
-		Data:            map[string]string{"id": workflowID},
-		AutoAcknowledge: true,
-	})
+	if s.publisher != nil {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   applicationID,
+			EntityType:      "workflow",
+			EntityID:        workflowID,
+			Operation:       "deleted",
+			Data:            map[string]string{"id": workflowID},
+			AutoAcknowledge: true,
+		})
+	}
 
-	return &rpc.ResponseStatus{
-		Code:    rpc.ResponseStatus_OK,
+	return &client.ResponseStatus{
+		Code:    client.ResponseStatus_OK,
 		Message: "Workflow deleted successfully",
 	}, nil
 }
 
-func (s *workflowService) ListWorkflows(ctx context.Context, req *rpc.ListWorkflowsRequest) (*rpc.ListWorkflowsResponse, error) {
+func (s *workflowService) ListWorkflows(ctx context.Context, req *client.ListWorkflowsRequest) (*client.ListWorkflowsResponse, error) {
 	var workflows []*models.WorkflowDefinition
 	var err error
 
@@ -201,14 +207,14 @@ func (s *workflowService) ListWorkflows(ctx context.Context, req *rpc.ListWorkfl
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list workflows: %w", err))
 	}
 
-	protoWorkflows := make([]*rpc.Workflow, len(workflows))
+	protoWorkflows := make([]*client.Workflow, len(workflows))
 	for i, wf := range workflows {
 		protoWorkflows[i] = s.workflowToProto(wf)
 	}
 
-	return &rpc.ListWorkflowsResponse{
-		Status: &rpc.ResponseStatus{
-			Code:    rpc.ResponseStatus_OK,
+	return &client.ListWorkflowsResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
 			Message: "Workflows retrieved successfully",
 		},
 		Workflows:  protoWorkflows,
@@ -218,7 +224,7 @@ func (s *workflowService) ListWorkflows(ctx context.Context, req *rpc.ListWorkfl
 	}, nil
 }
 
-func (s *workflowService) ExecuteWorkflow(ctx context.Context, req *rpc.ExecuteWorkflowRequest) (*rpc.ExecuteWorkflowResponse, error) {
+func (s *workflowService) ExecuteWorkflow(ctx context.Context, req *client.ExecuteWorkflowRequest) (*client.ExecuteWorkflowResponse, error) {
 	workflowID, err := uuid.Parse(req.WorkflowId)
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("workflow_id", "invalid UUID format")
@@ -269,18 +275,20 @@ func (s *workflowService) ExecuteWorkflow(ctx context.Context, req *rpc.ExecuteW
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create execution: %w", err))
 	}
 
-	s.publisher.Publish(workers.PublishOptions{
-		ApplicationID:   req.ApplicationId,
-		EntityType:      "workflow_execution",
-		EntityID:        exec.ID.String(),
-		Operation:       "created",
-		Data:            exec,
-		AutoAcknowledge: true,
-	})
+	if s.publisher != nil {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   req.ApplicationId,
+			EntityType:      "workflow_execution",
+			EntityID:        exec.ID.String(),
+			Operation:       "created",
+			Data:            exec,
+			AutoAcknowledge: true,
+		})
+	}
 
-	return &rpc.ExecuteWorkflowResponse{
-		Status: &rpc.ResponseStatus{
-			Code:    rpc.ResponseStatus_OK,
+	return &client.ExecuteWorkflowResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
 			Message: "Workflow execution started",
 		},
 		ExecutionId: exec.ID.String(),
@@ -288,7 +296,7 @@ func (s *workflowService) ExecuteWorkflow(ctx context.Context, req *rpc.ExecuteW
 	}, nil
 }
 
-func (s *workflowService) GetWorkflowExecution(ctx context.Context, req *rpc.GetWorkflowExecutionRequest) (*rpc.WorkflowExecutionResponse, error) {
+func (s *workflowService) GetWorkflowExecution(ctx context.Context, req *client.GetWorkflowExecutionRequest) (*client.WorkflowExecutionResponse, error) {
 	id, err := uuid.Parse(req.Id)
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
@@ -299,30 +307,30 @@ func (s *workflowService) GetWorkflowExecution(ctx context.Context, req *rpc.Get
 		return nil, twirp.NotFoundError("workflow execution not found")
 	}
 
-	return &rpc.WorkflowExecutionResponse{
-		Status: &rpc.ResponseStatus{
-			Code:    rpc.ResponseStatus_OK,
+	return &client.WorkflowExecutionResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
 			Message: "Workflow execution retrieved successfully",
 		},
 		Execution: s.executionToProto(exec),
 	}, nil
 }
 
-func (s *workflowService) ListWorkflowExecutions(ctx context.Context, req *rpc.ListWorkflowExecutionsRequest) (*rpc.ListWorkflowExecutionsResponse, error) {
+func (s *workflowService) ListWorkflowExecutions(ctx context.Context, req *client.ListWorkflowExecutionsRequest) (*client.ListWorkflowExecutionsResponse, error) {
 	// TODO: Implement filtering logic based on request parameters
 	executions, err := models.GetRecentWorkflowExecutions(s.executionRepo, int(req.PageSize))
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list executions: %w", err))
 	}
 
-	protoExecutions := make([]*rpc.WorkflowExecution, len(executions))
+	protoExecutions := make([]*client.WorkflowExecution, len(executions))
 	for i, exec := range executions {
 		protoExecutions[i] = s.executionToProto(&exec)
 	}
 
-	return &rpc.ListWorkflowExecutionsResponse{
-		Status: &rpc.ResponseStatus{
-			Code:    rpc.ResponseStatus_OK,
+	return &client.ListWorkflowExecutionsResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
 			Message: "Workflow executions retrieved successfully",
 		},
 		Executions: protoExecutions,
@@ -332,7 +340,7 @@ func (s *workflowService) ListWorkflowExecutions(ctx context.Context, req *rpc.L
 	}, nil
 }
 
-func (s *workflowService) CancelWorkflowExecution(ctx context.Context, req *rpc.CancelWorkflowExecutionRequest) (*rpc.ResponseStatus, error) {
+func (s *workflowService) CancelWorkflowExecution(ctx context.Context, req *client.CancelWorkflowExecutionRequest) (*client.ResponseStatus, error) {
 	id, err := uuid.Parse(req.Id)
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
@@ -348,26 +356,28 @@ func (s *workflowService) CancelWorkflowExecution(ctx context.Context, req *rpc.
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to cancel execution: %w", err))
 	}
 
-	s.publisher.Publish(workers.PublishOptions{
-		ApplicationID:   exec.ApplicationID.String(),
-		EntityType:      "workflow_execution",
-		EntityID:        exec.ID.String(),
-		Operation:       "cancelled",
-		Data:            exec,
-		AutoAcknowledge: true,
-	})
+	if s.publisher != nil {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   exec.ApplicationID.String(),
+			EntityType:      "workflow_execution",
+			EntityID:        exec.ID.String(),
+			Operation:       "cancelled",
+			Data:            exec,
+			AutoAcknowledge: true,
+		})
+	}
 
-	return &rpc.ResponseStatus{
-		Code:    rpc.ResponseStatus_OK,
+	return &client.ResponseStatus{
+		Code:    client.ResponseStatus_OK,
 		Message: "Workflow execution cancelled successfully",
 	}, nil
 }
 
 // Helper functions to convert between database models and protobuf messages
 
-func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *rpc.Workflow {
+func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *client.Workflow {
 	// Unmarshal steps from JSON
-	var steps []*rpc.WorkflowStep
+	var steps []*client.WorkflowStep
 	if wf.Steps != "" {
 		json.Unmarshal([]byte(wf.Steps), &steps)
 	}
@@ -382,7 +392,7 @@ func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *rpc.Wo
 	// These would need to be added to the model if needed
 	var createdAt, updatedAt *timestamppb.Timestamp
 
-	return &rpc.Workflow{
+	return &client.Workflow{
 		Id:            wf.ID.String(),
 		Name:          wf.Name,
 		ApplicationId: wf.ApplicationID.String(),
@@ -394,7 +404,7 @@ func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *rpc.Wo
 	}
 }
 
-func (s *workflowService) executionToProto(exec *models.WorkflowExecution) *rpc.WorkflowExecution {
+func (s *workflowService) executionToProto(exec *models.WorkflowExecution) *client.WorkflowExecution {
 	// Unmarshal inputs/outputs from JSON
 	var inputs, outputs map[string]string
 	if exec.Input != "" {
@@ -418,7 +428,7 @@ func (s *workflowService) executionToProto(exec *models.WorkflowExecution) *rpc.
 		updatedAt = timestamppb.New(exec.UpdatedAt)
 	}
 
-	return &rpc.WorkflowExecution{
+	return &client.WorkflowExecution{
 		Id:            exec.ID.String(),
 		WorkflowId:    exec.WorkflowID.String(),
 		Status:        string(exec.Status),
@@ -431,6 +441,6 @@ func (s *workflowService) executionToProto(exec *models.WorkflowExecution) *rpc.
 		CompletedAt:   completedAt,
 		CreatedAt:     createdAt,
 		UpdatedAt:     updatedAt,
-		Steps:         []*rpc.ExecutionStep{}, // TODO: Populate execution steps
+		Steps:         []*client.ExecutionStep{}, // TODO: Populate execution steps
 	}
 }

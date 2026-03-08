@@ -18,10 +18,13 @@ import (
 	"github.com/wolfymaster/woofx3/db/config"
 )
 
+type DatabaseAppConfig struct {
+	Logger *slog.Logger
+}
+
 type DatabaseApp struct {
 	*runtime.BaseApplication
 	logger          *slog.Logger
-	config          *config.Config
 	db              *gorm.DB
 	badgerDB        *badger.DB
 	casbin          *casbin.Enforcer
@@ -34,12 +37,43 @@ type DatabaseApp struct {
 	eventPublisher  *outbox.EventPublisher
 }
 
-func NewDatabaseApp(logger *slog.Logger, config *config.Config) *DatabaseApp {
+func NewDatabaseApp(cfg *DatabaseAppConfig) *DatabaseApp {
 	return &DatabaseApp{
 		BaseApplication: runtime.NewBaseApplication(),
-		logger:          logger,
-		config:          config,
+		logger:          cfg.Logger,
 	}
+}
+
+func (a *DatabaseApp) App() *types.App {
+	return &types.App{
+		BadgerDB:        a.badgerDB,
+		Casbin:          a.casbin,
+		Db:              a.db,
+		Logger:          a.logger,
+		NATSConn:        a.natsConn,
+		EventCache:      a.eventCache,
+		PublisherWorker: a.publisherWorker,
+		AckWorker:       a.ackWorker,
+		CleanupWorker:   a.cleanupWorker,
+		MetricsWorker:   a.metricsWorker,
+		EventPublisher:  a.eventPublisher,
+	}
+}
+
+func (a *DatabaseApp) BadgerDB() *badger.DB {
+	return a.badgerDB
+}
+
+func (a *DatabaseApp) Casbin() *casbin.Enforcer {
+	return a.casbin
+}
+
+func (a *DatabaseApp) Db() *gorm.DB {
+	return a.db
+}
+
+func (a *DatabaseApp) EventCache() *outbox.EventCache {
+	return a.eventCache
 }
 
 func (a *DatabaseApp) Init(ctx context.Context) error {
@@ -73,7 +107,7 @@ func (a *DatabaseApp) Init(ctx context.Context) error {
 	}
 
 	if workerSvc, ok := services["workers"]; ok {
-		if typedSvc, ok := workerSvc.(interface{ 
+		if typedSvc, ok := workerSvc.(interface {
 			EventCache() *outbox.EventCache
 			EventPublisher() *outbox.EventPublisher
 		}); ok {
@@ -95,6 +129,14 @@ func (a *DatabaseApp) Init(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (a *DatabaseApp) Logger() *slog.Logger {
+	return a.logger
+}
+
+func (a *DatabaseApp) NATSConn() *nats.Conn {
+	return a.natsConn
 }
 
 func (a *DatabaseApp) Run(ctx context.Context) error {
@@ -192,48 +234,4 @@ func (a *DatabaseApp) setupCustomEnforcerFunctions(enforcer *casbin.Enforcer) {
 		}
 		return false, nil
 	})
-}
-
-func (a *DatabaseApp) Config() *config.Config {
-	return a.config
-}
-
-func (a *DatabaseApp) Logger() *slog.Logger {
-	return a.logger
-}
-
-func (a *DatabaseApp) Db() *gorm.DB {
-	return a.db
-}
-
-func (a *DatabaseApp) BadgerDB() *badger.DB {
-	return a.badgerDB
-}
-
-func (a *DatabaseApp) Casbin() *casbin.Enforcer {
-	return a.casbin
-}
-
-func (a *DatabaseApp) NATSConn() *nats.Conn {
-	return a.natsConn
-}
-
-func (a *DatabaseApp) EventCache() *outbox.EventCache {
-	return a.eventCache
-}
-
-func (a *DatabaseApp) App() *types.App {
-	return &types.App{
-		BadgerDB:        a.badgerDB,
-		Casbin:          a.casbin,
-		Db:              a.db,
-		Logger:          a.logger,
-		NATSConn:        a.natsConn,
-		EventCache:      a.eventCache,
-		PublisherWorker: a.publisherWorker,
-		AckWorker:       a.ackWorker,
-		CleanupWorker:   a.cleanupWorker,
-		MetricsWorker:   a.metricsWorker,
-		EventPublisher:  a.eventPublisher,
-	}
 }

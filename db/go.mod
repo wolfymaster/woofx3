@@ -38,6 +38,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.3 // indirect
 	github.com/google/flatbuffers v1.12.1 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.7.2 // indirect
@@ -54,6 +55,8 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230126093431-47fa9a501578 // indirect
+	github.com/wolfymaster/woofx3/clients/barkloader v0.0.0 // indirect
+	github.com/wolfymaster/woofx3/clients/db v0.0.0 // indirect
 	github.com/wolfymaster/woofx3/common/cloudevents v0.0.0 // indirect
 	go.opencensus.io v0.22.5 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
@@ -73,6 +76,8 @@ require (
 )
 
 replace (
+	github.com/wolfymaster/woofx3/clients/barkloader => ../shared/clients/golang/barkloader
+	github.com/wolfymaster/woofx3/clients/db => ../shared/clients/golang/db
 	github.com/wolfymaster/woofx3/clients/nats => ../shared/clients/golang/nats
 	github.com/wolfymaster/woofx3/common/cloudevents => ../shared/common/golang/cloudevents
 	github.com/wolfymaster/woofx3/common/runtime => ../shared/common/golang/runtime

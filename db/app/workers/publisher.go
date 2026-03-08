@@ -3,6 +3,7 @@ package workers
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/wolfymaster/woofx3/db/database/models"
@@ -10,11 +11,15 @@ import (
 )
 
 type EventPublisher struct {
-	repo *repository.DbEventRepository
+	repo   *repository.DbEventRepository
+	logger *slog.Logger
 }
 
-func NewEventPublisher(repo *repository.DbEventRepository) *EventPublisher {
-	return &EventPublisher{repo: repo}
+func NewEventPublisher(repo *repository.DbEventRepository, logger *slog.Logger) *EventPublisher {
+	return &EventPublisher{
+		repo:   repo,
+		logger: logger,
+	}
 }
 
 type PublishOptions struct {
@@ -28,8 +33,19 @@ type PublishOptions struct {
 }
 
 func (p *EventPublisher) Publish(opts PublishOptions) error {
+	p.logger.Info("creating event for publishing",
+		"entity_type", opts.EntityType,
+		"entity_id", opts.EntityID,
+		"operation", opts.Operation,
+		"application_id", opts.ApplicationID,
+		"auto_acknowledge", opts.AutoAcknowledge)
+
 	payloadBytes, err := json.Marshal(opts.Data)
 	if err != nil {
+		p.logger.Error("failed to marshal event payload",
+			"entity_type", opts.EntityType,
+			"operation", opts.Operation,
+			"error", err)
 		return fmt.Errorf("marshal payload: %w", err)
 	}
 
@@ -64,7 +80,25 @@ func (p *EventPublisher) Publish(opts PublishOptions) error {
 		event.MaxAttempts = opts.MaxAttempts
 	}
 
-	return p.repo.Create(event)
+	p.logger.Info("storing event in database",
+		"subject", subject,
+		"event_type", eventType,
+		"payload_size", len(payloadBytes))
+
+	if err := p.repo.Create(event); err != nil {
+		p.logger.Error("failed to store event in database",
+			"entity_type", opts.EntityType,
+			"operation", opts.Operation,
+			"error", err)
+		return err
+	}
+
+	p.logger.Info("event stored successfully, worker will pick it up",
+		"entity_type", opts.EntityType,
+		"operation", opts.Operation,
+		"subject", subject)
+
+	return nil
 }
 
 func generateUUID() string {

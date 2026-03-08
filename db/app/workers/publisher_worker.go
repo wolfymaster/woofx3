@@ -51,10 +51,27 @@ func NewPublisherWorker(
 }
 
 func (w *PublisherWorker) Start() {
+	natsStatus := "disconnected"
+	if w.natsConn != nil && w.natsConn.IsConnected() {
+		natsStatus = "connected"
+	}
+
 	w.logger.Info("publisher worker starting",
 		"poll_interval", w.pollInterval,
 		"retry_interval", w.retryInterval,
+		"batch_size", w.batchSize,
+		"default_ttl", w.defaultTTL,
+		"nats_status", natsStatus,
 	)
+
+	if w.natsConn == nil {
+		w.logger.Error("NATS connection is nil - worker cannot publish events")
+		return
+	}
+
+	if !w.natsConn.IsConnected() {
+		w.logger.Warn("NATS connection is not connected - events may fail to publish")
+	}
 
 	go w.pollDatabase()
 	go w.pollCache()
@@ -84,18 +101,31 @@ func (w *PublisherWorker) pollDatabase() {
 }
 
 func (w *PublisherWorker) processNewEvents() error {
+	w.logger.Debug("polling database for pending events")
+
 	events, err := w.repo.FetchPending(w.ctx, w.batchSize)
 	if err != nil {
 		return fmt.Errorf("fetch pending events: %w", err)
 	}
 
 	if len(events) == 0 {
+		w.logger.Debug("no pending events found")
 		return nil
 	}
 
-	w.logger.Debug("processing new events", "count", len(events))
+	w.logger.Info("found pending events to publish",
+		"count", len(events),
+		"batch_size", w.batchSize)
 
 	for _, event := range events {
+		w.logger.Info("processing event",
+			"event_id", event.ID,
+			"event_type", event.EventType,
+			"entity_type", event.EntityType,
+			"operation", event.Operation,
+			"subject", event.NATSSubject,
+			"auto_ack", event.AutoAcknowledge)
+
 		if err := w.publishEvent(event); err != nil {
 			w.logger.Error("failed to publish event",
 				"event_id", event.ID,
@@ -109,6 +139,10 @@ func (w *PublisherWorker) processNewEvents() error {
 }
 
 func (w *PublisherWorker) publishEvent(event *models.WorkerEvent) error {
+	w.logger.Debug("preparing cloudevent",
+		"event_id", event.ID,
+		"payload_size", len(event.Payload))
+
 	ce := cloudevents.NewEvent()
 	ce.SetID(event.ID)
 	ce.SetSource("db-proxy")
@@ -126,18 +160,51 @@ func (w *PublisherWorker) publishEvent(event *models.WorkerEvent) error {
 
 	var payloadData interface{}
 	if err := json.Unmarshal(event.Payload, &payloadData); err != nil {
+		w.logger.Error("failed to unmarshal payload",
+			"event_id", event.ID,
+			"error", err)
 		return fmt.Errorf("unmarshal payload: %w", err)
 	}
 	ce.SetData(cloudevents.ApplicationJSON, payloadData)
 
 	ceBytes, err := json.Marshal(ce)
 	if err != nil {
+		w.logger.Error("failed to marshal cloudevent",
+			"event_id", event.ID,
+			"error", err)
 		return fmt.Errorf("marshal cloudevent: %w", err)
 	}
 
+	if w.natsConn == nil {
+		w.logger.Error("NATS connection is nil, cannot publish event",
+			"event_id", event.ID,
+			"subject", event.NATSSubject)
+		return fmt.Errorf("nats connection is nil")
+	}
+
+	if !w.natsConn.IsConnected() {
+		w.logger.Error("NATS connection is not connected, cannot publish event",
+			"event_id", event.ID,
+			"subject", event.NATSSubject)
+		return fmt.Errorf("nats connection not connected")
+	}
+
+	w.logger.Info("publishing event to NATS",
+		"event_id", event.ID,
+		"subject", event.NATSSubject,
+		"cloudevent_size", len(ceBytes))
+
 	if err := w.natsConn.Publish(event.NATSSubject, ceBytes); err != nil {
+		w.logger.Error("NATS publish failed",
+			"event_id", event.ID,
+			"subject", event.NATSSubject,
+			"error", err)
 		return fmt.Errorf("nats publish: %w", err)
 	}
+
+	w.logger.Info("successfully published to NATS",
+		"event_id", event.ID,
+		"subject", event.NATSSubject)
 
 	if event.AutoAcknowledge {
 		if err := w.repo.MarkPublished(event.ID); err != nil {
@@ -148,7 +215,7 @@ func (w *PublisherWorker) publishEvent(event *models.WorkerEvent) error {
 			return err
 		}
 
-		w.logger.Debug("event published (auto-ack)",
+		w.logger.Info("event published and marked complete (auto-ack)",
 			"event_id", event.ID,
 			"event_type", event.EventType,
 			"subject", event.NATSSubject,
@@ -164,7 +231,7 @@ func (w *PublisherWorker) publishEvent(event *models.WorkerEvent) error {
 
 		w.cache.Add(event, w.defaultTTL)
 
-		w.logger.Debug("event published (waiting for ack)",
+		w.logger.Info("event published, waiting for acknowledgment",
 			"event_id", event.ID,
 			"event_type", event.EventType,
 			"subject", event.NATSSubject,

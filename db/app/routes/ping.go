@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/twitchtv/twirp"
-	rpc "github.com/wolfymaster/woofx3/db/app/server"
+	client "github.com/wolfymaster/woofx3/clients/db"
 	svc "github.com/wolfymaster/woofx3/db/app/services"
 )
 
@@ -12,10 +12,10 @@ import (
 // This route does not require authentication and is used to verify the db proxy is accessible
 func PingRoutes(mux *http.ServeMux) {
 	commonService := svc.NewCommonService()
-	commonHandler := rpc.NewCommonServiceServer(
+	commonHandler := client.NewCommonServiceServer(
 		commonService,
 		twirp.WithServerHooks(twirp.ChainHooks(
-			// No casbin middleware - ping is a public health check endpoint
+		// No casbin middleware - ping is a public health check endpoint
 		)),
 	)
 	mux.Handle(commonHandler.PathPrefix(), commonHandler)

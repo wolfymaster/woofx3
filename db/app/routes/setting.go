@@ -3,7 +3,7 @@ package routes
 import (
 	"net/http"
 
-	rpc "github.com/wolfymaster/woofx3/db/app/server"
+	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/services"
 	"github.com/wolfymaster/woofx3/db/app/types"
 	"github.com/wolfymaster/woofx3/db/database/repository"
@@ -12,6 +12,6 @@ import (
 func SettingsRoutes(mux *http.ServeMux, app *types.App) {
 	settingsRepository := repository.NewSettingRepository(app.Db)
 	settingService := services.NewSettingService(settingsRepository)
-	settingsHandler := rpc.NewSettingServiceServer(settingService)
+	settingsHandler := client.NewSettingServiceServer(settingService)
 	mux.Handle(settingsHandler.PathPrefix(), settingsHandler)
 }

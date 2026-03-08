@@ -1,62 +1,15 @@
 package config
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
-
-	"github.com/wolfymaster/woofx3/db/app/workers"
+	"github.com/wolfymaster/woofx3/clients/nats"
 )
 
-type Config struct {
-	DatabaseURL string         `json:"databaseUrl"`
-	BadgerPath  string         `json:"badgerPath"`
-	NATSURL     string         `json:"natsUrl"`
-	HTTPPort    string         `json:"httpPort"`
-	Workers     workers.Config `json:"workers"`
-}
-
-func LoadConfiguration() (*Config, error) {
-	config := &Config{
-		BadgerPath: "badger",
-		HTTPPort:   "8080",
-		Workers:    workers.DefaultConfig(),
-	}
-
-	configFile := "conf.json"
-	if _, err := os.Stat(configFile); os.IsNotExist(err) {
-		configFile = filepath.Join("..", "conf.json")
-		if _, err := os.Stat(configFile); os.IsNotExist(err) {
-			configFile = ""
-		}
-	}
-
-	if configFile != "" {
-		data, err := os.ReadFile(configFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read config file %s: %w", configFile, err)
-		}
-
-		if err := json.Unmarshal(data, config); err != nil {
-			return nil, fmt.Errorf("failed to parse config file %s: %w", configFile, err)
-		}
-	}
-
-	if envVal := os.Getenv("DATABASE_URL"); envVal != "" {
-		config.DatabaseURL = envVal
-	}
-	if envVal := os.Getenv("BADGER_PATH"); envVal != "" {
-		config.BadgerPath = envVal
-	}
-	if envVal := os.Getenv("NATS_URL"); envVal != "" {
-		config.NATSURL = envVal
-	}
-	if envVal := os.Getenv("DATABASE_PROXY_PORT"); envVal != "" {
-		config.HTTPPort = envVal
-	}
-
-	return config, nil
+type DatabaseEnvConfig struct {
+	DatabaseURL       string `env:"WOOFX3_DATABASE_URL,required"`
+	BadgerPath        string `env:"WOOFX3_BADGER_PATH,required"`
+	DatabaseProxyPort string `env:"WOOFX3_DATABASE_PROXY_PORT,default=8080"`
+	LogLevel          string `env:"WOOFX3_LOG_LEVEL"`
+	nats.Config
 }
 
 func GetCasbinModelString() (string, error) {
