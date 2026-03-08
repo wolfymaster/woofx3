@@ -42,6 +42,9 @@ crash.*.log
 .terraformrc
 terraform.rc
 
+# rust
+**/target/*
+
 # Build dist
 build/dist
 
@@ -53,6 +56,9 @@ pids
 
 # workflow
 workflow/workflow
+
+# woofx3 configuration
+.woofx3.json
 
 # wolfy tmp cleanup
 ai/*

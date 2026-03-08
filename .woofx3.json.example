@@ -1,0 +1,12 @@
+{
+  "barkloaderWsUrl": "",
+  "databaseProxyUrl": "",
+
+  "rootPath": "",
+
+  "messageBusHost": "",
+  "messageBusWebSocketPort": 4225,
+  "messageBusUrl": "ws://localhost:4225",
+  "messageBusJwt": "",
+  "messageBusNKey": ""
+}
