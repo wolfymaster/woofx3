@@ -1,24 +1,37 @@
 use lib_repository::Repository;
+use log::warn;
 
 use super::module_file::ModuleFile;
-use super::module_manifest::{ModuleCommand, ModuleFunction, ModuleStorage, ModuleWorkflow};
+use super::module_manifest::{ModuleCommand, ModuleFunction, ModuleWorkflow, ModuleWorkflowTrigger};
 use super::module_manifest::ModuleManifest;
- 
+
 pub enum NodeKind {
     Command(ModuleCommand),
     Function(ModuleFunction),
-    Storage(ModuleStorage),
+    // Storage(ModuleStorage),
     Workflow(ModuleWorkflow),
+    WorkflowTrigger(ModuleWorkflowTrigger),
 }
 
 impl NodeKind {
-    pub async fn process<R>(&self, files: &Vec<ModuleFile>, repository: &R)
+    // TODO: This should receive the &app instance
+    pub async fn process<R>(&self, module_name: &str, files: &Vec<ModuleFile>, repository: &R, db_proxy_url: Option<&str>)
     where R: Repository {
         let _result = match self {
-            NodeKind::Command(cmd) => cmd.process(),
-            NodeKind::Function(func) => func.process(files, repository).await,
-            NodeKind::Storage(storage) => storage.process(),
-            NodeKind::Workflow(workflow) => workflow.process(),
+            // TODO: pass &app.dbClient
+            NodeKind::Command(cmd) => cmd.process().await,
+            // TODO: pass &app.repository
+            NodeKind::Function(func) => func.process(module_name, files, repository).await,
+            // NodeKind::Storage(storage) => storage.process(),
+            NodeKind::Workflow(workflow) => workflow.process().await,
+            NodeKind::WorkflowTrigger(trigger) => {
+                if let Some(url) = db_proxy_url {
+                    trigger.process(module_name, url).await
+                } else {
+                    warn!("DB proxy not configured, skipping trigger registration for {}", trigger.name);
+                    Ok(())
+                }
+            },
         };
     }
 }
@@ -42,13 +55,17 @@ impl ModulePlan {
         };
 
         // add items to plan in reverse order (LIFO)
-        // workflows -> commands -> storage -> functions
+        // workflows -> triggers -> commands -> storage -> functions
         let mut instance = Self { head: None };
 
         for workflow in manifest.workflows {
-            instance.push(NodeKind::Workflow(workflow))    
+            instance.push(NodeKind::Workflow(workflow))
         }
-        
+
+        for trigger in manifest.workflow_triggers {
+            instance.push(NodeKind::WorkflowTrigger(trigger))
+        }
+
         for command in manifest.commands {
             instance.push(NodeKind::Command(command))
         }
@@ -56,8 +73,8 @@ impl ModulePlan {
         for function in manifest.functions {
             instance.push(NodeKind::Function(function))
         }
-        
-        instance.push(NodeKind::Storage(manifest.storage));
+
+        // instance.push(NodeKind::Storage(manifest.storage));
         
         instance
     }

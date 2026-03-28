@@ -10,17 +10,25 @@ export default class TwitchChatClientService implements Service<ChatClient> {
 
   constructor(client: ChatClient) {
     this.healthcheck = false;
-    this.name = 'twitchchat';
-    this.type = 'twitchchat';
+    this.name = "twitchchat";
+    this.type = "twitchchat";
     this.client = client;
     this.connected = false;
   }
 
   async connect(): Promise<void> {
+    if (this.connected) {
+      return;
+    }
     this.client.connect();
+    this.connected = true;
   }
 
   async disconnect(): Promise<void> {
+    if (!this.connected) {
+      return;
+    }
     this.client.quit();
+    this.connected = false;
   }
 }

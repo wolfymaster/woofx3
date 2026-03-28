@@ -3,12 +3,11 @@
     "start": "bun run index.ts"
   },
   "dependencies": {
-    "@nats-io/transport-node": "^3.0.2",
+    "@woofx3/messagebus": "file:../shared/clients/typescript/nats",
     "@types/bun": "^1.2.20",
     "@types/node": "^24.3.0",
     "chalk": "^5.6.0",
     "dotenv": "^16.5.0",
-    "nats": "^2.29.3",
     "wasmoon": "^1.16.0"
   }
 }

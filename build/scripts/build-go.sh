@@ -6,6 +6,8 @@ shift
 TARGETS=("$@")
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=resolve-build-paths.sh
+source "$SCRIPT_DIR/resolve-build-paths.sh"
 
 log_info() {
     echo -e "\033[0;32m[GO]\033[0m $1"
@@ -21,11 +23,7 @@ if ! command -v go &> /dev/null; then
     exit 1
 fi
 
-# Get output directory
-OUTPUT_DIR=$(jq -r '.build.output_dir' "$CONFIG_FILE")
-if [[ "$OUTPUT_DIR" == "null" ]]; then
-    OUTPUT_DIR="./dist"
-fi
+woofx3_set_output_dir "$CONFIG_FILE"
 
 # Get go services from config
 readarray -t GO_SERVICES < <(jq -c '.services[] | select(.type == "go" and .enabled == true)' "$CONFIG_FILE")

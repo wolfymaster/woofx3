@@ -11,7 +11,7 @@ import (
 	"github.com/wolfymaster/woofx3/wooflow/internal/core"
 )
 
-// EventRepository implements core.EventRepository using SQLite
+// EventRepository implements types.EventRepository using SQLite
 type EventRepository struct {
 	db   *sql.DB
 	mu   sync.RWMutex

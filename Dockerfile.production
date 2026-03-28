@@ -1,0 +1,67 @@
+# syntax=docker/dockerfile:1
+#
+# Build:  docker build -f Dockerfile.production -t woofx3:production .
+# Run:    docker run --rm -v /path/to/.woofx3.json:/app/.woofx3.json:ro woofx3:production
+#         (add volume mounts for badgerPath / data dirs as needed)
+#
+# Pin Bun with: docker build --build-arg BUN_VERSION=1.1.34 ...
+
+ARG BUN_VERSION=1.1.34
+
+FROM oven/bun:${BUN_VERSION} AS bun-toolchain
+
+FROM golang:1.24-bookworm AS builder
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        git \
+        jq \
+        pkg-config \
+        protobuf-compiler \
+        libprotobuf-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# prost-build / prost-wkt-build need `protoc` plus well-known types (google/protobuf/*.proto)
+ENV PROTOC_INCLUDE=/usr/include
+
+COPY --from=bun-toolchain /usr/local/bin/bun /usr/local/bin/bun
+RUN ln -sf /usr/local/bin/bun /usr/local/bin/bunx
+ENV PATH="/usr/local/bin:/root/.cargo/bin:${PATH}"
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+
+WORKDIR /src
+
+COPY . .
+
+ENV PACKAGE_SKIP_ARCHIVE=1
+ENV RUST_LINUX_TARGET=x86_64-unknown-linux-gnu
+
+WORKDIR /src/build
+RUN chmod +x main.sh scripts/*.sh \
+    && ./main.sh --target linux-amd64 \
+    && ls -la /src/build/dist/linux-amd64/ \
+    && test -f /src/build/dist/linux-amd64/orchestrator \
+    && test -x /src/build/dist/linux-amd64/orchestrator
+
+# bookworm-slim: same glibc family as the builder; full dynamic linker paths for mixed static/dynamic binaries.
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 65532 nonroot \
+    && useradd --system --uid 65532 --gid nonroot --home /nonexistent --shell /usr/sbin/nologin nonroot
+
+COPY --from=builder --chown=65532:65532 /src/build/dist/linux-amd64/ /app/
+
+WORKDIR /app
+ENV WOOFX3_ROOT=/app
+
+USER 65532:65532
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["/app/orchestrator"]

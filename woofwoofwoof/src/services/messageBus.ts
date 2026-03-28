@@ -10,18 +10,24 @@ export default class MessageBusService implements Service<NATSClient> {
 
   constructor(client: NATSClient) {
     this.healthcheck = false;
-    this.name = 'messageBus';
-    this.type = 'nats';
+    this.name = "messageBus";
+    this.type = "nats";
     this.client = client;
     this.connected = false;
   }
 
   async connect(): Promise<void> {
+    if (this.connected) {
+      return;
+    }
     await this.client.connect();
     this.connected = true;
   }
-  
-  async disconnect(): Promise<void> { 
+
+  async disconnect(): Promise<void> {
+    if (!this.connected) {
+      return;
+    }
     await this.client.close();
     this.connected = false;
   }

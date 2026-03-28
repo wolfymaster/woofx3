@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package common;
+
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+message ResponseStatus {
+  enum Code {
+    OK = 0;
+    INVALID_ARGUMENT = 1;
+    NOT_FOUND = 2;
+    PERMISSION_DENIED = 3;
+    INTERNAL = 4;
+  }
+  
+  Code code = 1;
+  string message = 2;
+}
+
+// PingRequest is an empty request for the ping endpoint
+message PingRequest {}
+
+// PingResponse returns a success status indicating the service is accessible
+message PingResponse {
+  ResponseStatus status = 1;
+}
+
+// CommonService provides common utility endpoints
+service CommonService {
+  // Ping checks if the service is accessible and returns a success response
+  rpc Ping(PingRequest) returns (PingResponse);
+}

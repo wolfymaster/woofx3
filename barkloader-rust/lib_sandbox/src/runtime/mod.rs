@@ -1,11 +1,16 @@
 use crate::error::Error;
+use crate::host::InvocationContext;
 use serde_json::Value;
 
 pub mod echo;
 pub mod lua;
 pub mod quickjs;
 
-pub trait RuntimeAdapter {
-    fn execute(&self, code: &str, args: Value) -> Result<Value, Error>;
-    fn create_sandbox(&self) -> Result<(), Error>;
+pub trait RuntimeAdapter: Send {
+    fn execute(
+        &self,
+        code: &str,
+        entry_point: &str,
+        invocation: &InvocationContext,
+    ) -> Result<Value, Error>;
 }

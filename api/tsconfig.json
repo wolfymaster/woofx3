@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "paths": {
+      "@woofx3/common/*": ["../shared/common/typescript/*"],
+      "@woofx3/*": ["../shared/clients/typescript/*"]
+    },
+    "strict": true,
+    "target": "es2022",
+    "types": ["bun-types"]
+  }
+}

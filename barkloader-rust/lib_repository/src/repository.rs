@@ -3,12 +3,12 @@ use std::path::{Path};
 use async_trait::async_trait;
 use enum_dispatch::enum_dispatch;
 use crate::repositories::file::{FileRepository, FileRepositoryConfig};
-use crate::repositories::s3::{S3Repository, S3RepositoryConfig};
+// use crate::repositories::s3::{S3Repository, S3RepositoryConfig};
 
 #[derive(Debug, Clone)]
 pub enum RepositoryConfig {
     File(FileRepositoryConfig),
-    S3(S3RepositoryConfig),
+    // S3(S3RepositoryConfig),
 }
 
  #[allow(dead_code)]
@@ -30,6 +30,9 @@ struct Module {
 #[enum_dispatch(RepositoryImpl)]
 pub trait Repository {
     fn setup(&self) -> Result<()>;
+    fn read_file(&self, key: &str) -> Result<Vec<u8>>;
+    fn delete_prefix(&self, prefix: &str) -> Result<()>;
+    fn list_prefix(&self, prefix: &str) -> Result<Vec<String>>;
     async fn list<P: AsRef<Path> + Send>(&self, path: P) -> Result<()>;
     async fn create<I: IntoIterator<Item = CreateFileRequest> + Send>(&self, req: I, failed: &mut Vec<String>) -> Result<()>;
 }
@@ -38,7 +41,7 @@ pub trait Repository {
 #[derive(Clone)]
 pub enum RepositoryImpl {
     File(FileRepository),
-    S3(S3Repository),
+    // S3(S3Repository),
 }
 
 pub struct RepositoryFactory {}
@@ -48,7 +51,7 @@ impl RepositoryFactory {
             RepositoryConfig::File(file_config) => RepositoryImpl::File(FileRepository::new(FileRepositoryConfig {
                 destination: file_config.destination.clone(),
             })),
-            RepositoryConfig::S3(_s3_config) => RepositoryImpl::S3(S3Repository::new(S3RepositoryConfig {}).await),
+            // RepositoryConfig::S3(_s3_config) => RepositoryImpl::S3(S3Repository::new(S3RepositoryConfig {}).await),
         }
     }
 }

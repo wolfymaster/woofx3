@@ -1,16 +1,19 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use anyhow::Result;
 
-use lib_repository::{RepositoryImpl};
-use lib_sandbox::SandboxFactory;
+use lib_repository::RepositoryImpl;
+use lib_sandbox::{ModuleRegistry, SandboxFactory};
 
 use crate::util;
 
- #[allow(dead_code)]
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct AppContext {
     pub repository: RepositoryImpl,
     pub sandbox: SandboxFactory,
+    pub registry: Arc<ModuleRegistry>,
+    pub db_proxy_url: Option<String>,
 }
 
 pub struct SafeTempDir {

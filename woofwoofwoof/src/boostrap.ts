@@ -1,53 +1,39 @@
 import BarkloaderClient from "@woofx3/barkloader";
-import type { MainConfigurationFile } from "@woofx3/common/types";
-import { mergeConfigWithEnvironment, readConfigFile } from "@woofx3/common/utils";
 import MessageBus from "@woofx3/nats";
 import type NATSClient from "@woofx3/nats/src/client";
 import TwitchClient, { type ChatClient } from "@woofx3/twitch";
+import type { WoofEnvConfig } from "./config";
 
-export default async function Bootstrap(): Promise<AppConfig> {
-  // read configuration
-  const configurationFileContents = readConfigFile();
-  // merge config with environment
-  const configuration = mergeConfigWithEnvironment(configurationFileContents, process.env);
+export default async function Bootstrap(config: WoofEnvConfig): Promise<AppConfig> {
+  const channel = config.woofx3TwitchChannelName;
 
-  // twitch channel
-  const channel = configuration.twitchChannelName;
-  if (!channel) {
-    throw new Error("twitch channel missing. please set environment variable: TWITCH_CHANNEL_NAME.");
-  }
-
-  // connect to NATS
   const bus = await MessageBus.createMessageBus({
     name: "woofwooofwoof",
-    url: configuration.messageBusUrl,
-    jwt: configuration.messageBusJwt,
-    nkeySeed: configuration.messageBusNKey,
+    url: config.woofx3MessagebusUrl,
+    jwt: config.woofx3MessagebusJwt,
+    nkeySeed: config.woofx3MessagebusNKey,
   });
 
-  // Get Twitch Client
   const twitchClient = new TwitchClient({
-    applicationId: process.env.APPLICATION_ID || "",
+    applicationId: config.applicationId,
     channel,
-    databaseURL: process.env.DATABASE_PROXY_URL || "",
+    databaseURL: config.woofx3DatabaseProxyUrl,
   });
 
   await twitchClient.init({
-    clientId: process.env.TWITCH_WOLFY_CLIENT_ID || "",
-    clientSecret: process.env.TWITCH_WOLFY_CLIENT_SECRET || "",
-    redirectUri: process.env.TWITCH_REDIRECT_URL || "http://localhost",
+    clientId: config.woofx3TwitchClientId,
+    clientSecret: config.woofx3TwitchClientSecret,
+    redirectUri: config.twitchRedirectUrl,
   });
 
-  // create Twitch chat client
   const chatClient = twitchClient.ChatClient();
 
-  // Barkloader websocket
   const barkloaderClient = new BarkloaderClient({
-    wsUrl: process.env.WOOFX3_BARKLOADER_WS_URL || "",
-    onOpen: (event) => {
+    wsUrl: config.woofx3BarkloaderWsUrl,
+    onOpen: () => {
       console.log("socket opened");
     },
-    onClose: (event) => {
+    onClose: () => {
       console.log("socket closed");
     },
     onError: (event) => {
@@ -57,26 +43,24 @@ export default async function Bootstrap(): Promise<AppConfig> {
     onReconnectAttempt: () => {
       console.log("disconnecting.. attempting to reconnect");
     },
-    reconnectTimeout: 5000, // 5 seconds
+    reconnectTimeout: 5000,
   });
 
   return {
     channelName: channel,
-    config: configuration,
     services: {
       barkloaderClient,
       chatClient,
       messageBus: bus,
-    }
+    },
   };
 }
 
 export type AppConfig = {
   channelName: string;
-  config: MainConfigurationFile;
   services: {
     barkloaderClient: BarkloaderClient;
     chatClient: ChatClient;
-    messageBus: NATSClient;  
-  }
+    messageBus: NATSClient;
+  };
 };

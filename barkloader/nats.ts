@@ -1,20 +1,32 @@
-import dotenv from 'dotenv';
-import { jwtAuthenticator, wsconnect, type NatsConnection } from "@nats-io/transport-node";
+import { createMessageBus } from "@woofx3/messagebus";
 
-dotenv.config();
+const env = process.env;
 
-let client: NatsConnection; 
+function getNATSConfig() {
+  const url = env.WOOFX3_MESSAGEBUS_URL ?? env.NATS_URL ?? "tls://connect.ngs.global";
+  const jwt = env.WOOFX3_MESSAGEBUS_JWT ?? env.NATS_USER_JWT ?? "";
+  const nkeySeed = env.WOOFX3_MESSAGEBUS_NKEY ?? env.NATS_NKEY_SEED ?? "";
 
-export default async function NatsClient() {
-    if(client) {
-        return client;
-    }
-    const authenticator = jwtAuthenticator(process.env.NATS_USER_JWT!, Buffer.from(process.env.NATS_NKEY_SEED!));
-    client = await wsconnect({ name: 'BarkLoader', servers: "tls://connect.ngs.global", authenticator });
-    return client;
+  console.log(url, jwt, nkeySeed);
+
+  return {
+    name: "BarkLoader",
+    url,
+    ...(jwt && nkeySeed && { jwt, nkeySeed }),
+  };
 }
 
-export async function natsMessageHandler<T>(msg: Msg, cb) {
-    const { command, args } = msg.json<T>();
-    cb(command, args);
+let client: Awaited<ReturnType<typeof createMessageBus>> | null = null;
+
+export default async function getNatsClient() {
+  if (client) {
+    return client;
+  }
+  client = await createMessageBus(getNATSConfig(), console);
+  await client.connect();
+  return client;
+}
+
+export function encodePublish(data: unknown): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify(data));
 }

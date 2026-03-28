@@ -1,6 +1,16 @@
 {
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "biomejs.biome",
+  "editor.codeActionsOnSave": {
+    "source.organizeImports.biome": "explicit"
+  },
   "go.alternateTools": {
     "go": "/home/wolfy/code/wolfymaster/woofx3/.devbox/nix/profile/default/bin/go",
-    "gopls": "/home/wolfy/code/wolfymaster/woofx3/.devbox/nix/profile/default/bin/gopls"
+    "gopls": "/home/wolfy/code/wolfymaster/woofx3/.devbox/nix/profile/default/bin/gopls",
+    "goroot": "/home/wolfy/code/wolfymaster/woofx3/.devbox/nix/profile/default/bin"
+  },
+  "workbench.colorCustomizations": {
+    "statusBar.background": "#000000",
+    "statusBar.foreground": "#EC6758"
   }
 }

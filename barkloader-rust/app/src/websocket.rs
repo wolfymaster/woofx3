@@ -37,7 +37,8 @@ impl WebSocketSession {
                                         .as_str()
                                         .unwrap_or("")
                                         .to_string(),
-                                    args: message.data["args"].clone(),
+                                    event: message.data["event"].clone(),
+                                    user: message.data.get("user").cloned(),
                                 };
                                 let result = self.sandbox.invoke(request);
                                 match result {

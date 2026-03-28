@@ -11,7 +11,6 @@ import (
 	"github.com/wolfymaster/woofx3/wooflow/internal/core"
 )
 
-// WorkflowDefinitionRepository implements core.WorkflowDefinitionRepository using SQLite
 type WorkflowDefinitionRepository struct {
 	db   *sql.DB
 	mu   sync.RWMutex

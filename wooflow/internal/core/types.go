@@ -1,5 +1,10 @@
 package core
 
+import (
+	"context"
+	"log"
+)
+
 // Event represents a workflow event
 type Event struct {
 	ID      string         `json:"id,omitempty"`
@@ -64,3 +69,85 @@ type WorkflowDefinitionFilter struct {
 	TriggerEvent string `json:"triggerEvent,omitempty"`
 	Limit        int    `json:"limit,omitempty"`
 }
+
+// ActivityFunc defines the signature for workflow activities
+type ActivityFunc func(ctx context.Context, params map[string]any) (ExecuteActionResult, error)
+
+type WorkflowEngine interface {
+	// Start initializes the workflow engine
+	Start(ctx context.Context) error
+
+	// Stop shuts down the workflow engine gracefully
+	Stop() error
+
+	// HandleEvent processes an event and triggers/signals workflows
+	HandleEvent(ctx context.Context, event *Event) error
+
+	// RegisterActivity registers a custom activity with the engine
+	RegisterActivity(name string, activity ActivityFunc) error
+
+	// GetState returns the current state of the workflow engine
+	GetState() any
+
+	// IsHealthy returns true if the engine is running and healthy
+	IsHealthy() bool
+}
+
+// WorkflowStatus represents the current state of a workflow instance
+type WorkflowStatus struct {
+	ID         string                 `json:"id"`
+	Definition string                 `json:"definition"`
+	Status     string                 `json:"status"`
+	Input      map[string]interface{} `json:"input"`
+	Output     map[string]interface{} `json:"output,omitempty"`
+	Error      string                 `json:"error,omitempty"`
+	StartedAt  int64                  `json:"started_at"`
+	UpdatedAt  int64                  `json:"updated_at"`
+}
+
+// ExecuteActionResult represents the result of executing an action
+type ExecuteActionResult struct {
+	Success bool           `json:"success"`
+	Exports map[string]any `json:"exports,omitempty"`
+	Error   string         `json:"error,omitempty"`
+}
+
+// WorkflowEngineConfig holds configuration for workflow engines
+type WorkflowEngineConfig struct {
+	// Engine type: "temporal" or "local"
+	Engine string
+
+	// Temporal-specific configuration
+	Temporal TemporalConfig
+
+	// Local engine configuration
+	Local LocalConfig
+
+	// Common configuration
+	TaskQueue    string
+	Logger       log.Logger
+	EventRepo    EventRepository
+	WorkflowRepo WorkflowDefinitionRepository
+}
+
+// TemporalConfig holds Temporal-specific configuration
+type TemporalConfig struct {
+	Host      string
+	Namespace string
+}
+
+// LocalConfig holds local engine configuration
+type LocalConfig struct {
+	MaxConcurrentWorkflows int
+	WorkflowTimeout        int // seconds
+}
+
+// Backend represents the workflow engine backend type
+type Backend string
+
+const (
+	// BackendTemporal uses Temporal.io for workflow orchestration
+	BackendTemporal Backend = "temporal"
+	// BackendLocal uses local in-memory workflow execution
+	BackendLocal Backend = "local"
+)

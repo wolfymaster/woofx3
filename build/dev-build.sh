@@ -1,0 +1,1 @@
+RUST_LINUX_TARGET=x86_64-unknown-linux-gnu ./main.sh --target linux-amd64

@@ -7,9 +7,18 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/wolfymaster/woofx3/wooflow/internal/core"
+	"github.com/wolfymaster/woofx3/wooflow/internal/services"
 )
 
-func CreateWorkflowDefinition(service *core.WorkflowService, logger *slog.Logger) http.HandlerFunc {
+func setupRoutes(app *App, router *mux.Router) {
+	router.HandleFunc("/v1/workflow-definitions", CreateWorkflowDefinition(app.WorkflowService, app.Logger)).Methods("POST")
+	router.HandleFunc("/v1/workflow-definitions/{id}", GetWorkflowDefinition(app.WorkflowService)).Methods("GET")
+	router.HandleFunc("/v1/workflow-definitions/{id}", UpdateWorkflowDefinition(app.WorkflowService)).Methods("PUT")
+	router.HandleFunc("/v1/workflow-definitions/{id}", DeleteWorkflowDefinition(app.WorkflowService)).Methods("DELETE")
+	router.HandleFunc("/v1/workflow-definitions", ListWorkflowDefinitions(app.WorkflowService)).Methods("GET")
+}
+
+func CreateWorkflowDefinition(service *services.WorkflowService, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var def core.WorkflowDefinition
 		if err := json.NewDecoder(r.Body).Decode(&def); err != nil {
@@ -28,7 +37,7 @@ func CreateWorkflowDefinition(service *core.WorkflowService, logger *slog.Logger
 	}
 }
 
-func GetWorkflowDefinition(service *core.WorkflowService) http.HandlerFunc {
+func GetWorkflowDefinition(service *services.WorkflowService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		id := vars["id"]
@@ -44,7 +53,7 @@ func GetWorkflowDefinition(service *core.WorkflowService) http.HandlerFunc {
 	}
 }
 
-func UpdateWorkflowDefinition(service *core.WorkflowService) http.HandlerFunc {
+func UpdateWorkflowDefinition(service *services.WorkflowService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		id := vars["id"]
@@ -66,7 +75,7 @@ func UpdateWorkflowDefinition(service *core.WorkflowService) http.HandlerFunc {
 	}
 }
 
-func DeleteWorkflowDefinition(service *core.WorkflowService) http.HandlerFunc {
+func DeleteWorkflowDefinition(service *services.WorkflowService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		id := vars["id"]
@@ -80,7 +89,7 @@ func DeleteWorkflowDefinition(service *core.WorkflowService) http.HandlerFunc {
 	}
 }
 
-func ListWorkflowDefinitions(service *core.WorkflowService) http.HandlerFunc {
+func ListWorkflowDefinitions(service *services.WorkflowService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		search := r.URL.Query().Get("search")
 		filter := &core.WorkflowDefinitionFilter{

@@ -1,13 +1,14 @@
 {
-    "compilerOptions": {
-      "baseUrl": ".",
-      "esModuleInterop": true,
-      "module": "esnext",
-      "moduleResolution": "node",
-      "paths": {
-        "@woofx3/*": ["../shared/clients/typescript/db/*"]
-      },
-      "strict": true,
-      "target": "es2022",
-    }
+  "compilerOptions": {
+    "baseUrl": ".",
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "paths": {
+      "@woofx3/*": ["../shared/clients/typescript/db/*"],
+      "@woofx3/messagebus": ["../shared/clients/typescript/nats"]
+    },
+    "strict": true,
+    "target": "es2022"
   }
+}

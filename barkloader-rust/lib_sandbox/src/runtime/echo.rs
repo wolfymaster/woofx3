@@ -1,4 +1,6 @@
-use crate::{error::Error, runtime::RuntimeAdapter};
+use crate::error::Error;
+use crate::host::InvocationContext;
+use crate::runtime::RuntimeAdapter;
 use serde_json::{json, Value};
 
 pub struct EchoAdapter {}
@@ -10,12 +12,17 @@ impl EchoAdapter {
 }
 
 impl RuntimeAdapter for EchoAdapter {
-    fn execute(&self, code: &str, args: Value) -> Result<Value, Error> {
-        Ok(json!({"code": code, "args": args}))
-    }
-    
-    fn create_sandbox(&self) -> Result<(), Error> {
-        Ok(())
+    fn execute(
+        &self,
+        code: &str,
+        entry_point: &str,
+        invocation: &InvocationContext,
+    ) -> Result<Value, Error> {
+        Ok(json!({
+            "code": code,
+            "entry_point": entry_point,
+            "event": invocation.event,
+            "user": invocation.user,
+        }))
     }
 }
-
