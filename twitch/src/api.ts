@@ -1,48 +1,40 @@
-import path from "node:path";
-import { createApplication, createNATSHealthCheck, createNATSHeartbeat, createRuntime } from "@woofx3/common/runtime";
-import dotenv from "dotenv";
+import { createApplication, createNATSMonitor, createRuntime, loadRuntimeEnv } from "@woofx3/common/runtime";
+import MessageBus from "@woofx3/nats";
 import Application, { type TwitchApiApplication } from "./application";
-import { Bootstrap } from "./boostrap";
+import { TwitchEnvSchema } from "./config";
+import DbProxyService from "./services/dbProxy";
 import MessageBusService from "./services/messageBus";
-import TwitchEventBusService from "./services/twitchEventBus";
 
-dotenv.config({
-  path: [path.resolve(process.cwd(), ".env"), path.resolve(process.cwd(), "../", ".env")],
+const loadedConfig = loadRuntimeEnv({
+  schema: TwitchEnvSchema,
+  injectIntoProcess: true,
 });
 
-// boostrap the application
-const appConfig = await Bootstrap();
-
-const ctx = {
-  broadcaster: appConfig.broadcaster,
-  logger: appConfig.logger,
-  twitchApi: appConfig.services.twitchApi,
-};
+const bus = await MessageBus.createMessageBus({
+  name: "twitchapi",
+  url: loadedConfig.getConfig("woofx3MessagebusUrl") as string,
+  jwt: loadedConfig.getConfig("woofx3MessagebusJwt") as string,
+  nkeySeed: loadedConfig.getConfig("woofx3MessagebusNKey") as string,
+});
 
 const runtime = createRuntime({
-  application: createApplication(new Application(ctx)),
-  healthcheck: createNATSHealthCheck(appConfig.services.messageBus),
-  heartbeat: createNATSHeartbeat(appConfig.services.messageBus, "twichapi"),
+  application: createApplication(new Application()),
+  envSchema: TwitchEnvSchema,
+  logger: console,
+  runtimeEnv: () => loadedConfig,
+  healthMonitor: createNATSMonitor({
+    natsClient: bus,
+    applicationName: "twitchapi",
+    requiredServices: ["messageBus", "dbProxy"],
+  }),
   runtimeInit: async (app: TwitchApiApplication) => {
-    app.register("messageBus", new MessageBusService(appConfig.services.messageBus));
-    app.register("twitchEventBus", new TwitchEventBusService(appConfig.services.twitchEventBus));
+    app.register("messageBus", new MessageBusService(bus));
+    app.register("dbProxy", new DbProxyService(loadedConfig.getConfig("woofx3DatabaseProxyUrl") as string));
   },
   runtimeTerminate: async () => {},
 });
 
 runtime.start();
-
-// try {
-//   const userId = broadcaster.id;
-
-//   // const onChannelBan = listener.onChannelBan(userId, (event: EventSubChannelBanEvent) => {
-//   //     let { reason, isPermanent, userDisplayName, userId } = event;
-
-//   //     ctx.logger.info(Commands.USER_BANNED, reason, isPermanent, userDisplayName, userId);
-//   // });
-
-//   // const onStreamOnline = listener.onStreamOnline(userId, (event: any) => {
-//   //     console.log('event online', event);
 
 //   //     // Reset Daily Sub Count
 //   //     bus.publish('slobs', JSON.stringify({
@@ -436,26 +428,24 @@ runtime.start();
 // }
 
 async function gracefulShutdown(signal: string): Promise<void> {
-  console.log(`\n🛑 Received ${signal}, starting graceful shutdown...`);
+  console.log(`Received ${signal}, starting graceful shutdown...`);
 
   try {
     await runtime.stop();
-    console.log("✅ Graceful shutdown completed");
+    console.log("Graceful shutdown completed");
     process.exit(0);
   } catch (error) {
-    console.error("❌ Error during graceful shutdown:", error);
+    console.error("Error during graceful shutdown:", error);
     process.exit(1);
   }
 }
 
-// graceful shutdown
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 process.on("uncaughtException", (error) => {
-  appConfig.logger.error("Uncaught Exception", { error });
+  console.error("Uncaught Exception:", error);
   gracefulShutdown("uncaughtException");
 });
 process.on("unhandledRejection", (reason, promise) => {
-  appConfig.logger.error("Unhandled Rejection", { promise, reason });
-  gracefulShutdown("unhandledRejection");
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
 });

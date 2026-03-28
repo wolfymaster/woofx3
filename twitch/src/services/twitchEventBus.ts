@@ -10,18 +10,24 @@ export default class TwitchEventBusService implements Service<TwitchEventBus> {
 
   constructor(client: TwitchEventBus) {
     this.healthcheck = false;
-    this.name = 'twitchEventBus';
-    this.type = 'twitchapi';
+    this.name = "twitchEventBus";
+    this.type = "twitchapi";
     this.client = client;
     this.connected = false;
   }
 
   async connect(): Promise<void> {
+    if (this.connected) {
+      return;
+    }
     this.client.connect();
     this.connected = true;
   }
-  
-  async disconnect(): Promise<void> { 
+
+  async disconnect(): Promise<void> {
+    if (!this.connected) {
+      return;
+    }
     this.client.disconnect();
     this.connected = false;
   }

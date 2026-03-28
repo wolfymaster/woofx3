@@ -1,11 +1,11 @@
 import type { HelixUser } from "@twurple/api";
-import EventFactory from "@woofx3/cloudevents/EventFactory";
+import EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import { mergeConfigWithEnvironment, readConfigFile } from "@woofx3/common/utils";
 import MessageBus from "@woofx3/nats";
 import type NATSClient from "@woofx3/nats/src/client";
 import TwitchClient from "@woofx3/twitch";
 import type { Logger } from "winston";
-import * as twitch from './lib';
+import * as twitch from "./lib";
 import TwitchApi from "./lib/twitch";
 import TwitchEventBus from "./lib/twitchEventBus";
 import type { Context } from "./types";
@@ -30,9 +30,9 @@ export async function Bootstrap(): Promise<AppConfig> {
   // connect to NATS
   const bus = await MessageBus.createMessageBus({
     name: "twitchapi",
-    url: configuration.messageBusUrl,
-    jwt: configuration.messageBusJwt,
-    nkeySeed: configuration.messageBusNKey,
+    url: configuration.messagebusUrl,
+    jwt: configuration.messagebusJwt,
+    nkeySeed: configuration.messagebusNKey,
   });
 
   // Twitch client
@@ -76,8 +76,8 @@ export async function Bootstrap(): Promise<AppConfig> {
 }
 
 export type AppConfig = {
-  broadcaster: HelixUser,
-  logger: Logger,
+  broadcaster: HelixUser;
+  logger: Logger;
   services: {
     messageBus: NATSClient;
     twitchApi: TwitchApi;
