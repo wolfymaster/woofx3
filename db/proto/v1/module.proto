@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package module;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+service ModuleService {
+  rpc CreateModule(CreateModuleRequest) returns (ModuleResponse);
+  rpc UpdateModule(UpdateModuleRequest) returns (ModuleResponse);
+  rpc DeleteModule(DeleteModuleRequest) returns (common.ResponseStatus);
+  rpc GetModule(GetModuleRequest) returns (ModuleResponse);
+  rpc GetModuleByName(GetModuleByNameRequest) returns (ModuleResponse);
+  rpc ListModules(ListModulesRequest) returns (ListModulesResponse);
+  rpc SetModuleState(SetModuleStateRequest) returns (ModuleResponse);
+}
+
+message Module {
+  string id = 1;
+  string name = 2;
+  string version = 3;
+  string manifest = 4;
+  string state = 5;
+  string archive_key = 6;
+  repeated ModuleFunction functions = 7;
+  google.protobuf.Timestamp installed_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message ModuleFunction {
+  string id = 1;
+  string module_id = 2;
+  string function_name = 3;
+  string file_name = 4;
+  string file_key = 5;
+  string entry_point = 6;
+  string runtime = 7;
+}
+
+message CreateModuleRequest {
+  string name = 1;
+  string version = 2;
+  string manifest = 3;
+  string archive_key = 4;
+  repeated CreateModuleFunctionRequest functions = 5;
+}
+
+message CreateModuleFunctionRequest {
+  string function_name = 1;
+  string file_name = 2;
+  string file_key = 3;
+  string entry_point = 4;
+  string runtime = 5;
+}
+
+message UpdateModuleRequest {
+  string id = 1;
+  string version = 2;
+  string manifest = 3;
+  string archive_key = 4;
+  repeated CreateModuleFunctionRequest functions = 5;
+}
+
+message DeleteModuleRequest {
+  string name = 1;
+}
+
+message GetModuleRequest {
+  string id = 1;
+}
+
+message GetModuleByNameRequest {
+  string name = 1;
+}
+
+message ListModulesRequest {
+  string state = 1;
+}
+
+message SetModuleStateRequest {
+  string name = 1;
+  string state = 2;
+}
+
+message ModuleResponse {
+  common.ResponseStatus status = 1;
+  Module module = 2;
+}
+
+message ListModulesResponse {
+  common.ResponseStatus status = 1;
+  repeated Module modules = 2;
+}

@@ -12,6 +12,8 @@ func Migrate(db *gorm.DB) error {
 		migrations.CreateInitialSchema(),
 		migrations.CreateWorkerEventsTable(),
 		migrations.CreateWorkflowTables(),
+		migrations.CreateModuleTables(),
+		migrations.CreateModuleTriggerTable(),
 	})
 
 	return m.Migrate()

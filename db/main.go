@@ -24,10 +24,10 @@ func main() {
 	app := NewDatabaseApp(&DatabaseAppConfig{Logger: logger})
 	slogAdapter := &SlogAdapter{logger: logger}
 	natsSvc := service.NewNATS(logger, "nats", "messagebus")
-	natsMonitor := monitor.NewNATS("nats", *natsSvc, "db", "HEARTBEAT", 15*time.Second, slogAdapter)
+	natsMonitor := monitor.NewNATS("nats", natsSvc, "db", "HEARTBEAT", 15*time.Second, slogAdapter)
 	dbEnvConfig := &config.DatabaseEnvConfig{}
 
-	rt := runtime.NewRuntime(&runtime.RuntimeConfig{
+	rt, err := runtime.NewRuntime(&runtime.RuntimeConfig{
 		Application: app,
 		EnvConfig:   dbEnvConfig,
 		RuntimeInit: func(ctx context.Context, application runtime.Application) error {
@@ -76,6 +76,10 @@ func main() {
 		HealthMonitor: natsMonitor,
 		Logger:        slogAdapter,
 	})
+
+	if err != nil {
+		panic("failed to create runtime: " + err.Error())
+	}
 
 	rt.Start()
 

@@ -20,5 +20,5 @@ func CommandRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middlew
 			casbinMiddleware.Wrap(commandService),
 		)),
 	)
-	mux.Handle(commandHandler.PathPrefix(), commandHandler)
+	mux.Handle(commandHandler.PathPrefix(), casbinMiddleware.HTTPMiddleware(commandHandler))
 }
