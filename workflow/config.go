@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/wolfymaster/woofx3/clients/nats"
 )
 
 type Config struct {
@@ -12,15 +14,19 @@ type Config struct {
 	DatabaseProxyURL string `json:"databaseProxyUrl"`
 }
 
+type WorkflowEnvConfig struct {
+	nats.Config
+}
+
 func LoadConfiguration() (*Config, error) {
 	config := &Config{}
 
 	// Try to load from JSON file
 	// First check current directory
-	configFile := "conf.json"
+	configFile := ".woofx3.json"
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
 		// Try parent directory
-		configFile = filepath.Join("..", "conf.json")
+		configFile = filepath.Join("..", ".woofx3.json")
 		if _, err := os.Stat(configFile); os.IsNotExist(err) {
 			configFile = "" // No config file found
 		}

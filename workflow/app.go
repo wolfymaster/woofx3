@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/wolfymaster/woofx3/clients/barkloader"
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
@@ -51,17 +52,19 @@ func (p *NATSEventPublisher) Publish(event *types.Event) error {
 
 type WorkflowApp struct {
 	*runtime.BaseApplication
-	engine  *engine.Engine[AppServices]
-	logger  tasks.Logger
-	manager *WorkflowManager
+	engine         *engine.Engine[AppServices]
+	logger         tasks.Logger
+	manager        *WorkflowManager
+	moduleDbClient dbv1.ModuleService
 }
 
-func NewWorkflowApp(logger tasks.Logger, dbClient dbv1.WorkflowService) *WorkflowApp {
+func NewWorkflowApp(logger tasks.Logger, dbClient dbv1.WorkflowService, moduleDbClient dbv1.ModuleService) *WorkflowApp {
 	engine := engine.New[AppServices](logger)
 	app := &WorkflowApp{
 		BaseApplication: runtime.NewBaseApplication(),
 		engine:          engine,
 		logger:          logger,
+		moduleDbClient:  moduleDbClient,
 	}
 
 	// Create manager with app's engine as the registry (engine implements WorkflowRegistry interface)
@@ -94,7 +97,7 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 			})
 		}
 
-		if svc, ok := runtime.GetServiceTyped[*natsclient.Client](appCtx, "messageBus"); ok {
+		if svc, ok := runtime.GetServiceTyped[*natsclient.Client](appCtx, "nats"); ok {
 			natsClient := svc.Client()
 			registerService("messageBus", func() *natsclient.Client {
 				return natsClient
@@ -118,6 +121,10 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 			if err := a.subscribeToTriggerEvents(natsClient, patternRegistry.GetPatterns()); err != nil {
 				a.logger.Error("Failed to subscribe to trigger events", "error", err)
 				return fmt.Errorf("workflow service cannot start without trigger event subscriptions: %w", err)
+			}
+
+			if err := a.subscribeToModuleTriggerEvents(ctx, natsClient, a.moduleDbClient); err != nil {
+				a.logger.Warn("Failed to subscribe to module trigger events, continuing without them", "error", err)
 			}
 		}
 	}
@@ -247,4 +254,77 @@ func (a *WorkflowApp) subscribeToTriggerEvents(natsClient *natsclient.Client, pa
 		a.logger.Info("Subscribed to trigger events", "pattern", capturedPattern)
 	}
 	return nil
+}
+
+// subscribeToModuleTriggerEvents fetches registered module triggers from the DB proxy
+// and subscribes to any event subjects not already covered by the static pattern registry.
+func (a *WorkflowApp) subscribeToModuleTriggerEvents(ctx context.Context, natsClient *natsclient.Client, moduleClient dbv1.ModuleService) error {
+	if moduleClient == nil {
+		a.logger.Warn("Module DB client not configured, skipping module trigger subscriptions")
+		return nil
+	}
+
+	resp, err := moduleClient.ListTriggers(ctx, &dbv1.ListTriggersRequest{})
+	if err != nil {
+		return fmt.Errorf("failed to list module triggers: %w", err)
+	}
+
+	patternRegistry := NewEventPatternRegistry()
+	coveredPatterns := patternRegistry.GetPatterns()
+
+	subscribed := map[string]bool{}
+	for _, trigger := range resp.Triggers {
+		if trigger.Event == "" || subscribed[trigger.Event] {
+			continue
+		}
+		if isEventCoveredByPatterns(trigger.Event, coveredPatterns) {
+			continue
+		}
+		capturedEvent := trigger.Event
+		_, err := natsClient.Subscribe(capturedEvent, func(msg natsclient.Msg) {
+			a.handleTriggerEvent(msg)
+		})
+		if err != nil {
+			a.logger.Error("Failed to subscribe to module trigger event", "event", capturedEvent, "error", err)
+			continue
+		}
+		subscribed[capturedEvent] = true
+		a.logger.Info("Subscribed to module trigger event", "event", capturedEvent)
+	}
+	return nil
+}
+
+// isEventCoveredByPatterns checks if an event subject is already covered by
+// an existing NATS wildcard subscription pattern.
+func isEventCoveredByPatterns(event string, patterns []string) bool {
+	for _, pattern := range patterns {
+		if natsPatternMatches(pattern, event) {
+			return true
+		}
+	}
+	return false
+}
+
+// natsPatternMatches performs simple NATS wildcard matching.
+// NATS patterns: * matches one token, > matches remaining tokens.
+func natsPatternMatches(pattern, subject string) bool {
+	pp := strings.Split(pattern, ".")
+	sp := strings.Split(subject, ".")
+	return matchTokens(pp, sp)
+}
+
+func matchTokens(pattern, subject []string) bool {
+	if len(pattern) == 0 {
+		return len(subject) == 0
+	}
+	if pattern[0] == ">" {
+		return true
+	}
+	if len(subject) == 0 {
+		return false
+	}
+	if pattern[0] == "*" || pattern[0] == subject[0] {
+		return matchTokens(pattern[1:], subject[1:])
+	}
+	return false
 }

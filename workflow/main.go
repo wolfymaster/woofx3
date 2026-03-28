@@ -8,11 +8,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	barkloader "github.com/wolfymaster/woofx3/clients/barkloader"
 	db "github.com/wolfymaster/woofx3/clients/db"
-	natsclient "github.com/wolfymaster/woofx3/clients/nats"
 	"github.com/wolfymaster/woofx3/common/runtime"
+	"github.com/wolfymaster/woofx3/common/runtime/monitor"
 	"github.com/wolfymaster/woofx3/common/runtime/service"
 )
 
@@ -26,6 +27,8 @@ func main() {
 
 	// setup logger
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	logger.Info("config", "config", config)
 
 	// required environment variables
 	if config.BarkloaderWsURL == "" {
@@ -45,12 +48,11 @@ func main() {
 	)
 	logger.Info("Barkloader service configured", "url", config.BarkloaderWsURL)
 
+	slogAdapter := &SlogAdapter{logger: logger}
+
 	// Messagebus
-	messageBus, err := natsclient.FromEnv(logger)
-	if err != nil {
-		logger.Error("Failed to create NATS client", "error", err)
-		os.Exit(1)
-	}
+	natsSvc := service.NewNATS(logger, "nats", "messagebus")
+	natsMonitor := monitor.NewNATS("nats", natsSvc, "workflow", "HEARTBEAT", 15*time.Second, slogAdapter)
 
 	// Database
 	httpClient := &http.Client{}
@@ -58,8 +60,9 @@ func main() {
 	dbProxyService := service.NewDbProxyService(dbClient, true)
 	logger.Info("Database client configured", "url", config.DatabaseProxyURL)
 
-	rt := runtime.NewRuntime(&runtime.RuntimeConfig{
-		Application: NewWorkflowApp(logger, dbClient.Workflow),
+	rt, err := runtime.NewRuntime(&runtime.RuntimeConfig{
+		Application: NewWorkflowApp(logger, dbClient.Workflow, dbClient.Module),
+		EnvConfig:   &WorkflowEnvConfig{},
 		RuntimeInit: func(ctx context.Context, application runtime.Application) error {
 			logger.Info("Workflow runtime initializing")
 
@@ -69,8 +72,7 @@ func main() {
 			}
 
 			// Register messageBus service
-			svc := runtime.NewBaseService("messageBus", "nats", messageBus, false)
-			if err := application.Register("messageBus", svc); err != nil {
+			if err := application.Register("nats", natsSvc); err != nil {
 				return err
 			}
 
@@ -85,10 +87,14 @@ func main() {
 			logger.Info("Workflow runtime terminating")
 			return nil
 		},
-		Heartbeat:   runtime.CreateNATSHeartbeat(messageBus, "workflow", "HEARTBEAT", nil),
-		HealthCheck: runtime.CreateNATSHealthCheck(messageBus, "HEARTBEAT"),
-		Logger:      logger,
+		HealthMonitor: natsMonitor,
+		Logger:        slogAdapter,
 	})
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create runtime: %v\n", err)
+		os.Exit(1)
+	}
 
 	rt.Start()
 
