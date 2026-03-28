@@ -1,0 +1,16 @@
+{
+  "name": "woofwoofwoof",
+  "title": "WoofWoofWoof",
+  "description": "Twitch chatbot service that listens to messages, processes commands, and integrates with external services",
+  "repoBase": "https://github.com/wolfymaster/woofx3",
+  "sourceDir": "woofwoofwoof/src",
+  "entries": [
+    { "file": "application.ts", "title": "Application" },
+    { "file": "commands.ts", "title": "Commands" },
+    { "file": "config.ts", "title": "Configuration" },
+    { "file": "boostrap.ts", "title": "Bootstrap" },
+    { "file": "services/messageBus.ts", "title": "MessageBus" },
+    { "file": "services/barkloader.ts", "title": "Barkloader" },
+    { "file": "services/twitchChat.ts", "title": "TwitchChat" }
+  ]
+}
