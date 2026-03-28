@@ -5,6 +5,7 @@ option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
 
 import "common.proto";
 import "google/protobuf/timestamp.proto";
+import "module_trigger.proto";
 
 service ModuleService {
   rpc CreateModule(CreateModuleRequest) returns (ModuleResponse);
@@ -14,6 +15,9 @@ service ModuleService {
   rpc GetModuleByName(GetModuleByNameRequest) returns (ModuleResponse);
   rpc ListModules(ListModulesRequest) returns (ListModulesResponse);
   rpc SetModuleState(SetModuleStateRequest) returns (ModuleResponse);
+  rpc RegisterTrigger(RegisterTriggerRequest) returns (ModuleTriggerResponse);
+  rpc ListTriggers(ListTriggersRequest) returns (ListTriggersResponse);
+  rpc DeleteTriggersByModule(DeleteTriggersByModuleRequest) returns (common.ResponseStatus);
 }
 
 message Module {

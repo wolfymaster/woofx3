@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package module;
+
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+
+message ModuleTrigger {
+  string id = 1;
+  string module_id = 2;
+  string module_name = 3;
+  string category = 4;
+  string name = 5;
+  string description = 6;
+  string event = 7;
+  string config_schema = 8;
+  bool allow_variants = 9;
+}
+
+message RegisterTriggerRequest {
+  string module_name = 1;
+  string category = 2;
+  string name = 3;
+  string description = 4;
+  string event = 5;
+  string config_schema = 6;
+  bool allow_variants = 7;
+}
+
+message ListTriggersRequest {
+  string module_name = 1;
+}
+
+message ListTriggersResponse {
+  common.ResponseStatus status = 1;
+  repeated ModuleTrigger triggers = 2;
+}
+
+message ModuleTriggerResponse {
+  common.ResponseStatus status = 1;
+  ModuleTrigger trigger = 2;
+}
+
+message DeleteTriggersByModuleRequest {
+  string module_name = 1;
+}

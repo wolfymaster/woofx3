@@ -6,6 +6,11 @@ plugins:
     opt:
       - paths=source_relative
 
+  - local: protoc-gen-twirp
+    out: ../shared/clients/golang/db
+    opt:
+      - paths=source_relative
+
   # Generate Go protobuf types (local for db)
   - remote: buf.build/protocolbuffers/go
     out: app/server

@@ -413,6 +413,98 @@ impl<'de> serde::Deserialize<'de> for DeleteModuleRequest {
         deserializer.deserialize_struct("module.DeleteModuleRequest", FIELDS, GeneratedVisitor)
     }
 }
+impl serde::Serialize for DeleteTriggersByModuleRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.module_name.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.DeleteTriggersByModuleRequest", len)?;
+        if !self.module_name.is_empty() {
+            struct_ser.serialize_field("moduleName", &self.module_name)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for DeleteTriggersByModuleRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "module_name",
+            "moduleName",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            ModuleName,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "moduleName" | "module_name" => Ok(GeneratedField::ModuleName),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = DeleteTriggersByModuleRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.DeleteTriggersByModuleRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<DeleteTriggersByModuleRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut module_name__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::ModuleName => {
+                            if module_name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("moduleName"));
+                            }
+                            module_name__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(DeleteTriggersByModuleRequest {
+                    module_name: module_name__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.DeleteTriggersByModuleRequest", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for GetModuleByNameRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -792,6 +884,206 @@ impl<'de> serde::Deserialize<'de> for ListModulesResponse {
             }
         }
         deserializer.deserialize_struct("module.ListModulesResponse", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for ListTriggersRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.module_name.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.ListTriggersRequest", len)?;
+        if !self.module_name.is_empty() {
+            struct_ser.serialize_field("moduleName", &self.module_name)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for ListTriggersRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "module_name",
+            "moduleName",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            ModuleName,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "moduleName" | "module_name" => Ok(GeneratedField::ModuleName),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = ListTriggersRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.ListTriggersRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<ListTriggersRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut module_name__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::ModuleName => {
+                            if module_name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("moduleName"));
+                            }
+                            module_name__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(ListTriggersRequest {
+                    module_name: module_name__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.ListTriggersRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for ListTriggersResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.status.is_some() {
+            len += 1;
+        }
+        if !self.triggers.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.ListTriggersResponse", len)?;
+        if let Some(v) = self.status.as_ref() {
+            struct_ser.serialize_field("status", v)?;
+        }
+        if !self.triggers.is_empty() {
+            struct_ser.serialize_field("triggers", &self.triggers)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for ListTriggersResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "status",
+            "triggers",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Status,
+            Triggers,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "status" => Ok(GeneratedField::Status),
+                            "triggers" => Ok(GeneratedField::Triggers),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = ListTriggersResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.ListTriggersResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<ListTriggersResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut status__ = None;
+                let mut triggers__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = map_.next_value()?;
+                        }
+                        GeneratedField::Triggers => {
+                            if triggers__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("triggers"));
+                            }
+                            triggers__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(ListTriggersResponse {
+                    status: status__,
+                    triggers: triggers__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.ListTriggersResponse", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for Module {
@@ -1328,6 +1620,541 @@ impl<'de> serde::Deserialize<'de> for ModuleResponse {
             }
         }
         deserializer.deserialize_struct("module.ModuleResponse", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for ModuleTrigger {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.id.is_empty() {
+            len += 1;
+        }
+        if !self.module_id.is_empty() {
+            len += 1;
+        }
+        if !self.module_name.is_empty() {
+            len += 1;
+        }
+        if !self.category.is_empty() {
+            len += 1;
+        }
+        if !self.name.is_empty() {
+            len += 1;
+        }
+        if !self.description.is_empty() {
+            len += 1;
+        }
+        if !self.event.is_empty() {
+            len += 1;
+        }
+        if !self.config_schema.is_empty() {
+            len += 1;
+        }
+        if self.allow_variants {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.ModuleTrigger", len)?;
+        if !self.id.is_empty() {
+            struct_ser.serialize_field("id", &self.id)?;
+        }
+        if !self.module_id.is_empty() {
+            struct_ser.serialize_field("moduleId", &self.module_id)?;
+        }
+        if !self.module_name.is_empty() {
+            struct_ser.serialize_field("moduleName", &self.module_name)?;
+        }
+        if !self.category.is_empty() {
+            struct_ser.serialize_field("category", &self.category)?;
+        }
+        if !self.name.is_empty() {
+            struct_ser.serialize_field("name", &self.name)?;
+        }
+        if !self.description.is_empty() {
+            struct_ser.serialize_field("description", &self.description)?;
+        }
+        if !self.event.is_empty() {
+            struct_ser.serialize_field("event", &self.event)?;
+        }
+        if !self.config_schema.is_empty() {
+            struct_ser.serialize_field("configSchema", &self.config_schema)?;
+        }
+        if self.allow_variants {
+            struct_ser.serialize_field("allowVariants", &self.allow_variants)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for ModuleTrigger {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "id",
+            "module_id",
+            "moduleId",
+            "module_name",
+            "moduleName",
+            "category",
+            "name",
+            "description",
+            "event",
+            "config_schema",
+            "configSchema",
+            "allow_variants",
+            "allowVariants",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Id,
+            ModuleId,
+            ModuleName,
+            Category,
+            Name,
+            Description,
+            Event,
+            ConfigSchema,
+            AllowVariants,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "id" => Ok(GeneratedField::Id),
+                            "moduleId" | "module_id" => Ok(GeneratedField::ModuleId),
+                            "moduleName" | "module_name" => Ok(GeneratedField::ModuleName),
+                            "category" => Ok(GeneratedField::Category),
+                            "name" => Ok(GeneratedField::Name),
+                            "description" => Ok(GeneratedField::Description),
+                            "event" => Ok(GeneratedField::Event),
+                            "configSchema" | "config_schema" => Ok(GeneratedField::ConfigSchema),
+                            "allowVariants" | "allow_variants" => Ok(GeneratedField::AllowVariants),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = ModuleTrigger;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.ModuleTrigger")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<ModuleTrigger, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut id__ = None;
+                let mut module_id__ = None;
+                let mut module_name__ = None;
+                let mut category__ = None;
+                let mut name__ = None;
+                let mut description__ = None;
+                let mut event__ = None;
+                let mut config_schema__ = None;
+                let mut allow_variants__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Id => {
+                            if id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ModuleId => {
+                            if module_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("moduleId"));
+                            }
+                            module_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ModuleName => {
+                            if module_name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("moduleName"));
+                            }
+                            module_name__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Category => {
+                            if category__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("category"));
+                            }
+                            category__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Name => {
+                            if name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("name"));
+                            }
+                            name__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Description => {
+                            if description__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("description"));
+                            }
+                            description__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Event => {
+                            if event__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("event"));
+                            }
+                            event__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ConfigSchema => {
+                            if config_schema__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("configSchema"));
+                            }
+                            config_schema__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::AllowVariants => {
+                            if allow_variants__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("allowVariants"));
+                            }
+                            allow_variants__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(ModuleTrigger {
+                    id: id__.unwrap_or_default(),
+                    module_id: module_id__.unwrap_or_default(),
+                    module_name: module_name__.unwrap_or_default(),
+                    category: category__.unwrap_or_default(),
+                    name: name__.unwrap_or_default(),
+                    description: description__.unwrap_or_default(),
+                    event: event__.unwrap_or_default(),
+                    config_schema: config_schema__.unwrap_or_default(),
+                    allow_variants: allow_variants__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.ModuleTrigger", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for ModuleTriggerResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.status.is_some() {
+            len += 1;
+        }
+        if self.trigger.is_some() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.ModuleTriggerResponse", len)?;
+        if let Some(v) = self.status.as_ref() {
+            struct_ser.serialize_field("status", v)?;
+        }
+        if let Some(v) = self.trigger.as_ref() {
+            struct_ser.serialize_field("trigger", v)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for ModuleTriggerResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "status",
+            "trigger",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Status,
+            Trigger,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "status" => Ok(GeneratedField::Status),
+                            "trigger" => Ok(GeneratedField::Trigger),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = ModuleTriggerResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.ModuleTriggerResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<ModuleTriggerResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut status__ = None;
+                let mut trigger__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = map_.next_value()?;
+                        }
+                        GeneratedField::Trigger => {
+                            if trigger__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("trigger"));
+                            }
+                            trigger__ = map_.next_value()?;
+                        }
+                    }
+                }
+                Ok(ModuleTriggerResponse {
+                    status: status__,
+                    trigger: trigger__,
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.ModuleTriggerResponse", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for RegisterTriggerRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.module_name.is_empty() {
+            len += 1;
+        }
+        if !self.category.is_empty() {
+            len += 1;
+        }
+        if !self.name.is_empty() {
+            len += 1;
+        }
+        if !self.description.is_empty() {
+            len += 1;
+        }
+        if !self.event.is_empty() {
+            len += 1;
+        }
+        if !self.config_schema.is_empty() {
+            len += 1;
+        }
+        if self.allow_variants {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.RegisterTriggerRequest", len)?;
+        if !self.module_name.is_empty() {
+            struct_ser.serialize_field("moduleName", &self.module_name)?;
+        }
+        if !self.category.is_empty() {
+            struct_ser.serialize_field("category", &self.category)?;
+        }
+        if !self.name.is_empty() {
+            struct_ser.serialize_field("name", &self.name)?;
+        }
+        if !self.description.is_empty() {
+            struct_ser.serialize_field("description", &self.description)?;
+        }
+        if !self.event.is_empty() {
+            struct_ser.serialize_field("event", &self.event)?;
+        }
+        if !self.config_schema.is_empty() {
+            struct_ser.serialize_field("configSchema", &self.config_schema)?;
+        }
+        if self.allow_variants {
+            struct_ser.serialize_field("allowVariants", &self.allow_variants)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for RegisterTriggerRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "module_name",
+            "moduleName",
+            "category",
+            "name",
+            "description",
+            "event",
+            "config_schema",
+            "configSchema",
+            "allow_variants",
+            "allowVariants",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            ModuleName,
+            Category,
+            Name,
+            Description,
+            Event,
+            ConfigSchema,
+            AllowVariants,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "moduleName" | "module_name" => Ok(GeneratedField::ModuleName),
+                            "category" => Ok(GeneratedField::Category),
+                            "name" => Ok(GeneratedField::Name),
+                            "description" => Ok(GeneratedField::Description),
+                            "event" => Ok(GeneratedField::Event),
+                            "configSchema" | "config_schema" => Ok(GeneratedField::ConfigSchema),
+                            "allowVariants" | "allow_variants" => Ok(GeneratedField::AllowVariants),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = RegisterTriggerRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.RegisterTriggerRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<RegisterTriggerRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut module_name__ = None;
+                let mut category__ = None;
+                let mut name__ = None;
+                let mut description__ = None;
+                let mut event__ = None;
+                let mut config_schema__ = None;
+                let mut allow_variants__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::ModuleName => {
+                            if module_name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("moduleName"));
+                            }
+                            module_name__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Category => {
+                            if category__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("category"));
+                            }
+                            category__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Name => {
+                            if name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("name"));
+                            }
+                            name__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Description => {
+                            if description__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("description"));
+                            }
+                            description__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Event => {
+                            if event__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("event"));
+                            }
+                            event__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ConfigSchema => {
+                            if config_schema__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("configSchema"));
+                            }
+                            config_schema__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::AllowVariants => {
+                            if allow_variants__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("allowVariants"));
+                            }
+                            allow_variants__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(RegisterTriggerRequest {
+                    module_name: module_name__.unwrap_or_default(),
+                    category: category__.unwrap_or_default(),
+                    name: name__.unwrap_or_default(),
+                    description: description__.unwrap_or_default(),
+                    event: event__.unwrap_or_default(),
+                    config_schema: config_schema__.unwrap_or_default(),
+                    allow_variants: allow_variants__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.RegisterTriggerRequest", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for SetModuleStateRequest {
