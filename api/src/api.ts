@@ -1,0 +1,2222 @@
+import type * as command from "@woofx3/db/command.pb";
+import type * as treat from "@woofx3/db/treat.pb";
+import type * as user from "@woofx3/db/user.pb";
+import type * as workflow from "@woofx3/db/workflow.pb";
+import type NATSClient from "@woofx3/nats/src/client";
+import { RpcTarget } from "capnweb";
+import * as protoscript from "protoscript";
+import type { Logger } from "winston";
+import type { DbClient, ModuleTrigger } from "./db-client";
+
+/**
+ * Helper to create a protoscript.Timestamp from a Date
+ */
+function timestampFromDate(date: Date): protoscript.Timestamp {
+  const seconds = Math.floor(date.getTime() / 1000);
+  const nanos = (date.getTime() % 1000) * 1000000;
+  return {
+    seconds: BigInt(seconds),
+    nanos,
+  };
+}
+
+/**
+ * UI-focused API interface exposed via capnweb.
+ * Methods represent user actions and use cases rather than database operations.
+ */
+export class Api extends RpcTarget {
+  private triggerSubscribers = new Set<{ onTriggerChange(event: { type: string; moduleName: string }): Promise<void> }>();
+
+  constructor(
+    private db: DbClient,
+    private nats: NATSClient | null,
+    private applicationId: string,
+    private logger: Logger
+  ) {
+    super();
+  }
+
+  async initSubscriptions(): Promise<void> {
+    if (!this.nats) return;
+    await this.nats.subscribe("db.module_trigger.registered.*", async (msg) => {
+      try {
+        const payload = msg.json() as { module_name?: string };
+        const moduleName = payload.module_name ?? "";
+        await this.publishEvent("module.trigger.registered", { moduleName });
+        await this.notifyTriggerChange(moduleName);
+      } catch (err) {
+        this.logger.error("Failed to handle module trigger NATS event", { err });
+      }
+    });
+  }
+
+  async subscribeTriggerChanges(
+    callback: { onTriggerChange(event: { type: string; moduleName: string }): Promise<void> }
+  ): Promise<void> {
+    this.triggerSubscribers.add(callback);
+  }
+
+  private async notifyTriggerChange(moduleName: string): Promise<void> {
+    type Subscriber = { onTriggerChange(event: { type: string; moduleName: string }): Promise<void> };
+    const dead: Subscriber[] = [];
+    for (const cb of this.triggerSubscribers) {
+      try {
+        await cb.onTriggerChange({ type: "registered", moduleName });
+      } catch {
+        dead.push(cb);
+      }
+    }
+    for (const cb of dead) {
+      this.triggerSubscribers.delete(cb);
+    }
+  }
+
+  // ==================== Workflows ====================
+
+  /**
+   * Get available workflows for the UI to display.
+   * Returns workflows with their current status and recent execution info.
+   */
+  async getAvailableWorkflows(): Promise<{
+    workflows: Array<{
+      id: string;
+      name: string;
+      description: string;
+      enabled: boolean;
+      lastExecution?: {
+        id: string;
+        status: string;
+        startedAt: string;
+      };
+    }>;
+  }> {
+    this.logger.debug("Getting available workflows");
+    const req: workflow.ListWorkflowsRequest = {
+      applicationId: this.applicationId,
+      includeDisabled: false,
+      page: 1,
+      pageSize: 1000,
+      sortBy: "name",
+      sortDesc: false,
+    };
+    const response = await this.db.listWorkflows(req);
+    if (response.status?.code !== "OK") {
+      this.logger.error("Failed to get workflows", {
+        error: response.status?.message,
+        code: response.status?.code,
+      });
+      throw new Error(response.status?.message || "Failed to get workflows");
+    }
+    this.logger.info("Retrieved available workflows", {
+      count: response.workflows?.length || 0,
+    });
+
+    // Get recent executions for each workflow
+    const workflowsWithStatus = await Promise.all(
+      (response.workflows || []).map(async (wf) => {
+        const execReq: workflow.ListWorkflowExecutionsRequest = {
+          workflowId: wf.id,
+          applicationId: this.applicationId,
+          status: "",
+          startedBy: "",
+          from: protoscript.Timestamp.initialize(),
+          to: protoscript.Timestamp.initialize(),
+          page: 1,
+          pageSize: 1,
+          sortBy: "startedAt",
+          sortDesc: true,
+        };
+        const execResponse = await this.db.listWorkflowExecutions(execReq);
+        const lastExecution = execResponse.executions?.[0];
+
+        return {
+          id: wf.id,
+          name: wf.name,
+          description: wf.description,
+          enabled: wf.enabled,
+          lastExecution: lastExecution
+            ? {
+                id: lastExecution.id,
+                status: lastExecution.status,
+                startedAt: lastExecution.startedAt
+                  ? new Date(
+                      Number(lastExecution.startedAt.seconds) * 1000 + lastExecution.startedAt.nanos / 1000000
+                    ).toISOString()
+                  : "",
+              }
+            : undefined,
+        };
+      })
+    );
+
+    return { workflows: workflowsWithStatus };
+  }
+
+  /**
+   * Trigger a workflow by name (user-friendly).
+   * The UI can call this with a workflow name and parameters.
+   */
+  async triggerWorkflowByName(
+    workflowName: string,
+    parameters: Record<string, string> = {},
+    userId?: string
+  ): Promise<{
+    executionId: string;
+    status: string;
+    message: string;
+  }> {
+    this.logger.info("Triggering workflow by name", {
+      workflowName,
+      userId,
+      parametersCount: Object.keys(parameters).length,
+    });
+    // First, find the workflow by name
+    const workflowsReq: workflow.ListWorkflowsRequest = {
+      applicationId: this.applicationId,
+      includeDisabled: false,
+      page: 1,
+      pageSize: 1000,
+      sortBy: "name",
+      sortDesc: false,
+    };
+    const workflowsResponse = await this.db.listWorkflows(workflowsReq);
+    if (workflowsResponse.status?.code !== "OK") {
+      throw new Error("Failed to find workflows");
+    }
+
+    const foundWorkflow = workflowsResponse.workflows?.find(
+      (wf) => wf.name.toLowerCase() === workflowName.toLowerCase()
+    );
+    if (!foundWorkflow) {
+      throw new Error(`Workflow "${workflowName}" not found`);
+    }
+    if (!foundWorkflow.enabled) {
+      throw new Error(`Workflow "${workflowName}" is disabled`);
+    }
+
+    // Execute the workflow
+    const correlationId = crypto.randomUUID();
+    const execReq: workflow.ExecuteWorkflowRequest = {
+      workflowId: foundWorkflow.id,
+      applicationId: this.applicationId,
+      startedBy: userId || "ui",
+      inputs: parameters,
+      async: true,
+      correlationId,
+    };
+    const execResponse = await this.db.executeWorkflow(execReq);
+    if (execResponse.status?.code !== "OK") {
+      this.logger.error("Failed to execute workflow", {
+        workflowId: foundWorkflow.id,
+        workflowName,
+        error: execResponse.status?.message,
+        correlationId,
+      });
+      throw new Error(execResponse.status?.message || "Failed to trigger workflow");
+    }
+
+    this.logger.info("Workflow triggered successfully", {
+      workflowId: foundWorkflow.id,
+      workflowName,
+      executionId: execResponse.executionId,
+      correlationId,
+      async: execResponse.async,
+    });
+
+    return {
+      executionId: execResponse.executionId,
+      status: execResponse.async ? "running" : "completed",
+      message: execResponse.async ? "Workflow started successfully" : "Workflow completed",
+    };
+  }
+
+  /**
+   * Get workflow execution status for displaying in the UI.
+   */
+  async getWorkflowStatus(executionId: string): Promise<{
+    id: string;
+    workflowId: string;
+    workflowName: string;
+    status: string;
+    progress: number; // 0-100
+    startedAt: string;
+    completedAt?: string;
+    error?: string;
+    steps: Array<{
+      name: string;
+      status: string;
+      startedAt?: string;
+      completedAt?: string;
+    }>;
+  }> {
+    this.logger.debug("Getting workflow status", { executionId });
+    const req: workflow.GetWorkflowExecutionRequest = {
+      id: executionId,
+    };
+    const response = await this.db.getWorkflowExecution(req);
+    if (response.status?.code !== "OK") {
+      this.logger.error("Failed to get workflow execution", {
+        executionId,
+        error: response.status?.message,
+      });
+      throw new Error(response.status?.message || "Failed to get workflow status");
+    }
+    if (!response.execution) {
+      this.logger.warn("Workflow execution not found", { executionId });
+      throw new Error("Workflow execution not found");
+    }
+
+    const exec = response.execution;
+
+    // Get workflow name
+    const workflowReq: workflow.GetWorkflowRequest = {
+      id: exec.workflowId,
+    };
+    const workflowResponse = await this.db.getWorkflow(workflowReq);
+    const workflowName = workflowResponse.workflow?.name || "Unknown";
+
+    // Calculate progress based on steps
+    const steps = exec.steps || [];
+    const completedSteps = steps.filter((s) => s.status === "completed").length;
+    const progress = steps.length > 0 ? (completedSteps / steps.length) * 100 : 0;
+
+    return {
+      id: exec.id,
+      workflowId: exec.workflowId,
+      workflowName,
+      status: exec.status,
+      progress: Math.round(progress),
+      startedAt: exec.startedAt
+        ? new Date(Number(exec.startedAt.seconds) * 1000 + exec.startedAt.nanos / 1000000).toISOString()
+        : "",
+      completedAt: exec.completedAt
+        ? new Date(Number(exec.completedAt.seconds) * 1000 + exec.completedAt.nanos / 1000000).toISOString()
+        : undefined,
+      error: exec.error || undefined,
+      steps: steps.map((step) => ({
+        name: step.name,
+        status: step.status,
+        startedAt: step.startedAt
+          ? new Date(Number(step.startedAt.seconds) * 1000 + step.startedAt.nanos / 1000000).toISOString()
+          : undefined,
+        completedAt: step.completedAt
+          ? new Date(Number(step.completedAt.seconds) * 1000 + step.completedAt.nanos / 1000000).toISOString()
+          : undefined,
+      })),
+    };
+  }
+
+  /**
+   * Get workflow execution history for a user or workflow.
+   */
+  async getWorkflowHistory(options: {
+    workflowName?: string;
+    userId?: string;
+    status?: string;
+    limit?: number;
+  }): Promise<{
+    executions: Array<{
+      id: string;
+      workflowName: string;
+      status: string;
+      startedAt: string;
+      completedAt?: string;
+      startedBy: string;
+    }>;
+  }> {
+    let workflowId: string | undefined;
+    if (options.workflowName) {
+      const workflowsReq: workflow.ListWorkflowsRequest = {
+        applicationId: this.applicationId,
+        includeDisabled: false,
+        page: 1,
+        pageSize: 1000,
+        sortBy: "name",
+        sortDesc: false,
+      };
+      const workflowsResponse = await this.db.listWorkflows(workflowsReq);
+      const foundWorkflow = workflowsResponse.workflows?.find(
+        (wf) => wf.name.toLowerCase() === options.workflowName?.toLowerCase()
+      );
+      workflowId = foundWorkflow?.id;
+    }
+
+    const req: workflow.ListWorkflowExecutionsRequest = {
+      workflowId: workflowId || "",
+      applicationId: this.applicationId,
+      status: options.status || "",
+      startedBy: options.userId || "",
+      from: protoscript.Timestamp.initialize(),
+      to: protoscript.Timestamp.initialize(),
+      page: 1,
+      pageSize: options.limit || 50,
+      sortBy: "startedAt",
+      sortDesc: true,
+    };
+    const response = await this.db.listWorkflowExecutions(req);
+    if (response.status?.code !== "OK") {
+      throw new Error(response.status?.message || "Failed to get workflow history");
+    }
+
+    // Get workflow names for each execution
+    const executionsWithNames = await Promise.all(
+      (response.executions || []).map(async (exec) => {
+        const workflowReq: workflow.GetWorkflowRequest = {
+          id: exec.workflowId,
+        };
+        const workflowResponse = await this.db.getWorkflow(workflowReq);
+        const workflowName = workflowResponse.workflow?.name || "Unknown";
+
+        return {
+          id: exec.id,
+          workflowName,
+          status: exec.status,
+          startedAt: exec.startedAt
+            ? new Date(Number(exec.startedAt.seconds) * 1000 + exec.startedAt.nanos / 1000000).toISOString()
+            : "",
+          completedAt: exec.completedAt
+            ? new Date(Number(exec.completedAt.seconds) * 1000 + exec.completedAt.nanos / 1000000).toISOString()
+            : undefined,
+          startedBy: exec.startedBy,
+        };
+      })
+    );
+
+    return { executions: executionsWithNames };
+  }
+
+  /**
+   * Cancel a running workflow execution.
+   */
+  async cancelWorkflow(executionId: string, reason?: string): Promise<void> {
+    this.logger.info("Cancelling workflow", { executionId, reason });
+    const req: workflow.CancelWorkflowExecutionRequest = {
+      id: executionId,
+      reason: reason || "Cancelled by user",
+    };
+    const response = await this.db.cancelWorkflowExecution(req);
+    if (response.code !== "OK") {
+      this.logger.error("Failed to cancel workflow", {
+        executionId,
+        error: response.message,
+      });
+      throw new Error(response.message || "Failed to cancel workflow");
+    }
+    this.logger.info("Workflow cancelled successfully", { executionId });
+  }
+
+  // ==================== Commands ====================
+
+  /**
+   * Get available commands for a user.
+   * Returns commands that the user can execute, with their current state.
+   * @param _username - Optional username (reserved for future permission checks)
+   */
+  async getAvailableCommands(_username?: string): Promise<{
+    commands: Array<{
+      id: string;
+      name: string;
+      type: string;
+      cooldown: number;
+      enabled: boolean;
+    }>;
+  }> {
+    const req: command.ListCommandsRequest = {
+      applicationId: this.applicationId,
+      includeDisabled: false,
+    };
+    const response = await this.db.listCommands(req);
+    if (response.status?.code !== "OK") {
+      throw new Error(response.status?.message || "Failed to get commands");
+    }
+
+    return {
+      commands: (response.commands || []).map((cmd) => ({
+        id: cmd.id,
+        name: cmd.command,
+        type: cmd.type,
+        cooldown: cmd.cooldown,
+        enabled: cmd.enabled,
+      })),
+    };
+  }
+
+  /**
+   * Execute a command by name.
+   * This would typically trigger the command execution via events.
+   */
+  async executeCommand(
+    commandName: string,
+    username: string,
+    args: Record<string, string> = {}
+  ): Promise<{
+    success: boolean;
+    message: string;
+  }> {
+    // Get the command
+    const cmdReq: command.GetCommandRequest = {
+      command: commandName,
+      applicationId: this.applicationId,
+      username,
+    };
+    const cmdResponse = await this.db.getCommand(cmdReq);
+    if (cmdResponse.status?.code !== "OK" || !cmdResponse.command) {
+      throw new Error("Command not found");
+    }
+
+    if (!cmdResponse.command.enabled) {
+      throw new Error("Command is disabled");
+    }
+
+    // Publish an event to trigger the command execution
+    await this.publishEvent("command.execute", {
+      command: commandName,
+      username,
+      args,
+      applicationId: this.applicationId,
+    });
+
+    return {
+      success: true,
+      message: `Command "${commandName}" executed`,
+    };
+  }
+
+  // ==================== User Actions ====================
+
+  /**
+   * Get user profile and stats for display in the UI.
+   */
+  async getUserProfile(userId: string): Promise<{
+    id: string;
+    username: string;
+    treats: {
+      total: number;
+      available: number;
+    };
+    stats?: Record<string, unknown>;
+  }> {
+    // Get user
+    const userReq: user.GetUserRequest = {
+      id: userId,
+    };
+    const userResponse = await this.db.getUser(userReq);
+    if (userResponse.status?.code !== "OK" || !userResponse.user) {
+      throw new Error("User not found");
+    }
+
+    // Get treats summary (last 30 days)
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const treatsReq: treat.GetUserTreatsSummaryRequest = {
+      userId,
+      applicationId: this.applicationId,
+      fromDate: timestampFromDate(thirtyDaysAgo),
+      toDate: timestampFromDate(now),
+    };
+    const treatsResponse = await this.db.getUserTreatsSummary(treatsReq);
+    const treatsSummary = treatsResponse.summary;
+
+    return {
+      id: userResponse.user.id,
+      username: userResponse.user.username,
+      treats: {
+        total: treatsSummary?.totalTreats || 0,
+        available: treatsSummary?.availableTreats || 0,
+      },
+    };
+  }
+
+  /**
+   * Award treats to a user (UI action).
+   */
+  async awardTreatsToUser(
+    userId: string,
+    treatType: string,
+    title: string,
+    description: string,
+    points: number,
+    awardedBy: string,
+    imageUrl: string = "",
+    expiresInDays?: number
+  ): Promise<{
+    success: boolean;
+    message: string;
+  }> {
+    const expiresAt = expiresInDays
+      ? timestampFromDate(new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000))
+      : protoscript.Timestamp.initialize();
+
+    const req: treat.AwardTreatRequest = {
+      userId,
+      treatType,
+      title,
+      description,
+      points,
+      imageUrl,
+      awardedBy,
+      applicationId: this.applicationId,
+      metadata: {},
+      expiresAt,
+    };
+    const response = await this.db.awardTreat(req);
+    if (response.status?.code !== "OK") {
+      throw new Error(response.status?.message || "Failed to award treat");
+    }
+
+    return {
+      success: true,
+      message: `Awarded treat "${title}" to user`,
+    };
+  }
+
+  // ==================== Events ====================
+
+  /**
+   * Simulate a Twitch event for testing workflows.
+   * This is useful for the UI to manually trigger workflows that respond to Twitch events.
+   */
+  async simulateTwitchEvent(
+    eventType: string,
+    eventData: Record<string, unknown>
+  ): Promise<{
+    success: boolean;
+    message: string;
+  }> {
+    this.logger.info("Simulating Twitch event", { eventType, eventData });
+    const subject = `twitch.${eventType}`;
+    await this.publishEvent(`twitch.${eventType}`, eventData, subject);
+
+    this.logger.info("Twitch event simulated successfully", { eventType, subject });
+    return {
+      success: true,
+      message: `Simulated Twitch event: ${eventType}`,
+    };
+  }
+
+  /**
+   * Trigger a workflow by publishing an event.
+   * Useful for triggering workflows that listen to specific event types.
+   */
+  async triggerEvent(
+    eventType: string,
+    eventData: Record<string, unknown>
+  ): Promise<{
+    success: boolean;
+    message: string;
+  }> {
+    await this.publishEvent(eventType, eventData);
+
+    return {
+      success: true,
+      message: `Published event: ${eventType}`,
+    };
+  }
+
+  // ==================== Dashboard/Overview ====================
+
+  /**
+   * Get system overview for the dashboard.
+   */
+  async getDashboard(): Promise<{
+    workflows: {
+      total: number;
+      enabled: number;
+      running: number;
+    };
+    recentActivity: Array<{
+      type: string;
+      message: string;
+      timestamp: string;
+    }>;
+  }> {
+    // Get workflow stats
+    const workflowsReq: workflow.ListWorkflowsRequest = {
+      applicationId: this.applicationId,
+      includeDisabled: true,
+      page: 1,
+      pageSize: 1000,
+      sortBy: "name",
+      sortDesc: false,
+    };
+    const workflowsResponse = await this.db.listWorkflows(workflowsReq);
+    const workflows = workflowsResponse.workflows || [];
+
+    // Get running executions
+    const runningExecReq: workflow.ListWorkflowExecutionsRequest = {
+      workflowId: "",
+      applicationId: this.applicationId,
+      status: "running",
+      startedBy: "",
+      from: protoscript.Timestamp.initialize(),
+      to: protoscript.Timestamp.initialize(),
+      page: 1,
+      pageSize: 100,
+      sortBy: "startedAt",
+      sortDesc: true,
+    };
+    const runningExecResponse = await this.db.listWorkflowExecutions(runningExecReq);
+    const runningCount = runningExecResponse.executions?.length || 0;
+
+    return {
+      workflows: {
+        total: workflows.length,
+        enabled: workflows.filter((w) => w.enabled).length,
+        running: runningCount,
+      },
+      recentActivity: [], // Could be populated from event history
+    };
+  }
+
+  // ==================== Users & Teams ====================
+
+  private currentUser = {
+    id: "user-1",
+    email: "streamer@example.com",
+    displayName: "ProStreamer",
+    role: "owner",
+    teamIds: ["team-1", "team-2"],
+    accountIds: ["account-1", "account-2", "account-3"],
+    createdAt: "2024-01-01T00:00:00Z",
+  };
+
+  async getUser(): Promise<{
+    id: string;
+    email: string;
+    displayName: string;
+    role: string;
+    teamIds: string[];
+    accountIds: string[];
+    createdAt: string;
+  }> {
+    return { ...this.currentUser };
+  }
+
+  async updateUser(input: { displayName?: string; email?: string }): Promise<{
+    id: string;
+    email: string;
+    displayName: string;
+    role: string;
+    teamIds: string[];
+    accountIds: string[];
+    createdAt: string;
+  }> {
+    if (input.displayName !== undefined) this.currentUser.displayName = input.displayName;
+    if (input.email !== undefined) this.currentUser.email = input.email;
+    return { ...this.currentUser };
+  }
+
+  private teams = [
+    {
+      id: "team-1",
+      name: "Main Stream Team",
+      slug: "main-stream",
+      ownerId: "user-1",
+      createdAt: "2024-01-15T00:00:00Z",
+    },
+    { id: "team-2", name: "Collab Squad", slug: "collab-squad", ownerId: "user-1", createdAt: "2024-06-01T00:00:00Z" },
+  ];
+
+  async getTeams(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      slug: string;
+      ownerId: string;
+      createdAt: string;
+    }>
+  > {
+    return [...this.teams];
+  }
+
+  async getTeam(id: string): Promise<{
+    id: string;
+    name: string;
+    slug: string;
+    ownerId: string;
+    createdAt: string;
+  } | null> {
+    return this.teams.find((t) => t.id === id) || null;
+  }
+
+  async getTeamMembers(teamId: string): Promise<
+    Array<{
+      id: string;
+      name: string;
+      email: string;
+      role: string;
+      status: string;
+      joinedAt: string;
+      avatarUrl: string;
+    }>
+  > {
+    return [
+      {
+        id: "member-1",
+        name: "ProStreamer",
+        email: "streamer@example.com",
+        role: "owner",
+        status: "active",
+        joinedAt: "2024-01-15T00:00:00Z",
+        avatarUrl: "",
+      },
+      {
+        id: "member-2",
+        name: "ModMaster",
+        email: "mod@example.com",
+        role: "admin",
+        status: "active",
+        joinedAt: "2024-02-01T00:00:00Z",
+        avatarUrl: "",
+      },
+      {
+        id: "member-3",
+        name: "NewHelper",
+        email: "helper@example.com",
+        role: "member",
+        status: "invited",
+        joinedAt: "2024-12-01T00:00:00Z",
+        avatarUrl: "",
+      },
+    ];
+  }
+
+  // ==================== Accounts ====================
+
+  private accounts = [
+    {
+      id: "account-1",
+      name: "MainTwitch",
+      displayName: "WoofyStream",
+      slug: "woofy-stream",
+      platform: "twitch",
+      teamId: "team-1",
+      status: "connected",
+      createdAt: "2024-01-15T00:00:00Z",
+    },
+    {
+      id: "account-2",
+      name: "YouTubeGaming",
+      displayName: "Woofy Gaming",
+      slug: "woofy-gaming",
+      platform: "youtube",
+      teamId: "team-1",
+      status: "connected",
+      createdAt: "2024-03-01T00:00:00Z",
+    },
+    {
+      id: "account-3",
+      name: "CollabTwitch",
+      displayName: "Collab Stream",
+      slug: "collab-stream",
+      platform: "twitch",
+      teamId: "team-2",
+      status: "connected",
+      createdAt: "2024-06-15T00:00:00Z",
+    },
+  ];
+
+  async getAccounts(teamId?: string): Promise<
+    Array<{
+      id: string;
+      name: string;
+      displayName: string;
+      slug: string;
+      platform: string;
+      teamId: string;
+      status: string;
+      createdAt: string;
+    }>
+  > {
+    const filtered = teamId ? this.accounts.filter((a) => a.teamId === teamId) : this.accounts;
+    return filtered.map((a) => ({ ...a }));
+  }
+
+  async getAccount(id: string): Promise<{
+    id: string;
+    name: string;
+    displayName: string;
+    slug: string;
+    platform: string;
+    teamId: string;
+    status: string;
+    createdAt: string;
+  } | null> {
+    const account = this.accounts.find((a) => a.id === id);
+    return account ? { ...account } : null;
+  }
+
+  async updateAccount(
+    id: string,
+    input: { name?: string; displayName?: string }
+  ): Promise<{
+    id: string;
+    name: string;
+    displayName: string;
+    slug: string;
+    platform: string;
+    teamId: string;
+    status: string;
+    createdAt: string;
+  } | null> {
+    const account = this.accounts.find((a) => a.id === id);
+    if (!account) return null;
+    if (input.name !== undefined) account.name = input.name;
+    if (input.displayName !== undefined) account.displayName = input.displayName;
+    return { ...account };
+  }
+
+  async getStreamStatus(accountId: string): Promise<{
+    isLive: boolean;
+    uptime: string;
+    viewerCount: number;
+    startedAt?: string;
+  }> {
+    // Simulate live status for account-1, offline for others
+    if (accountId === "account-1") {
+      return {
+        isLive: true,
+        uptime: "02:34:56",
+        viewerCount: 1247,
+        startedAt: new Date(Date.now() - 2 * 60 * 60 * 1000 - 34 * 60 * 1000 - 56 * 1000).toISOString(),
+      };
+    }
+    return {
+      isLive: false,
+      uptime: "00:00:00",
+      viewerCount: 0,
+    };
+  }
+
+  // ==================== Modules ====================
+
+  private mockModules = [
+    {
+      id: "mod-1",
+      name: "Chat Commands",
+      description: "Custom chat command system",
+      category: "chat",
+      version: "1.2.0",
+      author: "WoofX3",
+      isInstalled: true,
+      iconUrl: "",
+    },
+    {
+      id: "mod-2",
+      name: "Alerts Manager",
+      description: "Customizable stream alerts",
+      category: "alerts",
+      version: "2.0.1",
+      author: "WoofX3",
+      isInstalled: true,
+      iconUrl: "",
+    },
+    {
+      id: "mod-3",
+      name: "Loyalty Points",
+      description: "Viewer loyalty point system",
+      category: "engagement",
+      version: "1.5.0",
+      author: "WoofX3",
+      isInstalled: false,
+      iconUrl: "",
+    },
+    {
+      id: "mod-4",
+      name: "Sound Effects",
+      description: "Trigger sound effects from chat",
+      category: "audio",
+      version: "1.0.0",
+      author: "Community",
+      isInstalled: true,
+      iconUrl: "",
+    },
+    {
+      id: "mod-5",
+      name: "Polls & Voting",
+      description: "Interactive viewer polls",
+      category: "engagement",
+      version: "1.3.2",
+      author: "WoofX3",
+      isInstalled: false,
+      iconUrl: "",
+    },
+    {
+      id: "mod-6",
+      name: "Stream Deck",
+      description: "Stream Deck integration",
+      category: "integration",
+      version: "2.1.0",
+      author: "WoofX3",
+      isInstalled: false,
+      iconUrl: "",
+    },
+    {
+      id: "mod-7",
+      name: "Giveaways",
+      description: "Run viewer giveaways",
+      category: "engagement",
+      version: "1.1.0",
+      author: "Community",
+      isInstalled: false,
+      iconUrl: "",
+    },
+    {
+      id: "mod-8",
+      name: "OBS Control",
+      description: "Control OBS from chat",
+      category: "integration",
+      version: "1.4.0",
+      author: "WoofX3",
+      isInstalled: true,
+      iconUrl: "",
+    },
+  ];
+
+  async getModules(query?: {
+    category?: string;
+    search?: string;
+    installed?: boolean;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{
+    modules: typeof this.mockModules;
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    let filtered = [...this.mockModules];
+    if (query?.category) filtered = filtered.filter((m) => m.category === query.category);
+    if (query?.search) filtered = filtered.filter((m) => m.name.toLowerCase().includes(query.search!.toLowerCase()));
+    if (query?.installed !== undefined) filtered = filtered.filter((m) => m.isInstalled === query.installed);
+    const page = query?.page || 1;
+    const pageSize = query?.pageSize || 8;
+    return { modules: filtered.slice((page - 1) * pageSize, page * pageSize), total: filtered.length, page, pageSize };
+  }
+
+  async getModule(id: string): Promise<(typeof this.mockModules)[0] | null> {
+    return this.mockModules.find((m) => m.id === id) || null;
+  }
+
+  async installModule(id: string): Promise<{ success: boolean }> {
+    const mod = this.mockModules.find((m) => m.id === id);
+    if (mod) mod.isInstalled = true;
+    return { success: !!mod };
+  }
+
+  async uninstallModule(id: string): Promise<{ success: boolean }> {
+    const mod = this.mockModules.find((m) => m.id === id);
+    if (mod) mod.isInstalled = false;
+    return { success: !!mod };
+  }
+
+  // ==================== Workflows (Extended) ====================
+
+  private mockWorkflowsList: Array<{
+    id: string;
+    name: string;
+    description: string;
+    accountId: string;
+    isEnabled: boolean;
+    nodes: unknown[];
+    edges: unknown[];
+    stats: { runsToday: number; successRate: number };
+    createdAt: string;
+    updatedAt: string;
+  }> = [
+    {
+      id: "wf-1",
+      name: "Welcome New Followers",
+      description: "Greet new followers with custom message",
+      isEnabled: true,
+      accountId: "account-1",
+      nodes: [],
+      edges: [],
+      stats: { runsToday: 47, successRate: 98 },
+      createdAt: "2024-06-15T10:00:00Z",
+      updatedAt: "2026-01-10T14:30:00Z",
+    },
+    {
+      id: "wf-2",
+      name: "Sub Alert Chain",
+      description: "Multi-step subscription celebration",
+      isEnabled: true,
+      accountId: "account-1",
+      nodes: [],
+      edges: [],
+      stats: { runsToday: 12, successRate: 100 },
+      createdAt: "2024-07-20T08:00:00Z",
+      updatedAt: "2026-01-12T09:15:00Z",
+    },
+    {
+      id: "wf-3",
+      name: "Raid Response",
+      description: "Automated raid thank you",
+      isEnabled: false,
+      accountId: "account-1",
+      nodes: [],
+      edges: [],
+      stats: { runsToday: 0, successRate: 95 },
+      createdAt: "2024-08-01T12:00:00Z",
+      updatedAt: "2025-12-01T16:45:00Z",
+    },
+    {
+      id: "wf-4",
+      name: "Bit Rewards",
+      description: "Special effects for bit donations",
+      isEnabled: true,
+      accountId: "account-1",
+      nodes: [],
+      edges: [],
+      stats: { runsToday: 23, successRate: 99 },
+      createdAt: "2024-09-10T14:00:00Z",
+      updatedAt: "2026-01-13T11:20:00Z",
+    },
+    {
+      id: "wf-5",
+      name: "Channel Point Redemption",
+      description: "Handle channel point rewards",
+      isEnabled: true,
+      accountId: "account-2",
+      nodes: [],
+      edges: [],
+      stats: { runsToday: 156, successRate: 97 },
+      createdAt: "2024-10-05T09:00:00Z",
+      updatedAt: "2026-01-14T02:00:00Z",
+    },
+    {
+      id: "wf-6",
+      name: "Stream Start Routine",
+      description: "Automated stream startup tasks",
+      isEnabled: true,
+      accountId: "account-1",
+      nodes: [],
+      edges: [],
+      stats: { runsToday: 1, successRate: 100 },
+      createdAt: "2024-11-20T16:00:00Z",
+      updatedAt: "2026-01-14T04:00:00Z",
+    },
+  ];
+
+  async getWorkflows(query?: { accountId?: string; enabled?: boolean; page?: number; pageSize?: number }): Promise<{
+    workflows: typeof this.mockWorkflowsList;
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    let filtered = [...this.mockWorkflowsList];
+    if (query?.accountId) filtered = filtered.filter((w) => w.accountId === query.accountId);
+    if (query?.enabled !== undefined) filtered = filtered.filter((w) => w.isEnabled === query.enabled);
+    const page = query?.page || 1;
+    const pageSize = query?.pageSize || 6;
+    return {
+      workflows: filtered.slice((page - 1) * pageSize, page * pageSize),
+      total: filtered.length,
+      page,
+      pageSize,
+    };
+  }
+
+  async getWorkflow(id: string): Promise<(typeof this.mockWorkflowsList)[0] | null> {
+    return this.mockWorkflowsList.find((w) => w.id === id) || null;
+  }
+
+  async createWorkflow(data: {
+    name: string;
+    description?: string;
+    accountId: string;
+    isEnabled?: boolean;
+    nodes?: unknown[];
+    edges?: unknown[];
+  }): Promise<(typeof this.mockWorkflowsList)[0]> {
+    const now = new Date().toISOString();
+    const workflow = {
+      id: `wf-${Date.now()}`,
+      name: data.name,
+      description: data.description || "",
+      accountId: data.accountId,
+      isEnabled: data.isEnabled ?? false,
+      nodes: data.nodes || [],
+      edges: data.edges || [],
+      stats: { runsToday: 0, successRate: 100 },
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.mockWorkflowsList.push(workflow);
+    return workflow;
+  }
+
+  async updateWorkflow(
+    id: string,
+    data: { name?: string; description?: string; isEnabled?: boolean; nodes?: unknown[]; edges?: unknown[] }
+  ): Promise<(typeof this.mockWorkflowsList)[0] | null> {
+    const workflow = this.mockWorkflowsList.find((w) => w.id === id);
+    if (!workflow) return null;
+    if (data.name !== undefined) workflow.name = data.name;
+    if (data.description !== undefined) workflow.description = data.description;
+    if (data.isEnabled !== undefined) workflow.isEnabled = data.isEnabled;
+    if (data.nodes !== undefined) workflow.nodes = data.nodes;
+    if (data.edges !== undefined) workflow.edges = data.edges;
+    workflow.updatedAt = new Date().toISOString();
+    return workflow;
+  }
+
+  async deleteWorkflow(id: string): Promise<boolean> {
+    const idx = this.mockWorkflowsList.findIndex((w) => w.id === id);
+    if (idx >= 0) {
+      this.mockWorkflowsList.splice(idx, 1);
+      return true;
+    }
+    return false;
+  }
+
+  private workflowRuns: Array<{
+    id: string;
+    workflowId: string;
+    accountId: string;
+    status: string;
+    startedAt: string;
+    duration: number;
+    trigger: string;
+  }> = [
+    {
+      id: "run-1",
+      workflowId: "wf-1",
+      accountId: "account-1",
+      status: "success",
+      startedAt: "2026-01-14T04:30:00Z",
+      duration: 1200,
+      trigger: "follow",
+    },
+    {
+      id: "run-2",
+      workflowId: "wf-2",
+      accountId: "account-1",
+      status: "success",
+      startedAt: "2026-01-14T03:15:00Z",
+      duration: 3500,
+      trigger: "subscription",
+    },
+    {
+      id: "run-3",
+      workflowId: "wf-4",
+      accountId: "account-1",
+      status: "failed",
+      startedAt: "2026-01-14T02:45:00Z",
+      duration: 800,
+      trigger: "cheer",
+    },
+    {
+      id: "run-4",
+      workflowId: "wf-1",
+      accountId: "account-1",
+      status: "success",
+      startedAt: "2026-01-14T01:00:00Z",
+      duration: 950,
+      trigger: "follow",
+    },
+    {
+      id: "run-5",
+      workflowId: "wf-6",
+      accountId: "account-1",
+      status: "running",
+      startedAt: "2026-01-14T00:00:00Z",
+      duration: 0,
+      trigger: "stream.online",
+    },
+    {
+      id: "run-6",
+      workflowId: "wf-5",
+      accountId: "account-2",
+      status: "success",
+      startedAt: "2026-01-13T22:30:00Z",
+      duration: 450,
+      trigger: "redemption",
+    },
+    {
+      id: "run-7",
+      workflowId: "wf-5",
+      accountId: "account-2",
+      status: "success",
+      startedAt: "2026-01-13T21:00:00Z",
+      duration: 380,
+      trigger: "redemption",
+    },
+  ];
+
+  async getWorkflowRuns(query?: { workflowId?: string; accountId?: string; limit?: number }): Promise<
+    Array<{
+      id: string;
+      workflowId: string;
+      workflowName: string;
+      status: string;
+      startedAt: string;
+      duration: number;
+      trigger: string;
+    }>
+  > {
+    const req: workflow.ListWorkflowExecutionsRequest = {
+      workflowId: query?.workflowId || "",
+      applicationId: this.applicationId,
+      status: "",
+      startedBy: "",
+      from: protoscript.Timestamp.initialize(),
+      to: protoscript.Timestamp.initialize(),
+      page: 1,
+      pageSize: query?.limit || 10,
+      sortBy: "startedAt",
+      sortDesc: true,
+    };
+
+    const response = await this.db.listWorkflowExecutions(req);
+    if (response.status?.code !== "OK") {
+      // Fall back to empty array on error
+      return [];
+    }
+
+    // Get workflow names and calculate durations
+    const runs = await Promise.all(
+      (response.executions || []).map(async (exec) => {
+        // Get workflow name
+        const workflowReq: workflow.GetWorkflowRequest = {
+          id: exec.workflowId,
+        };
+        const workflowResponse = await this.db.getWorkflow(workflowReq);
+        const workflowName = workflowResponse.workflow?.name || "Unknown Workflow";
+
+        // Calculate startedAt timestamp
+        const startedAt = exec.startedAt
+          ? new Date(Number(exec.startedAt.seconds) * 1000 + exec.startedAt.nanos / 1000000).toISOString()
+          : "";
+
+        // Calculate duration in ms
+        let duration = 0;
+        if (exec.startedAt && exec.completedAt) {
+          const startMs = Number(exec.startedAt.seconds) * 1000 + exec.startedAt.nanos / 1000000;
+          const endMs = Number(exec.completedAt.seconds) * 1000 + exec.completedAt.nanos / 1000000;
+          duration = endMs - startMs;
+        } else if (exec.startedAt) {
+          // Still running - calculate from now
+          const startMs = Number(exec.startedAt.seconds) * 1000 + exec.startedAt.nanos / 1000000;
+          duration = Date.now() - startMs;
+        }
+
+        // Extract trigger from inputs metadata if available
+        const trigger = (exec.inputs?.trigger as string) || "manual";
+
+        return {
+          id: exec.id,
+          workflowId: exec.workflowId,
+          workflowName,
+          status: exec.status,
+          startedAt,
+          duration: Math.round(duration),
+          trigger,
+        };
+      })
+    );
+
+    return runs;
+  }
+
+  // ==================== Assets ====================
+
+  private mockAssets = [
+    {
+      id: "asset-1",
+      name: "Follow Alert",
+      type: "image",
+      url: "/assets/follow.gif",
+      accountId: "account-1",
+      size: 256000,
+      createdAt: "2024-06-01T00:00:00Z",
+    },
+    {
+      id: "asset-2",
+      name: "Sub Sound",
+      type: "audio",
+      url: "/assets/sub.mp3",
+      accountId: "account-1",
+      size: 512000,
+      createdAt: "2024-06-15T00:00:00Z",
+    },
+    {
+      id: "asset-3",
+      name: "Raid Video",
+      type: "video",
+      url: "/assets/raid.mp4",
+      accountId: "account-1",
+      size: 2048000,
+      createdAt: "2024-07-01T00:00:00Z",
+    },
+    {
+      id: "asset-4",
+      name: "Logo",
+      type: "image",
+      url: "/assets/logo.png",
+      accountId: "account-1",
+      size: 128000,
+      createdAt: "2024-01-15T00:00:00Z",
+    },
+    {
+      id: "asset-5",
+      name: "Intro Music",
+      type: "audio",
+      url: "/assets/intro.mp3",
+      accountId: "account-1",
+      size: 1024000,
+      createdAt: "2024-02-01T00:00:00Z",
+    },
+    {
+      id: "asset-6",
+      name: "Outro Video",
+      type: "video",
+      url: "/assets/outro.mp4",
+      accountId: "account-1",
+      size: 4096000,
+      createdAt: "2024-03-01T00:00:00Z",
+    },
+    {
+      id: "asset-7",
+      name: "Emote Pack",
+      type: "image",
+      url: "/assets/emotes.zip",
+      accountId: "account-1",
+      size: 768000,
+      createdAt: "2024-04-01T00:00:00Z",
+    },
+    {
+      id: "asset-8",
+      name: "Alert Sound",
+      type: "audio",
+      url: "/assets/alert.wav",
+      accountId: "account-1",
+      size: 384000,
+      createdAt: "2024-05-01T00:00:00Z",
+    },
+    {
+      id: "asset-9",
+      name: "BRB Screen",
+      type: "image",
+      url: "/assets/brb.png",
+      accountId: "account-2",
+      size: 192000,
+      createdAt: "2024-08-01T00:00:00Z",
+    },
+    {
+      id: "asset-10",
+      name: "Donation Sound",
+      type: "audio",
+      url: "/assets/donation.mp3",
+      accountId: "account-2",
+      size: 256000,
+      createdAt: "2024-09-01T00:00:00Z",
+    },
+    {
+      id: "asset-11",
+      name: "Starting Soon",
+      type: "video",
+      url: "/assets/starting.mp4",
+      accountId: "account-1",
+      size: 3072000,
+      createdAt: "2024-10-01T00:00:00Z",
+    },
+    {
+      id: "asset-12",
+      name: "Ending Screen",
+      type: "image",
+      url: "/assets/ending.png",
+      accountId: "account-1",
+      size: 256000,
+      createdAt: "2024-11-01T00:00:00Z",
+    },
+  ];
+
+  async getAssets(query?: {
+    accountId?: string;
+    type?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{
+    assets: typeof this.mockAssets;
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    let filtered = [...this.mockAssets];
+    if (query?.accountId) filtered = filtered.filter((a) => a.accountId === query.accountId);
+    if (query?.type) filtered = filtered.filter((a) => a.type === query.type);
+    if (query?.search) filtered = filtered.filter((a) => a.name.toLowerCase().includes(query.search!.toLowerCase()));
+    const page = query?.page || 1;
+    const pageSize = query?.pageSize || 12;
+    return { assets: filtered.slice((page - 1) * pageSize, page * pageSize), total: filtered.length, page, pageSize };
+  }
+
+  async getAsset(id: string): Promise<(typeof this.mockAssets)[0] | null> {
+    return this.mockAssets.find((a) => a.id === id) || null;
+  }
+
+  async createAsset(data: {
+    name: string;
+    type: string;
+    url: string;
+    accountId: string;
+    size: number;
+  }): Promise<{ id: string }> {
+    const id = `asset-${Date.now()}`;
+    this.mockAssets.push({ ...data, id, createdAt: new Date().toISOString() });
+    return { id };
+  }
+
+  async deleteAsset(id: string): Promise<{ success: boolean }> {
+    const idx = this.mockAssets.findIndex((a) => a.id === id);
+    if (idx >= 0) this.mockAssets.splice(idx, 1);
+    return { success: idx >= 0 };
+  }
+
+  // ==================== Scenes ====================
+
+  private mockScenes = [
+    {
+      id: "scene-1",
+      name: "Main Gaming",
+      accountId: "account-1",
+      widgets: [{ id: "w1", type: "camera", position: { x: 0, y: 0 }, size: { w: 400, h: 300 } }],
+      createdAt: "2024-01-15T00:00:00Z",
+    },
+    {
+      id: "scene-2",
+      name: "Just Chatting",
+      accountId: "account-1",
+      widgets: [{ id: "w2", type: "chat", position: { x: 0, y: 0 }, size: { w: 300, h: 600 } }],
+      createdAt: "2024-02-01T00:00:00Z",
+    },
+    {
+      id: "scene-3",
+      name: "BRB Screen",
+      accountId: "account-1",
+      widgets: [{ id: "w3", type: "image", position: { x: 0, y: 0 }, size: { w: 1920, h: 1080 } }],
+      createdAt: "2024-03-01T00:00:00Z",
+    },
+  ];
+
+  async getScenes(query?: { accountId?: string; page?: number; pageSize?: number }): Promise<{
+    scenes: typeof this.mockScenes;
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    let filtered = [...this.mockScenes];
+    if (query?.accountId) filtered = filtered.filter((s) => s.accountId === query.accountId);
+    const page = query?.page || 1;
+    const pageSize = query?.pageSize || 10;
+    return { scenes: filtered.slice((page - 1) * pageSize, page * pageSize), total: filtered.length, page, pageSize };
+  }
+
+  async getScene(id: string): Promise<(typeof this.mockScenes)[0] | null> {
+    return this.mockScenes.find((s) => s.id === id) || null;
+  }
+
+  async createScene(data: { name: string; accountId: string }): Promise<{ id: string }> {
+    const id = `scene-${Date.now()}`;
+    this.mockScenes.push({ ...data, id, widgets: [], createdAt: new Date().toISOString() });
+    return { id };
+  }
+
+  async updateScene(id: string, data: Partial<(typeof this.mockScenes)[0]>): Promise<{ success: boolean }> {
+    const idx = this.mockScenes.findIndex((s) => s.id === id);
+    if (idx >= 0) Object.assign(this.mockScenes[idx], data);
+    return { success: idx >= 0 };
+  }
+
+  async deleteScene(id: string): Promise<{ success: boolean }> {
+    const idx = this.mockScenes.findIndex((s) => s.id === id);
+    if (idx >= 0) this.mockScenes.splice(idx, 1);
+    return { success: idx >= 0 };
+  }
+
+  // ==================== Dashboard Stats ====================
+
+  async getDashboardStats(): Promise<{
+    activeWorkflows: number;
+    totalWorkflows: number;
+    installedModules: number;
+    totalModules: number;
+    activeAccounts: number;
+    recentEvents: number;
+  }> {
+    return {
+      activeWorkflows: this.mockWorkflowsList.filter((w) => w.isEnabled).length,
+      totalWorkflows: this.mockWorkflowsList.length,
+      installedModules: this.mockModules.filter((m) => m.isInstalled).length,
+      totalModules: this.mockModules.length,
+      activeAccounts: 2,
+      recentEvents: 147,
+    };
+  }
+
+  // ==================== Chat & Stream Events ====================
+
+  async getChatMessages(
+    accountId: string,
+    limit?: number
+  ): Promise<
+    Array<{
+      id: string;
+      user: string;
+      message: string;
+      timestamp: string;
+      badges: string[];
+      color: string;
+    }>
+  > {
+    const messages = [
+      {
+        id: "msg-1",
+        user: "CoolViewer42",
+        message: "Hey everyone!",
+        timestamp: "2026-01-13T23:30:00Z",
+        badges: ["subscriber"],
+        color: "#FF5733",
+      },
+      {
+        id: "msg-2",
+        user: "ModMaster",
+        message: "Welcome to the stream!",
+        timestamp: "2026-01-13T23:30:05Z",
+        badges: ["moderator", "subscriber"],
+        color: "#33FF57",
+      },
+      {
+        id: "msg-3",
+        user: "NewFollower",
+        message: "Just followed! Love your content",
+        timestamp: "2026-01-13T23:30:10Z",
+        badges: [],
+        color: "#3357FF",
+      },
+      {
+        id: "msg-4",
+        user: "BigDonor",
+        message: "PogChamp",
+        timestamp: "2026-01-13T23:30:15Z",
+        badges: ["subscriber", "vip"],
+        color: "#FF33F5",
+      },
+      {
+        id: "msg-5",
+        user: "ChattyPerson",
+        message: "What game is this?",
+        timestamp: "2026-01-13T23:30:20Z",
+        badges: ["subscriber"],
+        color: "#F5FF33",
+      },
+    ];
+    return messages.slice(0, limit || 50);
+  }
+
+  async sendChatMessage(accountId: string, message: string): Promise<{ success: boolean; messageId: string }> {
+    return { success: true, messageId: `msg-${Date.now()}` };
+  }
+
+  private streamEvents: Array<{
+    id: string;
+    accountId: string;
+    type: string;
+    user: string;
+    amount?: number;
+    message?: string;
+    timestamp: string;
+  }> = [
+    { id: "evt-1", accountId: "account-1", type: "follow", user: "NewFollower123", timestamp: "2026-01-14T05:25:00Z" },
+    {
+      id: "evt-2",
+      accountId: "account-1",
+      type: "subscription",
+      user: "LoyalSub",
+      amount: 1,
+      message: "Love the stream!",
+      timestamp: "2026-01-14T05:20:00Z",
+    },
+    {
+      id: "evt-3",
+      accountId: "account-1",
+      type: "cheer",
+      user: "BitGiver",
+      amount: 500,
+      message: "Take my bits!",
+      timestamp: "2026-01-14T05:15:00Z",
+    },
+    {
+      id: "evt-4",
+      accountId: "account-1",
+      type: "raid",
+      user: "FriendlyStreamer",
+      amount: 42,
+      timestamp: "2026-01-14T05:10:00Z",
+    },
+    {
+      id: "evt-5",
+      accountId: "account-1",
+      type: "gift",
+      user: "GiftMaster",
+      amount: 5,
+      message: "Gifting to the community!",
+      timestamp: "2026-01-14T05:05:00Z",
+    },
+    {
+      id: "evt-6",
+      accountId: "account-1",
+      type: "donation",
+      user: "GenerousDonor",
+      amount: 25,
+      message: "Keep up the great work!",
+      timestamp: "2026-01-14T05:00:00Z",
+    },
+    { id: "evt-7", accountId: "account-1", type: "follow", user: "AnotherFan", timestamp: "2026-01-14T04:55:00Z" },
+    {
+      id: "evt-8",
+      accountId: "account-1",
+      type: "subscription",
+      user: "TierThreeSub",
+      amount: 3,
+      message: "Tier 3 hype!",
+      timestamp: "2026-01-14T04:50:00Z",
+    },
+    { id: "evt-9", accountId: "account-2", type: "follow", user: "YTFollower", timestamp: "2026-01-14T04:45:00Z" },
+    {
+      id: "evt-10",
+      accountId: "account-2",
+      type: "donation",
+      user: "SuperChat",
+      amount: 10,
+      message: "Great content!",
+      timestamp: "2026-01-14T04:40:00Z",
+    },
+  ];
+
+  async getStreamEvents(query?: { accountId: string; limit?: number; types?: string[] }): Promise<
+    Array<{
+      id: string;
+      type: string;
+      user: string;
+      amount?: number;
+      message?: string;
+      timestamp: string;
+    }>
+  > {
+    let filtered = [...this.streamEvents];
+
+    // Filter by accountId (required)
+    if (query?.accountId) {
+      filtered = filtered.filter((e) => e.accountId === query.accountId);
+    }
+
+    // Filter by event types
+    if (query?.types?.length) {
+      filtered = filtered.filter((e) => query.types!.includes(e.type));
+    }
+
+    // Apply limit
+    const limit = query?.limit || 20;
+    filtered = filtered.slice(0, limit);
+
+    // Return without accountId in response
+    return filtered.map(({ accountId, ...event }) => event);
+  }
+
+  // ==================== Triggers & Actions ====================
+
+  private triggers: Array<{
+    id: string;
+    moduleId: string;
+    name: string;
+    description: string;
+    icon: string;
+    category: string;
+    color?: string;
+    config: {
+      fields: Array<{
+        id: string;
+        name: string;
+        type: string;
+        label: string;
+        description?: string;
+        required?: boolean;
+        placeholder?: string;
+        defaultValue?: unknown;
+        options?: Array<{ label: string; value: string }>;
+        min?: number;
+        max?: number;
+        step?: number;
+        unit?: string;
+        mediaType?: string;
+        validation?: { pattern?: string; message?: string };
+      }>;
+      supportsTiers?: boolean;
+      tierLabel?: string;
+    };
+  }> = [
+    {
+      id: "trigger-chat-command",
+      moduleId: "mod-1",
+      name: "Chat Command",
+      description: "When someone uses a chat command",
+      icon: "MessageCircle",
+      category: "chat",
+      color: "text-blue-500",
+      config: {
+        fields: [
+          { id: "command", name: "command", type: "string", label: "Command", required: true, placeholder: "!hello" },
+          {
+            id: "cooldown",
+            name: "cooldown",
+            type: "number",
+            label: "Cooldown",
+            unit: "seconds",
+            min: 0,
+            max: 3600,
+            defaultValue: 5,
+          },
+          { id: "modOnly", name: "modOnly", type: "boolean", label: "Mods Only", defaultValue: false },
+        ],
+      },
+    },
+    {
+      id: "trigger-follow",
+      moduleId: "mod-2",
+      name: "New Follower",
+      description: "When someone follows the channel",
+      icon: "UserPlus",
+      category: "events",
+      color: "text-green-500",
+      config: { fields: [] },
+    },
+    {
+      id: "trigger-subscription",
+      moduleId: "mod-2",
+      name: "Subscription",
+      description: "When someone subscribes or resubscribes",
+      icon: "Star",
+      category: "events",
+      color: "text-purple-500",
+      config: {
+        fields: [
+          {
+            id: "minMonths",
+            name: "minMonths",
+            type: "number",
+            label: "Minimum Months",
+            min: 0,
+            max: 100,
+            defaultValue: 0,
+          },
+        ],
+        supportsTiers: true,
+        tierLabel: "Subscription Tier",
+      },
+    },
+    {
+      id: "trigger-cheer",
+      moduleId: "mod-2",
+      name: "Cheer/Bits",
+      description: "When someone cheers with bits",
+      icon: "Gem",
+      category: "events",
+      color: "text-pink-500",
+      config: {
+        fields: [
+          {
+            id: "minBits",
+            name: "minBits",
+            type: "number",
+            label: "Minimum Bits",
+            min: 1,
+            max: 100000,
+            defaultValue: 1,
+          },
+        ],
+      },
+    },
+    {
+      id: "trigger-raid",
+      moduleId: "mod-2",
+      name: "Raid",
+      description: "When another streamer raids the channel",
+      icon: "Users",
+      category: "events",
+      color: "text-orange-500",
+      config: {
+        fields: [
+          {
+            id: "minViewers",
+            name: "minViewers",
+            type: "number",
+            label: "Minimum Viewers",
+            min: 0,
+            max: 10000,
+            defaultValue: 0,
+          },
+        ],
+      },
+    },
+    {
+      id: "trigger-redemption",
+      moduleId: "mod-3",
+      name: "Channel Point Redemption",
+      description: "When someone redeems channel points",
+      icon: "Gift",
+      category: "engagement",
+      color: "text-cyan-500",
+      config: {
+        fields: [
+          {
+            id: "rewardId",
+            name: "rewardId",
+            type: "string",
+            label: "Reward ID",
+            placeholder: "Leave empty for any reward",
+          },
+        ],
+      },
+    },
+    {
+      id: "trigger-stream-online",
+      moduleId: "mod-8",
+      name: "Stream Goes Live",
+      description: "When the stream starts",
+      icon: "Radio",
+      category: "stream",
+      color: "text-red-500",
+      config: { fields: [] },
+    },
+    {
+      id: "trigger-stream-offline",
+      moduleId: "mod-8",
+      name: "Stream Goes Offline",
+      description: "When the stream ends",
+      icon: "RadioOff",
+      category: "stream",
+      color: "text-gray-500",
+      config: { fields: [] },
+    },
+  ];
+
+  private actions: Array<{
+    id: string;
+    moduleId: string;
+    name: string;
+    description: string;
+    icon: string;
+    category: string;
+    color?: string;
+    config: {
+      fields: Array<{
+        id: string;
+        name: string;
+        type: string;
+        label: string;
+        description?: string;
+        required?: boolean;
+        placeholder?: string;
+        defaultValue?: unknown;
+        options?: Array<{ label: string; value: string }>;
+        min?: number;
+        max?: number;
+        step?: number;
+        unit?: string;
+        mediaType?: string;
+        validation?: { pattern?: string; message?: string };
+      }>;
+    };
+  }> = [
+    {
+      id: "action-show-alert",
+      moduleId: "mod-2",
+      name: "Show Alert",
+      description: "Display an on-screen alert overlay",
+      icon: "Bell",
+      category: "alerts",
+      color: "text-yellow-500",
+      config: {
+        fields: [
+          { id: "message", name: "message", type: "string", label: "Alert Message", placeholder: "Thanks!" },
+          {
+            id: "duration",
+            name: "duration",
+            type: "number",
+            label: "Duration",
+            unit: "seconds",
+            min: 1,
+            max: 30,
+            defaultValue: 5,
+          },
+          { id: "image", name: "image", type: "media", label: "Alert Image", mediaType: "image" },
+        ],
+      },
+    },
+    {
+      id: "action-send-chat",
+      moduleId: "mod-1",
+      name: "Send Chat Message",
+      description: "Send a message to chat",
+      icon: "MessageSquare",
+      category: "chat",
+      color: "text-blue-500",
+      config: {
+        fields: [
+          {
+            id: "message",
+            name: "message",
+            type: "string",
+            label: "Message",
+            required: true,
+            placeholder: "Hello {user}!",
+          },
+          {
+            id: "delay",
+            name: "delay",
+            type: "number",
+            label: "Delay",
+            unit: "seconds",
+            min: 0,
+            max: 60,
+            defaultValue: 0,
+          },
+        ],
+      },
+    },
+    {
+      id: "action-play-sound",
+      moduleId: "mod-4",
+      name: "Play Sound",
+      description: "Play a sound effect",
+      icon: "Volume2",
+      category: "audio",
+      color: "text-green-500",
+      config: {
+        fields: [
+          { id: "sound", name: "sound", type: "media", label: "Sound File", mediaType: "audio", required: true },
+          {
+            id: "volume",
+            name: "volume",
+            type: "range",
+            label: "Volume",
+            min: 0,
+            max: 100,
+            defaultValue: 80,
+            unit: "%",
+          },
+        ],
+      },
+    },
+    {
+      id: "action-add-points",
+      moduleId: "mod-3",
+      name: "Add Loyalty Points",
+      description: "Give loyalty points to a user",
+      icon: "Coins",
+      category: "engagement",
+      color: "text-amber-500",
+      config: {
+        fields: [
+          { id: "points", name: "points", type: "number", label: "Points", required: true, min: 1, max: 100000 },
+          {
+            id: "target",
+            name: "target",
+            type: "select",
+            label: "Target",
+            options: [
+              { label: "Triggering User", value: "trigger_user" },
+              { label: "Random Viewer", value: "random" },
+              { label: "All Viewers", value: "all" },
+            ],
+            defaultValue: "trigger_user",
+          },
+        ],
+      },
+    },
+    {
+      id: "action-obs-scene",
+      moduleId: "mod-8",
+      name: "Switch OBS Scene",
+      description: "Change the active OBS scene",
+      icon: "Monitor",
+      category: "obs",
+      color: "text-purple-500",
+      config: {
+        fields: [
+          { id: "scene", name: "scene", type: "string", label: "Scene Name", required: true, placeholder: "Gaming" },
+        ],
+      },
+    },
+    {
+      id: "action-timeout",
+      moduleId: "mod-1",
+      name: "Timeout User",
+      description: "Timeout a user in chat",
+      icon: "Clock",
+      category: "moderation",
+      color: "text-red-500",
+      config: {
+        fields: [
+          {
+            id: "duration",
+            name: "duration",
+            type: "number",
+            label: "Duration",
+            unit: "seconds",
+            min: 1,
+            max: 1209600,
+            defaultValue: 600,
+          },
+          { id: "reason", name: "reason", type: "string", label: "Reason", placeholder: "Rule violation" },
+        ],
+      },
+    },
+    {
+      id: "action-http-request",
+      moduleId: "mod-6",
+      name: "HTTP Request",
+      description: "Make an HTTP request to an external service",
+      icon: "Globe",
+      category: "integration",
+      color: "text-indigo-500",
+      config: {
+        fields: [
+          {
+            id: "url",
+            name: "url",
+            type: "string",
+            label: "URL",
+            required: true,
+            placeholder: "https://api.example.com/webhook",
+          },
+          {
+            id: "method",
+            name: "method",
+            type: "select",
+            label: "Method",
+            options: [
+              { label: "GET", value: "GET" },
+              { label: "POST", value: "POST" },
+              { label: "PUT", value: "PUT" },
+            ],
+            defaultValue: "POST",
+          },
+          { id: "body", name: "body", type: "json", label: "Request Body" },
+        ],
+      },
+    },
+  ];
+
+  async getTriggers(moduleId?: string): Promise<ModuleTrigger[]> {
+    return this.db.listTriggers(moduleId);
+  }
+
+  async getTrigger(id: string): Promise<(typeof this.triggers)[0] | null> {
+    return this.triggers.find((t) => t.id === id) || null;
+  }
+
+  async getActions(moduleId?: string): Promise<typeof this.actions> {
+    if (moduleId) {
+      return this.actions.filter((a) => a.moduleId === moduleId);
+    }
+    return [...this.actions];
+  }
+
+  async getAction(id: string): Promise<(typeof this.actions)[0] | null> {
+    return this.actions.find((a) => a.id === id) || null;
+  }
+
+  // ==================== User Preferences ====================
+
+  private userPreferences = { email: true, push: false, workflow: true, marketing: false };
+
+  async getUserPreferences(): Promise<{ email: boolean; push: boolean; workflow: boolean; marketing: boolean }> {
+    return { ...this.userPreferences };
+  }
+
+  async updateUserPreferences(prefs: Partial<typeof this.userPreferences>): Promise<{ success: boolean }> {
+    Object.assign(this.userPreferences, prefs);
+    return { success: true };
+  }
+
+  // ==================== Dashboard Layout ====================
+
+  private dashboardLayouts: Record<
+    string,
+    Array<{
+      id: string;
+      type: string;
+      title: string;
+      config?: Record<string, unknown>;
+    }>
+  > = {
+    "account-1": [
+      { id: "dash-1", type: "chat", title: "Live Chat", config: { accountId: "account-1" } },
+      { id: "dash-2", type: "workflow-runs", title: "Recent Workflows", config: { accountId: "account-1", limit: 5 } },
+      { id: "dash-3", type: "event-feed", title: "Stream Events", config: { accountId: "account-1", limit: 10 } },
+    ],
+  };
+
+  async getDashboardLayout(accountId: string): Promise<
+    Array<{
+      id: string;
+      type: string;
+      title: string;
+      config?: Record<string, unknown>;
+    }>
+  > {
+    return this.dashboardLayouts[accountId] || [];
+  }
+
+  async saveDashboardLayout(
+    accountId: string,
+    modules: Array<{
+      id: string;
+      type: string;
+      title: string;
+      config?: Record<string, unknown>;
+    }>
+  ): Promise<boolean> {
+    this.dashboardLayouts[accountId] = modules;
+    return true;
+  }
+
+  // ==================== Internal Helpers ====================
+
+  private async publishEvent(eventType: string, data: Record<string, unknown>, subject?: string): Promise<void> {
+    if (!this.nats) {
+      this.logger.error("Cannot publish event - NATS client not available", { eventType });
+      throw new Error("NATS client not available");
+    }
+
+    const eventId = crypto.randomUUID();
+    const event = {
+      id: eventId,
+      type: eventType,
+      source: "api",
+      time: new Date().toISOString(),
+      data,
+    };
+
+    const eventData = new TextEncoder().encode(JSON.stringify(event));
+    const eventSubject = subject || eventType;
+
+    this.logger.debug("Publishing event to NATS", {
+      eventType,
+      eventId,
+      subject: eventSubject,
+    });
+
+    await this.nats.publish(eventSubject, eventData);
+
+    this.logger.info("Event published successfully", {
+      eventType,
+      eventId,
+      subject: eventSubject,
+    });
+  }
+}
