@@ -1,7 +1,4 @@
-function foo(args) {
-    return { response: "Hello " + (args.name || "World") };
-}
-
-function main(args) {
-    return foo(args);
+function main(ctx) {
+    var name = (ctx.event && ctx.event.name) ? ctx.event.name : "World";
+    return { response: "Hello " + name };
 }

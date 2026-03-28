@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::host::InvocationContext;
 use crate::models::function::Function;
 use crate::runtime::RuntimeAdapter;
 use crate::runtime::echo::EchoAdapter;
@@ -15,7 +16,7 @@ impl FunctionExecutor {
     pub fn new() -> Result<Self, Error> {
         let mut executor = Self {
             adapters: HashMap::new(),
-        };        
+        };
 
         executor.add_adapter("echo".to_string(), Box::new(EchoAdapter::new()));
         executor.add_adapter("lua".to_string(), Box::new(LuaAdapter::new()?));
@@ -24,19 +25,24 @@ impl FunctionExecutor {
         Ok(executor)
     }
 
-    // method to add adapters
     pub fn add_adapter(&mut self, extension: String, adapter: Box<dyn RuntimeAdapter>) {
         self.adapters.insert(extension, adapter);
     }
-    
-    pub fn execute(&self, function: &Function, args: Value) -> Result<Value, Error> {
-        let extension = function.get_extension()
-            .ok_or(Error::UnknownFunctionType)?;
-        
-        let adapter = self.adapters.get(&extension)
+
+    pub fn execute(
+        &self,
+        function: &Function,
+        invocation: &InvocationContext,
+    ) -> Result<Value, Error> {
+        let extension = function.get_extension().ok_or(Error::UnknownFunctionType)?;
+
+        let adapter = self
+            .adapters
+            .get(&extension)
             .ok_or(Error::UnsupportedRuntime(extension.clone()))?;
-        
-        adapter.execute(&function.code, args)
+
+        let entry_point = function.resolved_entry_point();
+        adapter.execute(&function.code, entry_point, invocation)
     }
 }
 
@@ -44,20 +50,30 @@ impl FunctionExecutor {
 mod tests {
     use super::*;
     use crate::error::Error;
+    use crate::host::noop::noop_host_context;
     use serde_json::json;
 
-    // Mock RuntimeAdapter for testing
     struct MockRuntimeAdapter;
-    
+
     impl RuntimeAdapter for MockRuntimeAdapter {
-        fn execute(&self, code: &str, args: serde_json::Value) -> Result<serde_json::Value, Error> {
-            let mut result = args.as_object().unwrap().clone();
-            result.insert("result".to_string(), json!(format!("Hello {}", code)));
-            Ok(json!(result))
+        fn execute(
+            &self,
+            code: &str,
+            _entry_point: &str,
+            invocation: &InvocationContext,
+        ) -> Result<Value, Error> {
+            Ok(json!({
+                "event": invocation.event,
+                "result": format!("Hello {}", code),
+            }))
         }
-        
-        fn create_sandbox(&self) -> Result<(), Error> {
-            Ok(())
+    }
+
+    fn test_invocation(event: Value) -> InvocationContext {
+        InvocationContext {
+            event,
+            user: Value::Null,
+            host: noop_host_context(),
         }
     }
 
@@ -73,7 +89,7 @@ mod tests {
     fn test_add_adapter() {
         let mut executor = FunctionExecutor::new().unwrap();
         let adapter = Box::new(MockRuntimeAdapter);
-        
+
         executor.add_adapter("mock".to_string(), adapter);
         assert!(executor.adapters.contains_key("mock"));
     }
@@ -86,17 +102,19 @@ mod tests {
 
         let function = Function {
             name: "test_function".to_string(),
-            path: std::env::current_dir().unwrap().join("hello.mock"),
+            file_name: "hello.mock".to_string(),
             code: "wolfy".to_string(),
             is_trusted: false,
+            entry_point: None,
         };
 
-        let args = json!({ "input": "test" });
-        let result = executor.execute(&function, args.clone());
-        
+        let event = json!({ "input": "test" });
+        let invocation = test_invocation(event.clone());
+        let result = executor.execute(&function, &invocation);
+
         assert!(result.is_ok());
         let result_value = result.unwrap();
-        assert_eq!(result_value["input"], args["input"]);
+        assert_eq!(result_value["event"]["input"], event["input"]);
         assert_eq!(result_value["result"], json!("Hello wolfy"));
     }
 
@@ -105,14 +123,15 @@ mod tests {
         let executor = FunctionExecutor::new().unwrap();
         let function = Function {
             name: "test_function".to_string(),
-            path: std::env::current_dir().unwrap().join("test_function.nonexistent"),
+            file_name: "test_function.nonexistent".to_string(),
             code: "test code".to_string(),
             is_trusted: false,
+            entry_point: None,
         };
 
-        let args = json!({ "input": "test" });
-        let result = executor.execute(&function, args);
-        
+        let invocation = test_invocation(json!({ "input": "test" }));
+        let result = executor.execute(&function, &invocation);
+
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), Error::UnsupportedRuntime(_)));
     }
@@ -122,14 +141,15 @@ mod tests {
         let executor = FunctionExecutor::new().unwrap();
         let function = Function {
             name: "test_function".to_string(),
-            path: std::env::current_dir().unwrap().join("test_function"),
+            file_name: "test_function".to_string(),
             code: "test code".to_string(),
             is_trusted: false,
+            entry_point: None,
         };
 
-        let args = json!({ "input": "test" });
-        let result = executor.execute(&function, args);
-        
+        let invocation = test_invocation(json!({ "input": "test" }));
+        let result = executor.execute(&function, &invocation);
+
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), Error::UnknownFunctionType));
     }

@@ -1,8 +1,10 @@
 mod error;
 mod function_executor;
+pub mod host;
 pub mod models;
-mod module_manager;
+pub mod module_registry;
 mod runtime;
 mod sandbox;
 
-pub use sandbox::{Config, Sandbox, SandboxFactory};
+pub use module_registry::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule};
+pub use sandbox::{Sandbox, SandboxFactory};
