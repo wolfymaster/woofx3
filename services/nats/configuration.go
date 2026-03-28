@@ -8,9 +8,9 @@ import (
 )
 
 type Configuration struct {
-	Host          string `json:"messageBusHost"`
-	Port          int    `json:"messageBusServerListeningPort"`
-	WebSocketPort int    `json:"messageBusWebSocketPort"`
+	Host          string `json:"messagebusHost"`
+	Port          int    `json:"messagebusServerListeningPort"`
+	WebSocketPort int    `json:"messagebusWebSocketPort"`
 	NoLog         bool   `json:"noLog"`
 	NoSigs        bool   `json:"noSigs"`
 	RootPath      string `json:"rootPath"`
@@ -44,9 +44,9 @@ func (c *Configuration) Load(path string) error {
 	execDir := filepath.Dir(execPath)
 
 	candidatePaths := []string{
-		filepath.Join(execDir, "conf.json"),
-		filepath.Join(execDir, "..", "conf.json"),
-		filepath.Join(execDir, "..", "conf", "conf.json"),
+		filepath.Join(execDir, ".woofx3.json"),
+		filepath.Join(execDir, "..", ".woofx3.json"),
+		filepath.Join(execDir, "..", ".woofx3", ".woofx3.json"),
 	}
 
 	for _, p := range candidatePaths {
@@ -63,15 +63,15 @@ func (c *Configuration) Load(path string) error {
 }
 
 func (c *Configuration) OverlayFromMap(env map[string]string) {
-	if v := env["MESSAGE_BUS_HOST"]; v != "" {
+	if v := env["WOOFX3_MESSAGEBUS_HOST"]; v != "" {
 		c.Host = v
 	}
-	if v := env["MESSAGE_BUS_SERVER_LISTENING_PORT"]; v != "" {
+	if v := env["WOOFX3_MESSAGEBUS_SERVER_LISTENING_PORT"]; v != "" {
 		if p, err := strconv.Atoi(v); err == nil {
 			c.Port = p
 		}
 	}
-	if v := env["MESSAGE_BUS_WEBSOCKET_PORT"]; v != "" {
+	if v := env["WOOFX3_MESSAGEBUS_WEBSOCKET_PORT"]; v != "" {
 		if p, err := strconv.Atoi(v); err == nil {
 			c.WebSocketPort = p
 		}
