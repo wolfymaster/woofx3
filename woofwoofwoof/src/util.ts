@@ -1,7 +1,7 @@
 import { HasPermission } from "@woofx3/db/permission.pb";
 import type { AuthorizationResponse } from "./commands";
 
-export async function canUse(user: string, cmd: string): Promise<AuthorizationResponse> {
+export async function canUse(user: string, cmd: string, databaseProxyUrl: string): Promise<AuthorizationResponse> {
   const hasPermission = await HasPermission(
     {
       username: user.trim().toLowerCase(),
@@ -9,7 +9,7 @@ export async function canUse(user: string, cmd: string): Promise<AuthorizationRe
       action: "read",
     },
     {
-      baseURL: process.env.DATABASE_PROXY_URL || "",
+      baseURL: databaseProxyUrl,
     }
   );
 

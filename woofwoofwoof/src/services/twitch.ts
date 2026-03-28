@@ -10,18 +10,23 @@ export default class TwitchService implements Service<TwitchClient> {
 
   constructor(client: TwitchClient) {
     this.healthcheck = true;
-    this.name = 'messageBus';
-    this.type = 'nats';
+    this.name = "messageBus";
+    this.type = "nats";
     this.client = client;
     this.connected = false;
   }
 
   async connect(): Promise<void> {
-    
+    if (this.connected) {
+      return;
+    }
     this.connected = true;
   }
-  
-  async disconnect(): Promise<void> { 
+
+  async disconnect(): Promise<void> {
+    if (!this.connected) {
+      return;
+    }
     await this.client.close();
     this.connected = false;
   }

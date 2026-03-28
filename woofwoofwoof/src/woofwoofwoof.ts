@@ -1,80 +1,102 @@
-import path from "node:path";
-import EventFactory from '@woofx3/cloudevents/EventFactory';
-import { createApplication, createNATSHealthCheck, createNATSHeartbeat, createRuntime } from "@woofx3/common/runtime";
-import dotenv from "dotenv";
-import WoofWoofWoof, { type WoofWoofWoofApplication } from './application';
-import Bootstrap from "./boostrap";
-import { Commands } from "./commands";
+import BarkloaderClient from "@woofx3/barkloader";
+import { createApplication, createNATSMonitor, createRuntime, loadRuntimeEnv } from "@woofx3/common/runtime";
+import MessageBus from "@woofx3/nats";
+import TwitchClient from "@woofx3/twitch";
+import WoofWoofWoof, { type WoofWoofWoofApplication } from "./application";
+import { WoofEnvSchema } from "./config";
 import BarkloaderClientService from "./services/barkloader";
 import MessageBusService from "./services/messageBus";
 import TwitchChatClientService from "./services/twitchChat";
-import { canUse } from "./util";
 
 export interface WoofWoofWoofRequestMessage {
   command: string;
   args: Record<string, string>;
 }
 
-dotenv.config({
-  path: [path.resolve(process.cwd(), ".env"), path.resolve(process.cwd(), "../", ".env")],
+const loadedConfig = loadRuntimeEnv({
+  schema: WoofEnvSchema,
+  injectIntoProcess: true,
 });
 
-// boostrap the application
-const appConfig = await Bootstrap();
-
-// new Commands instance
-const commander = new Commands(appConfig.channelName, appConfig.services.chatClient);
-
-// add permissions check to commander
-commander.setAuth(async (user: string, cmd: string) => {
-  return await canUse(user, cmd);
+const bus = await MessageBus.createMessageBus({
+  name: "woofwooofwoof",
+  url: loadedConfig.getConfig("woofx3MessagebusUrl") as string,
+  jwt: loadedConfig.getConfig("woofx3MessagebusJwt") as string,
+  nkeySeed: loadedConfig.getConfig("woofx3MessagebusNKey") as string,
 });
-
-// Events
-const eventFactory = new EventFactory({ source: "woofwoofwoof" });
-
-const ctx = {
-  channelName: appConfig.channelName,
-  commander,
-  events: eventFactory,
-};
+const messageBusService = new MessageBusService(bus);
 
 const runtime = createRuntime({
-  application: createApplication(new WoofWoofWoof(ctx)),
-  healthcheck: createNATSHealthCheck(appConfig.services.messageBus),
-  heartbeat: createNATSHeartbeat(appConfig.services.messageBus, "woofwoofwoof"),
-  runtimeInit: async (app: WoofWoofWoofApplication) => {
-    app.register('messageBus', new MessageBusService(appConfig.services.messageBus));
-    app.register('twitchChat', new TwitchChatClientService(appConfig.services.chatClient));
-    app.register('barkloader', new BarkloaderClientService(appConfig.services.barkloaderClient));
+  application: createApplication(new WoofWoofWoof()),
+  envSchema: WoofEnvSchema,
+  logger: console,
+  runtimeEnv: () => loadedConfig,
+  healthMonitor: createNATSMonitor({
+    natsClient: bus,
+    applicationName: "woofwoofwoof",
+    requiredServices: ["messageBus"],
+  }),
+  runtimeInit: async (application: WoofWoofWoofApplication) => {
+    const config = application.context.config;
+
+    application.register("messageBus", messageBusService);
+
+    const twitchClient = new TwitchClient({
+      applicationId: config.getConfig("woofx3ApplicationId") as string,
+      channel: config.getConfig("woofx3TwitchChannelName") as string,
+      databaseURL: config.getConfig("woofx3DatabaseProxyUrl") as string,
+    });
+    await twitchClient.init({
+      clientId: config.getConfig("woofx3TwitchClientId") as string,
+      clientSecret: config.getConfig("woofx3TwitchClientSecret") as string,
+      redirectUri: config.getConfig("woofx3TwitchRedirectUrl") as string,
+    });
+    application.register("twitchChat", new TwitchChatClientService(twitchClient.ChatClient()));
+
+    const barkloaderClient = new BarkloaderClient({
+      wsUrl: config.getConfig("woofx3BarkloaderWsUrl") as string,
+      onOpen: () => {
+        console.log("socket opened");
+      },
+      onClose: () => {
+        console.log("socket closed");
+      },
+      onError: (event: any) => {
+        console.log("socket error", event);
+      },
+      maxRetries: Infinity,
+      onReconnectAttempt: () => {
+        console.log("disconnecting.. attempting to reconnect");
+      },
+      reconnectTimeout: 5000,
+    });
+    application.register("barkloader", new BarkloaderClientService(barkloaderClient));
   },
-  runtimeTerminate: async () => {},  
+  runtimeTerminate: async () => {},
 });
 
 runtime.start();
 
 async function gracefulShutdown(signal: string): Promise<void> {
-  console.log(`\n🛑 Received ${signal}, starting graceful shutdown...`);
+  console.log(`Received ${signal}, starting graceful shutdown...`);
 
   try {
     await runtime.stop();
-    // app.barkloaderClient.destroy();
-    console.log("✅ Graceful shutdown completed");
+    console.log("Graceful shutdown completed");
     process.exit(0);
   } catch (error) {
-    console.error("❌ Error during graceful shutdown:", error);
+    console.error("Error during graceful shutdown:", error);
     process.exit(1);
   }
 }
 
-// graceful shutdown
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 process.on("uncaughtException", (error) => {
-  console.error("💥 Uncaught Exception:", error);
+  console.error("Uncaught Exception:", error);
   gracefulShutdown("uncaughtException");
 });
 process.on("unhandledRejection", (reason, promise) => {
-  console.error("🚫 Unhandled Rejection at:", promise, "reason:", reason);
-  gracefulShutdown("unhandledRejection");
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+  // Don't immediately shutdown - let the runtime handle retries
 });
