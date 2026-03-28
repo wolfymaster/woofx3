@@ -8,6 +8,7 @@ type DbProxyClient struct {
 	Common      CommonService
 	Application ApplicationService
 	Command     CommandService
+	Module      ModuleService
 	Permission  PermissionService
 	Setting     SettingService
 	Storage     StorageService
@@ -29,6 +30,7 @@ func NewDbProxyClient(baseURL string, httpClient *http.Client) *DbProxyClient {
 		Common:      NewCommonServiceProtobufClient(baseURL, httpClient),
 		Application: NewApplicationServiceProtobufClient(baseURL, httpClient),
 		Command:     NewCommandServiceProtobufClient(baseURL, httpClient),
+		Module:      NewModuleServiceProtobufClient(baseURL, httpClient),
 		Permission:  NewPermissionServiceProtobufClient(baseURL, httpClient),
 		Setting:     NewSettingServiceProtobufClient(baseURL, httpClient),
 		Storage:     NewStorageServiceProtobufClient(baseURL, httpClient),
