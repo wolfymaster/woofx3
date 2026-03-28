@@ -15,6 +15,6 @@
     "@twurple/chat": "^7.4.0",
     "@twurple/eventsub-ws": "^7.4.0",
     "express": "^5.1.0",
-    "open": "^10.2.0"
+    "open": "^11.0.0"
   }
 }

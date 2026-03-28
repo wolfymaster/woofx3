@@ -1,1 +1,1 @@
-export * as default from './src/index';
+export { createMessageBus, default } from "./src/index";

@@ -1,86 +1,86 @@
-import path from 'path';
-import { RefreshingAuthProvider } from '@twurple/auth';
-import express from 'express';
-import dotenv from 'dotenv';
-import fs from 'fs/promises';
-import open from 'open';
+import fs from "node:fs/promises";
+import path from "node:path";
+import { RefreshingAuthProvider } from "@twurple/auth";
+import dotenv from "dotenv";
+import express from "express";
+import open from "open";
 
 function encodeScopes(scopes: string[]) {
-    return scopes.map(encodeURIComponent).join('+');
+  return scopes.map(encodeURIComponent).join("+");
 }
 
 dotenv.config({
-    path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../', '.env')],
+  path: [path.resolve(process.cwd(), ".env"), path.resolve(process.cwd(), "../", ".env")],
 });
 
 const PUBLIC_CLOUDFLARED_HOST = null;
 
 const app = express();
 const port = 9000;
-const auth_base_url = 'https://id.twitch.tv/oauth2/authorize';
-const redirectHost = PUBLIC_CLOUDFLARED_HOST || `http://localhost:${port}`
+const auth_base_url = "https://id.twitch.tv/oauth2/authorize";
+const redirectHost = PUBLIC_CLOUDFLARED_HOST || `http://localhost:${port}`;
 const redirectUri = `${redirectHost}/auth/twitch/callback`;
-const scopes = ['user:read:email', 'user:bot', 'user:write:chat', 'user:read:chat', 'chat:read', 'chat:edit'];
+const scopes = ["user:read:email", "user:bot", "user:write:chat", "user:read:chat", "chat:read", "chat:edit"];
 const adminScopes = [
-    'bits:read',
-    'channel:manage:broadcast',
-    'channel:moderate',
-    'channel:read:hype_train', 
-    'channel:read:polls', 
-    'channel:read:predictions', 
-    'channel:read:redemptions', 
-    'channel:read:subscriptions', 
-    'clips:edit',
-    'moderator:manage:blocked_terms',
-    'moderator:manage:shoutouts', 
-    'moderator:manage:banned_users',
-    'moderator:read:chatters',
-    'moderator:read:chat_messages',
-    'moderator:read:chat_settings',
-    'moderator:read:followers',
-    'moderator:read:moderators',
-    'moderator:read:unban_requests',
-    'moderator:read:warnings',
-    'moderator:read:vips',
+  "bits:read",
+  "channel:manage:broadcast",
+  "channel:moderate",
+  "channel:read:hype_train",
+  "channel:read:polls",
+  "channel:read:predictions",
+  "channel:read:redemptions",
+  "channel:read:subscriptions",
+  "clips:edit",
+  "moderator:manage:blocked_terms",
+  "moderator:manage:shoutouts",
+  "moderator:manage:banned_users",
+  "moderator:read:chatters",
+  "moderator:read:chat_messages",
+  "moderator:read:chat_settings",
+  "moderator:read:followers",
+  "moderator:read:moderators",
+  "moderator:read:unban_requests",
+  "moderator:read:warnings",
+  "moderator:read:vips",
 ];
 
 const clientId = process.env.TWITCH_WOLFY_CLIENT_ID || "";
 const clientSecret = process.env.TWITCH_WOLFY_CLIENT_SECRET || "";
 
 const authProvider = new RefreshingAuthProvider({
-    clientId,
-    clientSecret,
-    redirectUri,
-    appImpliedScopes: ['chat:read', 'chat:edit']
-})
+  clientId,
+  clientSecret,
+  redirectUri,
+  appImpliedScopes: ["chat:read", "chat:edit"],
+});
 
-app.get('/auth/twitch/callback', async (req, res) => {
-    const { code } = req.query;
+app.get("/auth/twitch/callback", async (req, res) => {
+  const { code } = req.query;
 
-    const userId = await authProvider.addUserForCode(code, ['chat']);
+  const userId = await authProvider.addUserForCode(code as string, ["chat"]);
 
-    const accessTokenWithUserId = await authProvider.getAccessTokenForUser(userId, scopes);
+  const accessTokenWithUserId = await authProvider.getAccessTokenForUser(userId, scopes);
 
-    if(!accessTokenWithUserId) {
-        console.error('Failed to get access token')
-        return res.send("Failed to get access token")
-    }
+  if (!accessTokenWithUserId) {
+    console.error("Failed to get access token");
+    return res.send("Failed to get access token");
+  }
 
-    await authProvider.addUserForToken(accessTokenWithUserId, ['chat']);
+  await authProvider.addUserForToken(accessTokenWithUserId, ["chat"]);
 
-    await fs.writeFile('./.wolfy_access_token', JSON.stringify(accessTokenWithUserId), 'utf-8');
+  await fs.writeFile("./.wolfy_access_token", JSON.stringify(accessTokenWithUserId), "utf-8");
 
-    res.send("Logged in successfully");
+  res.send("Logged in successfully");
 });
 
 async function run() {
-    const encodedScopes = encodeScopes(scopes.concat(adminScopes));
-    const authUrl = `${auth_base_url}?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${encodedScopes}&state`;
-    console.log("Auth URL: ", authUrl);
-    open(authUrl);
+  const encodedScopes = encodeScopes(scopes.concat(adminScopes));
+  const authUrl = `${auth_base_url}?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${encodedScopes}&state`;
+  console.log("Auth URL: ", authUrl);
+  open(authUrl);
 }
 
 app.listen(port, () => {
-    run();
-    console.log(`Server is running on http://localhost:${port}`);
+  run();
+  console.log(`Server is running on http://localhost:${port}`);
 });
