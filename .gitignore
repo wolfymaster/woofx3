@@ -1,16 +1,3 @@
-# chat
-
-# clips
-clips/downloads
-clips/out
-clips/processed
-clips/transcripts
-
-# stream
-stream/chunks
-
-transcripts
-
 node_modules
 .devbox
 .env*
@@ -20,6 +7,7 @@ node_modules
 
 .*access_token
 
+# streamlabs assets
 streamlabs/public
 
 # Local .terraform directories
@@ -29,18 +17,17 @@ streamlabs/public
 *.tfstate
 *.tfstate.*
 
-# Crash log files
-crash.log
-crash.*.log
-
 # Exclude sensitive variables files
 *.tfvars.json
 *.tfvars
-# But you might want to include example.tfvars
 
 # CLI configuration files
 .terraformrc
 terraform.rc
+
+# Crash log files
+crash.log
+crash.*.log
 
 # rust
 **/target/*
@@ -50,6 +37,9 @@ build/dist
 
 # DB Badger files
 db/badger
+
+# docs
+docs/.vitepress
 
 # pids
 pids
@@ -61,8 +51,5 @@ workflow/workflow
 .woofx3.json
 
 # wolfy tmp cleanup
-ai/*
-auth/*
 boardModule/*
-dvr/*
-stream/*
+tmp/*

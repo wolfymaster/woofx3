@@ -4,27 +4,29 @@ environment:
   - "FORCE_COLOR=1"
 
 processes:
-  barkloader:
-    command: bun run start
-    description: Plugin Module System
-    working_dir: barkloader
-    depends_on:
-      wooflow:
-        condition: process_started
+  api:
+    command: bun run dev
+    description: woofx3 API
+    working_dir: api
+
+  # barkloader:
+  #   command: bun run start
+  #   description: Plugin Module System
+  #   working_dir: barkloader
+  #   depends_on:
+  #     wooflow:
+  #       condition: process_started
 
   barkloader-rust:
     command: cargo run .
     description: Plugin Module System
     working_dir: barkloader-rust
-    depends_on:
-      wooflow:
-        condition: process_started
 
   db:
     command: go run .
     description: proxy for accessing databases
-    working_dir: db/cmd/server
-    ready_log_line: "Starting server"
+    working_dir: db
+    # ready_log_line: "Starting server"
 
   messagebus:
     command: GO_ENV=development go run .
@@ -39,38 +41,39 @@ processes:
       woofwoofwoof:
         condition: process_started
 
-  temporal-server:
-    command: temporal server start-dev
-    description: Temporal Server
-
   twitch:
     command: bun run src/api.ts
     description: Twitch API + Eventbus
     working_dir: twitch
-    depends_on:
-      db:
-        condition: process_log_ready
-      messagebus:
-        condition: process_started
+    # depends_on:
+    #   db:
+    #     condition: process_log_ready
+    #   messagebus:
+    #     condition: process_started
       # barkloader-rust:
         # condition: process_started
       # wooflow:
         # condition: process_started
 
-  wooflow:
+  # wooflow:
+  #   command: go run .
+  #   description: Workflow Management
+  #   working_dir: wooflow
+  #   depends_on:
+  #     temporal-server:
+  #       condition: process_started
+
+  workflow:
     command: go run .
     description: Workflow Management
-    working_dir: wooflow
-    depends_on:
-      temporal-server:
-        condition: process_started
+    working_dir: workflow
 
   woofwoofwoof:
     command: bun run src/woofwoofwoof.ts
     description: Twitch Chatbot
     working_dir: woofwoofwoof
-    depends_on:
-      db:
-        condition: process_log_ready
-      twitch:
-        condition: process_started
+    # depends_on:
+    #   db:
+    #     condition: process_log_ready
+    #   twitch:
+    #     condition: process_started
