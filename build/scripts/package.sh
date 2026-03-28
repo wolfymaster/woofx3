@@ -6,6 +6,8 @@ shift
 TARGETS=("$@")
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=resolve-build-paths.sh
+source "$SCRIPT_DIR/resolve-build-paths.sh"
 
 log_info() {
     echo -e "\033[0;32m[PACKAGE]\033[0m $1"
@@ -15,11 +17,7 @@ log_error() {
     echo -e "\033[0;31m[PACKAGE ERROR]\033[0m $1"
 }
 
-# Get output directory
-OUTPUT_DIR=$(jq -r '.build.output_dir' "$CONFIG_FILE")
-if [[ "$OUTPUT_DIR" == "null" ]]; then
-    OUTPUT_DIR="./dist"
-fi
+woofx3_set_output_dir "$CONFIG_FILE"
 
 # Get enabled services for copying config
 readarray -t ENABLED_SERVICES < <(jq -c '.services[] | select(.enabled == true)' "$CONFIG_FILE")
@@ -44,6 +42,9 @@ for target in "${TARGETS[@]}"; do
     # Copy services.json to the target directory for runtime use
     # Filter to only include enabled services
     jq '.services |= [.[] | select(.enabled == true)]' "$CONFIG_FILE" > "$TARGET_DIR/services.json"
+
+    # Copy .woofx3.json to the target directory for runtime use
+    cp "$SCRIPT_DIR/../config/.woofx3.json" "$TARGET_DIR/.woofx3.json"
     
     # Create a simple startup script
     case "$target" in
@@ -113,6 +114,11 @@ EOF
     BINARY_COUNT=$(find "$TARGET_DIR" -maxdepth 1 -type f -executable | wc -l)
     log_info "  Found $BINARY_COUNT binaries in $target"
     
+    if [[ "${PACKAGE_SKIP_ARCHIVE:-}" == "1" ]]; then
+        log_info "  Skipping archive (PACKAGE_SKIP_ARCHIVE=1)"
+        continue
+    fi
+
     # Create archive
     ARCHIVE_NAME="services-$target"
     case "$target" in
@@ -135,14 +141,16 @@ EOF
 done
 
 log_info "Packaging complete!"
-log_info "Deployment packages:"
-for target in "${TARGETS[@]}"; do
-    case "$target" in
-        linux-amd64)
-            echo "  - services-$target.tar.gz"
-            ;;
-        windows-amd64)
-            echo "  - services-$target.zip"
-            ;;
-    esac
-done
+if [[ "${PACKAGE_SKIP_ARCHIVE:-}" != "1" ]]; then
+    log_info "Deployment packages:"
+    for target in "${TARGETS[@]}"; do
+        case "$target" in
+            linux-amd64)
+                echo "  - services-$target.tar.gz"
+                ;;
+            windows-amd64)
+                echo "  - services-$target.zip"
+                ;;
+        esac
+    done
+fi

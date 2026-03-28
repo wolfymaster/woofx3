@@ -6,6 +6,8 @@ shift
 TARGETS=("$@")
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=resolve-build-paths.sh
+source "$SCRIPT_DIR/resolve-build-paths.sh"
 
 log_info() {
     echo -e "\033[0;32m[RUST]\033[0m $1"
@@ -21,11 +23,7 @@ if ! command -v cargo &> /dev/null; then
     exit 1
 fi
 
-# Get output directory
-OUTPUT_DIR=$(jq -r '.build.output_dir' "$CONFIG_FILE")
-if [[ "$OUTPUT_DIR" == "null" ]]; then
-    OUTPUT_DIR="./dist"
-fi
+woofx3_set_output_dir "$CONFIG_FILE"
 
 # Get rust services from config
 readarray -t RUST_SERVICES < <(jq -c '.services[] | select(.type == "rust" and .enabled == true)' "$CONFIG_FILE")
@@ -58,7 +56,7 @@ for service_json in "${RUST_SERVICES[@]}"; do
     for target in "${TARGETS[@]}"; do
         case "$target" in
             linux-amd64)
-                RUST_TARGET="x86_64-unknown-linux-musl"
+                RUST_TARGET="${RUST_LINUX_TARGET:-x86_64-unknown-linux-musl}"
                 BINARY_EXT=""
                 ;;
             windows-amd64)
@@ -86,8 +84,12 @@ for service_json in "${RUST_SERVICES[@]}"; do
             # Add target if not already added
             rustup target add "$RUST_TARGET" 2>/dev/null || true
             
-            # Build static binary
-            RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target="$RUST_TARGET"
+            if [[ "$RUST_TARGET" == *-musl ]]; then
+                export RUSTFLAGS="-C target-feature=+crt-static"
+            else
+                unset RUSTFLAGS
+            fi
+            cargo build --release --target="$RUST_TARGET"
             
             # Copy binary to output directory
             BUILT_BINARY="target/$RUST_TARGET/release/${SERVICE_OUTPUT}${BINARY_EXT}"

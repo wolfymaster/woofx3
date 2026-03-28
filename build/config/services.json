@@ -1,12 +1,19 @@
 {
     "services": [
         {
-            "name": "barkloader",
-            "type": "bun",
-            "path": "../barkloader",
             "enabled": true,
-            "entry": "index.ts",
-            "output": "barkloader"
+            "entry": "src/server.ts",
+            "name": "api",
+            "output": "api",
+            "path": "../api",
+            "type": "bun"
+        },
+        {
+            "enabled": true,
+            "name": "barkloader",
+            "output": "barkloader",
+            "path": "../barkloader-rust",
+            "type": "rust"
         },
         {
             "name": "db-proxy",
@@ -16,11 +23,11 @@
             "output": "db-proxy"
         },
         {
-            "name": "permissions",
+            "name": "message-bus",
             "type": "go",
-            "path": "../permissions",
+            "path": "../services/nats",
             "enabled": true,
-            "output": "permissions"
+            "output": "messagebus"
         },
         {
             "name": "twitch",
@@ -33,7 +40,7 @@
         {
             "name": "wooflow",
             "type": "go",
-            "path": "../wooflow",
+            "path": "../workflow",
             "enabled": true,
             "output": "wooflow"
         },

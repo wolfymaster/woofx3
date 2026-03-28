@@ -3,6 +3,8 @@ set -e
 
 # Main build script for monorepo build system
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/resolve-build-paths.sh
+source "${SCRIPT_DIR}/scripts/resolve-build-paths.sh"
 CONFIG_FILE="${SCRIPT_DIR}/config/services.json"
 BUILD_ENV="${SCRIPT_DIR}/.env"
 
@@ -66,11 +68,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Get output directory from config
-OUTPUT_DIR=$(jq -r '.build.output_dir' "$CONFIG_FILE")
-if [[ "$OUTPUT_DIR" == "null" ]]; then
-    OUTPUT_DIR="./dist"
-fi
+woofx3_set_output_dir "$CONFIG_FILE"
 
 # Clean if requested
 if [[ "$BUILD_CLEAN" == "true" ]]; then

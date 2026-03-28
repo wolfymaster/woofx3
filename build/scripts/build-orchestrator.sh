@@ -6,6 +6,8 @@ shift
 TARGETS=("$@")
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=resolve-build-paths.sh
+source "$SCRIPT_DIR/resolve-build-paths.sh"
 ORCHESTRATOR_DIR="$SCRIPT_DIR/../orchestrator"
 
 log_info() {
@@ -22,11 +24,7 @@ if ! command -v go &> /dev/null; then
     exit 1
 fi
 
-# Get output directory
-OUTPUT_DIR=$(jq -r '.build.output_dir' "$CONFIG_FILE")
-if [[ "$OUTPUT_DIR" == "null" ]]; then
-    OUTPUT_DIR="./dist"
-fi
+woofx3_set_output_dir "$CONFIG_FILE"
 
 # Check if orchestrator directory exists
 if [[ ! -d "$ORCHESTRATOR_DIR" ]]; then
