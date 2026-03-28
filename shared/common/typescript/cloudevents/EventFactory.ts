@@ -1,4 +1,5 @@
 import TwitchEvents from './Twitch';
+import TwitchApiEvents from './Twitch/commands';
 import SlobsEvents from './Slobs';
 
 export interface EventFactoryOpts {
@@ -14,6 +15,10 @@ export default class EventFactory {
 
     Twitch() {
         return new TwitchEvents(this.source);
+    }
+
+    TwitchApi() {
+        return new TwitchApiEvents();
     }
 
     Slobs() {
