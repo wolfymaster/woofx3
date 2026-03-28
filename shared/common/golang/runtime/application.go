@@ -28,10 +28,6 @@ func (a *ApplicationContext) Register(serviceType string, service any) error {
 
 	if err := a.depGraph.Validate(); err != nil {
 		delete(a.Services, serviceType)
-		a.depGraph = NewDependencyGraph()
-		for name, svc := range a.Services {
-			a.depGraph.AddService(name, svc)
-		}
 		return fmt.Errorf("dependency validation failed: %w", err)
 	}
 
@@ -65,7 +61,6 @@ func (a *ApplicationContext) GetServiceBatches() ([][]any, error) {
 	return a.depGraph.GetServiceBatches()
 }
 
-// SetConfig sets the resolved env config struct. Called by the runtime after FillEnvConfig.
 func (a *ApplicationContext) SetConfig(cfg any) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

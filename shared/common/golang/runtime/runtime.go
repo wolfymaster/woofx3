@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 )
@@ -20,6 +21,23 @@ func (l *noOpLogger) Info(message string, args ...any)  {}
 func (l *noOpLogger) Error(message string, args ...any) {}
 func (l *noOpLogger) Warn(message string, args ...any)  {}
 func (l *noOpLogger) Debug(message string, args ...any) {}
+
+type stdlibLogger struct {
+	logger *log.Logger
+}
+
+func (l *stdlibLogger) Info(message string, args ...any) {
+	l.logger.Printf("[INFO] "+message, args...)
+}
+func (l *stdlibLogger) Error(message string, args ...any) {
+	l.logger.Printf("[ERROR] "+message, args...)
+}
+func (l *stdlibLogger) Warn(message string, args ...any) {
+	l.logger.Printf("[WARN] "+message, args...)
+}
+func (l *stdlibLogger) Debug(message string, args ...any) {
+	l.logger.Printf("[DEBUG] "+message, args...)
+}
 
 type StateSubscriber func(State)
 
@@ -60,15 +78,15 @@ type Runtime struct {
 	healthMonitorLivenessCancel context.CancelFunc
 }
 
-func NewRuntime(config *RuntimeConfig) *Runtime {
+func NewRuntime(config *RuntimeConfig) (*Runtime, error) {
 	env, err := LoadRuntimeEnv(&LoadRuntimeEnvOptions{RootDir: config.RootDir})
 	if err != nil {
-		panic("LoadRuntimeEnv failed: " + err.Error())
+		return nil, fmt.Errorf("LoadRuntimeEnv failed: %w", err)
 	}
 	appCtx := config.Application.Context()
 	if config.EnvConfig != nil {
 		if err := FillEnvConfig(env, config.EnvConfig); err != nil {
-			panic("EnvConfig fill failed: " + err.Error())
+			return nil, fmt.Errorf("EnvConfig fill failed: %w", err)
 		}
 		appCtx.SetConfig(config.EnvConfig)
 	}
@@ -77,10 +95,9 @@ func NewRuntime(config *RuntimeConfig) *Runtime {
 
 	logger := config.Logger
 	if logger == nil {
-		logger = &noOpLogger{}
+		logger = &stdlibLogger{logger: log.Default()}
 	}
 
-	// Initialize health monitor liveness context
 	healthMonitorLivenessCtx, healthMonitorLivenessCancel := context.WithCancel(ctx)
 
 	return &Runtime{
@@ -98,14 +115,13 @@ func NewRuntime(config *RuntimeConfig) *Runtime {
 		serviceStates:               make(map[string]*ServiceConnectionState),
 		healthMonitorLivenessCtx:    healthMonitorLivenessCtx,
 		healthMonitorLivenessCancel: healthMonitorLivenessCancel,
-	}
+	}, nil
 }
 
 func (r *Runtime) Start() *Runtime {
 	r.wg.Add(1)
 	go r.stateMachine()
 
-	// Start the state machine
 	r.stateChan <- EventServicesReady
 
 	return r
@@ -154,6 +170,13 @@ func (r *Runtime) Wait() {
 func (r *Runtime) transitionTo(newState State) {
 	r.mu.Lock()
 	oldState := r.state
+
+	if oldState == StateTerminated && newState != StateTerminated {
+		r.mu.Unlock()
+		r.logger.Error("Invalid state transition from terminated state", "from", oldState, "to", newState)
+		return
+	}
+
 	r.state = newState
 	r.mu.Unlock()
 
@@ -170,19 +193,21 @@ func (r *Runtime) notifySubscribers(state State) {
 	}
 }
 
-func (r *Runtime) setServiceState(service any, connected bool, err error) {
-	r.serviceStatesMu.Lock()
-	defer r.serviceStatesMu.Unlock()
-
-	var serviceKey string
+func (r *Runtime) getServiceKey(service any) string {
 	if typedSvc, ok := service.(interface {
 		Name() string
 		Type() string
 	}); ok {
-		serviceKey = typedSvc.Name() + ":" + typedSvc.Type()
-	} else {
-		serviceKey = fmt.Sprintf("%p", service)
+		return typedSvc.Name() + ":" + typedSvc.Type()
 	}
+	return fmt.Sprintf("%p", service)
+}
+
+func (r *Runtime) setServiceState(service any, connected bool, err error) {
+	r.serviceStatesMu.Lock()
+	defer r.serviceStatesMu.Unlock()
+
+	serviceKey := r.getServiceKey(service)
 
 	r.serviceStates[serviceKey] = &ServiceConnectionState{
 		Service:   service,
@@ -195,15 +220,7 @@ func (r *Runtime) getServiceState(service any) *ServiceConnectionState {
 	r.serviceStatesMu.RLock()
 	defer r.serviceStatesMu.RUnlock()
 
-	var serviceKey string
-	if typedSvc, ok := service.(interface {
-		Name() string
-		Type() string
-	}); ok {
-		serviceKey = typedSvc.Name() + ":" + typedSvc.Type()
-	} else {
-		serviceKey = fmt.Sprintf("%p", service)
-	}
+	serviceKey := r.getServiceKey(service)
 
 	state, exists := r.serviceStates[serviceKey]
 	if !exists {
@@ -246,6 +263,14 @@ func (r *Runtime) resetServiceStates() {
 	defer r.serviceStatesMu.Unlock()
 
 	r.serviceStates = make(map[string]*ServiceConnectionState)
+}
+
+func (r *Runtime) isServiceTracked(service any) bool {
+	r.serviceStatesMu.RLock()
+	defer r.serviceStatesMu.RUnlock()
+
+	_, exists := r.serviceStates[r.getServiceKey(service)]
+	return exists
 }
 
 func (r *Runtime) stateMachine() {
@@ -292,6 +317,19 @@ func (r *Runtime) handleEvent(event Event) {
 		r.transitionTo(StateHealthMonitorWaiting)
 		r.handleHealthMonitorWaiting()
 		return
+	case EventHealthCheckFailed:
+		// Health check failed during runtime - disconnect and retry
+		if currentState != StateApplicationRunning && currentState != StateServicesConnected {
+			r.logger.Debug("Health check failed but not in running state, ignoring")
+			return
+		}
+		r.logger.Warn("Health check failed, disconnecting services and retrying")
+		if err := r.disconnectAllServices(); err != nil {
+			r.logger.Error("Failed to disconnect services", "error", err)
+		}
+		r.transitionTo(StateHealthMonitorWaiting)
+		r.handleHealthMonitorWaiting()
+		return
 	case EventAllServicesDisconnected:
 		// After disconnecting, restart the health monitor flow
 		r.stateChan <- EventServicesReady
@@ -300,7 +338,12 @@ func (r *Runtime) handleEvent(event Event) {
 
 	switch currentState {
 	case StateRuntimeInit:
-		r.handleRuntimeInit()
+		switch event {
+		case EventServicesReady:
+			r.handleRuntimeInit()
+		default:
+			r.logger.Error("Unexpected event in StateRuntimeInit", "event", event)
+		}
 
 	case StateHealthMonitorInit:
 		switch event {
@@ -308,47 +351,87 @@ func (r *Runtime) handleEvent(event Event) {
 			r.handleHealthMonitorInit()
 		case EventHealthMonitorReady:
 			r.handleHealthMonitorReady()
+		default:
+			r.logger.Error("Unexpected event in StateHealthMonitorInit", "event", event)
 		}
 
 	case StateHealthMonitorReady:
-		if event == EventServicesReady {
+		switch event {
+		case EventServicesReady:
 			r.transitionTo(StateServicesConnect)
 			r.handleServicesConnect()
+		default:
+			r.logger.Error("Unexpected event in StateHealthMonitorReady", "event", event)
 		}
 
 	case StateHealthMonitorWaiting:
-		if event == EventServicesReady {
+		switch event {
+		case EventServicesReady:
 			r.logger.Info("Retrying health monitor initialization after backoff")
 			r.transitionTo(StateHealthMonitorInit)
 			r.handleHealthMonitorInit()
-		} else {
+		default:
 			r.handleHealthMonitorWaiting()
 		}
 
 	case StateServicesConnect:
-		if event == EventServicesReady {
+		switch event {
+		case EventServicesReady:
 			r.handleServicesConnect()
+		default:
+			r.logger.Error("Unexpected event in StateServicesConnect", "event", event)
 		}
 
 	case StateServicesConnectWaiting:
-		r.handleServicesConnectWaiting()
+		switch event {
+		case EventServicesReady:
+			r.handleServicesConnectWaiting()
+		default:
+			r.logger.Error("Unexpected event in StateServicesConnectWaiting", "event", event)
+		}
 
 	case StateServicesConnected:
-		r.handleServicesConnected()
+		switch event {
+		case EventServicesReady:
+			r.handleServicesConnected()
+		default:
+			r.logger.Error("Unexpected event in StateServicesConnected", "event", event)
+		}
 
 	case StateApplicationInit:
-		r.handleApplicationInit()
+		switch event {
+		case EventServicesReady:
+			r.handleApplicationInit()
+		default:
+			r.logger.Error("Unexpected event in StateApplicationInit", "event", event)
+		}
 
 	case StateApplicationRunning:
-		r.handleApplicationRunning()
+		switch event {
+		case EventServicesReady:
+			r.handleApplicationRunning()
+		default:
+			r.logger.Error("Unexpected event in StateApplicationRunning", "event", event)
+		}
 
 	case StateApplicationTerminating:
-		r.handleApplicationTerminating()
+		switch event {
+		case EventServicesReady:
+			r.handleApplicationTerminating()
+		default:
+			r.logger.Error("Unexpected event in StateApplicationTerminating", "event", event)
+		}
 
 	case StateRuntimeTerminating:
-		r.handleRuntimeTerminating()
+		switch event {
+		case EventServicesReady:
+			r.handleRuntimeTerminating()
+		default:
+			r.logger.Error("Unexpected event in StateRuntimeTerminating", "event", event)
+		}
 
 	case StateTerminated:
+		r.logger.Error("Received event in StateTerminated - should not happen", "event", event)
 	}
 }
 
@@ -450,10 +533,12 @@ func (r *Runtime) handleServicesConnect() {
 
 	appCtx := r.application.Context()
 
-	// Initialize service states for all services
+	// Only initialize states for services not already tracked (e.g., by health monitor init)
 	for _, batch := range serviceBatches {
 		for _, svc := range batch {
-			r.setServiceState(svc, false, nil)
+			if !r.isServiceTracked(svc) {
+				r.setServiceState(svc, false, nil)
+			}
 		}
 	}
 
@@ -496,7 +581,6 @@ func (r *Runtime) handleServicesConnect() {
 		batchWg.Wait()
 	}
 
-	// Check if all services are connected
 	if r.allServicesConnected() {
 		r.backoff.Reset()
 		r.resetServiceStates()
@@ -604,8 +688,6 @@ func (r *Runtime) handleRuntimeTerminating() {
 		}
 	}
 }
-
-// Health Monitor Lifecycle Handlers
 
 func (r *Runtime) handleHealthMonitorInit() {
 	r.transitionTo(StateHealthMonitorInit)

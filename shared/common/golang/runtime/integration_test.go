@@ -78,10 +78,13 @@ func TestIntegration_ServiceStartupOrder(t *testing.T) {
 		t.Fatalf("Failed to register workers: %v", err)
 	}
 
-	rt := NewRuntime(&RuntimeConfig{
+	rt, err := NewRuntime(&RuntimeConfig{
 		Application: app,
 		Logger:      &noOpLogger{},
 	})
+	if err != nil {
+		t.Fatalf("Failed to create runtime: %v", err)
+	}
 
 	rt.Start()
 
@@ -211,10 +214,13 @@ func TestIntegration_ServiceRetryOnlyFailedServices(t *testing.T) {
 	}
 	defer func() { NewBackoff = originalBackoff }()
 
-	rt := NewRuntime(&RuntimeConfig{
+	rt, err := NewRuntime(&RuntimeConfig{
 		Application: app,
 		Logger:      &noOpLogger{},
 	})
+	if err != nil {
+		t.Fatalf("Failed to create runtime: %v", err)
+	}
 
 	rt.Start()
 

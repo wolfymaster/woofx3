@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -23,9 +24,46 @@ type NATSClient interface {
 	Close() error
 }
 
+type natsLogger struct {
+	logger runtime.Logger
+	stdlog *log.Logger
+}
+
+func (l *natsLogger) Info(message string, args ...any) {
+	if l.logger != nil {
+		l.logger.Info(message, args...)
+	} else {
+		l.stdlog.Printf("[INFO] "+message, args...)
+	}
+}
+
+func (l *natsLogger) Error(message string, args ...any) {
+	if l.logger != nil {
+		l.logger.Error(message, args...)
+	} else {
+		l.stdlog.Printf("[ERROR] "+message, args...)
+	}
+}
+
+func (l *natsLogger) Warn(message string, args ...any) {
+	if l.logger != nil {
+		l.logger.Warn(message, args...)
+	} else {
+		l.stdlog.Printf("[WARN] "+message, args...)
+	}
+}
+
+func (l *natsLogger) Debug(message string, args ...any) {
+	if l.logger != nil {
+		l.logger.Debug(message, args...)
+	} else {
+		l.stdlog.Printf("[DEBUG] "+message, args...)
+	}
+}
+
 type NATSMonitor struct {
 	serviceName       string
-	svc               service.NATSService
+	svc               *service.NATSService
 	appName           string
 	subject           string
 	expirationTimeout time.Duration
@@ -33,11 +71,11 @@ type NATSMonitor struct {
 	mu                sync.RWMutex
 	readyFn           func() bool
 	subscription      natsclient.Subscription
-	logger            runtime.Logger
+	logger            *natsLogger
 }
 
 // NewNATS returns a health monitor that uses the given NATS service's client. serviceName is used for RequiredServices() so the runtime connects the service before Start().
-func NewNATS(serviceName string, svc service.NATSService, appName, subject string, expirationTimeout time.Duration, logger runtime.Logger) *NATSMonitor {
+func NewNATS(serviceName string, svc *service.NATSService, appName, subject string, expirationTimeout time.Duration, logger runtime.Logger) *NATSMonitor {
 	if subject == "" {
 		subject = "HEARTBEAT"
 	}
@@ -51,7 +89,7 @@ func NewNATS(serviceName string, svc service.NATSService, appName, subject strin
 		subject:           subject,
 		expirationTimeout: expirationTimeout,
 		lastHeartbeats:    make(map[string]*heartbeatEntry),
-		logger:            logger,
+		logger:            &natsLogger{logger: logger, stdlog: log.Default()},
 	}
 }
 
@@ -73,22 +111,16 @@ func (n *NATSMonitor) isClientNil() bool {
 
 func (n *NATSMonitor) Liveness() error {
 	if n.isClientNil() {
-		if n.logger != nil {
-			n.logger.Error("Health monitor liveness check failed: NATS client is nil")
-		}
+		n.logger.Error("Health monitor liveness check failed: NATS client is nil")
 		return fmt.Errorf("NATS client is nil")
 	}
 	client := n.client()
 	testSubject := fmt.Sprintf("_HEALTH.%s.ping", n.appName)
 	if err := client.Publish(testSubject, []byte("ping")); err != nil {
-		if n.logger != nil {
-			n.logger.Error("Health monitor liveness check failed: NATS publish failed", "error", err)
-		}
+		n.logger.Error("Health monitor liveness check failed: NATS publish failed", "error", err)
 		return fmt.Errorf("NATS connection failed: %w", err)
 	}
-	if n.logger != nil {
-		n.logger.Debug("Health monitor liveness check passed: NATS is connected")
-	}
+	n.logger.Debug("Health monitor liveness check passed: NATS is connected")
 	return nil
 }
 
@@ -98,23 +130,17 @@ func (n *NATSMonitor) Start(ctx context.Context) error {
 	}
 	client := n.client()
 
-	if n.logger != nil {
-		n.logger.Info("Starting NATS health monitor", "app", n.appName, "subject", n.subject, "timeout", n.expirationTimeout)
-	}
+	n.logger.Info("Starting NATS health monitor", "app", n.appName, "subject", n.subject, "timeout", n.expirationTimeout)
 
 	subAny, err := client.Subscribe(n.subject, func(msg natsclient.Msg) {
 		var event cloudevents.Heartbeat
 		if err := msg.JSON(&event); err != nil {
-			if n.logger != nil {
-				n.logger.Debug("Failed to parse heartbeat message", "error", err)
-			}
+			n.logger.Debug("Failed to parse heartbeat message", "error", err)
 			return
 		}
 		data, err := event.Data()
 		if err != nil {
-			if n.logger != nil {
-				n.logger.Debug("Failed to extract heartbeat data", "error", err)
-			}
+			n.logger.Debug("Failed to extract heartbeat data", "error", err)
 			return
 		}
 		n.mu.Lock()
@@ -172,9 +198,7 @@ func (n *NATSMonitor) Heartbeat(ctx context.Context) error {
 
 func (n *NATSMonitor) HealthCheck(ctx context.Context, services runtime.ServicesRegistry) (bool, error) {
 	if n.isClientNil() {
-		if n.logger != nil {
-			n.logger.Debug("Health check skipped - NATS client not available")
-		}
+		n.logger.Debug("Health check skipped - NATS client not available")
 		return true, nil
 	}
 	now := time.Now()
@@ -202,30 +226,20 @@ func (n *NATSMonitor) HealthCheck(ctx context.Context, services runtime.Services
 		entry, exists := n.lastHeartbeats[typedSvc.Name()]
 		n.mu.RUnlock()
 		if !exists {
-			if n.logger != nil {
-				n.logger.Warn("Service health check failed - no heartbeat received", "service", typedSvc.Name())
-			}
+			n.logger.Warn("Service health check failed - no heartbeat received", "service", typedSvc.Name())
 			return false, nil
 		}
 		if now.Sub(entry.lastSeen) > n.expirationTimeout {
-			if n.logger != nil {
-				n.logger.Warn("Service health check failed - heartbeat expired", "service", typedSvc.Name(), "last_seen", entry.lastSeen, "age", now.Sub(entry.lastSeen))
-			}
+			n.logger.Warn("Service health check failed - heartbeat expired", "service", typedSvc.Name(), "last_seen", entry.lastSeen, "age", now.Sub(entry.lastSeen))
 			return false, nil
 		}
 		if !entry.ready {
-			if n.logger != nil {
-				n.logger.Warn("Service health check failed - service not ready", "service", typedSvc.Name())
-			}
+			n.logger.Warn("Service health check failed - service not ready", "service", typedSvc.Name())
 			return false, nil
 		}
-		if n.logger != nil {
-			n.logger.Debug("Service health check passed", "service", typedSvc.Name())
-		}
+		n.logger.Debug("Service health check passed", "service", typedSvc.Name())
 	}
-	if n.logger != nil {
-		n.logger.Debug("All service health checks passed")
-	}
+	n.logger.Debug("All service health checks passed")
 	return true, nil
 }
 
