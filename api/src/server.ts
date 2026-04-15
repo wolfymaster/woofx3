@@ -3,8 +3,10 @@ import type { ServerWebSocket } from "bun";
 import { newHttpBatchRpcResponse, newWebSocketRpcSession } from "capnweb";
 import type { Logger } from "winston";
 import { Api } from "./api";
+import { ClientAuth } from "./auth";
 import { loadConfig } from "./config";
 import { DbClient } from "./db-client";
+import { ApiGateway } from "./gateway";
 import { makeLogger } from "./logger";
 
 /**
@@ -154,11 +156,22 @@ async function main() {
   }
 
   // Create API instance
-  const api = new Api(dbClient, natsClient, config.applicationId, logger);
+  const api = new Api({
+    db: dbClient,
+    nats: natsClient,
+    applicationId: config.applicationId,
+    barkloaderUrl: config.barkloaderUrl,
+    logger,
+  });
   await api.initSubscriptions();
 
+  // Create auth and gateway
+  const auth = new ClientAuth(dbClient, logger);
+  api.setAuthInvalidate(() => auth.invalidateCache());
+  const gateway = new ApiGateway(api, auth, dbClient, config.applicationId, logger);
+
   // Create HTTP server
-  const server = Bun.serve({
+  Bun.serve({
     port: config.port,
     async fetch(req, server) {
       const url = new URL(req.url);
@@ -194,23 +207,36 @@ async function main() {
 
         const startTime = Date.now();
         try {
-          logger.debug("HTTP batch RPC request", {
+          const reqBody = await req.clone().text();
+          logger.info("HTTP batch RPC request", {
             method: req.method,
             path: url.pathname,
+            bodyLength: reqBody.length,
+            bodyPreview: reqBody.substring(0, 500),
           });
-          const response = await newHttpBatchRpcResponse(req, api, {
+          const response = await newHttpBatchRpcResponse(req, gateway, {
+            onSendError(error: Error) {
+              logger.error("RPC method error", {
+                error: error.message,
+                stack: error.stack,
+              });
+              return error;
+            },
             headers: {
               "Access-Control-Allow-Origin": "*",
               "Access-Control-Allow-Methods": "POST, OPTIONS",
               "Access-Control-Allow-Headers": "Content-Type",
             },
-          });
+          } as any);
           const duration = Date.now() - startTime;
+          const responseBody = await response.clone().text();
           logger.info("HTTP batch RPC request completed", {
             method: req.method,
             path: url.pathname,
             status: response.status,
             duration: `${duration}ms`,
+            bodyLength: responseBody.length,
+            bodyPreview: responseBody.substring(0, 500),
           });
           return response;
         } catch (err) {
@@ -263,7 +289,15 @@ async function main() {
         try {
           const adapter = new BunWebSocketAdapter(ws, logger);
           wsAdapters.set(ws, adapter);
-          newWebSocketRpcSession(adapter as any, api);
+          newWebSocketRpcSession(adapter as any, gateway, {
+            onSendError(error: Error) {
+              logger.error("WebSocket RPC method error", {
+                error: error.message,
+                stack: error.stack,
+              });
+              return error;
+            },
+          });
           logger.debug("Cap'n Web RPC session initialized for WebSocket");
         } catch (error) {
           logger.error("Failed to initialize WebSocket RPC session", {

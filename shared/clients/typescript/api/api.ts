@@ -25,8 +25,8 @@ export interface TeamMember {
   id: string;
   name: string;
   email: string;
-  role: 'owner' | 'admin' | 'member';
-  status: 'active' | 'invited' | 'inactive';
+  role: "owner" | "admin" | "member";
+  status: "active" | "invited" | "inactive";
   joinedAt: string;
   avatarUrl?: string;
 }
@@ -78,9 +78,8 @@ export interface Workflow {
   description: string;
   enabled: boolean;
   accountId: string;
-  trigger: string;
-  nodes: unknown[];
-  edges: unknown[];
+  steps: unknown[];
+  trigger?: unknown;
 }
 
 export interface WorkflowsQuery {
@@ -101,7 +100,7 @@ export interface WorkflowRun {
   id: string;
   workflowId: string;
   workflowName: string;
-  status: 'success' | 'failed' | 'running';
+  status: "success" | "failed" | "running";
   startedAt: string;
   duration: number;
   trigger: string;
@@ -183,7 +182,7 @@ export interface ChatMessage {
 
 export interface StreamEvent {
   id: string;
-  type: 'follow' | 'subscription' | 'donation' | 'raid' | 'cheer' | 'gift';
+  type: "follow" | "subscription" | "donation" | "raid" | "cheer" | "gift";
   user: string;
   amount?: number;
   message?: string;
@@ -226,7 +225,30 @@ export interface DashboardStats {
 
 // ==================== API Interface ====================
 
+/** RPC connectivity check; mirrors `GET /health` semantics. */
+export type PingResponse = { status: "ok"; instanceId: string };
+
+/**
+ * Gateway is the capnweb entry point. Unauthenticated callers see only
+ * `ping()` and `authenticate()`. A successful `authenticate()` returns
+ * the full `StreamControlApi` stub.
+ */
+export interface StreamControlGateway {
+  ping(): Promise<{ status: string }>;
+  authenticate(clientId: string, clientSecret: string): StreamControlApi;
+  registerClient(
+    description: string,
+    callbackUrl?: string,
+    callbackToken?: string
+  ): Promise<{ clientId: string; clientSecret: string }>;
+}
+
 export interface StreamControlApi {
+  ping(): Promise<PingResponse>;
+
+  // Client Management
+  deleteClient(clientId: string): Promise<{ success: boolean; message: string }>;
+
   // User & Auth
   getUser(): Promise<User>;
 
@@ -248,7 +270,13 @@ export interface StreamControlApi {
   // Workflows
   getWorkflows(query?: WorkflowsQuery): Promise<PaginatedWorkflows>;
   getWorkflow(id: string): Promise<Workflow | null>;
-  createWorkflow(data: { name: string; description: string; accountId: string; trigger: string }): Promise<{ id: string }>;
+  createWorkflow(data: {
+    name: string;
+    description: string;
+    accountId: string;
+    steps?: unknown[];
+    trigger?: unknown;
+  }): Promise<{ id: string }>;
   updateWorkflow(id: string, data: Partial<Workflow>): Promise<{ success: boolean }>;
   deleteWorkflow(id: string): Promise<{ success: boolean }>;
   getWorkflowRuns(query?: WorkflowRunsQuery): Promise<WorkflowRun[]>;
@@ -256,7 +284,13 @@ export interface StreamControlApi {
   // Assets
   getAssets(query?: AssetsQuery): Promise<PaginatedAssets>;
   getAsset(id: string): Promise<Asset | null>;
-  createAsset(data: { name: string; type: string; url: string; accountId: string; size: number }): Promise<{ id: string }>;
+  createAsset(data: {
+    name: string;
+    type: string;
+    url: string;
+    accountId: string;
+    size: number;
+  }): Promise<{ id: string }>;
   deleteAsset(id: string): Promise<{ success: boolean }>;
 
   // Scenes

@@ -1,3 +1,4 @@
+import type { PingResponse } from "@woofx3/api";
 import type * as command from "@woofx3/db/command.pb";
 import type * as treat from "@woofx3/db/treat.pb";
 import type * as user from "@woofx3/db/user.pb";
@@ -6,7 +7,9 @@ import type NATSClient from "@woofx3/nats/src/client";
 import { RpcTarget } from "capnweb";
 import * as protoscript from "protoscript";
 import type { Logger } from "winston";
-import type { DbClient, ModuleTrigger } from "./db-client";
+import type { ModuleTrigger } from "@woofx3/db/module_trigger.pb";
+import type { DbClient } from "./db-client";
+import type { WebhookClient } from "./webhook-client";
 
 /**
  * Helper to create a protoscript.Timestamp from a Date
@@ -20,20 +23,96 @@ function timestampFromDate(date: Date): protoscript.Timestamp {
   };
 }
 
+interface WorkflowItem {
+  id: string;
+  name: string;
+  description: string;
+  accountId: string;
+  isEnabled: boolean;
+  steps: Array<{ id: string; name: string; type: string; action?: string; parameters?: Record<string, unknown> }>;
+  trigger?: { type: string; event: string; condition?: Record<string, unknown> };
+  stats: { runsToday: number; successRate: number };
+  createdAt: string;
+  updatedAt: string;
+}
+
 /**
  * UI-focused API interface exposed via capnweb.
  * Methods represent user actions and use cases rather than database operations.
  */
-export class Api extends RpcTarget {
-  private triggerSubscribers = new Set<{ onTriggerChange(event: { type: string; moduleName: string }): Promise<void> }>();
+const consoleLogger: Logger = {
+  info: console.log,
+  debug: console.debug,
+  warn: console.warn,
+  error: console.error,
+} as unknown as Logger;
 
-  constructor(
-    private db: DbClient,
-    private nats: NATSClient | null,
-    private applicationId: string,
-    private logger: Logger
-  ) {
+interface ApiOptions {
+  db: DbClient;
+  nats: NATSClient | null;
+  applicationId: string;
+  barkloaderUrl: string;
+  logger?: Logger;
+}
+
+export class Api extends RpcTarget {
+  private triggerSubscribers = new Set<{
+    onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
+  }>();
+  private webhookClient: WebhookClient | null = null;
+  private authInvalidate: (() => void) | null = null;
+
+  private db: DbClient;
+  private nats: NATSClient | null;
+  private applicationId: string;
+  private barkloaderUrl: string;
+  private logger: Logger;
+
+  constructor(opts: ApiOptions) {
     super();
+    if (!opts.db) {
+      throw new Error("ApiOptions.db is required");
+    }
+    if (!opts.applicationId) {
+      throw new Error("ApiOptions.applicationId is required");
+    }
+    if (!opts.barkloaderUrl) {
+      throw new Error("ApiOptions.barkloaderUrl is required");
+    }
+    this.db = opts.db;
+    this.nats = opts.nats;
+    this.applicationId = opts.applicationId;
+    this.barkloaderUrl = opts.barkloaderUrl;
+    this.logger = opts.logger ?? consoleLogger;
+  }
+
+  async ping(): Promise<PingResponse> {
+    return { status: "ok", instanceId: this.applicationId };
+  }
+
+  async deleteClient(clientId: string): Promise<{ success: boolean; message: string }> {
+    this.logger.info("Deleting client", { clientId });
+    const resp = await this.db.getClientByClientID(clientId);
+    if (!resp.client) {
+      return { success: false, message: "Client not found" };
+    }
+    await this.db.deleteClient(resp.client.id);
+    if (this.authInvalidate) {
+      this.authInvalidate();
+    }
+    if (this.webhookClient) {
+      await this.webhookClient.refreshCallbackUrls();
+    }
+    this.logger.info("Client deleted", { clientId });
+    return { success: true, message: "Client deleted" };
+  }
+
+  setWebhookClient(client: WebhookClient): void {
+    this.webhookClient = client;
+  }
+
+  setAuthInvalidate(fn: () => void): void {
+    this.authInvalidate = fn;
   }
 
   async initSubscriptions(): Promise<void> {
@@ -44,15 +123,18 @@ export class Api extends RpcTarget {
         const moduleName = payload.module_name ?? "";
         await this.publishEvent("module.trigger.registered", { moduleName });
         await this.notifyTriggerChange(moduleName);
+        if (this.webhookClient) {
+          await this.webhookClient.send({ type: "module.trigger.registered", moduleName });
+        }
       } catch (err) {
         this.logger.error("Failed to handle module trigger NATS event", { err });
       }
     });
   }
 
-  async subscribeTriggerChanges(
-    callback: { onTriggerChange(event: { type: string; moduleName: string }): Promise<void> }
-  ): Promise<void> {
+  async subscribeTriggerChanges(callback: {
+    onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
+  }): Promise<void> {
     this.triggerSubscribers.add(callback);
   }
 
@@ -421,6 +503,7 @@ export class Api extends RpcTarget {
       enabled: boolean;
     }>;
   }> {
+    this.logger.info("Getting available commands", { username: _username });
     const req: command.ListCommandsRequest = {
       applicationId: this.applicationId,
       includeDisabled: false,
@@ -453,6 +536,7 @@ export class Api extends RpcTarget {
     success: boolean;
     message: string;
   }> {
+    this.logger.info("Executing command", { commandName, username, args: Object.keys(args) });
     // Get the command
     const cmdReq: command.GetCommandRequest = {
       command: commandName,
@@ -476,6 +560,7 @@ export class Api extends RpcTarget {
       applicationId: this.applicationId,
     });
 
+    this.logger.info("Command executed", { commandName, username });
     return {
       success: true,
       message: `Command "${commandName}" executed`,
@@ -492,7 +577,7 @@ export class Api extends RpcTarget {
     username: string;
     treats: {
       total: number;
-      available: number;
+      points: number;
     };
     stats?: Record<string, unknown>;
   }> {
@@ -522,7 +607,7 @@ export class Api extends RpcTarget {
       username: userResponse.user.username,
       treats: {
         total: treatsSummary?.totalTreats || 0,
-        available: treatsSummary?.availableTreats || 0,
+        points: treatsSummary?.totalPoints || 0,
       },
     };
   }
@@ -890,88 +975,68 @@ export class Api extends RpcTarget {
 
   // ==================== Modules ====================
 
-  private mockModules = [
-    {
-      id: "mod-1",
-      name: "Chat Commands",
-      description: "Custom chat command system",
-      category: "chat",
-      version: "1.2.0",
-      author: "WoofX3",
-      isInstalled: true,
-      iconUrl: "",
-    },
-    {
-      id: "mod-2",
-      name: "Alerts Manager",
-      description: "Customizable stream alerts",
-      category: "alerts",
-      version: "2.0.1",
-      author: "WoofX3",
-      isInstalled: true,
-      iconUrl: "",
-    },
-    {
-      id: "mod-3",
-      name: "Loyalty Points",
-      description: "Viewer loyalty point system",
-      category: "engagement",
-      version: "1.5.0",
-      author: "WoofX3",
-      isInstalled: false,
-      iconUrl: "",
-    },
-    {
-      id: "mod-4",
-      name: "Sound Effects",
-      description: "Trigger sound effects from chat",
-      category: "audio",
-      version: "1.0.0",
-      author: "Community",
-      isInstalled: true,
-      iconUrl: "",
-    },
-    {
-      id: "mod-5",
-      name: "Polls & Voting",
-      description: "Interactive viewer polls",
-      category: "engagement",
-      version: "1.3.2",
-      author: "WoofX3",
-      isInstalled: false,
-      iconUrl: "",
-    },
-    {
-      id: "mod-6",
-      name: "Stream Deck",
-      description: "Stream Deck integration",
-      category: "integration",
-      version: "2.1.0",
-      author: "WoofX3",
-      isInstalled: false,
-      iconUrl: "",
-    },
-    {
-      id: "mod-7",
-      name: "Giveaways",
-      description: "Run viewer giveaways",
-      category: "engagement",
-      version: "1.1.0",
-      author: "Community",
-      isInstalled: false,
-      iconUrl: "",
-    },
-    {
-      id: "mod-8",
-      name: "OBS Control",
-      description: "Control OBS from chat",
-      category: "integration",
-      version: "1.4.0",
-      author: "WoofX3",
-      isInstalled: true,
-      iconUrl: "",
-    },
-  ];
+  private getBarkloaderBaseUrl(): string {
+    return this.barkloaderUrl.endsWith("/") ? this.barkloaderUrl.slice(0, -1) : this.barkloaderUrl;
+  }
+
+  private async barkloaderRequest(path: string, init?: RequestInit): Promise<Response> {
+    const response = await fetch(`${this.getBarkloaderBaseUrl()}${path}`, init);
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Barkloader request failed (${response.status} ${response.statusText}): ${body || "empty body"}`);
+    }
+    return response;
+  }
+
+  async installModuleZip(fileName: string, zipBase64: string): Promise<{ success: boolean; message?: string }> {
+    this.logger.info("Installing module zip", { fileName, size: zipBase64.length });
+    const zipBytes = Buffer.from(zipBase64, "base64");
+    const formData = new FormData();
+    formData.append("file", new File([zipBytes], fileName, { type: "application/zip" }));
+
+    const response = await this.barkloaderRequest("/functions", {
+      method: "POST",
+      body: formData,
+    });
+    const json = (await response.json()) as { message?: string };
+    this.logger.info("Module zip installed", { fileName, message: json.message });
+    return { success: true, message: json.message ?? "Module uploaded" };
+  }
+
+  async listEngineModules(): Promise<Array<{ name: string; version: string; state: string }>> {
+    this.logger.info("Listing engine modules");
+    const response = await this.barkloaderRequest("/functions", { method: "GET" });
+    const json = (await response.json()) as {
+      modules?: Array<{ name?: string; version?: string; state?: string }>;
+    };
+    const modules = (json.modules ?? [])
+      .filter((m) => !!m.name)
+      .map((m) => ({
+        name: m.name ?? "",
+        version: m.version ?? "",
+        state: m.state ?? "active",
+      }));
+    this.logger.info("Listed engine modules", { count: modules.length });
+    return modules;
+  }
+
+  async uninstallEngineModule(name: string): Promise<{ success: boolean }> {
+    this.logger.info("Uninstalling engine module", { name });
+    await this.barkloaderRequest(`/functions/${encodeURIComponent(name)}`, { method: "DELETE" });
+    this.logger.info("Engine module uninstalled", { name });
+    return { success: true };
+  }
+
+  async setEngineModuleState(name: string, state: string): Promise<{ success: boolean }> {
+    this.logger.info("Setting engine module state", { name, state });
+    await this.barkloaderRequest(`/functions/${encodeURIComponent(name)}/state`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state }),
+    });
+    this.logger.info("Engine module state set", { name, state });
+    return { success: true };
+  }
 
   async getModules(query?: {
     category?: string;
@@ -980,145 +1045,148 @@ export class Api extends RpcTarget {
     page?: number;
     pageSize?: number;
   }): Promise<{
-    modules: typeof this.mockModules;
+    modules: Array<{
+      id: string;
+      name: string;
+      description: string;
+      version: string;
+      author: string;
+      isInstalled: boolean;
+      iconUrl: string;
+    }>;
     total: number;
     page: number;
     pageSize: number;
   }> {
-    let filtered = [...this.mockModules];
-    if (query?.category) filtered = filtered.filter((m) => m.category === query.category);
-    if (query?.search) filtered = filtered.filter((m) => m.name.toLowerCase().includes(query.search!.toLowerCase()));
-    if (query?.installed !== undefined) filtered = filtered.filter((m) => m.isInstalled === query.installed);
+    this.logger.info("Getting modules", { query });
+    const engineModules = await this.listEngineModules();
+    this.logger.info("Got modules", { count: engineModules.length });
+    const normalized = engineModules.map((m) => ({
+      id: m.name,
+      name: m.name,
+      description: "",
+      category: "integration",
+      version: m.version,
+      author: "Engine",
+      isInstalled: true,
+      iconUrl: "",
+    }));
     const page = query?.page || 1;
     const pageSize = query?.pageSize || 8;
-    return { modules: filtered.slice((page - 1) * pageSize, page * pageSize), total: filtered.length, page, pageSize };
-  }
-
-  async getModule(id: string): Promise<(typeof this.mockModules)[0] | null> {
-    return this.mockModules.find((m) => m.id === id) || null;
-  }
-
-  async installModule(id: string): Promise<{ success: boolean }> {
-    const mod = this.mockModules.find((m) => m.id === id);
-    if (mod) mod.isInstalled = true;
-    return { success: !!mod };
-  }
-
-  async uninstallModule(id: string): Promise<{ success: boolean }> {
-    const mod = this.mockModules.find((m) => m.id === id);
-    if (mod) mod.isInstalled = false;
-    return { success: !!mod };
-  }
-
-  // ==================== Workflows (Extended) ====================
-
-  private mockWorkflowsList: Array<{
-    id: string;
-    name: string;
-    description: string;
-    accountId: string;
-    isEnabled: boolean;
-    nodes: unknown[];
-    edges: unknown[];
-    stats: { runsToday: number; successRate: number };
-    createdAt: string;
-    updatedAt: string;
-  }> = [
-    {
-      id: "wf-1",
-      name: "Welcome New Followers",
-      description: "Greet new followers with custom message",
-      isEnabled: true,
-      accountId: "account-1",
-      nodes: [],
-      edges: [],
-      stats: { runsToday: 47, successRate: 98 },
-      createdAt: "2024-06-15T10:00:00Z",
-      updatedAt: "2026-01-10T14:30:00Z",
-    },
-    {
-      id: "wf-2",
-      name: "Sub Alert Chain",
-      description: "Multi-step subscription celebration",
-      isEnabled: true,
-      accountId: "account-1",
-      nodes: [],
-      edges: [],
-      stats: { runsToday: 12, successRate: 100 },
-      createdAt: "2024-07-20T08:00:00Z",
-      updatedAt: "2026-01-12T09:15:00Z",
-    },
-    {
-      id: "wf-3",
-      name: "Raid Response",
-      description: "Automated raid thank you",
-      isEnabled: false,
-      accountId: "account-1",
-      nodes: [],
-      edges: [],
-      stats: { runsToday: 0, successRate: 95 },
-      createdAt: "2024-08-01T12:00:00Z",
-      updatedAt: "2025-12-01T16:45:00Z",
-    },
-    {
-      id: "wf-4",
-      name: "Bit Rewards",
-      description: "Special effects for bit donations",
-      isEnabled: true,
-      accountId: "account-1",
-      nodes: [],
-      edges: [],
-      stats: { runsToday: 23, successRate: 99 },
-      createdAt: "2024-09-10T14:00:00Z",
-      updatedAt: "2026-01-13T11:20:00Z",
-    },
-    {
-      id: "wf-5",
-      name: "Channel Point Redemption",
-      description: "Handle channel point rewards",
-      isEnabled: true,
-      accountId: "account-2",
-      nodes: [],
-      edges: [],
-      stats: { runsToday: 156, successRate: 97 },
-      createdAt: "2024-10-05T09:00:00Z",
-      updatedAt: "2026-01-14T02:00:00Z",
-    },
-    {
-      id: "wf-6",
-      name: "Stream Start Routine",
-      description: "Automated stream startup tasks",
-      isEnabled: true,
-      accountId: "account-1",
-      nodes: [],
-      edges: [],
-      stats: { runsToday: 1, successRate: 100 },
-      createdAt: "2024-11-20T16:00:00Z",
-      updatedAt: "2026-01-14T04:00:00Z",
-    },
-  ];
-
-  async getWorkflows(query?: { accountId?: string; enabled?: boolean; page?: number; pageSize?: number }): Promise<{
-    workflows: typeof this.mockWorkflowsList;
-    total: number;
-    page: number;
-    pageSize: number;
-  }> {
-    let filtered = [...this.mockWorkflowsList];
-    if (query?.accountId) filtered = filtered.filter((w) => w.accountId === query.accountId);
-    if (query?.enabled !== undefined) filtered = filtered.filter((w) => w.isEnabled === query.enabled);
-    const page = query?.page || 1;
-    const pageSize = query?.pageSize || 6;
     return {
-      workflows: filtered.slice((page - 1) * pageSize, page * pageSize),
-      total: filtered.length,
+      modules: normalized.slice((page - 1) * pageSize, page * pageSize),
+      total: normalized.length,
       page,
       pageSize,
     };
   }
 
-  async getWorkflow(id: string): Promise<(typeof this.mockWorkflowsList)[0] | null> {
-    return this.mockWorkflowsList.find((w) => w.id === id) || null;
+  async getModule(id: string): Promise<{
+    id: string;
+    name: string;
+    description: string;
+    category: string;
+    version: string;
+    author: string;
+    isInstalled: boolean;
+    iconUrl: string;
+  } | null> {
+    const modules = await this.listEngineModules();
+    const found = modules.find((m) => m.name === id);
+    if (!found) return null;
+    return {
+      id: found.name,
+      name: found.name,
+      description: "",
+      category: "integration",
+      version: found.version,
+      author: "Engine",
+      isInstalled: true,
+      iconUrl: "",
+    };
+  }
+
+  async installModule(id: string): Promise<{ success: boolean }> {
+    // Legacy API expects module "id"; current engine API uses module name.
+    // Keep compatibility by treating id as the module name.
+    return this.setEngineModuleState(id, "active");
+  }
+
+  async uninstallModule(id: string): Promise<{ success: boolean }> {
+    // Legacy API expects module "id"; current engine API uses module name.
+    return this.uninstallEngineModule(id);
+  }
+
+  // ==================== Workflows (Extended) ====================
+
+  private workflowToItem(wf: {
+    id?: string;
+    name?: string;
+    description?: string;
+    applicationId?: string;
+    enabled?: boolean;
+    variables?: Record<string, string | undefined>;
+    createdAt?: { seconds?: bigint };
+    updatedAt?: { seconds?: bigint };
+  }): WorkflowItem {
+    const steps = wf.variables?._steps ? JSON.parse(wf.variables._steps) : [];
+    const trigger = wf.variables?._trigger ? JSON.parse(wf.variables._trigger) : undefined;
+    const createdAt = wf.createdAt?.seconds
+      ? new Date(Number(wf.createdAt.seconds) * 1000).toISOString()
+      : new Date().toISOString();
+    const updatedAt = wf.updatedAt?.seconds
+      ? new Date(Number(wf.updatedAt.seconds) * 1000).toISOString()
+      : new Date().toISOString();
+    return {
+      id: wf.id ?? "",
+      name: wf.name ?? "",
+      description: wf.description ?? "",
+      accountId: wf.applicationId ?? "",
+      isEnabled: wf.enabled ?? false,
+      steps,
+      trigger,
+      stats: { runsToday: 0, successRate: 100 },
+      createdAt,
+      updatedAt,
+    };
+  }
+
+  async getWorkflows(query?: { accountId?: string; enabled?: boolean; page?: number; pageSize?: number }): Promise<{
+    workflows: WorkflowItem[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    const page = query?.page ?? 1;
+    const pageSize = query?.pageSize ?? 20;
+    const response = await this.db.listWorkflows({
+      applicationId: query?.accountId ?? this.applicationId,
+      includeDisabled: query?.enabled === undefined ? true : !query.enabled,
+      page,
+      pageSize,
+      sortBy: "",
+      sortDesc: false,
+    });
+    if (response.status?.code !== "OK") {
+      throw new Error(response.status?.message || "Failed to list workflows");
+    }
+    return {
+      workflows: (response.workflows ?? []).map((wf) => this.workflowToItem(wf)),
+      total: response.totalCount ?? 0,
+      page: response.page ?? page,
+      pageSize: response.pageSize ?? pageSize,
+    };
+  }
+
+  async getWorkflow(id: string): Promise<WorkflowItem | null> {
+    this.logger.info("Getting workflow", { id });
+    const response = await this.db.getWorkflow({ id });
+    if (response.status?.code !== "OK" || !response.workflow) {
+      this.logger.warn("Workflow not found", { id });
+      return null;
+    }
+    this.logger.info("Retrieved workflow", { id, name: response.workflow.name });
+    return this.workflowToItem(response.workflow);
   }
 
   async createWorkflow(data: {
@@ -1126,48 +1194,75 @@ export class Api extends RpcTarget {
     description?: string;
     accountId: string;
     isEnabled?: boolean;
-    nodes?: unknown[];
-    edges?: unknown[];
-  }): Promise<(typeof this.mockWorkflowsList)[0]> {
-    const now = new Date().toISOString();
-    const workflow = {
-      id: `wf-${Date.now()}`,
+    steps?: Array<{ id: string; name: string; type: string; action?: string; parameters?: Record<string, unknown> }>;
+    trigger?: { type: string; event: string; condition?: Record<string, unknown> };
+  }): Promise<WorkflowItem> {
+    this.logger.info("Creating workflow", { name: data.name, steps: data.steps?.length });
+    const variables: Record<string, string> = {};
+    if (data.steps) variables._steps = JSON.stringify(data.steps);
+    if (data.trigger) variables._trigger = JSON.stringify(data.trigger);
+    const response = await this.db.createWorkflow({
       name: data.name,
-      description: data.description || "",
-      accountId: data.accountId,
-      isEnabled: data.isEnabled ?? false,
-      nodes: data.nodes || [],
-      edges: data.edges || [],
-      stats: { runsToday: 0, successRate: 100 },
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.mockWorkflowsList.push(workflow);
-    return workflow;
+      description: data.description ?? "",
+      applicationId: this.applicationId,
+      createdBy: "",
+      enabled: data.isEnabled ?? false,
+      steps: [],
+      variables,
+      onSuccess: "",
+      onFailure: "",
+      maxRetries: 0,
+      timeoutSeconds: 0,
+    });
+    if (response.status?.code !== "OK" || !response.workflow) {
+      throw new Error(response.status?.message || "Failed to create workflow");
+    }
+    this.logger.info("Created workflow", { id: response.workflow.id, name: response.workflow.name });
+    return this.workflowToItem(response.workflow);
   }
 
   async updateWorkflow(
     id: string,
-    data: { name?: string; description?: string; isEnabled?: boolean; nodes?: unknown[]; edges?: unknown[] }
-  ): Promise<(typeof this.mockWorkflowsList)[0] | null> {
-    const workflow = this.mockWorkflowsList.find((w) => w.id === id);
-    if (!workflow) return null;
-    if (data.name !== undefined) workflow.name = data.name;
-    if (data.description !== undefined) workflow.description = data.description;
-    if (data.isEnabled !== undefined) workflow.isEnabled = data.isEnabled;
-    if (data.nodes !== undefined) workflow.nodes = data.nodes;
-    if (data.edges !== undefined) workflow.edges = data.edges;
-    workflow.updatedAt = new Date().toISOString();
-    return workflow;
+    data: { name?: string; description?: string; isEnabled?: boolean; steps?: unknown[]; trigger?: unknown }
+  ): Promise<WorkflowItem | null> {
+    this.logger.info("Updating workflow", { id, data: Object.keys(data) });
+    const existing = await this.db.getWorkflow({ id });
+    if (existing.status?.code !== "OK" || !existing.workflow) {
+      this.logger.warn("Workflow not found for update", { id });
+      return null;
+    }
+    const existingVars = existing.workflow.variables ?? {};
+    const variables: Record<string, string> = {
+      ...existingVars,
+      ...(data.steps !== undefined ? { _steps: JSON.stringify(data.steps) } : {}),
+      ...(data.trigger !== undefined ? { _trigger: JSON.stringify(data.trigger) } : {}),
+    };
+    // Remove old _nodes/_edges if present (migration cleanup)
+    delete variables._nodes;
+    delete variables._edges;
+    const response = await this.db.updateWorkflow({
+      id,
+      name: data.name ?? existing.workflow.name ?? "",
+      description: data.description ?? existing.workflow.description ?? "",
+      enabled: data.isEnabled ?? existing.workflow.enabled ?? false,
+      steps: existing.workflow.steps ?? [],
+      variables,
+      onSuccess: existing.workflow.onSuccess ?? "",
+      onFailure: existing.workflow.onFailure ?? "",
+      maxRetries: existing.workflow.maxRetries ?? 0,
+      timeoutSeconds: existing.workflow.timeoutSeconds ?? 0,
+    });
+    if (response.status?.code !== "OK" || !response.workflow) return null;
+    this.logger.info("Updated workflow", { id, name: response.workflow.name });
+    return this.workflowToItem(response.workflow);
   }
 
   async deleteWorkflow(id: string): Promise<boolean> {
-    const idx = this.mockWorkflowsList.findIndex((w) => w.id === id);
-    if (idx >= 0) {
-      this.mockWorkflowsList.splice(idx, 1);
-      return true;
-    }
-    return false;
+    this.logger.info("Deleting workflow", { id });
+    const response = await this.db.deleteWorkflow({ id });
+    const deleted = response.code === "OK";
+    this.logger.info("Workflow deleted", { id, success: deleted });
+    return deleted;
   }
 
   private workflowRuns: Array<{
@@ -1546,11 +1641,21 @@ export class Api extends RpcTarget {
     activeAccounts: number;
     recentEvents: number;
   }> {
+    const engineModules = await this.listEngineModules().catch(() => []);
+    const workflowsResponse = await this.db.listWorkflows({
+      applicationId: this.applicationId,
+      includeDisabled: true,
+      page: 1,
+      pageSize: 1000,
+      sortBy: "",
+      sortDesc: false,
+    });
+    const workflows = workflowsResponse.workflows ?? [];
     return {
-      activeWorkflows: this.mockWorkflowsList.filter((w) => w.isEnabled).length,
-      totalWorkflows: this.mockWorkflowsList.length,
-      installedModules: this.mockModules.filter((m) => m.isInstalled).length,
-      totalModules: this.mockModules.length,
+      activeWorkflows: workflows.filter((w) => w.enabled).length,
+      totalWorkflows: workflowsResponse.totalCount ?? workflows.length,
+      installedModules: engineModules.length,
+      totalModules: engineModules.length,
       activeAccounts: 2,
       recentEvents: 147,
     };
