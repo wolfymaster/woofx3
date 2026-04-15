@@ -2183,7 +2183,7 @@ func (s *treatServiceServer) serveGetTreatStatsProtobuf(ctx context.Context, res
 }
 
 func (s *treatServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor7, 0
+	return twirpFileDescriptor8, 0
 }
 
 func (s *treatServiceServer) ProtocGenTwirpVersion() string {
@@ -2197,7 +2197,7 @@ func (s *treatServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "treat", "TreatService")
 }
 
-var twirpFileDescriptor7 = []byte{
+var twirpFileDescriptor8 = []byte{
 	// 1276 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xbc, 0x57, 0xdd, 0x6e, 0xe3, 0x44,
 	0x14, 0x56, 0xe2, 0x38, 0x71, 0x8e, 0x93, 0x2e, 0x1d, 0x2d, 0x8b, 0x37, 0x05, 0x6d, 0x6b, 0x16,

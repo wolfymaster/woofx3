@@ -101,6 +101,29 @@ export interface DeleteSettingRequest {
   applicationId: string;
 }
 
+/**
+ * Request to list settings by key prefix
+ */
+export interface ListSettingsRequest {
+  keyPrefix: string;
+  applicationId: string;
+}
+
+/**
+ * Response with settings map
+ */
+export interface ListSettingsResponse {
+  status: common.ResponseStatus;
+  settings: Record<string, ListSettingsResponse.Settings["value"] | undefined>;
+}
+
+export declare namespace ListSettingsResponse {
+  interface Settings {
+    key: string;
+    value: string;
+  }
+}
+
 //========================================//
 //     SettingService Protobuf Client     //
 //========================================//
@@ -178,6 +201,21 @@ export async function DeleteSetting(
     config,
   );
   return common.ResponseStatus.decode(response);
+}
+
+/**
+ * List settings by key prefix
+ */
+export async function ListSettingsByPrefix(
+  listSettingsRequest: ListSettingsRequest,
+  config?: ClientConfiguration,
+): Promise<ListSettingsResponse> {
+  const response = await PBrequest(
+    "/setting.SettingService/ListSettingsByPrefix",
+    ListSettingsRequest.encode(listSettingsRequest),
+    config,
+  );
+  return ListSettingsResponse.decode(response);
 }
 
 //========================================//
@@ -259,6 +297,21 @@ export async function DeleteSettingJSON(
   return common.ResponseStatusJSON.decode(response);
 }
 
+/**
+ * List settings by key prefix
+ */
+export async function ListSettingsByPrefixJSON(
+  listSettingsRequest: ListSettingsRequest,
+  config?: ClientConfiguration,
+): Promise<ListSettingsResponse> {
+  const response = await JSONrequest(
+    "/setting.SettingService/ListSettingsByPrefix",
+    ListSettingsRequestJSON.encode(listSettingsRequest),
+    config,
+  );
+  return ListSettingsResponseJSON.decode(response);
+}
+
 //========================================//
 //             SettingService             //
 //========================================//
@@ -299,6 +352,13 @@ export interface SettingService<Context = unknown> {
     deleteSettingRequest: DeleteSettingRequest,
     context: Context,
   ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  /**
+   * List settings by key prefix
+   */
+  ListSettingsByPrefix: (
+    listSettingsRequest: ListSettingsRequest,
+    context: Context,
+  ) => Promise<ListSettingsResponse> | ListSettingsResponse;
 }
 
 export function createSettingService<Context>(
@@ -347,6 +407,15 @@ export function createSettingService<Context>(
         output: {
           protobuf: common.ResponseStatus,
           json: common.ResponseStatusJSON,
+        },
+      },
+      ListSettingsByPrefix: {
+        name: "ListSettingsByPrefix",
+        handler: service.ListSettingsByPrefix,
+        input: { protobuf: ListSettingsRequest, json: ListSettingsRequestJSON },
+        output: {
+          protobuf: ListSettingsResponse,
+          json: ListSettingsResponseJSON,
         },
       },
     },
@@ -1201,6 +1270,216 @@ export const DeleteSettingRequest = {
   },
 };
 
+export const ListSettingsRequest = {
+  /**
+   * Serializes ListSettingsRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<ListSettingsRequest>): Uint8Array {
+    return ListSettingsRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ListSettingsRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): ListSettingsRequest {
+    return ListSettingsRequest._readMessage(
+      ListSettingsRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ListSettingsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListSettingsRequest>,
+  ): ListSettingsRequest {
+    return {
+      keyPrefix: "",
+      applicationId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListSettingsRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.keyPrefix) {
+      writer.writeString(1, msg.keyPrefix);
+    }
+    if (msg.applicationId) {
+      writer.writeString(2, msg.applicationId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListSettingsRequest,
+    reader: protoscript.BinaryReader,
+  ): ListSettingsRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.keyPrefix = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.applicationId = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ListSettingsResponse = {
+  /**
+   * Serializes ListSettingsResponse to protobuf.
+   */
+  encode: function (msg: PartialDeep<ListSettingsResponse>): Uint8Array {
+    return ListSettingsResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ListSettingsResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): ListSettingsResponse {
+    return ListSettingsResponse._readMessage(
+      ListSettingsResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ListSettingsResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListSettingsResponse>,
+  ): ListSettingsResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      settings: {},
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListSettingsResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.settings) {
+      writer.writeRepeatedMessage(
+        2,
+        Object.entries(msg.settings).map(([key, value]) => ({
+          key: key as any,
+          value: value as any,
+        })) as any,
+        ListSettingsResponse.Settings._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListSettingsResponse,
+    reader: protoscript.BinaryReader,
+  ): ListSettingsResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          const map = {} as ListSettingsResponse.Settings;
+          reader.readMessage(map, ListSettingsResponse.Settings._readMessage);
+          msg.settings[map.key.toString()] = map.value;
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+
+  Settings: {
+    /**
+     * @private
+     */
+    _writeMessage: function (
+      msg: PartialDeep<ListSettingsResponse.Settings>,
+      writer: protoscript.BinaryWriter,
+    ): protoscript.BinaryWriter {
+      if (msg.key) {
+        writer.writeString(1, msg.key);
+      }
+      if (msg.value) {
+        writer.writeString(2, msg.value);
+      }
+      return writer;
+    },
+
+    /**
+     * @private
+     */
+    _readMessage: function (
+      msg: ListSettingsResponse.Settings,
+      reader: protoscript.BinaryReader,
+    ): ListSettingsResponse.Settings {
+      while (reader.nextField()) {
+        const field = reader.getFieldNumber();
+        switch (field) {
+          case 1: {
+            msg.key = reader.readString();
+            break;
+          }
+          case 2: {
+            msg.value = reader.readString();
+            break;
+          }
+          default: {
+            reader.skipField();
+            break;
+          }
+        }
+      }
+      return msg;
+    },
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -1926,5 +2205,189 @@ export const DeleteSettingRequestJSON = {
       msg.applicationId = _applicationId_;
     }
     return msg;
+  },
+};
+
+export const ListSettingsRequestJSON = {
+  /**
+   * Serializes ListSettingsRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<ListSettingsRequest>): string {
+    return JSON.stringify(ListSettingsRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ListSettingsRequest from JSON.
+   */
+  decode: function (json: string): ListSettingsRequest {
+    return ListSettingsRequestJSON._readMessage(
+      ListSettingsRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ListSettingsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListSettingsRequest>,
+  ): ListSettingsRequest {
+    return {
+      keyPrefix: "",
+      applicationId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListSettingsRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.keyPrefix) {
+      json["keyPrefix"] = msg.keyPrefix;
+    }
+    if (msg.applicationId) {
+      json["applicationId"] = msg.applicationId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListSettingsRequest,
+    json: any,
+  ): ListSettingsRequest {
+    const _keyPrefix_ = json["keyPrefix"] ?? json["key_prefix"];
+    if (_keyPrefix_) {
+      msg.keyPrefix = _keyPrefix_;
+    }
+    const _applicationId_ = json["applicationId"] ?? json["application_id"];
+    if (_applicationId_) {
+      msg.applicationId = _applicationId_;
+    }
+    return msg;
+  },
+};
+
+export const ListSettingsResponseJSON = {
+  /**
+   * Serializes ListSettingsResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<ListSettingsResponse>): string {
+    return JSON.stringify(ListSettingsResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ListSettingsResponse from JSON.
+   */
+  decode: function (json: string): ListSettingsResponse {
+    return ListSettingsResponseJSON._readMessage(
+      ListSettingsResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ListSettingsResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListSettingsResponse>,
+  ): ListSettingsResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      settings: {},
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListSettingsResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.settings) {
+      const _settings_ = Object.fromEntries(
+        Object.entries(msg.settings)
+          .map(([key, value]) => ({ key: key as any, value: value as any }))
+          .map(ListSettingsResponseJSON.Settings._writeMessage)
+          .map(({ key, value }) => [key, value]),
+      );
+      if (Object.keys(_settings_).length > 0) {
+        json["settings"] = _settings_;
+      }
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListSettingsResponse,
+    json: any,
+  ): ListSettingsResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _settings_ = json["settings"];
+    if (_settings_) {
+      msg.settings = Object.fromEntries(
+        Object.entries(_settings_)
+          .map(([key, value]) => ({ key: key as any, value: value as any }))
+          .map(ListSettingsResponseJSON.Settings._readMessage)
+          .map(({ key, value }) => [key, value]),
+      );
+    }
+    return msg;
+  },
+
+  Settings: {
+    /**
+     * @private
+     */
+    _writeMessage: function (
+      msg: PartialDeep<ListSettingsResponse.Settings>,
+    ): Record<string, unknown> {
+      const json: Record<string, unknown> = {};
+      if (msg.key) {
+        json["key"] = msg.key;
+      }
+      if (msg.value) {
+        json["value"] = msg.value;
+      }
+      return json;
+    },
+
+    /**
+     * @private
+     */
+    _readMessage: function (
+      msg: ListSettingsResponse.Settings,
+      json: any,
+    ): ListSettingsResponse.Settings {
+      const _key_ = json["key"];
+      if (_key_) {
+        msg.key = _key_;
+      }
+      const _value_ = json["value"];
+      if (_value_) {
+        msg.value = _value_;
+      }
+      return msg;
+    },
   },
 };

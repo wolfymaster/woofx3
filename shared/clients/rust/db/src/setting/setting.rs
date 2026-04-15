@@ -110,6 +110,25 @@ pub struct DeleteSettingRequest {
     #[prost(string, tag="2")]
     pub application_id: ::prost::alloc::string::String,
 }
+/// Request to list settings by key prefix
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListSettingsRequest {
+    /// Key prefix to filter by
+    #[prost(string, tag="1")]
+    pub key_prefix: ::prost::alloc::string::String,
+    /// Application ID for app-specific settings
+    #[prost(string, tag="2")]
+    pub application_id: ::prost::alloc::string::String,
+}
+/// Response with settings map
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListSettingsResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    /// Settings as key-value map
+    #[prost(map="string, string", tag="2")]
+    pub settings: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
+}
 include!("setting.serde.rs");
 include!("setting.tonic.rs");
 // @@protoc_insertion_point(module)

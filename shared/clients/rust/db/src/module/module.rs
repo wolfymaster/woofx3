@@ -62,6 +62,60 @@ pub struct DeleteTriggersByModuleRequest {
     #[prost(string, tag="1")]
     pub module_name: ::prost::alloc::string::String,
 }
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ModuleAction {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub module_id: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub module_name: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag="5")]
+    pub description: ::prost::alloc::string::String,
+    #[prost(string, tag="6")]
+    pub call: ::prost::alloc::string::String,
+    #[prost(string, tag="7")]
+    pub params_schema: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RegisterActionRequest {
+    #[prost(string, tag="1")]
+    pub module_name: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub description: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub call: ::prost::alloc::string::String,
+    #[prost(string, tag="5")]
+    pub params_schema: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListActionsRequest {
+    #[prost(string, tag="1")]
+    pub module_name: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListActionsResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, repeated, tag="2")]
+    pub actions: ::prost::alloc::vec::Vec<ModuleAction>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ModuleActionResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, optional, tag="2")]
+    pub action: ::core::option::Option<ModuleAction>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteActionsByModuleRequest {
+    #[prost(string, tag="1")]
+    pub module_name: ::prost::alloc::string::String,
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Module {
     #[prost(string, tag="1")]

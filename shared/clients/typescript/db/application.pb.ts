@@ -20,14 +20,8 @@ export interface Application {
   id: string;
   name: string;
   ownerId: string;
-  clients: Client[];
   enabled: boolean;
   createdAt: protoscript.Timestamp;
-}
-
-export interface Client {
-  clientId: string;
-  clientSecret: string;
 }
 
 /**
@@ -389,7 +383,6 @@ export const Application = {
       id: "",
       name: "",
       ownerId: "",
-      clients: [],
       enabled: false,
       createdAt: protoscript.Timestamp.initialize(),
       ...msg,
@@ -411,9 +404,6 @@ export const Application = {
     }
     if (msg.ownerId) {
       writer.writeString(4, msg.ownerId);
-    }
-    if (msg.clients?.length) {
-      writer.writeRepeatedMessage(5, msg.clients as any, Client._writeMessage);
     }
     if (msg.enabled) {
       writer.writeBool(6, msg.enabled);
@@ -450,94 +440,12 @@ export const Application = {
           msg.ownerId = reader.readString();
           break;
         }
-        case 5: {
-          const m = Client.initialize();
-          reader.readMessage(m, Client._readMessage);
-          msg.clients.push(m);
-          break;
-        }
         case 6: {
           msg.enabled = reader.readBool();
           break;
         }
         case 15: {
           reader.readMessage(msg.createdAt, protoscript.Timestamp._readMessage);
-          break;
-        }
-        default: {
-          reader.skipField();
-          break;
-        }
-      }
-    }
-    return msg;
-  },
-};
-
-export const Client = {
-  /**
-   * Serializes Client to protobuf.
-   */
-  encode: function (msg: PartialDeep<Client>): Uint8Array {
-    return Client._writeMessage(
-      msg,
-      new protoscript.BinaryWriter(),
-    ).getResultBuffer();
-  },
-
-  /**
-   * Deserializes Client from protobuf.
-   */
-  decode: function (bytes: ByteSource): Client {
-    return Client._readMessage(
-      Client.initialize(),
-      new protoscript.BinaryReader(bytes),
-    );
-  },
-
-  /**
-   * Initializes Client with all fields set to their default value.
-   */
-  initialize: function (msg?: Partial<Client>): Client {
-    return {
-      clientId: "",
-      clientSecret: "",
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<Client>,
-    writer: protoscript.BinaryWriter,
-  ): protoscript.BinaryWriter {
-    if (msg.clientId) {
-      writer.writeString(1, msg.clientId);
-    }
-    if (msg.clientSecret) {
-      writer.writeString(2, msg.clientSecret);
-    }
-    return writer;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (
-    msg: Client,
-    reader: protoscript.BinaryReader,
-  ): Client {
-    while (reader.nextField()) {
-      const field = reader.getFieldNumber();
-      switch (field) {
-        case 1: {
-          msg.clientId = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.clientSecret = reader.readString();
           break;
         }
         default: {
@@ -1132,7 +1040,6 @@ export const ApplicationJSON = {
       id: "",
       name: "",
       ownerId: "",
-      clients: [],
       enabled: false,
       createdAt: protoscript.TimestampJSON.initialize(),
       ...msg,
@@ -1154,9 +1061,6 @@ export const ApplicationJSON = {
     }
     if (msg.ownerId) {
       json["ownerId"] = msg.ownerId;
-    }
-    if (msg.clients?.length) {
-      json["clients"] = msg.clients.map(ClientJSON._writeMessage);
     }
     if (msg.enabled) {
       json["enabled"] = msg.enabled;
@@ -1183,14 +1087,6 @@ export const ApplicationJSON = {
     if (_ownerId_) {
       msg.ownerId = _ownerId_;
     }
-    const _clients_ = json["clients"];
-    if (_clients_) {
-      for (const item of _clients_) {
-        const m = ClientJSON.initialize();
-        ClientJSON._readMessage(m, item);
-        msg.clients.push(m);
-      }
-    }
     const _enabled_ = json["enabled"];
     if (_enabled_) {
       msg.enabled = _enabled_;
@@ -1198,62 +1094,6 @@ export const ApplicationJSON = {
     const _createdAt_ = json["createdAt"] ?? json["created_at"];
     if (_createdAt_) {
       msg.createdAt = protoscript.parseTimestamp(_createdAt_);
-    }
-    return msg;
-  },
-};
-
-export const ClientJSON = {
-  /**
-   * Serializes Client to JSON.
-   */
-  encode: function (msg: PartialDeep<Client>): string {
-    return JSON.stringify(ClientJSON._writeMessage(msg));
-  },
-
-  /**
-   * Deserializes Client from JSON.
-   */
-  decode: function (json: string): Client {
-    return ClientJSON._readMessage(ClientJSON.initialize(), JSON.parse(json));
-  },
-
-  /**
-   * Initializes Client with all fields set to their default value.
-   */
-  initialize: function (msg?: Partial<Client>): Client {
-    return {
-      clientId: "",
-      clientSecret: "",
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (msg: PartialDeep<Client>): Record<string, unknown> {
-    const json: Record<string, unknown> = {};
-    if (msg.clientId) {
-      json["clientId"] = msg.clientId;
-    }
-    if (msg.clientSecret) {
-      json["clientSecret"] = msg.clientSecret;
-    }
-    return json;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (msg: Client, json: any): Client {
-    const _clientId_ = json["clientId"] ?? json["client_id"];
-    if (_clientId_) {
-      msg.clientId = _clientId_;
-    }
-    const _clientSecret_ = json["clientSecret"] ?? json["client_secret"];
-    if (_clientSecret_) {
-      msg.clientSecret = _clientSecret_;
     }
     return msg;
   },

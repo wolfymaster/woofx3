@@ -434,6 +434,226 @@ impl<'de> serde::Deserialize<'de> for GetSettingsResponse {
         deserializer.deserialize_struct("setting.GetSettingsResponse", FIELDS, GeneratedVisitor)
     }
 }
+impl serde::Serialize for ListSettingsRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.key_prefix.is_empty() {
+            len += 1;
+        }
+        if !self.application_id.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("setting.ListSettingsRequest", len)?;
+        if !self.key_prefix.is_empty() {
+            struct_ser.serialize_field("keyPrefix", &self.key_prefix)?;
+        }
+        if !self.application_id.is_empty() {
+            struct_ser.serialize_field("applicationId", &self.application_id)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for ListSettingsRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "key_prefix",
+            "keyPrefix",
+            "application_id",
+            "applicationId",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            KeyPrefix,
+            ApplicationId,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "keyPrefix" | "key_prefix" => Ok(GeneratedField::KeyPrefix),
+                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = ListSettingsRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct setting.ListSettingsRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<ListSettingsRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut key_prefix__ = None;
+                let mut application_id__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::KeyPrefix => {
+                            if key_prefix__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("keyPrefix"));
+                            }
+                            key_prefix__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ApplicationId => {
+                            if application_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("applicationId"));
+                            }
+                            application_id__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(ListSettingsRequest {
+                    key_prefix: key_prefix__.unwrap_or_default(),
+                    application_id: application_id__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("setting.ListSettingsRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for ListSettingsResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.status.is_some() {
+            len += 1;
+        }
+        if !self.settings.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("setting.ListSettingsResponse", len)?;
+        if let Some(v) = self.status.as_ref() {
+            struct_ser.serialize_field("status", v)?;
+        }
+        if !self.settings.is_empty() {
+            struct_ser.serialize_field("settings", &self.settings)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for ListSettingsResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "status",
+            "settings",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Status,
+            Settings,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "status" => Ok(GeneratedField::Status),
+                            "settings" => Ok(GeneratedField::Settings),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = ListSettingsResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct setting.ListSettingsResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<ListSettingsResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut status__ = None;
+                let mut settings__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = map_.next_value()?;
+                        }
+                        GeneratedField::Settings => {
+                            if settings__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("settings"));
+                            }
+                            settings__ = Some(
+                                map_.next_value::<std::collections::HashMap<_, _>>()?
+                            );
+                        }
+                    }
+                }
+                Ok(ListSettingsResponse {
+                    status: status__,
+                    settings: settings__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("setting.ListSettingsResponse", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for SetSettingRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>

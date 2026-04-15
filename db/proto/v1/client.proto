@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package client;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+
+service ClientService {
+    rpc CreateClient(CreateClientRequest) returns (ClientResponse);
+    rpc GetClient(GetClientRequest) returns (ClientResponse);
+    rpc ListClients(ListClientsRequest) returns (ListClientsResponse);
+    rpc UpdateClient(UpdateClientRequest) returns (ClientResponse);
+    rpc DeleteClient(DeleteClientRequest) returns (common.ResponseStatus);
+    rpc ValidateClient(ValidateClientRequest) returns (ClientResponse);
+}
+
+message Client {
+    string id = 1;
+    string description = 2;
+    string application_id = 3;
+    string client_id = 4;
+    string client_secret = 5;
+    string callback_url = 6;
+    string callback_token = 7;
+}
+
+message CreateClientRequest {
+    string description = 1;
+    string application_id = 2;
+    string callback_url = 3;
+    string callback_token = 4;
+}
+
+message GetClientRequest {
+    string client_id = 1;
+}
+
+message ListClientsRequest {
+    string application_id = 1;
+}
+
+message UpdateClientRequest {
+    string id = 1;
+    string description = 2;
+    string callback_url = 3;
+    string callback_token = 4;
+}
+
+message DeleteClientRequest {
+    string id = 1;
+}
+
+message ValidateClientRequest {
+    string client_id = 1;
+    string client_secret = 2;
+}
+
+message ClientResponse {
+    common.ResponseStatus status = 1;
+    Client client = 2;
+}
+
+message ListClientsResponse {
+    common.ResponseStatus status = 1;
+    repeated Client clients = 2;
+}

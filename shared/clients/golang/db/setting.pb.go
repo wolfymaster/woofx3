@@ -548,6 +548,112 @@ func (x *DeleteSettingRequest) GetApplicationId() string {
 	return ""
 }
 
+// Request to list settings by key prefix
+type ListSettingsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	KeyPrefix     string                 `protobuf:"bytes,1,opt,name=key_prefix,json=keyPrefix,proto3" json:"key_prefix,omitempty"`             // Key prefix to filter by
+	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // Application ID for app-specific settings
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSettingsRequest) Reset() {
+	*x = ListSettingsRequest{}
+	mi := &file_setting_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSettingsRequest) ProtoMessage() {}
+
+func (x *ListSettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_setting_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSettingsRequest.ProtoReflect.Descriptor instead.
+func (*ListSettingsRequest) Descriptor() ([]byte, []int) {
+	return file_setting_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ListSettingsRequest) GetKeyPrefix() string {
+	if x != nil {
+		return x.KeyPrefix
+	}
+	return ""
+}
+
+func (x *ListSettingsRequest) GetApplicationId() string {
+	if x != nil {
+		return x.ApplicationId
+	}
+	return ""
+}
+
+// Response with settings map
+type ListSettingsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Settings      map[string]string      `protobuf:"bytes,2,rep,name=settings,proto3" json:"settings,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Settings as key-value map
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSettingsResponse) Reset() {
+	*x = ListSettingsResponse{}
+	mi := &file_setting_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSettingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSettingsResponse) ProtoMessage() {}
+
+func (x *ListSettingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_setting_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSettingsResponse.ProtoReflect.Descriptor instead.
+func (*ListSettingsResponse) Descriptor() ([]byte, []int) {
+	return file_setting_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ListSettingsResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *ListSettingsResponse) GetSettings() map[string]string {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
 type SetSettingsRequest_SettingUpdate struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -558,7 +664,7 @@ type SetSettingsRequest_SettingUpdate struct {
 
 func (x *SetSettingsRequest_SettingUpdate) Reset() {
 	*x = SetSettingsRequest_SettingUpdate{}
-	mi := &file_setting_proto_msgTypes[9]
+	mi := &file_setting_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -570,7 +676,7 @@ func (x *SetSettingsRequest_SettingUpdate) String() string {
 func (*SetSettingsRequest_SettingUpdate) ProtoMessage() {}
 
 func (x *SetSettingsRequest_SettingUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_setting_proto_msgTypes[9]
+	mi := &file_setting_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -643,7 +749,17 @@ const file_setting_proto_rawDesc = "" +
 	"\bsettings\x18\x02 \x03(\v2\x10.setting.SettingR\bsettings\"O\n" +
 	"\x14DeleteSettingRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId2\xf4\x02\n" +
+	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"[\n" +
+	"\x13ListSettingsRequest\x12\x1d\n" +
+	"\n" +
+	"key_prefix\x18\x01 \x01(\tR\tkeyPrefix\x12%\n" +
+	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"\xcc\x01\n" +
+	"\x14ListSettingsResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12G\n" +
+	"\bsettings\x18\x02 \x03(\v2+.setting.ListSettingsResponse.SettingsEntryR\bsettings\x1a;\n" +
+	"\rSettingsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xc9\x03\n" +
 	"\x0eSettingService\x12B\n" +
 	"\n" +
 	"GetSetting\x12\x1a.setting.GetSettingRequest\x1a\x18.setting.SettingResponse\x12H\n" +
@@ -651,7 +767,8 @@ const file_setting_proto_rawDesc = "" +
 	"\n" +
 	"SetSetting\x12\x1a.setting.SetSettingRequest\x1a\x18.setting.SettingResponse\x12H\n" +
 	"\vSetSettings\x12\x1b.setting.SetSettingsRequest\x1a\x1c.setting.SetSettingsResponse\x12F\n" +
-	"\rDeleteSetting\x12\x1d.setting.DeleteSettingRequest\x1a\x16.common.ResponseStatusB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"\rDeleteSetting\x12\x1d.setting.DeleteSettingRequest\x1a\x16.common.ResponseStatus\x12S\n" +
+	"\x14ListSettingsByPrefix\x12\x1c.setting.ListSettingsRequest\x1a\x1d.setting.ListSettingsResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_setting_proto_rawDescOnce sync.Once
@@ -665,7 +782,7 @@ func file_setting_proto_rawDescGZIP() []byte {
 	return file_setting_proto_rawDescData
 }
 
-var file_setting_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_setting_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_setting_proto_goTypes = []any{
 	(*Setting)(nil),                          // 0: setting.Setting
 	(*GetSettingRequest)(nil),                // 1: setting.GetSettingRequest
@@ -676,39 +793,46 @@ var file_setting_proto_goTypes = []any{
 	(*SetSettingsRequest)(nil),               // 6: setting.SetSettingsRequest
 	(*SetSettingsResponse)(nil),              // 7: setting.SetSettingsResponse
 	(*DeleteSettingRequest)(nil),             // 8: setting.DeleteSettingRequest
-	(*SetSettingsRequest_SettingUpdate)(nil), // 9: setting.SetSettingsRequest.SettingUpdate
-	(*structpb.Value)(nil),                   // 10: google.protobuf.Value
-	(*timestamppb.Timestamp)(nil),            // 11: google.protobuf.Timestamp
-	(*ResponseStatus)(nil),                   // 12: common.ResponseStatus
+	(*ListSettingsRequest)(nil),              // 9: setting.ListSettingsRequest
+	(*ListSettingsResponse)(nil),             // 10: setting.ListSettingsResponse
+	(*SetSettingsRequest_SettingUpdate)(nil), // 11: setting.SetSettingsRequest.SettingUpdate
+	nil,                                      // 12: setting.ListSettingsResponse.SettingsEntry
+	(*structpb.Value)(nil),                   // 13: google.protobuf.Value
+	(*timestamppb.Timestamp)(nil),            // 14: google.protobuf.Timestamp
+	(*ResponseStatus)(nil),                   // 15: common.ResponseStatus
 }
 var file_setting_proto_depIdxs = []int32{
-	10, // 0: setting.Setting.value:type_name -> google.protobuf.Value
-	11, // 1: setting.Setting.created_at:type_name -> google.protobuf.Timestamp
-	11, // 2: setting.Setting.updated_at:type_name -> google.protobuf.Timestamp
-	12, // 3: setting.SettingResponse.status:type_name -> common.ResponseStatus
+	13, // 0: setting.Setting.value:type_name -> google.protobuf.Value
+	14, // 1: setting.Setting.created_at:type_name -> google.protobuf.Timestamp
+	14, // 2: setting.Setting.updated_at:type_name -> google.protobuf.Timestamp
+	15, // 3: setting.SettingResponse.status:type_name -> common.ResponseStatus
 	0,  // 4: setting.SettingResponse.setting:type_name -> setting.Setting
-	12, // 5: setting.GetSettingsResponse.status:type_name -> common.ResponseStatus
+	15, // 5: setting.GetSettingsResponse.status:type_name -> common.ResponseStatus
 	0,  // 6: setting.GetSettingsResponse.settings:type_name -> setting.Setting
-	10, // 7: setting.SetSettingRequest.value:type_name -> google.protobuf.Value
-	9,  // 8: setting.SetSettingsRequest.settings:type_name -> setting.SetSettingsRequest.SettingUpdate
-	12, // 9: setting.SetSettingsResponse.status:type_name -> common.ResponseStatus
+	13, // 7: setting.SetSettingRequest.value:type_name -> google.protobuf.Value
+	11, // 8: setting.SetSettingsRequest.settings:type_name -> setting.SetSettingsRequest.SettingUpdate
+	15, // 9: setting.SetSettingsResponse.status:type_name -> common.ResponseStatus
 	0,  // 10: setting.SetSettingsResponse.settings:type_name -> setting.Setting
-	10, // 11: setting.SetSettingsRequest.SettingUpdate.value:type_name -> google.protobuf.Value
-	1,  // 12: setting.SettingService.GetSetting:input_type -> setting.GetSettingRequest
-	3,  // 13: setting.SettingService.GetSettings:input_type -> setting.GetSettingsRequest
-	5,  // 14: setting.SettingService.SetSetting:input_type -> setting.SetSettingRequest
-	6,  // 15: setting.SettingService.SetSettings:input_type -> setting.SetSettingsRequest
-	8,  // 16: setting.SettingService.DeleteSetting:input_type -> setting.DeleteSettingRequest
-	2,  // 17: setting.SettingService.GetSetting:output_type -> setting.SettingResponse
-	4,  // 18: setting.SettingService.GetSettings:output_type -> setting.GetSettingsResponse
-	2,  // 19: setting.SettingService.SetSetting:output_type -> setting.SettingResponse
-	7,  // 20: setting.SettingService.SetSettings:output_type -> setting.SetSettingsResponse
-	12, // 21: setting.SettingService.DeleteSetting:output_type -> common.ResponseStatus
-	17, // [17:22] is the sub-list for method output_type
-	12, // [12:17] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	15, // 11: setting.ListSettingsResponse.status:type_name -> common.ResponseStatus
+	12, // 12: setting.ListSettingsResponse.settings:type_name -> setting.ListSettingsResponse.SettingsEntry
+	13, // 13: setting.SetSettingsRequest.SettingUpdate.value:type_name -> google.protobuf.Value
+	1,  // 14: setting.SettingService.GetSetting:input_type -> setting.GetSettingRequest
+	3,  // 15: setting.SettingService.GetSettings:input_type -> setting.GetSettingsRequest
+	5,  // 16: setting.SettingService.SetSetting:input_type -> setting.SetSettingRequest
+	6,  // 17: setting.SettingService.SetSettings:input_type -> setting.SetSettingsRequest
+	8,  // 18: setting.SettingService.DeleteSetting:input_type -> setting.DeleteSettingRequest
+	9,  // 19: setting.SettingService.ListSettingsByPrefix:input_type -> setting.ListSettingsRequest
+	2,  // 20: setting.SettingService.GetSetting:output_type -> setting.SettingResponse
+	4,  // 21: setting.SettingService.GetSettings:output_type -> setting.GetSettingsResponse
+	2,  // 22: setting.SettingService.SetSetting:output_type -> setting.SettingResponse
+	7,  // 23: setting.SettingService.SetSettings:output_type -> setting.SetSettingsResponse
+	15, // 24: setting.SettingService.DeleteSetting:output_type -> common.ResponseStatus
+	10, // 25: setting.SettingService.ListSettingsByPrefix:output_type -> setting.ListSettingsResponse
+	20, // [20:26] is the sub-list for method output_type
+	14, // [14:20] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_setting_proto_init() }
@@ -723,7 +847,7 @@ func file_setting_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_setting_proto_rawDesc), len(file_setting_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

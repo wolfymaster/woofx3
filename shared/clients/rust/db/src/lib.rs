@@ -15,3 +15,9 @@ pub mod db {
         include!("workflow/workflow.rs");
     }
 }
+
+pub mod storage {
+    pub mod storage {
+        include!("storage/storage.rs");
+    }
+}

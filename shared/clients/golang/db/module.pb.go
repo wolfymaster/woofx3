@@ -786,7 +786,7 @@ var File_module_proto protoreflect.FileDescriptor
 
 const file_module_proto_rawDesc = "" +
 	"\n" +
-	"\fmodule.proto\x12\x06module\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14module_trigger.proto\"\xc9\x02\n" +
+	"\fmodule.proto\x12\x06module\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14module_trigger.proto\x1a\x13module_action.proto\"\xc9\x02\n" +
 	"\x06Module\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
@@ -845,7 +845,7 @@ const file_module_proto_rawDesc = "" +
 	"\x06module\x18\x02 \x01(\v2\x0e.module.ModuleR\x06module\"o\n" +
 	"\x13ListModulesResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12(\n" +
-	"\amodules\x18\x02 \x03(\v2\x0e.module.ModuleR\amodules2\xef\x05\n" +
+	"\amodules\x18\x02 \x03(\v2\x0e.module.ModuleR\amodules2\xdd\a\n" +
 	"\rModuleService\x12C\n" +
 	"\fCreateModule\x12\x1b.module.CreateModuleRequest\x1a\x16.module.ModuleResponse\x12C\n" +
 	"\fUpdateModule\x12\x1b.module.UpdateModuleRequest\x1a\x16.module.ModuleResponse\x12C\n" +
@@ -856,7 +856,10 @@ const file_module_proto_rawDesc = "" +
 	"\x0eSetModuleState\x12\x1d.module.SetModuleStateRequest\x1a\x16.module.ModuleResponse\x12P\n" +
 	"\x0fRegisterTrigger\x12\x1e.module.RegisterTriggerRequest\x1a\x1d.module.ModuleTriggerResponse\x12I\n" +
 	"\fListTriggers\x12\x1b.module.ListTriggersRequest\x1a\x1c.module.ListTriggersResponse\x12W\n" +
-	"\x16DeleteTriggersByModule\x12%.module.DeleteTriggersByModuleRequest\x1a\x16.common.ResponseStatusB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"\x16DeleteTriggersByModule\x12%.module.DeleteTriggersByModuleRequest\x1a\x16.common.ResponseStatus\x12M\n" +
+	"\x0eRegisterAction\x12\x1d.module.RegisterActionRequest\x1a\x1c.module.ModuleActionResponse\x12F\n" +
+	"\vListActions\x12\x1a.module.ListActionsRequest\x1a\x1b.module.ListActionsResponse\x12U\n" +
+	"\x15DeleteActionsByModule\x12$.module.DeleteActionsByModuleRequest\x1a\x16.common.ResponseStatusB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_module_proto_rawDescOnce sync.Once
@@ -889,8 +892,13 @@ var file_module_proto_goTypes = []any{
 	(*RegisterTriggerRequest)(nil),        // 14: module.RegisterTriggerRequest
 	(*ListTriggersRequest)(nil),           // 15: module.ListTriggersRequest
 	(*DeleteTriggersByModuleRequest)(nil), // 16: module.DeleteTriggersByModuleRequest
-	(*ModuleTriggerResponse)(nil),         // 17: module.ModuleTriggerResponse
-	(*ListTriggersResponse)(nil),          // 18: module.ListTriggersResponse
+	(*RegisterActionRequest)(nil),         // 17: module.RegisterActionRequest
+	(*ListActionsRequest)(nil),            // 18: module.ListActionsRequest
+	(*DeleteActionsByModuleRequest)(nil),  // 19: module.DeleteActionsByModuleRequest
+	(*ModuleTriggerResponse)(nil),         // 20: module.ModuleTriggerResponse
+	(*ListTriggersResponse)(nil),          // 21: module.ListTriggersResponse
+	(*ModuleActionResponse)(nil),          // 22: module.ModuleActionResponse
+	(*ListActionsResponse)(nil),           // 23: module.ListActionsResponse
 }
 var file_module_proto_depIdxs = []int32{
 	1,  // 0: module.Module.functions:type_name -> module.ModuleFunction
@@ -912,18 +920,24 @@ var file_module_proto_depIdxs = []int32{
 	14, // 16: module.ModuleService.RegisterTrigger:input_type -> module.RegisterTriggerRequest
 	15, // 17: module.ModuleService.ListTriggers:input_type -> module.ListTriggersRequest
 	16, // 18: module.ModuleService.DeleteTriggersByModule:input_type -> module.DeleteTriggersByModuleRequest
-	10, // 19: module.ModuleService.CreateModule:output_type -> module.ModuleResponse
-	10, // 20: module.ModuleService.UpdateModule:output_type -> module.ModuleResponse
-	13, // 21: module.ModuleService.DeleteModule:output_type -> common.ResponseStatus
-	10, // 22: module.ModuleService.GetModule:output_type -> module.ModuleResponse
-	10, // 23: module.ModuleService.GetModuleByName:output_type -> module.ModuleResponse
-	11, // 24: module.ModuleService.ListModules:output_type -> module.ListModulesResponse
-	10, // 25: module.ModuleService.SetModuleState:output_type -> module.ModuleResponse
-	17, // 26: module.ModuleService.RegisterTrigger:output_type -> module.ModuleTriggerResponse
-	18, // 27: module.ModuleService.ListTriggers:output_type -> module.ListTriggersResponse
-	13, // 28: module.ModuleService.DeleteTriggersByModule:output_type -> common.ResponseStatus
-	19, // [19:29] is the sub-list for method output_type
-	9,  // [9:19] is the sub-list for method input_type
+	17, // 19: module.ModuleService.RegisterAction:input_type -> module.RegisterActionRequest
+	18, // 20: module.ModuleService.ListActions:input_type -> module.ListActionsRequest
+	19, // 21: module.ModuleService.DeleteActionsByModule:input_type -> module.DeleteActionsByModuleRequest
+	10, // 22: module.ModuleService.CreateModule:output_type -> module.ModuleResponse
+	10, // 23: module.ModuleService.UpdateModule:output_type -> module.ModuleResponse
+	13, // 24: module.ModuleService.DeleteModule:output_type -> common.ResponseStatus
+	10, // 25: module.ModuleService.GetModule:output_type -> module.ModuleResponse
+	10, // 26: module.ModuleService.GetModuleByName:output_type -> module.ModuleResponse
+	11, // 27: module.ModuleService.ListModules:output_type -> module.ListModulesResponse
+	10, // 28: module.ModuleService.SetModuleState:output_type -> module.ModuleResponse
+	20, // 29: module.ModuleService.RegisterTrigger:output_type -> module.ModuleTriggerResponse
+	21, // 30: module.ModuleService.ListTriggers:output_type -> module.ListTriggersResponse
+	13, // 31: module.ModuleService.DeleteTriggersByModule:output_type -> common.ResponseStatus
+	22, // 32: module.ModuleService.RegisterAction:output_type -> module.ModuleActionResponse
+	23, // 33: module.ModuleService.ListActions:output_type -> module.ListActionsResponse
+	13, // 34: module.ModuleService.DeleteActionsByModule:output_type -> common.ResponseStatus
+	22, // [22:35] is the sub-list for method output_type
+	9,  // [9:22] is the sub-list for method input_type
 	9,  // [9:9] is the sub-list for extension type_name
 	9,  // [9:9] is the sub-list for extension extendee
 	0,  // [0:9] is the sub-list for field type_name
@@ -936,6 +950,7 @@ func file_module_proto_init() {
 	}
 	file_common_proto_init()
 	file_module_trigger_proto_init()
+	file_module_action_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

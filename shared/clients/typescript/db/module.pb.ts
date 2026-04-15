@@ -11,6 +11,8 @@ import { JSONrequest, PBrequest } from "twirpscript";
 export { MIN_SUPPORTED_VERSION_0_0_56 } from "twirpscript";
 import type { ClientConfiguration } from "twirpscript";
 import * as common from "./common.pb";
+import * as module_trigger from "./module_trigger.pb";
+import * as module_action from "./module_action.pb";
 
 //========================================//
 //                 Types                  //
@@ -181,6 +183,82 @@ export async function SetModuleState(
   return ModuleResponse.decode(response);
 }
 
+export async function RegisterTrigger(
+  registerTriggerRequest: module_trigger.RegisterTriggerRequest,
+  config?: ClientConfiguration,
+): Promise<module_trigger.ModuleTriggerResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/RegisterTrigger",
+    module_trigger.RegisterTriggerRequest.encode(registerTriggerRequest),
+    config,
+  );
+  return module_trigger.ModuleTriggerResponse.decode(response);
+}
+
+export async function ListTriggers(
+  listTriggersRequest: module_trigger.ListTriggersRequest,
+  config?: ClientConfiguration,
+): Promise<module_trigger.ListTriggersResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/ListTriggers",
+    module_trigger.ListTriggersRequest.encode(listTriggersRequest),
+    config,
+  );
+  return module_trigger.ListTriggersResponse.decode(response);
+}
+
+export async function DeleteTriggersByModule(
+  deleteTriggersByModuleRequest: module_trigger.DeleteTriggersByModuleRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/module.ModuleService/DeleteTriggersByModule",
+    module_trigger.DeleteTriggersByModuleRequest.encode(
+      deleteTriggersByModuleRequest,
+    ),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
+}
+
+export async function RegisterAction(
+  registerActionRequest: module_action.RegisterActionRequest,
+  config?: ClientConfiguration,
+): Promise<module_action.ModuleActionResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/RegisterAction",
+    module_action.RegisterActionRequest.encode(registerActionRequest),
+    config,
+  );
+  return module_action.ModuleActionResponse.decode(response);
+}
+
+export async function ListActions(
+  listActionsRequest: module_action.ListActionsRequest,
+  config?: ClientConfiguration,
+): Promise<module_action.ListActionsResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/ListActions",
+    module_action.ListActionsRequest.encode(listActionsRequest),
+    config,
+  );
+  return module_action.ListActionsResponse.decode(response);
+}
+
+export async function DeleteActionsByModule(
+  deleteActionsByModuleRequest: module_action.DeleteActionsByModuleRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/module.ModuleService/DeleteActionsByModule",
+    module_action.DeleteActionsByModuleRequest.encode(
+      deleteActionsByModuleRequest,
+    ),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
+}
+
 //========================================//
 //       ModuleService JSON Client        //
 //========================================//
@@ -269,6 +347,82 @@ export async function SetModuleStateJSON(
   return ModuleResponseJSON.decode(response);
 }
 
+export async function RegisterTriggerJSON(
+  registerTriggerRequest: module_trigger.RegisterTriggerRequest,
+  config?: ClientConfiguration,
+): Promise<module_trigger.ModuleTriggerResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/RegisterTrigger",
+    module_trigger.RegisterTriggerRequestJSON.encode(registerTriggerRequest),
+    config,
+  );
+  return module_trigger.ModuleTriggerResponseJSON.decode(response);
+}
+
+export async function ListTriggersJSON(
+  listTriggersRequest: module_trigger.ListTriggersRequest,
+  config?: ClientConfiguration,
+): Promise<module_trigger.ListTriggersResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/ListTriggers",
+    module_trigger.ListTriggersRequestJSON.encode(listTriggersRequest),
+    config,
+  );
+  return module_trigger.ListTriggersResponseJSON.decode(response);
+}
+
+export async function DeleteTriggersByModuleJSON(
+  deleteTriggersByModuleRequest: module_trigger.DeleteTriggersByModuleRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/module.ModuleService/DeleteTriggersByModule",
+    module_trigger.DeleteTriggersByModuleRequestJSON.encode(
+      deleteTriggersByModuleRequest,
+    ),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
+export async function RegisterActionJSON(
+  registerActionRequest: module_action.RegisterActionRequest,
+  config?: ClientConfiguration,
+): Promise<module_action.ModuleActionResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/RegisterAction",
+    module_action.RegisterActionRequestJSON.encode(registerActionRequest),
+    config,
+  );
+  return module_action.ModuleActionResponseJSON.decode(response);
+}
+
+export async function ListActionsJSON(
+  listActionsRequest: module_action.ListActionsRequest,
+  config?: ClientConfiguration,
+): Promise<module_action.ListActionsResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/ListActions",
+    module_action.ListActionsRequestJSON.encode(listActionsRequest),
+    config,
+  );
+  return module_action.ListActionsResponseJSON.decode(response);
+}
+
+export async function DeleteActionsByModuleJSON(
+  deleteActionsByModuleRequest: module_action.DeleteActionsByModuleRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/module.ModuleService/DeleteActionsByModule",
+    module_action.DeleteActionsByModuleRequestJSON.encode(
+      deleteActionsByModuleRequest,
+    ),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
 //========================================//
 //             ModuleService              //
 //========================================//
@@ -302,6 +456,38 @@ export interface ModuleService<Context = unknown> {
     setModuleStateRequest: SetModuleStateRequest,
     context: Context,
   ) => Promise<ModuleResponse> | ModuleResponse;
+  RegisterTrigger: (
+    registerTriggerRequest: module_trigger.RegisterTriggerRequest,
+    context: Context,
+  ) =>
+    | Promise<module_trigger.ModuleTriggerResponse>
+    | module_trigger.ModuleTriggerResponse;
+  ListTriggers: (
+    listTriggersRequest: module_trigger.ListTriggersRequest,
+    context: Context,
+  ) =>
+    | Promise<module_trigger.ListTriggersResponse>
+    | module_trigger.ListTriggersResponse;
+  DeleteTriggersByModule: (
+    deleteTriggersByModuleRequest: module_trigger.DeleteTriggersByModuleRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  RegisterAction: (
+    registerActionRequest: module_action.RegisterActionRequest,
+    context: Context,
+  ) =>
+    | Promise<module_action.ModuleActionResponse>
+    | module_action.ModuleActionResponse;
+  ListActions: (
+    listActionsRequest: module_action.ListActionsRequest,
+    context: Context,
+  ) =>
+    | Promise<module_action.ListActionsResponse>
+    | module_action.ListActionsResponse;
+  DeleteActionsByModule: (
+    deleteActionsByModuleRequest: module_action.DeleteActionsByModuleRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
 }
 
 export function createModuleService<Context>(service: ModuleService<Context>) {
@@ -361,6 +547,78 @@ export function createModuleService<Context>(service: ModuleService<Context>) {
           json: SetModuleStateRequestJSON,
         },
         output: { protobuf: ModuleResponse, json: ModuleResponseJSON },
+      },
+      RegisterTrigger: {
+        name: "RegisterTrigger",
+        handler: service.RegisterTrigger,
+        input: {
+          protobuf: module_trigger.RegisterTriggerRequest,
+          json: module_trigger.RegisterTriggerRequestJSON,
+        },
+        output: {
+          protobuf: module_trigger.ModuleTriggerResponse,
+          json: module_trigger.ModuleTriggerResponseJSON,
+        },
+      },
+      ListTriggers: {
+        name: "ListTriggers",
+        handler: service.ListTriggers,
+        input: {
+          protobuf: module_trigger.ListTriggersRequest,
+          json: module_trigger.ListTriggersRequestJSON,
+        },
+        output: {
+          protobuf: module_trigger.ListTriggersResponse,
+          json: module_trigger.ListTriggersResponseJSON,
+        },
+      },
+      DeleteTriggersByModule: {
+        name: "DeleteTriggersByModule",
+        handler: service.DeleteTriggersByModule,
+        input: {
+          protobuf: module_trigger.DeleteTriggersByModuleRequest,
+          json: module_trigger.DeleteTriggersByModuleRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
+      },
+      RegisterAction: {
+        name: "RegisterAction",
+        handler: service.RegisterAction,
+        input: {
+          protobuf: module_action.RegisterActionRequest,
+          json: module_action.RegisterActionRequestJSON,
+        },
+        output: {
+          protobuf: module_action.ModuleActionResponse,
+          json: module_action.ModuleActionResponseJSON,
+        },
+      },
+      ListActions: {
+        name: "ListActions",
+        handler: service.ListActions,
+        input: {
+          protobuf: module_action.ListActionsRequest,
+          json: module_action.ListActionsRequestJSON,
+        },
+        output: {
+          protobuf: module_action.ListActionsResponse,
+          json: module_action.ListActionsResponseJSON,
+        },
+      },
+      DeleteActionsByModule: {
+        name: "DeleteActionsByModule",
+        handler: service.DeleteActionsByModule,
+        input: {
+          protobuf: module_action.DeleteActionsByModuleRequest,
+          json: module_action.DeleteActionsByModuleRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
       },
     },
   } as const;

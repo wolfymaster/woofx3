@@ -3571,7 +3571,7 @@ func (s *permissionServiceServer) serveRemoveGroupFromResourceProtobuf(ctx conte
 }
 
 func (s *permissionServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor4, 0
+	return twirpFileDescriptor5, 0
 }
 
 func (s *permissionServiceServer) ProtocGenTwirpVersion() string {
@@ -3585,7 +3585,7 @@ func (s *permissionServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "permission", "PermissionService")
 }
 
-var twirpFileDescriptor4 = []byte{
+var twirpFileDescriptor5 = []byte{
 	// 430 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x94, 0xd1, 0x8a, 0xd3, 0x40,
 	0x14, 0x86, 0xc9, 0xee, 0xba, 0xab, 0x07, 0xbb, 0x6c, 0x47, 0x69, 0x43, 0x41, 0x29, 0x15, 0x51,

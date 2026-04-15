@@ -1623,7 +1623,7 @@ func (s *commandServiceServer) serveDeleteCommandProtobuf(ctx context.Context, r
 }
 
 func (s *commandServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor2, 0
+	return twirpFileDescriptor3, 0
 }
 
 func (s *commandServiceServer) ProtocGenTwirpVersion() string {
@@ -1637,7 +1637,7 @@ func (s *commandServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "command", "CommandService")
 }
 
-var twirpFileDescriptor2 = []byte{
+var twirpFileDescriptor3 = []byte{
 	// 625 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xcc, 0x54, 0xcd, 0x6e, 0xd3, 0x4c,
 	0x14, 0xfd, 0xc6, 0x6d, 0xd3, 0xf4, 0xb6, 0x49, 0xfb, 0x0d, 0x11, 0x1a, 0x59, 0x54, 0x8d, 0x2c,

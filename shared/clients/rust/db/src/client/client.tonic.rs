@@ -1,6 +1,6 @@
 // @generated
 /// Generated client implementations.
-pub mod setting_service_client {
+pub mod client_service_client {
     #![allow(
         unused_variables,
         dead_code,
@@ -11,10 +11,10 @@ pub mod setting_service_client {
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
-    pub struct SettingServiceClient<T> {
+    pub struct ClientServiceClient<T> {
         inner: tonic::client::Grpc<T>,
     }
-    impl SettingServiceClient<tonic::transport::Channel> {
+    impl ClientServiceClient<tonic::transport::Channel> {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
@@ -25,7 +25,7 @@ pub mod setting_service_client {
             Ok(Self::new(conn))
         }
     }
-    impl<T> SettingServiceClient<T>
+    impl<T> ClientServiceClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::Body>,
         T::Error: Into<StdError>,
@@ -43,7 +43,7 @@ pub mod setting_service_client {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> SettingServiceClient<InterceptedService<T, F>>
+        ) -> ClientServiceClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
@@ -57,7 +57,7 @@ pub mod setting_service_client {
                 http::Request<tonic::body::Body>,
             >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
         {
-            SettingServiceClient::new(InterceptedService::new(inner, interceptor))
+            ClientServiceClient::new(InterceptedService::new(inner, interceptor))
         }
         /// Compress requests with the given encoding.
         ///
@@ -90,11 +90,53 @@ pub mod setting_service_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        pub async fn get_setting(
+        pub async fn create_client(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetSettingRequest>,
+            request: impl tonic::IntoRequest<super::CreateClientRequest>,
+        ) -> std::result::Result<tonic::Response<super::ClientResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/client.ClientService/CreateClient",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("client.ClientService", "CreateClient"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_client(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetClientRequest>,
+        ) -> std::result::Result<tonic::Response<super::ClientResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/client.ClientService/GetClient",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("client.ClientService", "GetClient"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn list_clients(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListClientsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::SettingResponse>,
+            tonic::Response<super::ListClientsResponse>,
             tonic::Status,
         > {
             self.inner
@@ -107,20 +149,17 @@ pub mod setting_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/setting.SettingService/GetSetting",
+                "/client.ClientService/ListClients",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("setting.SettingService", "GetSetting"));
+                .insert(GrpcMethod::new("client.ClientService", "ListClients"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn get_settings(
+        pub async fn update_client(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetSettingsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetSettingsResponse>,
-            tonic::Status,
-        > {
+            request: impl tonic::IntoRequest<super::UpdateClientRequest>,
+        ) -> std::result::Result<tonic::Response<super::ClientResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -131,64 +170,16 @@ pub mod setting_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/setting.SettingService/GetSettings",
+                "/client.ClientService/UpdateClient",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("setting.SettingService", "GetSettings"));
+                .insert(GrpcMethod::new("client.ClientService", "UpdateClient"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn set_setting(
+        pub async fn delete_client(
             &mut self,
-            request: impl tonic::IntoRequest<super::SetSettingRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::SettingResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/setting.SettingService/SetSetting",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("setting.SettingService", "SetSetting"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn set_settings(
-            &mut self,
-            request: impl tonic::IntoRequest<super::SetSettingsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::SetSettingsResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/setting.SettingService/SetSettings",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("setting.SettingService", "SetSettings"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn delete_setting(
-            &mut self,
-            request: impl tonic::IntoRequest<super::DeleteSettingRequest>,
+            request: impl tonic::IntoRequest<super::DeleteClientRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
@@ -203,20 +194,17 @@ pub mod setting_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/setting.SettingService/DeleteSetting",
+                "/client.ClientService/DeleteClient",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("setting.SettingService", "DeleteSetting"));
+                .insert(GrpcMethod::new("client.ClientService", "DeleteClient"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn list_settings_by_prefix(
+        pub async fn validate_client(
             &mut self,
-            request: impl tonic::IntoRequest<super::ListSettingsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListSettingsResponse>,
-            tonic::Status,
-        > {
+            request: impl tonic::IntoRequest<super::ValidateClientRequest>,
+        ) -> std::result::Result<tonic::Response<super::ClientResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -227,19 +215,17 @@ pub mod setting_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/setting.SettingService/ListSettingsByPrefix",
+                "/client.ClientService/ValidateClient",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("setting.SettingService", "ListSettingsByPrefix"),
-                );
+                .insert(GrpcMethod::new("client.ClientService", "ValidateClient"));
             self.inner.unary(req, path, codec).await
         }
     }
 }
 /// Generated server implementations.
-pub mod setting_service_server {
+pub mod client_service_server {
     #![allow(
         unused_variables,
         dead_code,
@@ -248,55 +234,49 @@ pub mod setting_service_server {
         clippy::let_unit_value,
     )]
     use tonic::codegen::*;
-    /// Generated trait containing gRPC methods that should be implemented for use with SettingServiceServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with ClientServiceServer.
     #[async_trait]
-    pub trait SettingService: std::marker::Send + std::marker::Sync + 'static {
-        async fn get_setting(
+    pub trait ClientService: std::marker::Send + std::marker::Sync + 'static {
+        async fn create_client(
             &self,
-            request: tonic::Request<super::GetSettingRequest>,
-        ) -> std::result::Result<tonic::Response<super::SettingResponse>, tonic::Status>;
-        async fn get_settings(
+            request: tonic::Request<super::CreateClientRequest>,
+        ) -> std::result::Result<tonic::Response<super::ClientResponse>, tonic::Status>;
+        async fn get_client(
             &self,
-            request: tonic::Request<super::GetSettingsRequest>,
+            request: tonic::Request<super::GetClientRequest>,
+        ) -> std::result::Result<tonic::Response<super::ClientResponse>, tonic::Status>;
+        async fn list_clients(
+            &self,
+            request: tonic::Request<super::ListClientsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetSettingsResponse>,
+            tonic::Response<super::ListClientsResponse>,
             tonic::Status,
         >;
-        async fn set_setting(
+        async fn update_client(
             &self,
-            request: tonic::Request<super::SetSettingRequest>,
-        ) -> std::result::Result<tonic::Response<super::SettingResponse>, tonic::Status>;
-        async fn set_settings(
+            request: tonic::Request<super::UpdateClientRequest>,
+        ) -> std::result::Result<tonic::Response<super::ClientResponse>, tonic::Status>;
+        async fn delete_client(
             &self,
-            request: tonic::Request<super::SetSettingsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::SetSettingsResponse>,
-            tonic::Status,
-        >;
-        async fn delete_setting(
-            &self,
-            request: tonic::Request<super::DeleteSettingRequest>,
+            request: tonic::Request<super::DeleteClientRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
-        async fn list_settings_by_prefix(
+        async fn validate_client(
             &self,
-            request: tonic::Request<super::ListSettingsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListSettingsResponse>,
-            tonic::Status,
-        >;
+            request: tonic::Request<super::ValidateClientRequest>,
+        ) -> std::result::Result<tonic::Response<super::ClientResponse>, tonic::Status>;
     }
     #[derive(Debug)]
-    pub struct SettingServiceServer<T> {
+    pub struct ClientServiceServer<T> {
         inner: Arc<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
         max_decoding_message_size: Option<usize>,
         max_encoding_message_size: Option<usize>,
     }
-    impl<T> SettingServiceServer<T> {
+    impl<T> ClientServiceServer<T> {
         pub fn new(inner: T) -> Self {
             Self::from_arc(Arc::new(inner))
         }
@@ -347,9 +327,9 @@ pub mod setting_service_server {
             self
         }
     }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for SettingServiceServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for ClientServiceServer<T>
     where
-        T: SettingService,
+        T: ClientService,
         B: Body + std::marker::Send + 'static,
         B::Error: Into<StdError> + std::marker::Send + 'static,
     {
@@ -364,25 +344,25 @@ pub mod setting_service_server {
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             match req.uri().path() {
-                "/setting.SettingService/GetSetting" => {
+                "/client.ClientService/CreateClient" => {
                     #[allow(non_camel_case_types)]
-                    struct GetSettingSvc<T: SettingService>(pub Arc<T>);
+                    struct CreateClientSvc<T: ClientService>(pub Arc<T>);
                     impl<
-                        T: SettingService,
-                    > tonic::server::UnaryService<super::GetSettingRequest>
-                    for GetSettingSvc<T> {
-                        type Response = super::SettingResponse;
+                        T: ClientService,
+                    > tonic::server::UnaryService<super::CreateClientRequest>
+                    for CreateClientSvc<T> {
+                        type Response = super::ClientResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetSettingRequest>,
+                            request: tonic::Request<super::CreateClientRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as SettingService>::get_setting(&inner, request).await
+                                <T as ClientService>::create_client(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -393,7 +373,7 @@ pub mod setting_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = GetSettingSvc(inner);
+                        let method = CreateClientSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -409,25 +389,25 @@ pub mod setting_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/setting.SettingService/GetSettings" => {
+                "/client.ClientService/GetClient" => {
                     #[allow(non_camel_case_types)]
-                    struct GetSettingsSvc<T: SettingService>(pub Arc<T>);
+                    struct GetClientSvc<T: ClientService>(pub Arc<T>);
                     impl<
-                        T: SettingService,
-                    > tonic::server::UnaryService<super::GetSettingsRequest>
-                    for GetSettingsSvc<T> {
-                        type Response = super::GetSettingsResponse;
+                        T: ClientService,
+                    > tonic::server::UnaryService<super::GetClientRequest>
+                    for GetClientSvc<T> {
+                        type Response = super::ClientResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetSettingsRequest>,
+                            request: tonic::Request<super::GetClientRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as SettingService>::get_settings(&inner, request).await
+                                <T as ClientService>::get_client(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -438,7 +418,7 @@ pub mod setting_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = GetSettingsSvc(inner);
+                        let method = GetClientSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -454,25 +434,25 @@ pub mod setting_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/setting.SettingService/SetSetting" => {
+                "/client.ClientService/ListClients" => {
                     #[allow(non_camel_case_types)]
-                    struct SetSettingSvc<T: SettingService>(pub Arc<T>);
+                    struct ListClientsSvc<T: ClientService>(pub Arc<T>);
                     impl<
-                        T: SettingService,
-                    > tonic::server::UnaryService<super::SetSettingRequest>
-                    for SetSettingSvc<T> {
-                        type Response = super::SettingResponse;
+                        T: ClientService,
+                    > tonic::server::UnaryService<super::ListClientsRequest>
+                    for ListClientsSvc<T> {
+                        type Response = super::ListClientsResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::SetSettingRequest>,
+                            request: tonic::Request<super::ListClientsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as SettingService>::set_setting(&inner, request).await
+                                <T as ClientService>::list_clients(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -483,7 +463,7 @@ pub mod setting_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = SetSettingSvc(inner);
+                        let method = ListClientsSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -499,25 +479,25 @@ pub mod setting_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/setting.SettingService/SetSettings" => {
+                "/client.ClientService/UpdateClient" => {
                     #[allow(non_camel_case_types)]
-                    struct SetSettingsSvc<T: SettingService>(pub Arc<T>);
+                    struct UpdateClientSvc<T: ClientService>(pub Arc<T>);
                     impl<
-                        T: SettingService,
-                    > tonic::server::UnaryService<super::SetSettingsRequest>
-                    for SetSettingsSvc<T> {
-                        type Response = super::SetSettingsResponse;
+                        T: ClientService,
+                    > tonic::server::UnaryService<super::UpdateClientRequest>
+                    for UpdateClientSvc<T> {
+                        type Response = super::ClientResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::SetSettingsRequest>,
+                            request: tonic::Request<super::UpdateClientRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as SettingService>::set_settings(&inner, request).await
+                                <T as ClientService>::update_client(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -528,7 +508,7 @@ pub mod setting_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = SetSettingsSvc(inner);
+                        let method = UpdateClientSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -544,13 +524,13 @@ pub mod setting_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/setting.SettingService/DeleteSetting" => {
+                "/client.ClientService/DeleteClient" => {
                     #[allow(non_camel_case_types)]
-                    struct DeleteSettingSvc<T: SettingService>(pub Arc<T>);
+                    struct DeleteClientSvc<T: ClientService>(pub Arc<T>);
                     impl<
-                        T: SettingService,
-                    > tonic::server::UnaryService<super::DeleteSettingRequest>
-                    for DeleteSettingSvc<T> {
+                        T: ClientService,
+                    > tonic::server::UnaryService<super::DeleteClientRequest>
+                    for DeleteClientSvc<T> {
                         type Response = super::super::common::ResponseStatus;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -558,11 +538,11 @@ pub mod setting_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::DeleteSettingRequest>,
+                            request: tonic::Request<super::DeleteClientRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as SettingService>::delete_setting(&inner, request).await
+                                <T as ClientService>::delete_client(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -573,7 +553,7 @@ pub mod setting_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = DeleteSettingSvc(inner);
+                        let method = DeleteClientSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -589,29 +569,25 @@ pub mod setting_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/setting.SettingService/ListSettingsByPrefix" => {
+                "/client.ClientService/ValidateClient" => {
                     #[allow(non_camel_case_types)]
-                    struct ListSettingsByPrefixSvc<T: SettingService>(pub Arc<T>);
+                    struct ValidateClientSvc<T: ClientService>(pub Arc<T>);
                     impl<
-                        T: SettingService,
-                    > tonic::server::UnaryService<super::ListSettingsRequest>
-                    for ListSettingsByPrefixSvc<T> {
-                        type Response = super::ListSettingsResponse;
+                        T: ClientService,
+                    > tonic::server::UnaryService<super::ValidateClientRequest>
+                    for ValidateClientSvc<T> {
+                        type Response = super::ClientResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ListSettingsRequest>,
+                            request: tonic::Request<super::ValidateClientRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as SettingService>::list_settings_by_prefix(
-                                        &inner,
-                                        request,
-                                    )
-                                    .await
+                                <T as ClientService>::validate_client(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -622,7 +598,7 @@ pub mod setting_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = ListSettingsByPrefixSvc(inner);
+                        let method = ValidateClientSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -660,7 +636,7 @@ pub mod setting_service_server {
             }
         }
     }
-    impl<T> Clone for SettingServiceServer<T> {
+    impl<T> Clone for ClientServiceServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
             Self {
@@ -673,8 +649,8 @@ pub mod setting_service_server {
         }
     }
     /// Generated gRPC service name
-    pub const SERVICE_NAME: &str = "setting.SettingService";
-    impl<T> tonic::server::NamedService for SettingServiceServer<T> {
+    pub const SERVICE_NAME: &str = "client.ClientService";
+    impl<T> tonic::server::NamedService for ClientServiceServer<T> {
         const NAME: &'static str = SERVICE_NAME;
     }
 }

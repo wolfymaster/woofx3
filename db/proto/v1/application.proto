@@ -25,16 +25,10 @@ service ApplicationService {
 
 message Application {
     string id = 1;
-    string name = 2; 
-    string owner_id = 4; 
-    repeated Client clients = 5;
+    string name = 2;
+    string owner_id = 4;
     bool enabled = 6;
     google.protobuf.Timestamp created_at = 15;
-}
-
-message Client {
-    string client_id = 1;
-    string client_secret = 2;  
 }
 
 // Requests and Responses

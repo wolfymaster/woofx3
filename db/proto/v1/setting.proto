@@ -22,6 +22,9 @@ service SettingService {
     
     // Delete a setting
     rpc DeleteSetting(DeleteSettingRequest) returns (common.ResponseStatus);
+
+    // List settings by key prefix
+    rpc ListSettingsByPrefix(ListSettingsRequest) returns (ListSettingsResponse);
 }
 
 // Setting represents a configuration setting
@@ -87,4 +90,16 @@ message SetSettingsResponse {
 message DeleteSettingRequest {
     string key = 1;            // Key of the setting to delete
     string application_id = 2; // Optional: Application ID for app-specific settings
+}
+
+// Request to list settings by key prefix
+message ListSettingsRequest {
+    string key_prefix = 1;     // Key prefix to filter by
+    string application_id = 2; // Application ID for app-specific settings
+}
+
+// Response with settings map
+message ListSettingsResponse {
+    common.ResponseStatus status = 1;
+    map<string, string> settings = 2; // Settings as key-value map
 }

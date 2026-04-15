@@ -15,6 +15,7 @@ type DbProxyClient struct {
 	Treat       TreatService
 	User        UserService
 	Workflow    WorkflowService
+	Client     ClientService
 }
 
 // NewClient creates a new composite client for all db routes
@@ -37,5 +38,6 @@ func NewDbProxyClient(baseURL string, httpClient *http.Client) *DbProxyClient {
 		Treat:       NewTreatServiceProtobufClient(baseURL, httpClient),
 		User:        NewUserServiceProtobufClient(baseURL, httpClient),
 		Workflow:    NewWorkflowServiceProtobufClient(baseURL, httpClient),
+		Client:     NewClientServiceProtobufClient(baseURL, httpClient),
 	}
 }
