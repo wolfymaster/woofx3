@@ -9,6 +9,8 @@ type DatabaseEnvConfig struct {
 	BadgerPath        string `env:"WOOFX3_BADGER_PATH,required"`
 	DatabaseProxyPort string `env:"WOOFX3_DATABASE_PROXY_PORT,default=8080"`
 	LogLevel          string `env:"WOOFX3_LOG_LEVEL"`
+	ApplicationID     string `env:"WOOFX3_APPLICATION_ID"`
+	ApplicationName   string `env:"WOOFX3_APPLICATION_NAME,default=woofx3"`
 	nats.Config
 }
 

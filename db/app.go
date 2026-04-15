@@ -9,13 +9,16 @@ import (
 	"github.com/casbin/casbin/v2/util"
 	gormadapter "github.com/casbin/gorm-adapter/v3"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/db/app/types"
 	outbox "github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/config"
+	"github.com/wolfymaster/woofx3/db/database/models"
 )
 
 type DatabaseAppConfig struct {
@@ -126,8 +129,36 @@ func (a *DatabaseApp) Init(ctx context.Context) error {
 		}
 		a.casbin = casbinEnforcer
 		a.logger.Info("Casbin initialized successfully")
+
+		cfg := runtime.GetConfig[*config.DatabaseEnvConfig](a.Context())
+		if cfg.ApplicationID != "" {
+			if err := a.bootstrapApplication(cfg.ApplicationID, cfg.ApplicationName); err != nil {
+				a.logger.Error("Failed to bootstrap application", "error", err, "applicationId", cfg.ApplicationID)
+				return err
+			}
+		}
 	}
 
+	return nil
+}
+
+func (a *DatabaseApp) bootstrapApplication(applicationID, name string) error {
+	appUUID, err := uuid.Parse(applicationID)
+	if err != nil {
+		return err
+	}
+	app := models.Application{
+		ID:     appUUID,
+		Name:   name,
+		UserID: uuid.Nil,
+	}
+	result := a.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&app)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		a.logger.Info("Bootstrapped application row", "applicationId", applicationID, "name", name)
+	}
 	return nil
 }
 

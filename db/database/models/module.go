@@ -18,6 +18,7 @@ type Module struct {
 	UpdatedAt   time.Time        `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;not null"`
 	Functions   []ModuleFunction `gorm:"foreignKey:ModuleID;references:ID"`
 	Triggers    []ModuleTrigger  `gorm:"foreignKey:ModuleID"`
+	Actions     []ModuleAction   `gorm:"foreignKey:ModuleID"`
 }
 
 func (Module) TableName() string { return "modules" }
@@ -90,3 +91,17 @@ type ModuleTrigger struct {
 }
 
 func (ModuleTrigger) TableName() string { return "module_triggers" }
+
+type ModuleAction struct {
+	ID            uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	ModuleID      uuid.UUID `gorm:"column:module_id;type:uuid;not null;index"`
+	ModuleName    string    `gorm:"column:module_name;type:text;not null"`
+	Name          string    `gorm:"column:name;type:text;not null"`
+	Description   string    `gorm:"column:description;type:text;not null"`
+	Call          string    `gorm:"column:call;type:text;not null"`
+	ParamsSchema  string    `gorm:"column:params_schema;type:jsonb;not null;default:'{}'"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+func (ModuleAction) TableName() string { return "module_actions" }

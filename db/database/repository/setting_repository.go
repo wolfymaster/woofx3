@@ -32,6 +32,22 @@ func (r *SettingRepository) GetSettingsByApplicationID(appID uuid.UUID) ([]model
 	return settings, err
 }
 
+func (r *SettingRepository) GetSettingsByKeys(appID uuid.UUID, keys []string) ([]models.Setting, error) {
+	var settings []models.Setting
+	err := r.db.Where("application_id = ? AND key IN ?", appID, keys).Find(&settings).Error
+	return settings, err
+}
+
+func (r *SettingRepository) GetSettingsByKeyPrefix(appID uuid.UUID, prefix string) ([]models.Setting, error) {
+	var settings []models.Setting
+	err := r.db.Where("application_id = ? AND key LIKE ?", appID, prefix+"%").Find(&settings).Error
+	return settings, err
+}
+
+func (r *SettingRepository) DeleteByKey(appID uuid.UUID, key string) error {
+	return r.db.Where("application_id = ? AND key = ?", appID, key).Delete(&models.Setting{}).Error
+}
+
 func (r *SettingRepository) UpsertSetting(appID uuid.UUID, key, value string) error {
 	setting := models.Setting{
 		ApplicationID: appID,

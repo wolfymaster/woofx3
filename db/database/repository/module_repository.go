@@ -89,3 +89,30 @@ func (r *ModuleRepository) ListTriggers(moduleNameFilter string) ([]*models.Modu
 func (r *ModuleRepository) DeleteTriggersByModuleID(moduleID uuid.UUID) error {
 	return r.db.Where("module_id = ?", moduleID).Delete(&models.ModuleTrigger{}).Error
 }
+
+func (r *ModuleRepository) UpsertAction(a *models.ModuleAction) error {
+	return r.db.Exec(`
+		INSERT INTO public.module_actions (id, module_id, module_name, name, description, call, params_schema, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		ON CONFLICT (module_id, name) DO UPDATE SET
+			module_name = EXCLUDED.module_name,
+			description = EXCLUDED.description,
+			call = EXCLUDED.call,
+			params_schema = EXCLUDED.params_schema,
+			updated_at = NOW()
+	`, a.ID, a.ModuleID, a.ModuleName, a.Name, a.Description, a.Call, a.ParamsSchema).Error
+}
+
+func (r *ModuleRepository) ListActions(moduleNameFilter string) ([]*models.ModuleAction, error) {
+	var actions []*models.ModuleAction
+	q := r.db
+	if moduleNameFilter != "" {
+		q = q.Where("module_name = ?", moduleNameFilter)
+	}
+	err := q.Find(&actions).Error
+	return actions, err
+}
+
+func (r *ModuleRepository) DeleteActionsByModuleID(moduleID uuid.UUID) error {
+	return r.db.Where("module_id = ?", moduleID).Delete(&models.ModuleAction{}).Error
+}

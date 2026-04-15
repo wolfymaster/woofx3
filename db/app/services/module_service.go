@@ -309,6 +309,94 @@ func triggerToProto(t *models.ModuleTrigger) *client.ModuleTrigger {
 	}
 }
 
+func (s *moduleService) RegisterAction(ctx context.Context, req *client.RegisterActionRequest) (*client.ModuleActionResponse, error) {
+	m, err := s.repo.GetByName(req.ModuleName)
+	if err != nil {
+		return nil, fmt.Errorf("module not found: %w", err)
+	}
+
+	action := &models.ModuleAction{
+		ID:           uuid.New(),
+		ModuleID:     m.ID,
+		ModuleName:   req.ModuleName,
+		Name:         req.Name,
+		Description:  req.Description,
+		Call:         req.Call,
+		ParamsSchema: req.ParamsSchema,
+	}
+
+	if err := s.repo.UpsertAction(action); err != nil {
+		return nil, fmt.Errorf("upsert action: %w", err)
+	}
+
+	if s.publisher != nil {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   "",
+			EntityType:      "module_action",
+			EntityID:        action.ID.String(),
+			Operation:       "registered",
+			Data:            action,
+			AutoAcknowledge: true,
+		})
+	}
+
+	return &client.ModuleActionResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Action registered successfully",
+		},
+		Action: actionToProto(action),
+	}, nil
+}
+
+func (s *moduleService) ListActions(ctx context.Context, req *client.ListActionsRequest) (*client.ListActionsResponse, error) {
+	actions, err := s.repo.ListActions(req.ModuleName)
+	if err != nil {
+		return nil, err
+	}
+
+	protoActions := make([]*client.ModuleAction, len(actions))
+	for i, a := range actions {
+		protoActions[i] = actionToProto(a)
+	}
+
+	return &client.ListActionsResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Actions retrieved successfully",
+		},
+		Actions: protoActions,
+	}, nil
+}
+
+func (s *moduleService) DeleteActionsByModule(ctx context.Context, req *client.DeleteActionsByModuleRequest) (*client.ResponseStatus, error) {
+	m, err := s.repo.GetByName(req.ModuleName)
+	if err != nil {
+		return nil, fmt.Errorf("module not found: %w", err)
+	}
+
+	if err := s.repo.DeleteActionsByModuleID(m.ID); err != nil {
+		return nil, err
+	}
+
+	return &client.ResponseStatus{
+		Code:    client.ResponseStatus_OK,
+		Message: "Actions deleted successfully",
+	}, nil
+}
+
+func actionToProto(a *models.ModuleAction) *client.ModuleAction {
+	return &client.ModuleAction{
+		Id:           a.ID.String(),
+		ModuleId:     a.ModuleID.String(),
+		ModuleName:   a.ModuleName,
+		Name:         a.Name,
+		Description:  a.Description,
+		Call:         a.Call,
+		ParamsSchema: a.ParamsSchema,
+	}
+}
+
 func moduleToProto(m *models.Module) *client.Module {
 	protoFunctions := make([]*client.ModuleFunction, len(m.Functions))
 	for i, f := range m.Functions {

@@ -11,6 +11,8 @@ type Client struct {
 	ApplicationID uuid.UUID `gorm:"column:application_id;type:uuid;not null;index:idx_clients_application_id;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
 	ClientID      uuid.UUID `gorm:"column:client_id;type:uuid;not null;uniqueIndex"`
 	ClientSecret  string    `gorm:"column:client_secret;type:varchar(100);not null"`
+	CallbackUrl   string    `gorm:"column:callback_url;type:varchar(255)"`
+	CallbackToken string    `gorm:"column:callback_token;type:varchar(255)"`
 
 	// Relationships
 	Application Application `gorm:"foreignKey:ApplicationID;references:ID"`

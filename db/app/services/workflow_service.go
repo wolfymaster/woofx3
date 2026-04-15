@@ -40,17 +40,27 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
 	}
 
-	// Marshal steps to JSON
-	stepsJSON, err := json.Marshal(req.Steps)
-	if err != nil {
-		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to marshal steps: %w", err))
+	stepsJSON := "[]"
+	if raw, ok := req.Variables["_steps"]; ok && raw != "" {
+		stepsJSON = raw
+	} else if req.Steps != nil {
+		b, err := json.Marshal(req.Steps)
+		if err != nil {
+			return nil, twirp.InternalErrorWith(fmt.Errorf("failed to marshal steps: %w", err))
+		}
+		stepsJSON = string(b)
+	}
+
+	triggerJSON := "{}"
+	if raw, ok := req.Variables["_trigger"]; ok && raw != "" {
+		triggerJSON = raw
 	}
 
 	wf := &models.WorkflowDefinition{
 		ApplicationID: applicationID,
 		Name:          req.Name,
-		Steps:         string(stepsJSON),
-		Trigger:       "{}", // Default empty trigger, can be updated later
+		Steps:         stepsJSON,
+		Trigger:       triggerJSON,
 	}
 
 	err = s.workflowRepo.Create(wf)
@@ -114,13 +124,18 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 		wf.Name = req.Name
 	}
 
-	// Marshal steps if provided
-	if req.Steps != nil {
+	if raw, ok := req.Variables["_steps"]; ok && raw != "" {
+		wf.Steps = raw
+	} else if req.Steps != nil {
 		stepsJSON, err := json.Marshal(req.Steps)
 		if err != nil {
 			return nil, twirp.InternalErrorWith(fmt.Errorf("failed to marshal steps: %w", err))
 		}
 		wf.Steps = string(stepsJSON)
+	}
+
+	if raw, ok := req.Variables["_trigger"]; ok && raw != "" {
+		wf.Trigger = raw
 	}
 
 	err = s.workflowRepo.Update(wf)
@@ -376,31 +391,22 @@ func (s *workflowService) CancelWorkflowExecution(ctx context.Context, req *clie
 // Helper functions to convert between database models and protobuf messages
 
 func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *client.Workflow {
-	// Unmarshal steps from JSON
-	var steps []*client.WorkflowStep
-	if wf.Steps != "" {
-		json.Unmarshal([]byte(wf.Steps), &steps)
+	variables := map[string]string{
+		"_steps":   wf.Steps,
+		"_trigger": wf.Trigger,
 	}
 
-	// Unmarshal trigger from JSON (for future use)
-	// var trigger map[string]interface{}
-	// if wf.Trigger != "" {
-	// 	json.Unmarshal([]byte(wf.Trigger), &trigger)
-	// }
-
-	// Note: WorkflowDefinition model doesn't have CreatedAt/UpdatedAt fields
-	// These would need to be added to the model if needed
 	var createdAt, updatedAt *timestamppb.Timestamp
 
 	return &client.Workflow{
 		Id:            wf.ID.String(),
 		Name:          wf.Name,
 		ApplicationId: wf.ApplicationID.String(),
-		Steps:         steps,
-		Enabled:       true, // Default to true since we don't have this field in the model yet
+		Steps:         nil,
+		Enabled:       true,
 		CreatedAt:     createdAt,
 		UpdatedAt:     updatedAt,
-		Variables:     map[string]string{}, // Empty for now
+		Variables:     variables,
 	}
 }
 

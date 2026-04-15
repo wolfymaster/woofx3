@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
 )
@@ -25,28 +27,30 @@ func (r *UserRepository) Update(user *models.User) error {
 	return r.db.Save(user).Error
 }
 
-// Delete deletes a User
+// Delete soft-deletes a User (sets DeletedAt)
 func (r *UserRepository) Delete(user *models.User) error {
-	return r.db.Delete(user).Error
+	now := time.Now()
+	user.DeletedAt = &now
+	return r.db.Save(user).Error
 }
 
-// GetByID retrieves a User by ID
+// GetByID retrieves a User by ID (excludes deleted)
 func (r *UserRepository) GetByID(id string) (*models.User, error) {
 	var user models.User
-	err := r.db.Where("id = ?", id).First(&user).Error
+	err := r.db.Where("id = ? AND deleted_at IS NULL", id).First(&user).Error
 	return &user, err
 }
 
-// GetByUserID retrieves a User by their platform user ID
+// GetByUserID retrieves a User by their platform user ID (excludes deleted)
 func (r *UserRepository) GetByUserID(userID string, platform string) (*models.User, error) {
 	var user models.User
-	err := r.db.Where("user_id = ? AND platform = ?", userID, platform).First(&user).Error
+	err := r.db.Where("user_id = ? AND platform = ? AND deleted_at IS NULL", userID, platform).First(&user).Error
 	return &user, err
 }
 
-// GetAll retrieves all Users
+// GetAll retrieves all Users (excludes deleted)
 func (r *UserRepository) GetAll() ([]*models.User, error) {
 	var users []*models.User
-	err := r.db.Find(&users).Error
+	err := r.db.Where("deleted_at IS NULL").Find(&users).Error
 	return users, err
 }

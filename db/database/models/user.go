@@ -10,16 +10,17 @@ import (
 )
 
 type User struct {
-	ID        string    `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
-	Username  string    `gorm:"type:varchar(50);not null"`
-	UserID    string    `gorm:"column:user_id;type:varchar(100);not null;index"`
-	Platform  string    `gorm:"type:varchar(50)"`
+	ID        string     `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
+	Username  string     `gorm:"type:varchar(50);not null"`
+	UserID   string     `gorm:"column:user_id;type:varchar(100);not null;index"`
+	Platform string     `gorm:"type:varchar(50)"`
+	DeletedAt *time.Time `gorm:"column:deleted_at;index"`
 	CreatedAt time.Time `gorm:"column:created_at;default:CURRENT_TIMESTAMP;not null"`
 	UpdatedAt time.Time `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;not null"`
 
 	// Relationships
-	UserEvents       []UserEvent       `gorm:"foreignKey:UserID;references:ID"`
-	UserMeta         []UserMeta        `gorm:"foreignKey:UserID;references:ID"`
+	UserEvents        []UserEvent        `gorm:"foreignKey:UserID;references:ID"`
+	UserMeta        []UserMeta       `gorm:"foreignKey:UserID;references:ID"`
 	UserApplications []UserApplication `gorm:"foreignKey:UserID;references:ID"`
 }
 
