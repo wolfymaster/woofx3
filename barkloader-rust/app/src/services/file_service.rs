@@ -8,12 +8,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileMetadata {
     pub file_extension: Option<String>,
     pub file_name: String,
     pub temp_dir_path: PathBuf,
     pub upload_dir_path: PathBuf,
+    pub callback_url: Option<String>,
 }
 
 pub struct FileService {
@@ -38,6 +39,7 @@ impl FileService {
         })?;
 
         let mut metadata: Option<FileMetadata> = None;
+        let mut callback_url: Option<String> = None;
         while let Ok(Some(mut field)) = payload.try_next().await {
             let Some(content_disposition) = field.content_disposition() else {
                 return Err(actix_web::error::ErrorBadRequest(
@@ -52,10 +54,21 @@ impl FileService {
                         .get_filename()
                         .map(|s| s.to_string())
                         .ok_or_else(|| actix_web::error::ErrorBadRequest("File missing file name"))?;
-                    metadata = Some(self.handle_file_field(&mut field, file_name).await?)
+                    metadata = Some(self.handle_file_field(&mut field, file_name, callback_url.clone()).await?)
+                }
+                "callback_url" => {
+                    let mut value = String::new();
+                    while let Some(chunk) = field.next().await {
+                        let data = chunk.map_err(|e| {
+                            error!("Error reading callback_url chunk: {}", e);
+                            actix_web::error::ErrorInternalServerError("Upload error")
+                        })?;
+                        value.push_str(&String::from_utf8_lossy(&data));
+                    }
+                    callback_url = Some(value);
                 }
                 _ => {
-                    // Consume the field data but don't use it
+                    // Consume any other field data but don't use it
                     while let Some(chunk) = field.next().await {
                         let _ = chunk?;
                     }
@@ -92,6 +105,7 @@ impl FileService {
                         file_extension,
                         file_name:original_file_name.clone(),
                         upload_dir_path: metadata.upload_dir_path.clone(),
+                        callback_url: metadata.callback_url.clone(),
                     });
                 }
             }
@@ -134,6 +148,7 @@ impl FileService {
         &self,
         field: &mut Field,
         file_name: String,
+        callback_url: Option<String>,
     ) -> Result<FileMetadata, Error> {
         let temp_dir_name = Uuid::new_v4().to_string();
                 
@@ -176,6 +191,7 @@ impl FileService {
             file_extension,
             upload_dir_path,
             temp_dir_path,
+            callback_url,
         })
     }
 }

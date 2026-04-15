@@ -97,6 +97,11 @@ impl ModuleRegistry {
         modules.values().map(|m| m.metadata.clone()).collect()
     }
 
+    pub fn list_registered_modules(&self) -> Vec<RegisteredModule> {
+        let modules = self.modules.read().unwrap();
+        modules.values().cloned().collect()
+    }
+
     pub fn has_module(&self, name: &str) -> bool {
         let modules = self.modules.read().unwrap();
         modules.contains_key(name)

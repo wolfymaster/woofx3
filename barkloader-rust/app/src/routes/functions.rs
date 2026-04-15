@@ -11,8 +11,9 @@ use std::io::Read as _;
 use std::path::PathBuf;
 use tokio::task;
 
+use crate::callback;
 use crate::services::file_service::FileService;
-use crate::services::module_service::{ModuleFileKind, ModuleService, ModuleServiceConfig};
+use crate::services::module_service::{db_proxy, ModuleFileKind, ModuleService, ModuleServiceConfig};
 use crate::types::{AppContext, SafeTempDir};
 
 #[derive(Serialize)]
@@ -33,11 +34,18 @@ struct RollbackQuery {
     version: String,
 }
 
+#[derive(Deserialize)]
+struct UploadQuery {
+    force: Option<bool>,
+}
+
 #[post("/functions")]
 async fn upload_handler(
     ctx: Data<AppContext>,
     multipart: Multipart,
+    query: actix_web::web::Query<UploadQuery>,
 ) -> Result<HttpResponse, Error> {
+    let force = query.force.unwrap_or(false);
     /*
     - file upload
     - extract contents
@@ -62,7 +70,9 @@ async fn upload_handler(
         message: "File uploaded successfully".to_string(),
     };
 
-    // spawn thread for background processing task
+    let callback_url = metadata.callback_url.clone();
+    let module_name_for_callback = metadata.file_name.clone();
+
     task::spawn(async move {
         // SafeTempDir with automatic cleanup on drop
         let _upload_cleanup = SafeTempDir::new(PathBuf::from(&metadata.temp_dir_path), PathBuf::from("./uploads"));
@@ -73,10 +83,12 @@ async fn upload_handler(
         // process uploaded file into list of file metadata
         let metadatas = file_service.process_uploaded_file(metadata).await;
         if metadatas.is_err() {
-            log::error!(
-                "Failed to process uploaded file: {}",
-                metadatas.err().unwrap()
-            );
+            let err_msg = format!("{}", metadatas.err().unwrap());
+            log::error!("Failed to process uploaded file: {}", err_msg);
+            if let Some(url) = &callback_url {
+                let module_id = module_name_for_callback.split('.').next().unwrap_or(&module_name_for_callback).to_string();
+                callback::send_failure_callback(url, &module_id, "unknown", &err_msg).await;
+            }
             return;
         }
 
@@ -98,36 +110,82 @@ async fn upload_handler(
             };
 
             // if we can't handle the extension, skip
-            let Ok(kind) = extension.parse::<ModuleFileKind>() else {
-                // skip if extension is zip
-                if extension.to_lowercase().trim() == "zip" {
+            let kind = match extension.parse::<ModuleFileKind>() {
+                Ok(k) => k,
+                Err(_) => {
+                    if extension.to_lowercase().trim() == "zip" {
+                        continue;
+                    }
+                    warn!("skipping file extension: {}", &extension);
                     continue;
                 }
-                warn!("unknown file extension: {}", &extension);
-                continue;
             };
 
-            // get file contents
             let file_path = std::path::PathBuf::from(&data.temp_dir_path).join(&data.file_name);
-            let Ok(contents) = fs::read_to_string(file_path) else {
+            let Ok(contents) = fs::read(&file_path) else {
                 error!("Failed to read file contents: {}", &data.file_name);
                 continue;
             };
 
-            module.add_file(kind, &data.file_name, Vec::from(contents));
+            module.add_file(kind, &data.file_name, contents);
         }
 
         // run workflow to create module and upload files to repository
         let module_plan = match module.create_plan() {
             Ok(v) => v,
             Err(err) => {
-                error!("Failed to create module plan: {}", err);
+                let err_msg = err.to_string();
+                error!("Failed to create module plan: {}", err_msg);
+                if let Some(url) = &callback_url {
+                    let module_id = module_name_for_callback.split('.').next().unwrap_or(&module_name_for_callback).to_string();
+                    callback::send_failure_callback(url, &module_id, "unknown", &err_msg).await;
+                }
                 return;
             }
         };
 
-        // execute plan
-        module.execute_plan(&module_plan, ctx.db_proxy_url.as_deref()).await;
+        let (module_name, module_version) = match (module.module_name(), module.module_version()) {
+            (Some(n), Some(v)) => (n, v),
+            _ => {
+                let err_msg = "module identity missing after create_plan".to_string();
+                error!("{}", err_msg);
+                if let Some(url) = &callback_url {
+                    let module_id = module_name_for_callback.split('.').next().unwrap_or(&module_name_for_callback).to_string();
+                    callback::send_failure_callback(url, &module_id, "unknown", &err_msg).await;
+                }
+                return;
+            }
+        };
+
+        let archive_key = format!("archives/{}/{}.zip", module_name, module_version);
+
+        if !force {
+            if ctx.repository.exists(&archive_key).await.unwrap_or(false) {
+                let err_msg = format!(
+                    "Module '{}' version '{}' already exists. Use force=true to overwrite.",
+                    module_name, module_version
+                );
+                error!("{}", err_msg);
+                if let Some(url) = &callback_url {
+                    let module_id = module_name_for_callback.split('.').next().unwrap_or(&module_name_for_callback).to_string();
+                    callback::send_failure_callback(url, &module_id, module_version, &err_msg).await;
+                }
+                return;
+            }
+        }
+
+        if let Err(e) = module
+            .execute_plan(&module_plan, &archive_key, ctx.db_proxy_url.as_deref(), ctx.application_id.as_deref(), force)
+            .await
+        {
+            let err_msg = e.to_string();
+            error!("Module install failed: {}", err_msg);
+            if let Some(url) = &callback_url {
+                let module_id = module_name_for_callback.split('.').next().unwrap_or(&module_name_for_callback).to_string();
+                callback::send_failure_callback(url, &module_id, "unknown", &err_msg).await;
+            }
+            return;
+        }
 
         // archive the original zip to archives/{module_name}/{version}.zip
         if let (Some(name), Some(version)) = (module.module_name(), module.module_version()) {
@@ -152,6 +210,10 @@ async fn upload_handler(
                 }
             } else {
                 warn!("Original zip not found at {}, skipping archive", original_zip_path.display());
+            }
+
+            if let Some(url) = &callback_url {
+                callback::send_success_callback(url, &name, &version).await;
             }
         }
     });
@@ -178,6 +240,13 @@ async fn register_handler(
 
     let mut functions = HashMap::new();
     for key in &file_keys {
+        let ext = std::path::Path::new(key)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        if ext != "lua" && ext != "js" {
+            continue;
+        }
         let file_name = std::path::Path::new(key).file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("");
@@ -230,6 +299,26 @@ async fn delete_handler(
 ) -> Result<HttpResponse, Error> {
     let module_name = path.into_inner();
 
+    if let (Some(db_proxy_url), Some(application_id)) = (
+        ctx.db_proxy_url.as_deref(),
+        ctx.application_id.as_deref(),
+    ) {
+        if let Err(e) = db_proxy::delete_triggers_by_module(db_proxy_url, &module_name).await {
+            warn!("Failed to delete triggers for {}: {}", module_name, e);
+        }
+        if let Err(e) = db_proxy::delete_actions_by_module(db_proxy_url, &module_name).await {
+            warn!("Failed to delete actions for {}: {}", module_name, e);
+        }
+        if let Err(e) = db_proxy::delete_commands_by_module(db_proxy_url, application_id, &module_name).await {
+            warn!("Failed to delete commands for {}: {}", module_name, e);
+        }
+        if let Err(e) = db_proxy::delete_workflows_by_module(db_proxy_url, application_id, &module_name).await {
+            warn!("Failed to delete workflows for {}: {}", module_name, e);
+        }
+    } else {
+        warn!("DB_PROXY_ADDR or APPLICATION_ID not set; skipping entity cleanup");
+    }
+
     ctx.registry.unregister_module(&module_name)
         .map_err(|e| actix_web::error::ErrorNotFound(e.to_string()))?;
 
@@ -269,7 +358,7 @@ async fn state_handler(
 }
 
 #[patch("/functions/reload")]
-async fn reload_handler(ctx: Data<AppContext>) -> Result<HttpResponse, Error> {
+async fn reload_handler(_ctx: Data<AppContext>) -> Result<HttpResponse, Error> {
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "success": true,
         "message": "Modules reloaded"
@@ -278,11 +367,12 @@ async fn reload_handler(ctx: Data<AppContext>) -> Result<HttpResponse, Error> {
 
 #[actix_web::get("/functions")]
 async fn list_handler(ctx: Data<AppContext>) -> Result<HttpResponse, Error> {
-    let modules = ctx.registry.list_modules();
+    let modules = ctx.registry.list_registered_modules();
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "modules": modules.iter().map(|m| serde_json::json!({
-            "name": m.name,
-            "version": m.version,
+            "name": m.metadata.name,
+            "version": m.metadata.version,
+            "state": format!("{:?}", m.state).to_lowercase(),
         })).collect::<Vec<_>>()
     })))
 }

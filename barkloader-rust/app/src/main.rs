@@ -1,8 +1,10 @@
-use crate::util::{get_env_or_default, get_path_from_env};
+use crate::util::{get_env_or_default, get_path_from_env, validate_required_config};
 use actix_web::{App, HttpServer, middleware::Logger, web::Data};
 use anyhow::Result;
 use env_logger::Env;
 use lib_repository::{FileRepositoryConfig, Repository, RepositoryConfig, RepositoryFactory, RepositoryImpl};
+use futures::executor::block_on;
+use lib_sandbox::host::grpc::GrpcStorageClient;
 use lib_sandbox::host::noop::noop_host_context;
 use lib_sandbox::{ModuleRegistry, ModuleMetadata, ModuleState, RegisteredModule, SandboxFactory};
 use lib_sandbox::models::function::Function;
@@ -18,6 +20,7 @@ mod services;
 mod types;
 mod util;
 mod websocket;
+mod callback;
 
 const DEFAULT_REPOSITORY_TYPE: &str = "file";
 const DEFAULT_MODULE_DIR: &str = "modules";
@@ -27,7 +30,36 @@ async fn setup() -> Result<AppContext> {
 
     let registry = Arc::new(ModuleRegistry::new());
 
-    let sandbox = SandboxFactory::new(registry.clone(), noop_host_context());
+    let host_ctx = {
+        let storage_addr = get_env_or_default("STORAGE_ADDR", "");
+        if !storage_addr.is_empty() {
+            match get_env_or_default("APPLICATION_ID", "").parse::<uuid::Uuid>() {
+                Ok(app_id) => {
+                    match block_on(GrpcStorageClient::new(storage_addr.clone(), app_id)) {
+                        Ok(client) => {
+                            info!("Connected to storage service at {}", storage_addr);
+                            let mut ctx = noop_host_context();
+                            ctx.storage = Arc::new(client);
+                            ctx
+                        }
+                        Err(e) => {
+                            warn!("Failed to connect to storage service: {}; falling back to noop", e);
+                            noop_host_context()
+                        }
+                    }
+                }
+                Err(_) => {
+                    warn!("Invalid APPLICATION_ID; storage client not available");
+                    noop_host_context()
+                }
+            }
+        } else {
+            info!("STORAGE_ADDR not set; using noop storage client");
+            noop_host_context()
+        }
+    };
+
+    let sandbox = SandboxFactory::new(registry.clone(), host_ctx);
 
     let repository_config = RepositoryConfig::File(FileRepositoryConfig {
         destination
@@ -55,11 +87,22 @@ async fn setup() -> Result<AppContext> {
         }
     };
 
+    let application_id = {
+        let val = get_env_or_default("APPLICATION_ID", "");
+        if val.is_empty() {
+            warn!("APPLICATION_ID not set; workflow registration will be skipped");
+            None
+        } else {
+            Some(val)
+        }
+    };
+
     let ctx = AppContext {
         repository,
         sandbox,
         registry,
         db_proxy_url,
+        application_id,
     };
 
     Ok(ctx)
@@ -83,6 +126,13 @@ fn boot_modules(registry: &Arc<ModuleRegistry>, repository: &RepositoryImpl) -> 
     for (module_name, file_keys) in &modules_map {
         let mut functions = HashMap::new();
         for key in file_keys {
+            let ext = Path::new(key)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            if ext != "lua" && ext != "js" {
+                continue;
+            }
             let file_name = Path::new(key).file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
@@ -132,6 +182,12 @@ fn boot_modules(registry: &Arc<ModuleRegistry>, repository: &RepositoryImpl) -> 
 async fn main() -> std::io::Result<()> {
     // Initialize env_logger
     env_logger::init_from_env(Env::default().default_filter_or("info"));
+
+    // Validate required config
+    if let Err(e) = validate_required_config(&["WOOFX3_BARKLOADER_KEY", "APPLICATION_ID"]) {
+        log::error!("{}", e);
+        std::process::exit(1);
+    }
 
     // setup
     let ctx = setup().await.expect("Failed to complete set up");

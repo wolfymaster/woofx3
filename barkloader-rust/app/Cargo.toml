@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+woofx3-twirp = { path = "../../shared/clients/rust/twirp" }
+woofx3 = { path = "../../shared/clients/rust/db" }
+woofx3-runtime = { path = "../../shared/common/rust/runtime" }
 actix-web = "4.10"
 actix-ws = "0.3"
 serde = { version = "1.0", features = ["derive"] }
@@ -21,7 +24,7 @@ actix-multipart = "0.7.2"
 futures = "0.3.31"
 uuid = { version = "1.16.0", features = ["v4"] }
 sanitize-filename = "0.6.0"
-tokio = "1.45.0"
+tokio = { version = "1.45.0", features = ["rt", "rt-multi-thread", "sync"] }
 serde_yaml = "0.9.34"
 tonic = "0.14.2"
 zip = "2.1"
@@ -33,6 +36,3 @@ path = "../lib_repository"
 
 [dependencies.lib_sandbox]
 path = "../lib_sandbox"
-
-[dependencies.woofx3]
-path = "../../shared/clients/rust/db"

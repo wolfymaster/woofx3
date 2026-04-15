@@ -1,7 +1,7 @@
 mod repositories;
 mod repository;
 
-pub use repositories::file::FileRepositoryConfig;
+pub use repositories::file::{FileRepository, FileRepositoryConfig};
 // pub use repositories::s3::S3RepositoryConfig;
 
 pub use repository::{

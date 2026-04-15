@@ -1,3 +1,4 @@
+pub mod grpc;
 pub mod noop;
 
 use serde_json::Value;

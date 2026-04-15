@@ -1,6 +1,6 @@
+use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use anyhow::Result;
 
 use lib_repository::RepositoryImpl;
 use lib_sandbox::{ModuleRegistry, SandboxFactory};
@@ -14,6 +14,7 @@ pub struct AppContext {
     pub sandbox: SandboxFactory,
     pub registry: Arc<ModuleRegistry>,
     pub db_proxy_url: Option<String>,
+    pub application_id: Option<String>,
 }
 
 pub struct SafeTempDir {
@@ -25,7 +26,7 @@ impl SafeTempDir {
     pub fn new<P: AsRef<Path>>(path: P, allowed_parent: P) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
         let allowed_parent = allowed_parent.as_ref().to_path_buf();
-        
+
         Ok(SafeTempDir {
             path,
             allowed_parent,

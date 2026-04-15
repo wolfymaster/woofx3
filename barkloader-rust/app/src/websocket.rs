@@ -13,11 +13,12 @@ struct WsMessage {
 
 pub struct WebSocketSession {
     sandbox: Sandbox,
+    application_id: Option<String>,
 }
 
 impl WebSocketSession {
-    pub fn new(sandbox: Sandbox) -> Self {
-        Self { sandbox }
+    pub fn new(sandbox: Sandbox, application_id: Option<String>) -> Self {
+        Self { sandbox, application_id }
     }
 
     pub async fn handle_message(
@@ -35,6 +36,7 @@ impl WebSocketSession {
                                 let request = lib_sandbox::models::request::InvokeRequest {
                                     function: message.data["function"]
                                         .as_str()
+                                        .or_else(|| message.data["func"].as_str())
                                         .unwrap_or("")
                                         .to_string(),
                                     event: message.data["event"].clone(),

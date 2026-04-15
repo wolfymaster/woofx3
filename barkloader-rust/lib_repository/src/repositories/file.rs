@@ -79,7 +79,12 @@ impl Repository for FileRepository {
         Ok(results)
     }
 
-    async fn list<P: AsRef<Path> + Send>(&self, path: P) -> Result<()> {
+    async fn exists(&self, key: &str) -> Result<bool> {
+        let path = self.config.destination.join(key);
+        Ok(path.exists())
+    }
+
+    async fn list<P: AsRef<Path> + Send>(&self, _path: P) -> Result<()> {
         Ok(())
     }
 

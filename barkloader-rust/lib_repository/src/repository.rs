@@ -33,6 +33,7 @@ pub trait Repository {
     fn read_file(&self, key: &str) -> Result<Vec<u8>>;
     fn delete_prefix(&self, prefix: &str) -> Result<()>;
     fn list_prefix(&self, prefix: &str) -> Result<Vec<String>>;
+    async fn exists(&self, key: &str) -> Result<bool>;
     async fn list<P: AsRef<Path> + Send>(&self, path: P) -> Result<()>;
     async fn create<I: IntoIterator<Item = CreateFileRequest> + Send>(&self, req: I, failed: &mut Vec<String>) -> Result<()>;
 }

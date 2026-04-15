@@ -1,5 +1,7 @@
 use std::str::FromStr;
-use anyhow::{anyhow, Result, Error};
+
+use anyhow::{anyhow, Error, Result};
+
 use super::module_manifest::ModuleManifest;
 
 #[derive(Debug, Clone)]
@@ -14,43 +16,28 @@ pub enum ModuleValidManifestKind {
     YAML,
 }
 
- #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum ModuleFileKind {
     MANIFEST(ModuleValidManifestKind),
     PROGRAM(ModuleValidProgramKind),
+    /// Static assets (html, css, images, fonts, …) stored with this file extension.
+    ASSET(String),
 }
 
 impl ModuleFileKind {
     pub fn is_manifest(&self) -> bool {
-        match self {
-            ModuleFileKind::MANIFEST(_) => true,
-            _ => false,
-        }
+        matches!(self, ModuleFileKind::MANIFEST(_))
     }
 
     pub fn to_string(&self) -> String {
         match self {
-            ModuleFileKind::PROGRAM(ModuleValidProgramKind::JS) => "js",
-            ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA) => "lua",
-            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON) => "json",
-            ModuleFileKind::MANIFEST(ModuleValidManifestKind::YAML) => "yaml",
-        }.to_string()
+            ModuleFileKind::PROGRAM(ModuleValidProgramKind::JS) => "js".to_string(),
+            ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA) => "lua".to_string(),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON) => "json".to_string(),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::YAML) => "yaml".to_string(),
+            ModuleFileKind::ASSET(ext) => ext.clone(),
+        }
     }
-
-    // pub fn is_json_manifest(&self) -> bool {
-    //     match self {
-    //         ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON) => true,
-    //         _ => false,
-    //     }
-    // }
-
-    // pub fn is_yaml_manifest(&self) -> bool {
-    //     match self {
-    //         ModuleFileKind::MANIFEST(ModuleValidManifestKind::YAML) => true,
-    //         _ => false,
-    //     }
-    // }
 }
 
 impl FromStr for ModuleFileKind {
@@ -62,19 +49,15 @@ impl FromStr for ModuleFileKind {
             "json" => Ok(ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON)),
             "yaml" => Ok(ModuleFileKind::MANIFEST(ModuleValidManifestKind::YAML)),
             "yml" => Ok(ModuleFileKind::MANIFEST(ModuleValidManifestKind::YAML)),
-            _ => Err(anyhow!("Invalid file kind")),
+            "zip" => Err(anyhow!("zip is handled separately")),
+            other => Ok(ModuleFileKind::ASSET(other.to_string())),
         }
     }
 }
 
-impl Into<String> for &ModuleFileKind {
-    fn into(self) -> String {
-        match self {
-            ModuleFileKind::PROGRAM(ModuleValidProgramKind::JS) => "js",
-            ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA) => "lua",
-            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON) => "json",
-            ModuleFileKind::MANIFEST(ModuleValidManifestKind::YAML) => "yaml",
-        }.to_string()
+impl From<&ModuleFileKind> for String {
+    fn from(k: &ModuleFileKind) -> String {
+        k.to_string()
     }
 }
 
@@ -87,15 +70,17 @@ pub struct ModuleFile {
 
 impl ModuleFile {
     pub fn new(name: String, kind: ModuleFileKind, contents: Vec<u8>) -> Self {
-        Self { name, kind, contents }
+        Self {
+            name,
+            kind,
+            contents,
+        }
     }
 
     pub fn parse_as_manifest(&self) -> Result<ModuleManifest> {
         match &self.kind {
-            ModuleFileKind::MANIFEST(manifest_kind) => {
-                self.parse_manifest_by_kind(manifest_kind)
-            }
-            ModuleFileKind::PROGRAM(_) => Err(anyhow!("File '{}' is not a manifest", self.name)),
+            ModuleFileKind::MANIFEST(manifest_kind) => self.parse_manifest_by_kind(manifest_kind),
+            _ => Err(anyhow!("File '{}' is not a manifest", self.name)),
         }
     }
 
@@ -104,14 +89,12 @@ impl ModuleFile {
             .map_err(|_| anyhow!("File '{}' contents are not valid UTF-8", self.name))?;
 
         match kind {
-            ModuleValidManifestKind::JSON => {
-                serde_json::from_str(content_str)
-                    .map_err(|e| anyhow!("Failed to parse JSON manifest '{}': {}", self.name, e))
-            }
-            ModuleValidManifestKind::YAML => {
-                serde_yaml::from_str(content_str)
-                    .map_err(|e| anyhow!("Failed to parse YAML manifest '{}': {}", self.name, e))
-            }
+            ModuleValidManifestKind::JSON => serde_json::from_str(content_str).map_err(|e| {
+                anyhow!("Failed to parse JSON manifest '{}': {}", self.name, e)
+            }),
+            ModuleValidManifestKind::YAML => serde_yaml::from_str(content_str).map_err(|e| {
+                anyhow!("Failed to parse YAML manifest '{}': {}", self.name, e)
+            }),
         }
     }
 }
