@@ -90,7 +90,7 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
     );
     ctx.logger.info(chalk.yellow("####################################################### \n"));
 
-    const applicationId = ctx.config.getConfig("applicationId") as string;
+    const applicationId = ctx.config.getConfig("woofx3ApplicationId") as string;
     const databaseProxyUrl = ctx.config.getConfig("woofx3DatabaseProxyUrl") as string;
     const dbClientConfig = { baseURL: databaseProxyUrl };
 

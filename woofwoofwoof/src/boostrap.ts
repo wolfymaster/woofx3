@@ -15,7 +15,7 @@ export default async function Bootstrap(config: WoofEnvConfig): Promise<AppConfi
   });
 
   const twitchClient = new TwitchClient({
-    applicationId: config.applicationId,
+    applicationId: config.woofx3ApplicationId,
     channel,
     databaseURL: config.woofx3DatabaseProxyUrl,
   });
@@ -29,7 +29,7 @@ export default async function Bootstrap(config: WoofEnvConfig): Promise<AppConfi
   const chatClient = twitchClient.ChatClient();
 
   const barkloaderClient = new BarkloaderClient({
-    wsUrl: config.woofx3BarkloaderWsUrl,
+    wsUrl: `${config.woofx3BarkloaderWsUrl}?token=${config.woofx3BarkloaderKey}`,
     onOpen: () => {
       console.log("socket opened");
     },

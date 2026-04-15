@@ -34,7 +34,7 @@ const runtime = createRuntime({
   healthMonitor: createNATSMonitor({
     natsClient: bus,
     applicationName: "woofwoofwoof",
-    requiredServices: ["messageBus"],
+    requiredServices: ["messageBus", "barkloader"],
   }),
   runtimeInit: async (application: WoofWoofWoofApplication) => {
     const config = application.context.config;
@@ -53,15 +53,17 @@ const runtime = createRuntime({
     });
     application.register("twitchChat", new TwitchChatClientService(twitchClient.ChatClient()));
 
+    const barkloaderWsUrl = config.getConfig("woofx3BarkloaderWsUrl") as string;
+    const barkloaderToken = config.getConfig("woofx3BarkloaderKey") as string;
     const barkloaderClient = new BarkloaderClient({
-      wsUrl: config.getConfig("woofx3BarkloaderWsUrl") as string,
+      wsUrl: `${barkloaderWsUrl}?token=${barkloaderToken}`,
       onOpen: () => {
         console.log("socket opened");
       },
       onClose: () => {
         console.log("socket closed");
       },
-      onError: (event: any) => {
+      onError: (event: unknown) => {
         console.log("socket error", event);
       },
       maxRetries: Infinity,
