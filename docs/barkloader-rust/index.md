@@ -25,8 +25,8 @@ ModuleService (parse manifest)  FunctionExecutor.execute()
 Repository.create()             QuickJS/Lua runtime
   |                               |
   v                               v
-Store to modules/{name}/        Return result
-Archive to archives/{name}/
+Store under modules/{id}/       Return result
+Archive to archives/{id}/
   |
   v                             Startup Flow:
 (Upload complete)

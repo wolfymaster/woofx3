@@ -40,6 +40,7 @@ db/badger
 
 # docs
 docs/.vitepress
+docs/superpowers
 
 # pids
 pids
@@ -53,3 +54,6 @@ workflow/workflow
 # wolfy tmp cleanup
 boardModule/*
 tmp/*
+
+# claude
+.claude/

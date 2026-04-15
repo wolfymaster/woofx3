@@ -9,59 +9,36 @@ processes:
     description: woofx3 API
     working_dir: api
 
-  # barkloader:
-  #   command: bun run start
-  #   description: Plugin Module System
-  #   working_dir: barkloader
-  #   depends_on:
-  #     wooflow:
-  #       condition: process_started
-
-  barkloader-rust:
+  barkloader:
     command: cargo run .
     description: Plugin Module System
     working_dir: barkloader-rust
+
+  cloudflare:
+    command: cloudflared tunnel --url http://localhost:9001
 
   db:
     command: go run .
     description: proxy for accessing databases
     working_dir: db
-    # ready_log_line: "Starting server"
 
   messagebus:
     command: GO_ENV=development go run .
     description: communication message bus
     working_dir: services/nats
 
-  streamlabs:
-    command: PORT=5175 bun run dev
-    description: slobs
-    working_dir: streamlabs
-    depends_on:
-      woofwoofwoof:
-        condition: process_started
+  # streamlabs:
+  #   command: PORT=5175 bun run dev
+  #   description: slobs
+  #   working_dir: streamlabs
+  #   depends_on:
+  #     woofwoofwoof:
+  #       condition: process_started
 
   twitch:
     command: bun run src/api.ts
     description: Twitch API + Eventbus
     working_dir: twitch
-    # depends_on:
-    #   db:
-    #     condition: process_log_ready
-    #   messagebus:
-    #     condition: process_started
-      # barkloader-rust:
-        # condition: process_started
-      # wooflow:
-        # condition: process_started
-
-  # wooflow:
-  #   command: go run .
-  #   description: Workflow Management
-  #   working_dir: wooflow
-  #   depends_on:
-  #     temporal-server:
-  #       condition: process_started
 
   workflow:
     command: go run .
@@ -72,8 +49,3 @@ processes:
     command: bun run src/woofwoofwoof.ts
     description: Twitch Chatbot
     working_dir: woofwoofwoof
-    # depends_on:
-    #   db:
-    #     condition: process_log_ready
-    #   twitch:
-    #     condition: process_started

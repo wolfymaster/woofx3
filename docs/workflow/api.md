@@ -299,12 +299,84 @@ All requests use `POST`. Set `Content-Type: application/json` for JSON payloads 
 
 ## API Server (Cap'n Web RPC)
 
+> **Design principle:** The engine API only receives semantic workflow data (name, steps, trigger).
+> UI-specific state such as visual layout (ReactFlow nodes/edges) is the responsibility of the
+> calling UI and should be stored separately (e.g., in Convex for woofx3-ui).
+
 **Transport:** HTTP batch RPC (`POST /api`) or WebSocket (`ws://localhost:8080/api`)
 **Protocol:** Cap'n Web -- methods are called by name with JSON arguments. Multiple calls can be batched in a single request.
 
 These methods wrap the DB Proxy and provide a higher-level interface designed for UI consumption. The API server automatically scopes requests to the current application.
 
 ### Methods
+
+#### createWorkflow
+
+Creates a new workflow in the engine. Accepts `steps[]` and `trigger` (semantic execution data only).
+`nodes` and `edges` (ReactFlow visual layout) are NOT accepted and should be stored separately by the UI.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `name` | string | yes | Workflow display name |
+| `description` | string | no | Human-readable description |
+| `accountId` | string | yes | Application/account ID |
+| `isEnabled` | boolean | no | Whether the workflow is active |
+| `steps` | WorkflowStep[] | no | Executable steps the engine runs |
+| `trigger` | WorkflowTrigger | no | Event trigger definition |
+
+Where `WorkflowStep` is:
+```typescript
+{
+  id: string;
+  name: string;
+  /**
+   * Engine task type — must be one of the five built-in types:
+   *   action    run a registered action (module function)
+   *   log       write a debug message
+   *   condition AND/OR branching; parameters carry conditions/conditionLogic/onTrue/onFalse
+   *   wait      pause until an event arrives (single or aggregation mode)
+   *   workflow  execute a sub-workflow; parameters carry workflowId/waitUntilCompletion/timeout
+   */
+  type: 'action' | 'log' | 'condition' | 'wait' | 'workflow';
+  action?: string;           // e.g. "action-show-alert" — only used when type is "action"
+  parameters?: Record<string, unknown>;
+  dependsOn?: string[];
+}
+```
+
+And `WorkflowTrigger` is:
+```typescript
+{
+  type: 'event';
+  event: string;             // NATS subject, e.g. "follow.user.twitch"
+  condition?: Record<string, unknown>;
+}
+```
+
+**Returns:** `WorkflowItem` including the engine-assigned `id`. The calling UI should store its
+visual state (nodes/edges) separately, linked to the engine via this `id`.
+
+---
+
+#### updateWorkflow
+
+Updates an existing workflow. Accepts `steps` and `trigger` to replace stored execution data.
+`nodes` and `edges` are not accepted. Any legacy `_nodes`/`_edges` variables are removed on update.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `id` | string | yes | Engine workflow ID |
+| `name` | string | no | Updated display name |
+| `description` | string | no | Updated description |
+| `isEnabled` | boolean | no | Enable/disable the workflow |
+| `steps` | unknown[] | no | Replaces the stored steps array |
+| `trigger` | unknown | no | Replaces the stored trigger |
+
+**Returns:** Updated `WorkflowItem` or `null` if not found.
 
 #### getAvailableWorkflows
 

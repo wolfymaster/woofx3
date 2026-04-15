@@ -32,11 +32,14 @@ Content-Type: multipart/form-data
 
 1. Stream multipart upload to a temp directory (UUID-named)
 2. Detect file extension, decompress if ZIP or gzip
-3. Classify extracted files by extension
-4. Parse the manifest (`module.json` or `module.yaml`)
-5. Build an execution plan (linked list: workflows -> commands -> functions)
-6. Execute the plan, storing program files to the repository
-7. Clean up the temp directory via `SafeTempDir` (RAII drop)
+3. Classify each extracted file: `.js`/`.lua` programs, `.json`/`.yaml` manifests, or **asset** (any other extension, stored as bytes)
+4. Select and parse the manifest (`module.json` / `module.yaml` preferred; see [Module format](./modules.md))
+5. Run **install**: upload functions to `modules/{id}/functions/…`, widget/overlay assets, then (if `DB_PROXY_ADDR` is set) Twirp `CreateModule` and `RegisterTrigger` per manifest `triggers`
+6. Log-only stubs for manifest `actions`, `commands`, and `workflows` until those services are wired
+7. Archive the original ZIP to `archives/{id}/{version}.zip`
+8. Clean up the temp directory via `SafeTempDir` (RAII drop)
+
+Install failures after the HTTP response are **logged**; the client does not receive a second callback today.
 
 **Error responses:**
 
@@ -326,15 +329,8 @@ The `result` field contains whatever JSON-serializable value the function return
 
 Module file storage is handled through the `Repository` trait, which abstracts the underlying backend (filesystem or S3). Both upload and registration use the same repository operations. See [Module Format -- Repository Backends](./modules.md#repository-backends) for details.
 
-### StorageClient (gRPC)
+### Module manifest and KV storage
 
-Barkloader also includes a gRPC storage client for key/value operations via the DB proxy. This is used by modules that declare storage keys in their manifest.
+The **module manifest** processed by barkloader follows the woofx3-ui **module-improvements-spec** (see [Module format](./modules.md)). It does **not** include a `storage` / manifest-declared Badger key map; module file assets use the `Repository` layout only.
 
-| Method | Description |
-|--------|-------------|
-| `get(key, application_id)` | Retrieve a storage key |
-| `set(key)` | Set a storage key |
-| `delete(key, application_id)` | Delete a storage key |
-| `clear_namespace(namespace, application_id)` | Clear all keys in a namespace |
-| `clear_expired(application_id)` | Remove expired keys |
-| `clear_all_for_application(application_id)` | Remove all keys for an application |
+A separate in-process **StorageClient** (gRPC to the DB proxy) may exist for other features; it is **not** driven by the current manifest schema.
