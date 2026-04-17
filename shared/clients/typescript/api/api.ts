@@ -18,19 +18,27 @@ export interface User {
 export interface Team {
   id: string;
   name: string;
-  description: string;
-  memberCount: number;
+  slug: string;
+  ownerId: string;
   createdAt: string;
 }
 
+/**
+ * role / status are `string` at the wire level (engine uses free-form
+ * strings today). Well-known values are documented below so UI callers
+ * can narrow with `switch` or discriminated unions as needed.
+ *
+ * Known roles: "owner" | "admin" | "member"
+ * Known statuses: "active" | "invited" | "inactive"
+ */
 export interface TeamMember {
   id: string;
   name: string;
   email: string;
-  role: "owner" | "admin" | "member";
-  status: "active" | "invited" | "inactive";
+  role: string;
+  status: string;
   joinedAt: string;
-  avatarUrl?: string;
+  avatarUrl: string;
 }
 
 // ==================== Accounts ====================
@@ -46,11 +54,16 @@ export interface Account {
 
 // ==================== Modules ====================
 
+/**
+ * Catalog row returned by getModules. `category` is optional because
+ * engine-side mapping from the DB module record doesn't always have it
+ * populated — the workflow builder defaults to "General" when missing.
+ */
 export interface Module {
   id: string;
   name: string;
   description: string;
-  category: string;
+  category?: string;
   version: string;
   author: string;
   isInstalled: boolean;
@@ -145,11 +158,17 @@ export interface UpdateWorkflowInput {
   trigger?: unknown;
 }
 
+/**
+ * Row returned by getWorkflowRuns. `status` is `string` at the wire level;
+ * known values today are "success" | "failed" | "running" but the engine
+ * may add more (e.g. "cancelled", "timeout") without breaking the
+ * contract.
+ */
 export interface WorkflowRun {
   id: string;
   workflowId: string;
   workflowName: string;
-  status: "success" | "failed" | "running";
+  status: string;
   startedAt: string;
   duration: number;
   trigger: string;
@@ -229,9 +248,15 @@ export interface ChatMessage {
   color: string;
 }
 
+/**
+ * Real-time stream event delivered by the engine. Known types today:
+ * "follow" | "subscription" | "donation" | "raid" | "cheer" | "gift"
+ * (plus platform-specific extensions). Typed as `string` so new event
+ * types from the engine don't break the contract.
+ */
 export interface StreamEvent {
   id: string;
-  type: "follow" | "subscription" | "donation" | "raid" | "cheer" | "gift";
+  type: string;
   user: string;
   amount?: number;
   message?: string;
@@ -255,12 +280,16 @@ export interface UserPreferences {
 
 // ==================== Dashboard ====================
 
+/**
+ * Entry in a user's dashboard layout. The engine stores `config` as an
+ * opaque per-widget-type payload; consumers render / edit it based on
+ * `type`. Position / size are UI-local concerns and aren't persisted here.
+ */
 export interface DashboardModule {
   id: string;
   type: string;
   title: string;
-  position: { x: number; y: number };
-  size: { w: number; h: number };
+  config?: Record<string, unknown>;
 }
 
 export interface DashboardStats {
@@ -453,5 +482,5 @@ export interface Woofx3EngineApi {
   // Dashboard
   getDashboardStats(): Promise<DashboardStats>;
   getDashboardLayout(accountId: string): Promise<DashboardModule[]>;
-  saveDashboardLayout(accountId: string, modules: DashboardModule[]): Promise<{ success: boolean }>;
+  saveDashboardLayout(accountId: string, modules: DashboardModule[]): Promise<boolean>;
 }

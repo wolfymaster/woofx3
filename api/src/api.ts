@@ -1,4 +1,4 @@
-import type { PingResponse } from "@woofx3/api";
+import type { PingResponse, Woofx3EngineApi } from "@woofx3/api";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type * as command from "@woofx3/db/command.pb";
 import type { Trigger } from "@woofx3/db/module_trigger.pb";
@@ -63,12 +63,7 @@ interface ApiOptions {
   logger: SharedLogger;
 }
 
-// NOTE: `implements Woofx3EngineApi` is deliberately omitted today — the
-// shared interface and this concrete class have diverged (pagination
-// shapes, Team / Workflow return structures, Dashboard signatures).
-// Reconcile signature-by-signature in a follow-up pass, then turn
-// `implements` back on so TypeScript guards against future drift.
-export class Api extends RpcTarget {
+export class Api extends RpcTarget implements Woofx3EngineApi {
   private triggerSubscribers = new Set<{
     onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
   }>();
