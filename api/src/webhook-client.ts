@@ -1,5 +1,6 @@
 import type { SharedLogger } from "@woofx3/common/logging";
-import type { CallbackEnvelope, CallbackEvent } from "@woofx3/api/webhooks";
+import type { CallbackEvent } from "@woofx3/api/webhooks";
+import { makeCallbackEnvelope } from "@woofx3/api/webhooks";
 import type { DbClient } from "./db-client";
 
 // Re-export the shared webhook types so existing engine-side importers
@@ -19,6 +20,7 @@ export type {
   ModuleUsageRef,
   TriggerDefinition,
 } from "@woofx3/api/webhooks";
+export { EngineEventType, makeCallbackEnvelope } from "@woofx3/api/webhooks";
 
 interface RegisteredInstance {
   clientId: string;
@@ -66,13 +68,7 @@ export class WebhookClient {
       return;
     }
 
-    const envelope: CallbackEnvelope = {
-      id: crypto.randomUUID(),
-      source: "engine",
-      type: eventType,
-      time: new Date().toISOString(),
-      data: event,
-    };
+    const envelope = makeCallbackEnvelope(event);
 
     let targets = this.instances;
     if (targetClientId) {

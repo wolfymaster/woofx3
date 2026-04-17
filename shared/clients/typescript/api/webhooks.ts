@@ -1,8 +1,36 @@
-// Engine → callback webhook event types.
-// Source of truth for the shape of every event the engine POSTs to a
-// registered client's callbackUrl. The engine runtime (api/src/webhook-client.ts)
-// re-exports these; external clients (e.g. the woofx3-ui Convex webhook handler)
-// import them directly from "@woofx3/api/webhooks".
+// Engine → callback webhook event types. CloudEvents 1.0 envelope + the
+// discriminated union of every event the engine POSTs to a registered
+// client's callbackUrl.
+//
+// Source of truth for both sides:
+//   - Engine runtime (api/src/webhook-client.ts) constructs envelopes using
+//     these types and the EngineEventType constants.
+//   - External clients (e.g. woofx3-ui's Convex webhook handler) import
+//     from "@woofx3/api/webhooks" and narrow on event.type.
+//
+// The TypeScript subject list here mirrors the Go constants in
+// shared/common/golang/cloudevents/subjects.go — keep them in sync when
+// adding or renaming event types.
+
+/**
+ * Canonical event-type strings for every engine callback. Prefer
+ * `EngineEventType.MODULE_INSTALLED` over the raw string in application
+ * code so renames surface as compile errors instead of silent string drift.
+ */
+export const EngineEventType = {
+  MODULE_INSTALLED: "module.installed",
+  MODULE_INSTALL_FAILED: "module.install_failed",
+  MODULE_DELETED: "module.deleted",
+  MODULE_DELETE_FAILED: "module.delete_failed",
+  MODULE_TRIGGER_REGISTERED: "module.trigger.registered",
+  MODULE_ACTION_REGISTERED: "module.action.registered",
+} as const;
+
+export type EngineEventType = (typeof EngineEventType)[keyof typeof EngineEventType];
+
+// ---------------------------------------------------------------------------
+// Event payloads
+// ---------------------------------------------------------------------------
 
 export interface TriggerDefinition {
   id: string;
@@ -41,7 +69,7 @@ export interface ModuleResourceUsage {
 }
 
 export interface ModuleTriggerRegisteredEvent {
-  type: "module.trigger.registered";
+  type: typeof EngineEventType.MODULE_TRIGGER_REGISTERED;
   moduleKey: string;
   moduleName: string;
   version: string;
@@ -49,7 +77,7 @@ export interface ModuleTriggerRegisteredEvent {
 }
 
 export interface ModuleActionRegisteredEvent {
-  type: "module.action.registered";
+  type: typeof EngineEventType.MODULE_ACTION_REGISTERED;
   moduleKey: string;
   moduleName: string;
   version: string;
@@ -57,7 +85,7 @@ export interface ModuleActionRegisteredEvent {
 }
 
 export interface ModuleInstalledEvent {
-  type: "module.installed";
+  type: typeof EngineEventType.MODULE_INSTALLED;
   moduleName: string;
   version: string;
   moduleKey: string;
@@ -65,7 +93,7 @@ export interface ModuleInstalledEvent {
 }
 
 export interface ModuleInstallFailedEvent {
-  type: "module.install_failed";
+  type: typeof EngineEventType.MODULE_INSTALL_FAILED;
   moduleName: string;
   version: string;
   moduleKey: string;
@@ -73,13 +101,13 @@ export interface ModuleInstallFailedEvent {
 }
 
 export interface ModuleDeletedEvent {
-  type: "module.deleted";
+  type: typeof EngineEventType.MODULE_DELETED;
   moduleName: string;
   moduleKey: string;
 }
 
 export interface ModuleDeleteFailedEvent {
-  type: "module.delete_failed";
+  type: typeof EngineEventType.MODULE_DELETE_FAILED;
   moduleName: string;
   moduleKey: string;
   error: string;
@@ -100,14 +128,60 @@ export type CallbackEvent =
   | ModuleDeleteFailedEvent;
 
 /**
- * Outer envelope for every webhook delivery. The engine sets `source: "engine"`
- * and a unique `id` per delivery; `type` mirrors `data.type` for convenience
- * when a receiver only reads the envelope.
+ * Lookup from event-type string → payload type. Useful for emitter code
+ * that knows its type at compile time and wants to validate the payload.
+ */
+export type CallbackEventByType = {
+  [EngineEventType.MODULE_TRIGGER_REGISTERED]: ModuleTriggerRegisteredEvent;
+  [EngineEventType.MODULE_ACTION_REGISTERED]: ModuleActionRegisteredEvent;
+  [EngineEventType.MODULE_INSTALLED]: ModuleInstalledEvent;
+  [EngineEventType.MODULE_INSTALL_FAILED]: ModuleInstallFailedEvent;
+  [EngineEventType.MODULE_DELETED]: ModuleDeletedEvent;
+  [EngineEventType.MODULE_DELETE_FAILED]: ModuleDeleteFailedEvent;
+};
+
+// ---------------------------------------------------------------------------
+// CloudEvents 1.0 envelope
+// ---------------------------------------------------------------------------
+
+/**
+ * CloudEvents 1.0 envelope specialized for woofx3 engine webhooks. Conforms
+ * to the CNCF CloudEvents spec (https://github.com/cloudevents/spec) so the
+ * payload is portable across NATS, HTTP, and future transports.
+ *
+ * `specversion` is the literal "1.0" — this field's presence is how a
+ * receiver identifies a CloudEvent. `type` mirrors `data.type` for
+ * envelope-level routing without parsing `data`.
  */
 export interface CallbackEnvelope {
+  specversion: "1.0";
   id: string;
-  source: "engine";
-  type: string;
+  source: string;
+  type: EngineEventType;
   time: string;
+  datacontenttype?: string;
+  subject?: string;
   data: CallbackEvent;
+}
+
+/**
+ * Constructor for a CloudEvents-compliant envelope. Validates that the
+ * outer `type` matches `data.type` at compile time — pass a typed event
+ * and the correct type literal is inferred.
+ */
+export function makeCallbackEnvelope<E extends CallbackEvent>(
+  event: E,
+  source = "engine",
+  id: string = globalThis.crypto?.randomUUID() ?? "",
+  time: string = new Date().toISOString(),
+): CallbackEnvelope {
+  return {
+    specversion: "1.0",
+    id,
+    source,
+    type: event.type,
+    time,
+    datacontenttype: "application/json",
+    data: event,
+  };
 }
