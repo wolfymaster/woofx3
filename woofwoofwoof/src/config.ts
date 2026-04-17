@@ -14,6 +14,7 @@ export const WoofEnvSchema = z.object({
   woofx3ApplicationId: z.string().min(1, "APPLICATION_ID is required"),
   woofx3TwitchClientId: z.string().min(1, "TWITCH_WOLFY_CLIENT_ID is required"),
   woofx3TwitchClientSecret: z.string().min(1, "TWITCH_WOLFY_CLIENT_SECRET is required"),
+  woofx3RootPath: z.string().optional(),
   twitchRedirectUrl: z.string().default("http://localhost"),
   spotifyClientId: z.string().optional(),
   spotifyClientSecret: z.string().optional(),

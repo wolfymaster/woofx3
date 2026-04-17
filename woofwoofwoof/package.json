@@ -1,4 +1,6 @@
 {
+  "name": "woofwoofwoof",
+  "type": "module",
   "dependencies": {
     "zod": "^3.24.0",
     "@nats-io/transport-node": "^3.0.0-33",
@@ -17,6 +19,7 @@
     "woofwoofwoof": "./index.ts"
   },
   "devDependencies": {
+    "@types/bun": "latest",
     "@types/yargs": "^17.0.33"
   }
 }

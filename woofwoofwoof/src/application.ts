@@ -3,12 +3,12 @@ import EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import { type ChatMessageMessage, EventType } from "@woofx3/common/cloudevents/Twitch";
 import type { ApplicationContext } from "@woofx3/common/runtime";
 import type { Application, IApplication } from "@woofx3/common/runtime/application";
-import { type Command, ListCommands } from "@woofx3/db/command.pb";
-import { AddUserToResource, RemoveUserFromResource } from "@woofx3/db/permission.pb";
+import type { Command } from "@woofx3/db/command.pb";
 import type { Msg } from "@woofx3/nats/src/types";
 import chalk from "chalk";
 import { Commands } from "./commands";
 import type BarkloaderClientService from "./services/barkloader";
+import type DatabaseService from "./services/database";
 import type MessageBusService from "./services/messageBus";
 import type TwitchChatClientService from "./services/twitchChat";
 import Spotify from "./spotify";
@@ -18,6 +18,7 @@ type Context = ApplicationContext<WoofWoofWoofContext, WoofWoofWoofServices>;
 
 export type WoofWoofWoofServices = {
   barkloader: BarkloaderClientService;
+  db: DatabaseService;
   messageBus: MessageBusService;
   twitchChat: TwitchChatClientService;
 };
@@ -42,14 +43,14 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
   }
 
   async init(ctx: Context) {
-    const databaseProxyUrl = (ctx.config.getConfig("woofx3DatabaseProxyUrl") as string) ?? "";
+    const db = ctx.services.db.client;
 
     const commander = new Commands(
       ctx.config.getConfig("woofx3TwitchChannelName") as string,
       ctx.services.twitchChat.client
     );
     commander.setAuth(async (user: string, cmd: string) => {
-      return await canUse(user, cmd, databaseProxyUrl);
+      return await canUse(user, cmd, db);
     });
 
     // register message handler for barkloader
@@ -91,16 +92,12 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
     ctx.logger.info(chalk.yellow("####################################################### \n"));
 
     const applicationId = ctx.config.getConfig("woofx3ApplicationId") as string;
-    const databaseProxyUrl = ctx.config.getConfig("woofx3DatabaseProxyUrl") as string;
-    const dbClientConfig = { baseURL: databaseProxyUrl };
+    const db = ctx.services.db.client;
 
-    const commands = await ListCommands(
-      {
-        applicationId,
-        includeDisabled: false,
-      },
-      dbClientConfig
-    );
+    const commands = await db.listCommands({
+      applicationId,
+      includeDisabled: false,
+    });
     ctx.logger.info("after list commands");
 
     if (commands.status.code !== "OK") {
@@ -120,28 +117,22 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
     });
 
     ctx.commander.add("grantcommands", async (text: string, user?: string) => {
-      await AddUserToResource(
-        {
-          applicationId,
-          username: text,
-          resource: "command/*",
-          role: "moderator",
-        },
-        dbClientConfig
-      );
+      await db.addUserToResource({
+        applicationId,
+        username: text,
+        resource: "command/*",
+        role: "moderator",
+      });
       return "";
     });
 
     ctx.commander.add("revokecommands", async (text: string, user?: string) => {
-      await RemoveUserFromResource(
-        {
-          applicationId,
-          username: text,
-          resource: "command/*",
-          role: "moderator",
-        },
-        dbClientConfig
-      );
+      await db.removeUserFromResource({
+        applicationId,
+        username: text,
+        resource: "command/*",
+        role: "moderator",
+      });
       return "";
     });
 

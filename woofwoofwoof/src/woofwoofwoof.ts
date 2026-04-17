@@ -1,10 +1,12 @@
+import path from "node:path";
 import BarkloaderClient from "@woofx3/barkloader";
+import { createServiceLogger } from "@woofx3/common/logging";
 import { createApplication, createNATSMonitor, createRuntime, loadRuntimeEnv } from "@woofx3/common/runtime";
 import MessageBus from "@woofx3/nats";
-import TwitchClient from "@woofx3/twitch";
 import WoofWoofWoof, { type WoofWoofWoofApplication } from "./application";
 import { WoofEnvSchema } from "./config";
 import BarkloaderClientService from "./services/barkloader";
+import DatabaseService from "./services/database";
 import MessageBusService from "./services/messageBus";
 import TwitchChatClientService from "./services/twitchChat";
 
@@ -26,32 +28,55 @@ const bus = await MessageBus.createMessageBus({
 });
 const messageBusService = new MessageBusService(bus);
 
+const logger = createServiceLogger({
+  serviceName: "woofwoofwoof",
+  logDir: path.join((loadedConfig.getConfig("woofx3RootPath") as string | undefined) ?? process.cwd(), "logs"),
+  context: {
+    applicationId: loadedConfig.getConfig("woofx3ApplicationId") as string,
+  },
+});
+
 const runtime = createRuntime({
   application: createApplication(new WoofWoofWoof()),
   envSchema: WoofEnvSchema,
-  logger: console,
+  logger,
   runtimeEnv: () => loadedConfig,
   healthMonitor: createNATSMonitor({
     natsClient: bus,
     applicationName: "woofwoofwoof",
-    requiredServices: ["messageBus", "barkloader"],
+    requiredServices: ["messageBus", "db", "barkloader"],
   }),
   runtimeInit: async (application: WoofWoofWoofApplication) => {
     const config = application.context.config;
 
     application.register("messageBus", messageBusService);
 
-    const twitchClient = new TwitchClient({
-      applicationId: config.getConfig("woofx3ApplicationId") as string,
-      channel: config.getConfig("woofx3TwitchChannelName") as string,
-      databaseURL: config.getConfig("woofx3DatabaseProxyUrl") as string,
-    });
-    await twitchClient.init({
-      clientId: config.getConfig("woofx3TwitchClientId") as string,
-      clientSecret: config.getConfig("woofx3TwitchClientSecret") as string,
-      redirectUri: config.getConfig("woofx3TwitchRedirectUrl") as string,
-    });
-    application.register("twitchChat", new TwitchChatClientService(twitchClient.ChatClient()));
+    const databaseProxyUrl = config.getConfig("woofx3DatabaseProxyUrl") as string;
+    const dbService = new DatabaseService(databaseProxyUrl);
+    application.register("db", dbService);
+
+    application.register(
+      "twitchChat",
+      new TwitchChatClientService({
+        applicationId: config.getConfig("woofx3ApplicationId") as string,
+        channel: config.getConfig("woofx3TwitchChannelName") as string,
+        credentials: {
+          clientId: config.getConfig("woofx3TwitchClientId") as string,
+          clientSecret: config.getConfig("woofx3TwitchClientSecret") as string,
+          redirectUri: config.getConfig("woofx3TwitchRedirectUrl") as string,
+        },
+        getSetting: async (req) => {
+          const response = await dbService.client.getSetting(req);
+          return {
+            setting: {
+              value: {
+                stringValue: response.setting.value.stringValue ?? undefined,
+              },
+            },
+          };
+        },
+      })
+    );
 
     const barkloaderWsUrl = config.getConfig("woofx3BarkloaderWsUrl") as string;
     const barkloaderToken = config.getConfig("woofx3BarkloaderKey") as string;

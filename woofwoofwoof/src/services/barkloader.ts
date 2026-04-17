@@ -1,6 +1,7 @@
 import type BarkloaderClient from "@woofx3/barkloader";
 import type { Service } from "@woofx3/common/runtime";
 
+const POLL_INTERVAL_MS = 100;
 const CONNECTION_TIMEOUT_MS = 5000;
 
 export default class BarkloaderClientService implements Service<BarkloaderClient> {
@@ -17,6 +18,17 @@ export default class BarkloaderClientService implements Service<BarkloaderClient
     this.type = "barkloader";
     this.client = client;
     this.connected = false;
+
+    this.client.registerHandler("onError", (event: unknown) => {
+      this.connectionError = new Error(String(event));
+      this.connected = false;
+      this.healthcheck = false;
+    });
+
+    this.client.registerHandler("onClose", () => {
+      this.connected = false;
+      this.healthcheck = false;
+    });
   }
 
   async connect(): Promise<void> {
@@ -24,59 +36,41 @@ export default class BarkloaderClientService implements Service<BarkloaderClient
       return;
     }
 
-    // Track connection errors
-    const handleError = (event: unknown) => {
-      console.log("Barkloader connection error:", event);
-      this.connectionError = new Error(String(event));
-      this.connected = false;
-      this.healthcheck = false;
-    };
-
-    // Track close events
-    const handleClose = () => {
-      console.log("Barkloader connection closed");
-      this.connected = false;
-      this.healthcheck = false;
-    };
-
-    this.client.registerHandler("onError", handleError);
-
+    this.connectionError = null;
     this.client.connect();
 
-    // Wait for connection with timeout
-    await new Promise<void>((resolve, reject) => {
-      let elapsed = 0;
-      const checkInterval = 100;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        let elapsed = 0;
 
-      const checkConnection = () => {
-        elapsed += checkInterval;
+        const check = () => {
+          if (this.client.isConnected()) {
+            this.connected = true;
+            this.healthcheck = true;
+            this.connectionError = null;
+            resolve();
+            return;
+          }
 
-        if (this.client.isConnected()) {
-          this.connected = true;
-          this.healthcheck = true;
-          this.connectionError = null;
-          resolve();
-          return;
-        }
+          if (this.connectionError) {
+            reject(this.connectionError);
+            return;
+          }
 
-        if (this.connectionError) {
-          reject(this.connectionError);
-          return;
-        }
+          elapsed += POLL_INTERVAL_MS;
+          if (elapsed >= CONNECTION_TIMEOUT_MS) {
+            reject(new Error(`Barkloader connection timeout after ${CONNECTION_TIMEOUT_MS}ms`));
+            return;
+          }
 
-        if (elapsed >= CONNECTION_TIMEOUT_MS) {
-          reject(new Error(`Connection timeout after ${CONNECTION_TIMEOUT_MS}ms`));
-          return;
-        }
+          setTimeout(check, POLL_INTERVAL_MS);
+        };
 
-        setTimeout(checkConnection, checkInterval);
-      };
-
-      setTimeout(checkConnection, checkInterval);
-    });
-
-    if (!this.connected) {
-      throw new Error("Failed to connect to barkloader");
+        setTimeout(check, POLL_INTERVAL_MS);
+      });
+    } catch (err) {
+      this.client.disconnect();
+      throw err;
     }
   }
 
