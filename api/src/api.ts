@@ -63,6 +63,11 @@ interface ApiOptions {
   logger: SharedLogger;
 }
 
+// NOTE: `implements Woofx3EngineApi` is deliberately omitted today — the
+// shared interface and this concrete class have diverged (pagination
+// shapes, Team / Workflow return structures, Dashboard signatures).
+// Reconcile signature-by-signature in a follow-up pass, then turn
+// `implements` back on so TypeScript guards against future drift.
 export class Api extends RpcTarget {
   private triggerSubscribers = new Set<{
     onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;

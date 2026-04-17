@@ -1,5 +1,7 @@
 // Shared API Types for woofx3 UI and Backend
 
+import type { TriggerDefinition } from "./webhooks";
+
 // ==================== User & Auth ====================
 
 export interface User {
@@ -223,6 +225,51 @@ export interface DashboardStats {
   recentEvents: number;
 }
 
+// ==================== Module lifecycle response types ====================
+
+/**
+ * Response from `installModuleZip`. The install runs asynchronously on the
+ * engine — `success` only indicates the engine accepted the request. The
+ * final outcome arrives via the `module.installed` / `module.install_failed`
+ * webhook, correlated by `moduleKey`.
+ */
+export interface ModuleInstallZipResponse {
+  success: boolean;
+  message?: string;
+  alreadyInstalled?: boolean;
+}
+
+/**
+ * Response from `uninstallModule` / `uninstallEngineModule`. The actual
+ * removal is asynchronous; the outcome arrives via the `module.deleted`
+ * or `module.delete_failed` webhook, correlated by `moduleKey`.
+ */
+export interface UninstallModuleResponse {
+  requested: boolean;
+}
+
+/** Summary row returned by `listEngineModules`. */
+export interface EngineModuleSummary {
+  name: string;
+  version: string;
+  state: string;
+}
+
+// ==================== Stream / workflow response types ====================
+
+export interface StreamStatus {
+  isLive: boolean;
+  uptime: string;
+  viewerCount: number;
+  startedAt?: string;
+}
+
+export interface TriggerWorkflowResponse {
+  executionId: string;
+  status: string;
+  message: string;
+}
+
 // ==================== API Interface ====================
 
 /** RPC connectivity check; mirrors `GET /health` semantics. */
@@ -231,11 +278,11 @@ export type PingResponse = { status: "ok"; instanceId: string };
 /**
  * Gateway is the capnweb entry point. Unauthenticated callers see only
  * `ping()` and `authenticate()`. A successful `authenticate()` returns
- * the full `StreamControlApi` stub.
+ * the full `Woofx3EngineApi` stub.
  */
-export interface StreamControlGateway {
+export interface Woofx3EngineGateway {
   ping(): Promise<{ status: string }>;
-  authenticate(clientId: string, clientSecret: string): StreamControlApi;
+  authenticate(clientId: string, clientSecret: string): Woofx3EngineApi;
   registerClient(
     description: string,
     callbackUrl?: string,
@@ -243,7 +290,7 @@ export interface StreamControlGateway {
   ): Promise<{ clientId: string; clientSecret: string }>;
 }
 
-export interface StreamControlApi {
+export interface Woofx3EngineApi {
   ping(): Promise<PingResponse>;
 
   // Client Management
@@ -261,11 +308,43 @@ export interface StreamControlApi {
   getAccounts(teamId?: string): Promise<Account[]>;
   getAccount(id: string): Promise<Account | null>;
 
-  // Modules
+  // Modules — catalog + async install/uninstall lifecycle
   getModules(query?: ModulesQuery): Promise<PaginatedModules>;
   getModule(id: string): Promise<Module | null>;
-  installModule(id: string): Promise<{ success: boolean }>;
-  uninstallModule(id: string): Promise<{ success: boolean }>;
+
+  /**
+   * Deliver a zipped module archive to the engine for installation. The
+   * engine performs the install asynchronously and fires a
+   * `module.installed` or `module.install_failed` webhook, correlated by
+   * `context.moduleKey` (echoed back in the callback).
+   */
+  installModuleZip(
+    fileName: string,
+    zipBase64: string,
+    context: { clientId: string; moduleKey?: string }
+  ): Promise<ModuleInstallZipResponse>;
+
+  /** Lightweight summary of every module currently installed on the engine. */
+  listEngineModules(): Promise<EngineModuleSummary[]>;
+
+  /**
+   * Request an async uninstall by module id. Returns `{ requested: true }`
+   * immediately; the actual outcome arrives via the `module.deleted` or
+   * `module.delete_failed` webhook, both carrying `moduleKey`.
+   */
+  uninstallModule(
+    id: string,
+    context?: { clientId?: string; moduleKey?: string }
+  ): Promise<UninstallModuleResponse>;
+
+  /** Lower-level equivalent of uninstallModule keyed on engine module name. */
+  uninstallEngineModule(
+    name: string,
+    context?: { clientId?: string; moduleKey?: string }
+  ): Promise<UninstallModuleResponse>;
+
+  // Triggers & actions catalog
+  getTriggers(createdByType?: string, createdByRef?: string): Promise<TriggerDefinition[]>;
 
   // Workflows
   getWorkflows(query?: WorkflowsQuery): Promise<PaginatedWorkflows>;
@@ -304,6 +383,14 @@ export interface StreamControlApi {
   getChatMessages(accountId: string, limit?: number): Promise<ChatMessage[]>;
   sendChatMessage(accountId: string, message: string): Promise<{ success: boolean; messageId: string }>;
   getStreamEvents(query: StreamEventsQuery): Promise<StreamEvent[]>;
+  getStreamStatus(accountId: string): Promise<StreamStatus>;
+
+  // Workflow execution (user-facing)
+  triggerWorkflowByName(
+    workflowName: string,
+    parameters?: Record<string, string>,
+    userId?: string
+  ): Promise<TriggerWorkflowResponse>;
 
   // User Preferences
   getUserPreferences(): Promise<UserPreferences>;
