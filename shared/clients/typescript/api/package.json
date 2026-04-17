@@ -1,5 +1,15 @@
 {
   "name": "@woofx3/api",
-  "version": "1.0.0",
-  "description": "Shared API types for woofx3"
+  "version": "2.0.0",
+  "description": "Shared API types + capnweb client helpers for woofx3 engine",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./rpc": "./rpc.ts",
+    "./webhooks": "./webhooks.ts",
+    "./client": "./client.ts"
+  },
+  "dependencies": {
+    "capnweb": "^0.4.0"
+  }
 }

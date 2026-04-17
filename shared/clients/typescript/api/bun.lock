@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "@woofx3/api",
+      "dependencies": {
+        "capnweb": "^0.4.0",
+      },
+    },
+  },
+  "packages": {
+    "capnweb": ["capnweb@0.4.0", "", {}, "sha512-OgqPQcxnrAIqjrkAuwI4N9MP/mzseM5w9oLWb/oU63KveBJl1c8p41etLSVQUlYFiAYZu+h6/LJxKaDJd93xFw=="],
+  }
+}
