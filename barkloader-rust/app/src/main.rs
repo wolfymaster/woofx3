@@ -1,4 +1,4 @@
-use crate::util::{get_env_or_default, get_path_from_env, validate_required_config};
+use crate::util::{get_env_or_default, get_env_or_default_with_key, get_path_from_env, validate_required_config};
 use actix_web::{App, HttpServer, middleware::Logger, web::Data};
 use anyhow::Result;
 use env_logger::Env;
@@ -20,8 +20,6 @@ mod services;
 mod types;
 mod util;
 mod websocket;
-mod callback;
-
 const DEFAULT_REPOSITORY_TYPE: &str = "file";
 const DEFAULT_MODULE_DIR: &str = "modules";
 
@@ -78,7 +76,7 @@ async fn setup() -> Result<AppContext> {
     boot_modules(&registry, &repository)?;
 
     let db_proxy_url = {
-        let val = get_env_or_default("DB_PROXY_ADDR", "");
+        let val = get_env_or_default_with_key("DB_PROXY_ADDR", Some("databaseProxyUrl"), "");
         if val.is_empty() {
             warn!("DB_PROXY_ADDR not set; trigger registration will be skipped");
             None
@@ -207,6 +205,7 @@ async fn main() -> std::io::Result<()> {
             .configure(routes::functions::configure)
     })
     .bind(bind_addr)?
+    .shutdown_timeout(5)
     .run()
     .await
 }

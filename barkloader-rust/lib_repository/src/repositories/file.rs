@@ -60,10 +60,16 @@ impl Repository for FileRepository {
     }
 
     fn delete_prefix(&self, prefix: &str) -> Result<()> {
-        let dir = self.config.destination.join(prefix);
-        if dir.exists() {
-            std::fs::remove_dir_all(&dir)
-                .map_err(|e| anyhow::anyhow!("failed to delete {}: {}", dir.display(), e))?;
+        let path = self.config.destination.join(prefix);
+        if !path.exists() {
+            return Ok(());
+        }
+        if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+                .map_err(|e| anyhow::anyhow!("failed to delete directory {}: {}", path.display(), e))?;
+        } else {
+            std::fs::remove_file(&path)
+                .map_err(|e| anyhow::anyhow!("failed to delete file {}: {}", path.display(), e))?;
         }
         Ok(())
     }

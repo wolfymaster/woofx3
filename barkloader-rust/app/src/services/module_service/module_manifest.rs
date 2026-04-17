@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Result};
 use lib_repository::{CreateFileRequest, Repository};
 use log::{info, warn};
-use reqwest;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use super::module_file::ModuleFile;
 
@@ -133,6 +133,44 @@ impl ModuleManifest {
     pub fn module_key(&self) -> &str {
         &self.id
     }
+
+    /// The ID component used in the composite module_id.
+    /// Uses the manifest `id` field if non-empty, otherwise falls back to
+    /// lowercase snake_case of the module name.
+    pub fn id_component(&self) -> String {
+        let trimmed = self.id.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+        to_snake_case(&self.name)
+    }
+
+    /// Compute the composite module_key: `{id}:{version}:{hash}` where hash is
+    /// the first 7 characters of the SHA-256 hex digest of the zip bytes.
+    pub fn compute_module_key(&self, zip_bytes: &[u8]) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(zip_bytes);
+        let hash = format!("{:x}", hasher.finalize());
+        let short_hash = &hash[..7];
+        format!("{}:{}:{}", self.id_component(), self.version, short_hash)
+    }
+}
+
+fn to_snake_case(s: &str) -> String {
+    let mut result = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if c.is_uppercase() {
+            if i > 0 {
+                result.push('_');
+            }
+            result.push(c.to_ascii_lowercase());
+        } else if c.is_whitespace() || c == '-' {
+            result.push('_');
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
 fn normalize_rel_path(s: &str) -> String {
@@ -206,47 +244,21 @@ impl ManifestTrigger {
             .unwrap_or_else(|| self.trigger_type.clone())
     }
 
-    /// Maps manifest fields to Twirp `RegisterTrigger` until the DB API carries `trigger_id` / `trigger_type` natively.
-    pub async fn register(&self, module_name: &str, db_proxy_url: &str) -> Result<()> {
+    /// Build the Twirp TriggerInput JSON for bulk registration.
+    pub fn to_input(&self) -> super::db_proxy::TriggerInputJson {
         let config_schema = self
             .schema
             .as_ref()
             .map(|v| v.to_string())
             .unwrap_or_else(|| "{}".to_string());
-
-        let category = self.register_category();
-
-        let body = serde_json::json!({
-            "module_name": module_name,
-            "category": category.clone(),
-            "name": self.name,
-            "description": self.description,
-            "event": self.id,
-            "config_schema": config_schema,
-            "allow_variants": false,
-        });
-
-        let url = format!("{}/twirp/module.ModuleService/RegisterTrigger", db_proxy_url);
-        let client = reqwest::Client::new();
-        let response = client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| anyhow!("Failed to call DB proxy RegisterTrigger: {}", e))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            return Err(anyhow!("RegisterTrigger failed with status {}: {}", status, text));
+        super::db_proxy::TriggerInputJson {
+            category: self.register_category(),
+            name: self.name.clone(),
+            description: self.description.clone(),
+            event: self.id.clone(),
+            config_schema,
+            allow_variants: false,
         }
-
-        info!(
-            "Registered trigger: {} [{}] ({})",
-            self.id, category, self.name
-        );
-        Ok(())
     }
 }
 
@@ -362,30 +374,14 @@ impl ManifestOverlay {
 }
 
 impl ManifestAction {
-    pub async fn register(
-        &self,
-        module_name: &str,
-        db_proxy_url: &str,
-    ) -> Result<()> {
-        let params_schema = self.params.to_string();
-
-        super::db_proxy::register_action(
-            db_proxy_url,
-            module_name,
-            &self.name,
-            &self.description,
-            &self.call,
-            &params_schema,
-        )
-        .await?;
-
-        info!(
-            "Registered action: {} [{}] (call={})",
-            self.name,
-            self.id,
-            self.call
-        );
-        Ok(())
+    /// Build the Twirp ActionInput JSON for bulk registration.
+    pub fn to_input(&self) -> super::db_proxy::ActionInputJson {
+        super::db_proxy::ActionInputJson {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            call: self.call.clone(),
+            params_schema: self.params.to_string(),
+        }
     }
 
     #[allow(dead_code)]
@@ -506,6 +502,8 @@ impl ManifestWorkflow {
             on_failure: String::new(),
             max_retries: 0,
             timeout_seconds: 0,
+            created_by_type: "MODULE".to_string(),
+            created_by_ref: module_name.to_string(),
         };
 
         let client = woofx3_twirp::WorkflowServiceClient::new(db_proxy_url);

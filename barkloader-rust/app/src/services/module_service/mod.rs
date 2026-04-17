@@ -1,4 +1,5 @@
 pub mod db_proxy;
+pub mod module_delete;
 mod module_file;
 mod module_install;
 mod module_manifest;

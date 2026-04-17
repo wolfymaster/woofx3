@@ -5,14 +5,18 @@ use lib_repository::{CreateFileRequest, Repository};
 use lib_sandbox::models::function::Function;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read as _;
 use std::path::PathBuf;
 use tokio::task;
 
-use crate::callback;
+use crate::services::module_service::db_proxy::complete_module_install;
 use crate::services::file_service::FileService;
+use crate::services::module_service::module_delete::{
+    notify_delete, resolve_module, run_delete_resolved, DeleteError,
+};
 use crate::services::module_service::{db_proxy, ModuleFileKind, ModuleService, ModuleServiceConfig};
 use crate::types::{AppContext, SafeTempDir};
 
@@ -39,27 +43,43 @@ struct UploadQuery {
     force: Option<bool>,
 }
 
+#[derive(Deserialize)]
+struct DeleteQuery {
+    client_id: Option<String>,
+    module_key: Option<String>,
+}
+
 #[post("/functions")]
 async fn upload_handler(
+    _req: actix_web::HttpRequest,
     ctx: Data<AppContext>,
     multipart: Multipart,
     query: actix_web::web::Query<UploadQuery>,
 ) -> Result<HttpResponse, Error> {
     let force = query.force.unwrap_or(false);
-    /*
-    - file upload
-    - extract contents
-    - read manifest
-    - add file ot module service
-    - generate plan for module
-    - execute plan pipeline
-       - everything should be added
-    */
+
     let file_service = FileService::new("./uploads");
 
-    // upload the file to temporary location for processing
+    // upload the file to temporary location for processing;
+    // multipart fields client_id and module_key are extracted alongside the file
     let metadata: crate::services::file_service::FileMetadata =
         file_service.process_upload(multipart).await?;
+
+    let expected_module_key = metadata.module_key.clone().unwrap_or_default();
+
+    let mut request_context = {
+        let client_id = metadata.client_id.clone().unwrap_or_default();
+        let application_id = ctx.application_id.clone().unwrap_or_default();
+        info!(
+            "Upload form fields: client_id={:?} module_key={:?} application_id={:?}",
+            metadata.client_id, metadata.module_key, application_id
+        );
+        Some(db_proxy::RequestContext {
+            client_id,
+            application_id,
+            module_key: String::new(),
+        })
+    };
 
     // archive the zip file (in case we need it at some later point)
 
@@ -70,9 +90,6 @@ async fn upload_handler(
         message: "File uploaded successfully".to_string(),
     };
 
-    let callback_url = metadata.callback_url.clone();
-    let module_name_for_callback = metadata.file_name.clone();
-
     task::spawn(async move {
         // SafeTempDir with automatic cleanup on drop
         let _upload_cleanup = SafeTempDir::new(PathBuf::from(&metadata.temp_dir_path), PathBuf::from("./uploads"));
@@ -80,15 +97,58 @@ async fn upload_handler(
         // save original zip path before processing extracts files
         let original_zip_path = PathBuf::from(&metadata.temp_dir_path).join(&metadata.file_name);
 
+        // compute SHA-256 hash of the zip for the composite module_key
+        let zip_hash = match fs::read(&original_zip_path) {
+            Ok(bytes) => {
+                let mut hasher = Sha256::new();
+                hasher.update(&bytes);
+                format!("{:x}", hasher.finalize())
+            }
+            Err(e) => {
+                error!("Failed to read zip for hashing: {}", e);
+                "0000000".to_string()
+            }
+        };
+        let zip_hash_short = zip_hash[..7_usize.min(zip_hash.len())].to_string();
+
+        // Helper: send install status notification to db proxy via outbox
+        async fn notify_install(
+            db_proxy_url: Option<&str>,
+            module_name: &str,
+            version: &str,
+            status: &str,
+            error_msg: &str,
+            request_context: Option<&db_proxy::RequestContext>,
+        ) {
+            let Some(url) = db_proxy_url else {
+                warn!("DB_PROXY_URL not set, skipping install notification for {}/{}", module_name, version);
+                return;
+            };
+
+            info!("Notifying db proxy: module={}/{} status={}", module_name, version, status);
+
+            // Try to resolve module_id from db proxy; use empty string if not found
+            let module_id = match super::super::services::module_service::db_proxy::get_module_by_name(url, module_name).await {
+                Ok(Some(resp)) => {
+                    let v: serde_json::Value = serde_json::from_str(&resp).unwrap_or_default();
+                    v.get("module").and_then(|m| m.get("id")).and_then(|v| v.as_str()).unwrap_or("").to_string()
+                }
+                _ => String::new(),
+            };
+
+            info!("Sending CompleteModuleInstall: module_id={} name={} version={} status={}", module_id, module_name, version, status);
+            match complete_module_install(url, &module_id, module_name, version, status, error_msg, request_context).await {
+                Ok(_) => info!("CompleteModuleInstall succeeded for {}/{} (status={})", module_name, version, status),
+                Err(e) => error!("CompleteModuleInstall failed for {}/{}: {}", module_name, version, e),
+            }
+        }
+
         // process uploaded file into list of file metadata
         let metadatas = file_service.process_uploaded_file(metadata).await;
         if metadatas.is_err() {
             let err_msg = format!("{}", metadatas.err().unwrap());
-            log::error!("Failed to process uploaded file: {}", err_msg);
-            if let Some(url) = &callback_url {
-                let module_id = module_name_for_callback.split('.').next().unwrap_or(&module_name_for_callback).to_string();
-                callback::send_failure_callback(url, &module_id, "unknown", &err_msg).await;
-            }
+            error!("Failed to process uploaded file: {}", err_msg);
+            notify_install(ctx.db_proxy_url.as_deref(), "unknown", "unknown", "failed", &err_msg, request_context.as_ref()).await;
             return;
         }
 
@@ -99,6 +159,18 @@ async fn upload_handler(
             repository: ctx.repository.clone(),
         };
         let mut module = ModuleService::new(module_config);
+
+        // DEBUG: log all extracted files
+        log::info!("=== ZIP CONTENTS ({} entries) ===", file_metadata.len());
+        for data in &file_metadata {
+            log::info!(
+                "  file: {:?}  ext: {:?}  dir: {:?}",
+                data.file_name,
+                data.file_extension,
+                data.temp_dir_path,
+            );
+        }
+        log::info!("=== END ZIP CONTENTS ===");
 
         // loop the file meta and add files to module
         // skip the original zip folder in the directory
@@ -130,34 +202,62 @@ async fn upload_handler(
             module.add_file(kind, &data.file_name, contents);
         }
 
+        // DEBUG: log what files were added to the module service
+        log::info!("=== FILES ADDED TO MODULE SERVICE ===");
+        for f in module.files() {
+            log::info!("  name: {:?}  kind: {:?}", f.name, f.kind);
+        }
+        log::info!("=== END FILES ADDED ===");
+
         // run workflow to create module and upload files to repository
         let module_plan = match module.create_plan() {
             Ok(v) => v,
             Err(err) => {
                 let err_msg = err.to_string();
                 error!("Failed to create module plan: {}", err_msg);
-                if let Some(url) = &callback_url {
-                    let module_id = module_name_for_callback.split('.').next().unwrap_or(&module_name_for_callback).to_string();
-                    callback::send_failure_callback(url, &module_id, "unknown", &err_msg).await;
-                }
+                notify_install(ctx.db_proxy_url.as_deref(), "unknown", "unknown", "failed", &err_msg, request_context.as_ref()).await;
                 return;
             }
         };
 
-        let (module_name, module_version) = match (module.module_name(), module.module_version()) {
-            (Some(n), Some(v)) => (n, v),
+        let (module_id, module_name, module_version) = match (module.module_id(), module.module_name(), module.module_version()) {
+            (Some(id), Some(n), Some(v)) => (id, n, v),
             _ => {
-                let err_msg = "module identity missing after create_plan".to_string();
+                let err_msg = "module identity missing after create_plan";
                 error!("{}", err_msg);
-                if let Some(url) = &callback_url {
-                    let module_id = module_name_for_callback.split('.').next().unwrap_or(&module_name_for_callback).to_string();
-                    callback::send_failure_callback(url, &module_id, "unknown", &err_msg).await;
-                }
+                notify_install(ctx.db_proxy_url.as_deref(), "unknown", "unknown", "failed", err_msg, request_context.as_ref()).await;
                 return;
             }
         };
 
-        let archive_key = format!("archives/{}/{}.zip", module_name, module_version);
+        // Compute the composite module_key: {id}:{version}:{hash[:7]}
+        let computed_module_key = format!("{}:{}:{}", module_id, module_version, zip_hash_short);
+        info!(
+            "module_key components: id={} name={} version={} hash={} (full_hash={}) => {}",
+            module_id, module_name, module_version, zip_hash_short, zip_hash, computed_module_key
+        );
+
+        // Validate against expected module_key if one was provided by the caller
+        if !expected_module_key.is_empty() && expected_module_key != computed_module_key {
+            let err_msg = format!(
+                "ModuleKeyMismatch: expected '{}', computed '{}'",
+                expected_module_key, computed_module_key
+            );
+            error!("{}", err_msg);
+            // Inject module_key into request context for the notification
+            if let Some(ref mut rc) = request_context {
+                rc.module_key = expected_module_key.clone();
+            }
+            notify_install(ctx.db_proxy_url.as_deref(), module_name, module_version, "failed", &err_msg, request_context.as_ref()).await;
+            return;
+        }
+
+        // Inject module_key into request context
+        if let Some(ref mut rc) = request_context {
+            rc.module_key = computed_module_key.clone();
+        }
+
+        let archive_key = format!("archives/{}.zip", computed_module_key);
 
         if !force {
             if ctx.repository.exists(&archive_key).await.unwrap_or(false) {
@@ -166,31 +266,37 @@ async fn upload_handler(
                     module_name, module_version
                 );
                 error!("{}", err_msg);
-                if let Some(url) = &callback_url {
-                    let module_id = module_name_for_callback.split('.').next().unwrap_or(&module_name_for_callback).to_string();
-                    callback::send_failure_callback(url, &module_id, module_version, &err_msg).await;
-                }
+                notify_install(ctx.db_proxy_url.as_deref(), module_name, module_version, "failed", &err_msg, request_context.as_ref()).await;
                 return;
             }
         }
 
+        let upload_client_id = request_context
+            .as_ref()
+            .map(|rc| rc.client_id.clone())
+            .unwrap_or_default();
         if let Err(e) = module
-            .execute_plan(&module_plan, &archive_key, ctx.db_proxy_url.as_deref(), ctx.application_id.as_deref(), force)
+            .execute_plan(
+                &module_plan,
+                &archive_key,
+                ctx.db_proxy_url.as_deref(),
+                ctx.application_id.as_deref(),
+                force,
+                &computed_module_key,
+                &upload_client_id,
+            )
             .await
         {
             let err_msg = e.to_string();
             error!("Module install failed: {}", err_msg);
-            if let Some(url) = &callback_url {
-                let module_id = module_name_for_callback.split('.').next().unwrap_or(&module_name_for_callback).to_string();
-                callback::send_failure_callback(url, &module_id, "unknown", &err_msg).await;
-            }
+            notify_install(ctx.db_proxy_url.as_deref(), module_name, module_version, "failed", &err_msg, request_context.as_ref()).await;
             return;
         }
 
-        // archive the original zip to archives/{module_name}/{version}.zip
+        // archive the original zip keyed by module_key
         if let (Some(name), Some(version)) = (module.module_name(), module.module_version()) {
             if let Ok(zip_bytes) = fs::read(&original_zip_path) {
-                let archive_key = format!("archives/{}/{}.zip", name, version);
+                let archive_key = format!("archives/{}.zip", computed_module_key);
                 let req = CreateFileRequest {
                     content: Some(zip_bytes),
                     extension: Some("zip".to_string()),
@@ -212,9 +318,7 @@ async fn upload_handler(
                 warn!("Original zip not found at {}, skipping archive", original_zip_path.display());
             }
 
-            if let Some(url) = &callback_url {
-                callback::send_success_callback(url, &name, &version).await;
-            }
+            notify_install(ctx.db_proxy_url.as_deref(), name, version, "completed", "", request_context.as_ref()).await;
         }
     });
 
@@ -296,40 +400,142 @@ async fn register_handler(
 async fn delete_handler(
     ctx: Data<AppContext>,
     path: actix_web::web::Path<String>,
+    query: actix_web::web::Query<DeleteQuery>,
 ) -> Result<HttpResponse, Error> {
     let module_name = path.into_inner();
+    let client_id = query.client_id.clone().unwrap_or_default();
+    // Caller-supplied moduleKey. Used as a fallback when the engine no
+    // longer has a record of the module (idempotent delete): the UI still
+    // needs a moduleKey on the callback to correlate with its local state.
+    let caller_module_key = query.module_key.clone().unwrap_or_default();
+    let application_id = ctx.application_id.clone().unwrap_or_default();
 
-    if let (Some(db_proxy_url), Some(application_id)) = (
-        ctx.db_proxy_url.as_deref(),
-        ctx.application_id.as_deref(),
-    ) {
-        if let Err(e) = db_proxy::delete_triggers_by_module(db_proxy_url, &module_name).await {
-            warn!("Failed to delete triggers for {}: {}", module_name, e);
-        }
-        if let Err(e) = db_proxy::delete_actions_by_module(db_proxy_url, &module_name).await {
-            warn!("Failed to delete actions for {}: {}", module_name, e);
-        }
-        if let Err(e) = db_proxy::delete_commands_by_module(db_proxy_url, application_id, &module_name).await {
-            warn!("Failed to delete commands for {}: {}", module_name, e);
-        }
-        if let Err(e) = db_proxy::delete_workflows_by_module(db_proxy_url, application_id, &module_name).await {
-            warn!("Failed to delete workflows for {}: {}", module_name, e);
-        }
-    } else {
-        warn!("DB_PROXY_ADDR or APPLICATION_ID not set; skipping entity cleanup");
-    }
-
-    ctx.registry.unregister_module(&module_name)
-        .map_err(|e| actix_web::error::ErrorNotFound(e.to_string()))?;
-
-    let prefix = format!("modules/{}", module_name);
-    let _ = ctx.repository.delete_prefix(&prefix);
-
-    Ok(HttpResponse::Ok().json(serde_json::json!({
-        "success": true,
+    // Acknowledge the request synchronously. Actual deletion runs in a
+    // background task and communicates its result via CompleteModuleDelete,
+    // which the db-proxy publishes to NATS for the API layer to forward to
+    // the UI over webhook.
+    let ack = serde_json::json!({
+        "requested": true,
         "module": module_name,
-        "message": "Module deleted successfully"
-    })))
+        "message": "Module deletion requested"
+    });
+
+    let Some(db_proxy_url) = ctx.db_proxy_url.clone() else {
+        warn!("DB_PROXY_ADDR not set; cannot process module delete request for {}", module_name);
+        return Ok(HttpResponse::ServiceUnavailable().json(serde_json::json!({
+            "error": "db_proxy_url not configured"
+        })));
+    };
+
+    let ctx_clone = ctx.clone();
+    let module_name_task = module_name.clone();
+
+    tokio::spawn(async move {
+        let mut request_context = db_proxy::RequestContext {
+            client_id,
+            application_id: application_id.clone(),
+            module_key: caller_module_key.clone(),
+        };
+
+        let app_id_opt = if application_id.is_empty() { None } else { Some(application_id.as_str()) };
+        let registry = ctx_clone.registry.clone();
+
+        // Resolve the module eagerly so the callback always carries
+        // module_key — both on success and on any subsequent failure.
+        //
+        // If the module does not exist, treat the delete as already-done and
+        // report success (idempotent delete — the end state is what the
+        // caller wanted).
+        let resolved = match resolve_module(&db_proxy_url, &module_name_task).await {
+            Ok(Some(r)) => r,
+            Ok(None) => {
+                // request_context.module_key was seeded with the caller's
+                // moduleKey, so the UI receives the key it sent in the
+                // deletion request even though we have no DB record.
+                info!(
+                    "Module {} already absent (caller module_key={:?}), treating delete as no-op success",
+                    module_name_task, request_context.module_key
+                );
+                notify_delete(
+                    &db_proxy_url,
+                    "",
+                    &module_name_task,
+                    "completed",
+                    "",
+                    &[],
+                    Some(&request_context),
+                ).await;
+                return;
+            }
+            Err(e) => {
+                let msg = format!("failed to resolve module {}: {}", module_name_task, e);
+                error!("{}", msg);
+                notify_delete(
+                    &db_proxy_url,
+                    "",
+                    &module_name_task,
+                    "failed",
+                    &msg,
+                    &[],
+                    Some(&request_context),
+                ).await;
+                return;
+            }
+        };
+        request_context.module_key = resolved.module_key.clone();
+
+        match run_delete_resolved(
+            &resolved,
+            &module_name_task,
+            &db_proxy_url,
+            app_id_opt,
+            &ctx_clone.repository,
+            registry,
+        ).await {
+            Ok(_) => {
+                info!(
+                    "Module {} deleted successfully (id={}, key={})",
+                    module_name_task, resolved.module_id, resolved.module_key
+                );
+                notify_delete(
+                    &db_proxy_url,
+                    &resolved.module_id,
+                    &module_name_task,
+                    "completed",
+                    "",
+                    &[],
+                    Some(&request_context),
+                ).await;
+            }
+            Err(DeleteError::InUse(list)) => {
+                error!("Module {} cannot be deleted: {} resource(s) still in use", module_name_task, list.len());
+                notify_delete(
+                    &db_proxy_url,
+                    &resolved.module_id,
+                    &module_name_task,
+                    "failed",
+                    "One or more resources are still in use by other workflows or commands",
+                    &list,
+                    Some(&request_context),
+                ).await;
+            }
+            Err(DeleteError::Other(e)) => {
+                let msg = e.to_string();
+                error!("Module {} delete failed: {}", module_name_task, msg);
+                notify_delete(
+                    &db_proxy_url,
+                    &resolved.module_id,
+                    &module_name_task,
+                    "failed",
+                    &msg,
+                    &[],
+                    Some(&request_context),
+                ).await;
+            }
+        }
+    });
+
+    Ok(HttpResponse::Accepted().json(ack))
 }
 
 #[patch("/functions/{name}/state")]

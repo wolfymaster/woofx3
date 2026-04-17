@@ -10,6 +10,7 @@ use super::module_plan::ModulePlan;
 pub struct ModuleService<R> {
     files: Vec<ModuleFile>,
     pub repository: R,
+    module_id: Option<String>,
     module_name: Option<String>,
     module_version: Option<String>,
     stored_manifest: Option<ModuleManifest>,
@@ -27,6 +28,7 @@ where
         ModuleService {
             files: Vec::new(),
             repository: config.repository,
+            module_id: None,
             module_name: None,
             module_version: None,
             stored_manifest: None,
@@ -74,7 +76,8 @@ where
         let manifest_file = self.pick_manifest_file()?;
         let manifest = manifest_file.parse_as_manifest()?;
 
-        self.module_name = Some(manifest.module_key().to_string());
+        self.module_id = Some(manifest.module_key().to_string());
+        self.module_name = Some(manifest.name.clone());
         self.module_version = Some(manifest.version.clone());
         self.stored_manifest = Some(manifest);
 
@@ -97,6 +100,8 @@ where
         db_proxy_url: Option<&str>,
         application_id: Option<&str>,
         force: bool,
+        composite_module_key: &str,
+        client_id: &str,
     ) -> Result<()> {
         let cleanup_old = force;
         let manifest = self
@@ -111,8 +116,18 @@ where
             db_proxy_url,
             application_id,
             cleanup_old,
+            composite_module_key,
+            client_id,
         )
         .await
+    }
+
+    pub fn files(&self) -> &[ModuleFile] {
+        &self.files
+    }
+
+    pub fn module_id(&self) -> Option<&str> {
+        self.module_id.as_deref()
     }
 
     pub fn module_name(&self) -> Option<&str> {

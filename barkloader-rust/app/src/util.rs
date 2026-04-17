@@ -25,31 +25,29 @@ pub fn get_path_from_env(env_var: &str, default: &str) -> PathBuf {
 
 // get env var or default - first checks WOOFX3 config (.woofx3.json), then falls back to env
 pub fn get_env_or_default(env_var: &str, default: &str) -> String {
-    // Try to get from config first (maps .woofx3.json key to WOOFX3_* env var)
+    get_env_or_default_with_key(env_var, None, default)
+}
+
+// Same as get_env_or_default but allows specifying an explicit .woofx3.json config key
+// when the env var name does not follow the WOOFX3_<camelCase> convention.
+pub fn get_env_or_default_with_key(env_var: &str, config_key: Option<&str>, default: &str) -> String {
     if let Ok(config) = Config::load() {
-        // Convert env var to config key: WOOFX3_APPLICATION_ID -> applicationId
-        let config_key = env_var.strip_prefix("WOOFX3_").map(|s| {
-            let mut converted = String::new();
-            for (i, c) in s.to_lowercase().chars().enumerate() {
-                if c == '_' {
-                    continue;
-                }
-                if i > 0
-                    && s.chars()
-                        .nth(i - 1)
-                        .map(|prev| prev == '_')
-                        .unwrap_or(false)
-                {
-                    converted.push(c.to_ascii_uppercase());
-                } else {
-                    converted.push(c);
+        // If an explicit config key was provided, try it first
+        if let Some(key) = config_key {
+            if let Some(value) = config.get(key) {
+                if !value.is_empty() {
+                    return value;
                 }
             }
-            converted
-        });
+        }
 
-        if let Some(key) = config_key {
-            if let Some(value) = config.get(&key) {
+        // Convert env var to config key: strip optional WOOFX3_ prefix, then
+        // SCREAMING_SNAKE -> camelCase (e.g. APPLICATION_ID -> applicationId,
+        // WOOFX3_APPLICATION_ID -> applicationId, DB_PROXY_ADDR -> dbProxyAddr)
+        let base = env_var.strip_prefix("WOOFX3_").unwrap_or(env_var);
+        let converted = screaming_snake_to_camel(base);
+        if !converted.is_empty() {
+            if let Some(value) = config.get(&converted) {
                 if !value.is_empty() {
                     return value;
                 }
@@ -59,6 +57,24 @@ pub fn get_env_or_default(env_var: &str, default: &str) -> String {
 
     // Fall back to environment variable
     env::var(env_var).unwrap_or_else(|_| default.to_string())
+}
+
+fn screaming_snake_to_camel(s: &str) -> String {
+    let mut result = String::new();
+    let mut capitalize_next = false;
+    for (i, c) in s.chars().enumerate() {
+        if c == '_' {
+            capitalize_next = true;
+            continue;
+        }
+        if i == 0 || !capitalize_next {
+            result.push(c.to_ascii_lowercase());
+        } else {
+            result.push(c.to_ascii_uppercase());
+        }
+        capitalize_next = false;
+    }
+    result
 }
 
 // Validate required config at startup - returns Err with list of missing keys if any are missing
