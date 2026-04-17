@@ -1,4 +1,4 @@
-import type { Logger } from "winston";
+import type { SharedLogger } from "@woofx3/common/logging";
 import type { DbClient } from "./db-client";
 
 export interface AuthResult {
@@ -20,7 +20,7 @@ export class ClientAuth {
 
   constructor(
     private db: DbClient,
-    private logger: Logger
+    private logger: SharedLogger
   ) {}
 
   async validate(clientId: string, clientSecret: string): Promise<AuthResult> {

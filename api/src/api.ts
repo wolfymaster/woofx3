@@ -1,14 +1,18 @@
 import type { PingResponse } from "@woofx3/api";
+import type { SharedLogger } from "@woofx3/common/logging";
 import type * as command from "@woofx3/db/command.pb";
+import type { Trigger } from "@woofx3/db/module_trigger.pb";
 import type * as treat from "@woofx3/db/treat.pb";
 import type * as user from "@woofx3/db/user.pb";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import type NATSClient from "@woofx3/nats/src/client";
 import { RpcTarget } from "capnweb";
 import * as protoscript from "protoscript";
-import type { Logger } from "winston";
-import type { ModuleTrigger } from "@woofx3/db/module_trigger.pb";
 import type { DbClient } from "./db-client";
+import {
+  parseModuleTriggerRegistered,
+  parseModuleActionRegistered,
+} from "./module-event-handlers";
 import type { WebhookClient } from "./webhook-client";
 
 /**
@@ -21,6 +25,17 @@ function timestampFromDate(date: Date): protoscript.Timestamp {
     seconds: BigInt(seconds),
     nanos,
   };
+}
+
+/**
+ * Response payload returned by uninstallModule / uninstallEngineModule.
+ * The actual removal runs asynchronously in the engine; the caller receives
+ * `requested: true` immediately, then learns the outcome via the webhook
+ * events `module.deleted` or `module.delete_failed`, both of which carry
+ * `moduleKey` for correlation with the originating install.
+ */
+export interface UninstallModuleResponse {
+  requested: boolean;
 }
 
 interface WorkflowItem {
@@ -40,19 +55,12 @@ interface WorkflowItem {
  * UI-focused API interface exposed via capnweb.
  * Methods represent user actions and use cases rather than database operations.
  */
-const consoleLogger: Logger = {
-  info: console.log,
-  debug: console.debug,
-  warn: console.warn,
-  error: console.error,
-} as unknown as Logger;
-
 interface ApiOptions {
   db: DbClient;
   nats: NATSClient | null;
   applicationId: string;
   barkloaderUrl: string;
-  logger?: Logger;
+  logger: SharedLogger;
 }
 
 export class Api extends RpcTarget {
@@ -66,7 +74,7 @@ export class Api extends RpcTarget {
   private nats: NATSClient | null;
   private applicationId: string;
   private barkloaderUrl: string;
-  private logger: Logger;
+  private logger: SharedLogger;
 
   constructor(opts: ApiOptions) {
     super();
@@ -83,7 +91,7 @@ export class Api extends RpcTarget {
     this.nats = opts.nats;
     this.applicationId = opts.applicationId;
     this.barkloaderUrl = opts.barkloaderUrl;
-    this.logger = opts.logger ?? consoleLogger;
+    this.logger = opts.logger;
   }
 
   async ping(): Promise<PingResponse> {
@@ -116,20 +124,238 @@ export class Api extends RpcTarget {
   }
 
   async initSubscriptions(): Promise<void> {
-    if (!this.nats) return;
-    await this.nats.subscribe("db.module_trigger.registered.*", async (msg) => {
+    if (!this.nats) {
+      this.logger.warn("NATS client not available, skipping subscriptions");
+      return;
+    }
+
+    this.logger.info("Initializing NATS subscriptions for module events");
+
+    await this.nats.subscribe("db.module.trigger.registered.*", async (msg) => {
+      this.logger.info("Received NATS message on db.module.trigger.registered.*", { subject: msg.subject });
       try {
-        const payload = msg.json() as { module_name?: string };
-        const moduleName = payload.module_name ?? "";
-        await this.publishEvent("module.trigger.registered", { moduleName });
-        await this.notifyTriggerChange(moduleName);
+        const ce = msg.json() as Record<string, unknown>;
+        const { clientId, event } = parseModuleTriggerRegistered(ce);
+        this.logger.info("Parsed module.trigger.registered", {
+          moduleKey: event.moduleKey,
+          moduleName: event.moduleName,
+          version: event.version,
+          triggerCount: event.triggers.length,
+          clientId,
+        });
+
+        await this.notifyTriggerChange(event.moduleKey);
+
         if (this.webhookClient) {
-          await this.webhookClient.send({ type: "module.trigger.registered", moduleName });
+          this.logger.info("Sending module.trigger.registered to webhook client", {
+            moduleKey: event.moduleKey,
+            clientId,
+          });
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for module.trigger.registered");
         }
       } catch (err) {
-        this.logger.error("Failed to handle module trigger NATS event", { err });
+        this.logger.error("Failed to handle module.trigger.registered NATS event", { err });
       }
     });
+
+    await this.nats.subscribe("db.module.action.registered.*", async (msg) => {
+      this.logger.info("Received NATS message on db.module.action.registered.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { clientId, event } = parseModuleActionRegistered(ce);
+        this.logger.info("Parsed module.action.registered", {
+          moduleKey: event.moduleKey,
+          moduleName: event.moduleName,
+          version: event.version,
+          actionCount: event.actions.length,
+          clientId,
+        });
+
+        if (this.webhookClient) {
+          this.logger.info("Sending module.action.registered to webhook client", {
+            moduleKey: event.moduleKey,
+            clientId,
+          });
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for module.action.registered");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle module.action.registered NATS event", { err });
+      }
+    });
+
+    await this.nats.subscribe("db.module.installed.*", async (msg) => {
+      this.logger.info("Received NATS message on db.module.installed.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const payload = (ce.data ?? ce) as {
+          module_id?: string;
+          module_name?: string;
+          module_key?: string;
+          version?: string;
+        };
+        const clientId = (ce.client_id as string) ?? "";
+        this.logger.info("Parsed module.installed event", { payload, clientId });
+        const moduleName = payload.module_name ?? "";
+        const moduleVersion = payload.version ?? "";
+        const moduleKey = payload.module_key ?? "";
+
+        if (this.webhookClient) {
+          this.logger.info("Sending module.installed to webhook client", {
+            moduleName,
+            moduleVersion,
+            moduleKey,
+            clientId,
+          });
+          await this.webhookClient.send(
+            {
+              type: "module.installed",
+              moduleName,
+              version: moduleVersion,
+              moduleKey,
+            },
+            clientId || undefined
+          );
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for module.installed");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle module installed NATS event", { err });
+      }
+    });
+
+    await this.nats.subscribe("db.module.deleted.*", async (msg) => {
+      this.logger.info("Received NATS message on db.module.deleted.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const payload = (ce.data ?? ce) as { module_id?: string; module_name?: string; module_key?: string };
+        const clientId = (ce.client_id as string) ?? "";
+        this.logger.info("Parsed module.deleted event", { payload, clientId });
+        const moduleName = payload.module_name ?? "";
+        const moduleKey = payload.module_key ?? "";
+        if (this.webhookClient) {
+          await this.webhookClient.send(
+            {
+              type: "module.deleted",
+              moduleName,
+              moduleKey,
+            },
+            clientId || undefined
+          );
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for module.deleted");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle module deleted NATS event", { err });
+      }
+    });
+
+    await this.nats.subscribe("db.module.delete_failed.*", async (msg) => {
+      this.logger.info("Received NATS message on db.module.delete_failed.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const payload = (ce.data ?? ce) as {
+          module_id?: string;
+          module_name?: string;
+          module_key?: string;
+          error?: string;
+          in_use_resources?: Array<{
+            resource_id?: string;
+            resource_type?: string;
+            resource_name?: string;
+            used_by?: Array<{ source_type?: string; source_id?: string; source_name?: string; context?: string }>;
+          }>;
+        };
+        const clientId = (ce.client_id as string) ?? "";
+        const moduleName = payload.module_name ?? "";
+        const moduleKey = payload.module_key ?? "";
+        const error = payload.error ?? "Unknown error";
+        const inUseResources = (payload.in_use_resources ?? []).map((r) => ({
+          resourceId: r.resource_id ?? "",
+          resourceType: r.resource_type ?? "",
+          resourceName: r.resource_name ?? "",
+          usedBy: (r.used_by ?? []).map((u) => ({
+            sourceType: u.source_type ?? "",
+            sourceId: u.source_id ?? "",
+            sourceName: u.source_name ?? "",
+            context: u.context ?? "",
+          })),
+        }));
+        this.logger.info("Parsed module.delete_failed event", {
+          moduleName,
+          moduleKey,
+          error,
+          inUseCount: inUseResources.length,
+          clientId,
+        });
+        if (this.webhookClient) {
+          await this.webhookClient.send(
+            {
+              type: "module.delete_failed",
+              moduleName,
+              moduleKey,
+              error,
+              inUseResources,
+            },
+            clientId || undefined
+          );
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for module.delete_failed");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle module delete_failed NATS event", { err });
+      }
+    });
+
+    await this.nats.subscribe("db.module.install_failed.*", async (msg) => {
+      this.logger.info("Received NATS message on db.module.install_failed.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const payload = (ce.data ?? ce) as {
+          module_id?: string;
+          module_name?: string;
+          module_key?: string;
+          version?: string;
+          error?: string;
+        };
+        const clientId = (ce.client_id as string) ?? "";
+        this.logger.info("Parsed module.install_failed event", { payload, clientId });
+        const moduleName = payload.module_name ?? "";
+        const moduleVersion = payload.version ?? "";
+        const moduleKey = payload.module_key ?? "";
+        const errorMsg = payload.error ?? "Unknown error";
+        this.logger.error("Module install failed", { moduleName, moduleVersion, moduleKey, error: errorMsg, clientId });
+
+        if (this.webhookClient) {
+          this.logger.info("Sending module.install_failed to webhook client", {
+            moduleName,
+            moduleVersion,
+            moduleKey,
+            error: errorMsg,
+            clientId,
+          });
+          await this.webhookClient.send(
+            {
+              type: "module.install_failed",
+              moduleName,
+              version: moduleVersion,
+              moduleKey,
+              error: errorMsg,
+            },
+            clientId || undefined
+          );
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for module.install_failed");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle module install_failed NATS event", { err });
+      }
+    });
+
+    this.logger.info("NATS subscriptions initialized for module events");
   }
 
   async subscribeTriggerChanges(callback: {
@@ -988,54 +1214,92 @@ export class Api extends RpcTarget {
     return response;
   }
 
-  async installModuleZip(fileName: string, zipBase64: string): Promise<{ success: boolean; message?: string }> {
-    this.logger.info("Installing module zip", { fileName, size: zipBase64.length });
+  async installModuleZip(
+    fileName: string,
+    zipBase64: string,
+    context: { clientId: string; moduleKey?: string }
+  ): Promise<{ success: boolean; message?: string; alreadyInstalled?: boolean }> {
+    const clientId = context?.clientId;
+    const moduleKey = context?.moduleKey;
+
+    if (!clientId) {
+      throw new Error("clientId is required to install a module");
+    }
+
+    this.logger.info("Installing module zip", { fileName, size: zipBase64.length, clientId, moduleKey });
+
+    // Duplicate check: if the caller supplied a module_key, look it up first
+    if (moduleKey) {
+      const existing = await this.db.getModuleByModuleKey(moduleKey);
+      if (existing) {
+        this.logger.info("Module already installed, skipping upload", {
+          clientId,
+          moduleKey,
+          moduleName: existing.name,
+        });
+        if (this.webhookClient) {
+          await this.webhookClient.send(
+            {
+              type: "module.installed",
+              moduleName: existing.name,
+              version: existing.version,
+              moduleKey,
+              alreadyInstalled: true,
+            },
+            clientId || undefined
+          );
+        }
+        return { success: true, message: "Module already installed", alreadyInstalled: true };
+      }
+    }
+
     const zipBytes = Buffer.from(zipBase64, "base64");
     const formData = new FormData();
     formData.append("file", new File([zipBytes], fileName, { type: "application/zip" }));
+    formData.append("client_id", clientId);
+    if (moduleKey) {
+      formData.append("module_key", moduleKey);
+    }
 
     const response = await this.barkloaderRequest("/functions", {
       method: "POST",
       body: formData,
     });
     const json = (await response.json()) as { message?: string };
-    this.logger.info("Module zip installed", { fileName, message: json.message });
+    this.logger.info("Module zip installed", { clientId, moduleKey, fileName, message: json.message });
     return { success: true, message: json.message ?? "Module uploaded" };
   }
 
   async listEngineModules(): Promise<Array<{ name: string; version: string; state: string }>> {
     this.logger.info("Listing engine modules");
-    const response = await this.barkloaderRequest("/functions", { method: "GET" });
-    const json = (await response.json()) as {
-      modules?: Array<{ name?: string; version?: string; state?: string }>;
-    };
-    const modules = (json.modules ?? [])
+    const modules = await this.db.listModules();
+    const result = modules
       .filter((m) => !!m.name)
       .map((m) => ({
-        name: m.name ?? "",
+        name: m.name,
         version: m.version ?? "",
         state: m.state ?? "active",
       }));
-    this.logger.info("Listed engine modules", { count: modules.length });
-    return modules;
+    this.logger.info("Listed engine modules", { count: result.length });
+    return result;
   }
 
-  async uninstallEngineModule(name: string): Promise<{ success: boolean }> {
-    this.logger.info("Uninstalling engine module", { name });
-    await this.barkloaderRequest(`/functions/${encodeURIComponent(name)}`, { method: "DELETE" });
-    this.logger.info("Engine module uninstalled", { name });
-    return { success: true };
-  }
-
-  async setEngineModuleState(name: string, state: string): Promise<{ success: boolean }> {
-    this.logger.info("Setting engine module state", { name, state });
-    await this.barkloaderRequest(`/functions/${encodeURIComponent(name)}/state`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ state }),
-    });
-    this.logger.info("Engine module state set", { name, state });
-    return { success: true };
+  async uninstallEngineModule(
+    name: string,
+    context?: { clientId?: string; moduleKey?: string },
+  ): Promise<UninstallModuleResponse> {
+    const clientId = context?.clientId;
+    const moduleKey = context?.moduleKey;
+    this.logger.info("Requesting engine module uninstall", { name, clientId, moduleKey });
+    const params = new URLSearchParams();
+    if (clientId) params.set("client_id", clientId);
+    if (moduleKey) params.set("module_key", moduleKey);
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    await this.barkloaderRequest(`/functions/${encodeURIComponent(name)}${qs}`, { method: "DELETE" });
+    this.logger.info("Engine module uninstall request acknowledged", { name, clientId, moduleKey });
+    // Success/failure is delivered asynchronously via webhook
+    // (module.deleted or module.delete_failed), both carrying moduleKey.
+    return { requested: true };
   }
 
   async getModules(query?: {
@@ -1059,18 +1323,20 @@ export class Api extends RpcTarget {
     pageSize: number;
   }> {
     this.logger.info("Getting modules", { query });
-    const engineModules = await this.listEngineModules();
-    this.logger.info("Got modules", { count: engineModules.length });
-    const normalized = engineModules.map((m) => ({
-      id: m.name,
-      name: m.name,
-      description: "",
-      category: "integration",
-      version: m.version,
-      author: "Engine",
-      isInstalled: true,
-      iconUrl: "",
-    }));
+    const dbModules = await this.db.listModules();
+    this.logger.info("Got modules", { count: dbModules.length });
+    const normalized = dbModules
+      .filter((m) => !!m.name)
+      .map((m) => ({
+        id: m.name,
+        name: m.name,
+        description: "",
+        category: "integration",
+        version: m.version ?? "",
+        author: "Engine",
+        isInstalled: true,
+        iconUrl: "",
+      }));
     const page = query?.page || 1;
     const pageSize = query?.pageSize || 8;
     return {
@@ -1091,8 +1357,7 @@ export class Api extends RpcTarget {
     isInstalled: boolean;
     iconUrl: string;
   } | null> {
-    const modules = await this.listEngineModules();
-    const found = modules.find((m) => m.name === id);
+    const found = await this.db.getModuleByName(id);
     if (!found) return null;
     return {
       id: found.name,
@@ -1106,15 +1371,11 @@ export class Api extends RpcTarget {
     };
   }
 
-  async installModule(id: string): Promise<{ success: boolean }> {
-    // Legacy API expects module "id"; current engine API uses module name.
-    // Keep compatibility by treating id as the module name.
-    return this.setEngineModuleState(id, "active");
-  }
-
-  async uninstallModule(id: string): Promise<{ success: boolean }> {
-    // Legacy API expects module "id"; current engine API uses module name.
-    return this.uninstallEngineModule(id);
+  async uninstallModule(
+    id: string,
+    context?: { clientId?: string; moduleKey?: string },
+  ): Promise<UninstallModuleResponse> {
+    return this.uninstallEngineModule(id, context);
   }
 
   // ==================== Workflows (Extended) ====================
@@ -1213,6 +1474,8 @@ export class Api extends RpcTarget {
       onFailure: "",
       maxRetries: 0,
       timeoutSeconds: 0,
+      createdByType: "USER",
+      createdByRef: "",
     });
     if (response.status?.code !== "OK" || !response.workflow) {
       throw new Error(response.status?.message || "Failed to create workflow");
@@ -2216,8 +2479,8 @@ export class Api extends RpcTarget {
     },
   ];
 
-  async getTriggers(moduleId?: string): Promise<ModuleTrigger[]> {
-    return this.db.listTriggers(moduleId);
+  async getTriggers(createdByType?: string, createdByRef?: string): Promise<Trigger[]> {
+    return this.db.listTriggers(createdByType, createdByRef);
   }
 
   async getTrigger(id: string): Promise<(typeof this.triggers)[0] | null> {

@@ -1,6 +1,7 @@
+import type { SharedLogger } from "@woofx3/common/logging";
 import { RpcTarget } from "capnweb";
-import type { Logger } from "winston";
 import type { Api } from "./api";
+import { ApiSession } from "./api-session";
 import type { ClientAuth } from "./auth";
 import type { DbClient } from "./db-client";
 import type { WebhookClient } from "./webhook-client";
@@ -13,7 +14,7 @@ export class ApiGateway extends RpcTarget {
     private auth: ClientAuth,
     private db: DbClient,
     private applicationId: string,
-    private logger: Logger
+    private logger: SharedLogger
   ) {
     super();
   }
@@ -22,7 +23,7 @@ export class ApiGateway extends RpcTarget {
     this.webhookClient = client;
   }
 
-  async authenticate(clientId: string, clientSecret: string): Promise<Api> {
+  async authenticate(clientId: string, clientSecret: string): Promise<ApiSession> {
     const result = await this.auth.validate(clientId, clientSecret);
     if (!result.valid) {
       throw new Error("Invalid client credentials");
@@ -34,7 +35,7 @@ export class ApiGateway extends RpcTarget {
       applicationId: result.applicationId,
     });
 
-    return this.api;
+    return new ApiSession(this.api, clientId);
   }
 
   async registerClient(

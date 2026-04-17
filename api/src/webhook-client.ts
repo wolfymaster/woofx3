@@ -1,10 +1,111 @@
-import type { Logger } from "winston";
+import type { SharedLogger } from "@woofx3/common/logging";
 import type { DbClient } from "./db-client";
 
 interface RegisteredInstance {
+  clientId: string;
   instanceName: string;
   callbackUrl: string;
   callbackToken: string;
+}
+
+// -- Callback event payloads sent to registered callback URLs --
+
+export interface TriggerDefinition {
+  id: string;
+  category: string;
+  name: string;
+  description: string;
+  event: string;
+  configSchema: string;
+  allowVariants: boolean;
+  createdByType: string;
+  createdByRef: string;
+}
+
+export interface ActionDefinition {
+  id: string;
+  name: string;
+  description: string;
+  call: string;
+  paramsSchema: string;
+  createdByType: string;
+  createdByRef: string;
+}
+
+export interface ModuleTriggerRegisteredEvent {
+  type: "module.trigger.registered";
+  moduleKey: string;
+  moduleName: string;
+  version: string;
+  triggers: TriggerDefinition[];
+}
+
+export interface ModuleActionRegisteredEvent {
+  type: "module.action.registered";
+  moduleKey: string;
+  moduleName: string;
+  version: string;
+  actions: ActionDefinition[];
+}
+
+export interface ModuleInstalledEvent {
+  type: "module.installed";
+  moduleName: string;
+  version: string;
+  moduleKey: string;
+  alreadyInstalled?: boolean;
+}
+
+export interface ModuleInstallFailedEvent {
+  type: "module.install_failed";
+  moduleName: string;
+  version: string;
+  moduleKey: string;
+  error: string;
+}
+
+export interface ModuleUsageRef {
+  sourceType: string;
+  sourceId: string;
+  sourceName: string;
+  context: string;
+}
+
+export interface ModuleResourceUsage {
+  resourceId: string;
+  resourceType: string;
+  resourceName: string;
+  usedBy: ModuleUsageRef[];
+}
+
+export interface ModuleDeletedEvent {
+  type: "module.deleted";
+  moduleName: string;
+  moduleKey: string;
+}
+
+export interface ModuleDeleteFailedEvent {
+  type: "module.delete_failed";
+  moduleName: string;
+  moduleKey: string;
+  error: string;
+  inUseResources: ModuleResourceUsage[];
+}
+
+export type CallbackEvent =
+  | ModuleTriggerRegisteredEvent
+  | ModuleActionRegisteredEvent
+  | ModuleInstalledEvent
+  | ModuleInstallFailedEvent
+  | ModuleDeletedEvent
+  | ModuleDeleteFailedEvent;
+
+export interface CallbackEnvelope {
+  id: string;
+  source: "engine";
+  type: string;
+  time: string;
+  data: CallbackEvent;
 }
 
 export class WebhookClient {
@@ -13,7 +114,7 @@ export class WebhookClient {
 
   constructor(
     private db: DbClient,
-    private logger: Logger,
+    private logger: SharedLogger,
     private applicationId: string
   ) {
     this.refreshCallbackUrls();
@@ -26,6 +127,7 @@ export class WebhookClient {
     for (const client of resp.clients ?? []) {
       if (client.callbackUrl) {
         newInstances.push({
+          clientId: client.clientId,
           instanceName: client.description || client.clientId,
           callbackUrl: client.callbackUrl,
           callbackToken: client.callbackToken,
@@ -37,24 +139,52 @@ export class WebhookClient {
     this.logger.info("Webhook callback URLs refreshed", { count: this.instances.length });
   }
 
-  async send(event: Record<string, unknown>): Promise<void> {
+  async send(event: CallbackEvent, targetClientId?: string): Promise<void> {
+    const eventType = event.type;
+
     if (this.instances.length === 0) {
+      this.logger.warn("WebhookClient.send called but no callback instances registered", { eventType, targetClientId });
       return;
     }
 
-    const envelope = {
+    const envelope: CallbackEnvelope = {
       id: crypto.randomUUID(),
       source: "engine",
-      type: (event["type"] as string) ?? "engine.event",
+      type: eventType,
       time: new Date().toISOString(),
       data: event,
     };
 
-    const promises = this.instances.map((instance) =>
-      this.sendToUrl(instance.callbackUrl, envelope, instance.instanceName, instance.callbackToken)
+    let targets = this.instances;
+    if (targetClientId) {
+      targets = this.instances.filter((i) => i.clientId === targetClientId);
+      if (targets.length === 0) {
+        this.logger.warn("WebhookClient.send: target clientId not found among registered instances", {
+          eventType,
+          targetClientId,
+          registeredClients: this.instances.map((i) => i.clientId),
+        });
+        return;
+      }
+    }
+
+    this.logger.info("WebhookClient dispatching event to callback instances", {
+      eventType,
+      envelopeId: envelope.id,
+      targetClientId: targetClientId ?? "broadcast",
+      instanceCount: targets.length,
+      targets: targets.map((i) => i.instanceName),
+    });
+
+    const results = await Promise.allSettled(
+      targets.map((instance) =>
+        this.sendToUrl(instance.callbackUrl, envelope, instance.instanceName, instance.callbackToken)
+      )
     );
 
-    await Promise.allSettled(promises);
+    const fulfilled = results.filter((r) => r.status === "fulfilled").length;
+    const rejected = results.filter((r) => r.status === "rejected").length;
+    this.logger.info("WebhookClient dispatch complete", { eventType, envelopeId: envelope.id, fulfilled, rejected });
   }
 
   private async sendToUrl(url: string, payload: object, instanceName: string, callbackToken: string): Promise<void> {
@@ -89,7 +219,7 @@ export class WebhookClient {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      this.logger.debug("Webhook delivered", { url, instanceName });
+      this.logger.info("Webhook delivered successfully", { url, instanceName, status: response.status });
     } catch (err) {
       this.logger.warn("Webhook delivery failed, retrying once", {
         url,

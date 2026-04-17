@@ -1,13 +1,13 @@
+import { createServiceLogger, type SharedLogger } from "@woofx3/common/logging";
 import { createMessageBus } from "@woofx3/nats";
 import type { ServerWebSocket } from "bun";
 import { newHttpBatchRpcResponse, newWebSocketRpcSession } from "capnweb";
-import type { Logger } from "winston";
 import { Api } from "./api";
 import { ClientAuth } from "./auth";
 import { loadConfig } from "./config";
 import { DbClient } from "./db-client";
 import { ApiGateway } from "./gateway";
-import { makeLogger } from "./logger";
+import { WebhookClient } from "./webhook-client";
 
 /**
  * Adapter to make Bun's ServerWebSocket compatible with the standard WebSocket interface
@@ -16,7 +16,7 @@ import { makeLogger } from "./logger";
 class BunWebSocketAdapter {
   private listeners: Map<string, Set<(event: any) => void>> = new Map();
   private bunWs: ServerWebSocket<unknown>;
-  private logger: Logger;
+  private logger: SharedLogger;
 
   // Standard WebSocket readyState constants
   static readonly CONNECTING = 0;
@@ -24,7 +24,7 @@ class BunWebSocketAdapter {
   static readonly CLOSING = 2;
   static readonly CLOSED = 3;
 
-  constructor(bunWs: ServerWebSocket<unknown>, logger: Logger) {
+  constructor(bunWs: ServerWebSocket<unknown>, logger: SharedLogger) {
     this.bunWs = bunWs;
     this.logger = logger;
   }
@@ -126,13 +126,13 @@ class BunWebSocketAdapter {
 const wsAdapters = new WeakMap<ServerWebSocket<unknown>, BunWebSocketAdapter>();
 
 async function main() {
-  // Initialize logger first
-  const logger = makeLogger({
-    level: process.env.LOG_LEVEL || "info",
-    defaultMeta: { service: "api" },
-  });
-
   const config = loadConfig();
+
+  // Initialize logger first
+  const logger = createServiceLogger({
+    serviceName: "api",
+    logDir: `${config.rootDir}/logs`,
+  });
 
   logger.info("Starting API server", {
     port: config.port || 8080,
@@ -163,12 +163,17 @@ async function main() {
     barkloaderUrl: config.barkloaderUrl,
     logger,
   });
+  // Create webhook client for callback notifications
+  const webhookClient = new WebhookClient(dbClient, logger, config.applicationId);
+  api.setWebhookClient(webhookClient);
+
   await api.initSubscriptions();
 
   // Create auth and gateway
   const auth = new ClientAuth(dbClient, logger);
   api.setAuthInvalidate(() => auth.invalidateCache());
   const gateway = new ApiGateway(api, auth, dbClient, config.applicationId, logger);
+  gateway.setWebhookClient(webhookClient);
 
   // Create HTTP server
   Bun.serve({
@@ -333,10 +338,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  const logger = makeLogger({ level: "error" });
-  logger.error("Failed to start server", {
-    error: err instanceof Error ? err.message : String(err),
-    stack: err instanceof Error ? err.stack : undefined,
-  });
+  console.log("Faileld to start server");
   process.exit(1);
 });

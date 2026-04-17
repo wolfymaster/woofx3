@@ -3,6 +3,7 @@ import { z } from "zod";
 
 export interface ApiConfig {
   port: number;
+  rootDir: string;
   databaseProxyUrl: string;
   applicationId: string;
   barkloaderUrl: string;
@@ -30,6 +31,7 @@ const apiEnvSchema = z
     messagebusJwt: z.string().optional(),
     woofx3MessagebusNkey: z.string().optional(),
     messagebusNkey: z.string().optional(),
+    woofx3RootPath: z.string().optional(),
   })
   .passthrough();
 
@@ -38,11 +40,10 @@ export function loadConfig(): ApiConfig {
   const config = result.config;
 
   const port = Number(config.woofx3ApiPort ?? config.apiPort ?? 8080);
+  const rootDir = String(config.woofx3RootPath);
   const databaseProxyUrl = String(config.woofx3DatabaseProxyUrl ?? config.databaseProxyUrl ?? "");
   const applicationId = String(config.woofx3ApplicationId ?? config.applicationId ?? "");
-  const barkloaderUrl = String(
-    config.woofx3BarkloaderUrl ?? config.barkloaderUrl ?? "http://127.0.0.1:3005"
-  );
+  const barkloaderUrl = String(config.woofx3BarkloaderUrl ?? config.barkloaderUrl ?? "http://127.0.0.1:3005");
 
   if (!databaseProxyUrl) {
     throw new Error("databaseProxyUrl (or DATABASE_PROXY_URL) is required");
@@ -71,6 +72,7 @@ export function loadConfig(): ApiConfig {
     databaseProxyUrl,
     applicationId,
     barkloaderUrl,
+    rootDir,
     nats: {
       url: messageBusUrl,
       name: "woofx3-api",

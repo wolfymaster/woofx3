@@ -4,6 +4,7 @@ import * as command from "@woofx3/db/command.pb";
 import type * as common from "@woofx3/db/common.pb";
 import * as module from "@woofx3/db/module.pb";
 import type * as module_trigger from "@woofx3/db/module_trigger.pb";
+import type * as module_action from "@woofx3/db/module_action.pb";
 import * as setting from "@woofx3/db/setting.pb";
 import * as treat from "@woofx3/db/treat.pb";
 import * as user from "@woofx3/db/user.pb";
@@ -76,12 +77,47 @@ export class DbClient {
     return treat.AwardTreat(req, this.config);
   }
 
-  async listTriggers(moduleNameFilter?: string): Promise<module_trigger.ModuleTrigger[]> {
+  async listModules(stateFilter?: string): Promise<module.Module[]> {
+    const resp = await module.ListModules(
+      { state: stateFilter ?? "" },
+      this.config,
+    );
+    return resp.modules;
+  }
+
+  async getModule(id: string): Promise<module.Module | null> {
+    const resp = await module.GetModule({ id }, this.config);
+    return resp.module ?? null;
+  }
+
+  async getModuleByName(name: string): Promise<module.Module | null> {
+    const resp = await module.GetModuleByName({ name }, this.config);
+    return resp.module ?? null;
+  }
+
+  async getModuleByModuleKey(moduleKey: string): Promise<module.Module | null> {
+    try {
+      const resp = await module.GetModuleByModuleKey({ moduleKey }, this.config);
+      return resp.module ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async listTriggers(createdByType?: string, createdByRef?: string): Promise<module_trigger.Trigger[]> {
     const resp = await module.ListTriggers(
-      { moduleName: moduleNameFilter ?? "" },
+      { createdByType: createdByType ?? "", createdByRef: createdByRef ?? "" },
       this.config,
     );
     return resp.triggers;
+  }
+
+  async listActions(createdByType?: string, createdByRef?: string): Promise<module_action.Action[]> {
+    const resp = await module.ListActions(
+      { createdByType: createdByType ?? "", createdByRef: createdByRef ?? "" },
+      this.config,
+    );
+    return resp.actions;
   }
 
   async createApplication(req: application.CreateApplicationRequest): Promise<application.ApplicationResponse> {
