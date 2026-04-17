@@ -74,14 +74,41 @@ export interface PaginatedModules {
 
 // ==================== Workflows ====================
 
+export interface WorkflowStep {
+  id: string;
+  name: string;
+  type: string;
+  action?: string;
+  parameters?: Record<string, unknown>;
+}
+
+export interface WorkflowTrigger {
+  type: string;
+  event: string;
+  condition?: Record<string, unknown>;
+}
+
+export interface WorkflowStats {
+  runsToday: number;
+  successRate: number;
+}
+
+/**
+ * Workflow shape as returned by the engine's Api class (matches WorkflowItem
+ * inside api/src/api.ts). `isEnabled` is the source-of-truth boolean;
+ * `stats` and timestamps are always populated by the engine.
+ */
 export interface Workflow {
   id: string;
   name: string;
   description: string;
-  enabled: boolean;
   accountId: string;
-  steps: unknown[];
-  trigger?: unknown;
+  isEnabled: boolean;
+  steps: WorkflowStep[];
+  trigger?: WorkflowTrigger;
+  stats: WorkflowStats;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface WorkflowsQuery {
@@ -96,6 +123,26 @@ export interface PaginatedWorkflows {
   total: number;
   page: number;
   pageSize: number;
+}
+
+export interface CreateWorkflowInput {
+  name: string;
+  description?: string;
+  accountId: string;
+  isEnabled?: boolean;
+  // `unknown[]` matches the engine's behavior — any JSON-serializable array
+  // is accepted and stringified into workflow.variables._steps. The shape
+  // only solidifies into WorkflowStep[] when the engine reads it back.
+  steps?: unknown[];
+  trigger?: WorkflowTrigger;
+}
+
+export interface UpdateWorkflowInput {
+  name?: string;
+  description?: string;
+  isEnabled?: boolean;
+  steps?: unknown[];
+  trigger?: unknown;
 }
 
 export interface WorkflowRun {
@@ -353,15 +400,9 @@ export interface Woofx3EngineApi {
   // Workflows
   getWorkflows(query?: WorkflowsQuery): Promise<PaginatedWorkflows>;
   getWorkflow(id: string): Promise<Workflow | null>;
-  createWorkflow(data: {
-    name: string;
-    description: string;
-    accountId: string;
-    steps?: unknown[];
-    trigger?: unknown;
-  }): Promise<{ id: string }>;
-  updateWorkflow(id: string, data: Partial<Workflow>): Promise<{ success: boolean }>;
-  deleteWorkflow(id: string): Promise<{ success: boolean }>;
+  createWorkflow(data: CreateWorkflowInput): Promise<Workflow>;
+  updateWorkflow(id: string, data: UpdateWorkflowInput): Promise<Workflow | null>;
+  deleteWorkflow(id: string): Promise<boolean>;
   getWorkflowRuns(query?: WorkflowRunsQuery): Promise<WorkflowRun[]>;
 
   // Assets
