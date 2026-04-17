@@ -66,13 +66,6 @@ pub struct ListTriggersResponse {
     pub triggers: ::prost::alloc::vec::Vec<Trigger>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct DeleteTriggersByModuleRequest {
-    #[prost(string, tag="1")]
-    pub created_by_type: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub created_by_ref: ::prost::alloc::string::String,
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Action {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
@@ -125,13 +118,6 @@ pub struct ListActionsResponse {
     pub status: ::core::option::Option<super::common::ResponseStatus>,
     #[prost(message, repeated, tag="2")]
     pub actions: ::prost::alloc::vec::Vec<Action>,
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct DeleteActionsByModuleRequest {
-    #[prost(string, tag="1")]
-    pub created_by_type: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub created_by_ref: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ModuleResource {

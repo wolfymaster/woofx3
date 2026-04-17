@@ -11,79 +11,82 @@ import * as common from "./common.pb";
 //                 Types                  //
 //========================================//
 
-export interface ModuleAction {
+export interface Action {
   id: string;
-  moduleId: string;
-  moduleName: string;
   name: string;
   description: string;
   call: string;
   paramsSchema: string;
+  createdByType: string;
+  createdByRef: string;
 }
 
 export interface RegisterActionRequest {
-  moduleName: string;
   name: string;
   description: string;
   call: string;
   paramsSchema: string;
+  createdByType: string;
+  createdByRef: string;
 }
 
 export interface ListActionsRequest {
-  moduleName: string;
+  createdByType: string;
+  createdByRef: string;
 }
 
 export interface ListActionsResponse {
   status: common.ResponseStatus;
-  actions: ModuleAction[];
+  actions: Action[];
 }
 
-export interface ModuleActionResponse {
+export interface ActionResponse {
   status: common.ResponseStatus;
-  action: ModuleAction;
+  action: Action;
 }
 
 export interface DeleteActionsByModuleRequest {
-  moduleName: string;
+  createdByType: string;
+  createdByRef: string;
 }
 
 //========================================//
 //        Protobuf Encode / Decode        //
 //========================================//
 
-export const ModuleAction = {
+export const Action = {
   /**
-   * Serializes ModuleAction to protobuf.
+   * Serializes Action to protobuf.
    */
-  encode: function (msg: PartialDeep<ModuleAction>): Uint8Array {
-    return ModuleAction._writeMessage(
+  encode: function (msg: PartialDeep<Action>): Uint8Array {
+    return Action._writeMessage(
       msg,
       new protoscript.BinaryWriter(),
     ).getResultBuffer();
   },
 
   /**
-   * Deserializes ModuleAction from protobuf.
+   * Deserializes Action from protobuf.
    */
-  decode: function (bytes: ByteSource): ModuleAction {
-    return ModuleAction._readMessage(
-      ModuleAction.initialize(),
+  decode: function (bytes: ByteSource): Action {
+    return Action._readMessage(
+      Action.initialize(),
       new protoscript.BinaryReader(bytes),
     );
   },
 
   /**
-   * Initializes ModuleAction with all fields set to their default value.
+   * Initializes Action with all fields set to their default value.
    */
-  initialize: function (msg?: Partial<ModuleAction>): ModuleAction {
+  initialize: function (msg?: Partial<Action>): Action {
     return {
       id: "",
-      moduleId: "",
-      moduleName: "",
       name: "",
       description: "",
       call: "",
       paramsSchema: "",
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -92,17 +95,11 @@ export const ModuleAction = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<ModuleAction>,
+    msg: PartialDeep<Action>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
     if (msg.id) {
       writer.writeString(1, msg.id);
-    }
-    if (msg.moduleId) {
-      writer.writeString(2, msg.moduleId);
-    }
-    if (msg.moduleName) {
-      writer.writeString(3, msg.moduleName);
     }
     if (msg.name) {
       writer.writeString(4, msg.name);
@@ -116,6 +113,12 @@ export const ModuleAction = {
     if (msg.paramsSchema) {
       writer.writeString(7, msg.paramsSchema);
     }
+    if (msg.createdByType) {
+      writer.writeString(8, msg.createdByType);
+    }
+    if (msg.createdByRef) {
+      writer.writeString(9, msg.createdByRef);
+    }
     return writer;
   },
 
@@ -123,22 +126,14 @@ export const ModuleAction = {
    * @private
    */
   _readMessage: function (
-    msg: ModuleAction,
+    msg: Action,
     reader: protoscript.BinaryReader,
-  ): ModuleAction {
+  ): Action {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
         case 1: {
           msg.id = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.moduleId = reader.readString();
-          break;
-        }
-        case 3: {
-          msg.moduleName = reader.readString();
           break;
         }
         case 4: {
@@ -155,6 +150,14 @@ export const ModuleAction = {
         }
         case 7: {
           msg.paramsSchema = reader.readString();
+          break;
+        }
+        case 8: {
+          msg.createdByType = reader.readString();
+          break;
+        }
+        case 9: {
+          msg.createdByRef = reader.readString();
           break;
         }
         default: {
@@ -195,11 +198,12 @@ export const RegisterActionRequest = {
     msg?: Partial<RegisterActionRequest>,
   ): RegisterActionRequest {
     return {
-      moduleName: "",
       name: "",
       description: "",
       call: "",
       paramsSchema: "",
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -211,9 +215,6 @@ export const RegisterActionRequest = {
     msg: PartialDeep<RegisterActionRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.moduleName) {
-      writer.writeString(1, msg.moduleName);
-    }
     if (msg.name) {
       writer.writeString(2, msg.name);
     }
@@ -225,6 +226,12 @@ export const RegisterActionRequest = {
     }
     if (msg.paramsSchema) {
       writer.writeString(5, msg.paramsSchema);
+    }
+    if (msg.createdByType) {
+      writer.writeString(6, msg.createdByType);
+    }
+    if (msg.createdByRef) {
+      writer.writeString(7, msg.createdByRef);
     }
     return writer;
   },
@@ -239,10 +246,6 @@ export const RegisterActionRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.moduleName = reader.readString();
-          break;
-        }
         case 2: {
           msg.name = reader.readString();
           break;
@@ -257,6 +260,14 @@ export const RegisterActionRequest = {
         }
         case 5: {
           msg.paramsSchema = reader.readString();
+          break;
+        }
+        case 6: {
+          msg.createdByType = reader.readString();
+          break;
+        }
+        case 7: {
+          msg.createdByRef = reader.readString();
           break;
         }
         default: {
@@ -295,7 +306,8 @@ export const ListActionsRequest = {
    */
   initialize: function (msg?: Partial<ListActionsRequest>): ListActionsRequest {
     return {
-      moduleName: "",
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -307,8 +319,11 @@ export const ListActionsRequest = {
     msg: PartialDeep<ListActionsRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.moduleName) {
-      writer.writeString(1, msg.moduleName);
+    if (msg.createdByType) {
+      writer.writeString(1, msg.createdByType);
+    }
+    if (msg.createdByRef) {
+      writer.writeString(2, msg.createdByRef);
     }
     return writer;
   },
@@ -324,7 +339,11 @@ export const ListActionsRequest = {
       const field = reader.getFieldNumber();
       switch (field) {
         case 1: {
-          msg.moduleName = reader.readString();
+          msg.createdByType = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.createdByRef = reader.readString();
           break;
         }
         default: {
@@ -382,11 +401,7 @@ export const ListActionsResponse = {
       writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
     }
     if (msg.actions?.length) {
-      writer.writeRepeatedMessage(
-        2,
-        msg.actions as any,
-        ModuleAction._writeMessage,
-      );
+      writer.writeRepeatedMessage(2, msg.actions as any, Action._writeMessage);
     }
     return writer;
   },
@@ -406,8 +421,8 @@ export const ListActionsResponse = {
           break;
         }
         case 2: {
-          const m = ModuleAction.initialize();
-          reader.readMessage(m, ModuleAction._readMessage);
+          const m = Action.initialize();
+          reader.readMessage(m, Action._readMessage);
           msg.actions.push(m);
           break;
         }
@@ -421,36 +436,34 @@ export const ListActionsResponse = {
   },
 };
 
-export const ModuleActionResponse = {
+export const ActionResponse = {
   /**
-   * Serializes ModuleActionResponse to protobuf.
+   * Serializes ActionResponse to protobuf.
    */
-  encode: function (msg: PartialDeep<ModuleActionResponse>): Uint8Array {
-    return ModuleActionResponse._writeMessage(
+  encode: function (msg: PartialDeep<ActionResponse>): Uint8Array {
+    return ActionResponse._writeMessage(
       msg,
       new protoscript.BinaryWriter(),
     ).getResultBuffer();
   },
 
   /**
-   * Deserializes ModuleActionResponse from protobuf.
+   * Deserializes ActionResponse from protobuf.
    */
-  decode: function (bytes: ByteSource): ModuleActionResponse {
-    return ModuleActionResponse._readMessage(
-      ModuleActionResponse.initialize(),
+  decode: function (bytes: ByteSource): ActionResponse {
+    return ActionResponse._readMessage(
+      ActionResponse.initialize(),
       new protoscript.BinaryReader(bytes),
     );
   },
 
   /**
-   * Initializes ModuleActionResponse with all fields set to their default value.
+   * Initializes ActionResponse with all fields set to their default value.
    */
-  initialize: function (
-    msg?: Partial<ModuleActionResponse>,
-  ): ModuleActionResponse {
+  initialize: function (msg?: Partial<ActionResponse>): ActionResponse {
     return {
       status: common.ResponseStatus.initialize(),
-      action: ModuleAction.initialize(),
+      action: Action.initialize(),
       ...msg,
     };
   },
@@ -459,14 +472,14 @@ export const ModuleActionResponse = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<ModuleActionResponse>,
+    msg: PartialDeep<ActionResponse>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
     if (msg.status) {
       writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
     }
     if (msg.action) {
-      writer.writeMessage(2, msg.action, ModuleAction._writeMessage);
+      writer.writeMessage(2, msg.action, Action._writeMessage);
     }
     return writer;
   },
@@ -475,9 +488,9 @@ export const ModuleActionResponse = {
    * @private
    */
   _readMessage: function (
-    msg: ModuleActionResponse,
+    msg: ActionResponse,
     reader: protoscript.BinaryReader,
-  ): ModuleActionResponse {
+  ): ActionResponse {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
@@ -486,7 +499,7 @@ export const ModuleActionResponse = {
           break;
         }
         case 2: {
-          reader.readMessage(msg.action, ModuleAction._readMessage);
+          reader.readMessage(msg.action, Action._readMessage);
           break;
         }
         default: {
@@ -529,7 +542,8 @@ export const DeleteActionsByModuleRequest = {
     msg?: Partial<DeleteActionsByModuleRequest>,
   ): DeleteActionsByModuleRequest {
     return {
-      moduleName: "",
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -541,8 +555,11 @@ export const DeleteActionsByModuleRequest = {
     msg: PartialDeep<DeleteActionsByModuleRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.moduleName) {
-      writer.writeString(1, msg.moduleName);
+    if (msg.createdByType) {
+      writer.writeString(1, msg.createdByType);
+    }
+    if (msg.createdByRef) {
+      writer.writeString(2, msg.createdByRef);
     }
     return writer;
   },
@@ -558,7 +575,11 @@ export const DeleteActionsByModuleRequest = {
       const field = reader.getFieldNumber();
       switch (field) {
         case 1: {
-          msg.moduleName = reader.readString();
+          msg.createdByType = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.createdByRef = reader.readString();
           break;
         }
         default: {
@@ -575,36 +596,33 @@ export const DeleteActionsByModuleRequest = {
 //          JSON Encode / Decode          //
 //========================================//
 
-export const ModuleActionJSON = {
+export const ActionJSON = {
   /**
-   * Serializes ModuleAction to JSON.
+   * Serializes Action to JSON.
    */
-  encode: function (msg: PartialDeep<ModuleAction>): string {
-    return JSON.stringify(ModuleActionJSON._writeMessage(msg));
+  encode: function (msg: PartialDeep<Action>): string {
+    return JSON.stringify(ActionJSON._writeMessage(msg));
   },
 
   /**
-   * Deserializes ModuleAction from JSON.
+   * Deserializes Action from JSON.
    */
-  decode: function (json: string): ModuleAction {
-    return ModuleActionJSON._readMessage(
-      ModuleActionJSON.initialize(),
-      JSON.parse(json),
-    );
+  decode: function (json: string): Action {
+    return ActionJSON._readMessage(ActionJSON.initialize(), JSON.parse(json));
   },
 
   /**
-   * Initializes ModuleAction with all fields set to their default value.
+   * Initializes Action with all fields set to their default value.
    */
-  initialize: function (msg?: Partial<ModuleAction>): ModuleAction {
+  initialize: function (msg?: Partial<Action>): Action {
     return {
       id: "",
-      moduleId: "",
-      moduleName: "",
       name: "",
       description: "",
       call: "",
       paramsSchema: "",
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -612,18 +630,10 @@ export const ModuleActionJSON = {
   /**
    * @private
    */
-  _writeMessage: function (
-    msg: PartialDeep<ModuleAction>,
-  ): Record<string, unknown> {
+  _writeMessage: function (msg: PartialDeep<Action>): Record<string, unknown> {
     const json: Record<string, unknown> = {};
     if (msg.id) {
       json["id"] = msg.id;
-    }
-    if (msg.moduleId) {
-      json["moduleId"] = msg.moduleId;
-    }
-    if (msg.moduleName) {
-      json["moduleName"] = msg.moduleName;
     }
     if (msg.name) {
       json["name"] = msg.name;
@@ -637,24 +647,22 @@ export const ModuleActionJSON = {
     if (msg.paramsSchema) {
       json["paramsSchema"] = msg.paramsSchema;
     }
+    if (msg.createdByType) {
+      json["createdByType"] = msg.createdByType;
+    }
+    if (msg.createdByRef) {
+      json["createdByRef"] = msg.createdByRef;
+    }
     return json;
   },
 
   /**
    * @private
    */
-  _readMessage: function (msg: ModuleAction, json: any): ModuleAction {
+  _readMessage: function (msg: Action, json: any): Action {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
-    }
-    const _moduleId_ = json["moduleId"] ?? json["module_id"];
-    if (_moduleId_) {
-      msg.moduleId = _moduleId_;
-    }
-    const _moduleName_ = json["moduleName"] ?? json["module_name"];
-    if (_moduleName_) {
-      msg.moduleName = _moduleName_;
     }
     const _name_ = json["name"];
     if (_name_) {
@@ -671,6 +679,14 @@ export const ModuleActionJSON = {
     const _paramsSchema_ = json["paramsSchema"] ?? json["params_schema"];
     if (_paramsSchema_) {
       msg.paramsSchema = _paramsSchema_;
+    }
+    const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
+    if (_createdByType_) {
+      msg.createdByType = _createdByType_;
+    }
+    const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
+    if (_createdByRef_) {
+      msg.createdByRef = _createdByRef_;
     }
     return msg;
   },
@@ -701,11 +717,12 @@ export const RegisterActionRequestJSON = {
     msg?: Partial<RegisterActionRequest>,
   ): RegisterActionRequest {
     return {
-      moduleName: "",
       name: "",
       description: "",
       call: "",
       paramsSchema: "",
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -717,9 +734,6 @@ export const RegisterActionRequestJSON = {
     msg: PartialDeep<RegisterActionRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.moduleName) {
-      json["moduleName"] = msg.moduleName;
-    }
     if (msg.name) {
       json["name"] = msg.name;
     }
@@ -732,6 +746,12 @@ export const RegisterActionRequestJSON = {
     if (msg.paramsSchema) {
       json["paramsSchema"] = msg.paramsSchema;
     }
+    if (msg.createdByType) {
+      json["createdByType"] = msg.createdByType;
+    }
+    if (msg.createdByRef) {
+      json["createdByRef"] = msg.createdByRef;
+    }
     return json;
   },
 
@@ -742,10 +762,6 @@ export const RegisterActionRequestJSON = {
     msg: RegisterActionRequest,
     json: any,
   ): RegisterActionRequest {
-    const _moduleName_ = json["moduleName"] ?? json["module_name"];
-    if (_moduleName_) {
-      msg.moduleName = _moduleName_;
-    }
     const _name_ = json["name"];
     if (_name_) {
       msg.name = _name_;
@@ -761,6 +777,14 @@ export const RegisterActionRequestJSON = {
     const _paramsSchema_ = json["paramsSchema"] ?? json["params_schema"];
     if (_paramsSchema_) {
       msg.paramsSchema = _paramsSchema_;
+    }
+    const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
+    if (_createdByType_) {
+      msg.createdByType = _createdByType_;
+    }
+    const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
+    if (_createdByRef_) {
+      msg.createdByRef = _createdByRef_;
     }
     return msg;
   },
@@ -789,7 +813,8 @@ export const ListActionsRequestJSON = {
    */
   initialize: function (msg?: Partial<ListActionsRequest>): ListActionsRequest {
     return {
-      moduleName: "",
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -801,8 +826,11 @@ export const ListActionsRequestJSON = {
     msg: PartialDeep<ListActionsRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.moduleName) {
-      json["moduleName"] = msg.moduleName;
+    if (msg.createdByType) {
+      json["createdByType"] = msg.createdByType;
+    }
+    if (msg.createdByRef) {
+      json["createdByRef"] = msg.createdByRef;
     }
     return json;
   },
@@ -814,9 +842,13 @@ export const ListActionsRequestJSON = {
     msg: ListActionsRequest,
     json: any,
   ): ListActionsRequest {
-    const _moduleName_ = json["moduleName"] ?? json["module_name"];
-    if (_moduleName_) {
-      msg.moduleName = _moduleName_;
+    const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
+    if (_createdByType_) {
+      msg.createdByType = _createdByType_;
+    }
+    const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
+    if (_createdByRef_) {
+      msg.createdByRef = _createdByRef_;
     }
     return msg;
   },
@@ -867,7 +899,7 @@ export const ListActionsResponseJSON = {
       }
     }
     if (msg.actions?.length) {
-      json["actions"] = msg.actions.map(ModuleActionJSON._writeMessage);
+      json["actions"] = msg.actions.map(ActionJSON._writeMessage);
     }
     return json;
   },
@@ -886,8 +918,8 @@ export const ListActionsResponseJSON = {
     const _actions_ = json["actions"];
     if (_actions_) {
       for (const item of _actions_) {
-        const m = ModuleActionJSON.initialize();
-        ModuleActionJSON._readMessage(m, item);
+        const m = ActionJSON.initialize();
+        ActionJSON._readMessage(m, item);
         msg.actions.push(m);
       }
     }
@@ -895,33 +927,31 @@ export const ListActionsResponseJSON = {
   },
 };
 
-export const ModuleActionResponseJSON = {
+export const ActionResponseJSON = {
   /**
-   * Serializes ModuleActionResponse to JSON.
+   * Serializes ActionResponse to JSON.
    */
-  encode: function (msg: PartialDeep<ModuleActionResponse>): string {
-    return JSON.stringify(ModuleActionResponseJSON._writeMessage(msg));
+  encode: function (msg: PartialDeep<ActionResponse>): string {
+    return JSON.stringify(ActionResponseJSON._writeMessage(msg));
   },
 
   /**
-   * Deserializes ModuleActionResponse from JSON.
+   * Deserializes ActionResponse from JSON.
    */
-  decode: function (json: string): ModuleActionResponse {
-    return ModuleActionResponseJSON._readMessage(
-      ModuleActionResponseJSON.initialize(),
+  decode: function (json: string): ActionResponse {
+    return ActionResponseJSON._readMessage(
+      ActionResponseJSON.initialize(),
       JSON.parse(json),
     );
   },
 
   /**
-   * Initializes ModuleActionResponse with all fields set to their default value.
+   * Initializes ActionResponse with all fields set to their default value.
    */
-  initialize: function (
-    msg?: Partial<ModuleActionResponse>,
-  ): ModuleActionResponse {
+  initialize: function (msg?: Partial<ActionResponse>): ActionResponse {
     return {
       status: common.ResponseStatusJSON.initialize(),
-      action: ModuleActionJSON.initialize(),
+      action: ActionJSON.initialize(),
       ...msg,
     };
   },
@@ -930,7 +960,7 @@ export const ModuleActionResponseJSON = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<ModuleActionResponse>,
+    msg: PartialDeep<ActionResponse>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
     if (msg.status) {
@@ -940,7 +970,7 @@ export const ModuleActionResponseJSON = {
       }
     }
     if (msg.action) {
-      const _action_ = ModuleActionJSON._writeMessage(msg.action);
+      const _action_ = ActionJSON._writeMessage(msg.action);
       if (Object.keys(_action_).length > 0) {
         json["action"] = _action_;
       }
@@ -951,17 +981,14 @@ export const ModuleActionResponseJSON = {
   /**
    * @private
    */
-  _readMessage: function (
-    msg: ModuleActionResponse,
-    json: any,
-  ): ModuleActionResponse {
+  _readMessage: function (msg: ActionResponse, json: any): ActionResponse {
     const _status_ = json["status"];
     if (_status_) {
       common.ResponseStatusJSON._readMessage(msg.status, _status_);
     }
     const _action_ = json["action"];
     if (_action_) {
-      ModuleActionJSON._readMessage(msg.action, _action_);
+      ActionJSON._readMessage(msg.action, _action_);
     }
     return msg;
   },
@@ -992,7 +1019,8 @@ export const DeleteActionsByModuleRequestJSON = {
     msg?: Partial<DeleteActionsByModuleRequest>,
   ): DeleteActionsByModuleRequest {
     return {
-      moduleName: "",
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -1004,8 +1032,11 @@ export const DeleteActionsByModuleRequestJSON = {
     msg: PartialDeep<DeleteActionsByModuleRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.moduleName) {
-      json["moduleName"] = msg.moduleName;
+    if (msg.createdByType) {
+      json["createdByType"] = msg.createdByType;
+    }
+    if (msg.createdByRef) {
+      json["createdByRef"] = msg.createdByRef;
     }
     return json;
   },
@@ -1017,9 +1048,13 @@ export const DeleteActionsByModuleRequestJSON = {
     msg: DeleteActionsByModuleRequest,
     json: any,
   ): DeleteActionsByModuleRequest {
-    const _moduleName_ = json["moduleName"] ?? json["module_name"];
-    if (_moduleName_) {
-      msg.moduleName = _moduleName_;
+    const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
+    if (_createdByType_) {
+      msg.createdByType = _createdByType_;
+    }
+    const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
+    if (_createdByRef_) {
+      msg.createdByRef = _createdByRef_;
     }
     return msg;
   },

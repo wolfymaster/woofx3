@@ -43,6 +43,10 @@ pub struct Workflow {
     pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
     #[prost(message, optional, tag="14")]
     pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(string, tag="15")]
+    pub created_by_type: ::prost::alloc::string::String,
+    #[prost(string, tag="16")]
+    pub created_by_ref: ::prost::alloc::string::String,
 }
 /// A single step in a workflow
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -177,6 +181,10 @@ pub struct CreateWorkflowRequest {
     pub max_retries: i32,
     #[prost(int32, tag="11")]
     pub timeout_seconds: i32,
+    #[prost(string, tag="12")]
+    pub created_by_type: ::prost::alloc::string::String,
+    #[prost(string, tag="13")]
+    pub created_by_ref: ::prost::alloc::string::String,
 }
 /// Request to get a workflow by ID
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

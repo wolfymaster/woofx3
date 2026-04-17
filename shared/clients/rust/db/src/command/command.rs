@@ -32,6 +32,10 @@ pub struct Command {
     pub created_by: ::prost::alloc::string::String,
     #[prost(message, optional, tag="15")]
     pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(string, tag="16")]
+    pub created_by_type: ::prost::alloc::string::String,
+    #[prost(string, tag="17")]
+    pub created_by_ref: ::prost::alloc::string::String,
 }
 /// Request to get a single command by ID
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -86,6 +90,10 @@ pub struct CreateCommandRequest {
     pub priority: i32,
     #[prost(string, tag="8")]
     pub created_by: ::prost::alloc::string::String,
+    #[prost(string, tag="9")]
+    pub created_by_type: ::prost::alloc::string::String,
+    #[prost(string, tag="10")]
+    pub created_by_ref: ::prost::alloc::string::String,
 }
 /// Request to update an existing command
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

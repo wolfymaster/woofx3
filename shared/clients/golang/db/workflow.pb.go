@@ -39,6 +39,8 @@ type Workflow struct {
 	TimeoutSeconds int32                  `protobuf:"varint,12,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`                                         // Global timeout for the workflow in seconds
 	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	CreatedByType  string                 `protobuf:"bytes,15,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
+	CreatedByRef   string                 `protobuf:"bytes,16,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -169,6 +171,20 @@ func (x *Workflow) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *Workflow) GetCreatedByType() string {
+	if x != nil {
+		return x.CreatedByType
+	}
+	return ""
+}
+
+func (x *Workflow) GetCreatedByRef() string {
+	if x != nil {
+		return x.CreatedByRef
+	}
+	return ""
 }
 
 // A single step in a workflow
@@ -568,6 +584,8 @@ type CreateWorkflowRequest struct {
 	OnFailure      string                 `protobuf:"bytes,9,opt,name=on_failure,json=onFailure,proto3" json:"on_failure,omitempty"`
 	MaxRetries     int32                  `protobuf:"varint,10,opt,name=max_retries,json=maxRetries,proto3" json:"max_retries,omitempty"`
 	TimeoutSeconds int32                  `protobuf:"varint,11,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
+	CreatedByType  string                 `protobuf:"bytes,12,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
+	CreatedByRef   string                 `protobuf:"bytes,13,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -677,6 +695,20 @@ func (x *CreateWorkflowRequest) GetTimeoutSeconds() int32 {
 		return x.TimeoutSeconds
 	}
 	return 0
+}
+
+func (x *CreateWorkflowRequest) GetCreatedByType() string {
+	if x != nil {
+		return x.CreatedByType
+	}
+	return ""
+}
+
+func (x *CreateWorkflowRequest) GetCreatedByRef() string {
+	if x != nil {
+		return x.CreatedByRef
+	}
+	return ""
 }
 
 // Request to get a workflow by ID
@@ -1612,7 +1644,7 @@ var File_workflow_proto protoreflect.FileDescriptor
 
 const file_workflow_proto_rawDesc = "" +
 	"\n" +
-	"\x0eworkflow.proto\x12\bworkflow\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xdb\x04\n" +
+	"\x0eworkflow.proto\x12\bworkflow\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa9\x05\n" +
 	"\bWorkflow\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -1634,7 +1666,9 @@ const file_workflow_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x1a<\n" +
+	"updated_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12&\n" +
+	"\x0fcreated_by_type\x18\x0f \x01(\tR\rcreatedByType\x12$\n" +
+	"\x0ecreated_by_ref\x18\x10 \x01(\tR\fcreatedByRef\x1a<\n" +
 	"\x0eVariablesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8e\x04\n" +
@@ -1706,7 +1740,7 @@ const file_workflow_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a:\n" +
 	"\fOutputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xef\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xbd\x04\n" +
 	"\x15CreateWorkflowRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12%\n" +
@@ -1723,7 +1757,9 @@ const file_workflow_proto_rawDesc = "" +
 	"\vmax_retries\x18\n" +
 	" \x01(\x05R\n" +
 	"maxRetries\x12'\n" +
-	"\x0ftimeout_seconds\x18\v \x01(\x05R\x0etimeoutSeconds\x1a<\n" +
+	"\x0ftimeout_seconds\x18\v \x01(\x05R\x0etimeoutSeconds\x12&\n" +
+	"\x0fcreated_by_type\x18\f \x01(\tR\rcreatedByType\x12$\n" +
+	"\x0ecreated_by_ref\x18\r \x01(\tR\fcreatedByRef\x1a<\n" +
 	"\x0eVariablesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"$\n" +

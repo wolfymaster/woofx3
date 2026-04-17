@@ -15,6 +15,17 @@ import type { ClientConfiguration } from "twirpscript";
 //                 Types                  //
 //========================================//
 
+/**
+ * RequestContext carries caller metadata through service boundaries.
+ * Any request that triggers async work (events, callbacks) should include
+ * this so downstream services know who initiated the operation.
+ */
+export interface RequestContext {
+  clientId: string;
+  applicationId: string;
+  moduleKey: string;
+}
+
 export interface ResponseStatus {
   code: ResponseStatus.Code;
   message: string;
@@ -113,6 +124,90 @@ export function createCommonService<Context>(service: CommonService<Context>) {
 //========================================//
 //        Protobuf Encode / Decode        //
 //========================================//
+
+export const RequestContext = {
+  /**
+   * Serializes RequestContext to protobuf.
+   */
+  encode: function (msg: PartialDeep<RequestContext>): Uint8Array {
+    return RequestContext._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes RequestContext from protobuf.
+   */
+  decode: function (bytes: ByteSource): RequestContext {
+    return RequestContext._readMessage(
+      RequestContext.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes RequestContext with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<RequestContext>): RequestContext {
+    return {
+      clientId: "",
+      applicationId: "",
+      moduleKey: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<RequestContext>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.clientId) {
+      writer.writeString(1, msg.clientId);
+    }
+    if (msg.applicationId) {
+      writer.writeString(2, msg.applicationId);
+    }
+    if (msg.moduleKey) {
+      writer.writeString(3, msg.moduleKey);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: RequestContext,
+    reader: protoscript.BinaryReader,
+  ): RequestContext {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.clientId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.applicationId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.moduleKey = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
 
 export const ResponseStatus = {
   /**
@@ -366,6 +461,75 @@ export const PingResponse = {
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
+
+export const RequestContextJSON = {
+  /**
+   * Serializes RequestContext to JSON.
+   */
+  encode: function (msg: PartialDeep<RequestContext>): string {
+    return JSON.stringify(RequestContextJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes RequestContext from JSON.
+   */
+  decode: function (json: string): RequestContext {
+    return RequestContextJSON._readMessage(
+      RequestContextJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes RequestContext with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<RequestContext>): RequestContext {
+    return {
+      clientId: "",
+      applicationId: "",
+      moduleKey: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<RequestContext>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.clientId) {
+      json["clientId"] = msg.clientId;
+    }
+    if (msg.applicationId) {
+      json["applicationId"] = msg.applicationId;
+    }
+    if (msg.moduleKey) {
+      json["moduleKey"] = msg.moduleKey;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (msg: RequestContext, json: any): RequestContext {
+    const _clientId_ = json["clientId"] ?? json["client_id"];
+    if (_clientId_) {
+      msg.clientId = _clientId_;
+    }
+    const _applicationId_ = json["applicationId"] ?? json["application_id"];
+    if (_applicationId_) {
+      msg.applicationId = _applicationId_;
+    }
+    const _moduleKey_ = json["moduleKey"] ?? json["module_key"];
+    if (_moduleKey_) {
+      msg.moduleKey = _moduleKey_;
+    }
+    return msg;
+  },
+};
 
 export const ResponseStatusJSON = {
   /**

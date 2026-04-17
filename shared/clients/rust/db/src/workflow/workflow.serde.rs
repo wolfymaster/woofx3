@@ -148,6 +148,12 @@ impl serde::Serialize for CreateWorkflowRequest {
         if self.timeout_seconds != 0 {
             len += 1;
         }
+        if !self.created_by_type.is_empty() {
+            len += 1;
+        }
+        if !self.created_by_ref.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("workflow.CreateWorkflowRequest", len)?;
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
@@ -182,6 +188,12 @@ impl serde::Serialize for CreateWorkflowRequest {
         if self.timeout_seconds != 0 {
             struct_ser.serialize_field("timeoutSeconds", &self.timeout_seconds)?;
         }
+        if !self.created_by_type.is_empty() {
+            struct_ser.serialize_field("createdByType", &self.created_by_type)?;
+        }
+        if !self.created_by_ref.is_empty() {
+            struct_ser.serialize_field("createdByRef", &self.created_by_ref)?;
+        }
         struct_ser.end()
     }
 }
@@ -209,6 +221,10 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
             "maxRetries",
             "timeout_seconds",
             "timeoutSeconds",
+            "created_by_type",
+            "createdByType",
+            "created_by_ref",
+            "createdByRef",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -224,6 +240,8 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
             OnFailure,
             MaxRetries,
             TimeoutSeconds,
+            CreatedByType,
+            CreatedByRef,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -256,6 +274,8 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
                             "onFailure" | "on_failure" => Ok(GeneratedField::OnFailure),
                             "maxRetries" | "max_retries" => Ok(GeneratedField::MaxRetries),
                             "timeoutSeconds" | "timeout_seconds" => Ok(GeneratedField::TimeoutSeconds),
+                            "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
+                            "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -286,6 +306,8 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
                 let mut on_failure__ = None;
                 let mut max_retries__ = None;
                 let mut timeout_seconds__ = None;
+                let mut created_by_type__ = None;
+                let mut created_by_ref__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Name => {
@@ -360,6 +382,18 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
                                 Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
                             ;
                         }
+                        GeneratedField::CreatedByType => {
+                            if created_by_type__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByType"));
+                            }
+                            created_by_type__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CreatedByRef => {
+                            if created_by_ref__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByRef"));
+                            }
+                            created_by_ref__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(CreateWorkflowRequest {
@@ -374,6 +408,8 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
                     on_failure: on_failure__.unwrap_or_default(),
                     max_retries: max_retries__.unwrap_or_default(),
                     timeout_seconds: timeout_seconds__.unwrap_or_default(),
+                    created_by_type: created_by_type__.unwrap_or_default(),
+                    created_by_ref: created_by_ref__.unwrap_or_default(),
                 })
             }
         }
@@ -2333,6 +2369,12 @@ impl serde::Serialize for Workflow {
         if self.updated_at.is_some() {
             len += 1;
         }
+        if !self.created_by_type.is_empty() {
+            len += 1;
+        }
+        if !self.created_by_ref.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("workflow.Workflow", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -2376,6 +2418,12 @@ impl serde::Serialize for Workflow {
         if let Some(v) = self.updated_at.as_ref() {
             struct_ser.serialize_field("updatedAt", v)?;
         }
+        if !self.created_by_type.is_empty() {
+            struct_ser.serialize_field("createdByType", &self.created_by_type)?;
+        }
+        if !self.created_by_ref.is_empty() {
+            struct_ser.serialize_field("createdByRef", &self.created_by_ref)?;
+        }
         struct_ser.end()
     }
 }
@@ -2408,6 +2456,10 @@ impl<'de> serde::Deserialize<'de> for Workflow {
             "createdAt",
             "updated_at",
             "updatedAt",
+            "created_by_type",
+            "createdByType",
+            "created_by_ref",
+            "createdByRef",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -2426,6 +2478,8 @@ impl<'de> serde::Deserialize<'de> for Workflow {
             TimeoutSeconds,
             CreatedAt,
             UpdatedAt,
+            CreatedByType,
+            CreatedByRef,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -2461,6 +2515,8 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                             "timeoutSeconds" | "timeout_seconds" => Ok(GeneratedField::TimeoutSeconds),
                             "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
                             "updatedAt" | "updated_at" => Ok(GeneratedField::UpdatedAt),
+                            "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
+                            "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -2494,6 +2550,8 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                 let mut timeout_seconds__ = None;
                 let mut created_at__ = None;
                 let mut updated_at__ = None;
+                let mut created_by_type__ = None;
+                let mut created_by_ref__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -2586,6 +2644,18 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                             }
                             updated_at__ = map_.next_value()?;
                         }
+                        GeneratedField::CreatedByType => {
+                            if created_by_type__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByType"));
+                            }
+                            created_by_type__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CreatedByRef => {
+                            if created_by_ref__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByRef"));
+                            }
+                            created_by_ref__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Workflow {
@@ -2603,6 +2673,8 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                     timeout_seconds: timeout_seconds__.unwrap_or_default(),
                     created_at: created_at__,
                     updated_at: updated_at__,
+                    created_by_type: created_by_type__.unwrap_or_default(),
+                    created_by_ref: created_by_ref__.unwrap_or_default(),
                 })
             }
         }

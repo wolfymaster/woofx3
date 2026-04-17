@@ -37,6 +37,12 @@ impl serde::Serialize for Command {
         if self.created_at.is_some() {
             len += 1;
         }
+        if !self.created_by_type.is_empty() {
+            len += 1;
+        }
+        if !self.created_by_ref.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("command.Command", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -68,6 +74,12 @@ impl serde::Serialize for Command {
         if let Some(v) = self.created_at.as_ref() {
             struct_ser.serialize_field("createdAt", v)?;
         }
+        if !self.created_by_type.is_empty() {
+            struct_ser.serialize_field("createdByType", &self.created_by_type)?;
+        }
+        if !self.created_by_ref.is_empty() {
+            struct_ser.serialize_field("createdByRef", &self.created_by_ref)?;
+        }
         struct_ser.end()
     }
 }
@@ -92,6 +104,10 @@ impl<'de> serde::Deserialize<'de> for Command {
             "createdBy",
             "created_at",
             "createdAt",
+            "created_by_type",
+            "createdByType",
+            "created_by_ref",
+            "createdByRef",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -106,6 +122,8 @@ impl<'de> serde::Deserialize<'de> for Command {
             Enabled,
             CreatedBy,
             CreatedAt,
+            CreatedByType,
+            CreatedByRef,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -137,6 +155,8 @@ impl<'de> serde::Deserialize<'de> for Command {
                             "enabled" => Ok(GeneratedField::Enabled),
                             "createdBy" | "created_by" => Ok(GeneratedField::CreatedBy),
                             "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
+                            "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
+                            "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -166,6 +186,8 @@ impl<'de> serde::Deserialize<'de> for Command {
                 let mut enabled__ = None;
                 let mut created_by__ = None;
                 let mut created_at__ = None;
+                let mut created_by_type__ = None;
+                let mut created_by_ref__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -232,6 +254,18 @@ impl<'de> serde::Deserialize<'de> for Command {
                             }
                             created_at__ = map_.next_value()?;
                         }
+                        GeneratedField::CreatedByType => {
+                            if created_by_type__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByType"));
+                            }
+                            created_by_type__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CreatedByRef => {
+                            if created_by_ref__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByRef"));
+                            }
+                            created_by_ref__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Command {
@@ -245,6 +279,8 @@ impl<'de> serde::Deserialize<'de> for Command {
                     enabled: enabled__.unwrap_or_default(),
                     created_by: created_by__.unwrap_or_default(),
                     created_at: created_at__,
+                    created_by_type: created_by_type__.unwrap_or_default(),
+                    created_by_ref: created_by_ref__.unwrap_or_default(),
                 })
             }
         }
@@ -391,6 +427,12 @@ impl serde::Serialize for CreateCommandRequest {
         if !self.created_by.is_empty() {
             len += 1;
         }
+        if !self.created_by_type.is_empty() {
+            len += 1;
+        }
+        if !self.created_by_ref.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("command.CreateCommandRequest", len)?;
         if !self.application_id.is_empty() {
             struct_ser.serialize_field("applicationId", &self.application_id)?;
@@ -416,6 +458,12 @@ impl serde::Serialize for CreateCommandRequest {
         if !self.created_by.is_empty() {
             struct_ser.serialize_field("createdBy", &self.created_by)?;
         }
+        if !self.created_by_type.is_empty() {
+            struct_ser.serialize_field("createdByType", &self.created_by_type)?;
+        }
+        if !self.created_by_ref.is_empty() {
+            struct_ser.serialize_field("createdByRef", &self.created_by_ref)?;
+        }
         struct_ser.end()
     }
 }
@@ -437,6 +485,10 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
             "priority",
             "created_by",
             "createdBy",
+            "created_by_type",
+            "createdByType",
+            "created_by_ref",
+            "createdByRef",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -449,6 +501,8 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
             TypeValue,
             Priority,
             CreatedBy,
+            CreatedByType,
+            CreatedByRef,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -478,6 +532,8 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                             "typeValue" | "type_value" => Ok(GeneratedField::TypeValue),
                             "priority" => Ok(GeneratedField::Priority),
                             "createdBy" | "created_by" => Ok(GeneratedField::CreatedBy),
+                            "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
+                            "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -505,6 +561,8 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                 let mut type_value__ = None;
                 let mut priority__ = None;
                 let mut created_by__ = None;
+                let mut created_by_type__ = None;
+                let mut created_by_ref__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::ApplicationId => {
@@ -559,6 +617,18 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                             }
                             created_by__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::CreatedByType => {
+                            if created_by_type__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByType"));
+                            }
+                            created_by_type__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CreatedByRef => {
+                            if created_by_ref__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByRef"));
+                            }
+                            created_by_ref__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(CreateCommandRequest {
@@ -570,6 +640,8 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                     type_value: type_value__.unwrap_or_default(),
                     priority: priority__.unwrap_or_default(),
                     created_by: created_by__.unwrap_or_default(),
+                    created_by_type: created_by_type__.unwrap_or_default(),
+                    created_by_ref: created_by_ref__.unwrap_or_default(),
                 })
             }
         }

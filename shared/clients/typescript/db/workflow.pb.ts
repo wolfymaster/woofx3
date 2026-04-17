@@ -34,6 +34,8 @@ export interface Workflow {
   timeoutSeconds: number;
   createdAt: protoscript.Timestamp;
   updatedAt: protoscript.Timestamp;
+  createdByType: string;
+  createdByRef: string;
 }
 
 export declare namespace Workflow {
@@ -149,6 +151,8 @@ export interface CreateWorkflowRequest {
   onFailure: string;
   maxRetries: number;
   timeoutSeconds: number;
+  createdByType: string;
+  createdByRef: string;
 }
 
 export declare namespace CreateWorkflowRequest {
@@ -814,6 +818,8 @@ export const Workflow = {
       timeoutSeconds: 0,
       createdAt: protoscript.Timestamp.initialize(),
       updatedAt: protoscript.Timestamp.initialize(),
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -886,6 +892,12 @@ export const Workflow = {
         protoscript.Timestamp._writeMessage,
       );
     }
+    if (msg.createdByType) {
+      writer.writeString(15, msg.createdByType);
+    }
+    if (msg.createdByRef) {
+      writer.writeString(16, msg.createdByRef);
+    }
     return writer;
   },
 
@@ -957,6 +969,14 @@ export const Workflow = {
         }
         case 14: {
           reader.readMessage(msg.updatedAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 15: {
+          msg.createdByType = reader.readString();
+          break;
+        }
+        case 16: {
+          msg.createdByRef = reader.readString();
           break;
         }
         default: {
@@ -1865,6 +1885,8 @@ export const CreateWorkflowRequest = {
       onFailure: "",
       maxRetries: 0,
       timeoutSeconds: 0,
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -1919,6 +1941,12 @@ export const CreateWorkflowRequest = {
     }
     if (msg.timeoutSeconds) {
       writer.writeInt32(11, msg.timeoutSeconds);
+    }
+    if (msg.createdByType) {
+      writer.writeString(12, msg.createdByType);
+    }
+    if (msg.createdByRef) {
+      writer.writeString(13, msg.createdByRef);
     }
     return writer;
   },
@@ -1979,6 +2007,14 @@ export const CreateWorkflowRequest = {
         }
         case 11: {
           msg.timeoutSeconds = reader.readInt32();
+          break;
+        }
+        case 12: {
+          msg.createdByType = reader.readString();
+          break;
+        }
+        case 13: {
+          msg.createdByRef = reader.readString();
           break;
         }
         default: {
@@ -3513,6 +3549,8 @@ export const WorkflowJSON = {
       timeoutSeconds: 0,
       createdAt: protoscript.TimestampJSON.initialize(),
       updatedAt: protoscript.TimestampJSON.initialize(),
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -3573,6 +3611,12 @@ export const WorkflowJSON = {
     }
     if (msg.updatedAt && (msg.updatedAt.seconds || msg.updatedAt.nanos)) {
       json["updatedAt"] = protoscript.serializeTimestamp(msg.updatedAt);
+    }
+    if (msg.createdByType) {
+      json["createdByType"] = msg.createdByType;
+    }
+    if (msg.createdByRef) {
+      json["createdByRef"] = msg.createdByRef;
     }
     return json;
   },
@@ -3645,6 +3689,14 @@ export const WorkflowJSON = {
     const _updatedAt_ = json["updatedAt"] ?? json["updated_at"];
     if (_updatedAt_) {
       msg.updatedAt = protoscript.parseTimestamp(_updatedAt_);
+    }
+    const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
+    if (_createdByType_) {
+      msg.createdByType = _createdByType_;
+    }
+    const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
+    if (_createdByRef_) {
+      msg.createdByRef = _createdByRef_;
     }
     return msg;
   },
@@ -4430,6 +4482,8 @@ export const CreateWorkflowRequestJSON = {
       onFailure: "",
       maxRetries: 0,
       timeoutSeconds: 0,
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -4481,6 +4535,12 @@ export const CreateWorkflowRequestJSON = {
     }
     if (msg.timeoutSeconds) {
       json["timeoutSeconds"] = msg.timeoutSeconds;
+    }
+    if (msg.createdByType) {
+      json["createdByType"] = msg.createdByType;
+    }
+    if (msg.createdByRef) {
+      json["createdByRef"] = msg.createdByRef;
     }
     return json;
   },
@@ -4544,6 +4604,14 @@ export const CreateWorkflowRequestJSON = {
     const _timeoutSeconds_ = json["timeoutSeconds"] ?? json["timeout_seconds"];
     if (_timeoutSeconds_) {
       msg.timeoutSeconds = protoscript.parseNumber(_timeoutSeconds_);
+    }
+    const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
+    if (_createdByType_) {
+      msg.createdByType = _createdByType_;
+    }
+    const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
+    if (_createdByRef_) {
+      msg.createdByRef = _createdByRef_;
     }
     return msg;
   },

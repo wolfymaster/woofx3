@@ -312,32 +312,6 @@ pub mod module_service_client {
                 .insert(GrpcMethod::new("module.ModuleService", "ListTriggers"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn delete_triggers_by_module(
-            &mut self,
-            request: impl tonic::IntoRequest<super::DeleteTriggersByModuleRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::super::common::ResponseStatus>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/module.ModuleService/DeleteTriggersByModule",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("module.ModuleService", "DeleteTriggersByModule"),
-                );
-            self.inner.unary(req, path, codec).await
-        }
         pub async fn delete_triggers_by_module_id(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteByModuleIdRequest>,
@@ -410,32 +384,6 @@ pub mod module_service_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("module.ModuleService", "ListActions"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn delete_actions_by_module(
-            &mut self,
-            request: impl tonic::IntoRequest<super::DeleteActionsByModuleRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::super::common::ResponseStatus>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/module.ModuleService/DeleteActionsByModule",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("module.ModuleService", "DeleteActionsByModule"),
-                );
             self.inner.unary(req, path, codec).await
         }
         pub async fn delete_actions_by_module_id(
@@ -710,13 +658,6 @@ pub mod module_service_server {
             tonic::Response<super::ListTriggersResponse>,
             tonic::Status,
         >;
-        async fn delete_triggers_by_module(
-            &self,
-            request: tonic::Request<super::DeleteTriggersByModuleRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::super::common::ResponseStatus>,
-            tonic::Status,
-        >;
         async fn delete_triggers_by_module_id(
             &self,
             request: tonic::Request<super::DeleteByModuleIdRequest>,
@@ -736,13 +677,6 @@ pub mod module_service_server {
             request: tonic::Request<super::ListActionsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::ListActionsResponse>,
-            tonic::Status,
-        >;
-        async fn delete_actions_by_module(
-            &self,
-            request: tonic::Request<super::DeleteActionsByModuleRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
         async fn delete_actions_by_module_id(
@@ -1335,55 +1269,6 @@ pub mod module_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/module.ModuleService/DeleteTriggersByModule" => {
-                    #[allow(non_camel_case_types)]
-                    struct DeleteTriggersByModuleSvc<T: ModuleService>(pub Arc<T>);
-                    impl<
-                        T: ModuleService,
-                    > tonic::server::UnaryService<super::DeleteTriggersByModuleRequest>
-                    for DeleteTriggersByModuleSvc<T> {
-                        type Response = super::super::common::ResponseStatus;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::DeleteTriggersByModuleRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ModuleService>::delete_triggers_by_module(
-                                        &inner,
-                                        request,
-                                    )
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = DeleteTriggersByModuleSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
                 "/module.ModuleService/DeleteTriggersByModuleId" => {
                     #[allow(non_camel_case_types)]
                     struct DeleteTriggersByModuleIdSvc<T: ModuleService>(pub Arc<T>);
@@ -1509,55 +1394,6 @@ pub mod module_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ListActionsSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/module.ModuleService/DeleteActionsByModule" => {
-                    #[allow(non_camel_case_types)]
-                    struct DeleteActionsByModuleSvc<T: ModuleService>(pub Arc<T>);
-                    impl<
-                        T: ModuleService,
-                    > tonic::server::UnaryService<super::DeleteActionsByModuleRequest>
-                    for DeleteActionsByModuleSvc<T> {
-                        type Response = super::super::common::ResponseStatus;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::DeleteActionsByModuleRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ModuleService>::delete_actions_by_module(
-                                        &inner,
-                                        request,
-                                    )
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = DeleteActionsByModuleSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

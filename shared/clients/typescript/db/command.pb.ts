@@ -30,6 +30,8 @@ export interface Command {
   enabled: boolean;
   createdBy: string;
   createdAt: protoscript.Timestamp;
+  createdByType: string;
+  createdByRef: string;
 }
 
 /**
@@ -77,6 +79,8 @@ export interface CreateCommandRequest {
   typeValue: string;
   priority: number;
   createdBy: string;
+  createdByType: string;
+  createdByRef: string;
 }
 
 /**
@@ -394,6 +398,8 @@ export const Command = {
       enabled: false,
       createdBy: "",
       createdAt: protoscript.Timestamp.initialize(),
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -438,6 +444,12 @@ export const Command = {
         msg.createdAt,
         protoscript.Timestamp._writeMessage,
       );
+    }
+    if (msg.createdByType) {
+      writer.writeString(16, msg.createdByType);
+    }
+    if (msg.createdByRef) {
+      writer.writeString(17, msg.createdByRef);
     }
     return writer;
   },
@@ -490,6 +502,14 @@ export const Command = {
         }
         case 15: {
           reader.readMessage(msg.createdAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 16: {
+          msg.createdByType = reader.readString();
+          break;
+        }
+        case 17: {
+          msg.createdByRef = reader.readString();
           break;
         }
         default: {
@@ -860,6 +880,8 @@ export const CreateCommandRequest = {
       typeValue: "",
       priority: 0,
       createdBy: "",
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -894,6 +916,12 @@ export const CreateCommandRequest = {
     }
     if (msg.createdBy) {
       writer.writeString(8, msg.createdBy);
+    }
+    if (msg.createdByType) {
+      writer.writeString(9, msg.createdByType);
+    }
+    if (msg.createdByRef) {
+      writer.writeString(10, msg.createdByRef);
     }
     return writer;
   },
@@ -938,6 +966,14 @@ export const CreateCommandRequest = {
         }
         case 8: {
           msg.createdBy = reader.readString();
+          break;
+        }
+        case 9: {
+          msg.createdByType = reader.readString();
+          break;
+        }
+        case 10: {
+          msg.createdByRef = reader.readString();
           break;
         }
         default: {
@@ -1172,6 +1208,8 @@ export const CommandJSON = {
       enabled: false,
       createdBy: "",
       createdAt: protoscript.TimestampJSON.initialize(),
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -1210,6 +1248,12 @@ export const CommandJSON = {
     }
     if (msg.createdAt && (msg.createdAt.seconds || msg.createdAt.nanos)) {
       json["createdAt"] = protoscript.serializeTimestamp(msg.createdAt);
+    }
+    if (msg.createdByType) {
+      json["createdByType"] = msg.createdByType;
+    }
+    if (msg.createdByRef) {
+      json["createdByRef"] = msg.createdByRef;
     }
     return json;
   },
@@ -1257,6 +1301,14 @@ export const CommandJSON = {
     const _createdAt_ = json["createdAt"] ?? json["created_at"];
     if (_createdAt_) {
       msg.createdAt = protoscript.parseTimestamp(_createdAt_);
+    }
+    const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
+    if (_createdByType_) {
+      msg.createdByType = _createdByType_;
+    }
+    const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
+    if (_createdByRef_) {
+      msg.createdByRef = _createdByRef_;
     }
     return msg;
   },
@@ -1574,6 +1626,8 @@ export const CreateCommandRequestJSON = {
       typeValue: "",
       priority: 0,
       createdBy: "",
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -1608,6 +1662,12 @@ export const CreateCommandRequestJSON = {
     }
     if (msg.createdBy) {
       json["createdBy"] = msg.createdBy;
+    }
+    if (msg.createdByType) {
+      json["createdByType"] = msg.createdByType;
+    }
+    if (msg.createdByRef) {
+      json["createdByRef"] = msg.createdByRef;
     }
     return json;
   },
@@ -1650,6 +1710,14 @@ export const CreateCommandRequestJSON = {
     const _createdBy_ = json["createdBy"] ?? json["created_by"];
     if (_createdBy_) {
       msg.createdBy = _createdBy_;
+    }
+    const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
+    if (_createdByType_) {
+      msg.createdByType = _createdByType_;
+    }
+    const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
+    if (_createdByRef_) {
+      msg.createdByRef = _createdByRef_;
     }
     return msg;
   },

@@ -13,6 +13,7 @@ import type { ClientConfiguration } from "twirpscript";
 import * as common from "./common.pb";
 import * as module_trigger from "./module_trigger.pb";
 import * as module_action from "./module_action.pb";
+import * as module_resource from "./module_resource.pb";
 
 //========================================//
 //                 Types                  //
@@ -28,6 +29,9 @@ export interface Module {
   functions: ModuleFunction[];
   installedAt: protoscript.Timestamp;
   updatedAt: protoscript.Timestamp;
+  createdByType: string;
+  createdByRef: string;
+  moduleKey: string;
 }
 
 export interface ModuleFunction {
@@ -46,6 +50,9 @@ export interface CreateModuleRequest {
   manifest: string;
   archiveKey: string;
   functions: CreateModuleFunctionRequest[];
+  createdByType: string;
+  createdByRef: string;
+  moduleKey: string;
 }
 
 export interface CreateModuleFunctionRequest {
@@ -76,6 +83,10 @@ export interface GetModuleByNameRequest {
   name: string;
 }
 
+export interface GetModuleByModuleKeyRequest {
+  moduleKey: string;
+}
+
 export interface ListModulesRequest {
   state: string;
 }
@@ -93,6 +104,54 @@ export interface ModuleResponse {
 export interface ListModulesResponse {
   status: common.ResponseStatus;
   modules: Module[];
+}
+
+export interface CompleteModuleInstallRequest {
+  moduleId: string;
+  moduleName: string;
+  version: string;
+  status: string;
+  error: string;
+  requestContext: common.RequestContext;
+}
+
+/**
+ * UsageRef identifies a single source that references a target resource.
+ */
+export interface UsageRef {
+  sourceType: string;
+  sourceId: string;
+  sourceName: string;
+  context: string;
+}
+
+/**
+ * ResourceUsage groups all sources that reference a single target resource.
+ */
+export interface ResourceUsage {
+  resourceId: string;
+  resourceType: string;
+  resourceName: string;
+  usedBy: UsageRef[];
+}
+
+export interface CheckModuleResourceUsageRequest {
+  moduleId: string;
+  applicationId: string;
+}
+
+export interface CheckModuleResourceUsageResponse {
+  status: common.ResponseStatus;
+  inUse: ResourceUsage[];
+}
+
+export interface CompleteModuleDeleteRequest {
+  moduleId: string;
+  moduleName: string;
+  status: string;
+  error: string;
+  inUseResources: ResourceUsage[];
+  requestContext: common.RequestContext;
 }
 
 //========================================//
@@ -159,6 +218,18 @@ export async function GetModuleByName(
   return ModuleResponse.decode(response);
 }
 
+export async function GetModuleByModuleKey(
+  getModuleByModuleKeyRequest: GetModuleByModuleKeyRequest,
+  config?: ClientConfiguration,
+): Promise<ModuleResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/GetModuleByModuleKey",
+    GetModuleByModuleKeyRequest.encode(getModuleByModuleKeyRequest),
+    config,
+  );
+  return ModuleResponse.decode(response);
+}
+
 export async function ListModules(
   listModulesRequest: ListModulesRequest,
   config?: ClientConfiguration,
@@ -186,13 +257,13 @@ export async function SetModuleState(
 export async function RegisterTrigger(
   registerTriggerRequest: module_trigger.RegisterTriggerRequest,
   config?: ClientConfiguration,
-): Promise<module_trigger.ModuleTriggerResponse> {
+): Promise<module_trigger.TriggerResponse> {
   const response = await PBrequest(
     "/module.ModuleService/RegisterTrigger",
     module_trigger.RegisterTriggerRequest.encode(registerTriggerRequest),
     config,
   );
-  return module_trigger.ModuleTriggerResponse.decode(response);
+  return module_trigger.TriggerResponse.decode(response);
 }
 
 export async function ListTriggers(
@@ -224,13 +295,13 @@ export async function DeleteTriggersByModule(
 export async function RegisterAction(
   registerActionRequest: module_action.RegisterActionRequest,
   config?: ClientConfiguration,
-): Promise<module_action.ModuleActionResponse> {
+): Promise<module_action.ActionResponse> {
   const response = await PBrequest(
     "/module.ModuleService/RegisterAction",
     module_action.RegisterActionRequest.encode(registerActionRequest),
     config,
   );
-  return module_action.ModuleActionResponse.decode(response);
+  return module_action.ActionResponse.decode(response);
 }
 
 export async function ListActions(
@@ -254,6 +325,98 @@ export async function DeleteActionsByModule(
     module_action.DeleteActionsByModuleRequest.encode(
       deleteActionsByModuleRequest,
     ),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
+}
+
+export async function CreateModuleResource(
+  createModuleResourceRequest: module_resource.CreateModuleResourceRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource.ModuleResourceResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/CreateModuleResource",
+    module_resource.CreateModuleResourceRequest.encode(
+      createModuleResourceRequest,
+    ),
+    config,
+  );
+  return module_resource.ModuleResourceResponse.decode(response);
+}
+
+export async function ListModuleResources(
+  listModuleResourcesRequest: module_resource.ListModuleResourcesRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource.ListModuleResourcesResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/ListModuleResources",
+    module_resource.ListModuleResourcesRequest.encode(
+      listModuleResourcesRequest,
+    ),
+    config,
+  );
+  return module_resource.ListModuleResourcesResponse.decode(response);
+}
+
+export async function DeleteModuleResources(
+  deleteModuleResourcesRequest: module_resource.DeleteModuleResourcesRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/module.ModuleService/DeleteModuleResources",
+    module_resource.DeleteModuleResourcesRequest.encode(
+      deleteModuleResourcesRequest,
+    ),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
+}
+
+export async function UpdateModuleResourceVersion(
+  updateModuleResourceVersionRequest: module_resource.UpdateModuleResourceVersionRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource.ModuleResourceResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/UpdateModuleResourceVersion",
+    module_resource.UpdateModuleResourceVersionRequest.encode(
+      updateModuleResourceVersionRequest,
+    ),
+    config,
+  );
+  return module_resource.ModuleResourceResponse.decode(response);
+}
+
+export async function CompleteModuleInstall(
+  completeModuleInstallRequest: CompleteModuleInstallRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/module.ModuleService/CompleteModuleInstall",
+    CompleteModuleInstallRequest.encode(completeModuleInstallRequest),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
+}
+
+export async function CheckModuleResourceUsage(
+  checkModuleResourceUsageRequest: CheckModuleResourceUsageRequest,
+  config?: ClientConfiguration,
+): Promise<CheckModuleResourceUsageResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/CheckModuleResourceUsage",
+    CheckModuleResourceUsageRequest.encode(checkModuleResourceUsageRequest),
+    config,
+  );
+  return CheckModuleResourceUsageResponse.decode(response);
+}
+
+export async function CompleteModuleDelete(
+  completeModuleDeleteRequest: CompleteModuleDeleteRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/module.ModuleService/CompleteModuleDelete",
+    CompleteModuleDeleteRequest.encode(completeModuleDeleteRequest),
     config,
   );
   return common.ResponseStatus.decode(response);
@@ -323,6 +486,18 @@ export async function GetModuleByNameJSON(
   return ModuleResponseJSON.decode(response);
 }
 
+export async function GetModuleByModuleKeyJSON(
+  getModuleByModuleKeyRequest: GetModuleByModuleKeyRequest,
+  config?: ClientConfiguration,
+): Promise<ModuleResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/GetModuleByModuleKey",
+    GetModuleByModuleKeyRequestJSON.encode(getModuleByModuleKeyRequest),
+    config,
+  );
+  return ModuleResponseJSON.decode(response);
+}
+
 export async function ListModulesJSON(
   listModulesRequest: ListModulesRequest,
   config?: ClientConfiguration,
@@ -350,13 +525,13 @@ export async function SetModuleStateJSON(
 export async function RegisterTriggerJSON(
   registerTriggerRequest: module_trigger.RegisterTriggerRequest,
   config?: ClientConfiguration,
-): Promise<module_trigger.ModuleTriggerResponse> {
+): Promise<module_trigger.TriggerResponse> {
   const response = await JSONrequest(
     "/module.ModuleService/RegisterTrigger",
     module_trigger.RegisterTriggerRequestJSON.encode(registerTriggerRequest),
     config,
   );
-  return module_trigger.ModuleTriggerResponseJSON.decode(response);
+  return module_trigger.TriggerResponseJSON.decode(response);
 }
 
 export async function ListTriggersJSON(
@@ -388,13 +563,13 @@ export async function DeleteTriggersByModuleJSON(
 export async function RegisterActionJSON(
   registerActionRequest: module_action.RegisterActionRequest,
   config?: ClientConfiguration,
-): Promise<module_action.ModuleActionResponse> {
+): Promise<module_action.ActionResponse> {
   const response = await JSONrequest(
     "/module.ModuleService/RegisterAction",
     module_action.RegisterActionRequestJSON.encode(registerActionRequest),
     config,
   );
-  return module_action.ModuleActionResponseJSON.decode(response);
+  return module_action.ActionResponseJSON.decode(response);
 }
 
 export async function ListActionsJSON(
@@ -418,6 +593,98 @@ export async function DeleteActionsByModuleJSON(
     module_action.DeleteActionsByModuleRequestJSON.encode(
       deleteActionsByModuleRequest,
     ),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
+export async function CreateModuleResourceJSON(
+  createModuleResourceRequest: module_resource.CreateModuleResourceRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource.ModuleResourceResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/CreateModuleResource",
+    module_resource.CreateModuleResourceRequestJSON.encode(
+      createModuleResourceRequest,
+    ),
+    config,
+  );
+  return module_resource.ModuleResourceResponseJSON.decode(response);
+}
+
+export async function ListModuleResourcesJSON(
+  listModuleResourcesRequest: module_resource.ListModuleResourcesRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource.ListModuleResourcesResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/ListModuleResources",
+    module_resource.ListModuleResourcesRequestJSON.encode(
+      listModuleResourcesRequest,
+    ),
+    config,
+  );
+  return module_resource.ListModuleResourcesResponseJSON.decode(response);
+}
+
+export async function DeleteModuleResourcesJSON(
+  deleteModuleResourcesRequest: module_resource.DeleteModuleResourcesRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/module.ModuleService/DeleteModuleResources",
+    module_resource.DeleteModuleResourcesRequestJSON.encode(
+      deleteModuleResourcesRequest,
+    ),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
+export async function UpdateModuleResourceVersionJSON(
+  updateModuleResourceVersionRequest: module_resource.UpdateModuleResourceVersionRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource.ModuleResourceResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/UpdateModuleResourceVersion",
+    module_resource.UpdateModuleResourceVersionRequestJSON.encode(
+      updateModuleResourceVersionRequest,
+    ),
+    config,
+  );
+  return module_resource.ModuleResourceResponseJSON.decode(response);
+}
+
+export async function CompleteModuleInstallJSON(
+  completeModuleInstallRequest: CompleteModuleInstallRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/module.ModuleService/CompleteModuleInstall",
+    CompleteModuleInstallRequestJSON.encode(completeModuleInstallRequest),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
+export async function CheckModuleResourceUsageJSON(
+  checkModuleResourceUsageRequest: CheckModuleResourceUsageRequest,
+  config?: ClientConfiguration,
+): Promise<CheckModuleResourceUsageResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/CheckModuleResourceUsage",
+    CheckModuleResourceUsageRequestJSON.encode(checkModuleResourceUsageRequest),
+    config,
+  );
+  return CheckModuleResourceUsageResponseJSON.decode(response);
+}
+
+export async function CompleteModuleDeleteJSON(
+  completeModuleDeleteRequest: CompleteModuleDeleteRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/module.ModuleService/CompleteModuleDelete",
+    CompleteModuleDeleteRequestJSON.encode(completeModuleDeleteRequest),
     config,
   );
   return common.ResponseStatusJSON.decode(response);
@@ -448,6 +715,10 @@ export interface ModuleService<Context = unknown> {
     getModuleByNameRequest: GetModuleByNameRequest,
     context: Context,
   ) => Promise<ModuleResponse> | ModuleResponse;
+  GetModuleByModuleKey: (
+    getModuleByModuleKeyRequest: GetModuleByModuleKeyRequest,
+    context: Context,
+  ) => Promise<ModuleResponse> | ModuleResponse;
   ListModules: (
     listModulesRequest: ListModulesRequest,
     context: Context,
@@ -459,9 +730,7 @@ export interface ModuleService<Context = unknown> {
   RegisterTrigger: (
     registerTriggerRequest: module_trigger.RegisterTriggerRequest,
     context: Context,
-  ) =>
-    | Promise<module_trigger.ModuleTriggerResponse>
-    | module_trigger.ModuleTriggerResponse;
+  ) => Promise<module_trigger.TriggerResponse> | module_trigger.TriggerResponse;
   ListTriggers: (
     listTriggersRequest: module_trigger.ListTriggersRequest,
     context: Context,
@@ -475,9 +744,7 @@ export interface ModuleService<Context = unknown> {
   RegisterAction: (
     registerActionRequest: module_action.RegisterActionRequest,
     context: Context,
-  ) =>
-    | Promise<module_action.ModuleActionResponse>
-    | module_action.ModuleActionResponse;
+  ) => Promise<module_action.ActionResponse> | module_action.ActionResponse;
   ListActions: (
     listActionsRequest: module_action.ListActionsRequest,
     context: Context,
@@ -486,6 +753,42 @@ export interface ModuleService<Context = unknown> {
     | module_action.ListActionsResponse;
   DeleteActionsByModule: (
     deleteActionsByModuleRequest: module_action.DeleteActionsByModuleRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  CreateModuleResource: (
+    createModuleResourceRequest: module_resource.CreateModuleResourceRequest,
+    context: Context,
+  ) =>
+    | Promise<module_resource.ModuleResourceResponse>
+    | module_resource.ModuleResourceResponse;
+  ListModuleResources: (
+    listModuleResourcesRequest: module_resource.ListModuleResourcesRequest,
+    context: Context,
+  ) =>
+    | Promise<module_resource.ListModuleResourcesResponse>
+    | module_resource.ListModuleResourcesResponse;
+  DeleteModuleResources: (
+    deleteModuleResourcesRequest: module_resource.DeleteModuleResourcesRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  UpdateModuleResourceVersion: (
+    updateModuleResourceVersionRequest: module_resource.UpdateModuleResourceVersionRequest,
+    context: Context,
+  ) =>
+    | Promise<module_resource.ModuleResourceResponse>
+    | module_resource.ModuleResourceResponse;
+  CompleteModuleInstall: (
+    completeModuleInstallRequest: CompleteModuleInstallRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  CheckModuleResourceUsage: (
+    checkModuleResourceUsageRequest: CheckModuleResourceUsageRequest,
+    context: Context,
+  ) =>
+    | Promise<CheckModuleResourceUsageResponse>
+    | CheckModuleResourceUsageResponse;
+  CompleteModuleDelete: (
+    completeModuleDeleteRequest: CompleteModuleDeleteRequest,
     context: Context,
   ) => Promise<common.ResponseStatus> | common.ResponseStatus;
 }
@@ -530,6 +833,15 @@ export function createModuleService<Context>(service: ModuleService<Context>) {
         },
         output: { protobuf: ModuleResponse, json: ModuleResponseJSON },
       },
+      GetModuleByModuleKey: {
+        name: "GetModuleByModuleKey",
+        handler: service.GetModuleByModuleKey,
+        input: {
+          protobuf: GetModuleByModuleKeyRequest,
+          json: GetModuleByModuleKeyRequestJSON,
+        },
+        output: { protobuf: ModuleResponse, json: ModuleResponseJSON },
+      },
       ListModules: {
         name: "ListModules",
         handler: service.ListModules,
@@ -556,8 +868,8 @@ export function createModuleService<Context>(service: ModuleService<Context>) {
           json: module_trigger.RegisterTriggerRequestJSON,
         },
         output: {
-          protobuf: module_trigger.ModuleTriggerResponse,
-          json: module_trigger.ModuleTriggerResponseJSON,
+          protobuf: module_trigger.TriggerResponse,
+          json: module_trigger.TriggerResponseJSON,
         },
       },
       ListTriggers: {
@@ -592,8 +904,8 @@ export function createModuleService<Context>(service: ModuleService<Context>) {
           json: module_action.RegisterActionRequestJSON,
         },
         output: {
-          protobuf: module_action.ModuleActionResponse,
-          json: module_action.ModuleActionResponseJSON,
+          protobuf: module_action.ActionResponse,
+          json: module_action.ActionResponseJSON,
         },
       },
       ListActions: {
@@ -614,6 +926,90 @@ export function createModuleService<Context>(service: ModuleService<Context>) {
         input: {
           protobuf: module_action.DeleteActionsByModuleRequest,
           json: module_action.DeleteActionsByModuleRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
+      },
+      CreateModuleResource: {
+        name: "CreateModuleResource",
+        handler: service.CreateModuleResource,
+        input: {
+          protobuf: module_resource.CreateModuleResourceRequest,
+          json: module_resource.CreateModuleResourceRequestJSON,
+        },
+        output: {
+          protobuf: module_resource.ModuleResourceResponse,
+          json: module_resource.ModuleResourceResponseJSON,
+        },
+      },
+      ListModuleResources: {
+        name: "ListModuleResources",
+        handler: service.ListModuleResources,
+        input: {
+          protobuf: module_resource.ListModuleResourcesRequest,
+          json: module_resource.ListModuleResourcesRequestJSON,
+        },
+        output: {
+          protobuf: module_resource.ListModuleResourcesResponse,
+          json: module_resource.ListModuleResourcesResponseJSON,
+        },
+      },
+      DeleteModuleResources: {
+        name: "DeleteModuleResources",
+        handler: service.DeleteModuleResources,
+        input: {
+          protobuf: module_resource.DeleteModuleResourcesRequest,
+          json: module_resource.DeleteModuleResourcesRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
+      },
+      UpdateModuleResourceVersion: {
+        name: "UpdateModuleResourceVersion",
+        handler: service.UpdateModuleResourceVersion,
+        input: {
+          protobuf: module_resource.UpdateModuleResourceVersionRequest,
+          json: module_resource.UpdateModuleResourceVersionRequestJSON,
+        },
+        output: {
+          protobuf: module_resource.ModuleResourceResponse,
+          json: module_resource.ModuleResourceResponseJSON,
+        },
+      },
+      CompleteModuleInstall: {
+        name: "CompleteModuleInstall",
+        handler: service.CompleteModuleInstall,
+        input: {
+          protobuf: CompleteModuleInstallRequest,
+          json: CompleteModuleInstallRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
+      },
+      CheckModuleResourceUsage: {
+        name: "CheckModuleResourceUsage",
+        handler: service.CheckModuleResourceUsage,
+        input: {
+          protobuf: CheckModuleResourceUsageRequest,
+          json: CheckModuleResourceUsageRequestJSON,
+        },
+        output: {
+          protobuf: CheckModuleResourceUsageResponse,
+          json: CheckModuleResourceUsageResponseJSON,
+        },
+      },
+      CompleteModuleDelete: {
+        name: "CompleteModuleDelete",
+        handler: service.CompleteModuleDelete,
+        input: {
+          protobuf: CompleteModuleDeleteRequest,
+          json: CompleteModuleDeleteRequestJSON,
         },
         output: {
           protobuf: common.ResponseStatus,
@@ -663,6 +1059,9 @@ export const Module = {
       functions: [],
       installedAt: protoscript.Timestamp.initialize(),
       updatedAt: protoscript.Timestamp.initialize(),
+      createdByType: "",
+      createdByRef: "",
+      moduleKey: "",
       ...msg,
     };
   },
@@ -712,6 +1111,15 @@ export const Module = {
         msg.updatedAt,
         protoscript.Timestamp._writeMessage,
       );
+    }
+    if (msg.createdByType) {
+      writer.writeString(10, msg.createdByType);
+    }
+    if (msg.createdByRef) {
+      writer.writeString(11, msg.createdByRef);
+    }
+    if (msg.moduleKey) {
+      writer.writeString(12, msg.moduleKey);
     }
     return writer;
   },
@@ -765,6 +1173,18 @@ export const Module = {
         }
         case 9: {
           reader.readMessage(msg.updatedAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 10: {
+          msg.createdByType = reader.readString();
+          break;
+        }
+        case 11: {
+          msg.createdByRef = reader.readString();
+          break;
+        }
+        case 12: {
+          msg.moduleKey = reader.readString();
           break;
         }
         default: {
@@ -926,6 +1346,9 @@ export const CreateModuleRequest = {
       manifest: "",
       archiveKey: "",
       functions: [],
+      createdByType: "",
+      createdByRef: "",
+      moduleKey: "",
       ...msg,
     };
   },
@@ -955,6 +1378,15 @@ export const CreateModuleRequest = {
         msg.functions as any,
         CreateModuleFunctionRequest._writeMessage,
       );
+    }
+    if (msg.createdByType) {
+      writer.writeString(6, msg.createdByType);
+    }
+    if (msg.createdByRef) {
+      writer.writeString(7, msg.createdByRef);
+    }
+    if (msg.moduleKey) {
+      writer.writeString(8, msg.moduleKey);
     }
     return writer;
   },
@@ -989,6 +1421,18 @@ export const CreateModuleRequest = {
           const m = CreateModuleFunctionRequest.initialize();
           reader.readMessage(m, CreateModuleFunctionRequest._readMessage);
           msg.functions.push(m);
+          break;
+        }
+        case 6: {
+          msg.createdByType = reader.readString();
+          break;
+        }
+        case 7: {
+          msg.createdByRef = reader.readString();
+          break;
+        }
+        case 8: {
+          msg.moduleKey = reader.readString();
           break;
         }
         default: {
@@ -1419,6 +1863,76 @@ export const GetModuleByNameRequest = {
   },
 };
 
+export const GetModuleByModuleKeyRequest = {
+  /**
+   * Serializes GetModuleByModuleKeyRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<GetModuleByModuleKeyRequest>): Uint8Array {
+    return GetModuleByModuleKeyRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes GetModuleByModuleKeyRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): GetModuleByModuleKeyRequest {
+    return GetModuleByModuleKeyRequest._readMessage(
+      GetModuleByModuleKeyRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes GetModuleByModuleKeyRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetModuleByModuleKeyRequest>,
+  ): GetModuleByModuleKeyRequest {
+    return {
+      moduleKey: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetModuleByModuleKeyRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.moduleKey) {
+      writer.writeString(1, msg.moduleKey);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetModuleByModuleKeyRequest,
+    reader: protoscript.BinaryReader,
+  ): GetModuleByModuleKeyRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.moduleKey = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 export const ListModulesRequest = {
   /**
    * Serializes ListModulesRequest to protobuf.
@@ -1721,6 +2235,600 @@ export const ListModulesResponse = {
   },
 };
 
+export const CompleteModuleInstallRequest = {
+  /**
+   * Serializes CompleteModuleInstallRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<CompleteModuleInstallRequest>,
+  ): Uint8Array {
+    return CompleteModuleInstallRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CompleteModuleInstallRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): CompleteModuleInstallRequest {
+    return CompleteModuleInstallRequest._readMessage(
+      CompleteModuleInstallRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CompleteModuleInstallRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompleteModuleInstallRequest>,
+  ): CompleteModuleInstallRequest {
+    return {
+      moduleId: "",
+      moduleName: "",
+      version: "",
+      status: "",
+      error: "",
+      requestContext: common.RequestContext.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompleteModuleInstallRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.moduleId) {
+      writer.writeString(1, msg.moduleId);
+    }
+    if (msg.moduleName) {
+      writer.writeString(2, msg.moduleName);
+    }
+    if (msg.version) {
+      writer.writeString(3, msg.version);
+    }
+    if (msg.status) {
+      writer.writeString(4, msg.status);
+    }
+    if (msg.error) {
+      writer.writeString(5, msg.error);
+    }
+    if (msg.requestContext) {
+      writer.writeMessage(
+        6,
+        msg.requestContext,
+        common.RequestContext._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompleteModuleInstallRequest,
+    reader: protoscript.BinaryReader,
+  ): CompleteModuleInstallRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.moduleId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.moduleName = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.version = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.status = reader.readString();
+          break;
+        }
+        case 5: {
+          msg.error = reader.readString();
+          break;
+        }
+        case 6: {
+          reader.readMessage(
+            msg.requestContext,
+            common.RequestContext._readMessage,
+          );
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const UsageRef = {
+  /**
+   * Serializes UsageRef to protobuf.
+   */
+  encode: function (msg: PartialDeep<UsageRef>): Uint8Array {
+    return UsageRef._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes UsageRef from protobuf.
+   */
+  decode: function (bytes: ByteSource): UsageRef {
+    return UsageRef._readMessage(
+      UsageRef.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes UsageRef with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<UsageRef>): UsageRef {
+    return {
+      sourceType: "",
+      sourceId: "",
+      sourceName: "",
+      context: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<UsageRef>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.sourceType) {
+      writer.writeString(1, msg.sourceType);
+    }
+    if (msg.sourceId) {
+      writer.writeString(2, msg.sourceId);
+    }
+    if (msg.sourceName) {
+      writer.writeString(3, msg.sourceName);
+    }
+    if (msg.context) {
+      writer.writeString(4, msg.context);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: UsageRef,
+    reader: protoscript.BinaryReader,
+  ): UsageRef {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.sourceType = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.sourceId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.sourceName = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.context = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ResourceUsage = {
+  /**
+   * Serializes ResourceUsage to protobuf.
+   */
+  encode: function (msg: PartialDeep<ResourceUsage>): Uint8Array {
+    return ResourceUsage._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ResourceUsage from protobuf.
+   */
+  decode: function (bytes: ByteSource): ResourceUsage {
+    return ResourceUsage._readMessage(
+      ResourceUsage.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ResourceUsage with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<ResourceUsage>): ResourceUsage {
+    return {
+      resourceId: "",
+      resourceType: "",
+      resourceName: "",
+      usedBy: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ResourceUsage>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.resourceId) {
+      writer.writeString(1, msg.resourceId);
+    }
+    if (msg.resourceType) {
+      writer.writeString(2, msg.resourceType);
+    }
+    if (msg.resourceName) {
+      writer.writeString(3, msg.resourceName);
+    }
+    if (msg.usedBy?.length) {
+      writer.writeRepeatedMessage(4, msg.usedBy as any, UsageRef._writeMessage);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ResourceUsage,
+    reader: protoscript.BinaryReader,
+  ): ResourceUsage {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.resourceId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.resourceType = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.resourceName = reader.readString();
+          break;
+        }
+        case 4: {
+          const m = UsageRef.initialize();
+          reader.readMessage(m, UsageRef._readMessage);
+          msg.usedBy.push(m);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const CheckModuleResourceUsageRequest = {
+  /**
+   * Serializes CheckModuleResourceUsageRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<CheckModuleResourceUsageRequest>,
+  ): Uint8Array {
+    return CheckModuleResourceUsageRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CheckModuleResourceUsageRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): CheckModuleResourceUsageRequest {
+    return CheckModuleResourceUsageRequest._readMessage(
+      CheckModuleResourceUsageRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CheckModuleResourceUsageRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CheckModuleResourceUsageRequest>,
+  ): CheckModuleResourceUsageRequest {
+    return {
+      moduleId: "",
+      applicationId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CheckModuleResourceUsageRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.moduleId) {
+      writer.writeString(1, msg.moduleId);
+    }
+    if (msg.applicationId) {
+      writer.writeString(2, msg.applicationId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CheckModuleResourceUsageRequest,
+    reader: protoscript.BinaryReader,
+  ): CheckModuleResourceUsageRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.moduleId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.applicationId = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const CheckModuleResourceUsageResponse = {
+  /**
+   * Serializes CheckModuleResourceUsageResponse to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<CheckModuleResourceUsageResponse>,
+  ): Uint8Array {
+    return CheckModuleResourceUsageResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CheckModuleResourceUsageResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): CheckModuleResourceUsageResponse {
+    return CheckModuleResourceUsageResponse._readMessage(
+      CheckModuleResourceUsageResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CheckModuleResourceUsageResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CheckModuleResourceUsageResponse>,
+  ): CheckModuleResourceUsageResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      inUse: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CheckModuleResourceUsageResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.inUse?.length) {
+      writer.writeRepeatedMessage(
+        2,
+        msg.inUse as any,
+        ResourceUsage._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CheckModuleResourceUsageResponse,
+    reader: protoscript.BinaryReader,
+  ): CheckModuleResourceUsageResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          const m = ResourceUsage.initialize();
+          reader.readMessage(m, ResourceUsage._readMessage);
+          msg.inUse.push(m);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const CompleteModuleDeleteRequest = {
+  /**
+   * Serializes CompleteModuleDeleteRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<CompleteModuleDeleteRequest>): Uint8Array {
+    return CompleteModuleDeleteRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CompleteModuleDeleteRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): CompleteModuleDeleteRequest {
+    return CompleteModuleDeleteRequest._readMessage(
+      CompleteModuleDeleteRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CompleteModuleDeleteRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompleteModuleDeleteRequest>,
+  ): CompleteModuleDeleteRequest {
+    return {
+      moduleId: "",
+      moduleName: "",
+      status: "",
+      error: "",
+      inUseResources: [],
+      requestContext: common.RequestContext.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompleteModuleDeleteRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.moduleId) {
+      writer.writeString(1, msg.moduleId);
+    }
+    if (msg.moduleName) {
+      writer.writeString(2, msg.moduleName);
+    }
+    if (msg.status) {
+      writer.writeString(3, msg.status);
+    }
+    if (msg.error) {
+      writer.writeString(4, msg.error);
+    }
+    if (msg.inUseResources?.length) {
+      writer.writeRepeatedMessage(
+        5,
+        msg.inUseResources as any,
+        ResourceUsage._writeMessage,
+      );
+    }
+    if (msg.requestContext) {
+      writer.writeMessage(
+        6,
+        msg.requestContext,
+        common.RequestContext._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompleteModuleDeleteRequest,
+    reader: protoscript.BinaryReader,
+  ): CompleteModuleDeleteRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.moduleId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.moduleName = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.status = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.error = reader.readString();
+          break;
+        }
+        case 5: {
+          const m = ResourceUsage.initialize();
+          reader.readMessage(m, ResourceUsage._readMessage);
+          msg.inUseResources.push(m);
+          break;
+        }
+        case 6: {
+          reader.readMessage(
+            msg.requestContext,
+            common.RequestContext._readMessage,
+          );
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -1754,6 +2862,9 @@ export const ModuleJSON = {
       functions: [],
       installedAt: protoscript.TimestampJSON.initialize(),
       updatedAt: protoscript.TimestampJSON.initialize(),
+      createdByType: "",
+      createdByRef: "",
+      moduleKey: "",
       ...msg,
     };
   },
@@ -1789,6 +2900,15 @@ export const ModuleJSON = {
     }
     if (msg.updatedAt && (msg.updatedAt.seconds || msg.updatedAt.nanos)) {
       json["updatedAt"] = protoscript.serializeTimestamp(msg.updatedAt);
+    }
+    if (msg.createdByType) {
+      json["createdByType"] = msg.createdByType;
+    }
+    if (msg.createdByRef) {
+      json["createdByRef"] = msg.createdByRef;
+    }
+    if (msg.moduleKey) {
+      json["moduleKey"] = msg.moduleKey;
     }
     return json;
   },
@@ -1836,6 +2956,18 @@ export const ModuleJSON = {
     const _updatedAt_ = json["updatedAt"] ?? json["updated_at"];
     if (_updatedAt_) {
       msg.updatedAt = protoscript.parseTimestamp(_updatedAt_);
+    }
+    const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
+    if (_createdByType_) {
+      msg.createdByType = _createdByType_;
+    }
+    const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
+    if (_createdByRef_) {
+      msg.createdByRef = _createdByRef_;
+    }
+    const _moduleKey_ = json["moduleKey"] ?? json["module_key"];
+    if (_moduleKey_) {
+      msg.moduleKey = _moduleKey_;
     }
     return msg;
   },
@@ -1972,6 +3104,9 @@ export const CreateModuleRequestJSON = {
       manifest: "",
       archiveKey: "",
       functions: [],
+      createdByType: "",
+      createdByRef: "",
+      moduleKey: "",
       ...msg,
     };
   },
@@ -1999,6 +3134,15 @@ export const CreateModuleRequestJSON = {
       json["functions"] = msg.functions.map(
         CreateModuleFunctionRequestJSON._writeMessage,
       );
+    }
+    if (msg.createdByType) {
+      json["createdByType"] = msg.createdByType;
+    }
+    if (msg.createdByRef) {
+      json["createdByRef"] = msg.createdByRef;
+    }
+    if (msg.moduleKey) {
+      json["moduleKey"] = msg.moduleKey;
     }
     return json;
   },
@@ -2033,6 +3177,18 @@ export const CreateModuleRequestJSON = {
         CreateModuleFunctionRequestJSON._readMessage(m, item);
         msg.functions.push(m);
       }
+    }
+    const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
+    if (_createdByType_) {
+      msg.createdByType = _createdByType_;
+    }
+    const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
+    if (_createdByRef_) {
+      msg.createdByRef = _createdByRef_;
+    }
+    const _moduleKey_ = json["moduleKey"] ?? json["module_key"];
+    if (_moduleKey_) {
+      msg.moduleKey = _moduleKey_;
     }
     return msg;
   },
@@ -2393,6 +3549,64 @@ export const GetModuleByNameRequestJSON = {
   },
 };
 
+export const GetModuleByModuleKeyRequestJSON = {
+  /**
+   * Serializes GetModuleByModuleKeyRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<GetModuleByModuleKeyRequest>): string {
+    return JSON.stringify(GetModuleByModuleKeyRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes GetModuleByModuleKeyRequest from JSON.
+   */
+  decode: function (json: string): GetModuleByModuleKeyRequest {
+    return GetModuleByModuleKeyRequestJSON._readMessage(
+      GetModuleByModuleKeyRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes GetModuleByModuleKeyRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetModuleByModuleKeyRequest>,
+  ): GetModuleByModuleKeyRequest {
+    return {
+      moduleKey: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetModuleByModuleKeyRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.moduleKey) {
+      json["moduleKey"] = msg.moduleKey;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetModuleByModuleKeyRequest,
+    json: any,
+  ): GetModuleByModuleKeyRequest {
+    const _moduleKey_ = json["moduleKey"] ?? json["module_key"];
+    if (_moduleKey_) {
+      msg.moduleKey = _moduleKey_;
+    }
+    return msg;
+  },
+};
+
 export const ListModulesRequestJSON = {
   /**
    * Serializes ListModulesRequest to JSON.
@@ -2650,6 +3864,527 @@ export const ListModulesResponseJSON = {
         ModuleJSON._readMessage(m, item);
         msg.modules.push(m);
       }
+    }
+    return msg;
+  },
+};
+
+export const CompleteModuleInstallRequestJSON = {
+  /**
+   * Serializes CompleteModuleInstallRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<CompleteModuleInstallRequest>): string {
+    return JSON.stringify(CompleteModuleInstallRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes CompleteModuleInstallRequest from JSON.
+   */
+  decode: function (json: string): CompleteModuleInstallRequest {
+    return CompleteModuleInstallRequestJSON._readMessage(
+      CompleteModuleInstallRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CompleteModuleInstallRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompleteModuleInstallRequest>,
+  ): CompleteModuleInstallRequest {
+    return {
+      moduleId: "",
+      moduleName: "",
+      version: "",
+      status: "",
+      error: "",
+      requestContext: common.RequestContextJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompleteModuleInstallRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.moduleId) {
+      json["moduleId"] = msg.moduleId;
+    }
+    if (msg.moduleName) {
+      json["moduleName"] = msg.moduleName;
+    }
+    if (msg.version) {
+      json["version"] = msg.version;
+    }
+    if (msg.status) {
+      json["status"] = msg.status;
+    }
+    if (msg.error) {
+      json["error"] = msg.error;
+    }
+    if (msg.requestContext) {
+      const _requestContext_ = common.RequestContextJSON._writeMessage(
+        msg.requestContext,
+      );
+      if (Object.keys(_requestContext_).length > 0) {
+        json["requestContext"] = _requestContext_;
+      }
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompleteModuleInstallRequest,
+    json: any,
+  ): CompleteModuleInstallRequest {
+    const _moduleId_ = json["moduleId"] ?? json["module_id"];
+    if (_moduleId_) {
+      msg.moduleId = _moduleId_;
+    }
+    const _moduleName_ = json["moduleName"] ?? json["module_name"];
+    if (_moduleName_) {
+      msg.moduleName = _moduleName_;
+    }
+    const _version_ = json["version"];
+    if (_version_) {
+      msg.version = _version_;
+    }
+    const _status_ = json["status"];
+    if (_status_) {
+      msg.status = _status_;
+    }
+    const _error_ = json["error"];
+    if (_error_) {
+      msg.error = _error_;
+    }
+    const _requestContext_ = json["requestContext"] ?? json["request_context"];
+    if (_requestContext_) {
+      common.RequestContextJSON._readMessage(
+        msg.requestContext,
+        _requestContext_,
+      );
+    }
+    return msg;
+  },
+};
+
+export const UsageRefJSON = {
+  /**
+   * Serializes UsageRef to JSON.
+   */
+  encode: function (msg: PartialDeep<UsageRef>): string {
+    return JSON.stringify(UsageRefJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes UsageRef from JSON.
+   */
+  decode: function (json: string): UsageRef {
+    return UsageRefJSON._readMessage(
+      UsageRefJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes UsageRef with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<UsageRef>): UsageRef {
+    return {
+      sourceType: "",
+      sourceId: "",
+      sourceName: "",
+      context: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<UsageRef>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.sourceType) {
+      json["sourceType"] = msg.sourceType;
+    }
+    if (msg.sourceId) {
+      json["sourceId"] = msg.sourceId;
+    }
+    if (msg.sourceName) {
+      json["sourceName"] = msg.sourceName;
+    }
+    if (msg.context) {
+      json["context"] = msg.context;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (msg: UsageRef, json: any): UsageRef {
+    const _sourceType_ = json["sourceType"] ?? json["source_type"];
+    if (_sourceType_) {
+      msg.sourceType = _sourceType_;
+    }
+    const _sourceId_ = json["sourceId"] ?? json["source_id"];
+    if (_sourceId_) {
+      msg.sourceId = _sourceId_;
+    }
+    const _sourceName_ = json["sourceName"] ?? json["source_name"];
+    if (_sourceName_) {
+      msg.sourceName = _sourceName_;
+    }
+    const _context_ = json["context"];
+    if (_context_) {
+      msg.context = _context_;
+    }
+    return msg;
+  },
+};
+
+export const ResourceUsageJSON = {
+  /**
+   * Serializes ResourceUsage to JSON.
+   */
+  encode: function (msg: PartialDeep<ResourceUsage>): string {
+    return JSON.stringify(ResourceUsageJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ResourceUsage from JSON.
+   */
+  decode: function (json: string): ResourceUsage {
+    return ResourceUsageJSON._readMessage(
+      ResourceUsageJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ResourceUsage with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<ResourceUsage>): ResourceUsage {
+    return {
+      resourceId: "",
+      resourceType: "",
+      resourceName: "",
+      usedBy: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ResourceUsage>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.resourceId) {
+      json["resourceId"] = msg.resourceId;
+    }
+    if (msg.resourceType) {
+      json["resourceType"] = msg.resourceType;
+    }
+    if (msg.resourceName) {
+      json["resourceName"] = msg.resourceName;
+    }
+    if (msg.usedBy?.length) {
+      json["usedBy"] = msg.usedBy.map(UsageRefJSON._writeMessage);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (msg: ResourceUsage, json: any): ResourceUsage {
+    const _resourceId_ = json["resourceId"] ?? json["resource_id"];
+    if (_resourceId_) {
+      msg.resourceId = _resourceId_;
+    }
+    const _resourceType_ = json["resourceType"] ?? json["resource_type"];
+    if (_resourceType_) {
+      msg.resourceType = _resourceType_;
+    }
+    const _resourceName_ = json["resourceName"] ?? json["resource_name"];
+    if (_resourceName_) {
+      msg.resourceName = _resourceName_;
+    }
+    const _usedBy_ = json["usedBy"] ?? json["used_by"];
+    if (_usedBy_) {
+      for (const item of _usedBy_) {
+        const m = UsageRefJSON.initialize();
+        UsageRefJSON._readMessage(m, item);
+        msg.usedBy.push(m);
+      }
+    }
+    return msg;
+  },
+};
+
+export const CheckModuleResourceUsageRequestJSON = {
+  /**
+   * Serializes CheckModuleResourceUsageRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<CheckModuleResourceUsageRequest>): string {
+    return JSON.stringify(
+      CheckModuleResourceUsageRequestJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes CheckModuleResourceUsageRequest from JSON.
+   */
+  decode: function (json: string): CheckModuleResourceUsageRequest {
+    return CheckModuleResourceUsageRequestJSON._readMessage(
+      CheckModuleResourceUsageRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CheckModuleResourceUsageRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CheckModuleResourceUsageRequest>,
+  ): CheckModuleResourceUsageRequest {
+    return {
+      moduleId: "",
+      applicationId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CheckModuleResourceUsageRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.moduleId) {
+      json["moduleId"] = msg.moduleId;
+    }
+    if (msg.applicationId) {
+      json["applicationId"] = msg.applicationId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CheckModuleResourceUsageRequest,
+    json: any,
+  ): CheckModuleResourceUsageRequest {
+    const _moduleId_ = json["moduleId"] ?? json["module_id"];
+    if (_moduleId_) {
+      msg.moduleId = _moduleId_;
+    }
+    const _applicationId_ = json["applicationId"] ?? json["application_id"];
+    if (_applicationId_) {
+      msg.applicationId = _applicationId_;
+    }
+    return msg;
+  },
+};
+
+export const CheckModuleResourceUsageResponseJSON = {
+  /**
+   * Serializes CheckModuleResourceUsageResponse to JSON.
+   */
+  encode: function (
+    msg: PartialDeep<CheckModuleResourceUsageResponse>,
+  ): string {
+    return JSON.stringify(
+      CheckModuleResourceUsageResponseJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes CheckModuleResourceUsageResponse from JSON.
+   */
+  decode: function (json: string): CheckModuleResourceUsageResponse {
+    return CheckModuleResourceUsageResponseJSON._readMessage(
+      CheckModuleResourceUsageResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CheckModuleResourceUsageResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CheckModuleResourceUsageResponse>,
+  ): CheckModuleResourceUsageResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      inUse: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CheckModuleResourceUsageResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.inUse?.length) {
+      json["inUse"] = msg.inUse.map(ResourceUsageJSON._writeMessage);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CheckModuleResourceUsageResponse,
+    json: any,
+  ): CheckModuleResourceUsageResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _inUse_ = json["inUse"] ?? json["in_use"];
+    if (_inUse_) {
+      for (const item of _inUse_) {
+        const m = ResourceUsageJSON.initialize();
+        ResourceUsageJSON._readMessage(m, item);
+        msg.inUse.push(m);
+      }
+    }
+    return msg;
+  },
+};
+
+export const CompleteModuleDeleteRequestJSON = {
+  /**
+   * Serializes CompleteModuleDeleteRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<CompleteModuleDeleteRequest>): string {
+    return JSON.stringify(CompleteModuleDeleteRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes CompleteModuleDeleteRequest from JSON.
+   */
+  decode: function (json: string): CompleteModuleDeleteRequest {
+    return CompleteModuleDeleteRequestJSON._readMessage(
+      CompleteModuleDeleteRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CompleteModuleDeleteRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompleteModuleDeleteRequest>,
+  ): CompleteModuleDeleteRequest {
+    return {
+      moduleId: "",
+      moduleName: "",
+      status: "",
+      error: "",
+      inUseResources: [],
+      requestContext: common.RequestContextJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompleteModuleDeleteRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.moduleId) {
+      json["moduleId"] = msg.moduleId;
+    }
+    if (msg.moduleName) {
+      json["moduleName"] = msg.moduleName;
+    }
+    if (msg.status) {
+      json["status"] = msg.status;
+    }
+    if (msg.error) {
+      json["error"] = msg.error;
+    }
+    if (msg.inUseResources?.length) {
+      json["inUseResources"] = msg.inUseResources.map(
+        ResourceUsageJSON._writeMessage,
+      );
+    }
+    if (msg.requestContext) {
+      const _requestContext_ = common.RequestContextJSON._writeMessage(
+        msg.requestContext,
+      );
+      if (Object.keys(_requestContext_).length > 0) {
+        json["requestContext"] = _requestContext_;
+      }
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompleteModuleDeleteRequest,
+    json: any,
+  ): CompleteModuleDeleteRequest {
+    const _moduleId_ = json["moduleId"] ?? json["module_id"];
+    if (_moduleId_) {
+      msg.moduleId = _moduleId_;
+    }
+    const _moduleName_ = json["moduleName"] ?? json["module_name"];
+    if (_moduleName_) {
+      msg.moduleName = _moduleName_;
+    }
+    const _status_ = json["status"];
+    if (_status_) {
+      msg.status = _status_;
+    }
+    const _error_ = json["error"];
+    if (_error_) {
+      msg.error = _error_;
+    }
+    const _inUseResources_ = json["inUseResources"] ?? json["in_use_resources"];
+    if (_inUseResources_) {
+      for (const item of _inUseResources_) {
+        const m = ResourceUsageJSON.initialize();
+        ResourceUsageJSON._readMessage(m, item);
+        msg.inUseResources.push(m);
+      }
+    }
+    const _requestContext_ = json["requestContext"] ?? json["request_context"];
+    if (_requestContext_) {
+      common.RequestContextJSON._readMessage(
+        msg.requestContext,
+        _requestContext_,
+      );
     }
     return msg;
   },

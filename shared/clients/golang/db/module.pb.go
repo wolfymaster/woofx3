@@ -1440,7 +1440,7 @@ const file_module_proto_rawDesc = "" +
 	"\x10in_use_resources\x18\x05 \x03(\v2\x15.module.ResourceUsageR\x0einUseResources\x12?\n" +
 	"\x0frequest_context\x18\x06 \x01(\v2\x16.common.RequestContextR\x0erequestContext\"6\n" +
 	"\x17DeleteByModuleIdRequest\x12\x1b\n" +
-	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId2\xf7\x0e\n" +
+	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId2\xc7\r\n" +
 	"\rModuleService\x12C\n" +
 	"\fCreateModule\x12\x1b.module.CreateModuleRequest\x1a\x16.module.ModuleResponse\x12C\n" +
 	"\fUpdateModule\x12\x1b.module.UpdateModuleRequest\x1a\x16.module.ModuleResponse\x12C\n" +
@@ -1451,12 +1451,10 @@ const file_module_proto_rawDesc = "" +
 	"\vListModules\x12\x1a.module.ListModulesRequest\x1a\x1b.module.ListModulesResponse\x12G\n" +
 	"\x0eSetModuleState\x12\x1d.module.SetModuleStateRequest\x1a\x16.module.ModuleResponse\x12Q\n" +
 	"\x10RegisterTriggers\x12\x1f.module.RegisterTriggersRequest\x1a\x1c.module.ListTriggersResponse\x12I\n" +
-	"\fListTriggers\x12\x1b.module.ListTriggersRequest\x1a\x1c.module.ListTriggersResponse\x12W\n" +
-	"\x16DeleteTriggersByModule\x12%.module.DeleteTriggersByModuleRequest\x1a\x16.common.ResponseStatus\x12S\n" +
+	"\fListTriggers\x12\x1b.module.ListTriggersRequest\x1a\x1c.module.ListTriggersResponse\x12S\n" +
 	"\x18DeleteTriggersByModuleId\x12\x1f.module.DeleteByModuleIdRequest\x1a\x16.common.ResponseStatus\x12N\n" +
 	"\x0fRegisterActions\x12\x1e.module.RegisterActionsRequest\x1a\x1b.module.ListActionsResponse\x12F\n" +
-	"\vListActions\x12\x1a.module.ListActionsRequest\x1a\x1b.module.ListActionsResponse\x12U\n" +
-	"\x15DeleteActionsByModule\x12$.module.DeleteActionsByModuleRequest\x1a\x16.common.ResponseStatus\x12R\n" +
+	"\vListActions\x12\x1a.module.ListActionsRequest\x1a\x1b.module.ListActionsResponse\x12R\n" +
 	"\x17DeleteActionsByModuleId\x12\x1f.module.DeleteByModuleIdRequest\x1a\x16.common.ResponseStatus\x12[\n" +
 	"\x14CreateModuleResource\x12#.module.CreateModuleResourceRequest\x1a\x1e.module.ModuleResourceResponse\x12^\n" +
 	"\x13ListModuleResources\x12\".module.ListModuleResourcesRequest\x1a#.module.ListModuleResourcesResponse\x12U\n" +
@@ -1505,18 +1503,16 @@ var file_module_proto_goTypes = []any{
 	(*RequestContext)(nil),                     // 22: common.RequestContext
 	(*RegisterTriggersRequest)(nil),            // 23: module.RegisterTriggersRequest
 	(*ListTriggersRequest)(nil),                // 24: module.ListTriggersRequest
-	(*DeleteTriggersByModuleRequest)(nil),      // 25: module.DeleteTriggersByModuleRequest
-	(*RegisterActionsRequest)(nil),             // 26: module.RegisterActionsRequest
-	(*ListActionsRequest)(nil),                 // 27: module.ListActionsRequest
-	(*DeleteActionsByModuleRequest)(nil),       // 28: module.DeleteActionsByModuleRequest
-	(*CreateModuleResourceRequest)(nil),        // 29: module.CreateModuleResourceRequest
-	(*ListModuleResourcesRequest)(nil),         // 30: module.ListModuleResourcesRequest
-	(*DeleteModuleResourcesRequest)(nil),       // 31: module.DeleteModuleResourcesRequest
-	(*UpdateModuleResourceVersionRequest)(nil), // 32: module.UpdateModuleResourceVersionRequest
-	(*ListTriggersResponse)(nil),               // 33: module.ListTriggersResponse
-	(*ListActionsResponse)(nil),                // 34: module.ListActionsResponse
-	(*ModuleResourceResponse)(nil),             // 35: module.ModuleResourceResponse
-	(*ListModuleResourcesResponse)(nil),        // 36: module.ListModuleResourcesResponse
+	(*RegisterActionsRequest)(nil),             // 25: module.RegisterActionsRequest
+	(*ListActionsRequest)(nil),                 // 26: module.ListActionsRequest
+	(*CreateModuleResourceRequest)(nil),        // 27: module.CreateModuleResourceRequest
+	(*ListModuleResourcesRequest)(nil),         // 28: module.ListModuleResourcesRequest
+	(*DeleteModuleResourcesRequest)(nil),       // 29: module.DeleteModuleResourcesRequest
+	(*UpdateModuleResourceVersionRequest)(nil), // 30: module.UpdateModuleResourceVersionRequest
+	(*ListTriggersResponse)(nil),               // 31: module.ListTriggersResponse
+	(*ListActionsResponse)(nil),                // 32: module.ListActionsResponse
+	(*ModuleResourceResponse)(nil),             // 33: module.ModuleResourceResponse
+	(*ListModuleResourcesResponse)(nil),        // 34: module.ListModuleResourcesResponse
 }
 var file_module_proto_depIdxs = []int32{
 	1,  // 0: module.Module.functions:type_name -> module.ModuleFunction
@@ -1544,44 +1540,40 @@ var file_module_proto_depIdxs = []int32{
 	10, // 22: module.ModuleService.SetModuleState:input_type -> module.SetModuleStateRequest
 	23, // 23: module.ModuleService.RegisterTriggers:input_type -> module.RegisterTriggersRequest
 	24, // 24: module.ModuleService.ListTriggers:input_type -> module.ListTriggersRequest
-	25, // 25: module.ModuleService.DeleteTriggersByModule:input_type -> module.DeleteTriggersByModuleRequest
-	19, // 26: module.ModuleService.DeleteTriggersByModuleId:input_type -> module.DeleteByModuleIdRequest
-	26, // 27: module.ModuleService.RegisterActions:input_type -> module.RegisterActionsRequest
-	27, // 28: module.ModuleService.ListActions:input_type -> module.ListActionsRequest
-	28, // 29: module.ModuleService.DeleteActionsByModule:input_type -> module.DeleteActionsByModuleRequest
-	19, // 30: module.ModuleService.DeleteActionsByModuleId:input_type -> module.DeleteByModuleIdRequest
-	29, // 31: module.ModuleService.CreateModuleResource:input_type -> module.CreateModuleResourceRequest
-	30, // 32: module.ModuleService.ListModuleResources:input_type -> module.ListModuleResourcesRequest
-	31, // 33: module.ModuleService.DeleteModuleResources:input_type -> module.DeleteModuleResourcesRequest
-	32, // 34: module.ModuleService.UpdateModuleResourceVersion:input_type -> module.UpdateModuleResourceVersionRequest
-	13, // 35: module.ModuleService.CompleteModuleInstall:input_type -> module.CompleteModuleInstallRequest
-	16, // 36: module.ModuleService.CheckModuleResourceUsage:input_type -> module.CheckModuleResourceUsageRequest
-	18, // 37: module.ModuleService.CompleteModuleDelete:input_type -> module.CompleteModuleDeleteRequest
-	11, // 38: module.ModuleService.CreateModule:output_type -> module.ModuleResponse
-	11, // 39: module.ModuleService.UpdateModule:output_type -> module.ModuleResponse
-	21, // 40: module.ModuleService.DeleteModule:output_type -> common.ResponseStatus
-	11, // 41: module.ModuleService.GetModule:output_type -> module.ModuleResponse
-	11, // 42: module.ModuleService.GetModuleByName:output_type -> module.ModuleResponse
-	11, // 43: module.ModuleService.GetModuleByModuleKey:output_type -> module.ModuleResponse
-	12, // 44: module.ModuleService.ListModules:output_type -> module.ListModulesResponse
-	11, // 45: module.ModuleService.SetModuleState:output_type -> module.ModuleResponse
-	33, // 46: module.ModuleService.RegisterTriggers:output_type -> module.ListTriggersResponse
-	33, // 47: module.ModuleService.ListTriggers:output_type -> module.ListTriggersResponse
-	21, // 48: module.ModuleService.DeleteTriggersByModule:output_type -> common.ResponseStatus
-	21, // 49: module.ModuleService.DeleteTriggersByModuleId:output_type -> common.ResponseStatus
-	34, // 50: module.ModuleService.RegisterActions:output_type -> module.ListActionsResponse
-	34, // 51: module.ModuleService.ListActions:output_type -> module.ListActionsResponse
-	21, // 52: module.ModuleService.DeleteActionsByModule:output_type -> common.ResponseStatus
-	21, // 53: module.ModuleService.DeleteActionsByModuleId:output_type -> common.ResponseStatus
-	35, // 54: module.ModuleService.CreateModuleResource:output_type -> module.ModuleResourceResponse
-	36, // 55: module.ModuleService.ListModuleResources:output_type -> module.ListModuleResourcesResponse
-	21, // 56: module.ModuleService.DeleteModuleResources:output_type -> common.ResponseStatus
-	35, // 57: module.ModuleService.UpdateModuleResourceVersion:output_type -> module.ModuleResourceResponse
-	21, // 58: module.ModuleService.CompleteModuleInstall:output_type -> common.ResponseStatus
-	17, // 59: module.ModuleService.CheckModuleResourceUsage:output_type -> module.CheckModuleResourceUsageResponse
-	21, // 60: module.ModuleService.CompleteModuleDelete:output_type -> common.ResponseStatus
-	38, // [38:61] is the sub-list for method output_type
-	15, // [15:38] is the sub-list for method input_type
+	19, // 25: module.ModuleService.DeleteTriggersByModuleId:input_type -> module.DeleteByModuleIdRequest
+	25, // 26: module.ModuleService.RegisterActions:input_type -> module.RegisterActionsRequest
+	26, // 27: module.ModuleService.ListActions:input_type -> module.ListActionsRequest
+	19, // 28: module.ModuleService.DeleteActionsByModuleId:input_type -> module.DeleteByModuleIdRequest
+	27, // 29: module.ModuleService.CreateModuleResource:input_type -> module.CreateModuleResourceRequest
+	28, // 30: module.ModuleService.ListModuleResources:input_type -> module.ListModuleResourcesRequest
+	29, // 31: module.ModuleService.DeleteModuleResources:input_type -> module.DeleteModuleResourcesRequest
+	30, // 32: module.ModuleService.UpdateModuleResourceVersion:input_type -> module.UpdateModuleResourceVersionRequest
+	13, // 33: module.ModuleService.CompleteModuleInstall:input_type -> module.CompleteModuleInstallRequest
+	16, // 34: module.ModuleService.CheckModuleResourceUsage:input_type -> module.CheckModuleResourceUsageRequest
+	18, // 35: module.ModuleService.CompleteModuleDelete:input_type -> module.CompleteModuleDeleteRequest
+	11, // 36: module.ModuleService.CreateModule:output_type -> module.ModuleResponse
+	11, // 37: module.ModuleService.UpdateModule:output_type -> module.ModuleResponse
+	21, // 38: module.ModuleService.DeleteModule:output_type -> common.ResponseStatus
+	11, // 39: module.ModuleService.GetModule:output_type -> module.ModuleResponse
+	11, // 40: module.ModuleService.GetModuleByName:output_type -> module.ModuleResponse
+	11, // 41: module.ModuleService.GetModuleByModuleKey:output_type -> module.ModuleResponse
+	12, // 42: module.ModuleService.ListModules:output_type -> module.ListModulesResponse
+	11, // 43: module.ModuleService.SetModuleState:output_type -> module.ModuleResponse
+	31, // 44: module.ModuleService.RegisterTriggers:output_type -> module.ListTriggersResponse
+	31, // 45: module.ModuleService.ListTriggers:output_type -> module.ListTriggersResponse
+	21, // 46: module.ModuleService.DeleteTriggersByModuleId:output_type -> common.ResponseStatus
+	32, // 47: module.ModuleService.RegisterActions:output_type -> module.ListActionsResponse
+	32, // 48: module.ModuleService.ListActions:output_type -> module.ListActionsResponse
+	21, // 49: module.ModuleService.DeleteActionsByModuleId:output_type -> common.ResponseStatus
+	33, // 50: module.ModuleService.CreateModuleResource:output_type -> module.ModuleResourceResponse
+	34, // 51: module.ModuleService.ListModuleResources:output_type -> module.ListModuleResourcesResponse
+	21, // 52: module.ModuleService.DeleteModuleResources:output_type -> common.ResponseStatus
+	33, // 53: module.ModuleService.UpdateModuleResourceVersion:output_type -> module.ModuleResourceResponse
+	21, // 54: module.ModuleService.CompleteModuleInstall:output_type -> common.ResponseStatus
+	17, // 55: module.ModuleService.CheckModuleResourceUsage:output_type -> module.CheckModuleResourceUsageResponse
+	21, // 56: module.ModuleService.CompleteModuleDelete:output_type -> common.ResponseStatus
+	36, // [36:57] is the sub-list for method output_type
+	15, // [15:36] is the sub-list for method input_type
 	15, // [15:15] is the sub-list for extension type_name
 	15, // [15:15] is the sub-list for extension extendee
 	0,  // [0:15] is the sub-list for field type_name
