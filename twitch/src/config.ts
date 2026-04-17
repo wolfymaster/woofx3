@@ -10,6 +10,7 @@ export const TwitchEnvSchema = z.object({
   woofx3TwitchClientId: z.string().min(1, "twitchClientId is required"),
   woofx3TwitchClientSecret: z.string().min(1, "twitchClientSecret is required"),
   woofx3TwitchRedirectUrl: z.string().default("http://localhost"),
+  woofx3RootPath: z.string().optional(),
 });
 
 export type TwitchEnvConfig = z.infer<typeof TwitchEnvSchema>;

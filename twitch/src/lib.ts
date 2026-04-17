@@ -1,30 +1,6 @@
 import type { AccessTokenWithUserId } from "@twurple/auth";
 import fs from "fs/promises";
-import winston, { type LoggerOptions } from "winston";
 import type { TwitchContext } from "./types";
-
-export function makeLogger(opts?: LoggerOptions): winston.Logger {
-  const { combine, prettyPrint } = winston.format;
-  const filterCtx = winston.format((info, opts) => {
-    let ctx = info.ctx as Partial<TwitchContext>;
-    if (ctx) {
-      delete ctx.logger;
-    }
-    return info;
-  });
-  const logger = winston.createLogger({
-    format: combine(
-      winston.format.timestamp({
-        format: "YYYY-MM-DD HH:mm:ss",
-      })
-    ),
-    transports: [
-      new winston.transports.Console({ format: combine(filterCtx(), winston.format.json(), prettyPrint()) }),
-    ],
-    ...opts,
-  });
-  return logger;
-}
 
 export async function getBroadcasterId(ctx: TwitchContext, username: string): Promise<string> {
   ctx.logger.info("getBroadcastId", { username });

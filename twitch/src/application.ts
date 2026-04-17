@@ -1,10 +1,11 @@
 import type { HelixUser } from "@twurple/api";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
+import type { SharedLogger } from "@woofx3/common/logging";
 import type { Application, IApplication } from "@woofx3/common/runtime";
+import { GetSetting } from "@woofx3/db/setting.pb";
 import type { Msg } from "@woofx3/nats/src/types";
 import TwitchClient from "@woofx3/twitch";
 import chalk from "chalk";
-import type { Logger } from "winston";
 import type TwitchApiClient from "./lib/twitch";
 import type { CommandResponse } from "./lib/twitch";
 import TwitchApiClientImpl from "./lib/twitch";
@@ -19,7 +20,7 @@ export type TwitchApiServices = {
 
 export type TwitchApiContext = {
   broadcaster: HelixUser;
-  logger: Logger;
+  logger: SharedLogger;
   services: TwitchApiServices;
   twitchEventBus?: TwitchEventBus;
   twitchApi: TwitchApiClient;
@@ -39,10 +40,20 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
   }
 
   async init(ctx: TwitchApiContext) {
+    const dbBaseURL = ctx.services.dbProxy.client.baseURL;
     const twitchClient = new TwitchClient({
       applicationId: ctx.config.getConfig("woofx3ApplicationId") as string,
       channel: ctx.config.getConfig("woofx3TwitchChannelName") as string,
-      databaseURL: ctx.services.dbProxy.client.baseURL,
+      getSetting: async (req) => {
+        const response = await GetSetting(req, { baseURL: dbBaseURL });
+        return {
+          setting: {
+            value: {
+              stringValue: response.setting.value.stringValue ?? undefined,
+            },
+          },
+        };
+      },
     });
     await twitchClient.init({
       clientId: ctx.config.getConfig("woofx3TwitchClientId") as string,

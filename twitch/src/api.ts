@@ -1,3 +1,5 @@
+import path from "node:path";
+import { createServiceLogger } from "@woofx3/common/logging";
 import { createApplication, createNATSMonitor, createRuntime, loadRuntimeEnv } from "@woofx3/common/runtime";
 import MessageBus from "@woofx3/nats";
 import Application, { type TwitchApiApplication } from "./application";
@@ -16,11 +18,18 @@ const bus = await MessageBus.createMessageBus({
   jwt: loadedConfig.getConfig("woofx3MessagebusJwt") as string,
   nkeySeed: loadedConfig.getConfig("woofx3MessagebusNKey") as string,
 });
+const logger = createServiceLogger({
+  serviceName: "twitch",
+  logDir: path.join((loadedConfig.getConfig("woofx3RootPath") as string | undefined) ?? process.cwd(), "logs"),
+  context: {
+    applicationId: loadedConfig.getConfig("woofx3ApplicationId") as string,
+  },
+});
 
 const runtime = createRuntime({
   application: createApplication(new Application()),
   envSchema: TwitchEnvSchema,
-  logger: console,
+  logger,
   runtimeEnv: () => loadedConfig,
   healthMonitor: createNATSMonitor({
     natsClient: bus,

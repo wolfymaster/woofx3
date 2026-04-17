@@ -1,11 +1,11 @@
 import type { HelixUser } from "@twurple/api";
 import type EventFactory from "@woofx3/common/cloudevents/EventFactory";
+import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
-import type { Logger } from "winston";
 
 export interface Context {
   broadcaster: HelixUser;
-  logger: Logger;
+  logger: SharedLogger;
   messageBus: NATSClient;
   events: EventFactory;
 }
@@ -15,7 +15,7 @@ export interface TwitchContext {
   clientId: string;
   clientSecret: string;
   accessToken: string;
-  logger: Logger;
+  logger: SharedLogger;
 }
 
 export interface TwitchApiRequestMessage {
