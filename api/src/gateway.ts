@@ -1,4 +1,5 @@
 import type { SharedLogger } from "@woofx3/common/logging";
+import type { ApiGatewayContract } from "@woofx3/api/rpc";
 import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
 import { ApiSession } from "./api-session";
@@ -6,7 +7,7 @@ import type { ClientAuth } from "./auth";
 import type { DbClient } from "./db-client";
 import type { WebhookClient } from "./webhook-client";
 
-export class ApiGateway extends RpcTarget {
+export class ApiGateway extends RpcTarget implements ApiGatewayContract {
   private webhookClient: WebhookClient | null = null;
 
   constructor(

@@ -1,111 +1,30 @@
 import type { SharedLogger } from "@woofx3/common/logging";
+import type { CallbackEnvelope, CallbackEvent } from "@woofx3/api/webhooks";
 import type { DbClient } from "./db-client";
+
+// Re-export the shared webhook types so existing engine-side importers
+// (./webhook-client) keep working without churn. External clients should
+// import from "@woofx3/api/webhooks" directly.
+export type {
+  ActionDefinition,
+  CallbackEnvelope,
+  CallbackEvent,
+  ModuleActionRegisteredEvent,
+  ModuleDeletedEvent,
+  ModuleDeleteFailedEvent,
+  ModuleInstalledEvent,
+  ModuleInstallFailedEvent,
+  ModuleResourceUsage,
+  ModuleTriggerRegisteredEvent,
+  ModuleUsageRef,
+  TriggerDefinition,
+} from "@woofx3/api/webhooks";
 
 interface RegisteredInstance {
   clientId: string;
   instanceName: string;
   callbackUrl: string;
   callbackToken: string;
-}
-
-// -- Callback event payloads sent to registered callback URLs --
-
-export interface TriggerDefinition {
-  id: string;
-  category: string;
-  name: string;
-  description: string;
-  event: string;
-  configSchema: string;
-  allowVariants: boolean;
-  createdByType: string;
-  createdByRef: string;
-}
-
-export interface ActionDefinition {
-  id: string;
-  name: string;
-  description: string;
-  call: string;
-  paramsSchema: string;
-  createdByType: string;
-  createdByRef: string;
-}
-
-export interface ModuleTriggerRegisteredEvent {
-  type: "module.trigger.registered";
-  moduleKey: string;
-  moduleName: string;
-  version: string;
-  triggers: TriggerDefinition[];
-}
-
-export interface ModuleActionRegisteredEvent {
-  type: "module.action.registered";
-  moduleKey: string;
-  moduleName: string;
-  version: string;
-  actions: ActionDefinition[];
-}
-
-export interface ModuleInstalledEvent {
-  type: "module.installed";
-  moduleName: string;
-  version: string;
-  moduleKey: string;
-  alreadyInstalled?: boolean;
-}
-
-export interface ModuleInstallFailedEvent {
-  type: "module.install_failed";
-  moduleName: string;
-  version: string;
-  moduleKey: string;
-  error: string;
-}
-
-export interface ModuleUsageRef {
-  sourceType: string;
-  sourceId: string;
-  sourceName: string;
-  context: string;
-}
-
-export interface ModuleResourceUsage {
-  resourceId: string;
-  resourceType: string;
-  resourceName: string;
-  usedBy: ModuleUsageRef[];
-}
-
-export interface ModuleDeletedEvent {
-  type: "module.deleted";
-  moduleName: string;
-  moduleKey: string;
-}
-
-export interface ModuleDeleteFailedEvent {
-  type: "module.delete_failed";
-  moduleName: string;
-  moduleKey: string;
-  error: string;
-  inUseResources: ModuleResourceUsage[];
-}
-
-export type CallbackEvent =
-  | ModuleTriggerRegisteredEvent
-  | ModuleActionRegisteredEvent
-  | ModuleInstalledEvent
-  | ModuleInstallFailedEvent
-  | ModuleDeletedEvent
-  | ModuleDeleteFailedEvent;
-
-export interface CallbackEnvelope {
-  id: string;
-  source: "engine";
-  type: string;
-  time: string;
-  data: CallbackEvent;
 }
 
 export class WebhookClient {
