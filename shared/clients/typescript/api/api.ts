@@ -397,6 +397,15 @@ export interface Woofx3EngineApi {
   // Triggers & actions catalog
   getTriggers(createdByType?: string, createdByRef?: string): Promise<TriggerDefinition[]>;
 
+  /**
+   * Return the set of actions available to the workflow builder. The exact
+   * row shape is still stabilizing on the engine side (currently mock-backed
+   * and UI-formatted with `icon`, `category`, `color`, `config`); external
+   * clients treat rows as structural records and read fields via `unknown`
+   * narrowing.
+   */
+  getActions(moduleId?: string): Promise<Array<Record<string, unknown>>>;
+
   // Workflows
   getWorkflows(query?: WorkflowsQuery): Promise<PaginatedWorkflows>;
   getWorkflow(id: string): Promise<Workflow | null>;
