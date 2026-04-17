@@ -7,6 +7,7 @@ import (
 
 type Config struct {
 	WSURL              string
+	Token              string
 	OnOpen             func()
 	OnClose            func()
 	OnError            func(error)

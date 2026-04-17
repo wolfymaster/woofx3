@@ -63,10 +63,14 @@ export default class BarkloaderClient {
         
         if (this.socket) {
             this.removeEventListeners();
-            
-            if (this.socket.readyState === WebSocket.OPEN || 
-                this.socket.readyState === WebSocket.CONNECTING) {
-                this.socket.close(1000, 'Manual disconnect');
+
+            try {
+                if (this.socket.readyState === WebSocket.OPEN ||
+                    this.socket.readyState === WebSocket.CONNECTING) {
+                    this.socket.close(1000, 'Manual disconnect');
+                }
+            } catch {
+                // Bun can throw when closing a socket mid-handshake
             }
             this.socket = null;
         }
@@ -87,10 +91,22 @@ export default class BarkloaderClient {
         }
     }
 
-    public registerHandler(event: string, cb: MessageHandler) {
+    public registerHandler(event: string, cb: (...args: any[]) => void) {
         switch(event) {
             case 'onMessage': {
-                this.onMessage = cb;
+                this.onMessage = cb as MessageHandler;
+                break;
+            }
+            case 'onError': {
+                this.config.onError = cb as EventListener;
+                break;
+            }
+            case 'onClose': {
+                this.config.onClose = cb as EventListener;
+                break;
+            }
+            case 'onOpen': {
+                this.config.onOpen = cb as EventListener;
                 break;
             }
         }

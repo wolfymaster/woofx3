@@ -3,6 +3,7 @@ package barkloader
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -82,7 +83,13 @@ func (c *Client) Connect() error {
 		HandshakeTimeout: 10 * time.Second,
 	}
 
-	conn, _, err := dialer.Dial(c.config.WSURL, nil)
+	var headers http.Header
+	if c.config.Token != "" {
+		headers = http.Header{}
+		headers.Set("Authorization", "Bearer "+c.config.Token)
+	}
+
+	conn, _, err := dialer.Dial(c.config.WSURL, headers)
 	if err != nil {
 		c.isConnecting = false
 		c.handleConnectionFailure()
