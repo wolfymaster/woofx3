@@ -150,6 +150,7 @@ func (w *PublisherWorker) publishEvent(event *models.WorkerEvent) error {
 	ce.SetTime(event.CreatedAt)
 
 	ce.SetExtension("application_id", event.ApplicationID)
+	ce.SetExtension("client_id", event.ClientID)
 	ce.SetExtension("entity_type", event.EntityType)
 	ce.SetExtension("entity_id", event.EntityID)
 	ce.SetExtension("operation", event.Operation)
@@ -312,6 +313,7 @@ func (w *PublisherWorker) retryEvent(cached *CachedEvent) error {
 	ce.SetTime(event.CreatedAt)
 
 	ce.SetExtension("application_id", event.ApplicationID)
+	ce.SetExtension("client_id", event.ClientID)
 	ce.SetExtension("entity_type", event.EntityType)
 	ce.SetExtension("entity_id", event.EntityID)
 	ce.SetExtension("operation", event.Operation)

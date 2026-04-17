@@ -5,9 +5,11 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/wolfymaster/woofx3/common/logging"
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/common/runtime/monitor"
 	"github.com/wolfymaster/woofx3/common/runtime/service"
@@ -17,14 +19,25 @@ import (
 )
 
 func main() {
-	var level slog.LevelVar
-	opts := &slog.HandlerOptions{Level: &level}
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, opts))
+	env, err := runtime.LoadRuntimeEnv(nil)
+	if err != nil {
+		panic("failed to load runtime env for logging: " + err.Error())
+	}
+
+	sharedLogger, err := logging.New(logging.Config{
+		ServiceName:             "db",
+		LogDirectory:            strings.TrimSpace(env["WOOFX3_ROOT_PATH"]) + "/logs",
+		AllowRuntimeLevelChange: true,
+	})
+	if err != nil {
+		panic("failed to initialize logger: " + err.Error())
+	}
+	defer sharedLogger.Close()
+	logger := sharedLogger.Slog()
 
 	app := NewDatabaseApp(&DatabaseAppConfig{Logger: logger})
-	slogAdapter := &SlogAdapter{logger: logger}
 	natsSvc := service.NewNATS(logger, "nats", "messagebus")
-	natsMonitor := monitor.NewNATS("nats", natsSvc, "db", "HEARTBEAT", 15*time.Second, slogAdapter)
+	natsMonitor := monitor.NewNATS("nats", natsSvc, "db", "HEARTBEAT", 15*time.Second, logger)
 	dbEnvConfig := &config.DatabaseEnvConfig{}
 
 	rt, err := runtime.NewRuntime(&runtime.RuntimeConfig{
@@ -40,7 +53,14 @@ func main() {
 			httpPort := cfg.DatabaseProxyPort
 
 			if cfg.LogLevel != "" {
-				level.UnmarshalText([]byte(cfg.LogLevel))
+				var parsedLevel slog.Level
+				if err := parsedLevel.UnmarshalText([]byte(cfg.LogLevel)); err == nil {
+					if err := sharedLogger.SetLevel(parsedLevel); err != nil {
+						logger.Warn("Failed to set runtime log level", "error", err, "level", cfg.LogLevel)
+					}
+				} else {
+					logger.Warn("Invalid log level in config", "error", err, "level", cfg.LogLevel)
+				}
 			}
 
 			postgresSvc := services.NewPostgresService(databaseURL, logger)
@@ -74,7 +94,7 @@ func main() {
 			return nil
 		},
 		HealthMonitor: natsMonitor,
-		Logger:        slogAdapter,
+		Logger:        logger,
 	})
 
 	if err != nil {

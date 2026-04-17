@@ -17,6 +17,8 @@ type Command struct {
 	CreatedBy     uuid.UUID `gorm:"column:created_by;type:uuid"`
 	Priority      int       `gorm:"column:priority;default:0"`
 	Enabled       bool      `gorm:"column:enabled;default:true"`
+	CreatedByType string    `gorm:"column:created_by_type;type:text;not null;default:'USER'"`
+	CreatedByRef  string    `gorm:"column:created_by_ref;type:text;not null;default:''"`
 	CreatedAt     time.Time `gorm:"column:created_at;default:CURRENT_TIMESTAMP;not null"`
 
 	// Relationships

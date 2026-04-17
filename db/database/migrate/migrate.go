@@ -15,6 +15,13 @@ func Migrate(db *gorm.DB) error {
 		migrations.CreateModuleTables(),
 		migrations.CreateModuleTriggerTable(),
 		migrations.AddClientCallbackUrl(),
+		migrations.AddResourceOriginColumns(),
+		migrations.CreateModuleResourcesTable(),
+		migrations.CreateModuleActionsTable(),
+		migrations.RelaxWorkerEventUuidColumns(),
+		migrations.DecoupleTriggerActionsFromModules(),
+		migrations.AddModuleKeyColumn(),
+		migrations.CreateResourceReferencesTable(),
 	})
 
 	return m.Migrate()

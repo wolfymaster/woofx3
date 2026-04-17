@@ -51,6 +51,8 @@ message Workflow {
     int32 timeout_seconds = 12;        // Global timeout for the workflow in seconds
     google.protobuf.Timestamp created_at = 13;
     google.protobuf.Timestamp updated_at = 14;
+    string created_by_type = 15;
+    string created_by_ref = 16;
 }
 
 // A single step in a workflow
@@ -112,6 +114,8 @@ message CreateWorkflowRequest {
     string on_failure = 9;
     int32 max_retries = 10;
     int32 timeout_seconds = 11;
+    string created_by_type = 12;
+    string created_by_ref = 13;
 }
 
 // Request to get a workflow by ID

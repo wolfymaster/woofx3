@@ -24,6 +24,7 @@ func NewEventPublisher(repo *repository.DbEventRepository, logger *slog.Logger) 
 
 type PublishOptions struct {
 	ApplicationID   string
+	ClientID        string
 	EntityType      string
 	EntityID        string
 	Operation       string
@@ -49,10 +50,15 @@ func (p *EventPublisher) Publish(opts PublishOptions) error {
 		return fmt.Errorf("marshal payload: %w", err)
 	}
 
+	appSegment := opts.ApplicationID
+	if appSegment == "" {
+		appSegment = "system"
+	}
+
 	subject := fmt.Sprintf("db.%s.%s.%s",
 		opts.EntityType,
 		opts.Operation,
-		opts.ApplicationID,
+		appSegment,
 	)
 
 	eventType := fmt.Sprintf("%s.%s", opts.EntityType, opts.Operation)
@@ -66,6 +72,7 @@ func (p *EventPublisher) Publish(opts PublishOptions) error {
 	event := &models.WorkerEvent{
 		EventType:       eventType,
 		ApplicationID:   opts.ApplicationID,
+		ClientID:        opts.ClientID,
 		EntityType:      opts.EntityType,
 		EntityID:        opts.EntityID,
 		Operation:       opts.Operation,

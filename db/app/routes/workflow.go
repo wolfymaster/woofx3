@@ -13,7 +13,8 @@ import (
 
 func WorkflowRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middleware.CasbinMiddleware) {
 	workflowRepository := repo.NewWorkflowRepository(app.Db)
-	workflowService := svc.NewWorkflowService(workflowRepository, app.Db, app.EventPublisher)
+	refRepository := repo.NewResourceReferenceRepository(app.Db)
+	workflowService := svc.NewWorkflowService(workflowRepository, app.Db, app.EventPublisher, refRepository)
 	workflowHandler := client.NewWorkflowServiceServer(
 		workflowService,
 		twirp.WithServerHooks(twirp.ChainHooks(

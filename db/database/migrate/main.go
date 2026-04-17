@@ -26,7 +26,7 @@ func main() {
 	// Initialize database connection
 	database, err := db.InitializeDB(*dbURL, logger)
 	if err != nil {
-		logger.Info("Failed to connect to database: %v", err)
+		logger.Info("Failed to connect to database", "error", err)
 		os.Exit(1)
 	}
 
@@ -34,7 +34,7 @@ func main() {
 	case "up":
 		logger.Info("Running migrations...")
 		if err := Migrate(database); err != nil {
-			logger.Info("Migration failed: %v", err)
+			logger.Info("Migration failed", "error", err)
 			os.Exit(1)
 		}
 		logger.Info("Migrations completed successfully")
@@ -42,7 +42,7 @@ func main() {
 	case "down":
 		logger.Info("Rolling back last migration...")
 		if err := Rollback(database); err != nil {
-			logger.Info("Rollback failed: %v", err)
+			logger.Info("Rollback failed", "error", err)
 			os.Exit(1)
 		}
 		logger.Info("Rollback completed successfully")

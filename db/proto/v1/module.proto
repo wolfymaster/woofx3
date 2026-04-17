@@ -20,11 +20,9 @@ service ModuleService {
   rpc SetModuleState(SetModuleStateRequest) returns (ModuleResponse);
   rpc RegisterTriggers(RegisterTriggersRequest) returns (ListTriggersResponse);
   rpc ListTriggers(ListTriggersRequest) returns (ListTriggersResponse);
-  rpc DeleteTriggersByModule(DeleteTriggersByModuleRequest) returns (common.ResponseStatus);
   rpc DeleteTriggersByModuleId(DeleteByModuleIdRequest) returns (common.ResponseStatus);
   rpc RegisterActions(RegisterActionsRequest) returns (ListActionsResponse);
   rpc ListActions(ListActionsRequest) returns (ListActionsResponse);
-  rpc DeleteActionsByModule(DeleteActionsByModuleRequest) returns (common.ResponseStatus);
   rpc DeleteActionsByModuleId(DeleteByModuleIdRequest) returns (common.ResponseStatus);
   rpc CreateModuleResource(CreateModuleResourceRequest) returns (ModuleResourceResponse);
   rpc ListModuleResources(ListModuleResourcesRequest) returns (ListModuleResourcesResponse);

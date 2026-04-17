@@ -353,58 +353,6 @@ func (x *ListActionsResponse) GetActions() []*Action {
 	return nil
 }
 
-type DeleteActionsByModuleRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CreatedByType string                 `protobuf:"bytes,1,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
-	CreatedByRef  string                 `protobuf:"bytes,2,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteActionsByModuleRequest) Reset() {
-	*x = DeleteActionsByModuleRequest{}
-	mi := &file_module_action_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteActionsByModuleRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteActionsByModuleRequest) ProtoMessage() {}
-
-func (x *DeleteActionsByModuleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_module_action_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteActionsByModuleRequest.ProtoReflect.Descriptor instead.
-func (*DeleteActionsByModuleRequest) Descriptor() ([]byte, []int) {
-	return file_module_action_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *DeleteActionsByModuleRequest) GetCreatedByType() string {
-	if x != nil {
-		return x.CreatedByType
-	}
-	return ""
-}
-
-func (x *DeleteActionsByModuleRequest) GetCreatedByRef() string {
-	if x != nil {
-		return x.CreatedByRef
-	}
-	return ""
-}
-
 var File_module_action_proto protoreflect.FileDescriptor
 
 const file_module_action_proto_rawDesc = "" +
@@ -435,10 +383,7 @@ const file_module_action_proto_rawDesc = "" +
 	"\x0ecreated_by_ref\x18\x02 \x01(\tR\fcreatedByRef\"o\n" +
 	"\x13ListActionsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12(\n" +
-	"\aactions\x18\x02 \x03(\v2\x0e.module.ActionR\aactions\"l\n" +
-	"\x1cDeleteActionsByModuleRequest\x12&\n" +
-	"\x0fcreated_by_type\x18\x01 \x01(\tR\rcreatedByType\x12$\n" +
-	"\x0ecreated_by_ref\x18\x02 \x01(\tR\fcreatedByRefB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"\aactions\x18\x02 \x03(\v2\x0e.module.ActionR\aactionsB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_module_action_proto_rawDescOnce sync.Once
@@ -452,19 +397,18 @@ func file_module_action_proto_rawDescGZIP() []byte {
 	return file_module_action_proto_rawDescData
 }
 
-var file_module_action_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_module_action_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_module_action_proto_goTypes = []any{
-	(*Action)(nil),                       // 0: module.Action
-	(*ActionInput)(nil),                  // 1: module.ActionInput
-	(*RegisterActionsRequest)(nil),       // 2: module.RegisterActionsRequest
-	(*ListActionsRequest)(nil),           // 3: module.ListActionsRequest
-	(*ListActionsResponse)(nil),          // 4: module.ListActionsResponse
-	(*DeleteActionsByModuleRequest)(nil), // 5: module.DeleteActionsByModuleRequest
-	(*ResponseStatus)(nil),               // 6: common.ResponseStatus
+	(*Action)(nil),                 // 0: module.Action
+	(*ActionInput)(nil),            // 1: module.ActionInput
+	(*RegisterActionsRequest)(nil), // 2: module.RegisterActionsRequest
+	(*ListActionsRequest)(nil),     // 3: module.ListActionsRequest
+	(*ListActionsResponse)(nil),    // 4: module.ListActionsResponse
+	(*ResponseStatus)(nil),         // 5: common.ResponseStatus
 }
 var file_module_action_proto_depIdxs = []int32{
 	1, // 0: module.RegisterActionsRequest.actions:type_name -> module.ActionInput
-	6, // 1: module.ListActionsResponse.status:type_name -> common.ResponseStatus
+	5, // 1: module.ListActionsResponse.status:type_name -> common.ResponseStatus
 	0, // 2: module.ListActionsResponse.actions:type_name -> module.Action
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
@@ -485,7 +429,7 @@ func file_module_action_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_module_action_proto_rawDesc), len(file_module_action_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

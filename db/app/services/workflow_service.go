@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	refsvc "github.com/wolfymaster/woofx3/db/app/services/resource_reference"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -19,9 +21,15 @@ type workflowService struct {
 	workflowRepo  *repo.WorkflowRepository
 	executionRepo *gorm.DB // We'll use direct DB access for executions for now
 	publisher     *workers.EventPublisher
+	refRepo       *repo.ResourceReferenceRepository
 }
 
-func NewWorkflowService(workflowRepo *repo.WorkflowRepository, db interface{}, publisher *workers.EventPublisher) client.WorkflowService {
+func NewWorkflowService(
+	workflowRepo *repo.WorkflowRepository,
+	db interface{},
+	publisher *workers.EventPublisher,
+	refRepo *repo.ResourceReferenceRepository,
+) client.WorkflowService {
 	var dbConn *gorm.DB
 	if gormDB, ok := db.(*gorm.DB); ok {
 		dbConn = gormDB
@@ -31,6 +39,31 @@ func NewWorkflowService(workflowRepo *repo.WorkflowRepository, db interface{}, p
 		workflowRepo:  workflowRepo,
 		executionRepo: dbConn,
 		publisher:     publisher,
+		refRepo:       refRepo,
+	}
+}
+
+// syncWorkflowEdges recomputes the resource_references edges for a workflow.
+// Failures are logged but do not fail the parent request — edge tracking is a
+// secondary index, and the source row has already been written successfully.
+func (s *workflowService) syncWorkflowEdges(
+	wf *models.WorkflowDefinition,
+	createdByType, createdByRef string,
+) {
+	if s.refRepo == nil {
+		return
+	}
+	appID := wf.ApplicationID
+	src := refsvc.WorkflowSource{
+		ID:                  wf.ID,
+		Name:                wf.Name,
+		ApplicationID:       &appID,
+		SourceCreatedByType: createdByType,
+		SourceCreatedByRef:  createdByRef,
+	}
+	edges := refsvc.ExtractWorkflowEdges(src, wf.Steps, wf.Trigger)
+	if err := s.refRepo.ReplaceEdgesForSource("workflow", wf.ID, edges); err != nil {
+		log.Printf("workflow_service: ReplaceEdgesForSource failed for workflow %s: %v", wf.ID, err)
 	}
 }
 
@@ -67,6 +100,8 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create workflow: %w", err))
 	}
+
+	s.syncWorkflowEdges(wf, req.CreatedByType, req.CreatedByRef)
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
@@ -143,6 +178,11 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update workflow: %w", err))
 	}
 
+	// UpdateWorkflow does not re-carry created_by metadata, so we rely on what
+	// is already recorded on the existing edge set if any edges exist. Since
+	// the model does not yet persist these columns, we default to USER.
+	s.syncWorkflowEdges(wf, "", "")
+
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
 			ApplicationID:   wf.ApplicationID.String(),
@@ -180,6 +220,12 @@ func (s *workflowService) DeleteWorkflow(ctx context.Context, req *client.Delete
 	err = s.workflowRepo.Delete(wf)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to delete workflow: %w", err))
+	}
+
+	if s.refRepo != nil {
+		if err := s.refRepo.DeleteEdgesBySource("workflow", wf.ID); err != nil {
+			log.Printf("workflow_service: DeleteEdgesBySource failed for workflow %s: %v", workflowID, err)
+		}
 	}
 
 	if s.publisher != nil {

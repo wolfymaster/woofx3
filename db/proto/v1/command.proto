@@ -36,6 +36,8 @@ message Command {
     bool enabled = 13;               // Whether the command is enabled
     string created_by = 14;         // User ID who created this command
     google.protobuf.Timestamp created_at = 15;
+    string created_by_type = 16;
+    string created_by_ref = 17;
 }
 
 // Request to get a single command by ID
@@ -73,6 +75,8 @@ message CreateCommandRequest {
     string type_value = 6;
     int32 priority = 7;
     string created_by = 8;
+    string created_by_type = 9;
+    string created_by_ref = 10;
 }
 
 // Request to update an existing command

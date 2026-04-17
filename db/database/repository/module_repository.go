@@ -38,6 +38,12 @@ func (r *ModuleRepository) GetByName(name string) (*models.Module, error) {
 	return &mod, err
 }
 
+func (r *ModuleRepository) GetByModuleKey(moduleKey string) (*models.Module, error) {
+	var mod models.Module
+	err := r.db.Preload("Functions").Where("module_key = ?", moduleKey).First(&mod).Error
+	return &mod, err
+}
+
 func (r *ModuleRepository) GetAll() ([]*models.Module, error) {
 	var modules []*models.Module
 	err := r.db.Preload("Functions").Find(&modules).Error
@@ -61,58 +67,114 @@ func (r *ModuleRepository) CreateFunctions(functions []models.ModuleFunction) er
 	return r.db.Create(&functions).Error
 }
 
-func (r *ModuleRepository) UpsertTrigger(t *models.ModuleTrigger) error {
-	return r.db.Exec(`
-		INSERT INTO public.module_triggers (id, module_id, module_name, category, name, description, event, config_schema, allow_variants, created_at, updated_at)
+func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
+	var storedID uuid.UUID
+	err := r.db.Raw(`
+		INSERT INTO public.triggers (id, category, name, description, event, config_schema, allow_variants, created_by_type, created_by_ref, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-		ON CONFLICT (module_id, name) DO UPDATE SET
-			module_name = EXCLUDED.module_name,
+		ON CONFLICT (created_by_type, created_by_ref, name) DO UPDATE SET
 			category = EXCLUDED.category,
 			description = EXCLUDED.description,
 			event = EXCLUDED.event,
 			config_schema = EXCLUDED.config_schema,
 			allow_variants = EXCLUDED.allow_variants,
 			updated_at = NOW()
-	`, t.ID, t.ModuleID, t.ModuleName, t.Category, t.Name, t.Description, t.Event, t.ConfigSchema, t.AllowVariants).Error
+		RETURNING id
+	`, t.ID, t.Category, t.Name, t.Description, t.Event, t.ConfigSchema, t.AllowVariants, t.CreatedByType, t.CreatedByRef).Scan(&storedID).Error
+	if err != nil {
+		return err
+	}
+	t.ID = storedID
+	return nil
 }
 
-func (r *ModuleRepository) ListTriggers(moduleNameFilter string) ([]*models.ModuleTrigger, error) {
-	var triggers []*models.ModuleTrigger
+func (r *ModuleRepository) ListTriggers(createdByType, createdByRef string) ([]*models.Trigger, error) {
+	var triggers []*models.Trigger
 	q := r.db
-	if moduleNameFilter != "" {
-		q = q.Where("module_name = ?", moduleNameFilter)
+	if createdByType != "" {
+		q = q.Where("created_by_type = ?", createdByType)
+	}
+	if createdByRef != "" {
+		q = q.Where("created_by_ref = ?", createdByRef)
 	}
 	err := q.Find(&triggers).Error
 	return triggers, err
 }
 
-func (r *ModuleRepository) DeleteTriggersByModuleID(moduleID uuid.UUID) error {
-	return r.db.Where("module_id = ?", moduleID).Delete(&models.ModuleTrigger{}).Error
+func (r *ModuleRepository) DeleteTriggersByModulePrefix(moduleID string) error {
+	return r.db.Where(
+		"created_by_type = ? AND created_by_ref LIKE ?",
+		"MODULE", moduleID+":%",
+	).Delete(&models.Trigger{}).Error
 }
 
-func (r *ModuleRepository) UpsertAction(a *models.ModuleAction) error {
-	return r.db.Exec(`
-		INSERT INTO public.module_actions (id, module_id, module_name, name, description, call, params_schema, created_at, updated_at)
+func (r *ModuleRepository) UpsertAction(a *models.Action) error {
+	var storedID uuid.UUID
+	err := r.db.Raw(`
+		INSERT INTO public.actions (id, name, description, call, params_schema, created_by_type, created_by_ref, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-		ON CONFLICT (module_id, name) DO UPDATE SET
-			module_name = EXCLUDED.module_name,
+		ON CONFLICT (created_by_type, created_by_ref, name) DO UPDATE SET
 			description = EXCLUDED.description,
 			call = EXCLUDED.call,
 			params_schema = EXCLUDED.params_schema,
 			updated_at = NOW()
-	`, a.ID, a.ModuleID, a.ModuleName, a.Name, a.Description, a.Call, a.ParamsSchema).Error
+		RETURNING id
+	`, a.ID, a.Name, a.Description, a.Call, a.ParamsSchema, a.CreatedByType, a.CreatedByRef).Scan(&storedID).Error
+	if err != nil {
+		return err
+	}
+	a.ID = storedID
+	return nil
 }
 
-func (r *ModuleRepository) ListActions(moduleNameFilter string) ([]*models.ModuleAction, error) {
-	var actions []*models.ModuleAction
+func (r *ModuleRepository) ListActions(createdByType, createdByRef string) ([]*models.Action, error) {
+	var actions []*models.Action
 	q := r.db
-	if moduleNameFilter != "" {
-		q = q.Where("module_name = ?", moduleNameFilter)
+	if createdByType != "" {
+		q = q.Where("created_by_type = ?", createdByType)
+	}
+	if createdByRef != "" {
+		q = q.Where("created_by_ref = ?", createdByRef)
 	}
 	err := q.Find(&actions).Error
 	return actions, err
 }
 
-func (r *ModuleRepository) DeleteActionsByModuleID(moduleID uuid.UUID) error {
-	return r.db.Where("module_id = ?", moduleID).Delete(&models.ModuleAction{}).Error
+func (r *ModuleRepository) DeleteActionsByModulePrefix(moduleID string) error {
+	return r.db.Where(
+		"created_by_type = ? AND created_by_ref LIKE ?",
+		"MODULE", moduleID+":%",
+	).Delete(&models.Action{}).Error
+}
+
+// Module Resources
+
+func (r *ModuleRepository) CreateModuleResource(res *models.ModuleResource) error {
+	return r.db.Create(res).Error
+}
+
+func (r *ModuleRepository) ListModuleResources(moduleID uuid.UUID, resourceType string) ([]*models.ModuleResource, error) {
+	var resources []*models.ModuleResource
+	q := r.db.Where("module_id = ?", moduleID)
+	if resourceType != "" {
+		q = q.Where("resource_type = ?", resourceType)
+	}
+	err := q.Find(&resources).Error
+	return resources, err
+}
+
+func (r *ModuleRepository) DeleteModuleResources(moduleID uuid.UUID) error {
+	return r.db.Where("module_id = ?", moduleID).Delete(&models.ModuleResource{}).Error
+}
+
+func (r *ModuleRepository) UpdateModuleResourceVersion(id uuid.UUID, version string) (*models.ModuleResource, error) {
+	var res models.ModuleResource
+	if err := r.db.First(&res, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	res.CurrentVersion = version
+	if err := r.db.Save(&res).Error; err != nil {
+		return nil, err
+	}
+	return &res, nil
 }

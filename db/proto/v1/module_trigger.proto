@@ -44,7 +44,3 @@ message ListTriggersResponse {
   repeated Trigger triggers = 2;
 }
 
-message DeleteTriggersByModuleRequest {
-  string created_by_type = 1;
-  string created_by_ref = 2;
-}

@@ -13,6 +13,7 @@ require (
 	github.com/nats-io/nats.go v1.48.0
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/wolfymaster/woofx3/clients/nats v0.0.0
+	github.com/wolfymaster/woofx3/common/logging v0.0.0
 	github.com/wolfymaster/woofx3/common/runtime v0.0.0
 	google.golang.org/protobuf v1.36.11
 	gorm.io/driver/postgres v1.5.11
@@ -80,5 +81,6 @@ replace (
 	github.com/wolfymaster/woofx3/clients/db => ../shared/clients/golang/db
 	github.com/wolfymaster/woofx3/clients/nats => ../shared/clients/golang/nats
 	github.com/wolfymaster/woofx3/common/cloudevents => ../shared/common/golang/cloudevents
+	github.com/wolfymaster/woofx3/common/logging => ../shared/common/golang/logging
 	github.com/wolfymaster/woofx3/common/runtime => ../shared/common/golang/runtime
 )

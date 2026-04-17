@@ -73,7 +73,70 @@ func (x ResponseStatus_Code) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ResponseStatus_Code.Descriptor instead.
 func (ResponseStatus_Code) EnumDescriptor() ([]byte, []int) {
-	return file_common_proto_rawDescGZIP(), []int{0, 0}
+	return file_common_proto_rawDescGZIP(), []int{1, 0}
+}
+
+// RequestContext carries caller metadata through service boundaries.
+// Any request that triggers async work (events, callbacks) should include
+// this so downstream services know who initiated the operation.
+type RequestContext struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ClientId      string                 `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	ModuleKey     string                 `protobuf:"bytes,3,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestContext) Reset() {
+	*x = RequestContext{}
+	mi := &file_common_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestContext) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestContext) ProtoMessage() {}
+
+func (x *RequestContext) ProtoReflect() protoreflect.Message {
+	mi := &file_common_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestContext.ProtoReflect.Descriptor instead.
+func (*RequestContext) Descriptor() ([]byte, []int) {
+	return file_common_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *RequestContext) GetClientId() string {
+	if x != nil {
+		return x.ClientId
+	}
+	return ""
+}
+
+func (x *RequestContext) GetApplicationId() string {
+	if x != nil {
+		return x.ApplicationId
+	}
+	return ""
+}
+
+func (x *RequestContext) GetModuleKey() string {
+	if x != nil {
+		return x.ModuleKey
+	}
+	return ""
 }
 
 type ResponseStatus struct {
@@ -86,7 +149,7 @@ type ResponseStatus struct {
 
 func (x *ResponseStatus) Reset() {
 	*x = ResponseStatus{}
-	mi := &file_common_proto_msgTypes[0]
+	mi := &file_common_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -98,7 +161,7 @@ func (x *ResponseStatus) String() string {
 func (*ResponseStatus) ProtoMessage() {}
 
 func (x *ResponseStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_common_proto_msgTypes[0]
+	mi := &file_common_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -111,7 +174,7 @@ func (x *ResponseStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResponseStatus.ProtoReflect.Descriptor instead.
 func (*ResponseStatus) Descriptor() ([]byte, []int) {
-	return file_common_proto_rawDescGZIP(), []int{0}
+	return file_common_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *ResponseStatus) GetCode() ResponseStatus_Code {
@@ -137,7 +200,7 @@ type PingRequest struct {
 
 func (x *PingRequest) Reset() {
 	*x = PingRequest{}
-	mi := &file_common_proto_msgTypes[1]
+	mi := &file_common_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -149,7 +212,7 @@ func (x *PingRequest) String() string {
 func (*PingRequest) ProtoMessage() {}
 
 func (x *PingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_common_proto_msgTypes[1]
+	mi := &file_common_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -162,7 +225,7 @@ func (x *PingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PingRequest.ProtoReflect.Descriptor instead.
 func (*PingRequest) Descriptor() ([]byte, []int) {
-	return file_common_proto_rawDescGZIP(), []int{1}
+	return file_common_proto_rawDescGZIP(), []int{2}
 }
 
 // PingResponse returns a success status indicating the service is accessible
@@ -175,7 +238,7 @@ type PingResponse struct {
 
 func (x *PingResponse) Reset() {
 	*x = PingResponse{}
-	mi := &file_common_proto_msgTypes[2]
+	mi := &file_common_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -187,7 +250,7 @@ func (x *PingResponse) String() string {
 func (*PingResponse) ProtoMessage() {}
 
 func (x *PingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_common_proto_msgTypes[2]
+	mi := &file_common_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -200,7 +263,7 @@ func (x *PingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PingResponse.ProtoReflect.Descriptor instead.
 func (*PingResponse) Descriptor() ([]byte, []int) {
-	return file_common_proto_rawDescGZIP(), []int{2}
+	return file_common_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *PingResponse) GetStatus() *ResponseStatus {
@@ -214,7 +277,12 @@ var File_common_proto protoreflect.FileDescriptor
 
 const file_common_proto_rawDesc = "" +
 	"\n" +
-	"\fcommon.proto\x12\x06common\"\xb5\x01\n" +
+	"\fcommon.proto\x12\x06common\"s\n" +
+	"\x0eRequestContext\x12\x1b\n" +
+	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12%\n" +
+	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x1d\n" +
+	"\n" +
+	"module_key\x18\x03 \x01(\tR\tmoduleKey\"\xb5\x01\n" +
 	"\x0eResponseStatus\x12/\n" +
 	"\x04code\x18\x01 \x01(\x0e2\x1b.common.ResponseStatus.CodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"X\n" +
@@ -243,18 +311,19 @@ func file_common_proto_rawDescGZIP() []byte {
 }
 
 var file_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_common_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_common_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_common_proto_goTypes = []any{
 	(ResponseStatus_Code)(0), // 0: common.ResponseStatus.Code
-	(*ResponseStatus)(nil),   // 1: common.ResponseStatus
-	(*PingRequest)(nil),      // 2: common.PingRequest
-	(*PingResponse)(nil),     // 3: common.PingResponse
+	(*RequestContext)(nil),   // 1: common.RequestContext
+	(*ResponseStatus)(nil),   // 2: common.ResponseStatus
+	(*PingRequest)(nil),      // 3: common.PingRequest
+	(*PingResponse)(nil),     // 4: common.PingResponse
 }
 var file_common_proto_depIdxs = []int32{
 	0, // 0: common.ResponseStatus.code:type_name -> common.ResponseStatus.Code
-	1, // 1: common.PingResponse.status:type_name -> common.ResponseStatus
-	2, // 2: common.CommonService.Ping:input_type -> common.PingRequest
-	3, // 3: common.CommonService.Ping:output_type -> common.PingResponse
+	2, // 1: common.PingResponse.status:type_name -> common.ResponseStatus
+	3, // 2: common.CommonService.Ping:input_type -> common.PingRequest
+	4, // 3: common.CommonService.Ping:output_type -> common.PingResponse
 	3, // [3:4] is the sub-list for method output_type
 	2, // [2:3] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
@@ -273,7 +342,7 @@ func file_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_common_proto_rawDesc), len(file_common_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -40,7 +40,3 @@ message ListActionsResponse {
   repeated Action actions = 2;
 }
 
-message DeleteActionsByModuleRequest {
-  string created_by_type = 1;
-  string created_by_ref = 2;
-}

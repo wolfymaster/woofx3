@@ -3,10 +3,12 @@ package services
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/google/uuid"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	refsvc "github.com/wolfymaster/woofx3/db/app/services/resource_reference"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"google.golang.org/protobuf/proto"
@@ -14,12 +16,35 @@ import (
 )
 
 type commandService struct {
-	repo *repo.CommandRepository
+	repo    *repo.CommandRepository
+	refRepo *repo.ResourceReferenceRepository
 }
 
-func NewCommandService(repo *repo.CommandRepository) *commandService {
+func NewCommandService(
+	cmdRepo *repo.CommandRepository,
+	refRepo *repo.ResourceReferenceRepository,
+) *commandService {
 	return &commandService{
-		repo: repo,
+		repo:    cmdRepo,
+		refRepo: refRepo,
+	}
+}
+
+func (s *commandService) syncCommandEdges(cmd *models.Command, cmdType, typeValue, createdByType, createdByRef string) {
+	if s.refRepo == nil {
+		return
+	}
+	appID := cmd.ApplicationID
+	src := refsvc.CommandSource{
+		ID:                  cmd.ID,
+		Name:                cmd.Command,
+		ApplicationID:       &appID,
+		SourceCreatedByType: createdByType,
+		SourceCreatedByRef:  createdByRef,
+	}
+	edges := refsvc.ExtractCommandEdges(src, cmdType, typeValue)
+	if err := s.refRepo.ReplaceEdgesForSource("command", cmd.ID, edges); err != nil {
+		log.Printf("command_service: ReplaceEdgesForSource failed for command %s: %v", cmd.ID, err)
 	}
 }
 
@@ -29,15 +54,29 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 		return nil, err
 	}
 
+	createdByType := cmd.CreatedByType
+	if createdByType == "" {
+		createdByType = "USER"
+	}
+
 	m := models.Command{
 		ApplicationID: applicationID,
 		Command:       cmd.Command,
+		Type:          cmd.Type,
+		TypeValue:     cmd.TypeValue,
+		Cooldown:      int(cmd.Cooldown),
+		Priority:      int(cmd.Priority),
+		Enabled:       cmd.Enabled,
+		CreatedByType: createdByType,
+		CreatedByRef:  cmd.CreatedByRef,
 	}
 
 	err = s.repo.Create(&m)
 	if err != nil {
 		return nil, err
 	}
+
+	s.syncCommandEdges(&m, m.Type, m.TypeValue, m.CreatedByType, m.CreatedByRef)
 
 	res := &client.CommandResponse{
 		Status: &client.ResponseStatus{
@@ -48,6 +87,8 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 			Id:            m.ID.String(),
 			ApplicationId: m.ApplicationID.String(),
 			Command:       m.Command,
+			Type:          m.Type,
+			TypeValue:     m.TypeValue,
 		},
 	}
 
@@ -132,11 +173,20 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 	}
 
 	m.Command = req.Command
+	if req.Type != "" {
+		m.Type = req.Type
+	}
+	m.TypeValue = req.TypeValue
+	m.Cooldown = int(req.Cooldown)
+	m.Priority = int(req.Priority)
+	m.Enabled = req.Enabled
 
 	err = s.repo.Update(m)
 	if err != nil {
 		return nil, err
 	}
+
+	s.syncCommandEdges(m, m.Type, m.TypeValue, m.CreatedByType, m.CreatedByRef)
 
 	res := &client.CommandResponse{
 		Status: &client.ResponseStatus{
@@ -147,6 +197,8 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 			Id:            m.ID.String(),
 			ApplicationId: m.ApplicationID.String(),
 			Command:       m.Command,
+			Type:          m.Type,
+			TypeValue:     m.TypeValue,
 		},
 	}
 
@@ -167,6 +219,12 @@ func (s *commandService) DeleteCommand(ctx context.Context, req *client.DeleteCo
 	err = s.repo.Delete(m)
 	if err != nil {
 		return nil, err
+	}
+
+	if s.refRepo != nil {
+		if err := s.refRepo.DeleteEdgesBySource("command", m.ID); err != nil {
+			log.Printf("command_service: DeleteEdgesBySource failed for command %s: %v", m.ID, err)
+		}
 	}
 
 	res := &client.ResponseStatus{

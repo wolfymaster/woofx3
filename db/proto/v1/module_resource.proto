@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package module;
+
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+message ModuleResource {
+  string id = 1;
+  string module_id = 2;
+  string resource_type = 3;
+  string resource_id = 4;
+  string manifest_id = 5;
+  string resource_name = 6;
+  string original_version = 7;
+  string current_version = 8;
+  google.protobuf.Timestamp installed_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+message CreateModuleResourceRequest {
+  string module_id = 1;
+  string resource_type = 2;
+  string resource_id = 3;
+  string manifest_id = 4;
+  string resource_name = 5;
+  string version = 6;
+}
+
+message ListModuleResourcesRequest {
+  string module_id = 1;
+  string resource_type = 2;
+}
+
+message ListModuleResourcesResponse {
+  common.ResponseStatus status = 1;
+  repeated ModuleResource resources = 2;
+}
+
+message ModuleResourceResponse {
+  common.ResponseStatus status = 1;
+  ModuleResource resource = 2;
+}
+
+message DeleteModuleResourcesRequest {
+  string module_id = 1;
+}
+
+message UpdateModuleResourceVersionRequest {
+  string id = 1;
+  string version = 2;
+}

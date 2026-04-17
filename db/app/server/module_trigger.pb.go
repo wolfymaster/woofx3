@@ -385,58 +385,6 @@ func (x *ListTriggersResponse) GetTriggers() []*Trigger {
 	return nil
 }
 
-type DeleteTriggersByModuleRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CreatedByType string                 `protobuf:"bytes,1,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
-	CreatedByRef  string                 `protobuf:"bytes,2,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteTriggersByModuleRequest) Reset() {
-	*x = DeleteTriggersByModuleRequest{}
-	mi := &file_module_trigger_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteTriggersByModuleRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteTriggersByModuleRequest) ProtoMessage() {}
-
-func (x *DeleteTriggersByModuleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_module_trigger_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteTriggersByModuleRequest.ProtoReflect.Descriptor instead.
-func (*DeleteTriggersByModuleRequest) Descriptor() ([]byte, []int) {
-	return file_module_trigger_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *DeleteTriggersByModuleRequest) GetCreatedByType() string {
-	if x != nil {
-		return x.CreatedByType
-	}
-	return ""
-}
-
-func (x *DeleteTriggersByModuleRequest) GetCreatedByRef() string {
-	if x != nil {
-		return x.CreatedByRef
-	}
-	return ""
-}
-
 var File_module_trigger_proto protoreflect.FileDescriptor
 
 const file_module_trigger_proto_rawDesc = "" +
@@ -472,10 +420,7 @@ const file_module_trigger_proto_rawDesc = "" +
 	"\x0ecreated_by_ref\x18\x02 \x01(\tR\fcreatedByRef\"s\n" +
 	"\x14ListTriggersResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12+\n" +
-	"\btriggers\x18\x02 \x03(\v2\x0f.module.TriggerR\btriggers\"m\n" +
-	"\x1dDeleteTriggersByModuleRequest\x12&\n" +
-	"\x0fcreated_by_type\x18\x01 \x01(\tR\rcreatedByType\x12$\n" +
-	"\x0ecreated_by_ref\x18\x02 \x01(\tR\fcreatedByRefB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"\btriggers\x18\x02 \x03(\v2\x0f.module.TriggerR\btriggersB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_module_trigger_proto_rawDescOnce sync.Once
@@ -489,19 +434,18 @@ func file_module_trigger_proto_rawDescGZIP() []byte {
 	return file_module_trigger_proto_rawDescData
 }
 
-var file_module_trigger_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_module_trigger_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_module_trigger_proto_goTypes = []any{
-	(*Trigger)(nil),                       // 0: module.Trigger
-	(*TriggerInput)(nil),                  // 1: module.TriggerInput
-	(*RegisterTriggersRequest)(nil),       // 2: module.RegisterTriggersRequest
-	(*ListTriggersRequest)(nil),           // 3: module.ListTriggersRequest
-	(*ListTriggersResponse)(nil),          // 4: module.ListTriggersResponse
-	(*DeleteTriggersByModuleRequest)(nil), // 5: module.DeleteTriggersByModuleRequest
-	(*ResponseStatus)(nil),                // 6: common.ResponseStatus
+	(*Trigger)(nil),                 // 0: module.Trigger
+	(*TriggerInput)(nil),            // 1: module.TriggerInput
+	(*RegisterTriggersRequest)(nil), // 2: module.RegisterTriggersRequest
+	(*ListTriggersRequest)(nil),     // 3: module.ListTriggersRequest
+	(*ListTriggersResponse)(nil),    // 4: module.ListTriggersResponse
+	(*ResponseStatus)(nil),          // 5: common.ResponseStatus
 }
 var file_module_trigger_proto_depIdxs = []int32{
 	1, // 0: module.RegisterTriggersRequest.triggers:type_name -> module.TriggerInput
-	6, // 1: module.ListTriggersResponse.status:type_name -> common.ResponseStatus
+	5, // 1: module.ListTriggersResponse.status:type_name -> common.ResponseStatus
 	0, // 2: module.ListTriggersResponse.triggers:type_name -> module.Trigger
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
@@ -522,7 +466,7 @@ func file_module_trigger_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_module_trigger_proto_rawDesc), len(file_module_trigger_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

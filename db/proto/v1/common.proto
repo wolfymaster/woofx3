@@ -4,6 +4,15 @@ package common;
 
 option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
 
+// RequestContext carries caller metadata through service boundaries.
+// Any request that triggers async work (events, callbacks) should include
+// this so downstream services know who initiated the operation.
+message RequestContext {
+  string client_id = 1;
+  string application_id = 2;
+  string module_key = 3;
+}
+
 message ResponseStatus {
   enum Code {
     OK = 0;

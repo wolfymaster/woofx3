@@ -13,7 +13,8 @@ import (
 
 func CommandRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middleware.CasbinMiddleware) {
 	commandRepository := repo.NewCommandRepository(app.Db)
-	commandService := svc.NewCommandService(commandRepository)
+	refRepository := repo.NewResourceReferenceRepository(app.Db)
+	commandService := svc.NewCommandService(commandRepository, refRepository)
 	commandHandler := client.NewCommandServiceServer(
 		commandService,
 		twirp.WithServerHooks(twirp.ChainHooks(

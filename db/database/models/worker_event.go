@@ -20,9 +20,10 @@ type WorkerEvent struct {
 	ID string `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
 
 	EventType     string `gorm:"type:varchar(255);not null;index"`
-	ApplicationID string `gorm:"type:uuid;not null;index"`
+	ApplicationID string `gorm:"type:varchar(36);not null;default:'';index"`
+	ClientID      string `gorm:"type:varchar(255);not null;default:''"`
 	EntityType    string `gorm:"type:varchar(100);not null;index"`
-	EntityID      string `gorm:"type:uuid;not null;index"`
+	EntityID      string `gorm:"type:varchar(36);not null;index"`
 	Operation     string `gorm:"type:varchar(50);not null"`
 
 	Payload []byte `gorm:"type:jsonb;not null"`
