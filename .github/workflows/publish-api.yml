@@ -1,0 +1,58 @@
+name: Publish @woofx3/api
+
+# Publishes the shared TypeScript SDK (engine types + capnweb client
+# helpers + CloudEvents webhook contract) to GitHub Packages whenever
+# anything under shared/clients/typescript/api/ changes on main.
+#
+# External consumers (woofx3-ui, Tauri, third-party integrations) pin a
+# version of @woofx3/api and pull from the GitHub Packages registry.
+# During co-development they can `bash scripts/link-sdk.sh` against a
+# sibling checkout of this repo to skip the publish loop.
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "shared/clients/typescript/api/**"
+      - ".github/workflows/publish-api.yml"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    defaults:
+      run:
+        working-directory: shared/clients/typescript/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # The SDK is type-only + capnweb facade; tsc --noEmit is the
+      # real check. Running it from the package dir catches drift
+      # between the shared interface and capnweb's published types.
+      - name: Type check
+        run: bunx tsc --noEmit --target es2022 --module esnext --moduleResolution node --strict *.ts
+
+      - name: Configure GitHub Packages auth
+        run: |
+          cat > .npmrc <<EOF
+          @woofx3:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}
+          EOF
+
+      # bun publish respects the exports / dependencies from package.json.
+      # --access restricted keeps it behind the @woofx3 org on GHP.
+      - name: Publish to GitHub Packages
+        run: bun publish --access restricted
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/shared/clients/typescript/api/.npmrc
