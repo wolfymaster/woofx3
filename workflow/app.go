@@ -58,20 +58,23 @@ type WorkflowApp struct {
 	moduleDbClient dbv1.ModuleService
 }
 
-func NewWorkflowApp(logger tasks.Logger, dbClient dbv1.WorkflowService, moduleDbClient dbv1.ModuleService) *WorkflowApp {
+func NewWorkflowApp(logger tasks.Logger) *WorkflowApp {
 	engine := engine.New[AppServices](logger)
 	app := &WorkflowApp{
 		BaseApplication: runtime.NewBaseApplication(),
 		engine:          engine,
 		logger:          logger,
-		moduleDbClient:  moduleDbClient,
 	}
 
-	// Create manager with app's engine as the registry (engine implements WorkflowRegistry interface)
-	// dbClient can be nil if not configured
-	app.manager = NewWorkflowManager(logger, app.engine, dbClient)
+	// Create manager without a db client; SetDbClients wires it after config is loaded.
+	app.manager = NewWorkflowManager(logger, app.engine, nil)
 
 	return app
+}
+
+func (a *WorkflowApp) SetDbClients(workflowClient dbv1.WorkflowService, moduleClient dbv1.ModuleService) {
+	a.moduleDbClient = moduleClient
+	a.manager.SetDbClient(workflowClient)
 }
 
 func (a *WorkflowApp) Init(ctx context.Context) error {

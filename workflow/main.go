@@ -3,83 +3,91 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	barkloader "github.com/wolfymaster/woofx3/clients/barkloader"
 	db "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/common/logging"
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/common/runtime/monitor"
 	"github.com/wolfymaster/woofx3/common/runtime/service"
 )
 
 func main() {
-	// load configuration
-	config, err := LoadConfiguration()
+	env, err := runtime.LoadRuntimeEnv(nil)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to load runtime env for logging: %v\n", err)
 		os.Exit(1)
 	}
 
-	// setup logger
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-
-	logger.Info("config", "config", config)
-
-	// required environment variables
-	if config.BarkloaderWsURL == "" {
-		logger.Error("Missing barkloader WS Url")
+	sharedLogger, err := logging.New(logging.Config{
+		ServiceName:  "workflow",
+		LogDirectory: strings.TrimSpace(env["WOOFX3_ROOT_PATH"]) + "/logs",
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
 		os.Exit(1)
 	}
-
-	if config.DatabaseProxyURL == "" {
-		logger.Error("Database proxy URL not configured, workflow loading from DB will be disabled")
-		os.Exit(1)
-	}
-
-	// Barkloader
-	barkloaderService := service.NewBarkloaderService(
-		barkloader.New(*barkloader.DefaultConfig(config.BarkloaderWsURL, logger)), // barkloader client
-		false,
-	)
-	logger.Info("Barkloader service configured", "url", config.BarkloaderWsURL)
-
+	defer sharedLogger.Close()
+	logger := sharedLogger.Slog()
 	slogAdapter := &SlogAdapter{logger: logger}
 
-	// Messagebus
+	// Messagebus (does not depend on config values)
 	natsSvc := service.NewNATS(logger, "nats", "messagebus")
 	natsMonitor := monitor.NewNATS("nats", natsSvc, "workflow", "HEARTBEAT", 15*time.Second, slogAdapter)
 
-	// Database
-	httpClient := &http.Client{}
-	dbClient := db.NewDbProxyClient(config.DatabaseProxyURL, httpClient)
-	dbProxyService := service.NewDbProxyService(dbClient, true)
-	logger.Info("Database client configured", "url", config.DatabaseProxyURL)
+	// Create application shell; db clients are wired in RuntimeInit after config is loaded.
+	app := NewWorkflowApp(logger)
 
 	rt, err := runtime.NewRuntime(&runtime.RuntimeConfig{
-		Application: NewWorkflowApp(logger, dbClient.Workflow, dbClient.Module),
+		Application: app,
 		EnvConfig:   &WorkflowEnvConfig{},
 		RuntimeInit: func(ctx context.Context, application runtime.Application) error {
 			logger.Info("Workflow runtime initializing")
 
-			// Register database service
+			appCtx := application.Context()
+			cfg := runtime.GetConfig[*WorkflowEnvConfig](appCtx)
+
+			logger.Info("config",
+				"barkloaderWsUrl", cfg.BarkloaderWsURL,
+				"databaseProxyUrl", cfg.DatabaseProxyURL,
+			)
+
+			// Database
+			httpClient := &http.Client{}
+			dbClient := db.NewDbProxyClient(cfg.DatabaseProxyURL, httpClient)
+			dbProxyService := service.NewDbProxyService(dbClient, true)
+			logger.Info("Database client configured", "url", cfg.DatabaseProxyURL)
+
 			if err := application.Register("db", dbProxyService); err != nil {
 				return err
 			}
 
-			// Register messageBus service
+			// Barkloader
+			barkloaderConfig := barkloader.DefaultConfig(cfg.BarkloaderWsURL, logger)
+			barkloaderConfig.Token = cfg.BarkloaderKey
+			barkloaderService := service.NewBarkloaderService(
+				barkloader.New(*barkloaderConfig),
+				false,
+			)
+			logger.Info("Barkloader service configured", "url", cfg.BarkloaderWsURL)
+
+			if err := application.Register("barkloader", barkloaderService); err != nil {
+				return err
+			}
+
+			// Messagebus
 			if err := application.Register("nats", natsSvc); err != nil {
 				return err
 			}
 
-			// Register barkloader service
-			if err := application.Register("barkloader", barkloaderService); err != nil {
-				return err
-			}
+			// Wire db clients into the application now that config is loaded
+			app.SetDbClients(dbClient.Workflow, dbClient.Module)
 
 			return nil
 		},

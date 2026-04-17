@@ -26,6 +26,10 @@ type WorkflowManager struct {
 	dbClient dbv1.WorkflowService
 }
 
+func (m *WorkflowManager) SetDbClient(client dbv1.WorkflowService) {
+	m.dbClient = client
+}
+
 // NewWorkflowManager creates a new WorkflowManager instance
 func NewWorkflowManager(logger tasks.Logger, registry WorkflowRegistry, dbClient dbv1.WorkflowService) *WorkflowManager {
 	return &WorkflowManager{
