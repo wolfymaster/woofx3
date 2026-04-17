@@ -317,11 +317,14 @@ export interface Woofx3EngineApi {
    * engine performs the install asynchronously and fires a
    * `module.installed` or `module.install_failed` webhook, correlated by
    * `context.moduleKey` (echoed back in the callback).
+   *
+   * `clientId` is injected automatically by the authenticated ApiSession;
+   * callers only provide `moduleKey` for correlation.
    */
   installModuleZip(
     fileName: string,
     zipBase64: string,
-    context: { clientId: string; moduleKey?: string }
+    context?: { moduleKey?: string }
   ): Promise<ModuleInstallZipResponse>;
 
   /** Lightweight summary of every module currently installed on the engine. */
@@ -330,17 +333,18 @@ export interface Woofx3EngineApi {
   /**
    * Request an async uninstall by module id. Returns `{ requested: true }`
    * immediately; the actual outcome arrives via the `module.deleted` or
-   * `module.delete_failed` webhook, both carrying `moduleKey`.
+   * `module.delete_failed` webhook, both carrying `moduleKey`. `clientId`
+   * is injected by the authenticated session.
    */
   uninstallModule(
     id: string,
-    context?: { clientId?: string; moduleKey?: string }
+    context?: { moduleKey?: string }
   ): Promise<UninstallModuleResponse>;
 
   /** Lower-level equivalent of uninstallModule keyed on engine module name. */
   uninstallEngineModule(
     name: string,
-    context?: { clientId?: string; moduleKey?: string }
+    context?: { moduleKey?: string }
   ): Promise<UninstallModuleResponse>;
 
   // Triggers & actions catalog
