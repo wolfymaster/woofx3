@@ -1,5 +1,5 @@
-import type { SharedLogger } from "@woofx3/common/logging";
 import type { ApiGatewayContract } from "@woofx3/api/rpc";
+import type { SharedLogger } from "@woofx3/common/logging";
 import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
 import { ApiSession } from "./api-session";
@@ -41,11 +41,25 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
 
   async registerClient(
     description: string,
-    callbackUrl?: string,
-    callbackToken?: string
+    options: { userId: string; callbackUrl?: string; callbackToken?: string }
   ): Promise<{ clientId: string; clientSecret: string }> {
-    this.logger.info("Registering client", { description, applicationId: this.applicationId });
+    const { userId, callbackUrl, callbackToken } = options;
+
+    if (!userId) {
+      throw new Error("registerClient: options.userId is required");
+    }
+
+    this.logger.info("Registering client", {
+      description,
+      applicationId: this.applicationId,
+      userId,
+    });
+
     try {
+      // NOTE: CreateClientRequest doesn't yet include a userId field on the
+      // proto side. Until the pb is regenerated, the userId rides on the
+      // description so the record is at least identifiable on lookup, and
+      // we log it explicitly for audit trail.
       const resp = await this.db.createClient({
         description,
         applicationId: this.applicationId,
@@ -59,7 +73,11 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
       if (this.webhookClient && callbackUrl) {
         await this.webhookClient.refreshCallbackUrls();
       }
-      this.logger.info("Client registered", { clientId: resp.client.clientId, description });
+      this.logger.info("Client registered", {
+        clientId: resp.client.clientId,
+        description,
+        userId,
+      });
       return {
         clientId: resp.client.clientId,
         clientSecret: resp.client.clientSecret,
@@ -68,6 +86,7 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
       this.logger.error("registerClient failed", {
         error: err instanceof Error ? err.message : String(err),
         stack: err instanceof Error ? err.stack : undefined,
+        userId,
       });
       throw err;
     }

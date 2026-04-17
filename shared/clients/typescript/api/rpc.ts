@@ -17,6 +17,22 @@
 export interface ApiContract {}
 
 /**
+ * Payload passed to `ApiGatewayContract.registerClient`. `userId` is the
+ * identity of the caller registering the client — the engine stores it so
+ * the resulting client record is attributable to a user (needed for
+ * per-user authorization on subsequent RPC calls).
+ *
+ * `callbackUrl` + `callbackToken` are the webhook target. They're optional
+ * only for headless consumers (CLI tests, smoke checks) that don't need
+ * to receive engine callbacks.
+ */
+export interface RegisterClientOptions {
+  userId: string;
+  callbackUrl?: string;
+  callbackToken?: string;
+}
+
+/**
  * The unauthenticated capnweb entry point served by the engine. Connecting
  * to the engine's `/api` URL via capnweb HTTP batch (or WebSocket) gives
  * back a stub of this shape.
@@ -26,14 +42,14 @@ export interface ApiGatewayContract {
   ping(): Promise<{ status: string }>;
 
   /**
-   * Register a new client (one per UI instance). The engine stores
-   * `callbackUrl` + `callbackToken` and uses them for every webhook
-   * callback scoped to this client.
+   * Register a new client (one per UI instance / caller). The engine stores
+   * `callbackUrl` + `callbackToken` and uses them for every webhook callback
+   * scoped to this client. `userId` attributes the registration to a known
+   * user so the engine can authorize subsequent operations.
    */
   registerClient(
     description: string,
-    callbackUrl?: string,
-    callbackToken?: string,
+    options: RegisterClientOptions,
   ): Promise<{ clientId: string; clientSecret: string }>;
 
   /**
