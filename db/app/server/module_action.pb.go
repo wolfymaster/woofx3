@@ -21,33 +21,33 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type ModuleAction struct {
+type Action struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ModuleId      string                 `protobuf:"bytes,2,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
-	ModuleName    string                 `protobuf:"bytes,3,opt,name=module_name,json=moduleName,proto3" json:"module_name,omitempty"`
 	Name          string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
 	Description   string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
 	Call          string                 `protobuf:"bytes,6,opt,name=call,proto3" json:"call,omitempty"`
 	ParamsSchema  string                 `protobuf:"bytes,7,opt,name=params_schema,json=paramsSchema,proto3" json:"params_schema,omitempty"`
+	CreatedByType string                 `protobuf:"bytes,8,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
+	CreatedByRef  string                 `protobuf:"bytes,9,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ModuleAction) Reset() {
-	*x = ModuleAction{}
+func (x *Action) Reset() {
+	*x = Action{}
 	mi := &file_module_action_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ModuleAction) String() string {
+func (x *Action) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ModuleAction) ProtoMessage() {}
+func (*Action) ProtoMessage() {}
 
-func (x *ModuleAction) ProtoReflect() protoreflect.Message {
+func (x *Action) ProtoReflect() protoreflect.Message {
 	mi := &file_module_action_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -59,85 +59,84 @@ func (x *ModuleAction) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ModuleAction.ProtoReflect.Descriptor instead.
-func (*ModuleAction) Descriptor() ([]byte, []int) {
+// Deprecated: Use Action.ProtoReflect.Descriptor instead.
+func (*Action) Descriptor() ([]byte, []int) {
 	return file_module_action_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *ModuleAction) GetId() string {
+func (x *Action) GetId() string {
 	if x != nil {
 		return x.Id
 	}
 	return ""
 }
 
-func (x *ModuleAction) GetModuleId() string {
-	if x != nil {
-		return x.ModuleId
-	}
-	return ""
-}
-
-func (x *ModuleAction) GetModuleName() string {
-	if x != nil {
-		return x.ModuleName
-	}
-	return ""
-}
-
-func (x *ModuleAction) GetName() string {
+func (x *Action) GetName() string {
 	if x != nil {
 		return x.Name
 	}
 	return ""
 }
 
-func (x *ModuleAction) GetDescription() string {
+func (x *Action) GetDescription() string {
 	if x != nil {
 		return x.Description
 	}
 	return ""
 }
 
-func (x *ModuleAction) GetCall() string {
+func (x *Action) GetCall() string {
 	if x != nil {
 		return x.Call
 	}
 	return ""
 }
 
-func (x *ModuleAction) GetParamsSchema() string {
+func (x *Action) GetParamsSchema() string {
 	if x != nil {
 		return x.ParamsSchema
 	}
 	return ""
 }
 
-type RegisterActionRequest struct {
+func (x *Action) GetCreatedByType() string {
+	if x != nil {
+		return x.CreatedByType
+	}
+	return ""
+}
+
+func (x *Action) GetCreatedByRef() string {
+	if x != nil {
+		return x.CreatedByRef
+	}
+	return ""
+}
+
+type ActionInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ModuleName    string                 `protobuf:"bytes,1,opt,name=module_name,json=moduleName,proto3" json:"module_name,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	Call          string                 `protobuf:"bytes,4,opt,name=call,proto3" json:"call,omitempty"`
-	ParamsSchema  string                 `protobuf:"bytes,5,opt,name=params_schema,json=paramsSchema,proto3" json:"params_schema,omitempty"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	Call          string                 `protobuf:"bytes,3,opt,name=call,proto3" json:"call,omitempty"`
+	ParamsSchema  string                 `protobuf:"bytes,4,opt,name=params_schema,json=paramsSchema,proto3" json:"params_schema,omitempty"` // JSON string
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *RegisterActionRequest) Reset() {
-	*x = RegisterActionRequest{}
+func (x *ActionInput) Reset() {
+	*x = ActionInput{}
 	mi := &file_module_action_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *RegisterActionRequest) String() string {
+func (x *ActionInput) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*RegisterActionRequest) ProtoMessage() {}
+func (*ActionInput) ProtoMessage() {}
 
-func (x *RegisterActionRequest) ProtoReflect() protoreflect.Message {
+func (x *ActionInput) ProtoReflect() protoreflect.Message {
 	mi := &file_module_action_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -149,56 +148,118 @@ func (x *RegisterActionRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use RegisterActionRequest.ProtoReflect.Descriptor instead.
-func (*RegisterActionRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use ActionInput.ProtoReflect.Descriptor instead.
+func (*ActionInput) Descriptor() ([]byte, []int) {
 	return file_module_action_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *RegisterActionRequest) GetModuleName() string {
-	if x != nil {
-		return x.ModuleName
-	}
-	return ""
-}
-
-func (x *RegisterActionRequest) GetName() string {
+func (x *ActionInput) GetName() string {
 	if x != nil {
 		return x.Name
 	}
 	return ""
 }
 
-func (x *RegisterActionRequest) GetDescription() string {
+func (x *ActionInput) GetDescription() string {
 	if x != nil {
 		return x.Description
 	}
 	return ""
 }
 
-func (x *RegisterActionRequest) GetCall() string {
+func (x *ActionInput) GetCall() string {
 	if x != nil {
 		return x.Call
 	}
 	return ""
 }
 
-func (x *RegisterActionRequest) GetParamsSchema() string {
+func (x *ActionInput) GetParamsSchema() string {
 	if x != nil {
 		return x.ParamsSchema
 	}
 	return ""
 }
 
+type RegisterActionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ModuleKey     string                 `protobuf:"bytes,1,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`
+	ModuleName    string                 `protobuf:"bytes,2,opt,name=module_name,json=moduleName,proto3" json:"module_name,omitempty"`
+	Version       string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	Actions       []*ActionInput         `protobuf:"bytes,4,rep,name=actions,proto3" json:"actions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterActionsRequest) Reset() {
+	*x = RegisterActionsRequest{}
+	mi := &file_module_action_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterActionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterActionsRequest) ProtoMessage() {}
+
+func (x *RegisterActionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_module_action_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterActionsRequest.ProtoReflect.Descriptor instead.
+func (*RegisterActionsRequest) Descriptor() ([]byte, []int) {
+	return file_module_action_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *RegisterActionsRequest) GetModuleKey() string {
+	if x != nil {
+		return x.ModuleKey
+	}
+	return ""
+}
+
+func (x *RegisterActionsRequest) GetModuleName() string {
+	if x != nil {
+		return x.ModuleName
+	}
+	return ""
+}
+
+func (x *RegisterActionsRequest) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *RegisterActionsRequest) GetActions() []*ActionInput {
+	if x != nil {
+		return x.Actions
+	}
+	return nil
+}
+
 type ListActionsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ModuleName    string                 `protobuf:"bytes,1,opt,name=module_name,json=moduleName,proto3" json:"module_name,omitempty"`
+	CreatedByType string                 `protobuf:"bytes,1,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
+	CreatedByRef  string                 `protobuf:"bytes,2,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListActionsRequest) Reset() {
 	*x = ListActionsRequest{}
-	mi := &file_module_action_proto_msgTypes[2]
+	mi := &file_module_action_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -210,7 +271,7 @@ func (x *ListActionsRequest) String() string {
 func (*ListActionsRequest) ProtoMessage() {}
 
 func (x *ListActionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_module_action_proto_msgTypes[2]
+	mi := &file_module_action_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -223,12 +284,19 @@ func (x *ListActionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActionsRequest.ProtoReflect.Descriptor instead.
 func (*ListActionsRequest) Descriptor() ([]byte, []int) {
-	return file_module_action_proto_rawDescGZIP(), []int{2}
+	return file_module_action_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *ListActionsRequest) GetModuleName() string {
+func (x *ListActionsRequest) GetCreatedByType() string {
 	if x != nil {
-		return x.ModuleName
+		return x.CreatedByType
+	}
+	return ""
+}
+
+func (x *ListActionsRequest) GetCreatedByRef() string {
+	if x != nil {
+		return x.CreatedByRef
 	}
 	return ""
 }
@@ -236,14 +304,14 @@ func (x *ListActionsRequest) GetModuleName() string {
 type ListActionsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
-	Actions       []*ModuleAction        `protobuf:"bytes,2,rep,name=actions,proto3" json:"actions,omitempty"`
+	Actions       []*Action              `protobuf:"bytes,2,rep,name=actions,proto3" json:"actions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListActionsResponse) Reset() {
 	*x = ListActionsResponse{}
-	mi := &file_module_action_proto_msgTypes[3]
+	mi := &file_module_action_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -255,7 +323,7 @@ func (x *ListActionsResponse) String() string {
 func (*ListActionsResponse) ProtoMessage() {}
 
 func (x *ListActionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_module_action_proto_msgTypes[3]
+	mi := &file_module_action_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -268,7 +336,7 @@ func (x *ListActionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActionsResponse.ProtoReflect.Descriptor instead.
 func (*ListActionsResponse) Descriptor() ([]byte, []int) {
-	return file_module_action_proto_rawDescGZIP(), []int{3}
+	return file_module_action_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListActionsResponse) GetStatus() *ResponseStatus {
@@ -278,68 +346,17 @@ func (x *ListActionsResponse) GetStatus() *ResponseStatus {
 	return nil
 }
 
-func (x *ListActionsResponse) GetActions() []*ModuleAction {
+func (x *ListActionsResponse) GetActions() []*Action {
 	if x != nil {
 		return x.Actions
 	}
 	return nil
 }
 
-type ModuleActionResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
-	Action        *ModuleAction          `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ModuleActionResponse) Reset() {
-	*x = ModuleActionResponse{}
-	mi := &file_module_action_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ModuleActionResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ModuleActionResponse) ProtoMessage() {}
-
-func (x *ModuleActionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_module_action_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ModuleActionResponse.ProtoReflect.Descriptor instead.
-func (*ModuleActionResponse) Descriptor() ([]byte, []int) {
-	return file_module_action_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *ModuleActionResponse) GetStatus() *ResponseStatus {
-	if x != nil {
-		return x.Status
-	}
-	return nil
-}
-
-func (x *ModuleActionResponse) GetAction() *ModuleAction {
-	if x != nil {
-		return x.Action
-	}
-	return nil
-}
-
 type DeleteActionsByModuleRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ModuleName    string                 `protobuf:"bytes,1,opt,name=module_name,json=moduleName,proto3" json:"module_name,omitempty"`
+	CreatedByType string                 `protobuf:"bytes,1,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
+	CreatedByRef  string                 `protobuf:"bytes,2,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -374,9 +391,16 @@ func (*DeleteActionsByModuleRequest) Descriptor() ([]byte, []int) {
 	return file_module_action_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *DeleteActionsByModuleRequest) GetModuleName() string {
+func (x *DeleteActionsByModuleRequest) GetCreatedByType() string {
 	if x != nil {
-		return x.ModuleName
+		return x.CreatedByType
+	}
+	return ""
+}
+
+func (x *DeleteActionsByModuleRequest) GetCreatedByRef() string {
+	if x != nil {
+		return x.CreatedByRef
 	}
 	return ""
 }
@@ -385,35 +409,36 @@ var File_module_action_proto protoreflect.FileDescriptor
 
 const file_module_action_proto_rawDesc = "" +
 	"\n" +
-	"\x13module_action.proto\x12\x06module\x1a\fcommon.proto\"\xcb\x01\n" +
-	"\fModuleAction\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
-	"\tmodule_id\x18\x02 \x01(\tR\bmoduleId\x12\x1f\n" +
-	"\vmodule_name\x18\x03 \x01(\tR\n" +
-	"moduleName\x12\x12\n" +
+	"\x13module_action.proto\x12\x06module\x1a\fcommon.proto\"\xd5\x01\n" +
+	"\x06Action\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x04 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x05 \x01(\tR\vdescription\x12\x12\n" +
 	"\x04call\x18\x06 \x01(\tR\x04call\x12#\n" +
-	"\rparams_schema\x18\a \x01(\tR\fparamsSchema\"\xa7\x01\n" +
-	"\x15RegisterActionRequest\x12\x1f\n" +
-	"\vmodule_name\x18\x01 \x01(\tR\n" +
-	"moduleName\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x12\n" +
-	"\x04call\x18\x04 \x01(\tR\x04call\x12#\n" +
-	"\rparams_schema\x18\x05 \x01(\tR\fparamsSchema\"5\n" +
-	"\x12ListActionsRequest\x12\x1f\n" +
-	"\vmodule_name\x18\x01 \x01(\tR\n" +
-	"moduleName\"u\n" +
+	"\rparams_schema\x18\a \x01(\tR\fparamsSchema\x12&\n" +
+	"\x0fcreated_by_type\x18\b \x01(\tR\rcreatedByType\x12$\n" +
+	"\x0ecreated_by_ref\x18\t \x01(\tR\fcreatedByRef\"|\n" +
+	"\vActionInput\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x12\n" +
+	"\x04call\x18\x03 \x01(\tR\x04call\x12#\n" +
+	"\rparams_schema\x18\x04 \x01(\tR\fparamsSchema\"\xa1\x01\n" +
+	"\x16RegisterActionsRequest\x12\x1d\n" +
+	"\n" +
+	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +
+	"\vmodule_name\x18\x02 \x01(\tR\n" +
+	"moduleName\x12\x18\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\x12-\n" +
+	"\aactions\x18\x04 \x03(\v2\x13.module.ActionInputR\aactions\"b\n" +
+	"\x12ListActionsRequest\x12&\n" +
+	"\x0fcreated_by_type\x18\x01 \x01(\tR\rcreatedByType\x12$\n" +
+	"\x0ecreated_by_ref\x18\x02 \x01(\tR\fcreatedByRef\"o\n" +
 	"\x13ListActionsResponse\x12.\n" +
-	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12.\n" +
-	"\aactions\x18\x02 \x03(\v2\x14.module.ModuleActionR\aactions\"t\n" +
-	"\x14ModuleActionResponse\x12.\n" +
-	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12,\n" +
-	"\x06action\x18\x02 \x01(\v2\x14.module.ModuleActionR\x06action\"?\n" +
-	"\x1cDeleteActionsByModuleRequest\x12\x1f\n" +
-	"\vmodule_name\x18\x01 \x01(\tR\n" +
-	"moduleNameB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12(\n" +
+	"\aactions\x18\x02 \x03(\v2\x0e.module.ActionR\aactions\"l\n" +
+	"\x1cDeleteActionsByModuleRequest\x12&\n" +
+	"\x0fcreated_by_type\x18\x01 \x01(\tR\rcreatedByType\x12$\n" +
+	"\x0ecreated_by_ref\x18\x02 \x01(\tR\fcreatedByRefB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_module_action_proto_rawDescOnce sync.Once
@@ -429,24 +454,23 @@ func file_module_action_proto_rawDescGZIP() []byte {
 
 var file_module_action_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_module_action_proto_goTypes = []any{
-	(*ModuleAction)(nil),                 // 0: module.ModuleAction
-	(*RegisterActionRequest)(nil),        // 1: module.RegisterActionRequest
-	(*ListActionsRequest)(nil),           // 2: module.ListActionsRequest
-	(*ListActionsResponse)(nil),          // 3: module.ListActionsResponse
-	(*ModuleActionResponse)(nil),         // 4: module.ModuleActionResponse
+	(*Action)(nil),                       // 0: module.Action
+	(*ActionInput)(nil),                  // 1: module.ActionInput
+	(*RegisterActionsRequest)(nil),       // 2: module.RegisterActionsRequest
+	(*ListActionsRequest)(nil),           // 3: module.ListActionsRequest
+	(*ListActionsResponse)(nil),          // 4: module.ListActionsResponse
 	(*DeleteActionsByModuleRequest)(nil), // 5: module.DeleteActionsByModuleRequest
 	(*ResponseStatus)(nil),               // 6: common.ResponseStatus
 }
 var file_module_action_proto_depIdxs = []int32{
-	6, // 0: module.ListActionsResponse.status:type_name -> common.ResponseStatus
-	0, // 1: module.ListActionsResponse.actions:type_name -> module.ModuleAction
-	6, // 2: module.ModuleActionResponse.status:type_name -> common.ResponseStatus
-	0, // 3: module.ModuleActionResponse.action:type_name -> module.ModuleAction
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	1, // 0: module.RegisterActionsRequest.actions:type_name -> module.ActionInput
+	6, // 1: module.ListActionsResponse.status:type_name -> common.ResponseStatus
+	0, // 2: module.ListActionsResponse.actions:type_name -> module.Action
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_module_action_proto_init() }

@@ -7,6 +7,7 @@ import "common.proto";
 import "google/protobuf/timestamp.proto";
 import "module_trigger.proto";
 import "module_action.proto";
+import "module_resource.proto";
 
 service ModuleService {
   rpc CreateModule(CreateModuleRequest) returns (ModuleResponse);
@@ -14,14 +15,24 @@ service ModuleService {
   rpc DeleteModule(DeleteModuleRequest) returns (common.ResponseStatus);
   rpc GetModule(GetModuleRequest) returns (ModuleResponse);
   rpc GetModuleByName(GetModuleByNameRequest) returns (ModuleResponse);
+  rpc GetModuleByModuleKey(GetModuleByModuleKeyRequest) returns (ModuleResponse);
   rpc ListModules(ListModulesRequest) returns (ListModulesResponse);
   rpc SetModuleState(SetModuleStateRequest) returns (ModuleResponse);
-  rpc RegisterTrigger(RegisterTriggerRequest) returns (ModuleTriggerResponse);
+  rpc RegisterTriggers(RegisterTriggersRequest) returns (ListTriggersResponse);
   rpc ListTriggers(ListTriggersRequest) returns (ListTriggersResponse);
   rpc DeleteTriggersByModule(DeleteTriggersByModuleRequest) returns (common.ResponseStatus);
-  rpc RegisterAction(RegisterActionRequest) returns (ModuleActionResponse);
+  rpc DeleteTriggersByModuleId(DeleteByModuleIdRequest) returns (common.ResponseStatus);
+  rpc RegisterActions(RegisterActionsRequest) returns (ListActionsResponse);
   rpc ListActions(ListActionsRequest) returns (ListActionsResponse);
   rpc DeleteActionsByModule(DeleteActionsByModuleRequest) returns (common.ResponseStatus);
+  rpc DeleteActionsByModuleId(DeleteByModuleIdRequest) returns (common.ResponseStatus);
+  rpc CreateModuleResource(CreateModuleResourceRequest) returns (ModuleResourceResponse);
+  rpc ListModuleResources(ListModuleResourcesRequest) returns (ListModuleResourcesResponse);
+  rpc DeleteModuleResources(DeleteModuleResourcesRequest) returns (common.ResponseStatus);
+  rpc UpdateModuleResourceVersion(UpdateModuleResourceVersionRequest) returns (ModuleResourceResponse);
+  rpc CompleteModuleInstall(CompleteModuleInstallRequest) returns (common.ResponseStatus);
+  rpc CheckModuleResourceUsage(CheckModuleResourceUsageRequest) returns (CheckModuleResourceUsageResponse);
+  rpc CompleteModuleDelete(CompleteModuleDeleteRequest) returns (common.ResponseStatus);
 }
 
 message Module {
@@ -34,6 +45,9 @@ message Module {
   repeated ModuleFunction functions = 7;
   google.protobuf.Timestamp installed_at = 8;
   google.protobuf.Timestamp updated_at = 9;
+  string created_by_type = 10;
+  string created_by_ref = 11;
+  string module_key = 12;
 }
 
 message ModuleFunction {
@@ -52,6 +66,9 @@ message CreateModuleRequest {
   string manifest = 3;
   string archive_key = 4;
   repeated CreateModuleFunctionRequest functions = 5;
+  string created_by_type = 6;
+  string created_by_ref = 7;
+  string module_key = 8;
 }
 
 message CreateModuleFunctionRequest {
@@ -82,6 +99,10 @@ message GetModuleByNameRequest {
   string name = 1;
 }
 
+message GetModuleByModuleKeyRequest {
+  string module_key = 1;
+}
+
 message ListModulesRequest {
   string state = 1;
 }
@@ -99,4 +120,52 @@ message ModuleResponse {
 message ListModulesResponse {
   common.ResponseStatus status = 1;
   repeated Module modules = 2;
+}
+
+message CompleteModuleInstallRequest {
+  string module_id = 1;
+  string module_name = 2;
+  string version = 3;
+  string status = 4;
+  string error = 5;
+  common.RequestContext request_context = 6;
+}
+
+// UsageRef identifies a single source that references a target resource.
+message UsageRef {
+  string source_type = 1;   // "workflow" | "command"
+  string source_id = 2;
+  string source_name = 3;
+  string context = 4;       // e.g., "step[3]" or "trigger"
+}
+
+// ResourceUsage groups all sources that reference a single target resource.
+message ResourceUsage {
+  string resource_id = 1;     // module_resources.id
+  string resource_type = 2;
+  string resource_name = 3;
+  repeated UsageRef used_by = 4;
+}
+
+message CheckModuleResourceUsageRequest {
+  string module_id = 1;
+  string application_id = 2;
+}
+
+message CheckModuleResourceUsageResponse {
+  common.ResponseStatus status = 1;
+  repeated ResourceUsage in_use = 2;
+}
+
+message CompleteModuleDeleteRequest {
+  string module_id = 1;
+  string module_name = 2;
+  string status = 3;                              // "completed" | "failed"
+  string error = 4;
+  repeated ResourceUsage in_use_resources = 5;
+  common.RequestContext request_context = 6;
+}
+
+message DeleteByModuleIdRequest {
+  string module_id = 1;  // == manifest.id; server does `created_by_ref LIKE '{module_id}:%'`
 }

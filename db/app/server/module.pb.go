@@ -33,6 +33,9 @@ type Module struct {
 	Functions     []*ModuleFunction      `protobuf:"bytes,7,rep,name=functions,proto3" json:"functions,omitempty"`
 	InstalledAt   *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=installed_at,json=installedAt,proto3" json:"installed_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	CreatedByType string                 `protobuf:"bytes,10,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
+	CreatedByRef  string                 `protobuf:"bytes,11,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
+	ModuleKey     string                 `protobuf:"bytes,12,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -128,6 +131,27 @@ func (x *Module) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *Module) GetCreatedByType() string {
+	if x != nil {
+		return x.CreatedByType
+	}
+	return ""
+}
+
+func (x *Module) GetCreatedByRef() string {
+	if x != nil {
+		return x.CreatedByRef
+	}
+	return ""
+}
+
+func (x *Module) GetModuleKey() string {
+	if x != nil {
+		return x.ModuleKey
+	}
+	return ""
 }
 
 type ModuleFunction struct {
@@ -229,6 +253,9 @@ type CreateModuleRequest struct {
 	Manifest      string                         `protobuf:"bytes,3,opt,name=manifest,proto3" json:"manifest,omitempty"`
 	ArchiveKey    string                         `protobuf:"bytes,4,opt,name=archive_key,json=archiveKey,proto3" json:"archive_key,omitempty"`
 	Functions     []*CreateModuleFunctionRequest `protobuf:"bytes,5,rep,name=functions,proto3" json:"functions,omitempty"`
+	CreatedByType string                         `protobuf:"bytes,6,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
+	CreatedByRef  string                         `protobuf:"bytes,7,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
+	ModuleKey     string                         `protobuf:"bytes,8,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -296,6 +323,27 @@ func (x *CreateModuleRequest) GetFunctions() []*CreateModuleFunctionRequest {
 		return x.Functions
 	}
 	return nil
+}
+
+func (x *CreateModuleRequest) GetCreatedByType() string {
+	if x != nil {
+		return x.CreatedByType
+	}
+	return ""
+}
+
+func (x *CreateModuleRequest) GetCreatedByRef() string {
+	if x != nil {
+		return x.CreatedByRef
+	}
+	return ""
+}
+
+func (x *CreateModuleRequest) GetModuleKey() string {
+	if x != nil {
+		return x.ModuleKey
+	}
+	return ""
 }
 
 type CreateModuleFunctionRequest struct {
@@ -582,6 +630,50 @@ func (x *GetModuleByNameRequest) GetName() string {
 	return ""
 }
 
+type GetModuleByModuleKeyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ModuleKey     string                 `protobuf:"bytes,1,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetModuleByModuleKeyRequest) Reset() {
+	*x = GetModuleByModuleKeyRequest{}
+	mi := &file_module_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetModuleByModuleKeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetModuleByModuleKeyRequest) ProtoMessage() {}
+
+func (x *GetModuleByModuleKeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_module_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetModuleByModuleKeyRequest.ProtoReflect.Descriptor instead.
+func (*GetModuleByModuleKeyRequest) Descriptor() ([]byte, []int) {
+	return file_module_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *GetModuleByModuleKeyRequest) GetModuleKey() string {
+	if x != nil {
+		return x.ModuleKey
+	}
+	return ""
+}
+
 type ListModulesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	State         string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
@@ -591,7 +683,7 @@ type ListModulesRequest struct {
 
 func (x *ListModulesRequest) Reset() {
 	*x = ListModulesRequest{}
-	mi := &file_module_proto_msgTypes[8]
+	mi := &file_module_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -603,7 +695,7 @@ func (x *ListModulesRequest) String() string {
 func (*ListModulesRequest) ProtoMessage() {}
 
 func (x *ListModulesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_module_proto_msgTypes[8]
+	mi := &file_module_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -616,7 +708,7 @@ func (x *ListModulesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListModulesRequest.ProtoReflect.Descriptor instead.
 func (*ListModulesRequest) Descriptor() ([]byte, []int) {
-	return file_module_proto_rawDescGZIP(), []int{8}
+	return file_module_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListModulesRequest) GetState() string {
@@ -636,7 +728,7 @@ type SetModuleStateRequest struct {
 
 func (x *SetModuleStateRequest) Reset() {
 	*x = SetModuleStateRequest{}
-	mi := &file_module_proto_msgTypes[9]
+	mi := &file_module_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -648,7 +740,7 @@ func (x *SetModuleStateRequest) String() string {
 func (*SetModuleStateRequest) ProtoMessage() {}
 
 func (x *SetModuleStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_module_proto_msgTypes[9]
+	mi := &file_module_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -661,7 +753,7 @@ func (x *SetModuleStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetModuleStateRequest.ProtoReflect.Descriptor instead.
 func (*SetModuleStateRequest) Descriptor() ([]byte, []int) {
-	return file_module_proto_rawDescGZIP(), []int{9}
+	return file_module_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *SetModuleStateRequest) GetName() string {
@@ -688,7 +780,7 @@ type ModuleResponse struct {
 
 func (x *ModuleResponse) Reset() {
 	*x = ModuleResponse{}
-	mi := &file_module_proto_msgTypes[10]
+	mi := &file_module_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -700,7 +792,7 @@ func (x *ModuleResponse) String() string {
 func (*ModuleResponse) ProtoMessage() {}
 
 func (x *ModuleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_module_proto_msgTypes[10]
+	mi := &file_module_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -713,7 +805,7 @@ func (x *ModuleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModuleResponse.ProtoReflect.Descriptor instead.
 func (*ModuleResponse) Descriptor() ([]byte, []int) {
-	return file_module_proto_rawDescGZIP(), []int{10}
+	return file_module_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ModuleResponse) GetStatus() *ResponseStatus {
@@ -740,7 +832,7 @@ type ListModulesResponse struct {
 
 func (x *ListModulesResponse) Reset() {
 	*x = ListModulesResponse{}
-	mi := &file_module_proto_msgTypes[11]
+	mi := &file_module_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -752,7 +844,7 @@ func (x *ListModulesResponse) String() string {
 func (*ListModulesResponse) ProtoMessage() {}
 
 func (x *ListModulesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_module_proto_msgTypes[11]
+	mi := &file_module_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -765,7 +857,7 @@ func (x *ListModulesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListModulesResponse.ProtoReflect.Descriptor instead.
 func (*ListModulesResponse) Descriptor() ([]byte, []int) {
-	return file_module_proto_rawDescGZIP(), []int{11}
+	return file_module_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListModulesResponse) GetStatus() *ResponseStatus {
@@ -782,11 +874,465 @@ func (x *ListModulesResponse) GetModules() []*Module {
 	return nil
 }
 
+type CompleteModuleInstallRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ModuleId       string                 `protobuf:"bytes,1,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
+	ModuleName     string                 `protobuf:"bytes,2,opt,name=module_name,json=moduleName,proto3" json:"module_name,omitempty"`
+	Version        string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	Status         string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
+	Error          string                 `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
+	RequestContext *RequestContext        `protobuf:"bytes,6,opt,name=request_context,json=requestContext,proto3" json:"request_context,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CompleteModuleInstallRequest) Reset() {
+	*x = CompleteModuleInstallRequest{}
+	mi := &file_module_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteModuleInstallRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteModuleInstallRequest) ProtoMessage() {}
+
+func (x *CompleteModuleInstallRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_module_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteModuleInstallRequest.ProtoReflect.Descriptor instead.
+func (*CompleteModuleInstallRequest) Descriptor() ([]byte, []int) {
+	return file_module_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *CompleteModuleInstallRequest) GetModuleId() string {
+	if x != nil {
+		return x.ModuleId
+	}
+	return ""
+}
+
+func (x *CompleteModuleInstallRequest) GetModuleName() string {
+	if x != nil {
+		return x.ModuleName
+	}
+	return ""
+}
+
+func (x *CompleteModuleInstallRequest) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *CompleteModuleInstallRequest) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *CompleteModuleInstallRequest) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *CompleteModuleInstallRequest) GetRequestContext() *RequestContext {
+	if x != nil {
+		return x.RequestContext
+	}
+	return nil
+}
+
+// UsageRef identifies a single source that references a target resource.
+type UsageRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SourceType    string                 `protobuf:"bytes,1,opt,name=source_type,json=sourceType,proto3" json:"source_type,omitempty"` // "workflow" | "command"
+	SourceId      string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	SourceName    string                 `protobuf:"bytes,3,opt,name=source_name,json=sourceName,proto3" json:"source_name,omitempty"`
+	Context       string                 `protobuf:"bytes,4,opt,name=context,proto3" json:"context,omitempty"` // e.g., "step[3]" or "trigger"
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UsageRef) Reset() {
+	*x = UsageRef{}
+	mi := &file_module_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageRef) ProtoMessage() {}
+
+func (x *UsageRef) ProtoReflect() protoreflect.Message {
+	mi := &file_module_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageRef.ProtoReflect.Descriptor instead.
+func (*UsageRef) Descriptor() ([]byte, []int) {
+	return file_module_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *UsageRef) GetSourceType() string {
+	if x != nil {
+		return x.SourceType
+	}
+	return ""
+}
+
+func (x *UsageRef) GetSourceId() string {
+	if x != nil {
+		return x.SourceId
+	}
+	return ""
+}
+
+func (x *UsageRef) GetSourceName() string {
+	if x != nil {
+		return x.SourceName
+	}
+	return ""
+}
+
+func (x *UsageRef) GetContext() string {
+	if x != nil {
+		return x.Context
+	}
+	return ""
+}
+
+// ResourceUsage groups all sources that reference a single target resource.
+type ResourceUsage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ResourceId    string                 `protobuf:"bytes,1,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"` // module_resources.id
+	ResourceType  string                 `protobuf:"bytes,2,opt,name=resource_type,json=resourceType,proto3" json:"resource_type,omitempty"`
+	ResourceName  string                 `protobuf:"bytes,3,opt,name=resource_name,json=resourceName,proto3" json:"resource_name,omitempty"`
+	UsedBy        []*UsageRef            `protobuf:"bytes,4,rep,name=used_by,json=usedBy,proto3" json:"used_by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceUsage) Reset() {
+	*x = ResourceUsage{}
+	mi := &file_module_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceUsage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceUsage) ProtoMessage() {}
+
+func (x *ResourceUsage) ProtoReflect() protoreflect.Message {
+	mi := &file_module_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceUsage.ProtoReflect.Descriptor instead.
+func (*ResourceUsage) Descriptor() ([]byte, []int) {
+	return file_module_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ResourceUsage) GetResourceId() string {
+	if x != nil {
+		return x.ResourceId
+	}
+	return ""
+}
+
+func (x *ResourceUsage) GetResourceType() string {
+	if x != nil {
+		return x.ResourceType
+	}
+	return ""
+}
+
+func (x *ResourceUsage) GetResourceName() string {
+	if x != nil {
+		return x.ResourceName
+	}
+	return ""
+}
+
+func (x *ResourceUsage) GetUsedBy() []*UsageRef {
+	if x != nil {
+		return x.UsedBy
+	}
+	return nil
+}
+
+type CheckModuleResourceUsageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ModuleId      string                 `protobuf:"bytes,1,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
+	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckModuleResourceUsageRequest) Reset() {
+	*x = CheckModuleResourceUsageRequest{}
+	mi := &file_module_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckModuleResourceUsageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckModuleResourceUsageRequest) ProtoMessage() {}
+
+func (x *CheckModuleResourceUsageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_module_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckModuleResourceUsageRequest.ProtoReflect.Descriptor instead.
+func (*CheckModuleResourceUsageRequest) Descriptor() ([]byte, []int) {
+	return file_module_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *CheckModuleResourceUsageRequest) GetModuleId() string {
+	if x != nil {
+		return x.ModuleId
+	}
+	return ""
+}
+
+func (x *CheckModuleResourceUsageRequest) GetApplicationId() string {
+	if x != nil {
+		return x.ApplicationId
+	}
+	return ""
+}
+
+type CheckModuleResourceUsageResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	InUse         []*ResourceUsage       `protobuf:"bytes,2,rep,name=in_use,json=inUse,proto3" json:"in_use,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckModuleResourceUsageResponse) Reset() {
+	*x = CheckModuleResourceUsageResponse{}
+	mi := &file_module_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckModuleResourceUsageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckModuleResourceUsageResponse) ProtoMessage() {}
+
+func (x *CheckModuleResourceUsageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_module_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckModuleResourceUsageResponse.ProtoReflect.Descriptor instead.
+func (*CheckModuleResourceUsageResponse) Descriptor() ([]byte, []int) {
+	return file_module_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *CheckModuleResourceUsageResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *CheckModuleResourceUsageResponse) GetInUse() []*ResourceUsage {
+	if x != nil {
+		return x.InUse
+	}
+	return nil
+}
+
+type CompleteModuleDeleteRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ModuleId       string                 `protobuf:"bytes,1,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
+	ModuleName     string                 `protobuf:"bytes,2,opt,name=module_name,json=moduleName,proto3" json:"module_name,omitempty"`
+	Status         string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"` // "completed" | "failed"
+	Error          string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	InUseResources []*ResourceUsage       `protobuf:"bytes,5,rep,name=in_use_resources,json=inUseResources,proto3" json:"in_use_resources,omitempty"`
+	RequestContext *RequestContext        `protobuf:"bytes,6,opt,name=request_context,json=requestContext,proto3" json:"request_context,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CompleteModuleDeleteRequest) Reset() {
+	*x = CompleteModuleDeleteRequest{}
+	mi := &file_module_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteModuleDeleteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteModuleDeleteRequest) ProtoMessage() {}
+
+func (x *CompleteModuleDeleteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_module_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteModuleDeleteRequest.ProtoReflect.Descriptor instead.
+func (*CompleteModuleDeleteRequest) Descriptor() ([]byte, []int) {
+	return file_module_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *CompleteModuleDeleteRequest) GetModuleId() string {
+	if x != nil {
+		return x.ModuleId
+	}
+	return ""
+}
+
+func (x *CompleteModuleDeleteRequest) GetModuleName() string {
+	if x != nil {
+		return x.ModuleName
+	}
+	return ""
+}
+
+func (x *CompleteModuleDeleteRequest) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *CompleteModuleDeleteRequest) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *CompleteModuleDeleteRequest) GetInUseResources() []*ResourceUsage {
+	if x != nil {
+		return x.InUseResources
+	}
+	return nil
+}
+
+func (x *CompleteModuleDeleteRequest) GetRequestContext() *RequestContext {
+	if x != nil {
+		return x.RequestContext
+	}
+	return nil
+}
+
+type DeleteByModuleIdRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ModuleId      string                 `protobuf:"bytes,1,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"` // == manifest.id; server does `created_by_ref LIKE '{module_id}:%'`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteByModuleIdRequest) Reset() {
+	*x = DeleteByModuleIdRequest{}
+	mi := &file_module_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteByModuleIdRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteByModuleIdRequest) ProtoMessage() {}
+
+func (x *DeleteByModuleIdRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_module_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteByModuleIdRequest.ProtoReflect.Descriptor instead.
+func (*DeleteByModuleIdRequest) Descriptor() ([]byte, []int) {
+	return file_module_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *DeleteByModuleIdRequest) GetModuleId() string {
+	if x != nil {
+		return x.ModuleId
+	}
+	return ""
+}
+
 var File_module_proto protoreflect.FileDescriptor
 
 const file_module_proto_rawDesc = "" +
 	"\n" +
-	"\fmodule.proto\x12\x06module\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14module_trigger.proto\x1a\x13module_action.proto\"\xc9\x02\n" +
+	"\fmodule.proto\x12\x06module\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14module_trigger.proto\x1a\x13module_action.proto\x1a\x15module_resource.proto\"\xb6\x03\n" +
 	"\x06Module\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
@@ -798,7 +1344,12 @@ const file_module_proto_rawDesc = "" +
 	"\tfunctions\x18\a \x03(\v2\x16.module.ModuleFunctionR\tfunctions\x12=\n" +
 	"\finstalled_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\vinstalledAt\x129\n" +
 	"\n" +
-	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xd5\x01\n" +
+	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12&\n" +
+	"\x0fcreated_by_type\x18\n" +
+	" \x01(\tR\rcreatedByType\x12$\n" +
+	"\x0ecreated_by_ref\x18\v \x01(\tR\fcreatedByRef\x12\x1d\n" +
+	"\n" +
+	"module_key\x18\f \x01(\tR\tmoduleKey\"\xd5\x01\n" +
 	"\x0eModuleFunction\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tmodule_id\x18\x02 \x01(\tR\bmoduleId\x12#\n" +
@@ -807,14 +1358,18 @@ const file_module_proto_rawDesc = "" +
 	"\bfile_key\x18\x05 \x01(\tR\afileKey\x12\x1f\n" +
 	"\ventry_point\x18\x06 \x01(\tR\n" +
 	"entryPoint\x12\x18\n" +
-	"\aruntime\x18\a \x01(\tR\aruntime\"\xc3\x01\n" +
+	"\aruntime\x18\a \x01(\tR\aruntime\"\xb0\x02\n" +
 	"\x13CreateModuleRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x1a\n" +
 	"\bmanifest\x18\x03 \x01(\tR\bmanifest\x12\x1f\n" +
 	"\varchive_key\x18\x04 \x01(\tR\n" +
 	"archiveKey\x12A\n" +
-	"\tfunctions\x18\x05 \x03(\v2#.module.CreateModuleFunctionRequestR\tfunctions\"\xb5\x01\n" +
+	"\tfunctions\x18\x05 \x03(\v2#.module.CreateModuleFunctionRequestR\tfunctions\x12&\n" +
+	"\x0fcreated_by_type\x18\x06 \x01(\tR\rcreatedByType\x12$\n" +
+	"\x0ecreated_by_ref\x18\a \x01(\tR\fcreatedByRef\x12\x1d\n" +
+	"\n" +
+	"module_key\x18\b \x01(\tR\tmoduleKey\"\xb5\x01\n" +
 	"\x1bCreateModuleFunctionRequest\x12#\n" +
 	"\rfunction_name\x18\x01 \x01(\tR\ffunctionName\x12\x1b\n" +
 	"\tfile_name\x18\x02 \x01(\tR\bfileName\x12\x19\n" +
@@ -834,7 +1389,10 @@ const file_module_proto_rawDesc = "" +
 	"\x10GetModuleRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\",\n" +
 	"\x16GetModuleByNameRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"*\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"<\n" +
+	"\x1bGetModuleByModuleKeyRequest\x12\x1d\n" +
+	"\n" +
+	"module_key\x18\x01 \x01(\tR\tmoduleKey\"*\n" +
 	"\x12ListModulesRequest\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\"A\n" +
 	"\x15SetModuleStateRequest\x12\x12\n" +
@@ -845,21 +1403,68 @@ const file_module_proto_rawDesc = "" +
 	"\x06module\x18\x02 \x01(\v2\x0e.module.ModuleR\x06module\"o\n" +
 	"\x13ListModulesResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12(\n" +
-	"\amodules\x18\x02 \x03(\v2\x0e.module.ModuleR\amodules2\xdd\a\n" +
+	"\amodules\x18\x02 \x03(\v2\x0e.module.ModuleR\amodules\"\xe5\x01\n" +
+	"\x1cCompleteModuleInstallRequest\x12\x1b\n" +
+	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\x12\x1f\n" +
+	"\vmodule_name\x18\x02 \x01(\tR\n" +
+	"moduleName\x12\x18\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\x12\x16\n" +
+	"\x06status\x18\x04 \x01(\tR\x06status\x12\x14\n" +
+	"\x05error\x18\x05 \x01(\tR\x05error\x12?\n" +
+	"\x0frequest_context\x18\x06 \x01(\v2\x16.common.RequestContextR\x0erequestContext\"\x83\x01\n" +
+	"\bUsageRef\x12\x1f\n" +
+	"\vsource_type\x18\x01 \x01(\tR\n" +
+	"sourceType\x12\x1b\n" +
+	"\tsource_id\x18\x02 \x01(\tR\bsourceId\x12\x1f\n" +
+	"\vsource_name\x18\x03 \x01(\tR\n" +
+	"sourceName\x12\x18\n" +
+	"\acontext\x18\x04 \x01(\tR\acontext\"\xa5\x01\n" +
+	"\rResourceUsage\x12\x1f\n" +
+	"\vresource_id\x18\x01 \x01(\tR\n" +
+	"resourceId\x12#\n" +
+	"\rresource_type\x18\x02 \x01(\tR\fresourceType\x12#\n" +
+	"\rresource_name\x18\x03 \x01(\tR\fresourceName\x12)\n" +
+	"\aused_by\x18\x04 \x03(\v2\x10.module.UsageRefR\x06usedBy\"e\n" +
+	"\x1fCheckModuleResourceUsageRequest\x12\x1b\n" +
+	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\x12%\n" +
+	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"\x80\x01\n" +
+	" CheckModuleResourceUsageResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12,\n" +
+	"\x06in_use\x18\x02 \x03(\v2\x15.module.ResourceUsageR\x05inUse\"\x8b\x02\n" +
+	"\x1bCompleteModuleDeleteRequest\x12\x1b\n" +
+	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\x12\x1f\n" +
+	"\vmodule_name\x18\x02 \x01(\tR\n" +
+	"moduleName\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12\x14\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\x12?\n" +
+	"\x10in_use_resources\x18\x05 \x03(\v2\x15.module.ResourceUsageR\x0einUseResources\x12?\n" +
+	"\x0frequest_context\x18\x06 \x01(\v2\x16.common.RequestContextR\x0erequestContext\"6\n" +
+	"\x17DeleteByModuleIdRequest\x12\x1b\n" +
+	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId2\xf7\x0e\n" +
 	"\rModuleService\x12C\n" +
 	"\fCreateModule\x12\x1b.module.CreateModuleRequest\x1a\x16.module.ModuleResponse\x12C\n" +
 	"\fUpdateModule\x12\x1b.module.UpdateModuleRequest\x1a\x16.module.ModuleResponse\x12C\n" +
 	"\fDeleteModule\x12\x1b.module.DeleteModuleRequest\x1a\x16.common.ResponseStatus\x12=\n" +
 	"\tGetModule\x12\x18.module.GetModuleRequest\x1a\x16.module.ModuleResponse\x12I\n" +
-	"\x0fGetModuleByName\x12\x1e.module.GetModuleByNameRequest\x1a\x16.module.ModuleResponse\x12F\n" +
+	"\x0fGetModuleByName\x12\x1e.module.GetModuleByNameRequest\x1a\x16.module.ModuleResponse\x12S\n" +
+	"\x14GetModuleByModuleKey\x12#.module.GetModuleByModuleKeyRequest\x1a\x16.module.ModuleResponse\x12F\n" +
 	"\vListModules\x12\x1a.module.ListModulesRequest\x1a\x1b.module.ListModulesResponse\x12G\n" +
-	"\x0eSetModuleState\x12\x1d.module.SetModuleStateRequest\x1a\x16.module.ModuleResponse\x12P\n" +
-	"\x0fRegisterTrigger\x12\x1e.module.RegisterTriggerRequest\x1a\x1d.module.ModuleTriggerResponse\x12I\n" +
+	"\x0eSetModuleState\x12\x1d.module.SetModuleStateRequest\x1a\x16.module.ModuleResponse\x12Q\n" +
+	"\x10RegisterTriggers\x12\x1f.module.RegisterTriggersRequest\x1a\x1c.module.ListTriggersResponse\x12I\n" +
 	"\fListTriggers\x12\x1b.module.ListTriggersRequest\x1a\x1c.module.ListTriggersResponse\x12W\n" +
-	"\x16DeleteTriggersByModule\x12%.module.DeleteTriggersByModuleRequest\x1a\x16.common.ResponseStatus\x12M\n" +
-	"\x0eRegisterAction\x12\x1d.module.RegisterActionRequest\x1a\x1c.module.ModuleActionResponse\x12F\n" +
+	"\x16DeleteTriggersByModule\x12%.module.DeleteTriggersByModuleRequest\x1a\x16.common.ResponseStatus\x12S\n" +
+	"\x18DeleteTriggersByModuleId\x12\x1f.module.DeleteByModuleIdRequest\x1a\x16.common.ResponseStatus\x12N\n" +
+	"\x0fRegisterActions\x12\x1e.module.RegisterActionsRequest\x1a\x1b.module.ListActionsResponse\x12F\n" +
 	"\vListActions\x12\x1a.module.ListActionsRequest\x1a\x1b.module.ListActionsResponse\x12U\n" +
-	"\x15DeleteActionsByModule\x12$.module.DeleteActionsByModuleRequest\x1a\x16.common.ResponseStatusB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"\x15DeleteActionsByModule\x12$.module.DeleteActionsByModuleRequest\x1a\x16.common.ResponseStatus\x12R\n" +
+	"\x17DeleteActionsByModuleId\x12\x1f.module.DeleteByModuleIdRequest\x1a\x16.common.ResponseStatus\x12[\n" +
+	"\x14CreateModuleResource\x12#.module.CreateModuleResourceRequest\x1a\x1e.module.ModuleResourceResponse\x12^\n" +
+	"\x13ListModuleResources\x12\".module.ListModuleResourcesRequest\x1a#.module.ListModuleResourcesResponse\x12U\n" +
+	"\x15DeleteModuleResources\x12$.module.DeleteModuleResourcesRequest\x1a\x16.common.ResponseStatus\x12i\n" +
+	"\x1bUpdateModuleResourceVersion\x12*.module.UpdateModuleResourceVersionRequest\x1a\x1e.module.ModuleResourceResponse\x12U\n" +
+	"\x15CompleteModuleInstall\x12$.module.CompleteModuleInstallRequest\x1a\x16.common.ResponseStatus\x12m\n" +
+	"\x18CheckModuleResourceUsage\x12'.module.CheckModuleResourceUsageRequest\x1a(.module.CheckModuleResourceUsageResponse\x12S\n" +
+	"\x14CompleteModuleDelete\x12#.module.CompleteModuleDeleteRequest\x1a\x16.common.ResponseStatusB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_module_proto_rawDescOnce sync.Once
@@ -873,74 +1478,113 @@ func file_module_proto_rawDescGZIP() []byte {
 	return file_module_proto_rawDescData
 }
 
-var file_module_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_module_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_module_proto_goTypes = []any{
-	(*Module)(nil),                        // 0: module.Module
-	(*ModuleFunction)(nil),                // 1: module.ModuleFunction
-	(*CreateModuleRequest)(nil),           // 2: module.CreateModuleRequest
-	(*CreateModuleFunctionRequest)(nil),   // 3: module.CreateModuleFunctionRequest
-	(*UpdateModuleRequest)(nil),           // 4: module.UpdateModuleRequest
-	(*DeleteModuleRequest)(nil),           // 5: module.DeleteModuleRequest
-	(*GetModuleRequest)(nil),              // 6: module.GetModuleRequest
-	(*GetModuleByNameRequest)(nil),        // 7: module.GetModuleByNameRequest
-	(*ListModulesRequest)(nil),            // 8: module.ListModulesRequest
-	(*SetModuleStateRequest)(nil),         // 9: module.SetModuleStateRequest
-	(*ModuleResponse)(nil),                // 10: module.ModuleResponse
-	(*ListModulesResponse)(nil),           // 11: module.ListModulesResponse
-	(*timestamppb.Timestamp)(nil),         // 12: google.protobuf.Timestamp
-	(*ResponseStatus)(nil),                // 13: common.ResponseStatus
-	(*RegisterTriggerRequest)(nil),        // 14: module.RegisterTriggerRequest
-	(*ListTriggersRequest)(nil),           // 15: module.ListTriggersRequest
-	(*DeleteTriggersByModuleRequest)(nil), // 16: module.DeleteTriggersByModuleRequest
-	(*RegisterActionRequest)(nil),         // 17: module.RegisterActionRequest
-	(*ListActionsRequest)(nil),            // 18: module.ListActionsRequest
-	(*DeleteActionsByModuleRequest)(nil),  // 19: module.DeleteActionsByModuleRequest
-	(*ModuleTriggerResponse)(nil),         // 20: module.ModuleTriggerResponse
-	(*ListTriggersResponse)(nil),          // 21: module.ListTriggersResponse
-	(*ModuleActionResponse)(nil),          // 22: module.ModuleActionResponse
-	(*ListActionsResponse)(nil),           // 23: module.ListActionsResponse
+	(*Module)(nil),                             // 0: module.Module
+	(*ModuleFunction)(nil),                     // 1: module.ModuleFunction
+	(*CreateModuleRequest)(nil),                // 2: module.CreateModuleRequest
+	(*CreateModuleFunctionRequest)(nil),        // 3: module.CreateModuleFunctionRequest
+	(*UpdateModuleRequest)(nil),                // 4: module.UpdateModuleRequest
+	(*DeleteModuleRequest)(nil),                // 5: module.DeleteModuleRequest
+	(*GetModuleRequest)(nil),                   // 6: module.GetModuleRequest
+	(*GetModuleByNameRequest)(nil),             // 7: module.GetModuleByNameRequest
+	(*GetModuleByModuleKeyRequest)(nil),        // 8: module.GetModuleByModuleKeyRequest
+	(*ListModulesRequest)(nil),                 // 9: module.ListModulesRequest
+	(*SetModuleStateRequest)(nil),              // 10: module.SetModuleStateRequest
+	(*ModuleResponse)(nil),                     // 11: module.ModuleResponse
+	(*ListModulesResponse)(nil),                // 12: module.ListModulesResponse
+	(*CompleteModuleInstallRequest)(nil),       // 13: module.CompleteModuleInstallRequest
+	(*UsageRef)(nil),                           // 14: module.UsageRef
+	(*ResourceUsage)(nil),                      // 15: module.ResourceUsage
+	(*CheckModuleResourceUsageRequest)(nil),    // 16: module.CheckModuleResourceUsageRequest
+	(*CheckModuleResourceUsageResponse)(nil),   // 17: module.CheckModuleResourceUsageResponse
+	(*CompleteModuleDeleteRequest)(nil),        // 18: module.CompleteModuleDeleteRequest
+	(*DeleteByModuleIdRequest)(nil),            // 19: module.DeleteByModuleIdRequest
+	(*timestamppb.Timestamp)(nil),              // 20: google.protobuf.Timestamp
+	(*ResponseStatus)(nil),                     // 21: common.ResponseStatus
+	(*RequestContext)(nil),                     // 22: common.RequestContext
+	(*RegisterTriggersRequest)(nil),            // 23: module.RegisterTriggersRequest
+	(*ListTriggersRequest)(nil),                // 24: module.ListTriggersRequest
+	(*DeleteTriggersByModuleRequest)(nil),      // 25: module.DeleteTriggersByModuleRequest
+	(*RegisterActionsRequest)(nil),             // 26: module.RegisterActionsRequest
+	(*ListActionsRequest)(nil),                 // 27: module.ListActionsRequest
+	(*DeleteActionsByModuleRequest)(nil),       // 28: module.DeleteActionsByModuleRequest
+	(*CreateModuleResourceRequest)(nil),        // 29: module.CreateModuleResourceRequest
+	(*ListModuleResourcesRequest)(nil),         // 30: module.ListModuleResourcesRequest
+	(*DeleteModuleResourcesRequest)(nil),       // 31: module.DeleteModuleResourcesRequest
+	(*UpdateModuleResourceVersionRequest)(nil), // 32: module.UpdateModuleResourceVersionRequest
+	(*ListTriggersResponse)(nil),               // 33: module.ListTriggersResponse
+	(*ListActionsResponse)(nil),                // 34: module.ListActionsResponse
+	(*ModuleResourceResponse)(nil),             // 35: module.ModuleResourceResponse
+	(*ListModuleResourcesResponse)(nil),        // 36: module.ListModuleResourcesResponse
 }
 var file_module_proto_depIdxs = []int32{
 	1,  // 0: module.Module.functions:type_name -> module.ModuleFunction
-	12, // 1: module.Module.installed_at:type_name -> google.protobuf.Timestamp
-	12, // 2: module.Module.updated_at:type_name -> google.protobuf.Timestamp
+	20, // 1: module.Module.installed_at:type_name -> google.protobuf.Timestamp
+	20, // 2: module.Module.updated_at:type_name -> google.protobuf.Timestamp
 	3,  // 3: module.CreateModuleRequest.functions:type_name -> module.CreateModuleFunctionRequest
 	3,  // 4: module.UpdateModuleRequest.functions:type_name -> module.CreateModuleFunctionRequest
-	13, // 5: module.ModuleResponse.status:type_name -> common.ResponseStatus
+	21, // 5: module.ModuleResponse.status:type_name -> common.ResponseStatus
 	0,  // 6: module.ModuleResponse.module:type_name -> module.Module
-	13, // 7: module.ListModulesResponse.status:type_name -> common.ResponseStatus
+	21, // 7: module.ListModulesResponse.status:type_name -> common.ResponseStatus
 	0,  // 8: module.ListModulesResponse.modules:type_name -> module.Module
-	2,  // 9: module.ModuleService.CreateModule:input_type -> module.CreateModuleRequest
-	4,  // 10: module.ModuleService.UpdateModule:input_type -> module.UpdateModuleRequest
-	5,  // 11: module.ModuleService.DeleteModule:input_type -> module.DeleteModuleRequest
-	6,  // 12: module.ModuleService.GetModule:input_type -> module.GetModuleRequest
-	7,  // 13: module.ModuleService.GetModuleByName:input_type -> module.GetModuleByNameRequest
-	8,  // 14: module.ModuleService.ListModules:input_type -> module.ListModulesRequest
-	9,  // 15: module.ModuleService.SetModuleState:input_type -> module.SetModuleStateRequest
-	14, // 16: module.ModuleService.RegisterTrigger:input_type -> module.RegisterTriggerRequest
-	15, // 17: module.ModuleService.ListTriggers:input_type -> module.ListTriggersRequest
-	16, // 18: module.ModuleService.DeleteTriggersByModule:input_type -> module.DeleteTriggersByModuleRequest
-	17, // 19: module.ModuleService.RegisterAction:input_type -> module.RegisterActionRequest
-	18, // 20: module.ModuleService.ListActions:input_type -> module.ListActionsRequest
-	19, // 21: module.ModuleService.DeleteActionsByModule:input_type -> module.DeleteActionsByModuleRequest
-	10, // 22: module.ModuleService.CreateModule:output_type -> module.ModuleResponse
-	10, // 23: module.ModuleService.UpdateModule:output_type -> module.ModuleResponse
-	13, // 24: module.ModuleService.DeleteModule:output_type -> common.ResponseStatus
-	10, // 25: module.ModuleService.GetModule:output_type -> module.ModuleResponse
-	10, // 26: module.ModuleService.GetModuleByName:output_type -> module.ModuleResponse
-	11, // 27: module.ModuleService.ListModules:output_type -> module.ListModulesResponse
-	10, // 28: module.ModuleService.SetModuleState:output_type -> module.ModuleResponse
-	20, // 29: module.ModuleService.RegisterTrigger:output_type -> module.ModuleTriggerResponse
-	21, // 30: module.ModuleService.ListTriggers:output_type -> module.ListTriggersResponse
-	13, // 31: module.ModuleService.DeleteTriggersByModule:output_type -> common.ResponseStatus
-	22, // 32: module.ModuleService.RegisterAction:output_type -> module.ModuleActionResponse
-	23, // 33: module.ModuleService.ListActions:output_type -> module.ListActionsResponse
-	13, // 34: module.ModuleService.DeleteActionsByModule:output_type -> common.ResponseStatus
-	22, // [22:35] is the sub-list for method output_type
-	9,  // [9:22] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	22, // 9: module.CompleteModuleInstallRequest.request_context:type_name -> common.RequestContext
+	14, // 10: module.ResourceUsage.used_by:type_name -> module.UsageRef
+	21, // 11: module.CheckModuleResourceUsageResponse.status:type_name -> common.ResponseStatus
+	15, // 12: module.CheckModuleResourceUsageResponse.in_use:type_name -> module.ResourceUsage
+	15, // 13: module.CompleteModuleDeleteRequest.in_use_resources:type_name -> module.ResourceUsage
+	22, // 14: module.CompleteModuleDeleteRequest.request_context:type_name -> common.RequestContext
+	2,  // 15: module.ModuleService.CreateModule:input_type -> module.CreateModuleRequest
+	4,  // 16: module.ModuleService.UpdateModule:input_type -> module.UpdateModuleRequest
+	5,  // 17: module.ModuleService.DeleteModule:input_type -> module.DeleteModuleRequest
+	6,  // 18: module.ModuleService.GetModule:input_type -> module.GetModuleRequest
+	7,  // 19: module.ModuleService.GetModuleByName:input_type -> module.GetModuleByNameRequest
+	8,  // 20: module.ModuleService.GetModuleByModuleKey:input_type -> module.GetModuleByModuleKeyRequest
+	9,  // 21: module.ModuleService.ListModules:input_type -> module.ListModulesRequest
+	10, // 22: module.ModuleService.SetModuleState:input_type -> module.SetModuleStateRequest
+	23, // 23: module.ModuleService.RegisterTriggers:input_type -> module.RegisterTriggersRequest
+	24, // 24: module.ModuleService.ListTriggers:input_type -> module.ListTriggersRequest
+	25, // 25: module.ModuleService.DeleteTriggersByModule:input_type -> module.DeleteTriggersByModuleRequest
+	19, // 26: module.ModuleService.DeleteTriggersByModuleId:input_type -> module.DeleteByModuleIdRequest
+	26, // 27: module.ModuleService.RegisterActions:input_type -> module.RegisterActionsRequest
+	27, // 28: module.ModuleService.ListActions:input_type -> module.ListActionsRequest
+	28, // 29: module.ModuleService.DeleteActionsByModule:input_type -> module.DeleteActionsByModuleRequest
+	19, // 30: module.ModuleService.DeleteActionsByModuleId:input_type -> module.DeleteByModuleIdRequest
+	29, // 31: module.ModuleService.CreateModuleResource:input_type -> module.CreateModuleResourceRequest
+	30, // 32: module.ModuleService.ListModuleResources:input_type -> module.ListModuleResourcesRequest
+	31, // 33: module.ModuleService.DeleteModuleResources:input_type -> module.DeleteModuleResourcesRequest
+	32, // 34: module.ModuleService.UpdateModuleResourceVersion:input_type -> module.UpdateModuleResourceVersionRequest
+	13, // 35: module.ModuleService.CompleteModuleInstall:input_type -> module.CompleteModuleInstallRequest
+	16, // 36: module.ModuleService.CheckModuleResourceUsage:input_type -> module.CheckModuleResourceUsageRequest
+	18, // 37: module.ModuleService.CompleteModuleDelete:input_type -> module.CompleteModuleDeleteRequest
+	11, // 38: module.ModuleService.CreateModule:output_type -> module.ModuleResponse
+	11, // 39: module.ModuleService.UpdateModule:output_type -> module.ModuleResponse
+	21, // 40: module.ModuleService.DeleteModule:output_type -> common.ResponseStatus
+	11, // 41: module.ModuleService.GetModule:output_type -> module.ModuleResponse
+	11, // 42: module.ModuleService.GetModuleByName:output_type -> module.ModuleResponse
+	11, // 43: module.ModuleService.GetModuleByModuleKey:output_type -> module.ModuleResponse
+	12, // 44: module.ModuleService.ListModules:output_type -> module.ListModulesResponse
+	11, // 45: module.ModuleService.SetModuleState:output_type -> module.ModuleResponse
+	33, // 46: module.ModuleService.RegisterTriggers:output_type -> module.ListTriggersResponse
+	33, // 47: module.ModuleService.ListTriggers:output_type -> module.ListTriggersResponse
+	21, // 48: module.ModuleService.DeleteTriggersByModule:output_type -> common.ResponseStatus
+	21, // 49: module.ModuleService.DeleteTriggersByModuleId:output_type -> common.ResponseStatus
+	34, // 50: module.ModuleService.RegisterActions:output_type -> module.ListActionsResponse
+	34, // 51: module.ModuleService.ListActions:output_type -> module.ListActionsResponse
+	21, // 52: module.ModuleService.DeleteActionsByModule:output_type -> common.ResponseStatus
+	21, // 53: module.ModuleService.DeleteActionsByModuleId:output_type -> common.ResponseStatus
+	35, // 54: module.ModuleService.CreateModuleResource:output_type -> module.ModuleResourceResponse
+	36, // 55: module.ModuleService.ListModuleResources:output_type -> module.ListModuleResourcesResponse
+	21, // 56: module.ModuleService.DeleteModuleResources:output_type -> common.ResponseStatus
+	35, // 57: module.ModuleService.UpdateModuleResourceVersion:output_type -> module.ModuleResourceResponse
+	21, // 58: module.ModuleService.CompleteModuleInstall:output_type -> common.ResponseStatus
+	17, // 59: module.ModuleService.CheckModuleResourceUsage:output_type -> module.CheckModuleResourceUsageResponse
+	21, // 60: module.ModuleService.CompleteModuleDelete:output_type -> common.ResponseStatus
+	38, // [38:61] is the sub-list for method output_type
+	15, // [15:38] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_module_proto_init() }
@@ -951,13 +1595,14 @@ func file_module_proto_init() {
 	file_common_proto_init()
 	file_module_trigger_proto_init()
 	file_module_action_proto_init()
+	file_module_resource_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_module_proto_rawDesc), len(file_module_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

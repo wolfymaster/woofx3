@@ -198,6 +198,27 @@ pub mod module_service_client {
                 .insert(GrpcMethod::new("module.ModuleService", "GetModuleByName"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn get_module_by_module_key(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetModuleByModuleKeyRequest>,
+        ) -> std::result::Result<tonic::Response<super::ModuleResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/GetModuleByModuleKey",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("module.ModuleService", "GetModuleByModuleKey"));
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn list_modules(
             &mut self,
             request: impl tonic::IntoRequest<super::ListModulesRequest>,
@@ -243,11 +264,11 @@ pub mod module_service_client {
                 .insert(GrpcMethod::new("module.ModuleService", "SetModuleState"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn register_trigger(
+        pub async fn register_triggers(
             &mut self,
-            request: impl tonic::IntoRequest<super::RegisterTriggerRequest>,
+            request: impl tonic::IntoRequest<super::RegisterTriggersRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::ModuleTriggerResponse>,
+            tonic::Response<super::ListTriggersResponse>,
             tonic::Status,
         > {
             self.inner
@@ -260,11 +281,11 @@ pub mod module_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/module.ModuleService/RegisterTrigger",
+                "/module.ModuleService/RegisterTriggers",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("module.ModuleService", "RegisterTrigger"));
+                .insert(GrpcMethod::new("module.ModuleService", "RegisterTriggers"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn list_triggers(
@@ -317,11 +338,11 @@ pub mod module_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        pub async fn register_action(
+        pub async fn delete_triggers_by_module_id(
             &mut self,
-            request: impl tonic::IntoRequest<super::RegisterActionRequest>,
+            request: impl tonic::IntoRequest<super::DeleteByModuleIdRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::ModuleActionResponse>,
+            tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         > {
             self.inner
@@ -334,11 +355,37 @@ pub mod module_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/module.ModuleService/RegisterAction",
+                "/module.ModuleService/DeleteTriggersByModuleId",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("module.ModuleService", "RegisterAction"));
+                .insert(
+                    GrpcMethod::new("module.ModuleService", "DeleteTriggersByModuleId"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn register_actions(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RegisterActionsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListActionsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/RegisterActions",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("module.ModuleService", "RegisterActions"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn list_actions(
@@ -391,6 +438,211 @@ pub mod module_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn delete_actions_by_module_id(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteByModuleIdRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/DeleteActionsByModuleId",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("module.ModuleService", "DeleteActionsByModuleId"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn create_module_resource(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateModuleResourceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ModuleResourceResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/CreateModuleResource",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("module.ModuleService", "CreateModuleResource"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn list_module_resources(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListModuleResourcesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListModuleResourcesResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/ListModuleResources",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("module.ModuleService", "ListModuleResources"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn delete_module_resources(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteModuleResourcesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/DeleteModuleResources",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("module.ModuleService", "DeleteModuleResources"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn update_module_resource_version(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdateModuleResourceVersionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ModuleResourceResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/UpdateModuleResourceVersion",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "module.ModuleService",
+                        "UpdateModuleResourceVersion",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn complete_module_install(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CompleteModuleInstallRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/CompleteModuleInstall",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("module.ModuleService", "CompleteModuleInstall"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn check_module_resource_usage(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CheckModuleResourceUsageRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CheckModuleResourceUsageResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/CheckModuleResourceUsage",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("module.ModuleService", "CheckModuleResourceUsage"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn complete_module_delete(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CompleteModuleDeleteRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/CompleteModuleDelete",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("module.ModuleService", "CompleteModuleDelete"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -429,6 +681,10 @@ pub mod module_service_server {
             &self,
             request: tonic::Request<super::GetModuleByNameRequest>,
         ) -> std::result::Result<tonic::Response<super::ModuleResponse>, tonic::Status>;
+        async fn get_module_by_module_key(
+            &self,
+            request: tonic::Request<super::GetModuleByModuleKeyRequest>,
+        ) -> std::result::Result<tonic::Response<super::ModuleResponse>, tonic::Status>;
         async fn list_modules(
             &self,
             request: tonic::Request<super::ListModulesRequest>,
@@ -440,11 +696,11 @@ pub mod module_service_server {
             &self,
             request: tonic::Request<super::SetModuleStateRequest>,
         ) -> std::result::Result<tonic::Response<super::ModuleResponse>, tonic::Status>;
-        async fn register_trigger(
+        async fn register_triggers(
             &self,
-            request: tonic::Request<super::RegisterTriggerRequest>,
+            request: tonic::Request<super::RegisterTriggersRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::ModuleTriggerResponse>,
+            tonic::Response<super::ListTriggersResponse>,
             tonic::Status,
         >;
         async fn list_triggers(
@@ -461,11 +717,18 @@ pub mod module_service_server {
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
-        async fn register_action(
+        async fn delete_triggers_by_module_id(
             &self,
-            request: tonic::Request<super::RegisterActionRequest>,
+            request: tonic::Request<super::DeleteByModuleIdRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::ModuleActionResponse>,
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        >;
+        async fn register_actions(
+            &self,
+            request: tonic::Request<super::RegisterActionsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListActionsResponse>,
             tonic::Status,
         >;
         async fn list_actions(
@@ -478,6 +741,62 @@ pub mod module_service_server {
         async fn delete_actions_by_module(
             &self,
             request: tonic::Request<super::DeleteActionsByModuleRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        >;
+        async fn delete_actions_by_module_id(
+            &self,
+            request: tonic::Request<super::DeleteByModuleIdRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        >;
+        async fn create_module_resource(
+            &self,
+            request: tonic::Request<super::CreateModuleResourceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ModuleResourceResponse>,
+            tonic::Status,
+        >;
+        async fn list_module_resources(
+            &self,
+            request: tonic::Request<super::ListModuleResourcesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListModuleResourcesResponse>,
+            tonic::Status,
+        >;
+        async fn delete_module_resources(
+            &self,
+            request: tonic::Request<super::DeleteModuleResourcesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        >;
+        async fn update_module_resource_version(
+            &self,
+            request: tonic::Request<super::UpdateModuleResourceVersionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ModuleResourceResponse>,
+            tonic::Status,
+        >;
+        async fn complete_module_install(
+            &self,
+            request: tonic::Request<super::CompleteModuleInstallRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        >;
+        async fn check_module_resource_usage(
+            &self,
+            request: tonic::Request<super::CheckModuleResourceUsageRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CheckModuleResourceUsageResponse>,
+            tonic::Status,
+        >;
+        async fn complete_module_delete(
+            &self,
+            request: tonic::Request<super::CompleteModuleDeleteRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
@@ -785,6 +1104,55 @@ pub mod module_service_server {
                     };
                     Box::pin(fut)
                 }
+                "/module.ModuleService/GetModuleByModuleKey" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetModuleByModuleKeySvc<T: ModuleService>(pub Arc<T>);
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<super::GetModuleByModuleKeyRequest>
+                    for GetModuleByModuleKeySvc<T> {
+                        type Response = super::ModuleResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetModuleByModuleKeyRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::get_module_by_module_key(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetModuleByModuleKeySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/module.ModuleService/ListModules" => {
                     #[allow(non_camel_case_types)]
                     struct ListModulesSvc<T: ModuleService>(pub Arc<T>);
@@ -876,25 +1244,25 @@ pub mod module_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/module.ModuleService/RegisterTrigger" => {
+                "/module.ModuleService/RegisterTriggers" => {
                     #[allow(non_camel_case_types)]
-                    struct RegisterTriggerSvc<T: ModuleService>(pub Arc<T>);
+                    struct RegisterTriggersSvc<T: ModuleService>(pub Arc<T>);
                     impl<
                         T: ModuleService,
-                    > tonic::server::UnaryService<super::RegisterTriggerRequest>
-                    for RegisterTriggerSvc<T> {
-                        type Response = super::ModuleTriggerResponse;
+                    > tonic::server::UnaryService<super::RegisterTriggersRequest>
+                    for RegisterTriggersSvc<T> {
+                        type Response = super::ListTriggersResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::RegisterTriggerRequest>,
+                            request: tonic::Request<super::RegisterTriggersRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ModuleService>::register_trigger(&inner, request)
+                                <T as ModuleService>::register_triggers(&inner, request)
                                     .await
                             };
                             Box::pin(fut)
@@ -906,7 +1274,7 @@ pub mod module_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = RegisterTriggerSvc(inner);
+                        let method = RegisterTriggersSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -1016,25 +1384,29 @@ pub mod module_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/module.ModuleService/RegisterAction" => {
+                "/module.ModuleService/DeleteTriggersByModuleId" => {
                     #[allow(non_camel_case_types)]
-                    struct RegisterActionSvc<T: ModuleService>(pub Arc<T>);
+                    struct DeleteTriggersByModuleIdSvc<T: ModuleService>(pub Arc<T>);
                     impl<
                         T: ModuleService,
-                    > tonic::server::UnaryService<super::RegisterActionRequest>
-                    for RegisterActionSvc<T> {
-                        type Response = super::ModuleActionResponse;
+                    > tonic::server::UnaryService<super::DeleteByModuleIdRequest>
+                    for DeleteTriggersByModuleIdSvc<T> {
+                        type Response = super::super::common::ResponseStatus;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::RegisterActionRequest>,
+                            request: tonic::Request<super::DeleteByModuleIdRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as ModuleService>::register_action(&inner, request).await
+                                <T as ModuleService>::delete_triggers_by_module_id(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -1045,7 +1417,53 @@ pub mod module_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = RegisterActionSvc(inner);
+                        let method = DeleteTriggersByModuleIdSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/module.ModuleService/RegisterActions" => {
+                    #[allow(non_camel_case_types)]
+                    struct RegisterActionsSvc<T: ModuleService>(pub Arc<T>);
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<super::RegisterActionsRequest>
+                    for RegisterActionsSvc<T> {
+                        type Response = super::ListActionsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RegisterActionsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::register_actions(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RegisterActionsSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -1140,6 +1558,400 @@ pub mod module_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = DeleteActionsByModuleSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/module.ModuleService/DeleteActionsByModuleId" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteActionsByModuleIdSvc<T: ModuleService>(pub Arc<T>);
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<super::DeleteByModuleIdRequest>
+                    for DeleteActionsByModuleIdSvc<T> {
+                        type Response = super::super::common::ResponseStatus;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteByModuleIdRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::delete_actions_by_module_id(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = DeleteActionsByModuleIdSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/module.ModuleService/CreateModuleResource" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateModuleResourceSvc<T: ModuleService>(pub Arc<T>);
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<super::CreateModuleResourceRequest>
+                    for CreateModuleResourceSvc<T> {
+                        type Response = super::ModuleResourceResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CreateModuleResourceRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::create_module_resource(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CreateModuleResourceSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/module.ModuleService/ListModuleResources" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListModuleResourcesSvc<T: ModuleService>(pub Arc<T>);
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<super::ListModuleResourcesRequest>
+                    for ListModuleResourcesSvc<T> {
+                        type Response = super::ListModuleResourcesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListModuleResourcesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::list_module_resources(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListModuleResourcesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/module.ModuleService/DeleteModuleResources" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteModuleResourcesSvc<T: ModuleService>(pub Arc<T>);
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<super::DeleteModuleResourcesRequest>
+                    for DeleteModuleResourcesSvc<T> {
+                        type Response = super::super::common::ResponseStatus;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteModuleResourcesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::delete_module_resources(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = DeleteModuleResourcesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/module.ModuleService/UpdateModuleResourceVersion" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateModuleResourceVersionSvc<T: ModuleService>(pub Arc<T>);
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<
+                        super::UpdateModuleResourceVersionRequest,
+                    > for UpdateModuleResourceVersionSvc<T> {
+                        type Response = super::ModuleResourceResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::UpdateModuleResourceVersionRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::update_module_resource_version(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = UpdateModuleResourceVersionSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/module.ModuleService/CompleteModuleInstall" => {
+                    #[allow(non_camel_case_types)]
+                    struct CompleteModuleInstallSvc<T: ModuleService>(pub Arc<T>);
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<super::CompleteModuleInstallRequest>
+                    for CompleteModuleInstallSvc<T> {
+                        type Response = super::super::common::ResponseStatus;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CompleteModuleInstallRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::complete_module_install(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CompleteModuleInstallSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/module.ModuleService/CheckModuleResourceUsage" => {
+                    #[allow(non_camel_case_types)]
+                    struct CheckModuleResourceUsageSvc<T: ModuleService>(pub Arc<T>);
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<super::CheckModuleResourceUsageRequest>
+                    for CheckModuleResourceUsageSvc<T> {
+                        type Response = super::CheckModuleResourceUsageResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::CheckModuleResourceUsageRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::check_module_resource_usage(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CheckModuleResourceUsageSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/module.ModuleService/CompleteModuleDelete" => {
+                    #[allow(non_camel_case_types)]
+                    struct CompleteModuleDeleteSvc<T: ModuleService>(pub Arc<T>);
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<super::CompleteModuleDeleteRequest>
+                    for CompleteModuleDeleteSvc<T> {
+                        type Response = super::super::common::ResponseStatus;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CompleteModuleDeleteRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::complete_module_delete(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CompleteModuleDeleteSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

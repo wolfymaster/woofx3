@@ -6,38 +6,41 @@ option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
 
 import "common.proto";
 
-message ModuleAction {
+message Action {
   string id = 1;
-  string module_id = 2;
-  string module_name = 3;
   string name = 4;
   string description = 5;
   string call = 6;
   string params_schema = 7;
+  string created_by_type = 8;
+  string created_by_ref = 9;
 }
 
-message RegisterActionRequest {
-  string module_name = 1;
-  string name = 2;
-  string description = 3;
-  string call = 4;
-  string params_schema = 5;
+message ActionInput {
+  string name = 1;
+  string description = 2;
+  string call = 3;
+  string params_schema = 4;  // JSON string
+}
+
+message RegisterActionsRequest {
+  string module_key = 1;
+  string module_name = 2;
+  string version = 3;
+  repeated ActionInput actions = 4;
 }
 
 message ListActionsRequest {
-  string module_name = 1;
+  string created_by_type = 1;
+  string created_by_ref = 2;
 }
 
 message ListActionsResponse {
   common.ResponseStatus status = 1;
-  repeated ModuleAction actions = 2;
-}
-
-message ModuleActionResponse {
-  common.ResponseStatus status = 1;
-  ModuleAction action = 2;
+  repeated Action actions = 2;
 }
 
 message DeleteActionsByModuleRequest {
-  string module_name = 1;
+  string created_by_type = 1;
+  string created_by_ref = 2;
 }
