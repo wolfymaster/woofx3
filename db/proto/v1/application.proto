@@ -9,16 +9,20 @@ import "google/protobuf/timestamp.proto";
 service ApplicationService {
     // Create a new application
     rpc CreateApplication(CreateApplicationRequest) returns (ApplicationResponse);
-    
+
     // Get an application by ID
     rpc GetApplication(GetApplicationRequest) returns (ApplicationResponse);
-    
+
+    // Get the single default application. Returns NOT_FOUND when no default
+    // exists yet (pre-onboarding).
+    rpc GetDefaultApplication(GetDefaultApplicationRequest) returns (ApplicationResponse);
+
     // Update an existing application
     rpc UpdateApplication(UpdateApplicationRequest) returns (ApplicationResponse);
-    
+
     // Delete an application
     rpc DeleteApplication(DeleteApplicationRequest) returns (common.ResponseStatus);
-    
+
     // List applications with optional filtering
     rpc ListApplications(ListApplicationsRequest) returns (ListApplicationsResponse);
 }
@@ -28,6 +32,7 @@ message Application {
     string name = 2;
     string owner_id = 4;
     bool enabled = 6;
+    bool is_default = 7;
     google.protobuf.Timestamp created_at = 15;
 }
 
@@ -37,6 +42,7 @@ message Application {
 message CreateApplicationRequest {
     string name = 1;
     string owner_id = 2;
+    bool is_default = 3;
 }
 
 // Get an application by ID or client ID
@@ -44,11 +50,15 @@ message GetApplicationRequest {
     string id = 1;
 }
 
+// Get the default application (the one with is_default = true).
+message GetDefaultApplicationRequest {}
+
 // Update an existing application
 message UpdateApplicationRequest {
     string id = 1;
     string name = 2;
     bool enabled = 3;
+    bool is_default = 4;
 }
 
 // Delete an application
