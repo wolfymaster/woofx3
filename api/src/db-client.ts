@@ -117,12 +117,44 @@ export class DbClient {
     return resp.actions;
   }
 
-  async createApplication(req: application.CreateApplicationRequest): Promise<application.ApplicationResponse> {
-    return application.CreateApplication(req, this.config);
+  async createApplication(opts: {
+    name: string;
+    ownerId: string;
+    isDefault: boolean;
+  }): Promise<{ id: string; name: string }> {
+    const resp = await application.CreateApplication(
+      { name: opts.name, ownerId: opts.ownerId, isDefault: opts.isDefault },
+      this.config
+    );
+    if (!resp.application || resp.status?.code !== "OK") {
+      throw new Error(`createApplication failed: ${resp.status?.message ?? "unknown error"}`);
+    }
+    return { id: resp.application.id, name: resp.application.name };
   }
 
   async getApplication(req: application.GetApplicationRequest): Promise<application.ApplicationResponse> {
     return application.GetApplication(req, this.config);
+  }
+
+  async getDefaultApplication(): Promise<{ id: string; name: string } | null> {
+    const resp = await application.GetDefaultApplication({}, this.config);
+    if (resp.status?.code !== "OK" || !resp.application) {
+      return null;
+    }
+    return { id: resp.application.id, name: resp.application.name };
+  }
+
+  async findOrCreateByWoofx3UIUserId(woofx3UIUserId: string): Promise<{ id: string }> {
+    const resp = await user.FindOrCreateByWoofx3UIUserId(
+      { woofx3UiUserId: woofx3UIUserId },
+      this.config
+    );
+    if (!resp.user || resp.status?.code !== "OK") {
+      throw new Error(
+        `findOrCreateByWoofx3UIUserId failed: ${resp.status?.message ?? "unknown error"}`
+      );
+    }
+    return { id: resp.user.id };
   }
 
   async setSetting(key: string, value: string, applicationId: string): Promise<setting.SettingResponse> {

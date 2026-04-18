@@ -58,7 +58,6 @@ interface WorkflowItem {
 interface ApiOptions {
   db: DbClient;
   nats: NATSClient | null;
-  applicationId: string;
   barkloaderUrl: string;
   logger: SharedLogger;
 }
@@ -72,7 +71,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
 
   private db: DbClient;
   private nats: NATSClient | null;
-  private applicationId: string;
+  private applicationId: string | null = null;
   private barkloaderUrl: string;
   private logger: SharedLogger;
 
@@ -81,21 +80,17 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     if (!opts.db) {
       throw new Error("ApiOptions.db is required");
     }
-    if (!opts.applicationId) {
-      throw new Error("ApiOptions.applicationId is required");
-    }
     if (!opts.barkloaderUrl) {
       throw new Error("ApiOptions.barkloaderUrl is required");
     }
     this.db = opts.db;
     this.nats = opts.nats;
-    this.applicationId = opts.applicationId;
     this.barkloaderUrl = opts.barkloaderUrl;
     this.logger = opts.logger;
   }
 
   async ping(): Promise<PingResponse> {
-    return { status: "ok", instanceId: this.applicationId };
+    return { status: "ok", instanceId: this.applicationId ?? "pending" };
   }
 
   async deleteClient(clientId: string): Promise<{ success: boolean; message: string }> {
@@ -121,6 +116,28 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
 
   setAuthInvalidate(fn: () => void): void {
     this.authInvalidate = fn;
+  }
+
+  setApplicationId(applicationId: string): void {
+    this.applicationId = applicationId;
+    if (this.webhookClient) {
+      this.webhookClient.setApplicationId(applicationId);
+    }
+  }
+
+  private async ensureApplicationId(): Promise<string> {
+    if (this.applicationId) {
+      return this.applicationId;
+    }
+    const app = await this.db.getDefaultApplication();
+    if (!app) {
+      throw new Error("No default application; complete UI onboarding first");
+    }
+    this.applicationId = app.id;
+    if (this.webhookClient) {
+      this.webhookClient.setApplicationId(app.id);
+    }
+    return app.id;
   }
 
   async initSubscriptions(): Promise<void> {
@@ -399,8 +416,9 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     }>;
   }> {
     this.logger.debug("Getting available workflows");
+    const applicationId = await this.ensureApplicationId();
     const req: workflow.ListWorkflowsRequest = {
-      applicationId: this.applicationId,
+      applicationId,
       includeDisabled: false,
       page: 1,
       pageSize: 1000,
@@ -424,7 +442,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
       (response.workflows || []).map(async (wf) => {
         const execReq: workflow.ListWorkflowExecutionsRequest = {
           workflowId: wf.id,
-          applicationId: this.applicationId,
+          applicationId,
           status: "",
           startedBy: "",
           from: protoscript.Timestamp.initialize(),
@@ -478,9 +496,10 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
       userId,
       parametersCount: Object.keys(parameters).length,
     });
+    const applicationId = await this.ensureApplicationId();
     // First, find the workflow by name
     const workflowsReq: workflow.ListWorkflowsRequest = {
-      applicationId: this.applicationId,
+      applicationId,
       includeDisabled: false,
       page: 1,
       pageSize: 1000,
@@ -506,7 +525,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     const correlationId = crypto.randomUUID();
     const execReq: workflow.ExecuteWorkflowRequest = {
       workflowId: foundWorkflow.id,
-      applicationId: this.applicationId,
+      applicationId,
       startedBy: userId || "ui",
       inputs: parameters,
       async: true,
@@ -632,10 +651,11 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
       startedBy: string;
     }>;
   }> {
+    const applicationId = await this.ensureApplicationId();
     let workflowId: string | undefined;
     if (options.workflowName) {
       const workflowsReq: workflow.ListWorkflowsRequest = {
-        applicationId: this.applicationId,
+        applicationId,
         includeDisabled: false,
         page: 1,
         pageSize: 1000,
@@ -651,7 +671,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
 
     const req: workflow.ListWorkflowExecutionsRequest = {
       workflowId: workflowId || "",
-      applicationId: this.applicationId,
+      applicationId,
       status: options.status || "",
       startedBy: options.userId || "",
       from: protoscript.Timestamp.initialize(),
@@ -730,8 +750,9 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     }>;
   }> {
     this.logger.info("Getting available commands", { username: _username });
+    const applicationId = await this.ensureApplicationId();
     const req: command.ListCommandsRequest = {
-      applicationId: this.applicationId,
+      applicationId,
       includeDisabled: false,
     };
     const response = await this.db.listCommands(req);
@@ -763,10 +784,11 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     message: string;
   }> {
     this.logger.info("Executing command", { commandName, username, args: Object.keys(args) });
+    const applicationId = await this.ensureApplicationId();
     // Get the command
     const cmdReq: command.GetCommandRequest = {
       command: commandName,
-      applicationId: this.applicationId,
+      applicationId,
       username,
     };
     const cmdResponse = await this.db.getCommand(cmdReq);
@@ -783,7 +805,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
       command: commandName,
       username,
       args,
-      applicationId: this.applicationId,
+      applicationId,
     });
 
     this.logger.info("Command executed", { commandName, username });
@@ -817,11 +839,12 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     }
 
     // Get treats summary (last 30 days)
+    const applicationId = await this.ensureApplicationId();
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const treatsReq: treat.GetUserTreatsSummaryRequest = {
       userId,
-      applicationId: this.applicationId,
+      applicationId,
       fromDate: timestampFromDate(thirtyDaysAgo),
       toDate: timestampFromDate(now),
     };
@@ -858,6 +881,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
       ? timestampFromDate(new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000))
       : protoscript.Timestamp.initialize();
 
+    const applicationId = await this.ensureApplicationId();
     const req: treat.AwardTreatRequest = {
       userId,
       treatType,
@@ -866,7 +890,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
       points,
       imageUrl,
       awardedBy,
-      applicationId: this.applicationId,
+      applicationId,
       metadata: {},
       expiresAt,
     };
@@ -942,8 +966,9 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     }>;
   }> {
     // Get workflow stats
+    const applicationId = await this.ensureApplicationId();
     const workflowsReq: workflow.ListWorkflowsRequest = {
-      applicationId: this.applicationId,
+      applicationId,
       includeDisabled: true,
       page: 1,
       pageSize: 1000,
@@ -956,7 +981,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     // Get running executions
     const runningExecReq: workflow.ListWorkflowExecutionsRequest = {
       workflowId: "",
-      applicationId: this.applicationId,
+      applicationId,
       status: "running",
       startedBy: "",
       from: protoscript.Timestamp.initialize(),
@@ -1420,8 +1445,9 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
   }> {
     const page = query?.page ?? 1;
     const pageSize = query?.pageSize ?? 20;
+    const applicationId = query?.accountId ?? (await this.ensureApplicationId());
     const response = await this.db.listWorkflows({
-      applicationId: query?.accountId ?? this.applicationId,
+      applicationId,
       includeDisabled: query?.enabled === undefined ? true : !query.enabled,
       page,
       pageSize,
@@ -1462,10 +1488,11 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     const variables: Record<string, string> = {};
     if (data.steps) variables._steps = JSON.stringify(data.steps);
     if (data.trigger) variables._trigger = JSON.stringify(data.trigger);
+    const applicationId = await this.ensureApplicationId();
     const response = await this.db.createWorkflow({
       name: data.name,
       description: data.description ?? "",
-      applicationId: this.applicationId,
+      applicationId,
       createdBy: "",
       enabled: data.isEnabled ?? false,
       steps: [],
@@ -1613,9 +1640,10 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
       trigger: string;
     }>
   > {
+    const applicationId = await this.ensureApplicationId();
     const req: workflow.ListWorkflowExecutionsRequest = {
       workflowId: query?.workflowId || "",
-      applicationId: this.applicationId,
+      applicationId,
       status: "",
       startedBy: "",
       from: protoscript.Timestamp.initialize(),
@@ -1905,8 +1933,9 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     recentEvents: number;
   }> {
     const engineModules = await this.listEngineModules().catch(() => []);
+    const applicationId = await this.ensureApplicationId();
     const workflowsResponse = await this.db.listWorkflows({
-      applicationId: this.applicationId,
+      applicationId,
       includeDisabled: true,
       page: 1,
       pageSize: 1000,

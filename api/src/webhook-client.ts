@@ -41,6 +41,10 @@ export class WebhookClient {
     this.refreshCallbackUrls();
   }
 
+  setApplicationId(applicationId: string): void {
+    this.applicationId = applicationId;
+  }
+
   async refreshCallbackUrls(): Promise<void> {
     const resp = await this.db.listClients(this.applicationId);
     const newInstances: RegisteredInstance[] = [];
