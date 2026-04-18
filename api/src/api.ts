@@ -139,6 +139,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     this.applicationId = app.id;
     if (this.webhookClient) {
       this.webhookClient.setApplicationId(app.id);
+      void this.webhookClient.refreshCallbackUrls();
     }
     return app.id;
   }
