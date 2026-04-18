@@ -174,6 +174,29 @@ pub mod user_service_client {
                 .insert(GrpcMethod::new("user.UserService", "DeleteUser"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn find_or_create_by_woofx3_ui_user_id(
+            &mut self,
+            request: impl tonic::IntoRequest<super::FindOrCreateByWoofx3UiUserIdRequest>,
+        ) -> std::result::Result<tonic::Response<super::UserResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/user.UserService/FindOrCreateByWoofx3UIUserId",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("user.UserService", "FindOrCreateByWoofx3UIUserId"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -208,6 +231,10 @@ pub mod user_service_server {
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
+        async fn find_or_create_by_woofx3_ui_user_id(
+            &self,
+            request: tonic::Request<super::FindOrCreateByWoofx3UiUserIdRequest>,
+        ) -> std::result::Result<tonic::Response<super::UserResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct UserServiceServer<T> {
@@ -450,6 +477,58 @@ pub mod user_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = DeleteUserSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/user.UserService/FindOrCreateByWoofx3UIUserId" => {
+                    #[allow(non_camel_case_types)]
+                    struct FindOrCreateByWoofx3UIUserIdSvc<T: UserService>(pub Arc<T>);
+                    impl<
+                        T: UserService,
+                    > tonic::server::UnaryService<
+                        super::FindOrCreateByWoofx3UiUserIdRequest,
+                    > for FindOrCreateByWoofx3UIUserIdSvc<T> {
+                        type Response = super::UserResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::FindOrCreateByWoofx3UiUserIdRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as UserService>::find_or_create_by_woofx3_ui_user_id(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = FindOrCreateByWoofx3UIUserIdSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

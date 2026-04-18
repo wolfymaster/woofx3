@@ -23,6 +23,7 @@ export interface User {
   platform: string;
   createdAt: protoscript.Timestamp;
   updatedAt: protoscript.Timestamp;
+  woofx3UiUserId: string;
 }
 
 /**
@@ -46,6 +47,10 @@ export interface UpdateUserRequest {
 
 export interface DeleteUserRequest {
   id: string;
+}
+
+export interface FindOrCreateByWoofx3UIUserIdRequest {
+  woofx3UiUserId: string;
 }
 
 export interface UserResponse {
@@ -129,6 +134,20 @@ export async function DeleteUser(
   return common.ResponseStatus.decode(response);
 }
 
+export async function FindOrCreateByWoofx3UIUserId(
+  findOrCreateByWoofx3UIUserIdRequest: FindOrCreateByWoofx3UIUserIdRequest,
+  config?: ClientConfiguration,
+): Promise<UserResponse> {
+  const response = await PBrequest(
+    "/user.UserService/FindOrCreateByWoofx3UIUserId",
+    FindOrCreateByWoofx3UIUserIdRequest.encode(
+      findOrCreateByWoofx3UIUserIdRequest,
+    ),
+    config,
+  );
+  return UserResponse.decode(response);
+}
+
 //========================================//
 //        UserService JSON Client         //
 //========================================//
@@ -181,6 +200,20 @@ export async function DeleteUserJSON(
   return common.ResponseStatusJSON.decode(response);
 }
 
+export async function FindOrCreateByWoofx3UIUserIdJSON(
+  findOrCreateByWoofx3UIUserIdRequest: FindOrCreateByWoofx3UIUserIdRequest,
+  config?: ClientConfiguration,
+): Promise<UserResponse> {
+  const response = await JSONrequest(
+    "/user.UserService/FindOrCreateByWoofx3UIUserId",
+    FindOrCreateByWoofx3UIUserIdRequestJSON.encode(
+      findOrCreateByWoofx3UIUserIdRequest,
+    ),
+    config,
+  );
+  return UserResponseJSON.decode(response);
+}
+
 //========================================//
 //              UserService               //
 //========================================//
@@ -202,6 +235,10 @@ export interface UserService<Context = unknown> {
     deleteUserRequest: DeleteUserRequest,
     context: Context,
   ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  FindOrCreateByWoofx3UIUserId: (
+    findOrCreateByWoofx3UIUserIdRequest: FindOrCreateByWoofx3UIUserIdRequest,
+    context: Context,
+  ) => Promise<UserResponse> | UserResponse;
 }
 
 export function createUserService<Context>(service: UserService<Context>) {
@@ -234,6 +271,15 @@ export function createUserService<Context>(service: UserService<Context>) {
           protobuf: common.ResponseStatus,
           json: common.ResponseStatusJSON,
         },
+      },
+      FindOrCreateByWoofx3UIUserId: {
+        name: "FindOrCreateByWoofx3UIUserId",
+        handler: service.FindOrCreateByWoofx3UIUserId,
+        input: {
+          protobuf: FindOrCreateByWoofx3UIUserIdRequest,
+          json: FindOrCreateByWoofx3UIUserIdRequestJSON,
+        },
+        output: { protobuf: UserResponse, json: UserResponseJSON },
       },
     },
   } as const;
@@ -275,6 +321,7 @@ export const User = {
       platform: "",
       createdAt: protoscript.Timestamp.initialize(),
       updatedAt: protoscript.Timestamp.initialize(),
+      woofx3UiUserId: "",
       ...msg,
     };
   },
@@ -312,6 +359,9 @@ export const User = {
         protoscript.Timestamp._writeMessage,
       );
     }
+    if (msg.woofx3UiUserId) {
+      writer.writeString(7, msg.woofx3UiUserId);
+    }
     return writer;
   },
 
@@ -344,6 +394,10 @@ export const User = {
         }
         case 6: {
           reader.readMessage(msg.updatedAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 7: {
+          msg.woofx3UiUserId = reader.readString();
           break;
         }
         default: {
@@ -648,6 +702,78 @@ export const DeleteUserRequest = {
       switch (field) {
         case 1: {
           msg.id = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const FindOrCreateByWoofx3UIUserIdRequest = {
+  /**
+   * Serializes FindOrCreateByWoofx3UIUserIdRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<FindOrCreateByWoofx3UIUserIdRequest>,
+  ): Uint8Array {
+    return FindOrCreateByWoofx3UIUserIdRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes FindOrCreateByWoofx3UIUserIdRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): FindOrCreateByWoofx3UIUserIdRequest {
+    return FindOrCreateByWoofx3UIUserIdRequest._readMessage(
+      FindOrCreateByWoofx3UIUserIdRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes FindOrCreateByWoofx3UIUserIdRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<FindOrCreateByWoofx3UIUserIdRequest>,
+  ): FindOrCreateByWoofx3UIUserIdRequest {
+    return {
+      woofx3UiUserId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<FindOrCreateByWoofx3UIUserIdRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.woofx3UiUserId) {
+      writer.writeString(1, msg.woofx3UiUserId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: FindOrCreateByWoofx3UIUserIdRequest,
+    reader: protoscript.BinaryReader,
+  ): FindOrCreateByWoofx3UIUserIdRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.woofx3UiUserId = reader.readString();
           break;
         }
         default: {
@@ -1110,6 +1236,7 @@ export const UserJSON = {
       platform: "",
       createdAt: protoscript.TimestampJSON.initialize(),
       updatedAt: protoscript.TimestampJSON.initialize(),
+      woofx3UiUserId: "",
       ...msg,
     };
   },
@@ -1136,6 +1263,9 @@ export const UserJSON = {
     }
     if (msg.updatedAt && (msg.updatedAt.seconds || msg.updatedAt.nanos)) {
       json["updatedAt"] = protoscript.serializeTimestamp(msg.updatedAt);
+    }
+    if (msg.woofx3UiUserId) {
+      json["woofx3UiUserId"] = msg.woofx3UiUserId;
     }
     return json;
   },
@@ -1167,6 +1297,11 @@ export const UserJSON = {
     const _updatedAt_ = json["updatedAt"] ?? json["updated_at"];
     if (_updatedAt_) {
       msg.updatedAt = protoscript.parseTimestamp(_updatedAt_);
+    }
+    const _woofx3UiUserId_ =
+      json["woofx3UiUserId"] ?? json["woofx3_ui_user_id"];
+    if (_woofx3UiUserId_) {
+      msg.woofx3UiUserId = _woofx3UiUserId_;
     }
     return msg;
   },
@@ -1420,6 +1555,69 @@ export const DeleteUserRequestJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
+    }
+    return msg;
+  },
+};
+
+export const FindOrCreateByWoofx3UIUserIdRequestJSON = {
+  /**
+   * Serializes FindOrCreateByWoofx3UIUserIdRequest to JSON.
+   */
+  encode: function (
+    msg: PartialDeep<FindOrCreateByWoofx3UIUserIdRequest>,
+  ): string {
+    return JSON.stringify(
+      FindOrCreateByWoofx3UIUserIdRequestJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes FindOrCreateByWoofx3UIUserIdRequest from JSON.
+   */
+  decode: function (json: string): FindOrCreateByWoofx3UIUserIdRequest {
+    return FindOrCreateByWoofx3UIUserIdRequestJSON._readMessage(
+      FindOrCreateByWoofx3UIUserIdRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes FindOrCreateByWoofx3UIUserIdRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<FindOrCreateByWoofx3UIUserIdRequest>,
+  ): FindOrCreateByWoofx3UIUserIdRequest {
+    return {
+      woofx3UiUserId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<FindOrCreateByWoofx3UIUserIdRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.woofx3UiUserId) {
+      json["woofx3UiUserId"] = msg.woofx3UiUserId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: FindOrCreateByWoofx3UIUserIdRequest,
+    json: any,
+  ): FindOrCreateByWoofx3UIUserIdRequest {
+    const _woofx3UiUserId_ =
+      json["woofx3UiUserId"] ?? json["woofx3_ui_user_id"];
+    if (_woofx3UiUserId_) {
+      msg.woofx3UiUserId = _woofx3UiUserId_;
     }
     return msg;
   },

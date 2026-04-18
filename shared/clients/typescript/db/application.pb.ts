@@ -21,6 +21,7 @@ export interface Application {
   name: string;
   ownerId: string;
   enabled: boolean;
+  isDefault: boolean;
   createdAt: protoscript.Timestamp;
 }
 
@@ -30,6 +31,7 @@ export interface Application {
 export interface CreateApplicationRequest {
   name: string;
   ownerId: string;
+  isDefault: boolean;
 }
 
 /**
@@ -40,12 +42,18 @@ export interface GetApplicationRequest {
 }
 
 /**
+ * Get the default application (the one with is_default = true).
+ */
+export interface GetDefaultApplicationRequest {}
+
+/**
  * Update an existing application
  */
 export interface UpdateApplicationRequest {
   id: string;
   name: string;
   enabled: boolean;
+  isDefault: boolean;
 }
 
 /**
@@ -109,6 +117,22 @@ export async function GetApplication(
   const response = await PBrequest(
     "/application.ApplicationService/GetApplication",
     GetApplicationRequest.encode(getApplicationRequest),
+    config,
+  );
+  return ApplicationResponse.decode(response);
+}
+
+/**
+ * Get the single default application. Returns NOT_FOUND when no default
+ * exists yet (pre-onboarding).
+ */
+export async function GetDefaultApplication(
+  getDefaultApplicationRequest: GetDefaultApplicationRequest,
+  config?: ClientConfiguration,
+): Promise<ApplicationResponse> {
+  const response = await PBrequest(
+    "/application.ApplicationService/GetDefaultApplication",
+    GetDefaultApplicationRequest.encode(getDefaultApplicationRequest),
     config,
   );
   return ApplicationResponse.decode(response);
@@ -194,6 +218,22 @@ export async function GetApplicationJSON(
 }
 
 /**
+ * Get the single default application. Returns NOT_FOUND when no default
+ * exists yet (pre-onboarding).
+ */
+export async function GetDefaultApplicationJSON(
+  getDefaultApplicationRequest: GetDefaultApplicationRequest,
+  config?: ClientConfiguration,
+): Promise<ApplicationResponse> {
+  const response = await JSONrequest(
+    "/application.ApplicationService/GetDefaultApplication",
+    GetDefaultApplicationRequestJSON.encode(getDefaultApplicationRequest),
+    config,
+  );
+  return ApplicationResponseJSON.decode(response);
+}
+
+/**
  * Update an existing application
  */
 export async function UpdateApplicationJSON(
@@ -258,6 +298,14 @@ export interface ApplicationService<Context = unknown> {
     context: Context,
   ) => Promise<ApplicationResponse> | ApplicationResponse;
   /**
+   * Get the single default application. Returns NOT_FOUND when no default
+   * exists yet (pre-onboarding).
+   */
+  GetDefaultApplication: (
+    getDefaultApplicationRequest: GetDefaultApplicationRequest,
+    context: Context,
+  ) => Promise<ApplicationResponse> | ApplicationResponse;
+  /**
    * Update an existing application
    */
   UpdateApplication: (
@@ -304,6 +352,18 @@ export function createApplicationService<Context>(
         input: {
           protobuf: GetApplicationRequest,
           json: GetApplicationRequestJSON,
+        },
+        output: {
+          protobuf: ApplicationResponse,
+          json: ApplicationResponseJSON,
+        },
+      },
+      GetDefaultApplication: {
+        name: "GetDefaultApplication",
+        handler: service.GetDefaultApplication,
+        input: {
+          protobuf: GetDefaultApplicationRequest,
+          json: GetDefaultApplicationRequestJSON,
         },
         output: {
           protobuf: ApplicationResponse,
@@ -384,6 +444,7 @@ export const Application = {
       name: "",
       ownerId: "",
       enabled: false,
+      isDefault: false,
       createdAt: protoscript.Timestamp.initialize(),
       ...msg,
     };
@@ -407,6 +468,9 @@ export const Application = {
     }
     if (msg.enabled) {
       writer.writeBool(6, msg.enabled);
+    }
+    if (msg.isDefault) {
+      writer.writeBool(7, msg.isDefault);
     }
     if (msg.createdAt) {
       writer.writeMessage(
@@ -442,6 +506,10 @@ export const Application = {
         }
         case 6: {
           msg.enabled = reader.readBool();
+          break;
+        }
+        case 7: {
+          msg.isDefault = reader.readBool();
           break;
         }
         case 15: {
@@ -488,6 +556,7 @@ export const CreateApplicationRequest = {
     return {
       name: "",
       ownerId: "",
+      isDefault: false,
       ...msg,
     };
   },
@@ -504,6 +573,9 @@ export const CreateApplicationRequest = {
     }
     if (msg.ownerId) {
       writer.writeString(2, msg.ownerId);
+    }
+    if (msg.isDefault) {
+      writer.writeBool(3, msg.isDefault);
     }
     return writer;
   },
@@ -524,6 +596,10 @@ export const CreateApplicationRequest = {
         }
         case 2: {
           msg.ownerId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.isDefault = reader.readBool();
           break;
         }
         default: {
@@ -606,6 +682,55 @@ export const GetApplicationRequest = {
   },
 };
 
+export const GetDefaultApplicationRequest = {
+  /**
+   * Serializes GetDefaultApplicationRequest to protobuf.
+   */
+  encode: function (
+    _msg?: PartialDeep<GetDefaultApplicationRequest>,
+  ): Uint8Array {
+    return new Uint8Array();
+  },
+
+  /**
+   * Deserializes GetDefaultApplicationRequest from protobuf.
+   */
+  decode: function (_bytes?: ByteSource): GetDefaultApplicationRequest {
+    return {};
+  },
+
+  /**
+   * Initializes GetDefaultApplicationRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetDefaultApplicationRequest>,
+  ): GetDefaultApplicationRequest {
+    return {
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    _msg: PartialDeep<GetDefaultApplicationRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    _msg: GetDefaultApplicationRequest,
+    _reader: protoscript.BinaryReader,
+  ): GetDefaultApplicationRequest {
+    return _msg;
+  },
+};
+
 export const UpdateApplicationRequest = {
   /**
    * Serializes UpdateApplicationRequest to protobuf.
@@ -637,6 +762,7 @@ export const UpdateApplicationRequest = {
       id: "",
       name: "",
       enabled: false,
+      isDefault: false,
       ...msg,
     };
   },
@@ -656,6 +782,9 @@ export const UpdateApplicationRequest = {
     }
     if (msg.enabled) {
       writer.writeBool(3, msg.enabled);
+    }
+    if (msg.isDefault) {
+      writer.writeBool(4, msg.isDefault);
     }
     return writer;
   },
@@ -680,6 +809,10 @@ export const UpdateApplicationRequest = {
         }
         case 3: {
           msg.enabled = reader.readBool();
+          break;
+        }
+        case 4: {
+          msg.isDefault = reader.readBool();
           break;
         }
         default: {
@@ -1041,6 +1174,7 @@ export const ApplicationJSON = {
       name: "",
       ownerId: "",
       enabled: false,
+      isDefault: false,
       createdAt: protoscript.TimestampJSON.initialize(),
       ...msg,
     };
@@ -1064,6 +1198,9 @@ export const ApplicationJSON = {
     }
     if (msg.enabled) {
       json["enabled"] = msg.enabled;
+    }
+    if (msg.isDefault) {
+      json["isDefault"] = msg.isDefault;
     }
     if (msg.createdAt && (msg.createdAt.seconds || msg.createdAt.nanos)) {
       json["createdAt"] = protoscript.serializeTimestamp(msg.createdAt);
@@ -1090,6 +1227,10 @@ export const ApplicationJSON = {
     const _enabled_ = json["enabled"];
     if (_enabled_) {
       msg.enabled = _enabled_;
+    }
+    const _isDefault_ = json["isDefault"] ?? json["is_default"];
+    if (_isDefault_) {
+      msg.isDefault = _isDefault_;
     }
     const _createdAt_ = json["createdAt"] ?? json["created_at"];
     if (_createdAt_) {
@@ -1126,6 +1267,7 @@ export const CreateApplicationRequestJSON = {
     return {
       name: "",
       ownerId: "",
+      isDefault: false,
       ...msg,
     };
   },
@@ -1142,6 +1284,9 @@ export const CreateApplicationRequestJSON = {
     }
     if (msg.ownerId) {
       json["ownerId"] = msg.ownerId;
+    }
+    if (msg.isDefault) {
+      json["isDefault"] = msg.isDefault;
     }
     return json;
   },
@@ -1160,6 +1305,10 @@ export const CreateApplicationRequestJSON = {
     const _ownerId_ = json["ownerId"] ?? json["owner_id"];
     if (_ownerId_) {
       msg.ownerId = _ownerId_;
+    }
+    const _isDefault_ = json["isDefault"] ?? json["is_default"];
+    if (_isDefault_) {
+      msg.isDefault = _isDefault_;
     }
     return msg;
   },
@@ -1223,6 +1372,52 @@ export const GetApplicationRequestJSON = {
   },
 };
 
+export const GetDefaultApplicationRequestJSON = {
+  /**
+   * Serializes GetDefaultApplicationRequest to JSON.
+   */
+  encode: function (_msg?: PartialDeep<GetDefaultApplicationRequest>): string {
+    return "{}";
+  },
+
+  /**
+   * Deserializes GetDefaultApplicationRequest from JSON.
+   */
+  decode: function (_json?: string): GetDefaultApplicationRequest {
+    return {};
+  },
+
+  /**
+   * Initializes GetDefaultApplicationRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetDefaultApplicationRequest>,
+  ): GetDefaultApplicationRequest {
+    return {
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    _msg: PartialDeep<GetDefaultApplicationRequest>,
+  ): Record<string, unknown> {
+    return {};
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetDefaultApplicationRequest,
+    _json: any,
+  ): GetDefaultApplicationRequest {
+    return msg;
+  },
+};
+
 export const UpdateApplicationRequestJSON = {
   /**
    * Serializes UpdateApplicationRequest to JSON.
@@ -1251,6 +1446,7 @@ export const UpdateApplicationRequestJSON = {
       id: "",
       name: "",
       enabled: false,
+      isDefault: false,
       ...msg,
     };
   },
@@ -1270,6 +1466,9 @@ export const UpdateApplicationRequestJSON = {
     }
     if (msg.enabled) {
       json["enabled"] = msg.enabled;
+    }
+    if (msg.isDefault) {
+      json["isDefault"] = msg.isDefault;
     }
     return json;
   },
@@ -1292,6 +1491,10 @@ export const UpdateApplicationRequestJSON = {
     const _enabled_ = json["enabled"];
     if (_enabled_) {
       msg.enabled = _enabled_;
+    }
+    const _isDefault_ = json["isDefault"] ?? json["is_default"];
+    if (_isDefault_) {
+      msg.isDefault = _isDefault_;
     }
     return msg;
   },

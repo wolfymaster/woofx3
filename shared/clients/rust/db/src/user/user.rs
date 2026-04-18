@@ -17,6 +17,8 @@ pub struct User {
     pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
     #[prost(message, optional, tag="6")]
     pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(string, tag="7")]
+    pub woofx3_ui_user_id: ::prost::alloc::string::String,
 }
 /// Requests and Responses
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -52,6 +54,11 @@ pub struct DeleteUserRequest {
     /// Our application's user ID
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct FindOrCreateByWoofx3UiUserIdRequest {
+    #[prost(string, tag="1")]
+    pub woofx3_ui_user_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UserResponse {

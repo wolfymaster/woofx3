@@ -10,6 +10,8 @@ pub struct Application {
     pub owner_id: ::prost::alloc::string::String,
     #[prost(bool, tag="6")]
     pub enabled: bool,
+    #[prost(bool, tag="7")]
+    pub is_default: bool,
     #[prost(message, optional, tag="15")]
     pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
 }
@@ -22,12 +24,18 @@ pub struct CreateApplicationRequest {
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub owner_id: ::prost::alloc::string::String,
+    #[prost(bool, tag="3")]
+    pub is_default: bool,
 }
 /// Get an application by ID or client ID
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetApplicationRequest {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
+}
+/// Get the default application (the one with is_default = true).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetDefaultApplicationRequest {
 }
 /// Update an existing application
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -38,6 +46,8 @@ pub struct UpdateApplicationRequest {
     pub name: ::prost::alloc::string::String,
     #[prost(bool, tag="3")]
     pub enabled: bool,
+    #[prost(bool, tag="4")]
+    pub is_default: bool,
 }
 /// Delete an application
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

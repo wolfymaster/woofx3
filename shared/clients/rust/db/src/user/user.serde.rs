@@ -216,6 +216,98 @@ impl<'de> serde::Deserialize<'de> for DeleteUserRequest {
         deserializer.deserialize_struct("user.DeleteUserRequest", FIELDS, GeneratedVisitor)
     }
 }
+impl serde::Serialize for FindOrCreateByWoofx3UiUserIdRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.woofx3_ui_user_id.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("user.FindOrCreateByWoofx3UIUserIdRequest", len)?;
+        if !self.woofx3_ui_user_id.is_empty() {
+            struct_ser.serialize_field("woofx3UiUserId", &self.woofx3_ui_user_id)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for FindOrCreateByWoofx3UiUserIdRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "woofx3_ui_user_id",
+            "woofx3UiUserId",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Woofx3UiUserId,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "woofx3UiUserId" | "woofx3_ui_user_id" => Ok(GeneratedField::Woofx3UiUserId),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = FindOrCreateByWoofx3UiUserIdRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct user.FindOrCreateByWoofx3UIUserIdRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<FindOrCreateByWoofx3UiUserIdRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut woofx3_ui_user_id__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Woofx3UiUserId => {
+                            if woofx3_ui_user_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("woofx3UiUserId"));
+                            }
+                            woofx3_ui_user_id__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(FindOrCreateByWoofx3UiUserIdRequest {
+                    woofx3_ui_user_id: woofx3_ui_user_id__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("user.FindOrCreateByWoofx3UIUserIdRequest", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for GetBroadcasterTokenRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -974,6 +1066,9 @@ impl serde::Serialize for User {
         if self.updated_at.is_some() {
             len += 1;
         }
+        if !self.woofx3_ui_user_id.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("user.User", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -992,6 +1087,9 @@ impl serde::Serialize for User {
         }
         if let Some(v) = self.updated_at.as_ref() {
             struct_ser.serialize_field("updatedAt", v)?;
+        }
+        if !self.woofx3_ui_user_id.is_empty() {
+            struct_ser.serialize_field("woofx3UiUserId", &self.woofx3_ui_user_id)?;
         }
         struct_ser.end()
     }
@@ -1012,6 +1110,8 @@ impl<'de> serde::Deserialize<'de> for User {
             "createdAt",
             "updated_at",
             "updatedAt",
+            "woofx3_ui_user_id",
+            "woofx3UiUserId",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -1022,6 +1122,7 @@ impl<'de> serde::Deserialize<'de> for User {
             Platform,
             CreatedAt,
             UpdatedAt,
+            Woofx3UiUserId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -1049,6 +1150,7 @@ impl<'de> serde::Deserialize<'de> for User {
                             "platform" => Ok(GeneratedField::Platform),
                             "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
                             "updatedAt" | "updated_at" => Ok(GeneratedField::UpdatedAt),
+                            "woofx3UiUserId" | "woofx3_ui_user_id" => Ok(GeneratedField::Woofx3UiUserId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -1074,6 +1176,7 @@ impl<'de> serde::Deserialize<'de> for User {
                 let mut platform__ = None;
                 let mut created_at__ = None;
                 let mut updated_at__ = None;
+                let mut woofx3_ui_user_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -1112,6 +1215,12 @@ impl<'de> serde::Deserialize<'de> for User {
                             }
                             updated_at__ = map_.next_value()?;
                         }
+                        GeneratedField::Woofx3UiUserId => {
+                            if woofx3_ui_user_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("woofx3UiUserId"));
+                            }
+                            woofx3_ui_user_id__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(User {
@@ -1121,6 +1230,7 @@ impl<'de> serde::Deserialize<'de> for User {
                     platform: platform__.unwrap_or_default(),
                     created_at: created_at__,
                     updated_at: updated_at__,
+                    woofx3_ui_user_id: woofx3_ui_user_id__.unwrap_or_default(),
                 })
             }
         }

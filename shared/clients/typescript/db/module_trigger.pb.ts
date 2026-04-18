@@ -23,15 +23,20 @@ export interface Trigger {
   createdByRef: string;
 }
 
-export interface RegisterTriggerRequest {
+export interface TriggerInput {
   category: string;
   name: string;
   description: string;
   event: string;
   configSchema: string;
   allowVariants: boolean;
-  createdByType: string;
-  createdByRef: string;
+}
+
+export interface RegisterTriggersRequest {
+  moduleKey: string;
+  moduleName: string;
+  version: string;
+  triggers: TriggerInput[];
 }
 
 export interface ListTriggersRequest {
@@ -42,16 +47,6 @@ export interface ListTriggersRequest {
 export interface ListTriggersResponse {
   status: common.ResponseStatus;
   triggers: Trigger[];
-}
-
-export interface TriggerResponse {
-  status: common.ResponseStatus;
-  trigger: Trigger;
-}
-
-export interface DeleteTriggersByModuleRequest {
-  createdByType: string;
-  createdByRef: string;
 }
 
 //========================================//
@@ -190,33 +185,31 @@ export const Trigger = {
   },
 };
 
-export const RegisterTriggerRequest = {
+export const TriggerInput = {
   /**
-   * Serializes RegisterTriggerRequest to protobuf.
+   * Serializes TriggerInput to protobuf.
    */
-  encode: function (msg: PartialDeep<RegisterTriggerRequest>): Uint8Array {
-    return RegisterTriggerRequest._writeMessage(
+  encode: function (msg: PartialDeep<TriggerInput>): Uint8Array {
+    return TriggerInput._writeMessage(
       msg,
       new protoscript.BinaryWriter(),
     ).getResultBuffer();
   },
 
   /**
-   * Deserializes RegisterTriggerRequest from protobuf.
+   * Deserializes TriggerInput from protobuf.
    */
-  decode: function (bytes: ByteSource): RegisterTriggerRequest {
-    return RegisterTriggerRequest._readMessage(
-      RegisterTriggerRequest.initialize(),
+  decode: function (bytes: ByteSource): TriggerInput {
+    return TriggerInput._readMessage(
+      TriggerInput.initialize(),
       new protoscript.BinaryReader(bytes),
     );
   },
 
   /**
-   * Initializes RegisterTriggerRequest with all fields set to their default value.
+   * Initializes TriggerInput with all fields set to their default value.
    */
-  initialize: function (
-    msg?: Partial<RegisterTriggerRequest>,
-  ): RegisterTriggerRequest {
+  initialize: function (msg?: Partial<TriggerInput>): TriggerInput {
     return {
       category: "",
       name: "",
@@ -224,8 +217,6 @@ export const RegisterTriggerRequest = {
       event: "",
       configSchema: "",
       allowVariants: false,
-      createdByType: "",
-      createdByRef: "",
       ...msg,
     };
   },
@@ -234,32 +225,26 @@ export const RegisterTriggerRequest = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<RegisterTriggerRequest>,
+    msg: PartialDeep<TriggerInput>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
     if (msg.category) {
-      writer.writeString(2, msg.category);
+      writer.writeString(1, msg.category);
     }
     if (msg.name) {
-      writer.writeString(3, msg.name);
+      writer.writeString(2, msg.name);
     }
     if (msg.description) {
-      writer.writeString(4, msg.description);
+      writer.writeString(3, msg.description);
     }
     if (msg.event) {
-      writer.writeString(5, msg.event);
+      writer.writeString(4, msg.event);
     }
     if (msg.configSchema) {
-      writer.writeString(6, msg.configSchema);
+      writer.writeString(5, msg.configSchema);
     }
     if (msg.allowVariants) {
-      writer.writeBool(7, msg.allowVariants);
-    }
-    if (msg.createdByType) {
-      writer.writeString(8, msg.createdByType);
-    }
-    if (msg.createdByRef) {
-      writer.writeString(9, msg.createdByRef);
+      writer.writeBool(6, msg.allowVariants);
     }
     return writer;
   },
@@ -268,42 +253,134 @@ export const RegisterTriggerRequest = {
    * @private
    */
   _readMessage: function (
-    msg: RegisterTriggerRequest,
+    msg: TriggerInput,
     reader: protoscript.BinaryReader,
-  ): RegisterTriggerRequest {
+  ): TriggerInput {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 2: {
+        case 1: {
           msg.category = reader.readString();
           break;
         }
-        case 3: {
+        case 2: {
           msg.name = reader.readString();
           break;
         }
-        case 4: {
+        case 3: {
           msg.description = reader.readString();
           break;
         }
-        case 5: {
+        case 4: {
           msg.event = reader.readString();
           break;
         }
-        case 6: {
+        case 5: {
           msg.configSchema = reader.readString();
           break;
         }
-        case 7: {
+        case 6: {
           msg.allowVariants = reader.readBool();
           break;
         }
-        case 8: {
-          msg.createdByType = reader.readString();
+        default: {
+          reader.skipField();
           break;
         }
-        case 9: {
-          msg.createdByRef = reader.readString();
+      }
+    }
+    return msg;
+  },
+};
+
+export const RegisterTriggersRequest = {
+  /**
+   * Serializes RegisterTriggersRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<RegisterTriggersRequest>): Uint8Array {
+    return RegisterTriggersRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes RegisterTriggersRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): RegisterTriggersRequest {
+    return RegisterTriggersRequest._readMessage(
+      RegisterTriggersRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes RegisterTriggersRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<RegisterTriggersRequest>,
+  ): RegisterTriggersRequest {
+    return {
+      moduleKey: "",
+      moduleName: "",
+      version: "",
+      triggers: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<RegisterTriggersRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.moduleKey) {
+      writer.writeString(1, msg.moduleKey);
+    }
+    if (msg.moduleName) {
+      writer.writeString(2, msg.moduleName);
+    }
+    if (msg.version) {
+      writer.writeString(3, msg.version);
+    }
+    if (msg.triggers?.length) {
+      writer.writeRepeatedMessage(
+        4,
+        msg.triggers as any,
+        TriggerInput._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: RegisterTriggersRequest,
+    reader: protoscript.BinaryReader,
+  ): RegisterTriggersRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.moduleKey = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.moduleName = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.version = reader.readString();
+          break;
+        }
+        case 4: {
+          const m = TriggerInput.initialize();
+          reader.readMessage(m, TriggerInput._readMessage);
+          msg.triggers.push(m);
           break;
         }
         default: {
@@ -478,162 +555,6 @@ export const ListTriggersResponse = {
   },
 };
 
-export const TriggerResponse = {
-  /**
-   * Serializes TriggerResponse to protobuf.
-   */
-  encode: function (msg: PartialDeep<TriggerResponse>): Uint8Array {
-    return TriggerResponse._writeMessage(
-      msg,
-      new protoscript.BinaryWriter(),
-    ).getResultBuffer();
-  },
-
-  /**
-   * Deserializes TriggerResponse from protobuf.
-   */
-  decode: function (bytes: ByteSource): TriggerResponse {
-    return TriggerResponse._readMessage(
-      TriggerResponse.initialize(),
-      new protoscript.BinaryReader(bytes),
-    );
-  },
-
-  /**
-   * Initializes TriggerResponse with all fields set to their default value.
-   */
-  initialize: function (msg?: Partial<TriggerResponse>): TriggerResponse {
-    return {
-      status: common.ResponseStatus.initialize(),
-      trigger: Trigger.initialize(),
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<TriggerResponse>,
-    writer: protoscript.BinaryWriter,
-  ): protoscript.BinaryWriter {
-    if (msg.status) {
-      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
-    }
-    if (msg.trigger) {
-      writer.writeMessage(2, msg.trigger, Trigger._writeMessage);
-    }
-    return writer;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (
-    msg: TriggerResponse,
-    reader: protoscript.BinaryReader,
-  ): TriggerResponse {
-    while (reader.nextField()) {
-      const field = reader.getFieldNumber();
-      switch (field) {
-        case 1: {
-          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
-          break;
-        }
-        case 2: {
-          reader.readMessage(msg.trigger, Trigger._readMessage);
-          break;
-        }
-        default: {
-          reader.skipField();
-          break;
-        }
-      }
-    }
-    return msg;
-  },
-};
-
-export const DeleteTriggersByModuleRequest = {
-  /**
-   * Serializes DeleteTriggersByModuleRequest to protobuf.
-   */
-  encode: function (
-    msg: PartialDeep<DeleteTriggersByModuleRequest>,
-  ): Uint8Array {
-    return DeleteTriggersByModuleRequest._writeMessage(
-      msg,
-      new protoscript.BinaryWriter(),
-    ).getResultBuffer();
-  },
-
-  /**
-   * Deserializes DeleteTriggersByModuleRequest from protobuf.
-   */
-  decode: function (bytes: ByteSource): DeleteTriggersByModuleRequest {
-    return DeleteTriggersByModuleRequest._readMessage(
-      DeleteTriggersByModuleRequest.initialize(),
-      new protoscript.BinaryReader(bytes),
-    );
-  },
-
-  /**
-   * Initializes DeleteTriggersByModuleRequest with all fields set to their default value.
-   */
-  initialize: function (
-    msg?: Partial<DeleteTriggersByModuleRequest>,
-  ): DeleteTriggersByModuleRequest {
-    return {
-      createdByType: "",
-      createdByRef: "",
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<DeleteTriggersByModuleRequest>,
-    writer: protoscript.BinaryWriter,
-  ): protoscript.BinaryWriter {
-    if (msg.createdByType) {
-      writer.writeString(1, msg.createdByType);
-    }
-    if (msg.createdByRef) {
-      writer.writeString(2, msg.createdByRef);
-    }
-    return writer;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (
-    msg: DeleteTriggersByModuleRequest,
-    reader: protoscript.BinaryReader,
-  ): DeleteTriggersByModuleRequest {
-    while (reader.nextField()) {
-      const field = reader.getFieldNumber();
-      switch (field) {
-        case 1: {
-          msg.createdByType = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.createdByRef = reader.readString();
-          break;
-        }
-        default: {
-          reader.skipField();
-          break;
-        }
-      }
-    }
-    return msg;
-  },
-};
-
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -750,30 +671,28 @@ export const TriggerJSON = {
   },
 };
 
-export const RegisterTriggerRequestJSON = {
+export const TriggerInputJSON = {
   /**
-   * Serializes RegisterTriggerRequest to JSON.
+   * Serializes TriggerInput to JSON.
    */
-  encode: function (msg: PartialDeep<RegisterTriggerRequest>): string {
-    return JSON.stringify(RegisterTriggerRequestJSON._writeMessage(msg));
+  encode: function (msg: PartialDeep<TriggerInput>): string {
+    return JSON.stringify(TriggerInputJSON._writeMessage(msg));
   },
 
   /**
-   * Deserializes RegisterTriggerRequest from JSON.
+   * Deserializes TriggerInput from JSON.
    */
-  decode: function (json: string): RegisterTriggerRequest {
-    return RegisterTriggerRequestJSON._readMessage(
-      RegisterTriggerRequestJSON.initialize(),
+  decode: function (json: string): TriggerInput {
+    return TriggerInputJSON._readMessage(
+      TriggerInputJSON.initialize(),
       JSON.parse(json),
     );
   },
 
   /**
-   * Initializes RegisterTriggerRequest with all fields set to their default value.
+   * Initializes TriggerInput with all fields set to their default value.
    */
-  initialize: function (
-    msg?: Partial<RegisterTriggerRequest>,
-  ): RegisterTriggerRequest {
+  initialize: function (msg?: Partial<TriggerInput>): TriggerInput {
     return {
       category: "",
       name: "",
@@ -781,8 +700,6 @@ export const RegisterTriggerRequestJSON = {
       event: "",
       configSchema: "",
       allowVariants: false,
-      createdByType: "",
-      createdByRef: "",
       ...msg,
     };
   },
@@ -791,7 +708,7 @@ export const RegisterTriggerRequestJSON = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<RegisterTriggerRequest>,
+    msg: PartialDeep<TriggerInput>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
     if (msg.category) {
@@ -812,22 +729,13 @@ export const RegisterTriggerRequestJSON = {
     if (msg.allowVariants) {
       json["allowVariants"] = msg.allowVariants;
     }
-    if (msg.createdByType) {
-      json["createdByType"] = msg.createdByType;
-    }
-    if (msg.createdByRef) {
-      json["createdByRef"] = msg.createdByRef;
-    }
     return json;
   },
 
   /**
    * @private
    */
-  _readMessage: function (
-    msg: RegisterTriggerRequest,
-    json: any,
-  ): RegisterTriggerRequest {
+  _readMessage: function (msg: TriggerInput, json: any): TriggerInput {
     const _category_ = json["category"];
     if (_category_) {
       msg.category = _category_;
@@ -852,13 +760,91 @@ export const RegisterTriggerRequestJSON = {
     if (_allowVariants_) {
       msg.allowVariants = _allowVariants_;
     }
-    const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
-    if (_createdByType_) {
-      msg.createdByType = _createdByType_;
+    return msg;
+  },
+};
+
+export const RegisterTriggersRequestJSON = {
+  /**
+   * Serializes RegisterTriggersRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<RegisterTriggersRequest>): string {
+    return JSON.stringify(RegisterTriggersRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes RegisterTriggersRequest from JSON.
+   */
+  decode: function (json: string): RegisterTriggersRequest {
+    return RegisterTriggersRequestJSON._readMessage(
+      RegisterTriggersRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes RegisterTriggersRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<RegisterTriggersRequest>,
+  ): RegisterTriggersRequest {
+    return {
+      moduleKey: "",
+      moduleName: "",
+      version: "",
+      triggers: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<RegisterTriggersRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.moduleKey) {
+      json["moduleKey"] = msg.moduleKey;
     }
-    const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
-    if (_createdByRef_) {
-      msg.createdByRef = _createdByRef_;
+    if (msg.moduleName) {
+      json["moduleName"] = msg.moduleName;
+    }
+    if (msg.version) {
+      json["version"] = msg.version;
+    }
+    if (msg.triggers?.length) {
+      json["triggers"] = msg.triggers.map(TriggerInputJSON._writeMessage);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: RegisterTriggersRequest,
+    json: any,
+  ): RegisterTriggersRequest {
+    const _moduleKey_ = json["moduleKey"] ?? json["module_key"];
+    if (_moduleKey_) {
+      msg.moduleKey = _moduleKey_;
+    }
+    const _moduleName_ = json["moduleName"] ?? json["module_name"];
+    if (_moduleName_) {
+      msg.moduleName = _moduleName_;
+    }
+    const _version_ = json["version"];
+    if (_version_) {
+      msg.version = _version_;
+    }
+    const _triggers_ = json["triggers"];
+    if (_triggers_) {
+      for (const item of _triggers_) {
+        const m = TriggerInputJSON.initialize();
+        TriggerInputJSON._readMessage(m, item);
+        msg.triggers.push(m);
+      }
     }
     return msg;
   },
@@ -998,139 +984,6 @@ export const ListTriggersResponseJSON = {
         TriggerJSON._readMessage(m, item);
         msg.triggers.push(m);
       }
-    }
-    return msg;
-  },
-};
-
-export const TriggerResponseJSON = {
-  /**
-   * Serializes TriggerResponse to JSON.
-   */
-  encode: function (msg: PartialDeep<TriggerResponse>): string {
-    return JSON.stringify(TriggerResponseJSON._writeMessage(msg));
-  },
-
-  /**
-   * Deserializes TriggerResponse from JSON.
-   */
-  decode: function (json: string): TriggerResponse {
-    return TriggerResponseJSON._readMessage(
-      TriggerResponseJSON.initialize(),
-      JSON.parse(json),
-    );
-  },
-
-  /**
-   * Initializes TriggerResponse with all fields set to their default value.
-   */
-  initialize: function (msg?: Partial<TriggerResponse>): TriggerResponse {
-    return {
-      status: common.ResponseStatusJSON.initialize(),
-      trigger: TriggerJSON.initialize(),
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<TriggerResponse>,
-  ): Record<string, unknown> {
-    const json: Record<string, unknown> = {};
-    if (msg.status) {
-      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
-      if (Object.keys(_status_).length > 0) {
-        json["status"] = _status_;
-      }
-    }
-    if (msg.trigger) {
-      const _trigger_ = TriggerJSON._writeMessage(msg.trigger);
-      if (Object.keys(_trigger_).length > 0) {
-        json["trigger"] = _trigger_;
-      }
-    }
-    return json;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (msg: TriggerResponse, json: any): TriggerResponse {
-    const _status_ = json["status"];
-    if (_status_) {
-      common.ResponseStatusJSON._readMessage(msg.status, _status_);
-    }
-    const _trigger_ = json["trigger"];
-    if (_trigger_) {
-      TriggerJSON._readMessage(msg.trigger, _trigger_);
-    }
-    return msg;
-  },
-};
-
-export const DeleteTriggersByModuleRequestJSON = {
-  /**
-   * Serializes DeleteTriggersByModuleRequest to JSON.
-   */
-  encode: function (msg: PartialDeep<DeleteTriggersByModuleRequest>): string {
-    return JSON.stringify(DeleteTriggersByModuleRequestJSON._writeMessage(msg));
-  },
-
-  /**
-   * Deserializes DeleteTriggersByModuleRequest from JSON.
-   */
-  decode: function (json: string): DeleteTriggersByModuleRequest {
-    return DeleteTriggersByModuleRequestJSON._readMessage(
-      DeleteTriggersByModuleRequestJSON.initialize(),
-      JSON.parse(json),
-    );
-  },
-
-  /**
-   * Initializes DeleteTriggersByModuleRequest with all fields set to their default value.
-   */
-  initialize: function (
-    msg?: Partial<DeleteTriggersByModuleRequest>,
-  ): DeleteTriggersByModuleRequest {
-    return {
-      createdByType: "",
-      createdByRef: "",
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<DeleteTriggersByModuleRequest>,
-  ): Record<string, unknown> {
-    const json: Record<string, unknown> = {};
-    if (msg.createdByType) {
-      json["createdByType"] = msg.createdByType;
-    }
-    if (msg.createdByRef) {
-      json["createdByRef"] = msg.createdByRef;
-    }
-    return json;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (
-    msg: DeleteTriggersByModuleRequest,
-    json: any,
-  ): DeleteTriggersByModuleRequest {
-    const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
-    if (_createdByType_) {
-      msg.createdByType = _createdByType_;
-    }
-    const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
-    if (_createdByRef_) {
-      msg.createdByRef = _createdByRef_;
     }
     return msg;
   },

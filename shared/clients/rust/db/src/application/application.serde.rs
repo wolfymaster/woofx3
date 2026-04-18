@@ -19,6 +19,9 @@ impl serde::Serialize for Application {
         if self.enabled {
             len += 1;
         }
+        if self.is_default {
+            len += 1;
+        }
         if self.created_at.is_some() {
             len += 1;
         }
@@ -34,6 +37,9 @@ impl serde::Serialize for Application {
         }
         if self.enabled {
             struct_ser.serialize_field("enabled", &self.enabled)?;
+        }
+        if self.is_default {
+            struct_ser.serialize_field("isDefault", &self.is_default)?;
         }
         if let Some(v) = self.created_at.as_ref() {
             struct_ser.serialize_field("createdAt", v)?;
@@ -53,6 +59,8 @@ impl<'de> serde::Deserialize<'de> for Application {
             "owner_id",
             "ownerId",
             "enabled",
+            "is_default",
+            "isDefault",
             "created_at",
             "createdAt",
         ];
@@ -63,6 +71,7 @@ impl<'de> serde::Deserialize<'de> for Application {
             Name,
             OwnerId,
             Enabled,
+            IsDefault,
             CreatedAt,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
@@ -89,6 +98,7 @@ impl<'de> serde::Deserialize<'de> for Application {
                             "name" => Ok(GeneratedField::Name),
                             "ownerId" | "owner_id" => Ok(GeneratedField::OwnerId),
                             "enabled" => Ok(GeneratedField::Enabled),
+                            "isDefault" | "is_default" => Ok(GeneratedField::IsDefault),
                             "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
@@ -113,6 +123,7 @@ impl<'de> serde::Deserialize<'de> for Application {
                 let mut name__ = None;
                 let mut owner_id__ = None;
                 let mut enabled__ = None;
+                let mut is_default__ = None;
                 let mut created_at__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
@@ -140,6 +151,12 @@ impl<'de> serde::Deserialize<'de> for Application {
                             }
                             enabled__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::IsDefault => {
+                            if is_default__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("isDefault"));
+                            }
+                            is_default__ = Some(map_.next_value()?);
+                        }
                         GeneratedField::CreatedAt => {
                             if created_at__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("createdAt"));
@@ -153,6 +170,7 @@ impl<'de> serde::Deserialize<'de> for Application {
                     name: name__.unwrap_or_default(),
                     owner_id: owner_id__.unwrap_or_default(),
                     enabled: enabled__.unwrap_or_default(),
+                    is_default: is_default__.unwrap_or_default(),
                     created_at: created_at__,
                 })
             }
@@ -282,12 +300,18 @@ impl serde::Serialize for CreateApplicationRequest {
         if !self.owner_id.is_empty() {
             len += 1;
         }
+        if self.is_default {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("application.CreateApplicationRequest", len)?;
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
         }
         if !self.owner_id.is_empty() {
             struct_ser.serialize_field("ownerId", &self.owner_id)?;
+        }
+        if self.is_default {
+            struct_ser.serialize_field("isDefault", &self.is_default)?;
         }
         struct_ser.end()
     }
@@ -302,12 +326,15 @@ impl<'de> serde::Deserialize<'de> for CreateApplicationRequest {
             "name",
             "owner_id",
             "ownerId",
+            "is_default",
+            "isDefault",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Name,
             OwnerId,
+            IsDefault,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -331,6 +358,7 @@ impl<'de> serde::Deserialize<'de> for CreateApplicationRequest {
                         match value {
                             "name" => Ok(GeneratedField::Name),
                             "ownerId" | "owner_id" => Ok(GeneratedField::OwnerId),
+                            "isDefault" | "is_default" => Ok(GeneratedField::IsDefault),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -352,6 +380,7 @@ impl<'de> serde::Deserialize<'de> for CreateApplicationRequest {
             {
                 let mut name__ = None;
                 let mut owner_id__ = None;
+                let mut is_default__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Name => {
@@ -366,11 +395,18 @@ impl<'de> serde::Deserialize<'de> for CreateApplicationRequest {
                             }
                             owner_id__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::IsDefault => {
+                            if is_default__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("isDefault"));
+                            }
+                            is_default__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(CreateApplicationRequest {
                     name: name__.unwrap_or_default(),
                     owner_id: owner_id__.unwrap_or_default(),
+                    is_default: is_default__.unwrap_or_default(),
                 })
             }
         }
@@ -557,6 +593,77 @@ impl<'de> serde::Deserialize<'de> for GetApplicationRequest {
             }
         }
         deserializer.deserialize_struct("application.GetApplicationRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for GetDefaultApplicationRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let len = 0;
+        let struct_ser = serializer.serialize_struct("application.GetDefaultApplicationRequest", len)?;
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for GetDefaultApplicationRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                            Err(serde::de::Error::unknown_field(value, FIELDS))
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = GetDefaultApplicationRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct application.GetDefaultApplicationRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<GetDefaultApplicationRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                while map_.next_key::<GeneratedField>()?.is_some() {
+                    let _ = map_.next_value::<serde::de::IgnoredAny>()?;
+                }
+                Ok(GetDefaultApplicationRequest {
+                })
+            }
+        }
+        deserializer.deserialize_struct("application.GetDefaultApplicationRequest", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for ListApplicationsRequest {
@@ -811,6 +918,9 @@ impl serde::Serialize for UpdateApplicationRequest {
         if self.enabled {
             len += 1;
         }
+        if self.is_default {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("application.UpdateApplicationRequest", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -820,6 +930,9 @@ impl serde::Serialize for UpdateApplicationRequest {
         }
         if self.enabled {
             struct_ser.serialize_field("enabled", &self.enabled)?;
+        }
+        if self.is_default {
+            struct_ser.serialize_field("isDefault", &self.is_default)?;
         }
         struct_ser.end()
     }
@@ -834,6 +947,8 @@ impl<'de> serde::Deserialize<'de> for UpdateApplicationRequest {
             "id",
             "name",
             "enabled",
+            "is_default",
+            "isDefault",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -841,6 +956,7 @@ impl<'de> serde::Deserialize<'de> for UpdateApplicationRequest {
             Id,
             Name,
             Enabled,
+            IsDefault,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -865,6 +981,7 @@ impl<'de> serde::Deserialize<'de> for UpdateApplicationRequest {
                             "id" => Ok(GeneratedField::Id),
                             "name" => Ok(GeneratedField::Name),
                             "enabled" => Ok(GeneratedField::Enabled),
+                            "isDefault" | "is_default" => Ok(GeneratedField::IsDefault),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -887,6 +1004,7 @@ impl<'de> serde::Deserialize<'de> for UpdateApplicationRequest {
                 let mut id__ = None;
                 let mut name__ = None;
                 let mut enabled__ = None;
+                let mut is_default__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -907,12 +1025,19 @@ impl<'de> serde::Deserialize<'de> for UpdateApplicationRequest {
                             }
                             enabled__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::IsDefault => {
+                            if is_default__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("isDefault"));
+                            }
+                            is_default__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(UpdateApplicationRequest {
                     id: id__.unwrap_or_default(),
                     name: name__.unwrap_or_default(),
                     enabled: enabled__.unwrap_or_default(),
+                    is_default: is_default__.unwrap_or_default(),
                 })
             }
         }
