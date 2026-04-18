@@ -46,11 +46,16 @@ export interface ApiGatewayContract {
    * `callbackUrl` + `callbackToken` and uses them for every webhook callback
    * scoped to this client. `userId` attributes the registration to a known
    * user so the engine can authorize subsequent operations.
+   *
+   * The returned `applicationId` is the engine-side application the client
+   * was scoped to (created during first-run onboarding or reused on
+   * subsequent calls). The UI persists it so later RPC calls can be
+   * attributed to the same application without re-resolving.
    */
   registerClient(
     description: string,
     options: RegisterClientOptions,
-  ): Promise<{ clientId: string; clientSecret: string }>;
+  ): Promise<{ clientId: string; clientSecret: string; applicationId: string }>;
 
   /**
    * Exchange client credentials for an authenticated API stub. The returned

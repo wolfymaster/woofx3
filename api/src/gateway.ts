@@ -1,4 +1,4 @@
-import type { ApiGatewayContract } from "@woofx3/api/rpc";
+import type { ApiGatewayContract, RegisterClientOptions } from "@woofx3/api/rpc";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
@@ -14,7 +14,6 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     private api: Api,
     private auth: ClientAuth,
     private db: DbClient,
-    private applicationId: string,
     private logger: SharedLogger
   ) {
     super();
@@ -29,67 +28,63 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     if (!result.valid) {
       throw new Error("Invalid client credentials");
     }
-
     this.logger.info("Authenticated client", {
       clientId,
       description: result.description,
       applicationId: result.applicationId,
     });
-
     return new ApiSession(this.api, clientId);
   }
 
   async registerClient(
     description: string,
-    options: { userId: string; callbackUrl?: string; callbackToken?: string }
-  ): Promise<{ clientId: string; clientSecret: string }> {
+    options: RegisterClientOptions
+  ): Promise<{ clientId: string; clientSecret: string; applicationId: string }> {
     const { userId, callbackUrl, callbackToken } = options;
-
     if (!userId) {
       throw new Error("registerClient: options.userId is required");
     }
+    this.logger.info("Registering client", { description, userId });
 
-    this.logger.info("Registering client", {
-      description,
-      applicationId: this.applicationId,
-      userId,
-    });
+    // userId at the RPC boundary maps to users.woofx3_ui_user_id on the engine side.
+    const user = await this.db.findOrCreateByWoofx3UIUserId(userId);
 
-    try {
-      // NOTE: CreateClientRequest doesn't yet include a userId field on the
-      // proto side. Until the pb is regenerated, the userId rides on the
-      // description so the record is at least identifiable on lookup, and
-      // we log it explicitly for audit trail.
-      const resp = await this.db.createClient({
-        description,
-        applicationId: this.applicationId,
-        callbackUrl: callbackUrl ?? "",
-        callbackToken: callbackToken ?? "",
-      });
-      if (!resp.client) {
-        this.logger.error("registerClient: createClient returned no client", { status: resp.status });
-        throw new Error("Failed to create client");
+    let app = await this.db.getDefaultApplication();
+    if (!app) {
+      try {
+        app = await this.db.createApplication({ name: "default", ownerId: user.id, isDefault: true });
+      } catch (err) {
+        // Unique-violation race: another onboarding call won; re-read.
+        app = await this.db.getDefaultApplication();
+        if (!app) {
+          throw err;
+        }
       }
-      if (this.webhookClient && callbackUrl) {
+    }
+
+    const resp = await this.db.createClient({
+      description,
+      applicationId: app.id,
+      callbackUrl: callbackUrl ?? "",
+      callbackToken: callbackToken ?? "",
+    });
+    if (!resp.client) {
+      throw new Error("Failed to create client");
+    }
+
+    this.api.setApplicationId(app.id);
+    if (this.webhookClient) {
+      this.webhookClient.setApplicationId(app.id);
+      if (callbackUrl) {
         await this.webhookClient.refreshCallbackUrls();
       }
-      this.logger.info("Client registered", {
-        clientId: resp.client.clientId,
-        description,
-        userId,
-      });
-      return {
-        clientId: resp.client.clientId,
-        clientSecret: resp.client.clientSecret,
-      };
-    } catch (err) {
-      this.logger.error("registerClient failed", {
-        error: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : undefined,
-        userId,
-      });
-      throw err;
     }
+
+    return {
+      clientId: resp.client.clientId,
+      clientSecret: resp.client.clientSecret,
+      applicationId: app.id,
+    };
   }
 
   async ping(): Promise<{ status: string }> {
