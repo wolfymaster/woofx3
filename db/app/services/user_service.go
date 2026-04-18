@@ -146,3 +146,7 @@ func userToProto(user *models.User) *client.User {
 func (s *UserService) GetUserByUserID(ctx context.Context, userID string, platformID string) (*models.User, error) {
 	return s.repo.GetByUserID(userID, platformID)
 }
+
+func (s *UserService) FindOrCreateByWoofx3UIUserId(ctx context.Context, req *client.FindOrCreateByWoofx3UIUserIdRequest) (*client.UserResponse, error) {
+	panic("FindOrCreateByWoofx3UIUserId: not implemented (Task 11)")
+}

@@ -7,11 +7,13 @@ require (
 	github.com/casbin/gorm-adapter/v3 v3.36.0
 	github.com/cloudevents/sdk-go/v2 v2.16.2
 	github.com/dgraph-io/badger/v3 v3.2103.5
+	github.com/glebarez/sqlite v1.7.0
 	github.com/go-gormigrate/gormigrate/v2 v2.1.5
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/nats-io/nats.go v1.48.0
 	github.com/twitchtv/twirp v8.1.3+incompatible
+	github.com/wolfymaster/woofx3/clients/db v0.0.0
 	github.com/wolfymaster/woofx3/clients/nats v0.0.0
 	github.com/wolfymaster/woofx3/common/logging v0.0.0
 	github.com/wolfymaster/woofx3/common/runtime v0.0.0
@@ -28,7 +30,6 @@ require (
 	github.com/dgraph-io/ristretto v0.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/glebarez/go-sqlite v1.20.3 // indirect
-	github.com/glebarez/sqlite v1.7.0 // indirect
 	github.com/go-sql-driver/mysql v1.7.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
@@ -57,7 +58,6 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230126093431-47fa9a501578 // indirect
 	github.com/wolfymaster/woofx3/clients/barkloader v0.0.0 // indirect
-	github.com/wolfymaster/woofx3/clients/db v0.0.0 // indirect
 	github.com/wolfymaster/woofx3/common/cloudevents v0.0.0 // indirect
 	go.opencensus.io v0.22.5 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
