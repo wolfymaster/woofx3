@@ -49,7 +49,11 @@ func (s *commandService) syncCommandEdges(cmd *models.Command, cmdType, typeValu
 }
 
 func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCommandRequest) (*client.CommandResponse, error) {
-	applicationID, err := uuid.Parse(cmd.ApplicationId)
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), cmd.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	applicationID, err := uuid.Parse(appIDStr)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +100,11 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 }
 
 func (s *commandService) GetCommand(ctx context.Context, req *client.GetCommandRequest) (*client.CommandResponse, error) {
-	applicationID, err := uuid.Parse(req.ApplicationId)
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	applicationID, err := uuid.Parse(appIDStr)
 	if err != nil {
 		return nil, err
 	}

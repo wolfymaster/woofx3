@@ -14,6 +14,10 @@ func NewClientRepository(db *gorm.DB) *ClientRepository {
 	return &ClientRepository{db: db}
 }
 
+func (r *ClientRepository) DB() *gorm.DB {
+	return r.db
+}
+
 func (r *ClientRepository) Create(client *models.Client) error {
 	return r.db.Create(client).Error
 }

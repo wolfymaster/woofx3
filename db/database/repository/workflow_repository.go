@@ -16,6 +16,11 @@ func NewWorkflowRepository(db *gorm.DB) *WorkflowRepository {
 	return &WorkflowRepository{db: db}
 }
 
+// DB exposes the underlying *gorm.DB for handler-level helpers.
+func (r *WorkflowRepository) DB() *gorm.DB {
+	return r.db
+}
+
 // Create creates a new WorkflowDefinition
 func (r *WorkflowRepository) Create(wf *models.WorkflowDefinition) error {
 	return r.db.Create(wf).Error

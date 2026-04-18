@@ -19,7 +19,11 @@ func NewSettingService(repo *repository.SettingRepository) *settingService {
 }
 
 func (s *settingService) GetSetting(ctx context.Context, req *client.GetSettingRequest) (*client.SettingResponse, error) {
-	applicationId, err := uuid.Parse(req.ApplicationId)
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	applicationId, err := uuid.Parse(appIDStr)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +49,11 @@ func (s *settingService) GetSetting(ctx context.Context, req *client.GetSettingR
 }
 
 func (s *settingService) GetSettings(ctx context.Context, req *client.GetSettingsRequest) (*client.GetSettingsResponse, error) {
-	applicationId, err := uuid.Parse(req.ApplicationId)
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	applicationId, err := uuid.Parse(appIDStr)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +84,11 @@ func (s *settingService) GetSettings(ctx context.Context, req *client.GetSetting
 }
 
 func (s *settingService) SetSetting(ctx context.Context, req *client.SetSettingRequest) (*client.SettingResponse, error) {
-	applicationId, err := uuid.Parse(req.ApplicationId)
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	applicationId, err := uuid.Parse(appIDStr)
 	if err != nil {
 		applicationId = uuid.Nil
 	}
@@ -102,7 +114,11 @@ func (s *settingService) SetSetting(ctx context.Context, req *client.SetSettingR
 }
 
 func (s *settingService) SetSettings(ctx context.Context, req *client.SetSettingsRequest) (*client.SetSettingsResponse, error) {
-	applicationId, err := uuid.Parse(req.ApplicationId)
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	applicationId, err := uuid.Parse(appIDStr)
 	if err != nil {
 		applicationId = uuid.Nil
 	}
@@ -133,7 +149,11 @@ func (s *settingService) SetSettings(ctx context.Context, req *client.SetSetting
 }
 
 func (s *settingService) DeleteSetting(ctx context.Context, req *client.DeleteSettingRequest) (*client.ResponseStatus, error) {
-	applicationId, err := uuid.Parse(req.ApplicationId)
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	applicationId, err := uuid.Parse(appIDStr)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +167,11 @@ func (s *settingService) DeleteSetting(ctx context.Context, req *client.DeleteSe
 }
 
 func (s *settingService) ListSettingsByPrefix(ctx context.Context, req *client.ListSettingsRequest) (*client.ListSettingsResponse, error) {
-	applicationId, err := uuid.Parse(req.ApplicationId)
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	applicationId, err := uuid.Parse(appIDStr)
 	if err != nil {
 		return nil, err
 	}

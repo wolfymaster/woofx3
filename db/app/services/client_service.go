@@ -30,7 +30,11 @@ func generateSecret() (string, error) {
 }
 
 func (s *clientService) CreateClient(ctx context.Context, req *client.CreateClientRequest) (*client.ClientResponse, error) {
-	applicationId, err := uuid.Parse(req.ApplicationId)
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	applicationId, err := uuid.Parse(appIDStr)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +95,11 @@ func (s *clientService) GetClient(ctx context.Context, req *client.GetClientRequ
 }
 
 func (s *clientService) ListClients(ctx context.Context, req *client.ListClientsRequest) (*client.ListClientsResponse, error) {
-	applicationId, err := uuid.Parse(req.ApplicationId)
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	applicationId, err := uuid.Parse(appIDStr)
 	if err != nil {
 		return nil, err
 	}

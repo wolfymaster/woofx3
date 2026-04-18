@@ -16,6 +16,11 @@ func NewCommandRepository(db *gorm.DB) *CommandRepository {
 	return &CommandRepository{db: db}
 }
 
+// DB exposes the underlying *gorm.DB for handler-level helpers.
+func (r *CommandRepository) DB() *gorm.DB {
+	return r.db
+}
+
 // Create creates a new Command
 func (r *CommandRepository) Create(cmd *models.Command) error {
 	return r.db.Create(cmd).Error

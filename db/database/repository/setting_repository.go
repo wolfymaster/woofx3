@@ -14,6 +14,10 @@ func NewSettingRepository(db *gorm.DB) *SettingRepository {
 	return &SettingRepository{db: db}
 }
 
+func (r *SettingRepository) DB() *gorm.DB {
+	return r.db
+}
+
 func (r *SettingRepository) GetSettingByKey(appID uuid.UUID, key string) (*models.Setting, error) {
 	var setting models.Setting
 	err := r.db.Where("application_id = ? AND key = ?", appID, key).First(&setting).Error

@@ -68,7 +68,11 @@ func (s *workflowService) syncWorkflowEdges(
 }
 
 func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.CreateWorkflowRequest) (*client.WorkflowResponse, error) {
-	applicationID, err := uuid.Parse(req.ApplicationId)
+	appIDStr, err := resolveApplicationID(ctx, s.workflowRepo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	applicationID, err := uuid.Parse(appIDStr)
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
 	}
@@ -105,7 +109,7 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
-			ApplicationID:   req.ApplicationId,
+			ApplicationID:   appIDStr,
 			EntityType:      "workflow",
 			EntityID:        wf.ID.String(),
 			Operation:       "created",
@@ -291,7 +295,11 @@ func (s *workflowService) ExecuteWorkflow(ctx context.Context, req *client.Execu
 		return nil, twirp.InvalidArgumentError("workflow_id", "invalid UUID format")
 	}
 
-	applicationID, err := uuid.Parse(req.ApplicationId)
+	appIDStr, err := resolveApplicationID(ctx, s.workflowRepo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	applicationID, err := uuid.Parse(appIDStr)
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
 	}
@@ -338,7 +346,7 @@ func (s *workflowService) ExecuteWorkflow(ctx context.Context, req *client.Execu
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
-			ApplicationID:   req.ApplicationId,
+			ApplicationID:   appIDStr,
 			EntityType:      "workflow_execution",
 			EntityID:        exec.ID.String(),
 			Operation:       "created",

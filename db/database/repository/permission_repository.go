@@ -18,6 +18,10 @@ func (r *PermissionRepository) GetDb() *gorm.DB {
 	return r.db
 }
 
+func (r *PermissionRepository) DB() *gorm.DB {
+	return r.db
+}
+
 // CRUD Operations
 func (r *PermissionRepository) Create(p *models.Permission) error {
 	return r.db.Create(r).Error

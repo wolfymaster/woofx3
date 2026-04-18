@@ -55,60 +55,64 @@ func (s *permissionService) HasPermission(ctx context.Context, req *client.HasPe
 // Add Permission Methods
 
 func (s *permissionService) AddPermission(ctx context.Context, req *client.PermissionRequest) (*client.ResponseStatus, error) {
-	return s.handleAddPermissionRequest(req)
+	return s.handleAddPermissionRequest(ctx, req)
 }
 
 func (s *permissionService) AddUserToResource(ctx context.Context, req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
-	return s.handleAddUserResourceRoleRequest(req)
+	return s.handleAddUserResourceRoleRequest(ctx, req)
 }
 
 func (s *permissionService) AddUserToGroup(ctx context.Context, req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
-	return s.handleAddUserResourceRoleRequest(req)
+	return s.handleAddUserResourceRoleRequest(ctx, req)
 }
 
 func (s *permissionService) AddUserToRole(ctx context.Context, req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
-	return s.handleAddUserResourceRoleRequest(req)
+	return s.handleAddUserResourceRoleRequest(ctx, req)
 }
 
 func (s *permissionService) AddRoleToGroup(ctx context.Context, req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
-	return s.handleAddUserResourceRoleRequest(req)
+	return s.handleAddUserResourceRoleRequest(ctx, req)
 }
 
 func (s *permissionService) AddGroupToResource(ctx context.Context, req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
-	return s.handleAddUserResourceRoleRequest(req)
+	return s.handleAddUserResourceRoleRequest(ctx, req)
 }
 
 // Remove Permission Methods
 
 func (s *permissionService) RemovePermission(ctx context.Context, req *client.PermissionRequest) (*client.ResponseStatus, error) {
-	return s.handleRemovePermissionRequest(req)
+	return s.handleRemovePermissionRequest(ctx, req)
 }
 
 func (s *permissionService) RemoveUserFromResource(ctx context.Context, req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
-	return s.handleRemoveUserResourceRoleRequest(req)
+	return s.handleRemoveUserResourceRoleRequest(ctx, req)
 }
 
 func (s *permissionService) RemoveUserFromGroup(ctx context.Context, req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
-	return s.handleRemoveUserResourceRoleRequest(req)
+	return s.handleRemoveUserResourceRoleRequest(ctx, req)
 }
 
 func (s *permissionService) RemoveUserFromRole(ctx context.Context, req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
-	return s.handleRemoveUserResourceRoleRequest(req)
+	return s.handleRemoveUserResourceRoleRequest(ctx, req)
 }
 
 func (s *permissionService) RemoveRoleFromGroup(ctx context.Context, req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
-	return s.handleRemoveUserResourceRoleRequest(req)
+	return s.handleRemoveUserResourceRoleRequest(ctx, req)
 }
 
 func (s *permissionService) RemoveGroupFromResource(ctx context.Context, req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
-	return s.handleRemoveUserResourceRoleRequest(req)
+	return s.handleRemoveUserResourceRoleRequest(ctx, req)
 }
 
 /*
 handleAddUserResourceRoleRequest is a helper function that handles the user resource role request
 */
-func (s *permissionService) handleAddUserResourceRoleRequest(req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
-	appId, err := uuid.Parse(req.ApplicationId)
+func (s *permissionService) handleAddUserResourceRoleRequest(ctx context.Context, req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	appId, err := uuid.Parse(appIDStr)
 	if err != nil {
 		return nil, err
 	}
@@ -131,8 +135,12 @@ func (s *permissionService) handleAddUserResourceRoleRequest(req *client.UserRes
 /*
 handleRemoveUserResourceRoleRequest is a helper function that handles the user resource role request
 */
-func (s *permissionService) handleRemoveUserResourceRoleRequest(req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
-	appId, err := uuid.Parse(req.ApplicationId)
+func (s *permissionService) handleRemoveUserResourceRoleRequest(ctx context.Context, req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	appId, err := uuid.Parse(appIDStr)
 	if err != nil {
 		return nil, err
 	}
@@ -155,8 +163,12 @@ func (s *permissionService) handleRemoveUserResourceRoleRequest(req *client.User
 /*
 handleAddPermissionRequest is a helper function that handles the permission request
 */
-func (s *permissionService) handleAddPermissionRequest(req *client.PermissionRequest) (*client.ResponseStatus, error) {
-	appId, err := uuid.Parse(req.ApplicationId)
+func (s *permissionService) handleAddPermissionRequest(ctx context.Context, req *client.PermissionRequest) (*client.ResponseStatus, error) {
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	appId, err := uuid.Parse(appIDStr)
 	if err != nil {
 		return nil, err
 	}
@@ -179,8 +191,12 @@ func (s *permissionService) handleAddPermissionRequest(req *client.PermissionReq
 /*
 handleRemovePermissionRequest is a helper function that handles the permission request
 */
-func (s *permissionService) handleRemovePermissionRequest(req *client.PermissionRequest) (*client.ResponseStatus, error) {
-	appId, err := uuid.Parse(req.ApplicationId)
+func (s *permissionService) handleRemovePermissionRequest(ctx context.Context, req *client.PermissionRequest) (*client.ResponseStatus, error) {
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	appId, err := uuid.Parse(appIDStr)
 	if err != nil {
 		return nil, err
 	}
