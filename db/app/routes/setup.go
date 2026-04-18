@@ -17,4 +17,5 @@ func SetupAllRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middle
 	CommandRoutes(mux, app, casbinMiddleware)
 	ModuleRoutes(mux, app)
 	ClientRoutes(mux, app)
+	ApplicationRoutes(mux, app)
 }
