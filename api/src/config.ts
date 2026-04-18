@@ -5,7 +5,6 @@ export interface ApiConfig {
   port: number;
   rootDir: string;
   databaseProxyUrl: string;
-  applicationId: string;
   barkloaderUrl: string;
   nats: {
     url: string;
@@ -21,8 +20,6 @@ const apiEnvSchema = z
     apiPort: z.union([z.number(), z.string()]).optional(),
     woofx3DatabaseProxyUrl: z.string().optional(),
     databaseProxyUrl: z.string().optional(),
-    woofx3ApplicationId: z.string().optional(),
-    applicationId: z.string().optional(),
     woofx3BarkloaderUrl: z.string().optional(),
     barkloaderUrl: z.string().optional(),
     woofx3MessagebusUrl: z.string().optional(),
@@ -42,15 +39,10 @@ export function loadConfig(): ApiConfig {
   const port = Number(config.woofx3ApiPort ?? config.apiPort ?? 8080);
   const rootDir = String(config.woofx3RootPath);
   const databaseProxyUrl = String(config.woofx3DatabaseProxyUrl ?? config.databaseProxyUrl ?? "");
-  const applicationId = String(config.woofx3ApplicationId ?? config.applicationId ?? "");
   const barkloaderUrl = String(config.woofx3BarkloaderUrl ?? config.barkloaderUrl ?? "http://127.0.0.1:3005");
 
   if (!databaseProxyUrl) {
     throw new Error("databaseProxyUrl (or DATABASE_PROXY_URL) is required");
-  }
-
-  if (!applicationId) {
-    throw new Error("applicationId (or APPLICATION_ID) is required");
   }
 
   const messageBusUrl = String(config.woofx3MessagebusUrl ?? config.messagebusUrl ?? "nats://localhost:4222");
@@ -70,7 +62,6 @@ export function loadConfig(): ApiConfig {
   return {
     port,
     databaseProxyUrl,
-    applicationId,
     barkloaderUrl,
     rootDir,
     nats: {
