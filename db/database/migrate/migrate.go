@@ -23,6 +23,7 @@ func Migrate(db *gorm.DB) error {
 		migrations.AddModuleKeyColumn(),
 		migrations.CreateResourceReferencesTable(),
 		migrations.AddApplicationsIsDefault(),
+		migrations.AddUsersWoofx3UIUserID(),
 	})
 
 	return m.Migrate()
