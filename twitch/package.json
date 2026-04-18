@@ -10,7 +10,7 @@
     "chalk": "^5.6.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "langchain": "^0.3.19",
+    "langchain": "^1.0.1",
     "open": "^10.1.0",
     "winston": "^3.17.0"
   },
