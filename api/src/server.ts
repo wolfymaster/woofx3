@@ -134,10 +134,7 @@ async function main() {
     logDir: `${config.rootDir}/logs`,
   });
 
-  logger.info("Starting API server", {
-    port: config.port || 8080,
-    applicationId: config.applicationId,
-  });
+  logger.info("Starting API server", { port: config.port || 8080 });
 
   // Initialize DB client
   logger.info("Initializing DB client", { url: config.databaseProxyUrl });
@@ -155,24 +152,36 @@ async function main() {
     logger.warn("Running in offline mode - some features may be unavailable");
   }
 
-  // Create API instance
   const api = new Api({
     db: dbClient,
     nats: natsClient,
-    applicationId: config.applicationId,
     barkloaderUrl: config.barkloaderUrl,
     logger,
   });
-  // Create webhook client for callback notifications
-  const webhookClient = new WebhookClient(dbClient, logger, config.applicationId);
+
+  const webhookClient = new WebhookClient(dbClient, logger, null);
   api.setWebhookClient(webhookClient);
+
+  try {
+    const existing = await dbClient.getDefaultApplication();
+    if (existing) {
+      api.setApplicationId(existing.id);
+      await webhookClient.refreshCallbackUrls();
+      logger.info("Warmed applicationId cache from existing default", { applicationId: existing.id });
+    } else {
+      logger.info("No default application yet; waiting for UI onboarding");
+    }
+  } catch (err) {
+    logger.warn("Default-application warmup failed (continuing)", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   await api.initSubscriptions();
 
-  // Create auth and gateway
   const auth = new ClientAuth(dbClient, logger);
   api.setAuthInvalidate(() => auth.invalidateCache());
-  const gateway = new ApiGateway(api, auth, dbClient, config.applicationId, logger);
+  const gateway = new ApiGateway(api, auth, dbClient, logger);
   gateway.setWebhookClient(webhookClient);
 
   // Create HTTP server
