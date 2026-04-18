@@ -90,7 +90,7 @@ func (s *settingService) SetSetting(ctx context.Context, req *client.SetSettingR
 	}
 	applicationId, err := uuid.Parse(appIDStr)
 	if err != nil {
-		applicationId = uuid.Nil
+		return nil, err
 	}
 
 	// Extract string value from protobuf Value
@@ -120,7 +120,7 @@ func (s *settingService) SetSettings(ctx context.Context, req *client.SetSetting
 	}
 	applicationId, err := uuid.Parse(appIDStr)
 	if err != nil {
-		applicationId = uuid.Nil
+		return nil, err
 	}
 
 	var pbSettings []*client.Setting

@@ -14,10 +14,6 @@ func NewPermissionRepository(db *gorm.DB) *PermissionRepository {
 	return &PermissionRepository{db: db}
 }
 
-func (r *PermissionRepository) GetDb() *gorm.DB {
-	return r.db
-}
-
 func (r *PermissionRepository) DB() *gorm.DB {
 	return r.db
 }
