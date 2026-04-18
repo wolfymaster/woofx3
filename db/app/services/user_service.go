@@ -133,12 +133,13 @@ func userToProto(user *models.User) *client.User {
 	}
 
 	return &client.User{
-		Id:        user.ID,
-		Username:  user.Username,
-		UserId:    user.UserID,
-		Platform:  user.Platform,
-		CreatedAt: createdAt,
-		UpdatedAt: updatedAt,
+		Id:             user.ID,
+		Username:       user.Username,
+		UserId:         user.UserID,
+		Platform:       user.Platform,
+		Woofx3UiUserId: user.Woofx3UIUserID,
+		CreatedAt:      createdAt,
+		UpdatedAt:      updatedAt,
 	}
 }
 
@@ -148,5 +149,15 @@ func (s *UserService) GetUserByUserID(ctx context.Context, userID string, platfo
 }
 
 func (s *UserService) FindOrCreateByWoofx3UIUserId(ctx context.Context, req *client.FindOrCreateByWoofx3UIUserIdRequest) (*client.UserResponse, error) {
-	panic("FindOrCreateByWoofx3UIUserId: not implemented (Task 11)")
+	if req.Woofx3UiUserId == "" {
+		return nil, twirp.InvalidArgumentError("woofx3_ui_user_id", "must be non-empty")
+	}
+	user, err := models.FindOrCreateUserByWoofx3UIUserID(s.repo.DB(), req.Woofx3UiUserId)
+	if err != nil {
+		return nil, twirp.InternalErrorWith(err)
+	}
+	return &client.UserResponse{
+		Status: &client.ResponseStatus{Code: client.ResponseStatus_OK},
+		User:   userToProto(user),
+	}, nil
 }

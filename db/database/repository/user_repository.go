@@ -17,6 +17,11 @@ func NewUserRepository(db *gorm.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
 
+// DB exposes the underlying *gorm.DB for model-level helpers.
+func (r *UserRepository) DB() *gorm.DB {
+	return r.db
+}
+
 // Create creates a new User
 func (r *UserRepository) Create(user *models.User) error {
 	return r.db.Create(user).Error

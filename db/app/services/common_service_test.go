@@ -12,24 +12,38 @@ import (
 	"gorm.io/gorm"
 )
 
-// newTestDB creates an in-memory SQLite database with a SQLite-compatible
-// applications schema — sufficient for resolveApplicationID tests. The
-// production gorm tag relies on the Postgres-only uuid_generate_v4(),
-// which SQLite cannot parse, so AutoMigrate is not used here.
+// newTestDB creates an in-memory SQLite database with SQLite-compatible
+// schemas for tables that tests touch. The production gorm tags rely on
+// Postgres-only uuid_generate_v4(), which SQLite cannot parse, so
+// AutoMigrate is not used here.
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	ddl := `CREATE TABLE applications (
-		id TEXT PRIMARY KEY,
-		name TEXT NOT NULL,
-		user_id TEXT NOT NULL,
-		is_default INTEGER NOT NULL DEFAULT 0
-	)`
-	if err := db.Exec(ddl).Error; err != nil {
-		t.Fatalf("create applications: %v", err)
+	stmts := []string{
+		`CREATE TABLE applications (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			is_default INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE TABLE users (
+			id TEXT PRIMARY KEY,
+			username TEXT,
+			user_id TEXT,
+			platform TEXT,
+			woofx3_ui_user_id TEXT,
+			deleted_at DATETIME,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+	}
+	for _, s := range stmts {
+		if err := db.Exec(s).Error; err != nil {
+			t.Fatalf("exec ddl: %v", err)
+		}
 	}
 	return db
 }
