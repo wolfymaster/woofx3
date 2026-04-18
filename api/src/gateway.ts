@@ -54,7 +54,13 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
       try {
         app = await this.db.createApplication({ name: "default", ownerId: user.id, isDefault: true });
       } catch (err) {
-        // Unique-violation race: another onboarding call won; re-read.
+        // Either a unique-violation race (another concurrent onboarding call
+        // won) or a real failure. Re-read the default: if it now exists, a
+        // peer beat us to it — use that row. If it still doesn't exist, the
+        // original error was genuine; rethrow it.
+        this.logger.warn("createApplication failed; checking for concurrent onboarding", {
+          error: err instanceof Error ? err.message : String(err),
+        });
         app = await this.db.getDefaultApplication();
         if (!app) {
           throw err;
@@ -72,12 +78,11 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
       throw new Error("Failed to create client");
     }
 
+    // api.setApplicationId cascades into the shared webhookClient; we only
+    // need to explicitly refresh callback URLs when a new callback was registered.
     this.api.setApplicationId(app.id);
-    if (this.webhookClient) {
-      this.webhookClient.setApplicationId(app.id);
-      if (callbackUrl) {
-        await this.webhookClient.refreshCallbackUrls();
-      }
+    if (this.webhookClient && callbackUrl) {
+      await this.webhookClient.refreshCallbackUrls();
     }
 
     return {
