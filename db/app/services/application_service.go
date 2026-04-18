@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"github.com/wolfymaster/woofx3/db/database/repository"
@@ -46,7 +47,7 @@ func (s *applicationService) CreateApplication(ctx context.Context, req *client.
 		IsDefault: req.IsDefault,
 	}
 	if err := s.repo.Create(app); err != nil {
-		if req.IsDefault && isUniqueViolation(err) {
+		if req.IsDefault && isDefaultApplicationUniqueViolation(err) {
 			if existing, reErr := s.repo.GetDefault(); reErr == nil {
 				return applicationModelToResponse(existing), nil
 			}
@@ -151,11 +152,22 @@ func applicationModelToResponse(m *models.Application) *client.ApplicationRespon
 	}
 }
 
-// isUniqueViolation detects Postgres' 23505 SQLSTATE or a SQLite "unique"
-// mention. The Postgres path is what the production migration triggers
-// via the applications_single_default partial index; the SQLite path is
-// defensive only — the test harness doesn't create that index.
-func isUniqueViolation(err error) bool {
+// isDefaultApplicationUniqueViolation detects a violation of the
+// applications_single_default partial unique index specifically. On
+// Postgres this is SQLSTATE 23505 with that constraint name. On SQLite
+// (used only in tests) we fall back to a string match since the test
+// schema does not install the partial index and the driver surfaces
+// unique violations as a generic message.
+func isDefaultApplicationUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505" && pgErr.ConstraintName == "applications_single_default"
+	}
+	// SQLite fallback — the test harness has no partial index so this branch
+	// is rarely exercised in practice; kept defensive.
 	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "unique") || strings.Contains(msg, "duplicate key")
+	return strings.Contains(msg, "unique") && strings.Contains(msg, "is_default")
 }
