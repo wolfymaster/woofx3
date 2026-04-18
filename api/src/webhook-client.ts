@@ -31,14 +31,18 @@ interface RegisteredInstance {
 
 export class WebhookClient {
   private instances: RegisteredInstance[] = [];
+  private applicationId: string | null;
   private readonly timeoutMs = 5_000;
 
   constructor(
     private db: DbClient,
     private logger: SharedLogger,
-    private applicationId: string
+    applicationId: string | null
   ) {
-    this.refreshCallbackUrls();
+    this.applicationId = applicationId;
+    if (applicationId) {
+      this.refreshCallbackUrls();
+    }
   }
 
   setApplicationId(applicationId: string): void {
@@ -46,6 +50,10 @@ export class WebhookClient {
   }
 
   async refreshCallbackUrls(): Promise<void> {
+    if (!this.applicationId) {
+      this.logger.debug("WebhookClient.refreshCallbackUrls skipped; applicationId not set yet");
+      return;
+    }
     const resp = await this.db.listClients(this.applicationId);
     const newInstances: RegisteredInstance[] = [];
 
