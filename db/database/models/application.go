@@ -6,9 +6,10 @@ import (
 )
 
 type Application struct {
-	ID     uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	Name   string    `gorm:"type:varchar(50);not null"`
-	UserID uuid.UUID `gorm:"column:user_id;type:uuid;not null;index:idx_applications_user_id"`
+	ID        uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	Name      string    `gorm:"type:varchar(50);not null"`
+	UserID    uuid.UUID `gorm:"column:user_id;type:uuid;not null;index:idx_applications_user_id"`
+	IsDefault bool      `gorm:"column:is_default;type:boolean;not null;default:false"`
 
 	// Relationships
 	Settings            []Setting            `gorm:"foreignKey:ApplicationID;references:ID"`
@@ -56,5 +57,11 @@ func GetApplicationWithAllRelations(db *gorm.DB, appID uuid.UUID) (*Application,
 		Preload("WorkflowDefinitions").
 		Preload("Treats").
 		First(&app, "id = ?", appID).Error
+	return &app, err
+}
+
+func GetDefaultApplication(db *gorm.DB) (*Application, error) {
+	var app Application
+	err := db.Where("is_default = ?", true).First(&app).Error
 	return &app, err
 }
