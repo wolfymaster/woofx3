@@ -22,6 +22,7 @@ func Migrate(db *gorm.DB) error {
 		migrations.DecoupleTriggerActionsFromModules(),
 		migrations.AddModuleKeyColumn(),
 		migrations.CreateResourceReferencesTable(),
+		migrations.AddApplicationsIsDefault(),
 	})
 
 	return m.Migrate()
