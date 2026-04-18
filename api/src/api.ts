@@ -112,6 +112,9 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
 
   setWebhookClient(client: WebhookClient): void {
     this.webhookClient = client;
+    if (this.applicationId) {
+      client.setApplicationId(this.applicationId);
+    }
   }
 
   setAuthInvalidate(fn: () => void): void {
