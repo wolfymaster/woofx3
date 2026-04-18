@@ -11,6 +11,7 @@ service UserService {
     rpc GetUser(GetUserRequest) returns (UserResponse);
     rpc UpdateUser(UpdateUserRequest) returns (UserResponse);
     rpc DeleteUser(DeleteUserRequest) returns (common.ResponseStatus);
+    rpc FindOrCreateByWoofx3UIUserId(FindOrCreateByWoofx3UIUserIdRequest) returns (UserResponse);
 }
 
 message User {
@@ -20,6 +21,7 @@ message User {
     string platform = 4;  // Platform identifier (e.g., 'twitch', 'youtube')
     google.protobuf.Timestamp created_at = 5;
     google.protobuf.Timestamp updated_at = 6;
+    string woofx3_ui_user_id = 7;
 }
 
 // Requests and Responses
@@ -41,6 +43,10 @@ message UpdateUserRequest {
 
 message DeleteUserRequest {
     string id = 1;  // Our application's user ID
+}
+
+message FindOrCreateByWoofx3UIUserIdRequest {
+    string woofx3_ui_user_id = 1;
 }
 
 message UserResponse {
