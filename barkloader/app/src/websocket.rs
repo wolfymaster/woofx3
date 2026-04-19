@@ -13,12 +13,11 @@ struct WsMessage {
 
 pub struct WebSocketSession {
     sandbox: Sandbox,
-    application_id: Option<String>,
 }
 
 impl WebSocketSession {
-    pub fn new(sandbox: Sandbox, application_id: Option<String>) -> Self {
-        Self { sandbox, application_id }
+    pub fn new(sandbox: Sandbox) -> Self {
+        Self { sandbox }
     }
 
     pub async fn handle_message(

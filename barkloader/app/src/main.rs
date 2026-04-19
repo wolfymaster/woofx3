@@ -31,23 +31,15 @@ async fn setup() -> Result<AppContext> {
     let host_ctx = {
         let storage_addr = get_env_or_default("STORAGE_ADDR", "");
         if !storage_addr.is_empty() {
-            match get_env_or_default("APPLICATION_ID", "").parse::<uuid::Uuid>() {
-                Ok(app_id) => {
-                    match block_on(GrpcStorageClient::new(storage_addr.clone(), app_id)) {
-                        Ok(client) => {
-                            info!("Connected to storage service at {}", storage_addr);
-                            let mut ctx = noop_host_context();
-                            ctx.storage = Arc::new(client);
-                            ctx
-                        }
-                        Err(e) => {
-                            warn!("Failed to connect to storage service: {}; falling back to noop", e);
-                            noop_host_context()
-                        }
-                    }
+            match block_on(GrpcStorageClient::new(storage_addr.clone(), String::new())) {
+                Ok(client) => {
+                    info!("Connected to storage service at {}", storage_addr);
+                    let mut ctx = noop_host_context();
+                    ctx.storage = Arc::new(client);
+                    ctx
                 }
-                Err(_) => {
-                    warn!("Invalid APPLICATION_ID; storage client not available");
+                Err(e) => {
+                    warn!("Failed to connect to storage service: {}; falling back to noop", e);
                     noop_host_context()
                 }
             }
@@ -85,22 +77,11 @@ async fn setup() -> Result<AppContext> {
         }
     };
 
-    let application_id = {
-        let val = get_env_or_default("APPLICATION_ID", "");
-        if val.is_empty() {
-            warn!("APPLICATION_ID not set; workflow registration will be skipped");
-            None
-        } else {
-            Some(val)
-        }
-    };
-
     let ctx = AppContext {
         repository,
         sandbox,
         registry,
         db_proxy_url,
-        application_id,
     };
 
     Ok(ctx)
@@ -182,7 +163,7 @@ async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(Env::default().default_filter_or("info"));
 
     // Validate required config
-    if let Err(e) = validate_required_config(&["WOOFX3_BARKLOADER_KEY", "APPLICATION_ID"]) {
+    if let Err(e) = validate_required_config(&["WOOFX3_BARKLOADER_KEY"]) {
         log::error!("{}", e);
         std::process::exit(1);
     }

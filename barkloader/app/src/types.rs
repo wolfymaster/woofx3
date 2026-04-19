@@ -14,7 +14,6 @@ pub struct AppContext {
     pub sandbox: SandboxFactory,
     pub registry: Arc<ModuleRegistry>,
     pub db_proxy_url: Option<String>,
-    pub application_id: Option<String>,
 }
 
 pub struct SafeTempDir {

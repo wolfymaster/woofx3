@@ -42,8 +42,8 @@ pub fn get_env_or_default_with_key(env_var: &str, config_key: Option<&str>, defa
         }
 
         // Convert env var to config key: strip optional WOOFX3_ prefix, then
-        // SCREAMING_SNAKE -> camelCase (e.g. APPLICATION_ID -> applicationId,
-        // WOOFX3_APPLICATION_ID -> applicationId, DB_PROXY_ADDR -> dbProxyAddr)
+        // SCREAMING_SNAKE -> camelCase (e.g. DB_PROXY_ADDR -> dbProxyAddr,
+        // WOOFX3_BARKLOADER_KEY -> barkloaderKey)
         let base = env_var.strip_prefix("WOOFX3_").unwrap_or(env_var);
         let converted = screaming_snake_to_camel(base);
         if !converted.is_empty() {

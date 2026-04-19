@@ -40,7 +40,7 @@ pub async fn check_version_conflict<R: Repository>(
 pub async fn cleanup_old_version(
     module_name: &str,
     db_proxy_url: Option<&str>,
-    application_id: Option<&str>,
+    application_id: &str,
 ) -> Result<()> {
     let url = match db_proxy_url {
         Some(u) => u,
@@ -51,13 +51,11 @@ pub async fn cleanup_old_version(
     super::db_proxy::delete_actions_by_module_id(url, module_name).await?;
     info!("Deleted triggers and actions for module {}", module_name);
 
-    if let Some(app_id) = application_id {
-        super::db_proxy::delete_workflows_by_module(url, app_id, module_name).await?;
-        info!("Deleted workflows for module {}", module_name);
+    super::db_proxy::delete_workflows_by_module(url, application_id, module_name).await?;
+    info!("Deleted workflows for module {}", module_name);
 
-        super::db_proxy::delete_commands_by_module(url, app_id, module_name).await?;
-        info!("Deleted commands for module {}", module_name);
-    }
+    super::db_proxy::delete_commands_by_module(url, application_id, module_name).await?;
+    info!("Deleted commands for module {}", module_name);
 
     Ok(())
 }
@@ -68,7 +66,7 @@ pub async fn run_install<R: Repository>(
     repository: &R,
     archive_key: &str,
     db_proxy_url: Option<&str>,
-    application_id: Option<&str>,
+    application_id: &str,
     cleanup_old: bool,
     composite_module_key: &str,
     client_id: &str,
@@ -108,11 +106,7 @@ pub async fn run_install<R: Repository>(
 
     if let Some(url) = db_proxy_url {
         if cleanup_old {
-            if let Some(app_id) = application_id {
-                cleanup_old_version(module_key, Some(url), Some(app_id)).await?;
-            } else {
-                cleanup_old_version(module_key, Some(url), None).await?;
-            }
+            cleanup_old_version(module_key, Some(url), application_id).await?;
         }
 
         let manifest_json = serde_json::to_string(manifest)
@@ -215,29 +209,15 @@ pub async fn run_install<R: Repository>(
             }
         }
 
-        if let Some(app_id) = application_id {
-            for wf in &manifest.workflows {
-                wf.register(module_key, url, app_id).await?;
-                if let Err(e) = create_module_resource(
-                    url, &db_record_id, "workflow", "", &wf.id, &wf.name, &manifest.version,
-                ).await {
-                    warn!("Failed to record workflow resource {}: {}", wf.id, e);
-                }
-            }
-        } else {
-            warn!("APPLICATION_ID not set; skipping workflow registration");
-            for wf in &manifest.workflows {
-                wf.process().await?;
-            }
-        }
-    } else {
-        warn!("DB_PROXY_ADDR not set; skipping CreateModule, trigger, workflow, and action registration");
         for wf in &manifest.workflows {
-            wf.process().await?;
+            wf.register(module_key, url, application_id).await?;
+            if let Err(e) = create_module_resource(
+                url, &db_record_id, "workflow", "", &wf.id, &wf.name, &manifest.version,
+            ).await {
+                warn!("Failed to record workflow resource {}: {}", wf.id, e);
+            }
         }
-    }
 
-    if let (Some(url), Some(app_id)) = (db_proxy_url, application_id) {
         // module_id may have been set above; retrieve it for resource tracking
         let mid = match super::db_proxy::get_module_by_name(url, module_key).await {
             Ok(Some(resp)) => {
@@ -248,7 +228,7 @@ pub async fn run_install<R: Repository>(
         };
 
         for cmd in &manifest.commands {
-            cmd.register(module_key, url, app_id).await?;
+            cmd.register(module_key, url, application_id).await?;
             if !mid.is_empty() {
                 if let Err(e) = create_module_resource(
                     url, &mid, "command", "", &cmd.id, &cmd.name, &manifest.version,
@@ -258,6 +238,10 @@ pub async fn run_install<R: Repository>(
             }
         }
     } else {
+        warn!("DB_PROXY_ADDR not set; skipping CreateModule, trigger, workflow, action, and command registration");
+        for wf in &manifest.workflows {
+            wf.process().await?;
+        }
         for c in &manifest.commands {
             c.process().await?;
         }
@@ -310,7 +294,7 @@ mod tests {
             &repo,
             "archives/test-mod/1.0.0.zip",
             None,
-            None,
+            "",
             false,
             &mid,
             "",
@@ -364,7 +348,7 @@ mod tests {
 
         let manifest: ModuleManifest = serde_json::from_slice(manifest_json).expect("manifest");
         let mid = manifest.compute_module_key(manifest_json);
-        run_install(&manifest, &files, &repo, "archives/wm/1.0.0.zip", None, None, false, &mid, "")
+        run_install(&manifest, &files, &repo, "archives/wm/1.0.0.zip", None, "", false, &mid, "")
             .await
             .expect("install");
 
@@ -408,7 +392,7 @@ mod tests {
 
         let manifest: ModuleManifest = serde_json::from_slice(manifest_json).expect("manifest");
         let mid = manifest.compute_module_key(manifest_json);
-        run_install(&manifest, &files, &repo, "archives/om/2.0.0.zip", None, None, false, &mid, "")
+        run_install(&manifest, &files, &repo, "archives/om/2.0.0.zip", None, "", false, &mid, "")
             .await
             .expect("install");
 

@@ -3,17 +3,16 @@ use serde_json::Value;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
-use uuid::Uuid;
 use woofx3::storage::storage::storage_service_client::StorageServiceClient;
 use woofx3::storage::storage::{GetRequest, SetRequest, StorageItem};
 
 pub struct GrpcStorageClient {
     client: Arc<Mutex<StorageServiceClient<tonic::transport::Channel>>>,
-    application_id: Uuid,
+    application_id: String,
 }
 
 impl GrpcStorageClient {
-    pub async fn new(addr: String, application_id: Uuid) -> Result<Self, String> {
+    pub async fn new(addr: String, application_id: String) -> Result<Self, String> {
         let client: StorageServiceClient<tonic::transport::Channel> = StorageServiceClient::connect(addr)
             .await
             .map_err(|e| format!("Failed to connect to storage service: {}", e))?;
@@ -27,14 +26,14 @@ impl GrpcStorageClient {
 impl StorageClient for GrpcStorageClient {
     fn get(&self, key: &str) -> Result<Option<Value>, String> {
         let client = self.client.clone();
-        let application_id = self.application_id;
+        let application_id = self.application_id.clone();
         let key_owned = key.to_string();
 
         Handle::current().block_on(async move {
             let mut client = client.lock().await;
             let request = tonic::Request::new(GetRequest {
                 key: key_owned,
-                application_id: application_id.to_string(),
+                application_id,
             });
 
             match client.get(request).await {
@@ -55,7 +54,7 @@ impl StorageClient for GrpcStorageClient {
 
     fn set(&self, key: &str, value: Value) -> Result<(), String> {
         let client = self.client.clone();
-        let application_id = self.application_id;
+        let application_id = self.application_id.clone();
         let key_owned = key.to_string();
         let value_str = serde_json::to_string(&value)
             .map_err(|e| format!("Failed to serialize value: {}", e))?;
@@ -69,7 +68,7 @@ impl StorageClient for GrpcStorageClient {
                     created_at: 0,
                     expires_at: 0,
                     namespace: String::new(),
-                    application_id: application_id.to_string(),
+                    application_id,
                     clear_on_stream_end: false,
                 }),
             });

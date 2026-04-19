@@ -8,7 +8,6 @@ use crate::util::get_env_or_default;
 #[derive(Deserialize)]
 struct WsQueryParams {
     token: Option<String>,
-    application_id: Option<String>,
 }
 
 fn validate_token(token: &str, expected_key: &str) -> bool {
@@ -57,23 +56,13 @@ async fn websocket_handler(
             .body("Invalid authentication token"));
     }
 
-    let application_id = query.application_id.clone()
-        .or_else(|| {
-            let v = get_env_or_default("APPLICATION_ID", "");
-            if v.is_empty() { None } else { Some(v) }
-        });
-
-    if let Some(ref app_id) = application_id {
-        log::info!("WebSocket connection authenticated for application: {}", app_id);
-    }
-
     let (res, session, stream) = actix_ws::handle(&req, stream)?;
     let stream = stream
         .aggregate_continuations()
         .max_continuation_size(2_usize.pow(20));
     rt::spawn(async move {
         let sandbox = ctx.sandbox.create().expect("Failed to create sandbox");
-        let socket = WebSocketSession::new(sandbox, application_id);
+        let socket = WebSocketSession::new(sandbox);
         socket.handle_message(session, stream).await;
     });
     Ok(res)

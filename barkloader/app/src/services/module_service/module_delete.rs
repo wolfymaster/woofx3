@@ -23,7 +23,7 @@ use super::db_proxy::{
 
 pub struct DeleteContext<'a, R: Repository> {
     pub db_proxy_url: &'a str,
-    pub application_id: Option<&'a str>,
+    pub application_id: &'a str,
     pub module_id: &'a str,
     pub module_name: &'a str,
     pub module_key: &'a str,
@@ -170,16 +170,10 @@ impl ModuleDeletePlan {
     ) -> Result<()> {
         match step {
             DeleteStep::Commands => {
-                if let Some(app_id) = ctx.application_id {
-                    delete_commands_by_module(ctx.db_proxy_url, app_id, ctx.manifest_id).await?;
-                }
-                Ok(())
+                delete_commands_by_module(ctx.db_proxy_url, ctx.application_id, ctx.manifest_id).await
             }
             DeleteStep::Workflows => {
-                if let Some(app_id) = ctx.application_id {
-                    delete_workflows_by_module(ctx.db_proxy_url, app_id, ctx.manifest_id).await?;
-                }
-                Ok(())
+                delete_workflows_by_module(ctx.db_proxy_url, ctx.application_id, ctx.manifest_id).await
             }
             DeleteStep::Actions => {
                 delete_actions_by_module_id(ctx.db_proxy_url, ctx.manifest_id).await
@@ -308,7 +302,7 @@ pub async fn run_delete_resolved<R: Repository>(
     resolved: &ResolvedModule,
     module_name: &str,
     db_proxy_url: &str,
-    application_id: Option<&str>,
+    application_id: &str,
     repository: &R,
     registry: Arc<ModuleRegistry>,
 ) -> Result<(), DeleteError> {
@@ -316,7 +310,7 @@ pub async fn run_delete_resolved<R: Repository>(
     let usage = check_module_resource_usage(
         db_proxy_url,
         &resolved.module_id,
-        application_id.unwrap_or(""),
+        application_id,
     )
     .await
     .map_err(DeleteError::Other)?;

@@ -98,7 +98,7 @@ where
         _plan: &ModulePlan,
         archive_key: &str,
         db_proxy_url: Option<&str>,
-        application_id: Option<&str>,
+        application_id: &str,
         force: bool,
         composite_module_key: &str,
         client_id: &str,

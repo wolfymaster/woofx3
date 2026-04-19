@@ -69,14 +69,13 @@ async fn upload_handler(
 
     let mut request_context = {
         let client_id = metadata.client_id.clone().unwrap_or_default();
-        let application_id = ctx.application_id.clone().unwrap_or_default();
         info!(
-            "Upload form fields: client_id={:?} module_key={:?} application_id={:?}",
-            metadata.client_id, metadata.module_key, application_id
+            "Upload form fields: client_id={:?} module_key={:?}",
+            metadata.client_id, metadata.module_key
         );
         Some(db_proxy::RequestContext {
             client_id,
-            application_id,
+            application_id: String::new(),
             module_key: String::new(),
         })
     };
@@ -280,7 +279,7 @@ async fn upload_handler(
                 &module_plan,
                 &archive_key,
                 ctx.db_proxy_url.as_deref(),
-                ctx.application_id.as_deref(),
+                "",
                 force,
                 &computed_module_key,
                 &upload_client_id,
@@ -408,7 +407,6 @@ async fn delete_handler(
     // longer has a record of the module (idempotent delete): the UI still
     // needs a moduleKey on the callback to correlate with its local state.
     let caller_module_key = query.module_key.clone().unwrap_or_default();
-    let application_id = ctx.application_id.clone().unwrap_or_default();
 
     // Acknowledge the request synchronously. Actual deletion runs in a
     // background task and communicates its result via CompleteModuleDelete,
@@ -433,11 +431,10 @@ async fn delete_handler(
     tokio::spawn(async move {
         let mut request_context = db_proxy::RequestContext {
             client_id,
-            application_id: application_id.clone(),
+            application_id: String::new(),
             module_key: caller_module_key.clone(),
         };
 
-        let app_id_opt = if application_id.is_empty() { None } else { Some(application_id.as_str()) };
         let registry = ctx_clone.registry.clone();
 
         // Resolve the module eagerly so the callback always carries
@@ -488,7 +485,7 @@ async fn delete_handler(
             &resolved,
             &module_name_task,
             &db_proxy_url,
-            app_id_opt,
+            "",
             &ctx_clone.repository,
             registry,
         ).await {
