@@ -21,9 +21,6 @@ const bus = await MessageBus.createMessageBus({
 const logger = createServiceLogger({
   serviceName: "twitch",
   logDir: path.join((loadedConfig.getConfig("woofx3RootPath") as string | undefined) ?? process.cwd(), "logs"),
-  context: {
-    applicationId: loadedConfig.getConfig("woofx3ApplicationId") as string,
-  },
 });
 
 const runtime = createRuntime({

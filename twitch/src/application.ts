@@ -42,7 +42,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
   async init(ctx: TwitchApiContext) {
     const dbBaseURL = ctx.services.dbProxy.client.baseURL;
     const twitchClient = new TwitchClient({
-      applicationId: ctx.config.getConfig("woofx3ApplicationId") as string,
+      applicationId: "",
       channel: ctx.config.getConfig("woofx3TwitchChannelName") as string,
       getSetting: async (req) => {
         const response = await GetSetting(req, { baseURL: dbBaseURL });
