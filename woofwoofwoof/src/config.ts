@@ -11,7 +11,6 @@ export const WoofEnvSchema = z.object({
   woofx3BarkloaderWsUrl: z.string().min(1, "barkloaderWsUrl is required in .woofx3.json"),
   woofx3BarkloaderKey: z.string().min(1, "barkloaderKey is required in .woofx3.json"),
   woofx3DatabaseProxyUrl: z.string().min(1, "databaseProxyUrl is required in .woofx3.json"),
-  woofx3ApplicationId: z.string().min(1, "APPLICATION_ID is required"),
   woofx3TwitchClientId: z.string().min(1, "TWITCH_WOLFY_CLIENT_ID is required"),
   woofx3TwitchClientSecret: z.string().min(1, "TWITCH_WOLFY_CLIENT_SECRET is required"),
   woofx3RootPath: z.string().optional(),

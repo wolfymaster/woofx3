@@ -31,9 +31,6 @@ const messageBusService = new MessageBusService(bus);
 const logger = createServiceLogger({
   serviceName: "woofwoofwoof",
   logDir: path.join((loadedConfig.getConfig("woofx3RootPath") as string | undefined) ?? process.cwd(), "logs"),
-  context: {
-    applicationId: loadedConfig.getConfig("woofx3ApplicationId") as string,
-  },
 });
 
 const runtime = createRuntime({
@@ -58,7 +55,6 @@ const runtime = createRuntime({
     application.register(
       "twitchChat",
       new TwitchChatClientService({
-        applicationId: config.getConfig("woofx3ApplicationId") as string,
         channel: config.getConfig("woofx3TwitchChannelName") as string,
         credentials: {
           clientId: config.getConfig("woofx3TwitchClientId") as string,

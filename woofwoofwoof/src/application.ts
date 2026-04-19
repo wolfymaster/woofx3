@@ -91,11 +91,10 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
     );
     ctx.logger.info(chalk.yellow("####################################################### \n"));
 
-    const applicationId = ctx.config.getConfig("woofx3ApplicationId") as string;
     const db = ctx.services.db.client;
 
     const commands = await db.listCommands({
-      applicationId,
+      applicationId: "",
       includeDisabled: false,
     });
     ctx.logger.info("after list commands");
@@ -118,7 +117,7 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
 
     ctx.commander.add("grantcommands", async (text: string, user?: string) => {
       await db.addUserToResource({
-        applicationId,
+        applicationId: "",
         username: text,
         resource: "command/*",
         role: "moderator",
@@ -128,7 +127,7 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
 
     ctx.commander.add("revokecommands", async (text: string, user?: string) => {
       await db.removeUserFromResource({
-        applicationId,
+        applicationId: "",
         username: text,
         resource: "command/*",
         role: "moderator",

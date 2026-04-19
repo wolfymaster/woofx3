@@ -2,7 +2,6 @@ import type { Service } from "@woofx3/common/runtime";
 import TwitchClient, { type ChatClient, type GetSettingFn, type TwitchAuthCredentials } from "@woofx3/twitch";
 
 export interface TwitchChatConfig {
-  applicationId: string;
   channel: string;
   credentials: TwitchAuthCredentials;
   getSetting: GetSettingFn;
