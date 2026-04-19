@@ -12,12 +12,7 @@
 // "capnweb" directly — RpcTarget is re-exported below so local interfaces
 // can extend it without a second dependency.
 
-import {
-  RpcTarget,
-  type RpcCompatible,
-  newHttpBatchRpcSession,
-  newWebSocketRpcSession,
-} from "capnweb";
+import { newHttpBatchRpcSession, newWebSocketRpcSession, type RpcCompatible, RpcTarget } from "capnweb";
 import type { ApiGatewayContract } from "./rpc";
 
 /** Capnweb's structural RpcTarget marker, re-exported so consumers tag
@@ -90,7 +85,7 @@ export function createEngineGatewaySession(instanceUrl: string): ApiGatewayContr
 export function createEngineSession<T extends RpcCompatible<T>>(
   instanceUrl: string,
   clientId: string,
-  clientSecret: string,
+  clientSecret: string
 ): T {
   const gateway = createEngineGatewaySession(instanceUrl);
   // Not awaited — pipelined into the same HTTP batch as the caller's API call.
@@ -124,7 +119,7 @@ export function createEngineBrowserSession<T extends RpcCompatible<T>>(
   instanceUrl: string,
   clientId: string,
   clientSecret: string,
-  fallbackProtocol: "ws" | "wss" = "ws",
+  fallbackProtocol: "ws" | "wss" = "ws"
 ): EngineBrowserSession<T> {
   const wsUrl = engineWebSocketUrl(instanceUrl, fallbackProtocol);
   const gateway = newWebSocketRpcSession<ApiGatewayContract>(wsUrl);

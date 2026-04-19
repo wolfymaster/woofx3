@@ -9,7 +9,7 @@ This platform provides a complete ecosystem for streaming and content creation, 
 - **Real-time Chat Integration**: Twitch chatbot with smart commands and automation
 - **Workflow Management**: Temporal-based workflow orchestration for streaming operations  
 - **Viewer Engagement**: Permissions system, rewards, and interactive features
-- **Plugin Architecture**: Extensible plugin systems in TypeScript/Lua and Rust
+- **Plugin Architecture**: Extensible Rust plugin system with Lua/JS module sandboxing
 - **Multi-Frontend Support**: Primary streaming interface, Twitch extensions, and streamer management UI
 - **Message Bus Abstraction**: Unified messaging system with NATS and WebSocket backends
 
@@ -30,7 +30,7 @@ This platform provides a complete ecosystem for streaming and content creation, 
 | **auth/** | Go | Authentication via SuperTokens | - |
 | **db/** | Go | Database proxy and API | - |
 | **permissions/** | Go | Viewer permissions management | db |
-| **twitch/** | Bun/TypeScript | Twitch API integration | db, barkloader-rust, wooflow |
+| **twitch/** | Bun/TypeScript | Twitch API integration | db, barkloader, wooflow |
 | **reward/** | Bun/TypeScript | Viewer rewards system | TBD |
 | **stream/** | Go | Voice control and transcription | TBD |
 | **wooflow/** | Go | Workflow management (Temporal) | temporal-server |
@@ -47,8 +47,7 @@ This platform provides a complete ecosystem for streaming and content creation, 
 
 | System | Technology | Purpose | Dependencies |
 |--------|------------|---------|-------------|
-| **barkloader/** | Bun/TypeScript + Lua | Plugin module system | wooflow |
-| **barkloader-rust/** | Rust | High-performance plugin system | wooflow |
+| **barkloader/** | Rust | Module/plugin system with sandboxed Lua and QuickJS runtimes | wooflow |
 
 ### Shared Libraries
 
@@ -95,7 +94,7 @@ The application uses `process-compose.yml` to orchestrate all services with prop
 
 ```yaml
 # Core services start first
-temporal-server → wooflow → barkloader/barkloader-rust
+temporal-server → wooflow → barkloader
 db → permissions, twitch, woofwoofwoof
 # Frontend depends on backend readiness  
 woofwoofwoof → streamlabs
@@ -135,8 +134,8 @@ The platform gracefully handles missing external services:
 ### Languages & Runtimes
 - **TypeScript/JavaScript**: Bun runtime for backend services
 - **Go**: High-performance backend services
-- **Rust**: Plugin system and performance-critical components
-- **Lua**: Scripting for plugin system
+- **Rust**: Plugin system (barkloader) and performance-critical components
+- **Lua / JavaScript (QuickJS)**: Sandbox runtimes for user-authored plugin modules
 
 ### Frontend Technologies  
 - **React 18** - Component library

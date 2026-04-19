@@ -1,6 +1,6 @@
-import type { SharedLogger } from "@woofx3/common/logging";
 import type { CallbackEvent } from "@woofx3/api/webhooks";
 import { makeCallbackEnvelope } from "@woofx3/api/webhooks";
+import type { SharedLogger } from "@woofx3/common/logging";
 import type { DbClient } from "./db-client";
 
 // Re-export the shared webhook types so existing engine-side importers
@@ -109,7 +109,7 @@ export class WebhookClient {
 
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (callbackToken) {
-        headers["Authorization"] = `Bearer ${callbackToken}`;
+        headers.Authorization = `Bearer ${callbackToken}`;
       }
 
       const response = await fetch(url, {

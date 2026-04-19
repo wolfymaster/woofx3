@@ -34,6 +34,7 @@ const (
 	SubjectModuleDelete            Subject = "module.change.delete"
 	SubjectModuleState             Subject = "module.change.state"
 	SubjectModuleTriggerRegistered Subject = "module.trigger.registered"
+	SubjectModuleActionRegistered  Subject = "module.action.registered"
 
 	// System events
 	SubjectHeartbeat    Subject = "HEARTBEAT"

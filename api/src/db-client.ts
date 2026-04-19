@@ -3,8 +3,8 @@ import * as clientPb from "@woofx3/db/client.pb";
 import * as command from "@woofx3/db/command.pb";
 import type * as common from "@woofx3/db/common.pb";
 import * as module from "@woofx3/db/module.pb";
-import type * as module_trigger from "@woofx3/db/module_trigger.pb";
 import type * as module_action from "@woofx3/db/module_action.pb";
+import type * as module_trigger from "@woofx3/db/module_trigger.pb";
 import * as setting from "@woofx3/db/setting.pb";
 import * as treat from "@woofx3/db/treat.pb";
 import * as user from "@woofx3/db/user.pb";
@@ -78,10 +78,7 @@ export class DbClient {
   }
 
   async listModules(stateFilter?: string): Promise<module.Module[]> {
-    const resp = await module.ListModules(
-      { state: stateFilter ?? "" },
-      this.config,
-    );
+    const resp = await module.ListModules({ state: stateFilter ?? "" }, this.config);
     return resp.modules;
   }
 
@@ -107,7 +104,7 @@ export class DbClient {
   async listTriggers(createdByType?: string, createdByRef?: string): Promise<module_trigger.Trigger[]> {
     const resp = await module.ListTriggers(
       { createdByType: createdByType ?? "", createdByRef: createdByRef ?? "" },
-      this.config,
+      this.config
     );
     return resp.triggers;
   }
@@ -115,7 +112,7 @@ export class DbClient {
   async listActions(createdByType?: string, createdByRef?: string): Promise<module_action.Action[]> {
     const resp = await module.ListActions(
       { createdByType: createdByType ?? "", createdByRef: createdByRef ?? "" },
-      this.config,
+      this.config
     );
     return resp.actions;
   }

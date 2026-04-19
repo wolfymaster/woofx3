@@ -7,7 +7,7 @@ Orientation for automated coding agents in the **woofx3** mono-repository (strea
 Subsystem APIs, workflow schema, barkloader/module format, and service layout are documented under **`docs/`** as **VitePress** (`docs/package.json`).
 
 - Entry: `docs/index.md`
-- Areas: `docs/workflow/`, `docs/barkloader-rust/`, `docs/woofwoofwoof/`, `docs/services/`, legacy `docs/barkloader/` where noted
+- Areas: `docs/workflow/`, `docs/barkloader/`, `docs/woofwoofwoof/`, `docs/services/`
 
 ```bash
 cd docs && bun run docs
@@ -34,7 +34,7 @@ Languages: **TypeScript (Bun)** on edges/integrations; **Rust** and **Go** for h
 
 - **TypeScript/Bun projects** (e.g., `streamlabs/`): Run `bun run <script>` or `bun run typecheck` / `bun run lint`
 - **Go projects** (e.g., `wooflow/`): Run `go run main.go` or `go build`
-- **Rust projects** (e.g., `barkloader-rust/`): Run `cargo build` / `cargo test`
+- **Rust projects** (e.g., `barkloader/`): Run `cargo build` / `cargo test`
 - **Database migrations**: Use `make migrate-up` / `make migrate-down` (requires Go)
 
 ### Generating protobuf code
@@ -52,7 +52,7 @@ Always rebuild after regenerating proto code to catch any compile errors:
 
 ```bash
 cd db && go build ./...           # Verify Go build
-cd ../barkloader-rust && cargo build  # Verify Rust build
+cd ../barkloader && cargo build  # Verify Rust build
 ```
 
 ### Client consistency
@@ -65,7 +65,7 @@ Clients exist in **three languages**: TypeScript, Go, and Rust. Some are generat
 Common hand-written clients:
 - `shared/clients/typescript/barkloader/index.ts`
 - `shared/clients/golang/barkloader/client.go`
-- (Rust uses the barkloader-rust server directly)
+- (Rust uses the barkloader server directly)
 
 ### Configuration
 

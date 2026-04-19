@@ -10,9 +10,13 @@ processes:
     working_dir: api
 
   barkloader:
-    command: cargo run .
+    command: cargo build -p barkloader && ./target/debug/barkloader
     description: Plugin Module System
-    working_dir: barkloader-rust
+    working_dir: barkloader
+    shutdown:
+      signal: 15
+      timeout_seconds: 10
+    log_location: logs/barkloader.log
 
   cloudflare:
     command: cloudflared tunnel --url http://localhost:9001

@@ -18,7 +18,7 @@ Woofx3 consists of the following tools:
 Subsystem behavior, public APIs, module formats, and workflow design are documented under **`docs/`** as a **VitePress** site (see `docs/package.json`). Use it together with this file when you need service-level depth beyond the mono-repo overview.
 
 - **Entry:** `docs/index.md`
-- **Major sections:** `docs/workflow/` (engine schema, execution, API), `docs/barkloader-rust/` (modules, sandbox, API), `docs/woofwoofwoof/` (application and services), `docs/services/` (shared runtime, CloudEvents), legacy `docs/barkloader/` where noted
+- **Major sections:** `docs/workflow/` (engine schema, execution, API), `docs/barkloader/` (modules, sandbox, API), `docs/woofwoofwoof/` (application and services), `docs/services/` (shared runtime, CloudEvents)
 
 ```bash
 cd docs && bun run docs           # VitePress dev
@@ -43,7 +43,7 @@ This project makes heavy use of Typescript (Bun), Rust, and Golang. Core service
 
 - **TypeScript/Bun projects** (e.g., `streamlabs/`): Run `bun run <script>` or `bun run typecheck` / `bun run lint`
 - **Go projects** (e.g., `wooflow/`): Run `go run main.go` or `go build`
-- **Rust projects** (e.g., `barkloader-rust/`): Run `cargo build` / `cargo test`
+- **Rust projects** (e.g., `barkloader/`): Run `cargo build` / `cargo test`
 - **Database migrations**: Use `make migrate-up` / `make migrate-down` (requires Go) 
 
 ### Generating protobuf code
@@ -61,7 +61,7 @@ Always rebuild after regenerating proto code to catch any compile errors:
 
 ```bash
 cd db && go build ./...
-cd ../barkloader-rust && cargo build
+cd ../barkloader && cargo build
 ```
 
 ### Client consistency
@@ -74,7 +74,7 @@ Clients exist in **three languages**: TypeScript, Go, and Rust. Some are generat
 Common hand-written clients:
 - `shared/clients/typescript/barkloader/index.ts`
 - `shared/clients/golang/barkloader/client.go`
-- (Rust uses the barkloader-rust server directly)
+- (Rust uses the barkloader server directly)
 
 ### Configuration
 

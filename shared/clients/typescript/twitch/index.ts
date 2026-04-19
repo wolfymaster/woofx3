@@ -1,7 +1,6 @@
-import { GetSetting } from "@client/setting.pb";
 import { ApiClient, type HelixUser } from "@twurple/api";
-import { RefreshingAuthProvider } from "@twurple/auth";
 import type { AccessTokenWithUserId } from "@twurple/auth";
+import { RefreshingAuthProvider } from "@twurple/auth";
 import { ChatClient } from "@twurple/chat";
 import { EventSubWsListener } from "@twurple/eventsub-ws";
 
@@ -9,10 +8,12 @@ export type { ApiClient } from "@twurple/api";
 export type { ChatClient, ChatMessage } from "@twurple/chat";
 export type { EventSubWsListener } from "@twurple/eventsub-ws";
 
+export type GetSettingFn = (req: { key: string; applicationId: string }) => Promise<{ setting: { value: { stringValue?: string } } }>;
+
 export type TwitchClientArgs = {
   applicationId: string;
   channel: string;
-  databaseURL: string;
+  getSetting: GetSettingFn;
 };
 
 export type TwitchAuthCredentials = {
@@ -21,14 +22,11 @@ export type TwitchAuthCredentials = {
   redirectUri: string;
 };
 
-async function GetBroadcasterToken(applicationId: string, databaseUrl: string): Promise<AccessTokenWithUserId> {
-  const response = await GetSetting(
-    {
-      applicationId,
-      key: "twitch_token",
-    },
-    { baseURL: databaseUrl }
-  );
+async function GetBroadcasterToken(applicationId: string, getSetting: GetSettingFn): Promise<AccessTokenWithUserId> {
+  const response = await getSetting({
+    applicationId,
+    key: "twitch_token",
+  });
   const token = response.setting.value.stringValue;
   if (!token) {
     throw new Error("Missing broadcaster token in db proxy setting: twitch_token");
@@ -112,7 +110,7 @@ export default class TwitchClient {
       console.error(error);
     });
 
-    const response = await GetBroadcasterToken(this.args.applicationId, this.args.databaseURL);
+    const response = await GetBroadcasterToken(this.args.applicationId, this.args.getSetting);
     await authProvider.addUserForToken(response, ["chat"]);
 
     return authProvider;

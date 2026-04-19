@@ -1,8 +1,8 @@
 import type {
+  ActionDefinition,
   ModuleActionRegisteredEvent,
   ModuleTriggerRegisteredEvent,
   TriggerDefinition,
-  ActionDefinition,
 } from "./webhook-client";
 
 interface RawTrigger {
@@ -72,9 +72,10 @@ function readPayload(ce: Record<string, unknown>): RawModuleRegistered {
   return ce as RawModuleRegistered;
 }
 
-export function parseModuleTriggerRegistered(
-  ce: Record<string, unknown>,
-): { clientId: string; event: ModuleTriggerRegisteredEvent } {
+export function parseModuleTriggerRegistered(ce: Record<string, unknown>): {
+  clientId: string;
+  event: ModuleTriggerRegisteredEvent;
+} {
   const payload = readPayload(ce);
   const rawTriggers = Array.isArray(payload.triggers) ? payload.triggers : [];
   return {
@@ -89,9 +90,10 @@ export function parseModuleTriggerRegistered(
   };
 }
 
-export function parseModuleActionRegistered(
-  ce: Record<string, unknown>,
-): { clientId: string; event: ModuleActionRegisteredEvent } {
+export function parseModuleActionRegistered(ce: Record<string, unknown>): {
+  clientId: string;
+  event: ModuleActionRegisteredEvent;
+} {
   const payload = readPayload(ce);
   const rawActions = Array.isArray(payload.actions) ? payload.actions : [];
   return {
