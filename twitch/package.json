@@ -15,6 +15,10 @@
     "winston": "^3.17.0"
   },
   "scripts": {
-    "start": "bun run src/api.ts"
+    "start": "bun run src/api.ts",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
   }
 }

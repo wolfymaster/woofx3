@@ -13,7 +13,8 @@
     "twirpscript": "^0.0.69"
   },
   "scripts": {
-    "start": "bun run src/woofwoofwoof.ts"
+    "start": "bun run src/woofwoofwoof.ts",
+    "test": "bun test"
   },
   "bin": {
     "woofwoofwoof": "./index.ts"
