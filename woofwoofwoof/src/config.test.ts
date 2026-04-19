@@ -8,7 +8,6 @@ const baseValid = {
   woofx3BarkloaderWsUrl: "wss://barkloader/ws",
   woofx3BarkloaderKey: "key",
   woofx3DatabaseProxyUrl: "http://db-proxy",
-  woofx3ApplicationId: "app-id",
   woofx3TwitchClientId: "twitch-client-id",
   woofx3TwitchClientSecret: "twitch-secret",
 };

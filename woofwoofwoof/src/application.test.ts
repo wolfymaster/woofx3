@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { EventType } from "@woofx3/common/cloudevents/Twitch";
 import type { Command } from "@woofx3/db/command.pb";
-import WoofWoofWoof from "./application";
 import type { WoofWoofWoofServices } from "./application";
+import WoofWoofWoof from "./application";
 
 type InitCtx = Parameters<WoofWoofWoof["init"]>[0];
 
@@ -10,7 +10,9 @@ function decodeCommandPayload(data: Uint8Array): { command: string; args: Record
   return JSON.parse(new TextDecoder().decode(data)) as { command: string; args: Record<string, unknown> };
 }
 
-function getChatHandler(base: { subscriptions: { eventType: string; handler: (msg: unknown) => void | Promise<void> }[] }) {
+function getChatHandler(base: {
+  subscriptions: { eventType: string; handler: (msg: unknown) => void | Promise<void> }[];
+}) {
   const chatSub = base.subscriptions.find((s) => s.eventType === EventType.ChatMessage);
   expect(chatSub).toBeDefined();
   if (!chatSub) {
@@ -80,7 +82,6 @@ function buildTestContext(options: {
     getConfig: (key: string) => {
       const m: Record<string, string> = {
         woofx3TwitchChannelName: "testchannel",
-        woofx3ApplicationId: "app-1",
         spotifyClientId: "",
         spotifyClientSecret: "",
         spotifyAccessToken: "",

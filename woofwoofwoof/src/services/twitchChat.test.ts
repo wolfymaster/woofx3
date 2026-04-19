@@ -31,10 +31,9 @@ describe("TwitchChatClientService", () => {
 
   test("starts disconnected and exposes stable service identity for health/runtime", () => {
     const svc = new TwitchChatClientService({
-      applicationId: "app-1",
       channel: "chan",
       credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
-      getSetting: async () => ({ setting: { value: {} } }),
+      getSetting: async () => undefined,
     });
 
     expect(svc.name).toBe("twitchchat");
@@ -43,10 +42,9 @@ describe("TwitchChatClientService", () => {
     expect(svc.healthcheck).toBe(false);
   });
 
-  test("connect wires Twitch client with application, channel, and settings resolver, then marks healthy and connected", async () => {
-    const getSetting = mock(async () => ({ setting: { value: {} } }));
+  test("connect wires Twitch client with channel and settings resolver, then marks healthy and connected", async () => {
+    const getSetting = mock(async (_key: string): Promise<string | undefined> => undefined);
     const svc = new TwitchChatClientService({
-      applicationId: "app-1",
       channel: "mychannel",
       credentials: { clientId: "cid", clientSecret: "sec", redirectUri: "http://r" },
       getSetting,
@@ -55,7 +53,6 @@ describe("TwitchChatClientService", () => {
     await svc.connect();
 
     expect(lastConstructedArgs).toEqual({
-      applicationId: "app-1",
       channel: "mychannel",
       getSetting,
     });
@@ -71,10 +68,9 @@ describe("TwitchChatClientService", () => {
 
   test("connect is idempotent: does not build a second client or reconnect chat", async () => {
     const svc = new TwitchChatClientService({
-      applicationId: "app-1",
       channel: "c",
       credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
-      getSetting: async () => ({ setting: { value: {} } }),
+      getSetting: async () => undefined,
     });
 
     await svc.connect();
@@ -86,10 +82,9 @@ describe("TwitchChatClientService", () => {
 
   test("disconnect tears down chat and clears connected/health state", async () => {
     const svc = new TwitchChatClientService({
-      applicationId: "app-1",
       channel: "c",
       credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
-      getSetting: async () => ({ setting: { value: {} } }),
+      getSetting: async () => undefined,
     });
     await svc.connect();
 
@@ -102,10 +97,9 @@ describe("TwitchChatClientService", () => {
 
   test("disconnect when already disconnected is a safe no-op", async () => {
     const svc = new TwitchChatClientService({
-      applicationId: "app-1",
       channel: "c",
       credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
-      getSetting: async () => ({ setting: { value: {} } }),
+      getSetting: async () => undefined,
     });
 
     await svc.disconnect();
@@ -115,10 +109,9 @@ describe("TwitchChatClientService", () => {
 
   test("disconnect after connect is idempotent: quit is not called twice", async () => {
     const svc = new TwitchChatClientService({
-      applicationId: "app-1",
       channel: "c",
       credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
-      getSetting: async () => ({ setting: { value: {} } }),
+      getSetting: async () => undefined,
     });
     await svc.connect();
     await svc.disconnect();
