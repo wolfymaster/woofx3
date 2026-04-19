@@ -274,7 +274,6 @@ export const WoofEnvSchema = z.object({
   woofx3TwitchChannelName: z.string().min(1),
   woofx3BarkloaderWsUrl: z.string().min(1),
   woofx3DatabaseProxyUrl: z.string().min(1),
-  applicationId: z.string().min(1),
   // ... other fields
 });
 

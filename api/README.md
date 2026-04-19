@@ -22,10 +22,15 @@ The API server requires the following environment variables:
 
 - `API_PORT`: Port to run the server on (default: 8080)
 - `DATABASE_PROXY_URL`: URL of the database proxy service (required)
-- `APPLICATION_ID`: Application ID for the current instance (required)
 - `MESSAGE_BUS_URL`: NATS server URL (default: nats://localhost:4222)
 - `MESSAGE_BUS_JWT`: Optional JWT for NATS authentication
 - `MESSAGE_BUS_NKEY`: Optional NKey seed for NATS authentication
+
+> Note: the default `applicationId` is no longer an env var. It is created (or
+> recovered) on first UI onboarding through `api.registerClient(description, { userId })`
+> and returned to the caller. The server warms this value at startup when a default
+> application already exists; otherwise it is populated lazily on the first
+> `registerClient` call.
 
 ## Running the Server
 

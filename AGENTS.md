@@ -87,18 +87,23 @@ use woofx3_runtime::Config;
 let config = Config::load()?;
 
 // Get value - checks WOOFX3_* env first, then config file
-let value = config.get("applicationId");
+let value = config.get("barkloaderKey");
 ```
 
 Required config validation should fail fast at startup:
 ```rust
 use crate::util::validate_required_config;
 
-if let Err(e) = validate_required_config(&["WOOFX3_BARKLOADER_KEY", "APPLICATION_ID"]) {
+if let Err(e) = validate_required_config(&["WOOFX3_BARKLOADER_KEY"]) {
     log::error!("{}", e);
     std::process::exit(1);
 }
 ```
+
+Note: `applicationId` is **not** a config value. It is created during UI onboarding
+via `api.registerClient(description, { userId })` and returned to the caller; services
+either carry it per-message (e.g. `api`, `barkloader`) or let the db-proxy resolve the
+server-side default when it is absent. Do not add it back to `.woofx3.json` or env.
 
 ## Git commits
 
