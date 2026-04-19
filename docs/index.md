@@ -4,6 +4,7 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 
 ## Services
 
+- **[Barkloader](/barkloader/)** - Rust-based module and plugin system that manages upload, manifest parsing, storage, and sandboxed execution of user-uploaded modules
 - **[Workflow Engine](/workflow/)** - Event-driven workflow execution engine with triggers, conditional branching, event aggregation, and sub-workflows
 - **[WoofWoofWoof](/woofwoofwoof/)** - A Twitch chatbot service that listens to messages, processes commands, and integrates with external services
 

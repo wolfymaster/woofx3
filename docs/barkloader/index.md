@@ -1,120 +1,136 @@
-# Barkloader (TypeScript)
+# Barkloader
 
-::: warning Deprecated
-This TypeScript barkloader is deprecated in favor of [Barkloader (Rust)](../barkloader-rust/), which provides module management, multi-runtime sandboxing, and a storage backend. This service will be removed in a future release.
-:::
+Module and plugin system for woofx3. Users upload modules as ZIP archives containing a manifest, executable code, commands, workflows, and assets that extend the platform.
 
-Lua script execution service built on Bun. Runs user-provided Lua scripts via Wasmoon (Lua compiled to WASM) and injects platform-specific globals that allow scripts to interact with Streamlabs, Twitch, and the command system over NATS.
+Barkloader is a Rust service built on Actix-web. It manages the full module lifecycle: upload, extraction, manifest parsing, storage, and sandboxed code execution. Other services invoke module functions over WebSocket.
+
+## Architecture
+
+```
+Upload Flow:                    Execution Flow:
+
+POST /functions                 WebSocket invoke
+  |                               |
+  v                               v
+FileService (extract zip)       ModuleRegistry.get_function()
+  |                               |  (RwLock<HashMap> read)
+  v                               v
+ModuleService (parse manifest)  FunctionExecutor.execute()
+  |                               |
+  v                               v
+Repository.create()             QuickJS/Lua runtime
+  |                               |
+  v                               v
+Store under modules/{id}/       Return result
+Archive to archives/{id}/
+  |
+  v                             Startup Flow:
+(Upload complete)
+                                Repository.list_prefix("modules/")
+Registration Flow:                |
+                                  v
+POST /functions/{name}/register Read code files from repository
+  |                               |
+  v                               v
+Repository.read() -> code       ModuleRegistry.register()
+  |                               |
+  v                               v
+ModuleRegistry.register()       Ready to serve
+  |
+  v
+Available for execution
+```
+
+Upload and registration are separate processes. Upload stores artifacts to the repository. Registration loads code into the in-memory `ModuleRegistry` so it is available for execution. At startup, barkloader scans the repository for previously stored modules and loads them automatically.
+
+## Crate Structure
+
+The project is a Cargo workspace with three crates:
+
+| Crate | Path | Purpose |
+|-------|------|---------|
+| **app** | `barkloader/app/` | HTTP server, routes, file processing, module service |
+| **lib_sandbox** | `barkloader/lib_sandbox/` | Sandboxed execution engine, runtime adapters, module registry |
+| **lib_repository** | `barkloader/lib_repository/` | Storage abstraction (filesystem, S3) |
 
 ## Configuration
 
+All configuration is via environment variables with sensible defaults.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `3005` | WebSocket server port |
-| `NATS_URL` | -- | NATS server connection URL |
+| `BARKLOADER_PORT` | `9653` | HTTP/WebSocket server port |
+| `MODULES_DIR` | `modules` | Directory for stored module files |
+| `REPOSITORY_TYPE` | `file` | Storage backend (`file` or `s3`) |
+| `RUST_LOG` | `info` | Log level filter |
 
-## WebSocket Protocol
+### S3 Configuration
 
-**Endpoint:** `ws://localhost:3005/`
+Required only when `REPOSITORY_TYPE=s3`.
 
-### Invoke
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `S3_BUCKET` | `barkloader-assets` | S3 bucket name |
+| `S3_PREFIX` | -- | Key prefix for all objects |
+| `AWS_REGION` / `AWS_DEFAULT_REGION` | -- | AWS region |
+| `AWS_ACCESS_KEY_ID` / `AWS_ACCESS_KEY` | -- | AWS access key |
+| `AWS_SECRET_ACCESS_KEY` / `AWS_SECRET_KEY` | -- | AWS secret key |
+| `S3_ENDPOINT` | -- | Custom endpoint (for MinIO/LocalStack) |
+| `S3_FORCE_PATH_STYLE` | `false` | Enable path-style bucket access |
 
-**Client -> Server:**
+A `.env` file is loaded automatically if present.
 
-```json
-{
-  "type": "invoke",
-  "data": {
-    "func": "myfunction",
-    "args": ["arg1", "arg2"]
-  }
+## Server Binding
+
+The server binds to `127.0.0.1` only -- it is not exposed externally by default. This is intentional since barkloader is an internal service accessed by other woofx3 services over the local network.
+
+## Client Library
+
+Other services connect via the shared `BarkloaderClient` (`@woofx3/barkloader`):
+
+```typescript
+import BarkloaderClient from "@woofx3/barkloader";
+
+const client = new BarkloaderClient({
+  wsUrl: "ws://localhost:9653/ws",
+  onOpen: () => console.log("connected"),
+  onClose: () => console.log("disconnected"),
+  onError: (err) => console.error(err),
+  reconnectTimeout: 5000,
+  maxRetries: Infinity,
+});
+
+client.connect();
+
+client.registerHandler("onMessage", (msg) => {
+  console.log(msg.command, msg.args);
+});
+
+client.send(JSON.stringify({
+  type: "invoke",
+  data: { function: "mymodule/greet", args: { name: "wolfy" } }
+}));
+```
+
+### BarkloaderClientConfig
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `wsUrl` | string | -- | WebSocket URL to connect to |
+| `onOpen` | EventListener | -- | Connection opened callback |
+| `onClose` | EventListener | -- | Connection closed callback |
+| `onError` | EventListener | -- | Error callback |
+| `reconnectTimeout` | number | `5000` | Milliseconds between reconnect attempts |
+| `maxRetries` | number | `Infinity` | Maximum reconnection attempts |
+| `onReconnectAttempt` | function | -- | Called on each reconnect attempt with `(attempt, maxRetries)` |
+
+### BarkloaderMessageResponse
+
+```typescript
+interface BarkloaderMessageResponse {
+  args: Record<string, any>;
+  command: string;
+  error: string;
+  message: string;
 }
 ```
-
-The `func` field maps to a file at `lua/{func}.lua` on disk.
-
-**Server -> Client (success):**
-
-```json
-{
-  "error": false,
-  "command": "write_message",
-  "args": {
-    "message": "return value from main()"
-  }
-}
-```
-
-**Server -> Client (error):**
-
-```json
-{
-  "error": true,
-  "message": "Error description",
-  "received": "the original message"
-}
-```
-
-## Lua Globals
-
-Scripts have access to injected globals that publish messages to NATS as side effects.
-
-### httpRequest(url, method, opts)
-
-Make an HTTP request.
-
-```lua
-local response = httpRequest("https://api.example.com", "GET", { headers = {} })
-```
-
-### environment(key)
-
-Read an environment variable.
-
-```lua
-local token = environment("API_TOKEN")
-```
-
-### stream_alert(args)
-
-Send an alert to Streamlabs/OBS. Publishes to NATS subject `slobs`.
-
-```lua
-stream_alert({ audioUrl = "https://example.com/sound.mp3" })
-```
-
-### twitch(args)
-
-Trigger a Twitch API command. Publishes to NATS subject `twitchapi`.
-
-```lua
-twitch({ time = "30s" })
-```
-
-### setTimer(args)
-
-Set a countdown timer in Streamlabs. Publishes to NATS subject `slobs`.
-
-```lua
-setTimer({ id = "timer-1", valueInSeconds = "120" })
-```
-
-### setCommand(args)
-
-Register a chat command in the database. Publishes to NATS subject `woofwoofwoof`.
-
-```lua
-setCommand({ name = "hello", response = "Hello, world!", type = "text" })
-```
-
-Command types: `text`, `function`, `func`.
-
-## NATS Subjects
-
-The TypeScript barkloader publishes to these subjects. It does not subscribe to any.
-
-| Subject | Trigger | Payload |
-|---------|---------|---------|
-| `slobs` | `stream_alert()`, `setTimer()` | `{ command: "alert_message" \| "setTime", args: {...} }` |
-| `twitchapi` | `twitch()` | `{ command: "clip", args: {...} }` |
-| `woofwoofwoof` | `setCommand()` | `{ command: "add_command", args: {...} }` |
