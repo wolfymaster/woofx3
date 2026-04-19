@@ -1,6 +1,6 @@
+import { describe, expect, mock, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
-import { describe, expect, mock, test } from "bun:test";
 import type { TwitchApiContext } from "./application";
 
 function subscriptionStub(): EventSubSubscription {
@@ -35,7 +35,7 @@ class MockTwitchClient {
   init = mock(async () => {});
   ApiClient = mock(() => ({}));
   EventBusListener = mock(() => createMockListener());
-  broadcaster = mock(async () => ({ id: "broadcaster-1", displayName: "Stream" } as HelixUser));
+  broadcaster = mock(async () => ({ id: "broadcaster-1", displayName: "Stream" }) as HelixUser);
 }
 
 mock.module("@woofx3/twitch", () => ({
@@ -45,11 +45,10 @@ mock.module("@woofx3/twitch", () => ({
 const { default: TwitchApiApplication } = await import("./application");
 
 describe("TwitchApi application", () => {
-  test("init wires TwitchClient with app id, channel, and DB-backed getSetting; starts EventSub and subscribes to twitchapi", async () => {
+  test("init wires TwitchClient with channel and DB-backed getSetting; starts EventSub and subscribes to twitchapi", async () => {
     const subscribe = mock(async () => {});
     const getConfig = mock((key: string) => {
       const map: Record<string, string> = {
-        woofx3ApplicationId: "app-1",
         woofx3TwitchChannelName: "mychan",
         woofx3TwitchClientId: "cid",
         woofx3TwitchClientSecret: "sec",
@@ -78,9 +77,9 @@ describe("TwitchApi application", () => {
 
     expect(lastTwitchClientConfig).toEqual(
       expect.objectContaining({
-        applicationId: "app-1",
+        applicationId: "",
         channel: "mychan",
-      }),
+      })
     );
     expect(typeof (lastTwitchClientConfig as { getSetting: unknown }).getSetting).toBe("function");
     expect(subscribe).toHaveBeenCalledWith("twitchapi", expect.any(Function));
@@ -105,11 +104,7 @@ describe("TwitchApi application", () => {
     const app = new TwitchApiApplication();
     const handler = (
       app as unknown as {
-        twitchApiMessageHandler(
-          ctx: TwitchApiContext,
-          command: string,
-          args: Record<string, string>,
-        ): Promise<boolean>;
+        twitchApiMessageHandler(ctx: TwitchApiContext, command: string, args: Record<string, string>): Promise<boolean>;
       }
     ).twitchApiMessageHandler.bind(app);
 
@@ -127,11 +122,7 @@ describe("TwitchApi application", () => {
     const app = new TwitchApiApplication();
     const handler = (
       app as unknown as {
-        twitchApiMessageHandler(
-          ctx: TwitchApiContext,
-          command: string,
-          args: Record<string, string>,
-        ): Promise<boolean>;
+        twitchApiMessageHandler(ctx: TwitchApiContext, command: string, args: Record<string, string>): Promise<boolean>;
       }
     ).twitchApiMessageHandler.bind(app);
 

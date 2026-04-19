@@ -7,7 +7,6 @@ describe("TwitchEnvSchema", () => {
       woofx3MessagebusUrl: "nats://localhost:4222",
       woofx3TwitchChannelName: "mychannel",
       woofx3DatabaseProxyUrl: "http://db",
-      woofx3ApplicationId: "app",
       woofx3TwitchClientId: "cid",
       woofx3TwitchClientSecret: "sec",
     });
@@ -19,7 +18,6 @@ describe("TwitchEnvSchema", () => {
       woofx3MessagebusUrl: "",
       woofx3TwitchChannelName: "c",
       woofx3DatabaseProxyUrl: "http://db",
-      woofx3ApplicationId: "a",
       woofx3TwitchClientId: "i",
       woofx3TwitchClientSecret: "s",
     });
