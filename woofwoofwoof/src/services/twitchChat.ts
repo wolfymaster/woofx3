@@ -30,7 +30,6 @@ export default class TwitchChatClientService implements Service<ChatClient> {
     }
 
     const twitchClient = new TwitchClient({
-      applicationId: this.config.applicationId,
       channel: this.config.channel,
       getSetting: this.config.getSetting,
     });

@@ -59,20 +59,14 @@ mock.module("@twurple/eventsub-ws", () => ({
   },
 }));
 
-let TwitchClient: (typeof import("./index"))["default"];
+let TwitchClient: typeof import("./index")["default"];
 
 beforeAll(async () => {
   ({ default: TwitchClient } = await import("./index"));
 });
 
 function createGetSetting(tokenJson: string | undefined) {
-  const fn = mock(async (_req: { key: string; applicationId: string }) => {
-    return {
-      setting: {
-        value: { stringValue: tokenJson },
-      },
-    };
-  });
+  const fn = mock(async (_key: string) => tokenJson);
   return fn;
 }
 
@@ -91,7 +85,6 @@ describe("TwitchClient", () => {
   test("init loads the broadcaster token from settings and registers chat scope on the auth provider", async () => {
     const getSetting = createGetSetting(TOKEN_JSON);
     const client = new TwitchClient({
-      applicationId: "app-9",
       channel: "mychannel",
       getSetting,
     });
@@ -102,7 +95,7 @@ describe("TwitchClient", () => {
       redirectUri: "https://app/cb",
     });
 
-    expect(getSetting).toHaveBeenCalledWith({ applicationId: "app-9", key: "twitch_token" });
+    expect(getSetting).toHaveBeenCalledWith("twitch_token");
     expect(lastRefreshingAuthCredentials).toEqual({
       clientId: "cid",
       clientSecret: "sec",
@@ -118,19 +111,17 @@ describe("TwitchClient", () => {
   test("init fails fast when twitch_token is missing or empty in settings", async () => {
     const getSettingEmpty = createGetSetting(undefined);
     const client = new TwitchClient({
-      applicationId: "a",
       channel: "c",
       getSetting: getSettingEmpty,
     });
 
-    await expect(
-      client.init({ clientId: "x", clientSecret: "y", redirectUri: "z" }),
-    ).rejects.toThrow("Missing broadcaster token in db proxy setting: twitch_token");
+    await expect(client.init({ clientId: "x", clientSecret: "y", redirectUri: "z" })).rejects.toThrow(
+      "Missing broadcaster token in db proxy setting: twitch_token"
+    );
   });
 
   test("facade methods require init before exposing Twitch surfaces", async () => {
     const client = new TwitchClient({
-      applicationId: "a",
       channel: "who",
       getSetting: createGetSetting(TOKEN_JSON),
     });
@@ -142,7 +133,6 @@ describe("TwitchClient", () => {
 
   test("ApiClient is lazily created once and reused", async () => {
     const client = new TwitchClient({
-      applicationId: "a",
       channel: "who",
       getSetting: createGetSetting(TOKEN_JSON),
     });
@@ -158,7 +148,6 @@ describe("TwitchClient", () => {
 
   test("ChatClient is constructed for the configured channel with the authenticated session", async () => {
     const client = new TwitchClient({
-      applicationId: "a",
       channel: "streamername",
       getSetting: createGetSetting(TOKEN_JSON),
     });
@@ -174,7 +163,6 @@ describe("TwitchClient", () => {
 
   test("EventSub listener is lazily created once and shares the Helix ApiClient", async () => {
     const client = new TwitchClient({
-      applicationId: "a",
       channel: "who",
       getSetting: createGetSetting(TOKEN_JSON),
     });
@@ -190,7 +178,6 @@ describe("TwitchClient", () => {
 
   test("broadcaster resolves the Helix user for the configured channel name", async () => {
     const client = new TwitchClient({
-      applicationId: "a",
       channel: "DisplayName",
       getSetting: createGetSetting(TOKEN_JSON),
     });
@@ -206,7 +193,6 @@ describe("TwitchClient", () => {
     getUserByName.mockImplementationOnce(async () => null);
 
     const client = new TwitchClient({
-      applicationId: "a",
       channel: "ghost",
       getSetting: createGetSetting(TOKEN_JSON),
     });

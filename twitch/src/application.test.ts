@@ -77,7 +77,6 @@ describe("TwitchApi application", () => {
 
     expect(lastTwitchClientConfig).toEqual(
       expect.objectContaining({
-        applicationId: "",
         channel: "mychan",
       })
     );

@@ -8,10 +8,9 @@ export type { ApiClient } from "@twurple/api";
 export type { ChatClient, ChatMessage } from "@twurple/chat";
 export type { EventSubWsListener } from "@twurple/eventsub-ws";
 
-export type GetSettingFn = (req: { key: string; applicationId: string }) => Promise<{ setting: { value: { stringValue?: string } } }>;
+export type GetSettingFn = (key: string) => Promise<string | undefined>;
 
 export type TwitchClientArgs = {
-  applicationId: string;
   channel: string;
   getSetting: GetSettingFn;
 };
@@ -21,18 +20,6 @@ export type TwitchAuthCredentials = {
   clientSecret: string;
   redirectUri: string;
 };
-
-async function GetBroadcasterToken(applicationId: string, getSetting: GetSettingFn): Promise<AccessTokenWithUserId> {
-  const response = await getSetting({
-    applicationId,
-    key: "twitch_token",
-  });
-  const token = response.setting.value.stringValue;
-  if (!token) {
-    throw new Error("Missing broadcaster token in db proxy setting: twitch_token");
-  }
-  return JSON.parse(token) satisfies AccessTokenWithUserId;
-}
 
 export default class TwitchClient {
   private authProvider: RefreshingAuthProvider | null;
@@ -98,6 +85,14 @@ export default class TwitchClient {
     return user;
   }
 
+  private async getBroadcasterToken(): Promise<AccessTokenWithUserId> {
+    const token = await this.args.getSetting("twitch_token");
+    if (!token) {
+      throw new Error("Missing broadcaster token in db proxy setting: twitch_token");
+    }
+    return JSON.parse(token) satisfies AccessTokenWithUserId;
+  }
+
   private async authenticate(credentials: TwitchAuthCredentials): Promise<RefreshingAuthProvider> {
     const authProvider = new RefreshingAuthProvider(credentials);
 
@@ -110,7 +105,7 @@ export default class TwitchClient {
       console.error(error);
     });
 
-    const response = await GetBroadcasterToken(this.args.applicationId, this.args.getSetting);
+    const response = await this.getBroadcasterToken();
     await authProvider.addUserForToken(response, ["chat"]);
 
     return authProvider;

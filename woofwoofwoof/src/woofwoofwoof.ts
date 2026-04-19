@@ -65,15 +65,9 @@ const runtime = createRuntime({
           clientSecret: config.getConfig("woofx3TwitchClientSecret") as string,
           redirectUri: config.getConfig("woofx3TwitchRedirectUrl") as string,
         },
-        getSetting: async (req) => {
-          const response = await dbService.client.getSetting(req);
-          return {
-            setting: {
-              value: {
-                stringValue: response.setting.value.stringValue ?? undefined,
-              },
-            },
-          };
+        getSetting: async (key) => {
+          const response = await dbService.client.getSetting({ applicationId: "", key });
+          return response.setting.value.stringValue ?? undefined;
         },
       })
     );
