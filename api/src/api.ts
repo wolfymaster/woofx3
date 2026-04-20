@@ -66,8 +66,7 @@ interface WorkflowItem {
   description: string;
   accountId: string;
   isEnabled: boolean;
-  steps: Array<{ id: string; name: string; type: string; action?: string; parameters?: Record<string, unknown> }>;
-  trigger?: { type: string; event: string; condition?: Record<string, unknown> };
+  definition: WorkflowDefinition | null;
   stats: { runsToday: number; successRate: number };
   createdAt: string;
   updatedAt: string;
@@ -1438,28 +1437,21 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     applicationId?: string;
     enabled?: boolean;
     variables?: Record<string, string | undefined>;
-    createdAt?: { seconds?: bigint };
-    updatedAt?: { seconds?: bigint };
+    createdAt?: { seconds?: bigint; nanos?: number };
+    updatedAt?: { seconds?: bigint; nanos?: number };
   }): WorkflowItem {
-    const steps = wf.variables?._steps ? JSON.parse(wf.variables._steps) : [];
-    const trigger = wf.variables?._trigger ? JSON.parse(wf.variables._trigger) : undefined;
-    const createdAt = wf.createdAt?.seconds
-      ? new Date(Number(wf.createdAt.seconds) * 1000).toISOString()
-      : new Date().toISOString();
-    const updatedAt = wf.updatedAt?.seconds
-      ? new Date(Number(wf.updatedAt.seconds) * 1000).toISOString()
-      : new Date().toISOString();
+    const defRaw = wf.variables?._definition;
+    const definition: WorkflowDefinition | null = defRaw ? (JSON.parse(defRaw) as WorkflowDefinition) : null;
     return {
       id: wf.id ?? "",
       name: wf.name ?? "",
       description: wf.description ?? "",
       accountId: wf.applicationId ?? "",
       isEnabled: wf.enabled ?? false,
-      steps,
-      trigger,
+      definition,
       stats: { runsToday: 0, successRate: 100 },
-      createdAt,
-      updatedAt,
+      createdAt: timestampToIso(wf.createdAt),
+      updatedAt: timestampToIso(wf.updatedAt),
     };
   }
 

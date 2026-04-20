@@ -88,20 +88,6 @@ export interface PaginatedModules {
 
 // ==================== Workflows ====================
 
-export interface WorkflowStep {
-  id: string;
-  name: string;
-  type: string;
-  action?: string;
-  parameters?: Record<string, unknown>;
-}
-
-export interface WorkflowTrigger {
-  type: string;
-  event: string;
-  condition?: Record<string, unknown>;
-}
-
 export interface WorkflowStats {
   runsToday: number;
   successRate: number;
@@ -110,7 +96,10 @@ export interface WorkflowStats {
 /**
  * Workflow shape as returned by the engine's Api class (matches WorkflowItem
  * inside api/src/api.ts). `isEnabled` is the source-of-truth boolean;
- * `stats` and timestamps are always populated by the engine.
+ * `definition` is the canonical `WorkflowDefinition` JSON, or null if the
+ * row exists but has no definition stored yet (shouldn't happen for
+ * workflows created via the new RPC). `stats` and timestamps are always
+ * populated by the engine.
  */
 export interface Workflow {
   id: string;
@@ -118,8 +107,7 @@ export interface Workflow {
   description: string;
   accountId: string;
   isEnabled: boolean;
-  steps: WorkflowStep[];
-  trigger?: WorkflowTrigger;
+  definition: WorkflowDefinition | null;
   stats: WorkflowStats;
   createdAt: string;
   updatedAt: string;
