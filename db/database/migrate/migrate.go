@@ -24,6 +24,7 @@ func Migrate(db *gorm.DB) error {
 		migrations.CreateResourceReferencesTable(),
 		migrations.AddApplicationsIsDefault(),
 		migrations.AddUsersWoofx3UIUserID(),
+		migrations.AddUsersDeletedAt(),
 	})
 
 	return m.Migrate()
