@@ -38,11 +38,20 @@ impl HttpClient for NoopHttpClient {
     }
 }
 
+pub struct NoopChatSender;
+
+impl ChatSender for NoopChatSender {
+    fn send_message(&self, _text: &str) -> Result<(), String> {
+        Ok(())
+    }
+}
+
 pub fn noop_host_context() -> HostContext {
     HostContext {
         nats: Arc::new(NoopNatsPublisher),
         storage: Arc::new(NoopStorageClient),
         env: Arc::new(NoopEnvReader),
         http: Arc::new(NoopHttpClient),
+        chat: Arc::new(NoopChatSender),
     }
 }

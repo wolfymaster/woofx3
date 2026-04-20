@@ -201,8 +201,28 @@ fn build_ctx_object<'js>(
     build_storage_namespace(ctx, &ctx_obj, invocation)?;
     build_http_namespace(ctx, &ctx_obj, invocation)?;
     build_env_namespace(ctx, &ctx_obj, invocation)?;
+    build_chat_namespace(ctx, &ctx_obj, invocation)?;
 
     Ok(ctx_obj)
+}
+
+fn build_chat_namespace<'js>(
+    ctx: &Ctx<'js>,
+    ctx_obj: &Object<'js>,
+    invocation: &InvocationContext,
+) -> Result<(), Error> {
+    let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
+    let chat = Object::new(ctx.clone()).map_err(map)?;
+
+    let sender = invocation.host.chat.clone();
+    let send_message = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, text: String| -> rquickjs::Result<()> {
+        sender.send_message(&text).map_err(host_err)?;
+        Ok(())
+    }).map_err(map)?;
+    chat.set("sendMessage", send_message).map_err(map)?;
+
+    ctx_obj.set("chat", chat).map_err(map)?;
+    Ok(())
 }
 
 fn build_events_namespace<'js>(

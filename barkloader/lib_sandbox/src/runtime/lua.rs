@@ -221,5 +221,17 @@ fn build_lua_ctx(
     }
     ctx.set("env", env)?;
 
+    // chat namespace
+    let chat = lua.create_table()?;
+    {
+        let sender = invocation.host.chat.clone();
+        let send_message = lua.create_function(move |_lua, text: String| {
+            sender.send_message(&text).map_err(mlua::Error::RuntimeError)?;
+            Ok(())
+        })?;
+        chat.set("sendMessage", send_message)?;
+    }
+    ctx.set("chat", chat)?;
+
     Ok(ctx)
 }

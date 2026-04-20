@@ -21,12 +21,17 @@ pub trait HttpClient: Send + Sync {
     fn request(&self, url: &str, method: &str, opts: Value) -> Result<Value, String>;
 }
 
+pub trait ChatSender: Send + Sync {
+    fn send_message(&self, text: &str) -> Result<(), String>;
+}
+
 #[derive(Clone)]
 pub struct HostContext {
     pub nats: Arc<dyn NatsPublisher>,
     pub storage: Arc<dyn StorageClient>,
     pub env: Arc<dyn EnvReader>,
     pub http: Arc<dyn HttpClient>,
+    pub chat: Arc<dyn ChatSender>,
 }
 
 pub struct InvocationContext {

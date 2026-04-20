@@ -1,9 +1,10 @@
 use lib_sandbox::host::noop::noop_host_context;
+use lib_sandbox::host::ChatSender;
 use lib_sandbox::models::function::Function;
 use lib_sandbox::models::request::InvokeRequest;
 use lib_sandbox::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule, Sandbox};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 fn build_registry() -> Arc<ModuleRegistry> {
     let registry = Arc::new(ModuleRegistry::new());
@@ -259,4 +260,59 @@ fn test_ctx_event_data() {
 
     assert_eq!(result["has_event"], serde_json::json!(true));
     assert_eq!(result["amount"], serde_json::json!(500));
+}
+
+#[derive(Default)]
+struct CapturingChatSender {
+    sent: Mutex<Vec<String>>,
+}
+
+impl ChatSender for CapturingChatSender {
+    fn send_message(&self, text: &str) -> Result<(), String> {
+        self.sent.lock().unwrap().push(text.to_string());
+        Ok(())
+    }
+}
+
+#[test]
+fn test_ctx_chat_send_message_routes_to_host() {
+    let code = r#"function main(ctx) {
+    ctx.chat.sendMessage(ctx.event.text);
+    return { ok: true };
+}"#;
+
+    let registry = Arc::new(ModuleRegistry::new());
+    let mut functions = HashMap::new();
+    functions.insert(
+        "send".to_string(),
+        Function::new("send".to_string(), "send.js".to_string(), code.to_string(), false),
+    );
+    let module = RegisteredModule {
+        metadata: ModuleMetadata {
+            name: "chat_test".to_string(),
+            version: "1.0.0".to_string(),
+            installed_at: 0,
+            updated_at: 0,
+        },
+        functions,
+        state: ModuleState::Active,
+    };
+    registry.register_module("chat_test".to_string(), module).unwrap();
+
+    let capturing = Arc::new(CapturingChatSender::default());
+    let mut host_ctx = noop_host_context();
+    host_ctx.chat = capturing.clone();
+
+    let sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    let result = sandbox
+        .invoke(InvokeRequest {
+            function: "chat_test/send".to_string(),
+            event: serde_json::json!({ "text": "hi from sandbox" }),
+            user: None,
+        })
+        .unwrap();
+
+    assert_eq!(result["ok"], serde_json::json!(true));
+    let captured = capturing.sent.lock().unwrap();
+    assert_eq!(captured.as_slice(), &["hi from sandbox".to_string()]);
 }
