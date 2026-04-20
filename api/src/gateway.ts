@@ -49,22 +49,13 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     // userId at the RPC boundary maps to users.woofx3_ui_user_id on the engine side.
     const user = await this.db.findOrCreateByWoofx3UIUserId(userId);
 
+    console.log("user", user);
+
     let app = await this.db.getDefaultApplication();
     if (!app) {
-      try {
-        app = await this.db.createApplication({ name: "default", ownerId: user.id, isDefault: true });
-      } catch (err) {
-        // Either a unique-violation race (another concurrent onboarding call
-        // won) or a real failure. Re-read the default: if it now exists, a
-        // peer beat us to it — use that row. If it still doesn't exist, the
-        // original error was genuine; rethrow it.
-        this.logger.warn("createApplication failed; checking for concurrent onboarding", {
-          error: err instanceof Error ? err.message : String(err),
-        });
-        app = await this.db.getDefaultApplication();
-        if (!app) {
-          throw err;
-        }
+      app = await this.db.createApplication({ name: "default", ownerId: user.id, isDefault: true });
+      if (!app) {
+        throw new Error("Failed to create default application");
       }
     }
 
