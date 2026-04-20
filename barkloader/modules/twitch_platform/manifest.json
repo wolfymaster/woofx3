@@ -5,213 +5,18 @@
   "description": "Twitch EventSub subscription types as eventbus triggers. IDs are twitch.<EventSub subscription type>. See https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/",
   "triggers": [
     {
-      "id": "twitch.automod.message.hold",
-      "name": "Automod message hold",
-      "description": "Twitch EventSub: automod.message.hold",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "automod.message.hold",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.automod.message.update",
-      "name": "Automod message update",
-      "description": "Twitch EventSub: automod.message.update",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "automod.message.update",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.automod.settings.update",
-      "name": "Automod settings update",
-      "description": "Twitch EventSub: automod.settings.update",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "automod.settings.update",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.automod.terms.update",
-      "name": "Automod terms update",
-      "description": "Twitch EventSub: automod.terms.update",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "automod.terms.update",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.bits.use",
-      "name": "Channel Bits use",
-      "description": "Twitch EventSub: channel.bits.use",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.bits.use",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.update",
-      "name": "Channel update",
-      "description": "Twitch EventSub: channel.update",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.update",
-        "payload": "object"
-      }
-    },
-    {
       "id": "twitch.channel.follow",
       "name": "Channel follow",
       "description": "Twitch EventSub: channel.follow",
       "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.follow",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.ad_break.begin",
-      "name": "Channel ad break begin",
-      "description": "Twitch EventSub: channel.ad_break.begin",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.ad_break.begin",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.chat.clear",
-      "name": "Channel chat clear",
-      "description": "Twitch EventSub: channel.chat.clear",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.chat.clear",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.chat.clear_user_messages",
-      "name": "Channel chat clear user messages",
-      "description": "Twitch EventSub: channel.chat.clear_user_messages",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.chat.clear_user_messages",
-        "payload": "object"
-      }
+      "category": "platform.twitch"
     },
     {
       "id": "twitch.channel.chat.message",
       "name": "Channel chat message",
       "description": "Twitch EventSub: channel.chat.message",
       "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.chat.message",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.chat.message_delete",
-      "name": "Channel chat message delete",
-      "description": "Twitch EventSub: channel.chat.message_delete",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.chat.message_delete",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.chat.notification",
-      "name": "Channel chat notification",
-      "description": "Twitch EventSub: channel.chat.notification",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.chat.notification",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.chat_settings.update",
-      "name": "Channel chat settings update",
-      "description": "Twitch EventSub: channel.chat_settings.update",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.chat_settings.update",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.chat.user_message_hold",
-      "name": "Channel chat user message hold",
-      "description": "Twitch EventSub: channel.chat.user_message_hold",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.chat.user_message_hold",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.chat.user_message_update",
-      "name": "Channel chat user message update",
-      "description": "Twitch EventSub: channel.chat.user_message_update",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.chat.user_message_update",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.shared_chat.begin",
-      "name": "Channel shared chat begin",
-      "description": "Twitch EventSub: channel.shared_chat.begin",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.shared_chat.begin",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.shared_chat.update",
-      "name": "Channel shared chat update",
-      "description": "Twitch EventSub: channel.shared_chat.update",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.shared_chat.update",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.shared_chat.end",
-      "name": "Channel shared chat end",
-      "description": "Twitch EventSub: channel.shared_chat.end",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.shared_chat.end",
-        "payload": "object"
-      }
+      "category": "platform.twitch"
     },
     {
       "id": "twitch.channel.subscribe",
@@ -219,21 +24,30 @@
       "description": "Twitch EventSub: channel.subscribe",
       "type": "eventbus",
       "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.subscribe",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.subscription.end",
-      "name": "Channel subscription end",
-      "description": "Twitch EventSub: channel.subscription.end",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.subscription.end",
-        "payload": "object"
-      }
+      "allowVariants": true,
+      "schema": [
+        {
+          "id": "tier",
+          "label": "Subscription tier",
+          "type": "select",
+          "required": true,
+          "options": [
+            {
+              "value": "1000",
+              "label": "Tier 1"
+            },
+            {
+              "value": "2000",
+              "label": "Tier 2"
+            },
+            {
+              "value": "3000",
+              "label": "Tier 3"
+            }
+          ],
+          "defaultValue": "1000"
+        }
+      ]
     },
     {
       "id": "twitch.channel.subscription.gift",
@@ -241,21 +55,39 @@
       "description": "Twitch EventSub: channel.subscription.gift",
       "type": "eventbus",
       "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.subscription.gift",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.subscription.message",
-      "name": "Channel subscription message",
-      "description": "Twitch EventSub: channel.subscription.message",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.subscription.message",
-        "payload": "object"
-      }
+      "allowVariants": true,
+      "schema": [
+        {
+          "id": "tier",
+          "label": "Gift tier",
+          "type": "select",
+          "required": true,
+          "options": [
+            {
+              "value": "1000",
+              "label": "Tier 1"
+            },
+            {
+              "value": "2000",
+              "label": "Tier 2"
+            },
+            {
+              "value": "3000",
+              "label": "Tier 3"
+            }
+          ],
+          "defaultValue": "1000"
+        },
+        {
+          "id": "minQuantity",
+          "label": "Minimum gift count",
+          "type": "number",
+          "required": true,
+          "min": 1,
+          "defaultValue": 1,
+          "placeholder": "e.g. 5"
+        }
+      ]
     },
     {
       "id": "twitch.channel.cheer",
@@ -263,604 +95,86 @@
       "description": "Twitch EventSub: channel.cheer",
       "type": "eventbus",
       "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.cheer",
-        "payload": "object"
-      }
+      "schema": [
+        {
+          "id": "minBits",
+          "label": "Minimum bits",
+          "type": "number",
+          "required": true,
+          "min": 1,
+          "defaultValue": 100,
+          "placeholder": "e.g. 100"
+        }
+      ],
+      "allowVariants": true
     },
     {
       "id": "twitch.channel.raid",
       "name": "Channel raid",
       "description": "Twitch EventSub: channel.raid",
       "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.raid",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.ban",
-      "name": "Channel ban",
-      "description": "Twitch EventSub: channel.ban",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.ban",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.unban",
-      "name": "Channel unban",
-      "description": "Twitch EventSub: channel.unban",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.unban",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.unban_request.create",
-      "name": "Channel unban request create",
-      "description": "Twitch EventSub: channel.unban_request.create",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.unban_request.create",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.unban_request.resolve",
-      "name": "Channel unban request resolve",
-      "description": "Twitch EventSub: channel.unban_request.resolve",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.unban_request.resolve",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.moderate",
-      "name": "Channel moderate",
-      "description": "Twitch EventSub: channel.moderate",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.moderate",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.moderator.add",
-      "name": "Channel moderator add",
-      "description": "Twitch EventSub: channel.moderator.add",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.moderator.add",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.moderator.remove",
-      "name": "Channel moderator remove",
-      "description": "Twitch EventSub: channel.moderator.remove",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.moderator.remove",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.guest_star_session.begin",
-      "name": "Channel Guest Star session begin",
-      "description": "Twitch EventSub: channel.guest_star_session.begin",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.guest_star_session.begin",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.guest_star_session.end",
-      "name": "Channel Guest Star session end",
-      "description": "Twitch EventSub: channel.guest_star_session.end",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.guest_star_session.end",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.guest_star_guest.update",
-      "name": "Channel Guest Star guest update",
-      "description": "Twitch EventSub: channel.guest_star_guest.update",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.guest_star_guest.update",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.guest_star_settings.update",
-      "name": "Channel Guest Star settings update",
-      "description": "Twitch EventSub: channel.guest_star_settings.update",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.guest_star_settings.update",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.channel_points_automatic_reward_redemption.add",
-      "name": "Channel points automatic reward redemption add",
-      "description": "Twitch EventSub: channel.channel_points_automatic_reward_redemption.add",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.channel_points_automatic_reward_redemption.add",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.channel_points_custom_reward.add",
-      "name": "Channel points custom reward add",
-      "description": "Twitch EventSub: channel.channel_points_custom_reward.add",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.channel_points_custom_reward.add",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.channel_points_custom_reward.update",
-      "name": "Channel points custom reward update",
-      "description": "Twitch EventSub: channel.channel_points_custom_reward.update",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.channel_points_custom_reward.update",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.channel_points_custom_reward.remove",
-      "name": "Channel points custom reward remove",
-      "description": "Twitch EventSub: channel.channel_points_custom_reward.remove",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.channel_points_custom_reward.remove",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.channel_points_custom_reward_redemption.add",
-      "name": "Channel points custom reward redemption add",
-      "description": "Twitch EventSub: channel.channel_points_custom_reward_redemption.add",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.channel_points_custom_reward_redemption.add",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.channel_points_custom_reward_redemption.update",
-      "name": "Channel points custom reward redemption update",
-      "description": "Twitch EventSub: channel.channel_points_custom_reward_redemption.update",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.channel_points_custom_reward_redemption.update",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.poll.begin",
-      "name": "Channel poll begin",
-      "description": "Twitch EventSub: channel.poll.begin",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.poll.begin",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.poll.progress",
-      "name": "Channel poll progress",
-      "description": "Twitch EventSub: channel.poll.progress",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.poll.progress",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.poll.end",
-      "name": "Channel poll end",
-      "description": "Twitch EventSub: channel.poll.end",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.poll.end",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.prediction.begin",
-      "name": "Channel prediction begin",
-      "description": "Twitch EventSub: channel.prediction.begin",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.prediction.begin",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.prediction.progress",
-      "name": "Channel prediction progress",
-      "description": "Twitch EventSub: channel.prediction.progress",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.prediction.progress",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.prediction.lock",
-      "name": "Channel prediction lock",
-      "description": "Twitch EventSub: channel.prediction.lock",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.prediction.lock",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.prediction.end",
-      "name": "Channel prediction end",
-      "description": "Twitch EventSub: channel.prediction.end",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.prediction.end",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.suspicious_user.message",
-      "name": "Channel suspicious user message",
-      "description": "Twitch EventSub: channel.suspicious_user.message",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.suspicious_user.message",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.suspicious_user.update",
-      "name": "Channel suspicious user update",
-      "description": "Twitch EventSub: channel.suspicious_user.update",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.suspicious_user.update",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.vip.add",
-      "name": "Channel VIP add",
-      "description": "Twitch EventSub: channel.vip.add",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.vip.add",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.vip.remove",
-      "name": "Channel VIP remove",
-      "description": "Twitch EventSub: channel.vip.remove",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.vip.remove",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.warning.acknowledge",
-      "name": "Channel warning acknowledge",
-      "description": "Twitch EventSub: channel.warning.acknowledge",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.warning.acknowledge",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.warning.send",
-      "name": "Channel warning send",
-      "description": "Twitch EventSub: channel.warning.send",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.warning.send",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.charity_campaign.donate",
-      "name": "Charity campaign donate",
-      "description": "Twitch EventSub: channel.charity_campaign.donate",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.charity_campaign.donate",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.charity_campaign.start",
-      "name": "Charity campaign start",
-      "description": "Twitch EventSub: channel.charity_campaign.start",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.charity_campaign.start",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.charity_campaign.progress",
-      "name": "Charity campaign progress",
-      "description": "Twitch EventSub: channel.charity_campaign.progress",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.charity_campaign.progress",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.charity_campaign.stop",
-      "name": "Charity campaign stop",
-      "description": "Twitch EventSub: channel.charity_campaign.stop",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.charity_campaign.stop",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.conduit.shard.disabled",
-      "name": "Conduit shard disabled",
-      "description": "Twitch EventSub: conduit.shard.disabled",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "conduit.shard.disabled",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.drop.entitlement.grant",
-      "name": "Drop entitlement grant",
-      "description": "Twitch EventSub: drop.entitlement.grant",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "drop.entitlement.grant",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.extension.bits_transaction.create",
-      "name": "Extension Bits transaction create",
-      "description": "Twitch EventSub: extension.bits_transaction.create",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "extension.bits_transaction.create",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.goal.begin",
-      "name": "Channel goal begin",
-      "description": "Twitch EventSub: channel.goal.begin",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.goal.begin",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.goal.progress",
-      "name": "Channel goal progress",
-      "description": "Twitch EventSub: channel.goal.progress",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.goal.progress",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.goal.end",
-      "name": "Channel goal end",
-      "description": "Twitch EventSub: channel.goal.end",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.goal.end",
-        "payload": "object"
-      }
+      "category": "platform.twitch"
     },
     {
       "id": "twitch.channel.hype_train.begin",
       "name": "Hype train begin",
       "description": "Twitch EventSub: channel.hype_train.begin",
       "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.hype_train.begin",
-        "payload": "object"
-      }
+      "category": "platform.twitch"
     },
     {
       "id": "twitch.channel.hype_train.progress",
       "name": "Hype train progress",
       "description": "Twitch EventSub: channel.hype_train.progress",
       "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.hype_train.progress",
-        "payload": "object"
-      }
+      "category": "platform.twitch"
     },
     {
       "id": "twitch.channel.hype_train.end",
       "name": "Hype train end",
       "description": "Twitch EventSub: channel.hype_train.end",
       "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.hype_train.end",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.shield_mode.begin",
-      "name": "Shield mode begin",
-      "description": "Twitch EventSub: channel.shield_mode.begin",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.shield_mode.begin",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.shield_mode.end",
-      "name": "Shield mode end",
-      "description": "Twitch EventSub: channel.shield_mode.end",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.shield_mode.end",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.shoutout.create",
-      "name": "Shoutout create",
-      "description": "Twitch EventSub: channel.shoutout.create",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.shoutout.create",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.channel.shoutout.receive",
-      "name": "Shoutout receive",
-      "description": "Twitch EventSub: channel.shoutout.receive",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "channel.shoutout.receive",
-        "payload": "object"
-      }
+      "category": "platform.twitch"
     },
     {
       "id": "twitch.stream.online",
       "name": "Stream online",
       "description": "Twitch EventSub: stream.online",
       "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "stream.online",
-        "payload": "object"
-      }
+      "category": "platform.twitch"
     },
     {
       "id": "twitch.stream.offline",
       "name": "Stream offline",
       "description": "Twitch EventSub: stream.offline",
       "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "stream.offline",
-        "payload": "object"
-      }
-    },
+      "category": "platform.twitch"
+    }
+  ],
+  "functions": [
     {
-      "id": "twitch.user.authorization.grant",
-      "name": "User authorization grant",
-      "description": "Twitch EventSub: user.authorization.grant",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "user.authorization.grant",
-        "payload": "object"
-      }
-    },
+      "id": "sendChatMessage",
+      "name": "Send chat message",
+      "runtime": "js",
+      "path": "functions/sendChatMessage.js",
+      "entryPoint": "sendChatMessage"
+    }
+  ],
+  "actions": [
     {
-      "id": "twitch.user.authorization.revoke",
-      "name": "User authorization revoke",
-      "description": "Twitch EventSub: user.authorization.revoke",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "user.authorization.revoke",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.user.update",
-      "name": "User update",
-      "description": "Twitch EventSub: user.update",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "user.update",
-        "payload": "object"
-      }
-    },
-    {
-      "id": "twitch.user.whisper.message",
-      "name": "User whisper message",
-      "description": "Twitch EventSub: user.whisper.message",
-      "type": "eventbus",
-      "category": "platform.twitch",
-      "schema": {
-        "subscriptionType": "user.whisper.message",
-        "payload": "object"
-      }
+      "id": "twitch.chat.send",
+      "name": "Send chat message",
+      "description": "Publish a message to Twitch chat on the broadcaster channel.",
+      "call": "sendChatMessage",
+      "schema": [
+        {
+          "id": "message",
+          "label": "Message",
+          "type": "text",
+          "required": true,
+          "placeholder": "What should the bot say?"
+        }
+      ]
     }
   ]
 }
