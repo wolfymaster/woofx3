@@ -29,24 +29,44 @@ async fn setup() -> Result<AppContext> {
     let registry = Arc::new(ModuleRegistry::new());
 
     let host_ctx = {
+        let mut ctx = noop_host_context();
+
         let storage_addr = get_env_or_default("STORAGE_ADDR", "");
         if !storage_addr.is_empty() {
             match block_on(GrpcStorageClient::new(storage_addr.clone(), String::new())) {
                 Ok(client) => {
                     info!("Connected to storage service at {}", storage_addr);
-                    let mut ctx = noop_host_context();
                     ctx.storage = Arc::new(client);
-                    ctx
                 }
                 Err(e) => {
                     warn!("Failed to connect to storage service: {}; falling back to noop", e);
-                    noop_host_context()
                 }
             }
         } else {
             info!("STORAGE_ADDR not set; using noop storage client");
-            noop_host_context()
         }
+
+        let messagebus_url = get_env_or_default_with_key("MESSAGEBUS_URL", Some("messagebusUrl"), "");
+        if !messagebus_url.is_empty() {
+            match crate::services::nats::NatsService::connect(&messagebus_url).await {
+                Ok(nats) => {
+                    info!("Connected to messagebus at {}", messagebus_url);
+                    let chat_sender = Arc::new(crate::services::chat::BusChatSender::new(
+                        nats.clone(),
+                        "twitch",
+                    ));
+                    ctx.nats = nats;
+                    ctx.chat = chat_sender;
+                }
+                Err(e) => {
+                    warn!("Failed to connect to messagebus: {}; falling back to noop publisher", e);
+                }
+            }
+        } else {
+            info!("messagebusUrl not set; using noop NATS publisher and noop chat sender");
+        }
+
+        ctx
     };
 
     let sandbox = SandboxFactory::new(registry.clone(), host_ctx);
