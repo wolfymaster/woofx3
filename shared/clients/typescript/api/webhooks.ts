@@ -12,6 +12,8 @@
 // shared/common/golang/cloudevents/subjects.go — keep them in sync when
 // adding or renaming event types.
 
+import type { WorkflowDefinition } from "./workflow-definition";
+
 /**
  * Canonical event-type strings for every engine callback. Prefer
  * `EngineEventType.MODULE_INSTALLED` over the raw string in application
@@ -24,6 +26,9 @@ export const EngineEventType = {
   MODULE_DELETE_FAILED: "module.delete_failed",
   MODULE_TRIGGER_REGISTERED: "module.trigger.registered",
   MODULE_ACTION_REGISTERED: "module.action.registered",
+  WORKFLOW_CREATED: "workflow.created",
+  WORKFLOW_UPDATED: "workflow.updated",
+  WORKFLOW_DELETED: "workflow.deleted",
 } as const;
 
 export type EngineEventType = (typeof EngineEventType)[keyof typeof EngineEventType];
@@ -115,6 +120,39 @@ export interface ModuleDeleteFailedEvent {
 }
 
 /**
+ * Snapshot of a workflow row at the point a webhook was emitted. Echoed
+ * back to Convex verbatim so it can upsert without re-fetching.
+ */
+export interface WorkflowSnapshot {
+  id: string;
+  definition: WorkflowDefinition;
+  isEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowCreatedEvent {
+  type: typeof EngineEventType.WORKFLOW_CREATED;
+  applicationId: string;
+  correlationKey?: string;
+  workflow: WorkflowSnapshot;
+}
+
+export interface WorkflowUpdatedEvent {
+  type: typeof EngineEventType.WORKFLOW_UPDATED;
+  applicationId: string;
+  correlationKey?: string;
+  workflow: WorkflowSnapshot;
+}
+
+export interface WorkflowDeletedEvent {
+  type: typeof EngineEventType.WORKFLOW_DELETED;
+  applicationId: string;
+  correlationKey?: string;
+  workflowId: string;
+}
+
+/**
  * Discriminated union of every event the engine can deliver via webhook.
  * Consumers should narrow on `event.type` — TypeScript will pick the right
  * branch without casts.
@@ -125,7 +163,10 @@ export type CallbackEvent =
   | ModuleInstalledEvent
   | ModuleInstallFailedEvent
   | ModuleDeletedEvent
-  | ModuleDeleteFailedEvent;
+  | ModuleDeleteFailedEvent
+  | WorkflowCreatedEvent
+  | WorkflowUpdatedEvent
+  | WorkflowDeletedEvent;
 
 /**
  * Lookup from event-type string → payload type. Useful for emitter code
@@ -138,6 +179,9 @@ export type CallbackEventByType = {
   [EngineEventType.MODULE_INSTALL_FAILED]: ModuleInstallFailedEvent;
   [EngineEventType.MODULE_DELETED]: ModuleDeletedEvent;
   [EngineEventType.MODULE_DELETE_FAILED]: ModuleDeleteFailedEvent;
+  [EngineEventType.WORKFLOW_CREATED]: WorkflowCreatedEvent;
+  [EngineEventType.WORKFLOW_UPDATED]: WorkflowUpdatedEvent;
+  [EngineEventType.WORKFLOW_DELETED]: WorkflowDeletedEvent;
 };
 
 // ---------------------------------------------------------------------------
@@ -173,7 +217,7 @@ export function makeCallbackEnvelope<E extends CallbackEvent>(
   event: E,
   source = "engine",
   id: string = globalThis.crypto?.randomUUID() ?? "",
-  time: string = new Date().toISOString(),
+  time: string = new Date().toISOString()
 ): CallbackEnvelope {
   return {
     specversion: "1.0",
