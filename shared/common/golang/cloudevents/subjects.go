@@ -17,6 +17,9 @@ const (
 	// Twitch API commands
 	SubjectTwitchApi Subject = "twitchapi"
 
+	// Chat events (platform-agnostic; payload carries `platform` discriminator)
+	SubjectChatSend Subject = "message.send"
+
 	// Slobs / OBS events
 	SubjectSlobs Subject = "slobs"
 
