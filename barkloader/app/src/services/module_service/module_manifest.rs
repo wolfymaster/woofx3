@@ -20,6 +20,12 @@ pub struct ManifestTrigger {
     pub category: Option<String>,
     #[serde(default)]
     pub schema: Option<serde_json::Value>,
+    /// When true, the UI lets the user create multiple bound instances ("variants")
+    /// of this trigger, each with its own values for the `schema` fields. Used for
+    /// triggers like cheer/subscribe/subscription.gift where the same event class
+    /// fans out into per-tier or per-threshold workflows.
+    #[serde(default)]
+    pub allow_variants: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,8 +36,14 @@ pub struct ManifestAction {
     #[serde(default)]
     pub description: String,
     pub call: String,
+    /// UI form definition for this action's user-editable inputs. Same shape
+    /// contract as `ManifestTrigger.schema` — typically a `ConfigField[]`.
+    /// Engine treats it as opaque JSON and forwards it on the wire as
+    /// `paramsSchema` (string) for the UI to parse. Distinct from
+    /// `ManifestWorkflowStep.params` which is the runtime arguments passed
+    /// into an action invocation, not the action's UI declaration.
     #[serde(default)]
-    pub params: serde_json::Value,
+    pub schema: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -257,7 +269,7 @@ impl ManifestTrigger {
             description: self.description.clone(),
             event: self.id.clone(),
             config_schema,
-            allow_variants: false,
+            allow_variants: self.allow_variants,
         }
     }
 }
@@ -380,7 +392,7 @@ impl ManifestAction {
             name: self.name.clone(),
             description: self.description.clone(),
             call: self.call.clone(),
-            params_schema: self.params.to_string(),
+            params_schema: self.schema.to_string(),
         }
     }
 

@@ -60,6 +60,32 @@ pub async fn cleanup_old_version(
     Ok(())
 }
 
+/// Compensating cleanup for a half-completed install. Called when any db-side
+/// step after `create_module` fails so the next install attempt doesn't trip
+/// the `modules_name_key` unique constraint. Each step is best-effort — a
+/// cleanup error is logged and suppressed so the original install error
+/// surfaces to the caller.
+async fn rollback_db_install(
+    db_proxy_url: &str,
+    manifest_module_key: &str,
+    module_name: &str,
+    application_id: &str,
+) {
+    if let Err(e) =
+        cleanup_old_version(manifest_module_key, Some(db_proxy_url), application_id).await
+    {
+        warn!(
+            "rollback: cleanup_old_version({}) failed: {}",
+            manifest_module_key, e
+        );
+    }
+    if let Err(e) = super::db_proxy::delete_module(db_proxy_url, module_name).await {
+        warn!("rollback: delete_module({}) failed: {}", module_name, e);
+    } else {
+        info!("rollback: removed module row for {}", module_name);
+    }
+}
+
 pub async fn run_install<R: Repository>(
     manifest: &ModuleManifest,
     files: &[ModuleFile],
@@ -109,133 +135,151 @@ pub async fn run_install<R: Repository>(
             cleanup_old_version(module_key, Some(url), application_id).await?;
         }
 
-        let manifest_json = serde_json::to_string(manifest)
-            .map_err(|e| anyhow!("serialize manifest: {}", e))?;
-        let db_record_id = create_module(
-            url,
-            &manifest.name,
-            &manifest.version,
-            &manifest_json,
-            archive_key,
-            &fn_rows,
-            composite_module_key,
-            client_id,
-        )
-        .await?;
+        // Saga-style install: every step after `create_module` must be paired
+        // with a compensating cleanup if the install fails partway through.
+        // We run the whole db-side sequence inside an async block so a single
+        // rollback path handles any failure.
+        let install_result: Result<()> = async {
+            let manifest_json = serde_json::to_string(manifest)
+                .map_err(|e| anyhow!("serialize manifest: {}", e))?;
+            let db_record_id = create_module(
+                url,
+                &manifest.name,
+                &manifest.version,
+                &manifest_json,
+                archive_key,
+                &fn_rows,
+                composite_module_key,
+                client_id,
+            )
+            .await?;
 
-        // Record function resources in ledger
-        for f in &manifest.functions {
-            if let Err(e) = create_module_resource(
-                url, &db_record_id, "function", "", &f.id, &f.name, &manifest.version,
-            ).await {
-                warn!("Failed to record function resource {}: {}", f.id, e);
-            }
-        }
-
-        // Record widget resources in ledger
-        for w in &manifest.widgets {
-            if let Err(e) = create_module_resource(
-                url, &db_record_id, "widget", "", &w.id, &w.name, &manifest.version,
-            ).await {
-                warn!("Failed to record widget resource {}: {}", w.id, e);
-            }
-        }
-
-        // Record overlay resources in ledger
-        for o in &manifest.overlays {
-            if let Err(e) = create_module_resource(
-                url, &db_record_id, "overlay", "", &o.id, &o.name, &manifest.version,
-            ).await {
-                warn!("Failed to record overlay resource {}: {}", o.id, e);
-            }
-        }
-
-        // Register triggers as a single bulk call keyed by the composite module_key.
-        let trigger_inputs: Vec<_> = manifest
-            .triggers
-            .iter()
-            .map(|t| t.to_input())
-            .collect();
-        info!(
-            "Registering {} trigger(s) for module {} (moduleKey={})",
-            trigger_inputs.len(),
-            module_key,
-            composite_module_key
-        );
-        super::db_proxy::register_triggers(
-            url,
-            composite_module_key,
-            &manifest.name,
-            &manifest.version,
-            trigger_inputs,
-        )
-        .await?;
-
-        // Ledger rows still record one resource per trigger.
-        for t in &manifest.triggers {
-            if let Err(e) = create_module_resource(
-                url, &db_record_id, "trigger", "", &t.id, &t.name, &manifest.version,
-            ).await {
-                warn!("Failed to record trigger resource {}: {}", t.id, e);
-            }
-        }
-
-        // Register actions as a single bulk call keyed by the composite module_key.
-        let action_inputs: Vec<_> = manifest
-            .actions
-            .iter()
-            .map(|a| a.to_input())
-            .collect();
-        info!(
-            "Registering {} action(s) for module {} (moduleKey={})",
-            action_inputs.len(),
-            module_key,
-            composite_module_key
-        );
-        super::db_proxy::register_actions(
-            url,
-            composite_module_key,
-            &manifest.name,
-            &manifest.version,
-            action_inputs,
-        )
-        .await?;
-
-        for a in &manifest.actions {
-            if let Err(e) = create_module_resource(
-                url, &db_record_id, "action", "", &a.id, &a.name, &manifest.version,
-            ).await {
-                warn!("Failed to record action resource {}: {}", a.id, e);
-            }
-        }
-
-        for wf in &manifest.workflows {
-            wf.register(module_key, url, application_id).await?;
-            if let Err(e) = create_module_resource(
-                url, &db_record_id, "workflow", "", &wf.id, &wf.name, &manifest.version,
-            ).await {
-                warn!("Failed to record workflow resource {}: {}", wf.id, e);
-            }
-        }
-
-        // module_id may have been set above; retrieve it for resource tracking
-        let mid = match super::db_proxy::get_module_by_name(url, module_key).await {
-            Ok(Some(resp)) => {
-                let v: serde_json::Value = serde_json::from_str(&resp).unwrap_or_default();
-                v.get("module").and_then(|m| m.get("id")).and_then(|v| v.as_str()).unwrap_or("").to_string()
-            }
-            _ => String::new(),
-        };
-
-        for cmd in &manifest.commands {
-            cmd.register(module_key, url, application_id).await?;
-            if !mid.is_empty() {
+            // Record function resources in ledger
+            for f in &manifest.functions {
                 if let Err(e) = create_module_resource(
-                    url, &mid, "command", "", &cmd.id, &cmd.name, &manifest.version,
+                    url, &db_record_id, "function", "", &f.id, &f.name, &manifest.version,
                 ).await {
-                    warn!("Failed to record command resource {}: {}", cmd.id, e);
+                    warn!("Failed to record function resource {}: {}", f.id, e);
                 }
             }
+
+            // Record widget resources in ledger
+            for w in &manifest.widgets {
+                if let Err(e) = create_module_resource(
+                    url, &db_record_id, "widget", "", &w.id, &w.name, &manifest.version,
+                ).await {
+                    warn!("Failed to record widget resource {}: {}", w.id, e);
+                }
+            }
+
+            // Record overlay resources in ledger
+            for o in &manifest.overlays {
+                if let Err(e) = create_module_resource(
+                    url, &db_record_id, "overlay", "", &o.id, &o.name, &manifest.version,
+                ).await {
+                    warn!("Failed to record overlay resource {}: {}", o.id, e);
+                }
+            }
+
+            // Register triggers as a single bulk call keyed by the composite module_key.
+            let trigger_inputs: Vec<_> = manifest
+                .triggers
+                .iter()
+                .map(|t| t.to_input())
+                .collect();
+            info!(
+                "Registering {} trigger(s) for module {} (moduleKey={})",
+                trigger_inputs.len(),
+                module_key,
+                composite_module_key
+            );
+            super::db_proxy::register_triggers(
+                url,
+                composite_module_key,
+                &manifest.name,
+                &manifest.version,
+                trigger_inputs,
+            )
+            .await?;
+
+            // Ledger rows still record one resource per trigger.
+            for t in &manifest.triggers {
+                if let Err(e) = create_module_resource(
+                    url, &db_record_id, "trigger", "", &t.id, &t.name, &manifest.version,
+                ).await {
+                    warn!("Failed to record trigger resource {}: {}", t.id, e);
+                }
+            }
+
+            // Register actions as a single bulk call keyed by the composite module_key.
+            let action_inputs: Vec<_> = manifest
+                .actions
+                .iter()
+                .map(|a| a.to_input())
+                .collect();
+            info!(
+                "Registering {} action(s) for module {} (moduleKey={})",
+                action_inputs.len(),
+                module_key,
+                composite_module_key
+            );
+            super::db_proxy::register_actions(
+                url,
+                composite_module_key,
+                &manifest.name,
+                &manifest.version,
+                action_inputs,
+            )
+            .await?;
+
+            for a in &manifest.actions {
+                if let Err(e) = create_module_resource(
+                    url, &db_record_id, "action", "", &a.id, &a.name, &manifest.version,
+                ).await {
+                    warn!("Failed to record action resource {}: {}", a.id, e);
+                }
+            }
+
+            for wf in &manifest.workflows {
+                wf.register(module_key, url, application_id).await?;
+                if let Err(e) = create_module_resource(
+                    url, &db_record_id, "workflow", "", &wf.id, &wf.name, &manifest.version,
+                ).await {
+                    warn!("Failed to record workflow resource {}: {}", wf.id, e);
+                }
+            }
+
+            // module_id may have been set above; retrieve it for resource tracking
+            let mid = match super::db_proxy::get_module_by_name(url, module_key).await {
+                Ok(Some(resp)) => {
+                    let v: serde_json::Value = serde_json::from_str(&resp).unwrap_or_default();
+                    v.get("module").and_then(|m| m.get("id")).and_then(|v| v.as_str()).unwrap_or("").to_string()
+                }
+                _ => String::new(),
+            };
+
+            for cmd in &manifest.commands {
+                cmd.register(module_key, url, application_id).await?;
+                if !mid.is_empty() {
+                    if let Err(e) = create_module_resource(
+                        url, &mid, "command", "", &cmd.id, &cmd.name, &manifest.version,
+                    ).await {
+                        warn!("Failed to record command resource {}: {}", cmd.id, e);
+                    }
+                }
+            }
+
+            Ok(())
+        }
+        .await;
+
+        if let Err(e) = install_result {
+            warn!(
+                "install failed for module {} ({}): rolling back db state: {}",
+                manifest.name, composite_module_key, e
+            );
+            rollback_db_install(url, module_key, &manifest.name, application_id).await;
+            return Err(e);
         }
     } else {
         warn!("DB_PROXY_ADDR not set; skipping CreateModule, trigger, workflow, action, and command registration");
