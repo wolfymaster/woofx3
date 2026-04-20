@@ -8,7 +8,8 @@
     "./rpc": "./rpc.ts",
     "./webhooks": "./webhooks.ts",
     "./client": "./client.ts",
-    "./ui-schema": "./ui-schema.ts"
+    "./ui-schema": "./ui-schema.ts",
+    "./workflow-definition": "./workflow-definition.ts"
   },
   "dependencies": {
     "capnweb": "^0.4.0"
