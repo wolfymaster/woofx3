@@ -34,7 +34,7 @@ func NewModuleService(
 }
 
 func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModuleRequest) (*client.ModuleResponse, error) {
-	// Idempotency: if a module with this module_key already exists, return it as success
+	// Idempotency layer 1: same composite module_key already installed → return as-is.
 	if req.ModuleKey != "" {
 		existing, err := s.repo.GetByModuleKey(req.ModuleKey)
 		if err == nil && existing != nil {
@@ -42,6 +42,62 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 				Status: &client.ResponseStatus{
 					Code:    client.ResponseStatus_OK,
 					Message: "Module already installed",
+				},
+				Module: moduleToProto(existing),
+			}, nil
+		}
+	}
+
+	// Idempotency layer 2: a row with the same name already exists but under a
+	// different module_key. This happens when a prior install half-succeeded
+	// (module row persisted, downstream RPCs failed) or the user is upgrading
+	// to a new version/hash without an explicit update call. Rewriting the
+	// row in place keeps the `modules_name_key` constraint happy and lets
+	// install retries converge. Functions are replaced wholesale.
+	if req.Name != "" {
+		existing, err := s.repo.GetByName(req.Name)
+		if err == nil && existing != nil {
+			existing.ModuleKey = req.ModuleKey
+			existing.Version = req.Version
+			existing.Manifest = req.Manifest
+			existing.ArchiveKey = req.ArchiveKey
+			existing.State = "active"
+			if req.CreatedByType != "" {
+				existing.CreatedByType = req.CreatedByType
+			}
+			if req.CreatedByRef != "" {
+				existing.CreatedByRef = req.CreatedByRef
+			}
+
+			if err := s.repo.Update(existing); err != nil {
+				return nil, err
+			}
+			if err := s.repo.DeleteFunctionsByModuleID(existing.ID); err != nil {
+				return nil, err
+			}
+
+			functions := make([]models.ModuleFunction, 0, len(req.Functions))
+			for _, f := range req.Functions {
+				functions = append(functions, models.ModuleFunction{
+					ModuleID:     existing.ID,
+					FunctionName: f.FunctionName,
+					FileName:     f.FileName,
+					FileKey:      f.FileKey,
+					EntryPoint:   f.EntryPoint,
+					Runtime:      f.Runtime,
+				})
+			}
+			if len(functions) > 0 {
+				if err := s.repo.CreateFunctions(functions); err != nil {
+					return nil, err
+				}
+			}
+			existing.Functions = functions
+
+			return &client.ModuleResponse{
+				Status: &client.ResponseStatus{
+					Code:    client.ResponseStatus_OK,
+					Message: "Module replaced",
 				},
 				Module: moduleToProto(existing),
 			}, nil
