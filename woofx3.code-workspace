@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "../woofx3-ui"
+		},
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"workbench.colorCustomizations": {
+			"statusBar.background": "#000000",
+			"statusBar.foreground": "#EC6758"
+		}
+	}
+}
