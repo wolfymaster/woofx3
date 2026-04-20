@@ -123,19 +123,45 @@ impl FileService {
                 }
                 walk_dir(Path::new(dir_path), "");
                 info!("=== END RAW DIRECTORY LISTING ===");
-                // create metadata for every extracted file
-                let entries = fs::read_dir(dir_path)?;
-                for entry in entries {
-                    let entry = entry?;
-                    let original_file_name = entry.file_name().to_string_lossy().to_string();
-                    let temp_file_path = entry.path();
-                    let file_extension = temp_file_path
-                        .extension()
-                        .and_then(|ext| Some(String::from(ext.to_str().unwrap())));
+                // Recursively collect every extracted file. `file_name` is the
+                // path **relative to the extraction root** (e.g.
+                // "functions/sendChatMessage.js"), which is what manifest
+                // entries reference via their `path` field.
+                fn collect_files(
+                    root: &Path,
+                    current: &Path,
+                    out: &mut Vec<(String, PathBuf, Option<String>)>,
+                ) -> std::io::Result<()> {
+                    for entry in fs::read_dir(current)? {
+                        let entry = entry?;
+                        let path = entry.path();
+                        if path.is_dir() {
+                            collect_files(root, &path, out)?;
+                            continue;
+                        }
+                        let rel = path
+                            .strip_prefix(root)
+                            .unwrap_or(&path)
+                            .to_string_lossy()
+                            .replace('\\', "/");
+                        let ext = path
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .map(|s| s.to_string());
+                        out.push((rel, path, ext));
+                    }
+                    Ok(())
+                }
+
+                let extract_root = Path::new(dir_path);
+                let mut collected: Vec<(String, PathBuf, Option<String>)> = Vec::new();
+                collect_files(extract_root, extract_root, &mut collected)?;
+
+                for (rel_name, _abs_path, file_extension) in collected {
                     metadatas.push(FileMetadata {
                         temp_dir_path: metadata.temp_dir_path.clone(),
                         file_extension,
-                        file_name:original_file_name.clone(),
+                        file_name: rel_name,
                         upload_dir_path: metadata.upload_dir_path.clone(),
                         callback_url: metadata.callback_url.clone(),
                         client_id: metadata.client_id.clone(),
