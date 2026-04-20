@@ -9,8 +9,7 @@ woofx3/                          # Root monorepo
 ├── .planning/                   # Planning documents
 │   └── codebase/               # Codebase analysis (this folder)
 │
-├── barkloader/                  # TypeScript/Lua Plugin System
-├── barkloader-rust/             # Rust Plugin System
+├── barkloader/                  # Rust Module/Plugin System (Lua + QuickJS runtimes)
 ├── db/                          # Database Proxy (Go + Protobuf)
 ├── reward/                      # Reward/Bits Handling (Bun/TS)
 ├── services/                    # Infrastructure Services
@@ -159,29 +158,18 @@ streamlabs/
 
 ## Plugin System
 
-### Barkloader (Lua) (`barkloader/`)
+### Barkloader (`barkloader/`)
+
+Rust module/plugin system. User modules are uploaded as ZIP archives containing
+a manifest plus Lua and/or QuickJS source; barkloader parses, stores, and
+executes them inside `lib_sandbox`.
 
 ```
 barkloader/
-├── index.ts                   # WebSocket server entry
-├── lua/                       # Lua scripts
-│   ├── *.lua                 # User scripts
-│   └── examples/
-├── nats.ts                    # NATS connection
-├── storage/
-│   └── src/
-│       └── light/            # Smart light control
-├── types.ts
-└── package.json
-```
-
-### Barkloader Rust (`barkloader-rust/`)
-
-```
-barkloader-rust/
-├── app/                       # Main application
-├── lib_sandbox/               # Sandboxing library
-│   └── tests/                # Rust tests
+├── app/                       # Actix-web server, routes, module service
+├── lib_sandbox/               # Sandboxed execution (Lua, QuickJS adapters)
+│   └── tests/                 # Rust tests
+├── lib_repository/            # Storage abstraction (filesystem, S3)
 ├── Cargo.toml
 └── Cargo.lock
 ```
@@ -231,7 +219,7 @@ Streaming Domain:
 
 Bot/Chat Domain:
   woofwoofwoof/     # Chat automation
-  barkloader/       # Command scripting
+  barkloader/       # Module/plugin execution (Rust)
 
 Infrastructure Domain:
   db/               # Data persistence

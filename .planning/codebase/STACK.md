@@ -8,8 +8,9 @@
 |----------|---------|-------------|
 | TypeScript | 5.0+ | Backend services, clients, shared libraries |
 | Go | 1.24.0 | Backend services (database, workflows, gateway) |
-| Rust | stable | High-performance plugin system (barkloader-rust) |
-| Lua | via wasmoon | Plugin scripting support |
+| Rust | stable | High-performance module/plugin host (barkloader) |
+| Lua | embedded | Sandbox runtime for user plugin modules |
+| JavaScript (QuickJS) | embedded | Sandbox runtime for user plugin modules |
 | JavaScript/JSX | ES2022 | React frontend components |
 
 ## Runtime Environment

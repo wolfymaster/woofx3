@@ -29,9 +29,8 @@ No dedicated Jest configuration files found:
 - `streamlabs/` - No test files
 
 **Only test-like files found:**
-- `barkloader/wasmoon-test.ts` - Manual test script (not Jest)
 - `streamlabs/obstest.ts` - Manual OBS test script
-- `barkloader-rust/lib_sandbox/tests/` - Rust tests
+- `barkloader/lib_sandbox/tests/` - Rust tests
 
 ## Test Scripts
 

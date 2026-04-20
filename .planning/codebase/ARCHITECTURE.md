@@ -61,7 +61,7 @@ WoofX3 is an **event-driven microservices platform** for live streaming automati
 | **Observer/Pub-Sub** | Entire architecture | Event-driven communication |
 | **CloudEvents Standard** | `shared/clients/typescript/cloudevents/` | Standardized event format |
 | **Workflow Orchestration** | `wooflow/` | Temporal-based workflows |
-| **Plugin System** | `barkloader/`, `barkloader-rust/` | Dynamic code execution |
+| **Plugin System** | `barkloader/` | Dynamic code execution (Rust sandbox) |
 
 ## Core Architectural Concepts
 
@@ -208,8 +208,7 @@ wildcard          # e.g., workflow.> (all workflow topics)
 |-----------|----------|----------------|
 | **Twitch Service** | `twitch/src/` | Twitch API, event subscriptions |
 | **Chat Bot** | `woofwoofwoof/src/` | Command processing, permissions |
-| **Plugin System (Lua)** | `barkloader/` | Lua script execution |
-| **Plugin System (Rust)** | `barkloader-rust/` | High-performance plugins |
+| **Plugin System** | `barkloader/` | Rust module host; runs Lua and QuickJS modules in a sandbox |
 | **Workflow Engine** | `wooflow/` | Temporal-based automation |
 | **Rewards System** | `reward/src/` | Bits, subscriptions, sounds |
 | **Frontend/Streaming UI** | `streamlabs/` | Remix + React interface |
@@ -227,7 +226,7 @@ Service startup order (from `process-compose.yml`):
 2. db               → Database proxy
 3. messagebus-gateway → WebSocket bridge
 4. wooflow          → Workflow engine
-5. barkloader       → Lua plugin system
+5. barkloader       → Module/plugin host (Rust)
 6. twitch           → Twitch API integration
 7. woofwoofwoof     → Chat bot (depends on twitch)
 8. streamlabs       → Frontend (depends on woofwoofwoof)
@@ -250,7 +249,7 @@ Service startup order (from `process-compose.yml`):
 |---------|-------------|-----------|
 | Twitch | `twitch/src/api.ts` | `Bootstrap()` → `createRuntime()` |
 | WoofWoofWoof | `woofwoofwoof/src/woofwoofwoof.ts` | Same pattern |
-| Barkloader | `barkloader/index.ts` | Bun WebSocket server |
+| Barkloader | `barkloader/app/src/main.rs` | Actix-web HTTP/WebSocket server |
 | Wooflow | `wooflow/main.go` | `NewApp()` → signal handler |
 | Streamlabs | `streamlabs/server.ts` | Remix Express server |
 | Database | `db/cmd/server/` | Go server with Protobuf |
