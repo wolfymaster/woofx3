@@ -45,3 +45,14 @@ export interface TriggerConfig {
   supportsTiers?: boolean;
   tierLabel?: string;
 }
+
+/**
+ * Action `paramsSchema` follows the same shape contract as trigger
+ * `configSchema` but without trigger-only concerns (tiers, variants). The
+ * canonical form for an action is a flat ConfigField[] describing the
+ * user-editable inputs; consumers may also accept a `{ fields }` object for
+ * forward compatibility.
+ */
+export interface ActionConfig {
+  fields: ConfigField[];
+}

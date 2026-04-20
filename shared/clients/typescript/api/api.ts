@@ -1,6 +1,6 @@
 // Shared API Types for woofx3 UI and Backend
 
-import type { TriggerDefinition } from "./webhooks";
+import type { ActionDefinition, TriggerDefinition } from "./webhooks";
 
 // ==================== User & Auth ====================
 
@@ -425,15 +425,7 @@ export interface Woofx3EngineApi {
 
   // Triggers & actions catalog
   getTriggers(createdByType?: string, createdByRef?: string): Promise<TriggerDefinition[]>;
-
-  /**
-   * Return the set of actions available to the workflow builder. The exact
-   * row shape is still stabilizing on the engine side (currently mock-backed
-   * and UI-formatted with `icon`, `category`, `color`, `config`); external
-   * clients treat rows as structural records and read fields via `unknown`
-   * narrowing.
-   */
-  getActions(moduleId?: string): Promise<Array<Record<string, unknown>>>;
+  getActions(createdByType?: string, createdByRef?: string): Promise<ActionDefinition[]>;
 
   // Workflows
   getWorkflows(query?: WorkflowsQuery): Promise<PaginatedWorkflows>;
