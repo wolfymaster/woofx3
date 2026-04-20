@@ -1,4 +1,5 @@
 import type { BarkloaderMessageResponse } from "@woofx3/barkloader";
+import { EventType as ChatEventType, type SendMessageMessage } from "@woofx3/common/cloudevents/Chat";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import { type ChatMessageMessage, EventType } from "@woofx3/common/cloudevents/Twitch";
 import type { ApplicationContext } from "@woofx3/common/runtime";
@@ -77,6 +78,18 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
         await commander.send(message);
       }
     });
+
+    // subscribe to outbound send-chat-message events from sandbox functions
+    // payload.data.platform discriminates target platform (twitch only today)
+    ctx.services.messageBus.client.subscribe(ChatEventType.SendMessage, async (msg: Msg) => {
+      const payload = msg.json<SendMessageMessage>();
+      const text = payload?.data?.message;
+      if (!text || !ctx.commander) {
+        return;
+      }
+      await ctx.commander.send(text);
+    });
+
     ctx.commander = commander;
   }
 
