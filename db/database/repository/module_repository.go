@@ -68,7 +68,13 @@ func (r *ModuleRepository) CreateFunctions(functions []models.ModuleFunction) er
 }
 
 func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
-	var storedID uuid.UUID
+	// GORM's .Scan(dest) treats a raw `*uuid.UUID` ([16]byte) as an array of
+	// uint8 columns and fails with `converting driver.Value type string ...
+	// to a uint8`. Scanning into a struct lets GORM bind by column name and
+	// correctly invoke uuid.UUID's sql.Scanner.
+	var result struct {
+		ID uuid.UUID `gorm:"column:id"`
+	}
 	err := r.db.Raw(`
 		INSERT INTO public.triggers (id, category, name, description, event, config_schema, allow_variants, created_by_type, created_by_ref, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
@@ -80,11 +86,11 @@ func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
 			allow_variants = EXCLUDED.allow_variants,
 			updated_at = NOW()
 		RETURNING id
-	`, t.ID, t.Category, t.Name, t.Description, t.Event, t.ConfigSchema, t.AllowVariants, t.CreatedByType, t.CreatedByRef).Scan(&storedID).Error
+	`, t.ID, t.Category, t.Name, t.Description, t.Event, t.ConfigSchema, t.AllowVariants, t.CreatedByType, t.CreatedByRef).Scan(&result).Error
 	if err != nil {
 		return err
 	}
-	t.ID = storedID
+	t.ID = result.ID
 	return nil
 }
 
@@ -109,7 +115,11 @@ func (r *ModuleRepository) DeleteTriggersByModulePrefix(moduleID string) error {
 }
 
 func (r *ModuleRepository) UpsertAction(a *models.Action) error {
-	var storedID uuid.UUID
+	// See UpsertTrigger: scan RETURNING id into a struct so GORM delegates
+	// to uuid.UUID's sql.Scanner instead of treating the array as columns.
+	var result struct {
+		ID uuid.UUID `gorm:"column:id"`
+	}
 	err := r.db.Raw(`
 		INSERT INTO public.actions (id, name, description, call, params_schema, created_by_type, created_by_ref, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
@@ -119,11 +129,11 @@ func (r *ModuleRepository) UpsertAction(a *models.Action) error {
 			params_schema = EXCLUDED.params_schema,
 			updated_at = NOW()
 		RETURNING id
-	`, a.ID, a.Name, a.Description, a.Call, a.ParamsSchema, a.CreatedByType, a.CreatedByRef).Scan(&storedID).Error
+	`, a.ID, a.Name, a.Description, a.Call, a.ParamsSchema, a.CreatedByType, a.CreatedByRef).Scan(&result).Error
 	if err != nil {
 		return err
 	}
-	a.ID = storedID
+	a.ID = result.ID
 	return nil
 }
 
