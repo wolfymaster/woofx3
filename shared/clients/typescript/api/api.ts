@@ -1,6 +1,7 @@
 // Shared API Types for woofx3 UI and Backend
 
 import type { ActionDefinition, TriggerDefinition } from "./webhooks";
+import type { WorkflowDefinition } from "./workflow-definition";
 
 // ==================== User & Auth ====================
 
@@ -138,24 +139,35 @@ export interface PaginatedWorkflows {
   pageSize: number;
 }
 
+/**
+ * Create a workflow from a canonical `WorkflowDefinition`. The engine
+ * mints the `id` server-side, so callers pass the definition without it.
+ */
 export interface CreateWorkflowInput {
-  name: string;
-  description?: string;
   accountId: string;
-  isEnabled?: boolean;
-  // `unknown[]` matches the engine's behavior — any JSON-serializable array
-  // is accepted and stringified into workflow.variables._steps. The shape
-  // only solidifies into WorkflowStep[] when the engine reads it back.
-  steps?: unknown[];
-  trigger?: WorkflowTrigger;
+  definition: Omit<WorkflowDefinition, "id">;
+  correlationKey?: string;
 }
 
+/**
+ * Update an existing workflow by replacing its canonical definition. The
+ * definition's `id` must match the path id.
+ */
 export interface UpdateWorkflowInput {
-  name?: string;
-  description?: string;
-  isEnabled?: boolean;
-  steps?: unknown[];
-  trigger?: unknown;
+  definition: WorkflowDefinition;
+  correlationKey?: string;
+}
+
+/**
+ * Minimal response for create/update CRUD round-trips. The full snapshot
+ * (including timestamps) reaches Convex via the `workflow.*` webhook;
+ * callers of the RPC only need id + definition + isEnabled to confirm
+ * the engine accepted the mutation.
+ */
+export interface WorkflowMutationResult {
+  id: string;
+  definition: WorkflowDefinition;
+  isEnabled: boolean;
 }
 
 /**
@@ -412,16 +424,10 @@ export interface Woofx3EngineApi {
    * `module.delete_failed` webhook, both carrying `moduleKey`. `clientId`
    * is injected by the authenticated session.
    */
-  uninstallModule(
-    id: string,
-    context?: { moduleKey?: string }
-  ): Promise<UninstallModuleResponse>;
+  uninstallModule(id: string, context?: { moduleKey?: string }): Promise<UninstallModuleResponse>;
 
   /** Lower-level equivalent of uninstallModule keyed on engine module name. */
-  uninstallEngineModule(
-    name: string,
-    context?: { moduleKey?: string }
-  ): Promise<UninstallModuleResponse>;
+  uninstallEngineModule(name: string, context?: { moduleKey?: string }): Promise<UninstallModuleResponse>;
 
   // Triggers & actions catalog
   getTriggers(createdByType?: string, createdByRef?: string): Promise<TriggerDefinition[]>;
@@ -430,9 +436,14 @@ export interface Woofx3EngineApi {
   // Workflows
   getWorkflows(query?: WorkflowsQuery): Promise<PaginatedWorkflows>;
   getWorkflow(id: string): Promise<Workflow | null>;
-  createWorkflow(data: CreateWorkflowInput): Promise<Workflow>;
-  updateWorkflow(id: string, data: UpdateWorkflowInput): Promise<Workflow | null>;
-  deleteWorkflow(id: string): Promise<boolean>;
+  createWorkflow(data: CreateWorkflowInput): Promise<WorkflowMutationResult>;
+  updateWorkflow(id: string, data: UpdateWorkflowInput): Promise<WorkflowMutationResult | null>;
+  deleteWorkflow(id: string, correlationKey?: string): Promise<boolean>;
+  setWorkflowEnabled(
+    id: string,
+    isEnabled: boolean,
+    correlationKey?: string
+  ): Promise<{ id: string; isEnabled: boolean }>;
   getWorkflowRuns(query?: WorkflowRunsQuery): Promise<WorkflowRun[]>;
 
   // Assets

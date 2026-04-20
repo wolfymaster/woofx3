@@ -6,8 +6,8 @@ describe("validateWorkflowDefinition", () => {
     const def = {
       id: "x",
       name: "X",
-      trigger: { type: "event", eventType: "cheer.user.twitch" },
-      tasks: [{ id: "t1", type: "action", parameters: { action: "print", message: "hi" } }],
+      trigger: { type: "event" as const, eventType: "cheer.user.twitch" },
+      tasks: [{ id: "t1", type: "action" as const, parameters: { action: "print", message: "hi" } }],
     };
     expect(validateWorkflowDefinition(def)).toEqual({ ok: true, value: def });
   });

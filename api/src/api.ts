@@ -1,7 +1,16 @@
-import type { PingResponse, Woofx3EngineApi } from "@woofx3/api";
+import type {
+  CreateWorkflowInput,
+  PingResponse,
+  UpdateWorkflowInput,
+  Woofx3EngineApi,
+  WorkflowDefinition,
+  WorkflowMutationResult,
+} from "@woofx3/api";
+import type { WorkflowCreatedEvent, WorkflowDeletedEvent, WorkflowUpdatedEvent } from "@woofx3/api/webhooks";
+import { EngineEventType } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
-import type { Action } from "@woofx3/db/module_action.pb";
 import type * as command from "@woofx3/db/command.pb";
+import type { Action } from "@woofx3/db/module_action.pb";
 import type { Trigger } from "@woofx3/db/module_trigger.pb";
 import type * as treat from "@woofx3/db/treat.pb";
 import type * as user from "@woofx3/db/user.pb";
@@ -10,11 +19,9 @@ import type NATSClient from "@woofx3/nats/src/client";
 import { RpcTarget } from "capnweb";
 import * as protoscript from "protoscript";
 import type { DbClient } from "./db-client";
-import {
-  parseModuleTriggerRegistered,
-  parseModuleActionRegistered,
-} from "./module-event-handlers";
+import { parseModuleActionRegistered, parseModuleTriggerRegistered } from "./module-event-handlers";
 import type { WebhookClient } from "./webhook-client";
+import { validateWorkflowDefinition } from "./workflow/validate-definition";
 
 /**
  * Helper to create a protoscript.Timestamp from a Date
@@ -26,6 +33,20 @@ function timestampFromDate(date: Date): protoscript.Timestamp {
     seconds: BigInt(seconds),
     nanos,
   };
+}
+
+/**
+ * Convert a protoscript.Timestamp (or anything shaped like one) to an ISO
+ * 8601 string. Falls back to `new Date().toISOString()` when the input is
+ * missing or has no `seconds` — the engine treats every workflow row as
+ * having valid timestamps, so the fallback is only defensive.
+ */
+function timestampToIso(ts: { seconds?: bigint; nanos?: number } | undefined): string {
+  if (!ts || ts.seconds === undefined) {
+    return new Date().toISOString();
+  }
+  const ms = Number(ts.seconds) * 1000 + Math.floor((ts.nanos ?? 0) / 1_000_000);
+  return new Date(ms).toISOString();
 }
 
 /**
@@ -1316,7 +1337,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
 
   async uninstallEngineModule(
     name: string,
-    context?: { clientId?: string; moduleKey?: string },
+    context?: { clientId?: string; moduleKey?: string }
   ): Promise<UninstallModuleResponse> {
     const clientId = context?.clientId;
     const moduleKey = context?.moduleKey;
@@ -1403,7 +1424,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
 
   async uninstallModule(
     id: string,
-    context?: { clientId?: string; moduleKey?: string },
+    context?: { clientId?: string; moduleKey?: string }
   ): Promise<UninstallModuleResponse> {
     return this.uninstallEngineModule(id, context);
   }
@@ -1481,27 +1502,34 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     return this.workflowToItem(response.workflow);
   }
 
-  async createWorkflow(data: {
-    name: string;
-    description?: string;
-    accountId: string;
-    isEnabled?: boolean;
-    steps?: Array<{ id: string; name: string; type: string; action?: string; parameters?: Record<string, unknown> }>;
-    trigger?: { type: string; event: string; condition?: Record<string, unknown> };
-  }): Promise<WorkflowItem> {
-    this.logger.info("Creating workflow", { name: data.name, steps: data.steps?.length });
-    const variables: Record<string, string> = {};
-    if (data.steps) variables._steps = JSON.stringify(data.steps);
-    if (data.trigger) variables._trigger = JSON.stringify(data.trigger);
-    const applicationId = await this.ensureApplicationId();
+  async createWorkflow(data: CreateWorkflowInput): Promise<WorkflowMutationResult> {
+    // DB mints the id, so we can't validate with a stable id here. Run the
+    // validation with a placeholder and then swap in the real id before
+    // storing + emitting. All id references inside the definition (e.g.
+    // dependsOn) refer to TASK ids, so the workflow id itself is inert.
+    const placeholderId = "pending";
+    const preValidation = validateWorkflowDefinition({ id: placeholderId, ...data.definition });
+    if (!preValidation.ok) {
+      throw new Error(
+        `Invalid workflow definition: ${preValidation.errors.map((e) => `${e.path}: ${e.message}`).join("; ")}`
+      );
+    }
+
+    this.logger.info("Creating workflow", { name: data.definition.name });
+    const applicationId = data.accountId || (await this.ensureApplicationId());
+
+    // The stored _definition blob is patched with the DB-minted id after the
+    // write. The initial write carries a best-effort serialization so the
+    // happy path requires only one DB round trip if the engine is later
+    // updated to accept id-in-input.
     const response = await this.db.createWorkflow({
-      name: data.name,
-      description: data.description ?? "",
+      name: data.definition.name,
+      description: data.definition.description ?? "",
       applicationId,
       createdBy: "",
-      enabled: data.isEnabled ?? false,
+      enabled: false,
       steps: [],
-      variables,
+      variables: { _definition: JSON.stringify({ id: placeholderId, ...data.definition }) },
       onSuccess: "",
       onFailure: "",
       maxRetries: 0,
@@ -1512,34 +1540,87 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     if (response.status?.code !== "OK" || !response.workflow) {
       throw new Error(response.status?.message || "Failed to create workflow");
     }
-    this.logger.info("Created workflow", { id: response.workflow.id, name: response.workflow.name });
-    return this.workflowToItem(response.workflow);
+
+    const createdId = response.workflow.id ?? "";
+    const storedDefinition: WorkflowDefinition = { id: createdId, ...data.definition };
+
+    // Patch the stored _definition so its `id` matches the DB-assigned one.
+    const patchResp = await this.db.updateWorkflow({
+      id: createdId,
+      name: response.workflow.name ?? storedDefinition.name,
+      description: response.workflow.description ?? storedDefinition.description ?? "",
+      enabled: response.workflow.enabled ?? false,
+      steps: response.workflow.steps ?? [],
+      variables: {
+        ...(response.workflow.variables ?? {}),
+        _definition: JSON.stringify(storedDefinition),
+      },
+      onSuccess: response.workflow.onSuccess ?? "",
+      onFailure: response.workflow.onFailure ?? "",
+      maxRetries: response.workflow.maxRetries ?? 0,
+      timeoutSeconds: response.workflow.timeoutSeconds ?? 0,
+    });
+    if (patchResp.status?.code !== "OK" || !patchResp.workflow) {
+      this.logger.warn("Failed to patch definition id on newly created workflow", {
+        id: createdId,
+        status: patchResp.status?.message,
+      });
+    }
+
+    this.logger.info("Created workflow", { id: createdId, name: storedDefinition.name });
+
+    const createdAt = timestampToIso(response.workflow.createdAt);
+    const updatedAt = timestampToIso(patchResp.workflow?.updatedAt ?? response.workflow.updatedAt);
+
+    void this.emitWorkflowWebhook({
+      type: EngineEventType.WORKFLOW_CREATED,
+      applicationId,
+      correlationKey: data.correlationKey,
+      workflow: {
+        id: createdId,
+        definition: storedDefinition,
+        isEnabled: false,
+        createdAt,
+        updatedAt,
+      },
+    });
+
+    return { id: createdId, definition: storedDefinition, isEnabled: false };
   }
 
-  async updateWorkflow(
-    id: string,
-    data: { name?: string; description?: string; isEnabled?: boolean; steps?: unknown[]; trigger?: unknown }
-  ): Promise<WorkflowItem | null> {
-    this.logger.info("Updating workflow", { id, data: Object.keys(data) });
+  async updateWorkflow(id: string, data: UpdateWorkflowInput): Promise<WorkflowMutationResult | null> {
+    if (data.definition.id !== id) {
+      throw new Error(`definition.id (${data.definition.id}) must match path id (${id})`);
+    }
+    const validation = validateWorkflowDefinition(data.definition);
+    if (!validation.ok) {
+      throw new Error(
+        `Invalid workflow definition: ${validation.errors.map((e) => `${e.path}: ${e.message}`).join("; ")}`
+      );
+    }
+
+    this.logger.info("Updating workflow", { id });
     const existing = await this.db.getWorkflow({ id });
     if (existing.status?.code !== "OK" || !existing.workflow) {
       this.logger.warn("Workflow not found for update", { id });
       return null;
     }
-    const existingVars = existing.workflow.variables ?? {};
+
     const variables: Record<string, string> = {
-      ...existingVars,
-      ...(data.steps !== undefined ? { _steps: JSON.stringify(data.steps) } : {}),
-      ...(data.trigger !== undefined ? { _trigger: JSON.stringify(data.trigger) } : {}),
+      ...(existing.workflow.variables ?? {}),
+      _definition: JSON.stringify(data.definition),
     };
-    // Remove old _nodes/_edges if present (migration cleanup)
+    // Purge any legacy blobs that may still be present.
+    delete variables._steps;
+    delete variables._trigger;
     delete variables._nodes;
     delete variables._edges;
+
     const response = await this.db.updateWorkflow({
       id,
-      name: data.name ?? existing.workflow.name ?? "",
-      description: data.description ?? existing.workflow.description ?? "",
-      enabled: data.isEnabled ?? existing.workflow.enabled ?? false,
+      name: data.definition.name,
+      description: data.definition.description ?? "",
+      enabled: existing.workflow.enabled ?? false,
       steps: existing.workflow.steps ?? [],
       variables,
       onSuccess: existing.workflow.onSuccess ?? "",
@@ -1547,17 +1628,110 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
       maxRetries: existing.workflow.maxRetries ?? 0,
       timeoutSeconds: existing.workflow.timeoutSeconds ?? 0,
     });
-    if (response.status?.code !== "OK" || !response.workflow) return null;
+    if (response.status?.code !== "OK" || !response.workflow) {
+      return null;
+    }
+
     this.logger.info("Updated workflow", { id, name: response.workflow.name });
-    return this.workflowToItem(response.workflow);
+
+    const applicationId = await this.ensureApplicationId();
+    const isEnabled = response.workflow.enabled ?? false;
+    const createdAt = timestampToIso(existing.workflow.createdAt);
+    const updatedAt = timestampToIso(response.workflow.updatedAt);
+
+    void this.emitWorkflowWebhook({
+      type: EngineEventType.WORKFLOW_UPDATED,
+      applicationId,
+      correlationKey: data.correlationKey,
+      workflow: {
+        id,
+        definition: data.definition,
+        isEnabled,
+        createdAt,
+        updatedAt,
+      },
+    });
+
+    return { id, definition: data.definition, isEnabled };
   }
 
-  async deleteWorkflow(id: string): Promise<boolean> {
+  async deleteWorkflow(id: string, correlationKey?: string): Promise<boolean> {
+    const applicationId = await this.ensureApplicationId();
     this.logger.info("Deleting workflow", { id });
     const response = await this.db.deleteWorkflow({ id });
     const deleted = response.code === "OK";
     this.logger.info("Workflow deleted", { id, success: deleted });
+    if (deleted) {
+      void this.emitWorkflowWebhook({
+        type: EngineEventType.WORKFLOW_DELETED,
+        applicationId,
+        correlationKey,
+        workflowId: id,
+      });
+    }
     return deleted;
+  }
+
+  async setWorkflowEnabled(
+    id: string,
+    isEnabled: boolean,
+    correlationKey?: string
+  ): Promise<{ id: string; isEnabled: boolean }> {
+    const existing = await this.db.getWorkflow({ id });
+    if (existing.status?.code !== "OK" || !existing.workflow) {
+      throw new Error("Workflow not found");
+    }
+    const response = await this.db.updateWorkflow({
+      id,
+      name: existing.workflow.name ?? "",
+      description: existing.workflow.description ?? "",
+      enabled: isEnabled,
+      steps: existing.workflow.steps ?? [],
+      variables: existing.workflow.variables ?? {},
+      onSuccess: existing.workflow.onSuccess ?? "",
+      onFailure: existing.workflow.onFailure ?? "",
+      maxRetries: existing.workflow.maxRetries ?? 0,
+      timeoutSeconds: existing.workflow.timeoutSeconds ?? 0,
+    });
+    if (response.status?.code !== "OK" || !response.workflow) {
+      throw new Error("Failed to toggle workflow enabled state");
+    }
+
+    const applicationId = await this.ensureApplicationId();
+    const defRaw = existing.workflow.variables?._definition;
+    const definition: WorkflowDefinition | undefined = defRaw ? (JSON.parse(defRaw) as WorkflowDefinition) : undefined;
+    if (definition) {
+      const createdAt = timestampToIso(existing.workflow.createdAt);
+      const updatedAt = timestampToIso(response.workflow.updatedAt);
+      void this.emitWorkflowWebhook({
+        type: EngineEventType.WORKFLOW_UPDATED,
+        applicationId,
+        correlationKey,
+        workflow: {
+          id,
+          definition,
+          isEnabled,
+          createdAt,
+          updatedAt,
+        },
+      });
+    }
+
+    return { id, isEnabled };
+  }
+
+  private async emitWorkflowWebhook(
+    event: WorkflowCreatedEvent | WorkflowUpdatedEvent | WorkflowDeletedEvent
+  ): Promise<void> {
+    if (!this.webhookClient) {
+      this.logger.warn("No webhook client set, skipping workflow webhook", { type: event.type });
+      return;
+    }
+    try {
+      await this.webhookClient.send(event);
+    } catch (err) {
+      this.logger.error("Failed to send workflow webhook", { type: event.type, err });
+    }
   }
 
   private workflowRuns: Array<{
