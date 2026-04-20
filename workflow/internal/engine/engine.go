@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/wolfymaster/woofx3/workflow/internal/eventmatch"
 	"github.com/wolfymaster/woofx3/workflow/internal/expression"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
@@ -219,8 +220,10 @@ func (e *Engine[TServices]) evaluateTrigger(wf *types.WorkflowDefinition, event 
 		return fmt.Errorf("only event triggers supported in MVP")
 	}
 
-	if wf.Trigger.EventType != event.Type {
-		return fmt.Errorf("event type mismatch")
+	// EventType may be an exact subject ("twitch.channel.cheer") or a NATS-style
+	// pattern ("*.user.twitch", "workflow.>"). eventmatch.Matches handles both.
+	if !eventmatch.Matches(wf.Trigger.EventType, event.Type) {
+		return fmt.Errorf("event type mismatch: pattern=%q event=%q", wf.Trigger.EventType, event.Type)
 	}
 
 	return nil

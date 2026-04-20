@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/wolfymaster/woofx3/clients/barkloader"
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
@@ -12,6 +11,7 @@ import (
 	"github.com/wolfymaster/woofx3/common/cloudevents"
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/workflow/internal/engine"
+	"github.com/wolfymaster/woofx3/workflow/internal/eventmatch"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
@@ -301,33 +301,9 @@ func (a *WorkflowApp) subscribeToModuleTriggerEvents(ctx context.Context, natsCl
 // an existing NATS wildcard subscription pattern.
 func isEventCoveredByPatterns(event string, patterns []string) bool {
 	for _, pattern := range patterns {
-		if natsPatternMatches(pattern, event) {
+		if eventmatch.Matches(pattern, event) {
 			return true
 		}
-	}
-	return false
-}
-
-// natsPatternMatches performs simple NATS wildcard matching.
-// NATS patterns: * matches one token, > matches remaining tokens.
-func natsPatternMatches(pattern, subject string) bool {
-	pp := strings.Split(pattern, ".")
-	sp := strings.Split(subject, ".")
-	return matchTokens(pp, sp)
-}
-
-func matchTokens(pattern, subject []string) bool {
-	if len(pattern) == 0 {
-		return len(subject) == 0
-	}
-	if pattern[0] == ">" {
-		return true
-	}
-	if len(subject) == 0 {
-		return false
-	}
-	if pattern[0] == "*" || pattern[0] == subject[0] {
-		return matchTokens(pattern[1:], subject[1:])
 	}
 	return false
 }

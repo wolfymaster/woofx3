@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/wolfymaster/woofx3/workflow/internal/eventmatch"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
@@ -47,13 +48,20 @@ func (r *WorkflowRegistry) Get(id string) (*types.WorkflowDefinition, error) {
 	return wf, nil
 }
 
+// GetByEventType returns workflows whose trigger event-type matches the given
+// concrete event subject. The trigger's EventType may be an exact subject or a
+// NATS-style pattern (`*` for one token, `>` for the remaining tail) — both
+// are handled uniformly by eventmatch.Matches.
 func (r *WorkflowRegistry) GetByEventType(eventType string) []*types.WorkflowDefinition {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	var matched []*types.WorkflowDefinition
 	for _, wf := range r.workflows {
-		if wf.Trigger != nil && wf.Trigger.Type == "event" && wf.Trigger.EventType == eventType {
+		if wf.Trigger == nil || wf.Trigger.Type != "event" {
+			continue
+		}
+		if eventmatch.Matches(wf.Trigger.EventType, eventType) {
 			matched = append(matched, wf)
 		}
 	}
