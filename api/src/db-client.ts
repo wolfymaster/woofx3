@@ -10,6 +10,26 @@ import * as treat from "@woofx3/db/treat.pb";
 import * as user from "@woofx3/db/user.pb";
 import * as workflow from "@woofx3/db/workflow.pb";
 import type { ClientConfiguration } from "twirpscript";
+
+// twirpscript's TwirpError is a plain class that does NOT extend Error, so
+// anything thrown from a Twirp call fails capnweb serialization (typeForRpc
+// rejects objects whose prototype is not Object.prototype and that are not
+// `instanceof Error`). Normalize at the db-proxy boundary so every caller
+// upstream sees a real Error carrying the Twirp code and message.
+function toError(err: unknown, op: string): Error {
+  if (err instanceof Error) {
+    return err;
+  }
+  if (err !== null && typeof err === "object") {
+    const e = err as { code?: unknown; msg?: unknown };
+    const code = typeof e.code === "string" ? e.code : undefined;
+    const msg = typeof e.msg === "string" ? e.msg : undefined;
+    const detail = [code, msg].filter((part) => part && part.length > 0).join(": ");
+    return new Error(`${op}: ${detail.length > 0 ? detail : String(err)}`);
+  }
+  return new Error(`${op}: ${String(err)}`);
+}
+
 export class DbClient {
   private config: ClientConfiguration;
 
@@ -17,6 +37,22 @@ export class DbClient {
     this.config = {
       baseURL: baseUrl,
     };
+    return new Proxy(this, {
+      get(target, prop, receiver) {
+        const value = Reflect.get(target, prop, receiver);
+        if (prop === "constructor" || typeof value !== "function") {
+          return value;
+        }
+        const method = value as (...args: unknown[]) => unknown;
+        return async function wrapped(this: unknown, ...args: unknown[]) {
+          try {
+            return await method.apply(this, args);
+          } catch (err) {
+            throw toError(err, `db.${String(prop)}`);
+          }
+        };
+      },
+    });
   }
 
   async getCommand(req: command.GetCommandRequest): Promise<command.CommandResponse> {
@@ -145,14 +181,9 @@ export class DbClient {
   }
 
   async findOrCreateByWoofx3UIUserId(woofx3UIUserId: string): Promise<{ id: string }> {
-    const resp = await user.FindOrCreateByWoofx3UIUserId(
-      { woofx3UiUserId: woofx3UIUserId },
-      this.config
-    );
+    const resp = await user.FindOrCreateByWoofx3UIUserId({ woofx3UiUserId: woofx3UIUserId }, this.config);
     if (!resp.user || resp.status?.code !== "OK") {
-      throw new Error(
-        `findOrCreateByWoofx3UIUserId failed: ${resp.status?.message ?? "unknown error"}`
-      );
+      throw new Error(`findOrCreateByWoofx3UIUserId failed: ${resp.status?.message ?? "unknown error"}`);
     }
     return { id: resp.user.id };
   }
