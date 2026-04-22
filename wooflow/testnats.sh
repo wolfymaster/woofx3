@@ -1,1 +1,0 @@
-nats publish workflow.bits '{ "type": "bits", "payload": { "amount": 1, "user": "wolfymaster" } }' --creds ../nats.creds
