@@ -26,6 +26,16 @@ export interface ConfigFieldOption {
   label: string;
 }
 
+/**
+ * Dynamic source for `select` fields whose options the UI must fetch at
+ * render time (not known at manifest/registration time). When both `source`
+ * and static `options` are present, the UI's configuration form prefers
+ * `source`. Currently only the `commands` kind is recognized; future
+ * additions follow the same discriminated-union pattern.
+ */
+export type ConfigFieldSource =
+  | { kind: "commands" };
+
 export interface ConfigField {
   id: string;
   label: string;
@@ -34,6 +44,7 @@ export interface ConfigField {
   placeholder?: string;
   unit?: string;
   options?: ConfigFieldOption[];
+  source?: ConfigFieldSource;
   min?: number;
   max?: number;
   defaultValue?: unknown;
