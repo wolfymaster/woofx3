@@ -97,6 +97,16 @@ async fn setup() -> Result<AppContext> {
         }
     };
 
+    // Register compile-time built-in actions (see builtin_actions::REGISTRY).
+    // Idempotent upsert keyed on (created_by_type, created_by_ref, name);
+    // a transient db-proxy outage is non-fatal because the next startup
+    // retries.
+    if let Some(url) = db_proxy_url.as_deref() {
+        if let Err(e) = services::builtin_actions::autoload::register_builtin_actions(url).await {
+            warn!("Failed to register builtin actions: {:?}", e);
+        }
+    }
+
     let ctx = AppContext {
         repository,
         sandbox,

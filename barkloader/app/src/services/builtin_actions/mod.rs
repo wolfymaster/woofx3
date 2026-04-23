@@ -3,6 +3,7 @@
 // them uniformly via the same RPC path as module actions; only the sandbox
 // invoke path branches on the `builtin:<name>` call prefix (see Phase D3).
 
+pub mod autoload;
 mod log;
 mod send_chat_message;
 

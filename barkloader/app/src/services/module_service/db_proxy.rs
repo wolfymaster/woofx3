@@ -55,6 +55,13 @@ pub struct RegisterActionsJson {
     pub module_name: String,
     pub version: String,
     pub actions: Vec<ActionInputJson>,
+    // Optional (MODULE, module_key) override. Both empty -> db-proxy falls
+    // back to (MODULE, module_key). Both set -> non-module namespace
+    // (e.g. SYSTEM:builtin) upsert key.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub created_by_type: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub created_by_ref: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -103,12 +110,39 @@ pub async fn register_actions(
     version: &str,
     actions: Vec<ActionInputJson>,
 ) -> Result<()> {
+    register_actions_with(
+        db_proxy_url,
+        module_key,
+        module_name,
+        version,
+        actions,
+        "",
+        "",
+    )
+    .await
+}
+
+/// Twirp JSON for `module.ModuleService/RegisterActions` with an explicit
+/// (created_by_type, created_by_ref) override. When both overrides are
+/// empty, the db-proxy falls back to the default (MODULE, module_key)
+/// pairing — behaviorally identical to the non-`_with` variant.
+pub async fn register_actions_with(
+    db_proxy_url: &str,
+    module_key: &str,
+    module_name: &str,
+    version: &str,
+    actions: Vec<ActionInputJson>,
+    created_by_type: &str,
+    created_by_ref: &str,
+) -> Result<()> {
     let url = format!("{}/twirp/module.ModuleService/RegisterActions", db_proxy_url);
     let body = RegisterActionsJson {
         module_key: module_key.to_string(),
         module_name: module_name.to_string(),
         version: version.to_string(),
         actions,
+        created_by_type: created_by_type.to_string(),
+        created_by_ref: created_by_ref.to_string(),
     };
     let client = reqwest::Client::new();
     let response = client
