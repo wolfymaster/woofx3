@@ -121,6 +121,12 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 				// Non-fatal: the reconciler will catch up if the DB is reachable later.
 			}
 
+			// Periodic safety net against dropped NATS lifecycle events: diff
+			// the in-memory registry against the DB and apply adds/removes.
+			reconciler := newReconciler(a.manager, a.engine.Registry(), a.manager.dbClient, a.logger, 0)
+			go reconciler.Run(ctx)
+			a.logger.Info("Reconciler started", "interval", reconciler.interval)
+
 			publisher := NewNATSEventPublisher(natsClient, a.logger)
 			a.engine.SetPublisher(publisher)
 			a.logger.Info("Event publisher configured with NATS")
