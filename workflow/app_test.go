@@ -56,35 +56,6 @@ func TestValidateCloudEvent(t *testing.T) {
 	}
 }
 
-func TestEventPatternRegistry(t *testing.T) {
-	registry := NewEventPatternRegistry()
-	patterns := registry.GetPatterns()
-
-	// Should have the default Twitch patterns
-	expectedPatterns := []string{
-		"*.user.twitch",
-		"*.channel.twitch",
-	}
-
-	if len(patterns) != len(expectedPatterns) {
-		t.Errorf("Expected %d patterns, got %d", len(expectedPatterns), len(patterns))
-	}
-
-	for i, expected := range expectedPatterns {
-		if i >= len(patterns) || patterns[i] != expected {
-			t.Errorf("Expected pattern %s at index %d, got %s", expected, i, patterns[i])
-		}
-	}
-
-	// Test adding a new pattern
-	registry.AddPattern("*.test.*")
-	updatedPatterns := registry.GetPatterns()
-	
-	if len(updatedPatterns) != len(expectedPatterns)+1 {
-		t.Errorf("Expected %d patterns after adding one, got %d", len(expectedPatterns)+1, len(updatedPatterns))
-	}
-}
-
 func TestEventSerialization(t *testing.T) {
 	// Test that our Event type matches what we expect from NATS messages
 	testEvent := map[string]any{

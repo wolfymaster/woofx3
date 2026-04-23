@@ -164,14 +164,6 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 			if err := a.subscribeToWorkflowEvents(natsClient, string(cloudevents.SubjectWorkflowExecute)); err != nil {
 				a.logger.Error("Failed to subscribe to workflow execute events", "error", err)
 			}
-
-			// System-wide static event patterns (sources of events that can trigger workflows
-			// but are not per-workflow — chat, follow, cheer, etc.). Per-workflow dynamic
-			// subscriptions are handled in Phase 2 by the TriggerRegistrar.
-			patternRegistry := NewEventPatternRegistry()
-			if err := a.subscribeToTriggerEvents(natsClient, patternRegistry.GetPatterns()); err != nil {
-				return fmt.Errorf("workflow service cannot start without trigger event subscriptions: %w", err)
-			}
 		}
 	}
 
@@ -262,8 +254,8 @@ func (a *WorkflowApp) validateCloudEvent(data []byte) (*types.Event, error) {
 }
 
 // handleTriggerEvent processes incoming events that may trigger workflows.
-// Takes primitive args so it can be invoked both from static-pattern NATS
-// subscribers and the dynamic trigger registrar without synthesizing a Msg.
+// Takes primitive args so the dynamic trigger registrar can invoke it
+// without synthesizing a Msg.
 func (a *WorkflowApp) handleTriggerEvent(payload []byte, subject string) {
 	// Validate CloudEvents format
 	event, err := a.validateCloudEvent(payload)
@@ -291,17 +283,3 @@ func (a *WorkflowApp) handleTriggerEvent(payload []byte, subject string) {
 	}
 }
 
-// subscribeToTriggerEvents subscribes to events that can trigger workflows
-func (a *WorkflowApp) subscribeToTriggerEvents(natsClient *natsclient.Client, patterns []string) error {
-	for _, pattern := range patterns {
-		capturedPattern := pattern // Capture for closure
-		_, err := natsClient.Subscribe(pattern, func(msg natsclient.Msg) {
-			a.handleTriggerEvent(msg.Data(), msg.Subject())
-		})
-		if err != nil {
-			return fmt.Errorf("failed to subscribe to pattern %s: %w", pattern, err)
-		}
-		a.logger.Info("Subscribed to trigger events", "pattern", capturedPattern)
-	}
-	return nil
-}
