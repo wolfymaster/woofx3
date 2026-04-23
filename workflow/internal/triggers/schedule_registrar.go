@@ -9,7 +9,9 @@ import (
 )
 
 // ScheduleFireFunc is invoked when a scheduled workflow's cron job fires.
-// Implementations typically synthesize an Event and hand it to engine.HandleEvent.
+// Implementations typically synthesize an Event and call engine.FireByWorkflowID
+// with the known target workflow ID (bypassing subject-based dispatch, since the
+// cron job already resolved the target).
 type ScheduleFireFunc func(workflowID string)
 
 type ScheduleTriggerRegistrar struct {

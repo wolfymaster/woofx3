@@ -110,10 +110,12 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 			subscriber := newNatsSubscriber(natsClient)
 			eventReg := triggers.NewEventTriggerRegistrar(subscriber, a.handleTriggerEvent, a.logger)
 			a.scheduleReg = triggers.NewScheduleTriggerRegistrar(func(workflowID string) {
+				now := time.Now()
 				evt := &types.Event{
-					ID:     fmt.Sprintf("sched-%s-%d", workflowID, time.Now().UnixNano()),
+					ID:     fmt.Sprintf("sched-%s-%d", workflowID, now.UnixNano()),
 					Type:   "workflow.schedule.fire",
 					Source: "workflow/scheduler",
+					Time:   now,
 					Data:   map[string]any{"workflowId": workflowID},
 				}
 				if err := a.engine.FireByWorkflowID(workflowID, evt); err != nil {
