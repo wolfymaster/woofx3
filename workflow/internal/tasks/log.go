@@ -11,7 +11,7 @@ type LogTask struct {
 }
 
 func NewLogTask() TaskFactory {
-	return func(params map[string]any) (Task, error) {
+	return func(_ *types.TaskDefinition, params map[string]any) (Task, error) {
 		message, ok := params["message"].(string)
 		if !ok {
 			return nil, fmt.Errorf("message parameter is required and must be a string")

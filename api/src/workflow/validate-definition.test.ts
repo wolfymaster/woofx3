@@ -7,7 +7,7 @@ describe("validateWorkflowDefinition", () => {
       id: "x",
       name: "X",
       trigger: { type: "event" as const, eventType: "cheer.user.twitch" },
-      tasks: [{ id: "t1", type: "action" as const, parameters: { action: "print", message: "hi" } }],
+      tasks: [{ id: "t1", type: "action" as const, action: "print", parameters: { message: "hi" } }],
     };
     expect(validateWorkflowDefinition(def)).toEqual({ ok: true, value: def });
   });
@@ -20,12 +20,25 @@ describe("validateWorkflowDefinition", () => {
     }
   });
 
+  test("rejects action task with no action field", () => {
+    const r = validateWorkflowDefinition({
+      id: "x",
+      name: "X",
+      trigger: { type: "event", eventType: "e" },
+      tasks: [{ id: "t1", type: "action", parameters: { message: "hi" } }],
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.errors.some((e) => e.path === "tasks[0].action")).toBe(true);
+    }
+  });
+
   test("rejects task dependsOn referencing unknown id", () => {
     const r = validateWorkflowDefinition({
       id: "x",
       name: "X",
       trigger: { type: "event", eventType: "e" },
-      tasks: [{ id: "t1", type: "action", dependsOn: ["ghost"], parameters: {} }],
+      tasks: [{ id: "t1", type: "action", action: "print", dependsOn: ["ghost"], parameters: {} }],
     });
     expect(r.ok).toBe(false);
     if (!r.ok) {
@@ -39,8 +52,8 @@ describe("validateWorkflowDefinition", () => {
       name: "X",
       trigger: { type: "event", eventType: "e" },
       tasks: [
-        { id: "t1", type: "action", parameters: {} },
-        { id: "t1", type: "action", parameters: {} },
+        { id: "t1", type: "action", action: "print", parameters: {} },
+        { id: "t1", type: "action", action: "print", parameters: {} },
       ],
     });
     expect(r.ok).toBe(false);
@@ -82,7 +95,7 @@ describe("validateWorkflowDefinition", () => {
       id: "x",
       name: "X",
       trigger: { type: "event", eventType: "e", conditions: [] },
-      tasks: [{ id: "t1", type: "action", parameters: {} }],
+      tasks: [{ id: "t1", type: "action", action: "print", parameters: {} }],
     });
     expect(r.ok).toBe(true);
   });

@@ -58,9 +58,9 @@ A single unit of work within a workflow. Tasks execute in dependency order deter
 {
   "id": "send-message",
   "type": "action",
+  "action": "function",
   "dependsOn": ["check-amount"],
   "parameters": {
-    "action": "function",
     "functionName": "sendChatMessage",
     "params": ["Thank you ${trigger.data.userName}!"]
   },
@@ -78,8 +78,9 @@ A single unit of work within a workflow. Tasks execute in dependency order deter
 |----------|------|----------|-------------|
 | `id` | `string` | Yes | Unique identifier within the workflow. Referenced by `dependsOn`, `onTrue`, and `onFalse` in other tasks. |
 | `type` | `string` | Yes | Task type. One of: `action`, `log`, `wait`, `condition`, `workflow`. See [Task Types](./tasks.md). |
+| `action` | `string` | Yes (when `type` is `"action"`) | Registered action name to dispatch. Separated from `parameters` so dispatch config never collides with handler-specific inputs. Ignored for other task types. |
 | `dependsOn` | `string[]` | No | List of task IDs that must complete before this task runs. The engine builds a directed acyclic graph from these relationships and executes tasks in topological order. |
-| `parameters` | `map<string, any>` | Yes | Task-specific parameters. All string values support [expression resolution](#expression-syntax). The shape depends on the task `type`. |
+| `parameters` | `map<string, any>` | Yes | Task-specific inputs passed to the handler. All string values support [expression resolution](#expression-syntax). The shape depends on the task `type` / `action`. |
 | `exports` | `map<string, string>` | No | Extracts values from the task result and makes them available to downstream tasks. Keys are the export names, values are dot-notation paths into the task's result data. |
 | `onError` | `string` | No | Error handling strategy. `"fail"` (default) stops the workflow. `"continue"` marks the task as failed but continues execution. |
 | `timeout` | [Duration](#duration) | No | Maximum time the task is allowed to run before being considered failed. |

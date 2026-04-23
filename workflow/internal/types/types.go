@@ -31,6 +31,7 @@ type ConditionConfig struct {
 type TaskDefinition struct {
 	ID             string                 `json:"id" yaml:"id"`
 	Type           string                 `json:"type" yaml:"type"`
+	Action         string                 `json:"action,omitempty" yaml:"action,omitempty"` // Registered action name; required when Type == "action"
 	DependsOn      []string               `json:"dependsOn,omitempty" yaml:"dependsOn,omitempty"`
 	Parameters     map[string]any `json:"parameters" yaml:"parameters"`
 	Exports        map[string]string      `json:"exports,omitempty" yaml:"exports,omitempty"`

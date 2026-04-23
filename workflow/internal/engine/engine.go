@@ -77,9 +77,7 @@ func New[TServices any](logger tasks.Logger) *Engine[TServices] {
 
 func (e *Engine[TServices]) registerBuiltInTasks() {
 	e.taskRegistry.Register("log", tasks.NewLogTask())
-	e.taskRegistry.Register("action", func(params map[string]any) (tasks.Task, error) {
-		return tasks.NewActionTask(e.actionRegistry)(params)
-	})
+	e.taskRegistry.Register("action", tasks.NewActionTask(e.actionRegistry))
 	e.taskRegistry.Register("wait", tasks.NewWaitTask())
 	e.taskRegistry.Register("condition", tasks.NewConditionTask())
 	e.taskRegistry.Register("workflow", tasks.NewWorkflowTask())
@@ -938,7 +936,7 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 		return nil, fmt.Errorf("resolved parameters must be a map")
 	}
 
-	task, err := e.taskRegistry.Create(taskDef.Type, params)
+	task, err := e.taskRegistry.Create(taskDef, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task: %w", err)
 	}

@@ -64,6 +64,12 @@ export type TaskType = "action" | "log" | "wait" | "condition" | "workflow";
 export interface TaskDefinition {
   id: string;
   type: TaskType;
+  /**
+   * Registered action name — required when `type === "action"`, ignored otherwise.
+   * Separated from `parameters` so dispatch config and handler inputs don't share
+   * a namespace, matching the pattern used by wait/workflow/condition tasks.
+   */
+  action?: string;
   dependsOn?: string[];
   parameters?: Record<string, unknown>;
   exports?: Record<string, string>;

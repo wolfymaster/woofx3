@@ -17,8 +17,8 @@ Logs a message when someone cheers any amount of bits.
     {
       "id": "log-cheer",
       "type": "action",
+      "action": "print",
       "parameters": {
-        "action": "print",
         "message": "${trigger.data.userName} cheered ${trigger.data.amount} bits"
       }
     }
@@ -54,9 +54,9 @@ Sends different messages based on cheer amount.
     {
       "id": "vip-reward",
       "type": "action",
+      "action": "function",
       "dependsOn": ["check-tier"],
       "parameters": {
-        "action": "function",
         "functionName": "sendChatMessage",
         "params": ["VIP CHEER! ${trigger.data.userName} dropped ${trigger.data.amount} bits!"]
       }
@@ -64,9 +64,9 @@ Sends different messages based on cheer amount.
     {
       "id": "standard-reward",
       "type": "action",
+      "action": "function",
       "dependsOn": ["check-tier"],
       "parameters": {
-        "action": "function",
         "functionName": "sendChatMessage",
         "params": ["Thanks for the ${trigger.data.amount} bits, ${trigger.data.userName}!"]
       }
@@ -107,9 +107,9 @@ Waits for a cumulative bit total within a time window, then triggers a special e
     {
       "id": "announce-goal",
       "type": "action",
+      "action": "function",
       "dependsOn": ["accumulate-bits"],
       "parameters": {
-        "action": "function",
         "functionName": "sendChatMessage",
         "params": ["BIT GOAL REACHED! 10,000 bits collected!"]
       }
@@ -137,8 +137,8 @@ A parent workflow triggers a sub-workflow and waits for it to complete.
     {
       "id": "welcome-message",
       "type": "action",
+      "action": "function",
       "parameters": {
-        "action": "function",
         "functionName": "sendChatMessage",
         "params": ["Welcome ${trigger.data.userName}!"]
       }
@@ -186,8 +186,8 @@ Workflow that publishes a custom event to the message bus.
     {
       "id": "publish-notification",
       "type": "action",
+      "action": "publish_event",
       "parameters": {
-        "action": "publish_event",
         "eventType": "stream.started.notification",
         "data": {
           "channel": "${trigger.data.broadcasterName}",
@@ -226,8 +226,8 @@ Using conditions as guards to conditionally skip tasks (not branching).
     {
       "id": "send-welcome",
       "type": "action",
+      "action": "function",
       "parameters": {
-        "action": "function",
         "functionName": "sendChatMessage",
         "params": ["Welcome ${trigger.data.userName}!"]
       }
@@ -235,6 +235,7 @@ Using conditions as guards to conditionally skip tasks (not branching).
     {
       "id": "send-vip-welcome",
       "type": "action",
+      "action": "function",
       "dependsOn": ["send-welcome"],
       "condition": {
         "field": "${trigger.data.isVIP}",
@@ -242,7 +243,6 @@ Using conditions as guards to conditionally skip tasks (not branching).
         "value": true
       },
       "parameters": {
-        "action": "function",
         "functionName": "sendChatMessage",
         "params": ["Special VIP welcome to ${trigger.data.userName}!"]
       }

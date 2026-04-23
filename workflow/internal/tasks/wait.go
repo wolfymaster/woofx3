@@ -13,7 +13,7 @@ type WaitTask struct {
 }
 
 func NewWaitTask() TaskFactory {
-	return func(params map[string]any) (Task, error) {
+	return func(_ *types.TaskDefinition, _ map[string]any) (Task, error) {
 		return &WaitTask{}, nil
 	}
 }

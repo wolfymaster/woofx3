@@ -6,6 +6,8 @@ Tasks are the units of execution within a workflow. Each task has a `type` that 
 
 Executes a registered action. Actions are the primary way workflows interact with external systems.
 
+The registered action name goes in the task's top-level **`action`** field. Handler-specific inputs go in `parameters`. This separation mirrors the `wait`/`workflow`/`condition` types, which keep dispatch config at the top level and `parameters` reserved for runtime inputs.
+
 ### Built-in Actions
 
 #### `print`
@@ -16,17 +18,17 @@ Logs the parameters for debugging.
 {
   "id": "debug-log",
   "type": "action",
+  "action": "print",
   "parameters": {
-    "action": "print",
     "message": "Received ${trigger.data.amount} bits from ${trigger.data.userName}"
   }
 }
 ```
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `action` | `string` | Yes | Must be `"print"`. |
-| `message` | `string` | No | Message to log. Supports expressions. |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | `string` | Yes | Must be `"print"`. Set at the task top level, not in `parameters`. |
+| `parameters.message` | `string` | No | Message to log. Supports expressions. |
 
 Returns all parameters as-is.
 
@@ -38,19 +40,19 @@ Invokes a function registered in the Barkloader module system.
 {
   "id": "send-chat",
   "type": "action",
+  "action": "function",
   "parameters": {
-    "action": "function",
     "functionName": "sendChatMessage",
     "params": ["Hello ${trigger.data.userName}!"]
   }
 }
 ```
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `action` | `string` | Yes | Must be `"function"`. |
-| `functionName` | `string` | Yes | Name of the Barkloader function to invoke. |
-| `params` | `any[]` | No | Arguments to pass to the function. Each element supports expressions. |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | `string` | Yes | Must be `"function"`. Set at the task top level. |
+| `parameters.functionName` | `string` | Yes | Name of the Barkloader function to invoke. |
+| `parameters.params` | `any[]` | No | Arguments to pass to the function. Each element supports expressions. |
 
 Returns the function's result as a map.
 
@@ -62,8 +64,8 @@ Publishes an event to the NATS message bus.
 {
   "id": "notify",
   "type": "action",
+  "action": "publish_event",
   "parameters": {
-    "action": "publish_event",
     "eventType": "reward.granted",
     "source": "workflow",
     "data": {
@@ -74,12 +76,12 @@ Publishes an event to the NATS message bus.
 }
 ```
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `action` | `string` | Yes | Must be `"publish_event"`. |
-| `eventType` | `string` | Yes | CloudEvents type for the published event. Also used as the NATS subject unless `subject` is set on the event. |
-| `source` | `string` | No | CloudEvents source field. Defaults to `"workflow"`. |
-| `data` | `object` | No | Event payload. Supports expressions. |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | `string` | Yes | Must be `"publish_event"`. Set at the task top level. |
+| `parameters.eventType` | `string` | Yes | CloudEvents type for the published event. Also used as the NATS subject unless `subject` is set on the event. |
+| `parameters.source` | `string` | No | CloudEvents source field. Defaults to `"workflow"`. |
+| `parameters.data` | `object` | No | Event payload. Supports expressions. |
 
 Returns:
 

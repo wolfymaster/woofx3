@@ -7,7 +7,7 @@ import (
 type WorkflowTask struct{}
 
 func NewWorkflowTask() TaskFactory {
-	return func(params map[string]any) (Task, error) {
+	return func(_ *types.TaskDefinition, _ map[string]any) (Task, error) {
 		return &WorkflowTask{}, nil
 	}
 }

@@ -112,6 +112,9 @@ export function validateWorkflowDefinition(input: unknown): ValidationResult {
       if (!TASK_TYPES.has(t.type)) {
         errors.push({ path: `${p}.type`, message: `unknown task type: ${String(t.type)}` });
       }
+      if (t.type === "action" && (typeof t.action !== "string" || t.action.length === 0)) {
+        errors.push({ path: `${p}.action`, message: "required non-empty string for action tasks" });
+      }
       validateConditions(t.conditions, `${p}.conditions`, errors);
       if (t.condition) {
         validateConditions([t.condition], `${p}.condition`, errors);

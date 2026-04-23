@@ -13,15 +13,14 @@ type ActionTask[TServices any] struct {
 }
 
 func NewActionTask[TServices any](actionRegistry *ActionRegistry[TServices]) TaskFactory {
-	return func(params map[string]any) (Task, error) {
-		actionName, ok := params["action"].(string)
-		if !ok {
-			return nil, fmt.Errorf("action parameter is required and must be a string")
+	return func(taskDef *types.TaskDefinition, params map[string]any) (Task, error) {
+		if taskDef.Action == "" {
+			return nil, fmt.Errorf("action field is required on action tasks")
 		}
 
 		return &ActionTask[TServices]{
 			actionRegistry: actionRegistry,
-			actionName:     actionName,
+			actionName:     taskDef.Action,
 			parameters:     params,
 		}, nil
 	}

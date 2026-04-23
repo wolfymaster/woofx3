@@ -28,7 +28,12 @@ type Logger interface {
 	Debug(message string, args ...any)
 }
 
-type TaskFactory func(params map[string]any) (Task, error)
+// TaskFactory builds a Task from its definition plus the resolved runtime
+// parameters. Factories receive the full TaskDefinition so each task type can
+// read its own top-level config fields (e.g. Action for "action" tasks, Wait
+// for "wait" tasks) without smuggling dispatch state through the parameters
+// map.
+type TaskFactory func(taskDef *types.TaskDefinition, params map[string]any) (Task, error)
 
 type TaskRegistry struct {
 	mu        sync.RWMutex
@@ -53,16 +58,16 @@ func (r *TaskRegistry) Register(taskType string, factory TaskFactory) error {
 	return nil
 }
 
-func (r *TaskRegistry) Create(taskType string, params map[string]any) (Task, error) {
+func (r *TaskRegistry) Create(taskDef *types.TaskDefinition, params map[string]any) (Task, error) {
 	r.mu.RLock()
-	factory, ok := r.factories[taskType]
+	factory, ok := r.factories[taskDef.Type]
 	r.mu.RUnlock()
 
 	if !ok {
-		return nil, fmt.Errorf("unknown task type: %s", taskType)
+		return nil, fmt.Errorf("unknown task type: %s", taskDef.Type)
 	}
 
-	return factory(params)
+	return factory(taskDef, params)
 }
 
 func (r *TaskRegistry) List() []string {
