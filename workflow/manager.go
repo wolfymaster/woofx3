@@ -125,6 +125,20 @@ func (m *WorkflowManager) HandleWorkflowCreateOrUpdate(evt *cloudevents.Workflow
 		return
 	}
 
+	// Respect the disabled flag on the lifecycle path: LoadWorkflowsFromDB
+	// and the reconciler both filter on GetEnabled(), so the real-time event
+	// path must too — otherwise toggling a workflow off leaves it firing
+	// until the next reconcile pass. Unregister is idempotent, so calling it
+	// when the workflow was never registered is safe.
+	if !resp.Workflow.GetEnabled() {
+		if m.registry != nil {
+			if err := m.registry.UnregisterWorkflow(changeData.EntityID); err != nil {
+				m.logger.Warn("Failed to unregister disabled workflow", "error", err, "workflow_id", changeData.EntityID)
+			}
+		}
+		return
+	}
+
 	// Convert DB workflow to engine workflow definition
 	workflowDef, err := convertDBWorkflowToEngineWorkflow(resp.Workflow)
 	if err != nil {

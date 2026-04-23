@@ -124,12 +124,17 @@ func (r *WorkflowRegistry) List() []*types.WorkflowDefinition {
 	return workflows
 }
 
+// Remove is idempotent: removing a workflow that was never registered is a
+// no-op rather than an error. The lifecycle path needs to unregister on
+// disable without knowing whether the workflow was previously enabled, and
+// the TriggerRegistrar contract specifies Unregister as idempotent — this
+// keeps the same semantics at the registry layer.
 func (r *WorkflowRegistry) Remove(id string) error {
 	r.mu.Lock()
 	def, ok := r.workflows[id]
 	if !ok {
 		r.mu.Unlock()
-		return fmt.Errorf("workflow not found: %s", id)
+		return nil
 	}
 	delete(r.workflows, id)
 	registrar := r.registrar

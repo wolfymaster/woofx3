@@ -89,5 +89,21 @@ func TestRegistry_NilTrigger_SkipsRegistrar(t *testing.T) {
 	}
 }
 
+func TestRegistry_Remove_IdempotentWhenAbsent(t *testing.T) {
+	reg := NewWorkflowRegistry()
+	rr := &recordingRegistrar{}
+	reg.SetRegistrar(rr)
+
+	// Removing a workflow that was never registered must succeed silently,
+	// so the lifecycle path can unregister on disable without knowing whether
+	// the workflow was previously enabled.
+	if err := reg.Remove("missing"); err != nil {
+		t.Fatalf("Remove(missing) returned error: %v", err)
+	}
+	if len(rr.unregisters) != 0 {
+		t.Errorf("expected no registrar calls; got %d unregisters", len(rr.unregisters))
+	}
+}
+
 // Silences unused import complaint if the file ends up not using triggers.*.
 var _ triggers.Registrar = (*recordingRegistrar)(nil)
