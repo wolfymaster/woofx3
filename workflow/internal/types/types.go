@@ -18,6 +18,7 @@ type WorkflowDefinition struct {
 type TriggerConfig struct {
 	Type       string            `json:"type" yaml:"type"`
 	EventType  string            `json:"eventType,omitempty" yaml:"eventType,omitempty"`
+	Schedule   string            `json:"schedule,omitempty" yaml:"schedule,omitempty"`
 	Conditions []ConditionConfig `json:"conditions,omitempty" yaml:"conditions,omitempty"`
 }
 
