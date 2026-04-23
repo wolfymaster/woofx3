@@ -29,11 +29,11 @@ export interface ConditionConfig {
   value?: unknown;
 }
 
-export interface TriggerConfig {
-  type: "event";
-  eventType: string;
-  conditions?: ConditionConfig[];
-}
+// Schedule cron grammar follows robfig/cron/v3 (5-field, no seconds).
+// Examples: "0 * * * *" (top of every hour), "*/15 * * * *" (every 15 min).
+export type TriggerConfig =
+  | { type: "event"; eventType: string; conditions?: ConditionConfig[] }
+  | { type: "schedule"; schedule: string; conditions?: ConditionConfig[] };
 
 export interface AggregationConfig {
   strategy: "count" | "sum" | "threshold";

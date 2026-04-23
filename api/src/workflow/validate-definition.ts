@@ -60,13 +60,16 @@ export function validateWorkflowDefinition(input: unknown): ValidationResult {
   if (!def.trigger || typeof def.trigger !== "object") {
     errors.push({ path: "trigger", message: "required object" });
   } else {
+    // Task 5.2 will add full schedule validation; for now preserve existing
+    // event-trigger behavior and reject other types at trigger.type.
     if (def.trigger.type !== "event") {
       errors.push({ path: "trigger.type", message: 'must be "event"' });
+    } else {
+      if (typeof def.trigger.eventType !== "string" || def.trigger.eventType.length === 0) {
+        errors.push({ path: "trigger.eventType", message: "required string" });
+      }
+      validateConditions(def.trigger.conditions, "trigger.conditions", errors);
     }
-    if (typeof def.trigger.eventType !== "string" || def.trigger.eventType.length === 0) {
-      errors.push({ path: "trigger.eventType", message: "required string" });
-    }
-    validateConditions(def.trigger.conditions, "trigger.conditions", errors);
   }
 
   if (!Array.isArray(def.tasks) || def.tasks.length === 0) {
