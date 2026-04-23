@@ -37,6 +37,14 @@ export interface RegisterTriggersRequest {
   moduleName: string;
   version: string;
   triggers: TriggerInput[];
+  /**
+   * Optional explicit registration identity. When both are set they override
+   * the default (MODULE, module_key) pairing, letting non-module registrars
+   * (e.g. SYSTEM services) upsert into the same table under their own
+   * namespace. The upsert key is (created_by_type, created_by_ref, name).
+   */
+  createdByType: string;
+  createdByRef: string;
 }
 
 export interface ListTriggersRequest {
@@ -325,6 +333,8 @@ export const RegisterTriggersRequest = {
       moduleName: "",
       version: "",
       triggers: [],
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -351,6 +361,12 @@ export const RegisterTriggersRequest = {
         msg.triggers as any,
         TriggerInput._writeMessage,
       );
+    }
+    if (msg.createdByType) {
+      writer.writeString(5, msg.createdByType);
+    }
+    if (msg.createdByRef) {
+      writer.writeString(6, msg.createdByRef);
     }
     return writer;
   },
@@ -381,6 +397,14 @@ export const RegisterTriggersRequest = {
           const m = TriggerInput.initialize();
           reader.readMessage(m, TriggerInput._readMessage);
           msg.triggers.push(m);
+          break;
+        }
+        case 5: {
+          msg.createdByType = reader.readString();
+          break;
+        }
+        case 6: {
+          msg.createdByRef = reader.readString();
           break;
         }
         default: {
@@ -793,6 +817,8 @@ export const RegisterTriggersRequestJSON = {
       moduleName: "",
       version: "",
       triggers: [],
+      createdByType: "",
+      createdByRef: "",
       ...msg,
     };
   },
@@ -815,6 +841,12 @@ export const RegisterTriggersRequestJSON = {
     }
     if (msg.triggers?.length) {
       json["triggers"] = msg.triggers.map(TriggerInputJSON._writeMessage);
+    }
+    if (msg.createdByType) {
+      json["createdByType"] = msg.createdByType;
+    }
+    if (msg.createdByRef) {
+      json["createdByRef"] = msg.createdByRef;
     }
     return json;
   },
@@ -845,6 +877,14 @@ export const RegisterTriggersRequestJSON = {
         TriggerInputJSON._readMessage(m, item);
         msg.triggers.push(m);
       }
+    }
+    const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
+    if (_createdByType_) {
+      msg.createdByType = _createdByType_;
+    }
+    const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
+    if (_createdByRef_) {
+      msg.createdByRef = _createdByRef_;
     }
     return msg;
   },

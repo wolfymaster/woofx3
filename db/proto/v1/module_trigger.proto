@@ -28,10 +28,16 @@ message TriggerInput {
 }
 
 message RegisterTriggersRequest {
-  string module_key = 1;   // composite "{id}:{version}:{hash}" — stored as created_by_ref
+  string module_key = 1;   // composite "{id}:{version}:{hash}" — stored as created_by_ref when created_by_type/ref are empty
   string module_name = 2;  // manifest.name — carried to event for display
   string version = 3;      // manifest.version — carried to event as metadata
   repeated TriggerInput triggers = 4;
+  // Optional explicit registration identity. When both are set they override
+  // the default (MODULE, module_key) pairing, letting non-module registrars
+  // (e.g. SYSTEM services) upsert into the same table under their own
+  // namespace. The upsert key is (created_by_type, created_by_ref, name).
+  string created_by_type = 5;
+  string created_by_ref = 6;
 }
 
 message ListTriggersRequest {

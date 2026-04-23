@@ -214,11 +214,17 @@ func (x *TriggerInput) GetAllowVariants() bool {
 }
 
 type RegisterTriggersRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ModuleKey     string                 `protobuf:"bytes,1,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`    // composite "{id}:{version}:{hash}" — stored as created_by_ref
-	ModuleName    string                 `protobuf:"bytes,2,opt,name=module_name,json=moduleName,proto3" json:"module_name,omitempty"` // manifest.name — carried to event for display
-	Version       string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`                         // manifest.version — carried to event as metadata
-	Triggers      []*TriggerInput        `protobuf:"bytes,4,rep,name=triggers,proto3" json:"triggers,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ModuleKey  string                 `protobuf:"bytes,1,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`    // composite "{id}:{version}:{hash}" — stored as created_by_ref when created_by_type/ref are empty
+	ModuleName string                 `protobuf:"bytes,2,opt,name=module_name,json=moduleName,proto3" json:"module_name,omitempty"` // manifest.name — carried to event for display
+	Version    string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`                         // manifest.version — carried to event as metadata
+	Triggers   []*TriggerInput        `protobuf:"bytes,4,rep,name=triggers,proto3" json:"triggers,omitempty"`
+	// Optional explicit registration identity. When both are set they override
+	// the default (MODULE, module_key) pairing, letting non-module registrars
+	// (e.g. SYSTEM services) upsert into the same table under their own
+	// namespace. The upsert key is (created_by_type, created_by_ref, name).
+	CreatedByType string `protobuf:"bytes,5,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
+	CreatedByRef  string `protobuf:"bytes,6,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -279,6 +285,20 @@ func (x *RegisterTriggersRequest) GetTriggers() []*TriggerInput {
 		return x.Triggers
 	}
 	return nil
+}
+
+func (x *RegisterTriggersRequest) GetCreatedByType() string {
+	if x != nil {
+		return x.CreatedByType
+	}
+	return ""
+}
+
+func (x *RegisterTriggersRequest) GetCreatedByRef() string {
+	if x != nil {
+		return x.CreatedByRef
+	}
+	return ""
 }
 
 type ListTriggersRequest struct {
@@ -407,14 +427,16 @@ const file_module_trigger_proto_rawDesc = "" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x14\n" +
 	"\x05event\x18\x04 \x01(\tR\x05event\x12#\n" +
 	"\rconfig_schema\x18\x05 \x01(\tR\fconfigSchema\x12%\n" +
-	"\x0eallow_variants\x18\x06 \x01(\bR\rallowVariants\"\xa5\x01\n" +
+	"\x0eallow_variants\x18\x06 \x01(\bR\rallowVariants\"\xf3\x01\n" +
 	"\x17RegisterTriggersRequest\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +
 	"\vmodule_name\x18\x02 \x01(\tR\n" +
 	"moduleName\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x120\n" +
-	"\btriggers\x18\x04 \x03(\v2\x14.module.TriggerInputR\btriggers\"c\n" +
+	"\btriggers\x18\x04 \x03(\v2\x14.module.TriggerInputR\btriggers\x12&\n" +
+	"\x0fcreated_by_type\x18\x05 \x01(\tR\rcreatedByType\x12$\n" +
+	"\x0ecreated_by_ref\x18\x06 \x01(\tR\fcreatedByRef\"c\n" +
 	"\x13ListTriggersRequest\x12&\n" +
 	"\x0fcreated_by_type\x18\x01 \x01(\tR\rcreatedByType\x12$\n" +
 	"\x0ecreated_by_ref\x18\x02 \x01(\tR\fcreatedByRef\"s\n" +

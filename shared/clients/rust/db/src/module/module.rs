@@ -39,7 +39,7 @@ pub struct TriggerInput {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterTriggersRequest {
-    /// composite "{id}:{version}:{hash}" — stored as created_by_ref
+    /// composite "{id}:{version}:{hash}" — stored as created_by_ref when created_by_type/ref are empty
     #[prost(string, tag="1")]
     pub module_key: ::prost::alloc::string::String,
     /// manifest.name — carried to event for display
@@ -50,6 +50,14 @@ pub struct RegisterTriggersRequest {
     pub version: ::prost::alloc::string::String,
     #[prost(message, repeated, tag="4")]
     pub triggers: ::prost::alloc::vec::Vec<TriggerInput>,
+    /// Optional explicit registration identity. When both are set they override
+    /// the default (MODULE, module_key) pairing, letting non-module registrars
+    /// (e.g. SYSTEM services) upsert into the same table under their own
+    /// namespace. The upsert key is (created_by_type, created_by_ref, name).
+    #[prost(string, tag="5")]
+    pub created_by_type: ::prost::alloc::string::String,
+    #[prost(string, tag="6")]
+    pub created_by_ref: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListTriggersRequest {

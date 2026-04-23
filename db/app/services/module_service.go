@@ -318,6 +318,15 @@ func (s *moduleService) SetModuleState(ctx context.Context, req *client.SetModul
 }
 
 func (s *moduleService) RegisterTriggers(ctx context.Context, req *client.RegisterTriggersRequest) (*client.ListTriggersResponse, error) {
+	// Default module-installer registration pairing; optional overrides let
+	// non-module registrars (SYSTEM services, integrations) upsert into the
+	// shared triggers table under their own (type, ref) namespace.
+	createdByType := "MODULE"
+	createdByRef := req.ModuleKey
+	if req.CreatedByType != "" && req.CreatedByRef != "" {
+		createdByType = req.CreatedByType
+		createdByRef = req.CreatedByRef
+	}
 	saved := make([]*models.Trigger, 0, len(req.Triggers))
 	for _, in := range req.Triggers {
 		t := &models.Trigger{
@@ -328,8 +337,8 @@ func (s *moduleService) RegisterTriggers(ctx context.Context, req *client.Regist
 			Event:         in.Event,
 			ConfigSchema:  in.ConfigSchema,
 			AllowVariants: in.AllowVariants,
-			CreatedByType: "MODULE",
-			CreatedByRef:  req.ModuleKey,
+			CreatedByType: createdByType,
+			CreatedByRef:  createdByRef,
 		}
 		if err := s.repo.UpsertTrigger(t); err != nil {
 			return nil, fmt.Errorf("upsert trigger %q: %w", in.Name, err)
