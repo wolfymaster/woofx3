@@ -158,55 +158,55 @@ func (m *WorkflowManager) HandleWorkflowDelete(entityID string) {
 	}
 }
 
-// convertDBWorkflowToEngineWorkflow converts a DB workflow proto to an engine workflow definition
+// convertDBWorkflowToEngineWorkflow converts a DB workflow proto to an engine workflow definition.
+// The canonical source of truth is variables["_definition"] (a JSON-encoded
+// WorkflowDefinition). If that variable is missing, we fall back to reconstructing
+// a minimal definition from the structured proto fields.
 func convertDBWorkflowToEngineWorkflow(dbWorkflow *dbv1.Workflow) (*types.WorkflowDefinition, error) {
+	if rawDef, ok := dbWorkflow.GetVariables()["_definition"]; ok && rawDef != "" {
+		var def types.WorkflowDefinition
+		if err := json.Unmarshal([]byte(rawDef), &def); err != nil {
+			return nil, fmt.Errorf("unmarshal _definition for workflow %s: %w", dbWorkflow.GetId(), err)
+		}
+		if def.ID == "" {
+			def.ID = dbWorkflow.GetId()
+		}
+		if def.Name == "" {
+			def.Name = dbWorkflow.GetName()
+		}
+		return &def, nil
+	}
+
+	// Legacy path: rebuild tasks from proto steps (no trigger available here).
 	dbSteps := dbWorkflow.GetSteps()
-
-	// First pass: convert all steps to tasks and build a map for dependency resolution
-	tasks := make([]types.TaskDefinition, 0, len(dbSteps))
-	stepIDToTaskIndex := make(map[string]int)
-
+	taskList := make([]types.TaskDefinition, 0, len(dbSteps))
+	stepIDToTaskIndex := make(map[string]int, len(dbSteps))
 	for i, dbStep := range dbSteps {
 		task, err := convertDBStepToTask(dbStep)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert step %s: %w", dbStep.GetId(), err)
 		}
-		tasks = append(tasks, *task)
+		taskList = append(taskList, *task)
 		stepIDToTaskIndex[dbStep.GetId()] = i
 	}
-
-	// Second pass: build dependencies from on_success/on_failure relationships
-	// If step A has on_success = "step_b", then step_b depends on step_a
 	for i, dbStep := range dbSteps {
 		stepID := dbStep.GetId()
-
-		// Add dependencies based on which steps point to this step as their next step
 		dependsOn := []string{}
-		for _, otherStep := range dbSteps {
-			if otherStep.GetOnSuccess() == stepID || otherStep.GetOnFailure() == stepID {
-				dependsOn = append(dependsOn, otherStep.GetId())
+		for _, other := range dbSteps {
+			if other.GetOnSuccess() == stepID || other.GetOnFailure() == stepID {
+				dependsOn = append(dependsOn, other.GetId())
 			}
 		}
-
 		if len(dependsOn) > 0 {
-			tasks[i].DependsOn = dependsOn
+			taskList[i].DependsOn = dependsOn
 		}
 	}
-
-	// Try to extract trigger from workflow metadata
-	// Since Trigger isn't in the proto, we might need to fetch it separately
-	// For now, we'll create a basic workflow without trigger
-	// TODO: Fetch trigger information if needed (might require GetWorkflow call or separate field)
-
-	workflowDef := &types.WorkflowDefinition{
+	return &types.WorkflowDefinition{
 		ID:          dbWorkflow.GetId(),
 		Name:        dbWorkflow.GetName(),
 		Description: dbWorkflow.GetDescription(),
-		Tasks:       tasks,
-		// Trigger will be set if available in the future
-	}
-
-	return workflowDef, nil
+		Tasks:       taskList,
+	}, nil
 }
 
 // convertDBStepToTask converts a DB workflow step proto to a task definition
