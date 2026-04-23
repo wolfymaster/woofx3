@@ -12,6 +12,7 @@ import (
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/workflow/internal/engine"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
+	"github.com/wolfymaster/woofx3/workflow/internal/triggers"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
@@ -104,6 +105,16 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 			registerService("messageBus", func() *natsclient.Client {
 				return natsClient
 			})
+
+			// Dynamic per-workflow trigger subscriptions: the registry drives
+			// subscribe/unsubscribe as workflows enter and leave the engine.
+			subscriber := newNatsSubscriber(natsClient)
+			eventReg := triggers.NewEventTriggerRegistrar(subscriber, a.handleTriggerEvent, a.logger)
+			composite := triggers.NewCompositeRegistrar()
+			composite.Set("event", eventReg)
+			a.engine.Registry().SetRegistrar(composite)
+			a.engine.Registry().SetLogger(a.logger)
+
 			publisher := NewNATSEventPublisher(natsClient, a.logger)
 			a.engine.SetPublisher(publisher)
 			a.logger.Info("Event publisher configured with NATS")
@@ -219,15 +230,17 @@ func (a *WorkflowApp) validateCloudEvent(data []byte) (*types.Event, error) {
 	return &event, nil
 }
 
-// handleTriggerEvent processes incoming events that may trigger workflows
-func (a *WorkflowApp) handleTriggerEvent(msg natsclient.Msg) {
+// handleTriggerEvent processes incoming events that may trigger workflows.
+// Takes primitive args so it can be invoked both from static-pattern NATS
+// subscribers and the dynamic trigger registrar without synthesizing a Msg.
+func (a *WorkflowApp) handleTriggerEvent(payload []byte, subject string) {
 	// Validate CloudEvents format
-	event, err := a.validateCloudEvent(msg.Data())
+	event, err := a.validateCloudEvent(payload)
 	if err != nil {
 		a.logger.Error("Invalid event format",
 			"error", err,
-			"subject", msg.Subject(),
-			"raw_data", string(msg.Data()))
+			"subject", subject,
+			"raw_data", string(payload))
 		return
 	}
 
@@ -235,7 +248,7 @@ func (a *WorkflowApp) handleTriggerEvent(msg natsclient.Msg) {
 	a.logger.Debug("Received trigger event",
 		"type", event.Type,
 		"id", event.ID,
-		"subject", msg.Subject())
+		"subject", subject)
 
 	// Route to engine for workflow matching and execution
 	if err := a.engine.HandleEvent(event); err != nil {
@@ -252,7 +265,7 @@ func (a *WorkflowApp) subscribeToTriggerEvents(natsClient *natsclient.Client, pa
 	for _, pattern := range patterns {
 		capturedPattern := pattern // Capture for closure
 		_, err := natsClient.Subscribe(pattern, func(msg natsclient.Msg) {
-			a.handleTriggerEvent(msg)
+			a.handleTriggerEvent(msg.Data(), msg.Subject())
 		})
 		if err != nil {
 			return fmt.Errorf("failed to subscribe to pattern %s: %w", pattern, err)

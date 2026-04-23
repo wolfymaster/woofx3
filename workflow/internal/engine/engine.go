@@ -85,6 +85,12 @@ func (e *Engine[TServices]) registerBuiltInTasks() {
 	e.taskRegistry.Register("workflow", tasks.NewWorkflowTask())
 }
 
+// Registry exposes the underlying workflow registry so callers (the workflow
+// app binary) can wire trigger registrars and a logger after construction.
+func (e *Engine[TServices]) Registry() *WorkflowRegistry {
+	return e.workflowRegistry
+}
+
 func (e *Engine[TServices]) RegisterWorkflow(def *types.WorkflowDefinition) error {
 	return e.workflowRegistry.Register(def)
 }
