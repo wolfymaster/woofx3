@@ -3847,6 +3847,12 @@ impl serde::Serialize for RegisterActionsRequest {
         if !self.actions.is_empty() {
             len += 1;
         }
+        if !self.created_by_type.is_empty() {
+            len += 1;
+        }
+        if !self.created_by_ref.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.RegisterActionsRequest", len)?;
         if !self.module_key.is_empty() {
             struct_ser.serialize_field("moduleKey", &self.module_key)?;
@@ -3859,6 +3865,12 @@ impl serde::Serialize for RegisterActionsRequest {
         }
         if !self.actions.is_empty() {
             struct_ser.serialize_field("actions", &self.actions)?;
+        }
+        if !self.created_by_type.is_empty() {
+            struct_ser.serialize_field("createdByType", &self.created_by_type)?;
+        }
+        if !self.created_by_ref.is_empty() {
+            struct_ser.serialize_field("createdByRef", &self.created_by_ref)?;
         }
         struct_ser.end()
     }
@@ -3876,6 +3888,10 @@ impl<'de> serde::Deserialize<'de> for RegisterActionsRequest {
             "moduleName",
             "version",
             "actions",
+            "created_by_type",
+            "createdByType",
+            "created_by_ref",
+            "createdByRef",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -3884,6 +3900,8 @@ impl<'de> serde::Deserialize<'de> for RegisterActionsRequest {
             ModuleName,
             Version,
             Actions,
+            CreatedByType,
+            CreatedByRef,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -3909,6 +3927,8 @@ impl<'de> serde::Deserialize<'de> for RegisterActionsRequest {
                             "moduleName" | "module_name" => Ok(GeneratedField::ModuleName),
                             "version" => Ok(GeneratedField::Version),
                             "actions" => Ok(GeneratedField::Actions),
+                            "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
+                            "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -3932,6 +3952,8 @@ impl<'de> serde::Deserialize<'de> for RegisterActionsRequest {
                 let mut module_name__ = None;
                 let mut version__ = None;
                 let mut actions__ = None;
+                let mut created_by_type__ = None;
+                let mut created_by_ref__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::ModuleKey => {
@@ -3958,6 +3980,18 @@ impl<'de> serde::Deserialize<'de> for RegisterActionsRequest {
                             }
                             actions__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::CreatedByType => {
+                            if created_by_type__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByType"));
+                            }
+                            created_by_type__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CreatedByRef => {
+                            if created_by_ref__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByRef"));
+                            }
+                            created_by_ref__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(RegisterActionsRequest {
@@ -3965,6 +3999,8 @@ impl<'de> serde::Deserialize<'de> for RegisterActionsRequest {
                     module_name: module_name__.unwrap_or_default(),
                     version: version__.unwrap_or_default(),
                     actions: actions__.unwrap_or_default(),
+                    created_by_type: created_by_type__.unwrap_or_default(),
+                    created_by_ref: created_by_ref__.unwrap_or_default(),
                 })
             }
         }

@@ -182,11 +182,17 @@ func (x *ActionInput) GetParamsSchema() string {
 }
 
 type RegisterActionsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ModuleKey     string                 `protobuf:"bytes,1,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`
-	ModuleName    string                 `protobuf:"bytes,2,opt,name=module_name,json=moduleName,proto3" json:"module_name,omitempty"`
-	Version       string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
-	Actions       []*ActionInput         `protobuf:"bytes,4,rep,name=actions,proto3" json:"actions,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ModuleKey  string                 `protobuf:"bytes,1,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`    // composite "{id}:{version}:{hash}" — stored as created_by_ref when created_by_type/ref are empty
+	ModuleName string                 `protobuf:"bytes,2,opt,name=module_name,json=moduleName,proto3" json:"module_name,omitempty"` // manifest.name — carried to event for display
+	Version    string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`                         // manifest.version — carried to event as metadata
+	Actions    []*ActionInput         `protobuf:"bytes,4,rep,name=actions,proto3" json:"actions,omitempty"`
+	// Optional explicit registration identity. When both are set they override
+	// the default (MODULE, module_key) pairing, letting non-module registrars
+	// (e.g. SYSTEM services) upsert into the same table under their own
+	// namespace. The upsert key is (created_by_type, created_by_ref, name).
+	CreatedByType string `protobuf:"bytes,5,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
+	CreatedByRef  string `protobuf:"bytes,6,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -247,6 +253,20 @@ func (x *RegisterActionsRequest) GetActions() []*ActionInput {
 		return x.Actions
 	}
 	return nil
+}
+
+func (x *RegisterActionsRequest) GetCreatedByType() string {
+	if x != nil {
+		return x.CreatedByType
+	}
+	return ""
+}
+
+func (x *RegisterActionsRequest) GetCreatedByRef() string {
+	if x != nil {
+		return x.CreatedByRef
+	}
+	return ""
 }
 
 type ListActionsRequest struct {
@@ -370,14 +390,16 @@ const file_module_action_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x12\n" +
 	"\x04call\x18\x03 \x01(\tR\x04call\x12#\n" +
-	"\rparams_schema\x18\x04 \x01(\tR\fparamsSchema\"\xa1\x01\n" +
+	"\rparams_schema\x18\x04 \x01(\tR\fparamsSchema\"\xef\x01\n" +
 	"\x16RegisterActionsRequest\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +
 	"\vmodule_name\x18\x02 \x01(\tR\n" +
 	"moduleName\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12-\n" +
-	"\aactions\x18\x04 \x03(\v2\x13.module.ActionInputR\aactions\"b\n" +
+	"\aactions\x18\x04 \x03(\v2\x13.module.ActionInputR\aactions\x12&\n" +
+	"\x0fcreated_by_type\x18\x05 \x01(\tR\rcreatedByType\x12$\n" +
+	"\x0ecreated_by_ref\x18\x06 \x01(\tR\fcreatedByRef\"b\n" +
 	"\x12ListActionsRequest\x12&\n" +
 	"\x0fcreated_by_type\x18\x01 \x01(\tR\rcreatedByType\x12$\n" +
 	"\x0ecreated_by_ref\x18\x02 \x01(\tR\fcreatedByRef\"o\n" +

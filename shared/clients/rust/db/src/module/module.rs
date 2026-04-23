@@ -104,14 +104,25 @@ pub struct ActionInput {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterActionsRequest {
+    /// composite "{id}:{version}:{hash}" — stored as created_by_ref when created_by_type/ref are empty
     #[prost(string, tag="1")]
     pub module_key: ::prost::alloc::string::String,
+    /// manifest.name — carried to event for display
     #[prost(string, tag="2")]
     pub module_name: ::prost::alloc::string::String,
+    /// manifest.version — carried to event as metadata
     #[prost(string, tag="3")]
     pub version: ::prost::alloc::string::String,
     #[prost(message, repeated, tag="4")]
     pub actions: ::prost::alloc::vec::Vec<ActionInput>,
+    /// Optional explicit registration identity. When both are set they override
+    /// the default (MODULE, module_key) pairing, letting non-module registrars
+    /// (e.g. SYSTEM services) upsert into the same table under their own
+    /// namespace. The upsert key is (created_by_type, created_by_ref, name).
+    #[prost(string, tag="5")]
+    pub created_by_type: ::prost::alloc::string::String,
+    #[prost(string, tag="6")]
+    pub created_by_ref: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListActionsRequest {

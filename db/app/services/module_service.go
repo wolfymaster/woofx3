@@ -414,6 +414,15 @@ func triggerToProto(t *models.Trigger) *client.Trigger {
 }
 
 func (s *moduleService) RegisterActions(ctx context.Context, req *client.RegisterActionsRequest) (*client.ListActionsResponse, error) {
+	// Default module-installer registration pairing; optional overrides let
+	// non-module registrars (SYSTEM services, integrations) upsert into the
+	// shared actions table under their own (type, ref) namespace.
+	createdByType := "MODULE"
+	createdByRef := req.ModuleKey
+	if req.CreatedByType != "" && req.CreatedByRef != "" {
+		createdByType = req.CreatedByType
+		createdByRef = req.CreatedByRef
+	}
 	saved := make([]*models.Action, 0, len(req.Actions))
 	for _, in := range req.Actions {
 		a := &models.Action{
@@ -422,8 +431,8 @@ func (s *moduleService) RegisterActions(ctx context.Context, req *client.Registe
 			Description:   in.Description,
 			Call:          in.Call,
 			ParamsSchema:  in.ParamsSchema,
-			CreatedByType: "MODULE",
-			CreatedByRef:  req.ModuleKey,
+			CreatedByType: createdByType,
+			CreatedByRef:  createdByRef,
 		}
 		if err := s.repo.UpsertAction(a); err != nil {
 			return nil, fmt.Errorf("upsert action %q: %w", in.Name, err)
