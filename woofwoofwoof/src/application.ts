@@ -7,7 +7,6 @@ import type { Application, IApplication } from "@woofx3/common/runtime/applicati
 import type { Command } from "@woofx3/db/command.pb";
 import type { Msg } from "@woofx3/nats/src/types";
 import chalk from "chalk";
-import { registerBuiltinTriggers } from "./builtin-triggers";
 import { Commands } from "./commands";
 import type BarkloaderClientService from "./services/barkloader";
 import type DatabaseService from "./services/database";
@@ -46,17 +45,6 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
 
   async init(ctx: Context) {
     const db = ctx.services.db.client;
-
-    // Register built-in system triggers with the DB proxy. Idempotent via the
-    // repository's (created_by_type, created_by_ref, name) upsert — a failure
-    // here is logged but non-fatal so a transient db-proxy outage does not
-    // crash the chatbot; next startup will upsert again.
-    try {
-      await registerBuiltinTriggers(db);
-      ctx.logger.info("Registered builtin system triggers");
-    } catch (err) {
-      ctx.logger.error("Failed to register builtin triggers", err);
-    }
 
     const commander = new Commands(
       ctx.config.getConfig("woofx3TwitchChannelName") as string,
