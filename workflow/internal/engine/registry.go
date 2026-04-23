@@ -5,18 +5,47 @@ import (
 	"sync"
 
 	"github.com/wolfymaster/woofx3/workflow/internal/eventmatch"
+	"github.com/wolfymaster/woofx3/workflow/internal/triggers"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
 type WorkflowRegistry struct {
 	mu        sync.RWMutex
 	workflows map[string]*types.WorkflowDefinition
+	registrar triggers.Registrar
+	logger    logger
+}
+
+// logger is the minimal interface the registry needs; engine.Engine passes its own.
+type logger interface {
+	Error(msg string, keysAndValues ...any)
 }
 
 func NewWorkflowRegistry() *WorkflowRegistry {
 	return &WorkflowRegistry{
 		workflows: make(map[string]*types.WorkflowDefinition),
+		registrar: triggers.NoopRegistrar{},
 	}
+}
+
+// SetRegistrar wires a trigger registrar. Must be called before any Register/Remove.
+// Passing nil restores the noop registrar.
+func (r *WorkflowRegistry) SetRegistrar(reg triggers.Registrar) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if reg == nil {
+		r.registrar = triggers.NoopRegistrar{}
+		return
+	}
+	r.registrar = reg
+}
+
+// SetLogger wires a logger for recording registrar errors. Errors are non-fatal:
+// a failed subscribe should not unregister the workflow.
+func (r *WorkflowRegistry) SetLogger(l logger) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.logger = l
 }
 
 func (r *WorkflowRegistry) Register(def *types.WorkflowDefinition) error {
@@ -31,9 +60,25 @@ func (r *WorkflowRegistry) Register(def *types.WorkflowDefinition) error {
 	}
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
+	prev, existed := r.workflows[def.ID]
 	r.workflows[def.ID] = def
+	registrar := r.registrar
+	logger := r.logger
+	r.mu.Unlock()
+
+	// On update, release any prior trigger first, then register the new one.
+	// Call the registrar without holding r.mu to avoid lock ordering issues
+	// between this mutex and the registrar's internal mutex.
+	if existed && prev.Trigger != nil {
+		if err := registrar.Unregister(def.ID, prev.Trigger); err != nil && logger != nil {
+			logger.Error("triggers: unregister failed during update", "workflow_id", def.ID, "error", err)
+		}
+	}
+	if def.Trigger != nil {
+		if err := registrar.Register(def.ID, def.Trigger); err != nil && logger != nil {
+			logger.Error("triggers: register failed", "workflow_id", def.ID, "error", err)
+		}
+	}
 	return nil
 }
 
@@ -81,11 +126,20 @@ func (r *WorkflowRegistry) List() []*types.WorkflowDefinition {
 
 func (r *WorkflowRegistry) Remove(id string) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if _, ok := r.workflows[id]; !ok {
+	def, ok := r.workflows[id]
+	if !ok {
+		r.mu.Unlock()
 		return fmt.Errorf("workflow not found: %s", id)
 	}
 	delete(r.workflows, id)
+	registrar := r.registrar
+	logger := r.logger
+	r.mu.Unlock()
+
+	if def.Trigger != nil {
+		if err := registrar.Unregister(id, def.Trigger); err != nil && logger != nil {
+			logger.Error("triggers: unregister failed", "workflow_id", id, "error", err)
+		}
+	}
 	return nil
 }
