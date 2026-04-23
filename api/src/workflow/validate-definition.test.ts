@@ -87,3 +87,38 @@ describe("validateWorkflowDefinition", () => {
     expect(r.ok).toBe(true);
   });
 });
+
+describe("schedule triggers", () => {
+  test("accepts a valid cron expression", () => {
+    const result = validateWorkflowDefinition({
+      id: "wf-1",
+      name: "Hourly",
+      trigger: { type: "schedule", schedule: "0 * * * *" },
+      tasks: [{ id: "t1", type: "log", parameters: { msg: "tick" } }],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  test("rejects a schedule trigger with empty schedule", () => {
+    const result = validateWorkflowDefinition({
+      id: "wf-1",
+      name: "Broken",
+      trigger: { type: "schedule", schedule: "" },
+      tasks: [{ id: "t1", type: "log" }],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.path.includes("trigger.schedule"))).toBe(true);
+    }
+  });
+
+  test("rejects a schedule trigger with malformed cron", () => {
+    const result = validateWorkflowDefinition({
+      id: "wf-1",
+      name: "Broken",
+      trigger: { type: "schedule", schedule: "not-a-cron" },
+      tasks: [{ id: "t1", type: "log" }],
+    });
+    expect(result.ok).toBe(false);
+  });
+});

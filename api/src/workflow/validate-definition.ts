@@ -27,6 +27,17 @@ const OPERATORS: ReadonlySet<ConditionOperator> = new Set([
 
 const TASK_TYPES = new Set(["action", "log", "wait", "condition", "workflow"]);
 
+// Shape check for a 5-field cron expression (robfig/cron/v3 style, no seconds).
+// Accepts numbers, ranges, steps, lists, wildcards, or a single "?".
+function isValidCronExpression(expr: string): boolean {
+  const fields = expr.trim().split(/\s+/);
+  if (fields.length !== 5) {
+    return false;
+  }
+  const fieldRe = /^(\*|\?|(\*|\d+)(\/\d+)?|(\d+(-\d+)?)(,\d+(-\d+)?)*)$/;
+  return fields.every((f) => fieldRe.test(f));
+}
+
 function validateConditions(cs: ConditionConfig[] | undefined, prefix: string, errors: ValidationError[]): void {
   if (!cs) {
     return;
@@ -59,17 +70,24 @@ export function validateWorkflowDefinition(input: unknown): ValidationResult {
 
   if (!def.trigger || typeof def.trigger !== "object") {
     errors.push({ path: "trigger", message: "required object" });
-  } else {
-    // Task 5.2 will add full schedule validation; for now preserve existing
-    // event-trigger behavior and reject other types at trigger.type.
-    if (def.trigger.type !== "event") {
-      errors.push({ path: "trigger.type", message: 'must be "event"' });
-    } else {
-      if (typeof def.trigger.eventType !== "string" || def.trigger.eventType.length === 0) {
-        errors.push({ path: "trigger.eventType", message: "required string" });
-      }
-      validateConditions(def.trigger.conditions, "trigger.conditions", errors);
+  } else if (def.trigger.type === "event") {
+    if (typeof def.trigger.eventType !== "string" || def.trigger.eventType.length === 0) {
+      errors.push({ path: "trigger.eventType", message: "required string" });
     }
+    validateConditions(def.trigger.conditions, "trigger.conditions", errors);
+  } else if (def.trigger.type === "schedule") {
+    const schedule = def.trigger.schedule;
+    if (typeof schedule !== "string" || schedule.length === 0) {
+      errors.push({ path: "trigger.schedule", message: "required: cron expression cannot be empty" });
+    } else if (!isValidCronExpression(schedule)) {
+      errors.push({
+        path: "trigger.schedule",
+        message: "invalid cron expression (expected 5 whitespace-separated fields)",
+      });
+    }
+    validateConditions(def.trigger.conditions, "trigger.conditions", errors);
+  } else {
+    errors.push({ path: "trigger.type", message: 'must be "event" or "schedule"' });
   }
 
   if (!Array.isArray(def.tasks) || def.tasks.length === 0) {
