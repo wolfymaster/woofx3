@@ -467,7 +467,20 @@ impl ManifestWorkflow {
         module_name: &str,
         db_proxy_url: &str,
         application_id: &str,
+        manifest_triggers: &[ManifestTrigger],
     ) -> Result<()> {
+        let trigger_event_subject = manifest_triggers
+            .iter()
+            .find(|t| t.id == self.trigger)
+            .map(|t| t.trigger_type.clone())
+            .ok_or_else(|| {
+                anyhow!(
+                    "workflow {} references unknown trigger {} (not declared in manifest)",
+                    self.id,
+                    self.trigger,
+                )
+            })?;
+
         let step_id_prefix = format!("{}-{}-", module_name, self.id);
         let steps: Vec<woofx3::db::workflow::WorkflowStep> = self
             .steps
@@ -497,6 +510,38 @@ impl ManifestWorkflow {
             })
             .collect();
 
+        // Build canonical WorkflowDefinition (mirrors shared/clients/typescript/api/workflow-definition.ts).
+        let tasks_json: Vec<serde_json::Value> = self
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                serde_json::json!({
+                    "id": format!("{}{}", step_id_prefix, i),
+                    "type": s.action.clone(),
+                    "parameters": s.params.clone(),
+                })
+            })
+            .collect();
+
+        let definition_json = serde_json::json!({
+            // id is a placeholder; API path uses "pending" and patches after create;
+            // barkloader does not patch, so we leave it empty and let consumers read the DB id.
+            "id": "",
+            "name": format!("{}/{}", module_name, self.name),
+            "trigger": {
+                "type": "event",
+                "eventType": trigger_event_subject,
+            },
+            "tasks": tasks_json,
+        });
+
+        let mut variables = std::collections::HashMap::new();
+        variables.insert(
+            "_definition".to_string(),
+            serde_json::to_string(&definition_json).map_err(|e| anyhow!("marshal _definition: {}", e))?,
+        );
+
         let request = woofx3::db::workflow::CreateWorkflowRequest {
             name: format!("{}/{}", module_name, self.name),
             description: format!(
@@ -509,7 +554,7 @@ impl ManifestWorkflow {
             created_by: format!("module:{}", module_name),
             enabled: true,
             steps,
-            variables: std::collections::HashMap::new(),
+            variables,
             on_success: String::new(),
             on_failure: String::new(),
             max_retries: 0,

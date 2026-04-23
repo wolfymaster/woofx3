@@ -241,7 +241,7 @@ pub async fn run_install<R: Repository>(
             }
 
             for wf in &manifest.workflows {
-                wf.register(module_key, url, application_id).await?;
+                wf.register(module_key, url, application_id, &manifest.triggers).await?;
                 if let Err(e) = create_module_resource(
                     url, &db_record_id, "workflow", "", &wf.id, &wf.name, &manifest.version,
                 ).await {
