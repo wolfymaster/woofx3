@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { Commands, type AuthorizationResponse } from "./commands";
+import { Commands, type AuthorizationResponse, type CommandMatch } from "./commands";
 
 function makeChatClient() {
   const say = mock(async (_channel: string, _message: string) => {});
@@ -64,5 +64,59 @@ describe("Commands", () => {
     await commands.send("hello chat");
     expect(chat.say).toHaveBeenCalledTimes(1);
     expect(chat.say.mock.calls[0]).toEqual(["mychannel", "hello chat", undefined]);
+  });
+
+  test("invokes the publisher with match details when a registered command matches", async () => {
+    const published: CommandMatch[] = [];
+    const commands = new Commands("#chan", makeChatClient() as never, {
+      publisher: (match) => {
+        published.push(match);
+      },
+    });
+    commands.add("hello", "hi there");
+    await commands.process("!hello world party", "alice");
+    expect(published.length).toBe(1);
+    expect(published[0]).toEqual({
+      commandName: "hello",
+      args: ["world", "party"],
+      rawMessage: "!hello world party",
+      chatter: "alice",
+    });
+  });
+
+  test("does not invoke the publisher for non-command chat", async () => {
+    const publisher = mock((_m: CommandMatch) => {});
+    const commands = new Commands("#chan", makeChatClient() as never, { publisher });
+    commands.add("hello", "hi");
+    await commands.process("just chatting", "alice");
+    expect(publisher).not.toHaveBeenCalled();
+  });
+
+  test("does not invoke the publisher when authorization denies the command", async () => {
+    const publisher = mock((_m: CommandMatch) => {});
+    const commands = new Commands("#chan", makeChatClient() as never, { publisher });
+    commands.setAuth(async (): Promise<AuthorizationResponse> => ({ granted: false, message: "no" }));
+    commands.add("secret", "classified");
+    await commands.process("!secret", "guest");
+    expect(publisher).not.toHaveBeenCalled();
+  });
+
+  test("publisher failure is isolated via onPublishError and does not break the handler chain", async () => {
+    const caught: Array<[unknown, CommandMatch]> = [];
+    const commands = new Commands("#chan", makeChatClient() as never, {
+      publisher: () => {
+        throw new Error("boom");
+      },
+      onPublishError: (err, match) => {
+        caught.push([err, match]);
+      },
+    });
+    commands.add("hello", "hi");
+    const [out, matched] = await commands.process("!hello", "alice");
+    expect(matched).toBe(true);
+    expect(out).toBe("hi");
+    expect(caught.length).toBe(1);
+    expect((caught[0][0] as Error).message).toBe("boom");
+    expect(caught[0][1].commandName).toBe("hello");
   });
 });

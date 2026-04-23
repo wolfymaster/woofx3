@@ -2,6 +2,7 @@ import TwitchEvents from './Twitch';
 import TwitchApiEvents from './Twitch/commands';
 import SlobsEvents from './Slobs';
 import ChatEvents from './Chat';
+import ChatCommandEvents from './Chat/commands';
 
 export interface EventFactoryOpts {
     source: string;
@@ -28,5 +29,9 @@ export default class EventFactory {
 
     Chat() {
         return new ChatEvents(this.source);
+    }
+
+    ChatCommand() {
+        return new ChatCommandEvents(this.source);
     }
 }

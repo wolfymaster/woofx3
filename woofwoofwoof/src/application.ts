@@ -48,7 +48,21 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
 
     const commander = new Commands(
       ctx.config.getConfig("woofx3TwitchChannelName") as string,
-      ctx.services.twitchChat.client
+      ctx.services.twitchChat.client,
+      {
+        publisher: (match) => {
+          const [subject, data] = ctx.events.ChatCommand().command(match.commandName, {
+            args: match.args,
+            rawMessage: match.rawMessage,
+            chatter: match.chatter,
+            platform: "twitch",
+          });
+          ctx.services.messageBus.client.publish(subject, data);
+        },
+        onPublishError: (err, match) => {
+          ctx.logger.error("Failed to publish chat.command event", match.commandName, err);
+        },
+      }
     );
     commander.setAuth(async (user: string, cmd: string) => {
       return await canUse(user, cmd, db);

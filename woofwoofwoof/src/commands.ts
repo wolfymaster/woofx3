@@ -17,16 +17,37 @@ export type AuthorizationResponse = {
 };
 export type AuthorizationFunction = (user: string, command: string) => Promise<AuthorizationResponse>;
 
+// Hook for emitting a `chat.command.<slug>` CloudEvent when a command matches.
+// Keeps `Commands` decoupled from EventFactory and the message bus so tests can
+// stub the publisher without wiring real transports.
+export interface CommandMatch {
+  commandName: string;
+  args: string[];
+  rawMessage: string;
+  chatter: string;
+}
+export type CommandPublisher = (match: CommandMatch) => void;
+
+export interface CommandsOptions {
+  publisher?: CommandPublisher;
+  onPublishError?: (err: unknown, match: CommandMatch) => void;
+}
+
 export class Commands {
   commands: Command[] = [];
   watchers: ChatWatcherFunction[] = [];
   auth: AuthorizationFunction;
+  private publisher?: CommandPublisher;
+  private onPublishError?: (err: unknown, match: CommandMatch) => void;
 
   constructor(
     private channel: string,
-    private chatClient: ChatClient
+    private chatClient: ChatClient,
+    opts?: CommandsOptions
   ) {
     this.auth = async (_user, _cmd) => ({ granted: true });
+    this.publisher = opts?.publisher;
+    this.onPublishError = opts?.onPublishError;
   }
 
   add(command: string, response: CommandResponse) {
@@ -68,6 +89,16 @@ export class Commands {
         if (!auth.granted) {
           return [auth.message ?? "", !!auth.message];
         }
+
+        // Emit the chat.command.<slug> CloudEvent before running the handler so
+        // downstream consumers (e.g. workflow engine triggers) still observe the
+        // match even if the handler throws or returns an empty string.
+        this.emitMatch({
+          commandName: msg.cmd,
+          args: msg.text.length > 0 ? msg.text.split(/\s+/) : [],
+          rawMessage: text,
+          chatter: user,
+        });
 
         if (typeof response === "string") {
           return [response, true];
@@ -113,6 +144,24 @@ export class Commands {
     try {
       f();
     } catch (err) {}
+  }
+
+  // Isolate publisher failures from command dispatch. A malformed command name
+  // (e.g. one that slipped past UI validation) would throw inside the slug
+  // helper, and we must not let that break the normal handler chain.
+  private emitMatch(match: CommandMatch) {
+    if (!this.publisher) {
+      return;
+    }
+    try {
+      this.publisher(match);
+    } catch (err) {
+      if (this.onPublishError) {
+        this.onPublishError(err, match);
+        return;
+      }
+      console.error("Failed to publish chat.command event", match.commandName, err);
+    }
   }
 
   async checkPermissions(user: string, cmd: string) {
