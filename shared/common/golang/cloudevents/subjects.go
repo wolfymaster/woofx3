@@ -24,10 +24,6 @@ const (
 	SubjectSlobs Subject = "slobs"
 
 	// Workflow events
-	SubjectWorkflowChange  Subject = "workflow.change"        // legacy — to be removed
-	SubjectWorkflowAdd     Subject = "workflow.change.add"    // legacy — to be removed
-	SubjectWorkflowUpdate  Subject = "workflow.change.update" // legacy — to be removed
-	SubjectWorkflowDelete  Subject = "workflow.change.delete" // legacy — to be removed
 	SubjectWorkflowExecute Subject = "workflow.execute"
 
 	// DB proxy workflow lifecycle events — match publisher.go:58 format:
