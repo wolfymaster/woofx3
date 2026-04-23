@@ -23,12 +23,20 @@ type Subscriber interface {
 // It is the bridge into the engine (typically `app.handleTriggerEvent`).
 type EventHandler func(payload []byte, subject string)
 
+// Logger is the minimal surface EventTriggerRegistrar needs for recording
+// non-fatal errors (e.g. failed Unsubscribe during an update). A nil logger
+// is a no-op.
+type Logger interface {
+	Error(msg string, keysAndValues ...any)
+}
+
 // EventTriggerRegistrar maintains one NATS subscription per distinct event subject,
 // ref-counted by the set of workflow IDs that reference it. Safe for concurrent use.
 type EventTriggerRegistrar struct {
 	mu        sync.Mutex
 	sub       Subscriber
 	onEvent   EventHandler
+	logger    Logger
 	subjects  map[string]*subjectEntry // subject -> entry
 	workflows map[string]string        // workflowID -> last-registered subject
 }
@@ -40,11 +48,14 @@ type subjectEntry struct {
 
 // NewEventTriggerRegistrar constructs the registrar. `onEvent` is invoked for every
 // message received on any subscribed subject; it should forward into the engine's
-// event-handling path (see `workflow/app.go:handleTriggerEvent`).
-func NewEventTriggerRegistrar(sub Subscriber, onEvent EventHandler) *EventTriggerRegistrar {
+// event-handling path (see `workflow/app.go:handleTriggerEvent`). `logger` may be
+// nil; when non-nil it records non-fatal errors encountered during bookkeeping
+// (e.g. failed Unsubscribe during an update).
+func NewEventTriggerRegistrar(sub Subscriber, onEvent EventHandler, logger Logger) *EventTriggerRegistrar {
 	return &EventTriggerRegistrar{
 		sub:       sub,
 		onEvent:   onEvent,
+		logger:    logger,
 		subjects:  make(map[string]*subjectEntry),
 		workflows: make(map[string]string),
 	}
@@ -58,12 +69,19 @@ func (r *EventTriggerRegistrar) Register(workflowID string, trigger *types.Trigg
 	defer r.mu.Unlock()
 
 	// If this workflow was previously registered under a different subject (updated
-	// workflow case), release the old subject first.
+	// workflow case), release the old subject first. A failure to unsubscribe the
+	// old subject must not abort the move; the caller's intent is to switch to the
+	// new subject, so we log and press on to keep the workflow registered somewhere.
 	if prev, ok := r.workflows[workflowID]; ok {
 		if prev == trigger.EventType {
 			return nil
 		}
-		r.releaseLocked(workflowID, prev)
+		if err := r.releaseLocked(workflowID, prev); err != nil && r.logger != nil {
+			r.logger.Error("triggers: release prior subject failed; continuing with new registration",
+				"workflow_id", workflowID,
+				"prev_subject", prev,
+				"error", err)
+		}
 	}
 
 	entry, ok := r.subjects[trigger.EventType]
@@ -105,10 +123,12 @@ func (r *EventTriggerRegistrar) releaseLocked(workflowID, subject string) error 
 	delete(entry.refWorkflows, workflowID)
 	delete(r.workflows, workflowID)
 	if len(entry.refWorkflows) == 0 {
+		// Drop in-memory state first so a failed Unsubscribe can't leave a dead
+		// entry that later Registers would reuse, silently skipping Subscribe.
+		delete(r.subjects, subject)
 		if err := entry.sub.Unsubscribe(); err != nil {
 			return fmt.Errorf("unsubscribe from %s: %w", subject, err)
 		}
-		delete(r.subjects, subject)
 	}
 	return nil
 }
