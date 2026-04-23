@@ -11,7 +11,6 @@ import (
 	"github.com/wolfymaster/woofx3/common/cloudevents"
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/workflow/internal/engine"
-	"github.com/wolfymaster/woofx3/workflow/internal/eventmatch"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
@@ -109,25 +108,29 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 			a.engine.SetPublisher(publisher)
 			a.logger.Info("Event publisher configured with NATS")
 
-			// workflow change events
-			if err := a.subscribeToWorkflowEvents(natsClient, string(cloudevents.SubjectWorkflowChange)); err != nil {
-				a.logger.Error("Failed to subscribe to workflow events", "error", err)
+			// DB-proxy workflow lifecycle events (source of truth for registry updates).
+			// Subjects come from db/app/workers/publisher.go:58 as "db.workflow.{op}.{appId}".
+			for _, subject := range []string{
+				string(cloudevents.SubjectDbWorkflowCreatedPattern),
+				string(cloudevents.SubjectDbWorkflowUpdatedPattern),
+				string(cloudevents.SubjectDbWorkflowDeletedPattern),
+			} {
+				if err := a.subscribeToWorkflowEvents(natsClient, subject); err != nil {
+					return fmt.Errorf("subscribe to %s: %w", subject, err)
+				}
 			}
 
-			// workflow execute events
+			// Explicit "execute this workflow now" commands (separate from lifecycle).
 			if err := a.subscribeToWorkflowEvents(natsClient, string(cloudevents.SubjectWorkflowExecute)); err != nil {
-				a.logger.Error("Failed to subscribe to workflow events", "error", err)
+				a.logger.Error("Failed to subscribe to workflow execute events", "error", err)
 			}
 
-			// NEW: Subscribe to trigger events - FAIL STARTUP IF THIS FAILS
+			// System-wide static event patterns (sources of events that can trigger workflows
+			// but are not per-workflow — chat, follow, cheer, etc.). Per-workflow dynamic
+			// subscriptions are handled in Phase 2 by the TriggerRegistrar.
 			patternRegistry := NewEventPatternRegistry()
 			if err := a.subscribeToTriggerEvents(natsClient, patternRegistry.GetPatterns()); err != nil {
-				a.logger.Error("Failed to subscribe to trigger events", "error", err)
 				return fmt.Errorf("workflow service cannot start without trigger event subscriptions: %w", err)
-			}
-
-			if err := a.subscribeToModuleTriggerEvents(ctx, natsClient, a.moduleDbClient); err != nil {
-				a.logger.Warn("Failed to subscribe to module trigger events, continuing without them", "error", err)
 			}
 		}
 	}
@@ -257,53 +260,4 @@ func (a *WorkflowApp) subscribeToTriggerEvents(natsClient *natsclient.Client, pa
 		a.logger.Info("Subscribed to trigger events", "pattern", capturedPattern)
 	}
 	return nil
-}
-
-// subscribeToModuleTriggerEvents fetches registered module triggers from the DB proxy
-// and subscribes to any event subjects not already covered by the static pattern registry.
-func (a *WorkflowApp) subscribeToModuleTriggerEvents(ctx context.Context, natsClient *natsclient.Client, moduleClient dbv1.ModuleService) error {
-	if moduleClient == nil {
-		a.logger.Warn("Module DB client not configured, skipping module trigger subscriptions")
-		return nil
-	}
-
-	resp, err := moduleClient.ListTriggers(ctx, &dbv1.ListTriggersRequest{})
-	if err != nil {
-		return fmt.Errorf("failed to list module triggers: %w", err)
-	}
-
-	patternRegistry := NewEventPatternRegistry()
-	coveredPatterns := patternRegistry.GetPatterns()
-
-	subscribed := map[string]bool{}
-	for _, trigger := range resp.Triggers {
-		if trigger.Event == "" || subscribed[trigger.Event] {
-			continue
-		}
-		if isEventCoveredByPatterns(trigger.Event, coveredPatterns) {
-			continue
-		}
-		capturedEvent := trigger.Event
-		_, err := natsClient.Subscribe(capturedEvent, func(msg natsclient.Msg) {
-			a.handleTriggerEvent(msg)
-		})
-		if err != nil {
-			a.logger.Error("Failed to subscribe to module trigger event", "event", capturedEvent, "error", err)
-			continue
-		}
-		subscribed[capturedEvent] = true
-		a.logger.Info("Subscribed to module trigger event", "event", capturedEvent)
-	}
-	return nil
-}
-
-// isEventCoveredByPatterns checks if an event subject is already covered by
-// an existing NATS wildcard subscription pattern.
-func isEventCoveredByPatterns(event string, patterns []string) bool {
-	for _, pattern := range patterns {
-		if eventmatch.Matches(pattern, event) {
-			return true
-		}
-	}
-	return false
 }
