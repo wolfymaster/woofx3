@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/wolfymaster/woofx3/clients/barkloader"
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
@@ -56,6 +57,7 @@ type WorkflowApp struct {
 	logger         tasks.Logger
 	manager        *WorkflowManager
 	moduleDbClient dbv1.ModuleService
+	scheduleReg    *triggers.ScheduleTriggerRegistrar
 }
 
 func NewWorkflowApp(logger tasks.Logger) *WorkflowApp {
@@ -107,8 +109,21 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 			// subscribe/unsubscribe as workflows enter and leave the engine.
 			subscriber := newNatsSubscriber(natsClient)
 			eventReg := triggers.NewEventTriggerRegistrar(subscriber, a.handleTriggerEvent, a.logger)
+			a.scheduleReg = triggers.NewScheduleTriggerRegistrar(func(workflowID string) {
+				evt := &types.Event{
+					ID:     fmt.Sprintf("sched-%s-%d", workflowID, time.Now().UnixNano()),
+					Type:   "workflow.schedule.fire",
+					Source: "workflow/scheduler",
+					Data:   map[string]any{"workflowId": workflowID},
+				}
+				if err := a.engine.FireByWorkflowID(workflowID, evt); err != nil {
+					a.logger.Error("schedule fire failed", "workflow_id", workflowID, "error", err)
+				}
+			})
+			a.scheduleReg.Start()
 			composite := triggers.NewCompositeRegistrar()
 			composite.Set("event", eventReg)
+			composite.Set("schedule", a.scheduleReg)
 			a.engine.Registry().SetRegistrar(composite)
 			a.engine.Registry().SetLogger(a.logger)
 
@@ -174,7 +189,9 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 
 func (a *WorkflowApp) Terminate(ctx context.Context) error {
 	a.logger.Info("Terminating workflow application")
-
+	if a.scheduleReg != nil {
+		a.scheduleReg.Stop()
+	}
 	return a.engine.Stop()
 }
 

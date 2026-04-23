@@ -167,6 +167,19 @@ func (e *Engine[TServices]) HandleEvent(event *types.Event) error {
 	return nil
 }
 
+// FireByWorkflowID runs the named workflow with a synthesized trigger event.
+// Used by non-bus trigger types (schedule, manual) that already know the target
+// and so bypass GetByEventType / evaluateTrigger. Dispatch mirrors HandleEvent:
+// launch executeWorkflow in a goroutine so callers never block on task execution.
+func (e *Engine[TServices]) FireByWorkflowID(workflowID string, event *types.Event) error {
+	def, err := e.workflowRegistry.Get(workflowID)
+	if err != nil {
+		return fmt.Errorf("FireByWorkflowID: %w", err)
+	}
+	go e.executeWorkflow(def, event)
+	return nil
+}
+
 func (e *Engine[TServices]) processWaitingExecutions(event *types.Event) {
 	e.waitingMu.Lock()
 	waiting := e.waitingExecutions[event.Type]
