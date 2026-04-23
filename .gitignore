@@ -60,3 +60,7 @@ tmp/*
 
 # logs
 logs/*
+
+# git worktrees
+.worktrees
+
