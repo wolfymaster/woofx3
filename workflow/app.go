@@ -78,14 +78,11 @@ func (a *WorkflowApp) SetDbClients(workflowClient dbv1.WorkflowService, moduleCl
 }
 
 func (a *WorkflowApp) Init(ctx context.Context) error {
+	// Workflows are loaded in Run, not here: Init fires before Run wires the
+	// real trigger registrar, so loading workflows here would register them
+	// against the default NoopRegistrar and leave cold-start workflows without
+	// dynamic NATS subscriptions.
 	a.logger.Info("Initializing workflow application")
-
-	// Load workflows from database
-	if err := a.manager.LoadWorkflowsFromDB(ctx); err != nil {
-		a.logger.Error("Failed to load workflows from database", "error", err)
-		// Don't fail initialization if workflow loading fails - continue with existing workflows
-	}
-
 	return nil
 }
 
@@ -114,6 +111,15 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 			composite.Set("event", eventReg)
 			a.engine.Registry().SetRegistrar(composite)
 			a.engine.Registry().SetLogger(a.logger)
+
+			// Load workflows from DB now that the registrar is attached. Loading
+			// earlier (in Init) would register them against the default
+			// NoopRegistrar, leaving cold-start workflows without trigger
+			// subscriptions until the reconciler catches up.
+			if err := a.manager.LoadWorkflowsFromDB(ctx); err != nil {
+				a.logger.Error("Failed to load workflows from database", "error", err)
+				// Non-fatal: the reconciler will catch up if the DB is reachable later.
+			}
 
 			publisher := NewNATSEventPublisher(natsClient, a.logger)
 			a.engine.SetPublisher(publisher)
