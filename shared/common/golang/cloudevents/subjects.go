@@ -20,6 +20,12 @@ const (
 	// Chat events (platform-agnostic; payload carries `platform` discriminator)
 	SubjectChatSend Subject = "message.send"
 
+	// Chat command events — subject pattern `chat.command.<slug>` emitted by
+	// woofwoofwoof when a chat command matches. The wildcard is documentation;
+	// the workflow engine subscribes to concrete subjects via the reactive
+	// registrar at workflow-creation time.
+	SubjectChatCommandPattern Subject = "chat.command.*"
+
 	// Slobs / OBS events
 	SubjectSlobs Subject = "slobs"
 
