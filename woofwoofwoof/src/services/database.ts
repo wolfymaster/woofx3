@@ -2,6 +2,8 @@ import type { Service } from "@woofx3/common/runtime";
 import { ListCommands, type ListCommandsRequest, type ListCommandsResponse } from "@woofx3/db/command.pb";
 import type { ResponseStatus } from "@woofx3/db/common.pb";
 import { Ping } from "@woofx3/db/common.pb";
+import { RegisterTriggers } from "@woofx3/db/module.pb";
+import type { ListTriggersResponse, RegisterTriggersRequest } from "@woofx3/db/module_trigger.pb";
 import {
   AddUserToResource,
   HasPermission,
@@ -41,6 +43,10 @@ export class DatabaseClient {
 
   async removeUserFromResource(req: UserResourceRoleRequest): Promise<ResponseStatus> {
     return RemoveUserFromResource(req, this.config);
+  }
+
+  async registerTriggers(req: RegisterTriggersRequest): Promise<ListTriggersResponse> {
+    return RegisterTriggers(req, this.config);
   }
 }
 
