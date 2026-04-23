@@ -69,7 +69,19 @@ async fn setup() -> Result<AppContext> {
         ctx
     };
 
-    let sandbox = SandboxFactory::new(registry.clone(), host_ctx);
+    let builtin_dispatcher: Arc<dyn lib_sandbox::BuiltinDispatcher> = {
+        let message_bus: Arc<dyn services::builtin_actions::MessageBusPublisher> = Arc::new(
+            services::builtin_actions::adapters::NatsMessageBusPublisher::new(host_ctx.nats.clone()),
+        );
+        let logger: Arc<dyn services::builtin_actions::Logger> =
+            Arc::new(services::builtin_actions::adapters::LogCrateLogger);
+        Arc::new(services::builtin_actions::bridge::BuiltinActionBridge::new(
+            message_bus, logger,
+        ))
+    };
+
+    let sandbox = SandboxFactory::new(registry.clone(), host_ctx)
+        .with_builtin_dispatcher(builtin_dispatcher);
 
     let repository_config = RepositoryConfig::File(FileRepositoryConfig {
         destination

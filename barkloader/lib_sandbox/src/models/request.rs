@@ -7,4 +7,9 @@ pub struct InvokeRequest {
     pub event: Value,
     #[serde(default)]
     pub user: Option<Value>,
+    /// Action parameters resolved by the caller (e.g. workflow engine). Used
+    /// by builtin dispatches; module functions still read their inputs from
+    /// `event`.
+    #[serde(default)]
+    pub params: Value,
 }

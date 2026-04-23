@@ -40,6 +40,11 @@ impl WebSocketSession {
                                         .to_string(),
                                     event: message.data["event"].clone(),
                                     user: message.data.get("user").cloned(),
+                                    params: message
+                                        .data
+                                        .get("params")
+                                        .cloned()
+                                        .unwrap_or(serde_json::Value::Null),
                                 };
                                 let result = self.sandbox.invoke(request);
                                 match result {

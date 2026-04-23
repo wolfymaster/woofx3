@@ -2,6 +2,7 @@ use lib_sandbox::host::noop::noop_host_context;
 use lib_sandbox::host::ChatSender;
 use lib_sandbox::models::function::Function;
 use lib_sandbox::models::request::InvokeRequest;
+use lib_sandbox::builtin_dispatch::BuiltinDispatcher;
 use lib_sandbox::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule, Sandbox};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -60,6 +61,7 @@ fn test_sandbox() {
             function: "example/example".to_string(),
             event: serde_json::json!({ "input": "test" }),
             user: None,
+            params: serde_json::Value::Null,
         })
         .unwrap();
 
@@ -82,6 +84,7 @@ fn test_lua_adapter() {
             function: "example/helloworld".to_string(),
             event: serde_json::json!({ "name": "wolfy" }),
             user: None,
+            params: serde_json::Value::Null,
         })
         .unwrap();
 
@@ -97,6 +100,7 @@ fn test_quickjs_adapter() {
             function: "example/sayhello".to_string(),
             event: serde_json::json!({ "name": "wolfy" }),
             user: None,
+            params: serde_json::Value::Null,
         })
         .unwrap();
 
@@ -112,6 +116,7 @@ fn test_null_event() {
             function: "example/sayhello".to_string(),
             event: serde_json::Value::Null,
             user: None,
+            params: serde_json::Value::Null,
         })
         .unwrap();
 
@@ -148,6 +153,7 @@ fn test_js_instruction_limit() {
         function: "limits/infinite".to_string(),
         event: serde_json::Value::Null,
         user: None,
+        params: serde_json::Value::Null,
     });
 
     assert!(result.is_err());
@@ -198,6 +204,7 @@ function main(ctx) {
             function: "example/isolation".to_string(),
             event: serde_json::Value::Null,
             user: None,
+            params: serde_json::Value::Null,
         })
         .unwrap();
 
@@ -206,6 +213,7 @@ function main(ctx) {
             function: "example/isolation".to_string(),
             event: serde_json::Value::Null,
             user: None,
+            params: serde_json::Value::Null,
         })
         .unwrap();
 
@@ -255,6 +263,7 @@ fn test_ctx_event_data() {
             function: "example/ctx_test".to_string(),
             event: serde_json::json!({ "amount": 500 }),
             user: None,
+            params: serde_json::Value::Null,
         })
         .unwrap();
 
@@ -309,10 +318,114 @@ fn test_ctx_chat_send_message_routes_to_host() {
             function: "chat_test/send".to_string(),
             event: serde_json::json!({ "text": "hi from sandbox" }),
             user: None,
+            params: serde_json::Value::Null,
         })
         .unwrap();
 
     assert_eq!(result["ok"], serde_json::json!(true));
     let captured = capturing.sent.lock().unwrap();
     assert_eq!(captured.as_slice(), &["hi from sandbox".to_string()]);
+}
+
+struct RecordingBuiltinDispatcher {
+    calls: Mutex<Vec<(String, serde_json::Value)>>,
+}
+
+impl BuiltinDispatcher for RecordingBuiltinDispatcher {
+    fn invoke(
+        &self,
+        name: &str,
+        params: serde_json::Value,
+    ) -> anyhow::Result<Option<serde_json::Value>> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((name.to_string(), params.clone()));
+        if name == "known" {
+            Ok(Some(serde_json::json!({ "dispatched": true, "echo": params })))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+#[test]
+fn test_builtin_prefix_routes_to_dispatcher() {
+    let registry = Arc::new(ModuleRegistry::new());
+    let dispatcher = Arc::new(RecordingBuiltinDispatcher {
+        calls: Mutex::new(vec![]),
+    });
+    let sandbox = Sandbox::new_with_builtin_dispatcher(
+        registry,
+        noop_host_context(),
+        Some(dispatcher.clone()),
+    )
+    .unwrap();
+
+    let result = sandbox
+        .invoke(InvokeRequest {
+            function: "builtin:known".to_string(),
+            event: serde_json::Value::Null,
+            user: None,
+            params: serde_json::json!({ "message": "hi" }),
+        })
+        .unwrap();
+
+    assert_eq!(result["dispatched"], serde_json::json!(true));
+    assert_eq!(result["echo"], serde_json::json!({ "message": "hi" }));
+
+    let calls = dispatcher.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, "known");
+    assert_eq!(calls[0].1, serde_json::json!({ "message": "hi" }));
+}
+
+#[test]
+fn test_builtin_unknown_name_returns_function_not_found() {
+    let registry = Arc::new(ModuleRegistry::new());
+    let dispatcher = Arc::new(RecordingBuiltinDispatcher {
+        calls: Mutex::new(vec![]),
+    });
+    let sandbox = Sandbox::new_with_builtin_dispatcher(
+        registry,
+        noop_host_context(),
+        Some(dispatcher),
+    )
+    .unwrap();
+
+    let err = sandbox
+        .invoke(InvokeRequest {
+            function: "builtin:missing".to_string(),
+            event: serde_json::Value::Null,
+            user: None,
+            params: serde_json::Value::Null,
+        })
+        .unwrap_err();
+
+    assert!(
+        err.to_string().contains("builtin:missing"),
+        "unexpected error: {}",
+        err
+    );
+}
+
+#[test]
+fn test_builtin_without_dispatcher_fails_fast() {
+    let registry = Arc::new(ModuleRegistry::new());
+    let sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
+
+    let err = sandbox
+        .invoke(InvokeRequest {
+            function: "builtin:anything".to_string(),
+            event: serde_json::Value::Null,
+            user: None,
+            params: serde_json::Value::Null,
+        })
+        .unwrap_err();
+
+    assert!(
+        err.to_string().contains("builtin dispatcher"),
+        "unexpected error: {}",
+        err
+    );
 }
