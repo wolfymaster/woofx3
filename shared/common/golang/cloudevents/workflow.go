@@ -26,9 +26,16 @@ type WorkflowChangeEvent struct {
 	subject string
 }
 
+// WorkflowChangeData is the workflow-consumer view of a workflow change event.
+//
+// The wire format names are generic (the db publisher serves every entity
+// type — users, modules, workflows, etc. — so its extension is `entityid`).
+// This struct translates the generic wire fields into workflow-specific
+// names so callers can write `data.WorkflowID` instead of `data.EntityID`.
 type WorkflowChangeData struct {
-	Operation string `json:"operation"`
-	EntityID  string `json:"entityId"`
+	Operation     string `json:"operation"`
+	WorkflowID    string `json:"workflowId"`
+	ApplicationID string `json:"applicationId"`
 }
 
 // Encode encodes the workflow change event to JSON bytes
@@ -41,14 +48,45 @@ func (w *WorkflowChangeEvent) Decode(data []byte) error {
 	return Decode(data, w)
 }
 
-// Data extracts WorkflowChangeData from the workflow change event
-// This includes only operation and entity ID from extensions
+// Data extracts WorkflowChangeData from the workflow change event.
+//
+// Producers don't agree on where to put the metadata:
+//   - NewWorkflowChangeEvent (this package) embeds it in the CloudEvent
+//     data payload as `operation` / `workflowId` / `applicationId`.
+//   - The db service's generic worker publisher sets it as CloudEvent
+//     extensions (`operation` / `entityid` / `applicationid`) and uses
+//     the data payload for the row body itself. The extensions are named
+//     generically because the same publisher serves every entity type.
+//
+// Read both: prefer the data payload, fall back to extensions when missing.
+// DataAs returning an error still tries extensions — the data shape may
+// legitimately not match (the db publisher payloads carry the row, not
+// WorkflowChangeData) but the extensions are still authoritative.
 func (w *WorkflowChangeEvent) Data() (*WorkflowChangeData, error) {
-	var parsedWorkflowChangeData WorkflowChangeData
-	if err := w.DataAs(&parsedWorkflowChangeData); err != nil {
-		return nil, err
+	var parsed WorkflowChangeData
+	dataErr := w.DataAs(&parsed)
+
+	exts := w.Extensions()
+	if parsed.Operation == "" {
+		if v, ok := exts["operation"].(string); ok {
+			parsed.Operation = v
+		}
 	}
-	return &parsedWorkflowChangeData, nil
+	if parsed.WorkflowID == "" {
+		if v, ok := exts["entityid"].(string); ok {
+			parsed.WorkflowID = v
+		}
+	}
+	if parsed.ApplicationID == "" {
+		if v, ok := exts["applicationid"].(string); ok {
+			parsed.ApplicationID = v
+		}
+	}
+
+	if parsed.Operation == "" && parsed.WorkflowID == "" && dataErr != nil {
+		return nil, dataErr
+	}
+	return &parsed, nil
 }
 
 // Helper functions for WorkflowChangeData
@@ -68,20 +106,22 @@ func (d WorkflowChangeData) IsCreateOrUpdate() bool {
 	return d.IsCreated() || d.IsUpdated()
 }
 
-// NewWorkflowChangeEvent creates a new workflow change event
-func NewWorkflowChangeEvent(operation, entityID, source string) (*WorkflowChangeEvent, error) {
-	// Determine event type based on operation
+// NewWorkflowChangeEvent creates a new workflow change event with the
+// metadata embedded in the data payload. Producers that prefer the
+// extension-based wire format (e.g. db's generic worker publisher) do not
+// use this helper.
+func NewWorkflowChangeEvent(operation, workflowID, applicationID, source string) (*WorkflowChangeEvent, error) {
 	eventType := fmt.Sprintf("woofx3.workflow.%s", operation)
 
-	// Create the event using CloudEvents SDK
 	evt := ce.NewEvent()
 	evt.SetType(eventType)
 	evt.SetSource(source)
 	evt.SetTime(time.Now())
 
 	data := WorkflowChangeData{
-		Operation: operation,
-		EntityID:  entityID,
+		Operation:     operation,
+		WorkflowID:    workflowID,
+		ApplicationID: applicationID,
 	}
 
 	if err := evt.SetData(ce.ApplicationJSON, data); err != nil {

@@ -3,6 +3,7 @@ import TwitchApiEvents from './Twitch/commands';
 import SlobsEvents from './Slobs';
 import ChatEvents from './Chat';
 import ChatCommandEvents from './Chat/commands';
+import CommandEvents from './Command';
 
 export interface EventFactoryOpts {
     source: string;
@@ -33,5 +34,9 @@ export default class EventFactory {
 
     ChatCommand() {
         return new ChatCommandEvents(this.source);
+    }
+
+    Command() {
+        return new CommandEvents(this.source);
     }
 }

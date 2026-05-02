@@ -3,14 +3,18 @@ package cloudevents
 import (
 	"encoding/json"
 	"testing"
+	"time"
+
+	ce "github.com/cloudevents/sdk-go/v2"
 )
 
 func TestWorkflow_NewWorkflowChangeEvent(t *testing.T) {
 	entityID := "workflow-123"
+	applicationID := "app-1"
 	source := "/woofx3/workflow"
 
 	// Create a new workflow change event
-	evt, err := WorkflowEvent.WorkflowChangeEvent(OperationCreated, entityID, source)
+	evt, err := WorkflowEvent.WorkflowChangeEvent(OperationCreated, entityID, applicationID, source)
 	if err != nil {
 		t.Fatalf("Failed to create workflow change event: %v", err)
 	}
@@ -62,17 +66,22 @@ func TestWorkflow_NewWorkflowChangeEvent(t *testing.T) {
 		t.Errorf("Expected JSON extension %q=%q, got %v", "operation", OperationCreated, data["operation"])
 	}
 
-	if data["entityId"] != entityID {
-		t.Errorf("Expected JSON extension %q=%q, got %v", "entityId", entityID, data["entityId"])
+	if data["workflowId"] != entityID {
+		t.Errorf("Expected JSON data %q=%q, got %v", "workflowId", entityID, data["workflowId"])
+	}
+
+	if data["applicationId"] != applicationID {
+		t.Errorf("Expected JSON data %q=%q, got %v", "applicationId", applicationID, data["applicationId"])
 	}
 }
 
 func TestWorkflow_ParseWorkflowChangeEvent(t *testing.T) {
 	entityID := "workflow-456"
+	applicationID := "app-2"
 	source := "/woofx3/workflow"
 
 	// Create a new workflow change event
-	originalEvt, err := WorkflowEvent.WorkflowChangeEvent(OperationUpdated, entityID, source)
+	originalEvt, err := WorkflowEvent.WorkflowChangeEvent(OperationUpdated, entityID, applicationID, source)
 	if err != nil {
 		t.Fatalf("Failed to create workflow change event: %v", err)
 	}
@@ -110,8 +119,12 @@ func TestWorkflow_ParseWorkflowChangeEvent(t *testing.T) {
 		t.Errorf("Expected change data operation %q, got %q", OperationUpdated, changeData.Operation)
 	}
 
-	if changeData.EntityID != entityID {
-		t.Errorf("Expected change data entityID %q, got %q", entityID, changeData.EntityID)
+	if changeData.WorkflowID != entityID {
+		t.Errorf("Expected change data WorkflowID %q, got %q", entityID, changeData.WorkflowID)
+	}
+
+	if changeData.ApplicationID != applicationID {
+		t.Errorf("Expected change data ApplicationID %q, got %q", applicationID, changeData.ApplicationID)
 	}
 
 	// Verify helper methods
@@ -131,11 +144,12 @@ func TestWorkflow_ParseWorkflowChangeEvent(t *testing.T) {
 
 func TestWorkflow_ParseWorkflowChangeEventWithSubject(t *testing.T) {
 	entityID := "workflow-789"
+	applicationID := "app-3"
 	source := "/woofx3/workflow"
 	subject := "db.workflow.updated.app-3"
 
 	// Create a new workflow change event
-	evt, err := WorkflowEvent.WorkflowChangeEvent(OperationUpdated, entityID, source)
+	evt, err := WorkflowEvent.WorkflowChangeEvent(OperationUpdated, entityID, applicationID, source)
 	if err != nil {
 		t.Fatalf("Failed to create workflow change event: %v", err)
 	}
@@ -205,5 +219,64 @@ func TestWorkflow_WorkflowChangeDataHelpers(t *testing.T) {
 	}
 	if deletedData.IsCreateOrUpdate() {
 		t.Error("Expected IsCreateOrUpdate() to return false for deleted operation")
+	}
+}
+
+// TestWorkflow_DataReadsFromExtensions covers the producer style used by db's
+// generic worker publisher (db/app/workers/publisher_worker.go), which carries
+// `operation` / `entityid` / `applicationid` as CloudEvent extensions and uses
+// the data payload for the row body itself. The consumer must source
+// operation/workflowID/applicationID from extensions when the data fields are
+// empty.
+func TestWorkflow_DataReadsFromExtensions(t *testing.T) {
+	workflowID := "workflow-456"
+	applicationID := "app-xyz"
+
+	rawEvt := ce.NewEvent()
+	rawEvt.SetID("event-1")
+	rawEvt.SetSource("db-proxy")
+	rawEvt.SetType("workflow.updated")
+	rawEvt.SetTime(time.Now())
+	rawEvt.SetExtension("operation", OperationUpdated)
+	rawEvt.SetExtension("entityid", workflowID)
+	rawEvt.SetExtension("applicationid", applicationID)
+	rowPayload := map[string]any{
+		"id":             workflowID,
+		"application_id": applicationID,
+		"name":           "Some Workflow",
+		"enabled":        true,
+	}
+	if err := rawEvt.SetData(ce.ApplicationJSON, rowPayload); err != nil {
+		t.Fatalf("SetData: %v", err)
+	}
+
+	bytes, err := json.Marshal(rawEvt)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var parsed WorkflowChangeEvent
+	if err := parsed.Decode(bytes); err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+
+	data, err := parsed.Data()
+	if err != nil {
+		t.Fatalf("Data: %v", err)
+	}
+	if data.Operation != OperationUpdated {
+		t.Errorf("Operation = %q, want %q (must come from extensions when not in data)",
+			data.Operation, OperationUpdated)
+	}
+	if data.WorkflowID != workflowID {
+		t.Errorf("WorkflowID = %q, want %q (must come from extensions when not in data)",
+			data.WorkflowID, workflowID)
+	}
+	if data.ApplicationID != applicationID {
+		t.Errorf("ApplicationID = %q, want %q (must come from extensions when not in data)",
+			data.ApplicationID, applicationID)
+	}
+	if !data.IsUpdated() {
+		t.Error("IsUpdated() = false; want true")
 	}
 }

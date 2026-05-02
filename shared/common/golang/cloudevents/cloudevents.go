@@ -19,9 +19,9 @@ var ApplicationEvent = struct {
 }
 
 var WorkflowEvent = struct {
-	WorkflowChangeEvent func(string, string, string) (*WorkflowChangeEvent, error)
+	WorkflowChangeEvent func(string, string, string, string) (*WorkflowChangeEvent, error)
 }{
-	WorkflowChangeEvent: func(operation string, entityId string, source string) (*WorkflowChangeEvent, error) {
-		return NewWorkflowChangeEvent(operation, entityId, source)
+	WorkflowChangeEvent: func(operation, workflowID, applicationID, source string) (*WorkflowChangeEvent, error) {
+		return NewWorkflowChangeEvent(operation, workflowID, applicationID, source)
 	},
 }
