@@ -12,7 +12,13 @@ pub struct RequestContext {
 
 #[derive(Debug, Serialize)]
 pub struct CreateModuleFunctionJson {
-    pub function_name: String,
+    /// Stable manifest-local function id (e.g. "play_alert"). Forms
+    /// the canonical id `{moduleId}:function:{manifest_id}`. Renamed
+    /// from `function_name` to align with the triggers / actions
+    /// `manifest_id` columns.
+    pub manifest_id: String,
+    /// Display name from the manifest (`functions[].name`); presentation only.
+    pub name: String,
     pub file_name: String,
     pub file_key: String,
     pub entry_point: String,
@@ -28,6 +34,11 @@ pub struct TriggerInputJson {
     pub event: String,
     pub config_schema: String,
     pub allow_variants: bool,
+    /// Stable manifest-local id (e.g. "channel_subscribe"). Forms the
+    /// canonical id `{moduleId}:trigger:{manifest_id}` together with the
+    /// moduleId segment of the row's `created_by_ref`. Required for the
+    /// dedupe/upsert key on the triggers table.
+    pub manifest_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -37,6 +48,10 @@ pub struct ActionInputJson {
     pub description: String,
     pub call: String,
     pub params_schema: String,
+    /// Stable manifest-local id (e.g. "play_alert"). Forms the canonical
+    /// id `{moduleId}:action:{manifest_id}`. Required for the
+    /// dedupe/upsert key on the actions table.
+    pub manifest_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -713,6 +728,127 @@ pub async fn complete_module_install(
 
 /// Twirp JSON for `module.ModuleService/GetModuleByName`.
 #[allow(dead_code)]
+/// Resolve a cross-module trigger reference. Returns the trigger row's
+/// `event` field (the NATS subject the engine must subscribe to when a
+/// workflow names this trigger via `$ref`). Used by the install path
+/// when a bundled workflow's `trigger` is a canonical id pointing at
+/// another module.
+pub async fn get_trigger_event_by_canonical_id(
+    db_proxy_url: &str,
+    canonical_id: &str,
+) -> Result<String> {
+    let url = format!(
+        "{}/twirp/module.ModuleService/GetTriggerByCanonicalId",
+        db_proxy_url
+    );
+    let body = serde_json::json!({ "canonical_id": canonical_id });
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("GetTriggerByCanonicalId request failed: {}", e))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "GetTriggerByCanonicalId({canonical_id}) failed {}: {}",
+            status,
+            text
+        ));
+    }
+    let value: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| anyhow!("parse GetTriggerByCanonicalId response: {}", e))?;
+    value
+        .get("trigger")
+        .and_then(|t| t.get("event"))
+        .and_then(|e| e.as_str())
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            anyhow!(
+                "GetTriggerByCanonicalId({canonical_id}) response missing trigger.event"
+            )
+        })
+}
+
+/// Resolved cross-module action: the engine handler the action
+/// dispatches to (`type` column), and the canonical function id when
+/// `type == "function"` (the `call` column). For non-function
+/// handlers (e.g. `alert`) `function_call` is `None`.
+pub struct ResolvedActionRef {
+    pub action_type: String,
+    pub function_call: Option<String>,
+}
+
+/// Resolve a cross-module action reference. Reads the action row's
+/// `type` (engine handler) and `call` (canonical function id, when
+/// type is `function`). Used by the install path when a bundled
+/// workflow step references an action from another module.
+pub async fn get_action_ref_by_canonical_id(
+    db_proxy_url: &str,
+    canonical_id: &str,
+) -> Result<ResolvedActionRef> {
+    let url = format!(
+        "{}/twirp/module.ModuleService/GetActionByCanonicalId",
+        db_proxy_url
+    );
+    let body = serde_json::json!({ "canonical_id": canonical_id });
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("GetActionByCanonicalId request failed: {}", e))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "GetActionByCanonicalId({canonical_id}) failed {}: {}",
+            status,
+            text
+        ));
+    }
+    let value: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| anyhow!("parse GetActionByCanonicalId response: {}", e))?;
+    let action = value
+        .get("action")
+        .ok_or_else(|| anyhow!("GetActionByCanonicalId({canonical_id}) response missing `action`"))?;
+    // `type` defaults to "function" when absent — covers older db
+    // rows that predate the type column.
+    let action_type = action
+        .get("type")
+        .and_then(|t| t.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("function")
+        .to_string();
+    let call = action
+        .get("call")
+        .and_then(|c| c.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
+    let function_call = if action_type == "function" {
+        Some(call.ok_or_else(|| {
+            anyhow!(
+                "action {canonical_id} has type=function but `call` is empty"
+            )
+        })?)
+    } else {
+        None
+    };
+    Ok(ResolvedActionRef {
+        action_type,
+        function_call,
+    })
+}
+
 pub async fn get_module_by_name(
     db_proxy_url: &str,
     name: &str,

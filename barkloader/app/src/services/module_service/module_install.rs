@@ -4,8 +4,9 @@ use log::{info, warn};
 use std::path::Path;
 
 use super::db_proxy::{create_module, create_module_resource, CreateModuleFunctionJson};
+use super::manifest_validate::{self, ResolvedActionImpl};
 use super::module_file::ModuleFile;
-use super::module_manifest::ModuleManifest;
+use super::module_manifest::{ModuleManifest, ResolvedWorkflowStep, ResolvedWorkflowTrigger};
 
 pub struct VersionConflict {
     pub module_name: String,
@@ -103,6 +104,16 @@ pub async fn run_install<R: Repository>(
     // that gets persisted on the module row and is the actual `moduleKey`
     // returned to the UI — these two are NOT the same.
     let module_key = manifest.module_key();
+
+    // Validate the manifest and resolve every intra-manifest reference
+    // before any side effect runs. Validation enforces the canonical-id
+    // contract documented in `docs/barkloader/modules.md`: required ids,
+    // valid characters, per-kind uniqueness, resolvable references. Any
+    // failure here aborts the install with no DB or filesystem state
+    // touched.
+    let resolved = manifest_validate::validate(manifest)
+        .map_err(|e| anyhow!("manifest validation failed: {}", e))?;
+
     let mut fn_rows: Vec<CreateModuleFunctionJson> =
         Vec::with_capacity(manifest.functions.len());
 
@@ -114,7 +125,8 @@ pub async fn run_install<R: Repository>(
             .unwrap_or("function")
             .to_string();
         fn_rows.push(CreateModuleFunctionJson {
-            function_name: f.id.clone(),
+            manifest_id: f.id.clone(),
+            name: f.name.clone(),
             file_name,
             file_key,
             entry_point: f.entry_point.clone().unwrap_or_default(),
@@ -154,34 +166,46 @@ pub async fn run_install<R: Repository>(
             )
             .await?;
 
-            // Record function resources in ledger
-            for f in &manifest.functions {
+            // Record function resources in ledger. `resource_name` is the
+            // canonical id — that's the value the in-use check and any
+            // future reference resolution joins on. `manifest_id` keeps
+            // the author's local id for debugging / display.
+            for (i, f) in manifest.functions.iter().enumerate() {
+                let canonical = resolved.functions[i].canonical_id.to_string();
                 if let Err(e) = create_module_resource(
-                    url, &db_record_id, "function", "", &f.id, &f.name, &manifest.version,
+                    url, &db_record_id, "function", "", &f.id, &canonical, &manifest.version,
                 ).await {
-                    warn!("Failed to record function resource {}: {}", f.id, e);
+                    warn!("Failed to record function resource {}: {}", canonical, e);
                 }
             }
 
             // Record widget resources in ledger
-            for w in &manifest.widgets {
+            for (i, w) in manifest.widgets.iter().enumerate() {
+                let canonical = resolved.widgets[i].canonical_id.to_string();
                 if let Err(e) = create_module_resource(
-                    url, &db_record_id, "widget", "", &w.id, &w.name, &manifest.version,
+                    url, &db_record_id, "widget", "", &w.id, &canonical, &manifest.version,
                 ).await {
-                    warn!("Failed to record widget resource {}: {}", w.id, e);
+                    warn!("Failed to record widget resource {}: {}", canonical, e);
                 }
             }
 
             // Record overlay resources in ledger
-            for o in &manifest.overlays {
+            for (i, o) in manifest.overlays.iter().enumerate() {
+                let canonical = resolved.overlays[i].canonical_id.to_string();
                 if let Err(e) = create_module_resource(
-                    url, &db_record_id, "overlay", "", &o.id, &o.name, &manifest.version,
+                    url, &db_record_id, "overlay", "", &o.id, &canonical, &manifest.version,
                 ).await {
-                    warn!("Failed to record overlay resource {}: {}", o.id, e);
+                    warn!("Failed to record overlay resource {}: {}", canonical, e);
                 }
             }
 
             // Register triggers as a single bulk call keyed by the composite module_key.
+            // The trigger row's `event` field is the actual NATS subject
+            // the trigger fires on (publishers emit on this subject;
+            // workflows subscribe to it). The trigger's *canonical id*
+            // (`{moduleId}:trigger:{id}`) is recorded separately in the
+            // module_resources ledger as `resource_name`, and referenced
+            // from workflow `$ref` fields — never on the trigger row.
             let trigger_inputs: Vec<_> = manifest
                 .triggers
                 .iter()
@@ -202,20 +226,31 @@ pub async fn run_install<R: Repository>(
             )
             .await?;
 
-            // Ledger rows still record one resource per trigger.
-            for t in &manifest.triggers {
+            // Ledger rows record one resource per trigger, keyed by canonical id.
+            for (i, t) in manifest.triggers.iter().enumerate() {
+                let canonical = resolved.triggers[i].canonical_id.to_string();
                 if let Err(e) = create_module_resource(
-                    url, &db_record_id, "trigger", "", &t.id, &t.name, &manifest.version,
+                    url, &db_record_id, "trigger", "", &t.id, &canonical, &manifest.version,
                 ).await {
-                    warn!("Failed to record trigger resource {}: {}", t.id, e);
+                    warn!("Failed to record trigger resource {}: {}", canonical, e);
                 }
             }
 
             // Register actions as a single bulk call keyed by the composite module_key.
+            // The action's `call` field is the resolved canonical function
+            // id of the action's resolved implementation.
             let action_inputs: Vec<_> = manifest
                 .actions
                 .iter()
-                .map(|a| a.to_input())
+                .enumerate()
+                .map(|(i, a)| {
+                    let resolved_call = match &resolved.actions[i].implementation {
+                        ResolvedActionImpl::Function { canonical_function_id } => {
+                            canonical_function_id.to_string()
+                        }
+                    };
+                    a.to_input(&resolved_call)
+                })
                 .collect();
             info!(
                 "Registering {} action(s) for module {} (moduleKey={})",
@@ -232,20 +267,129 @@ pub async fn run_install<R: Repository>(
             )
             .await?;
 
-            for a in &manifest.actions {
+            for (i, a) in manifest.actions.iter().enumerate() {
+                let canonical = resolved.actions[i].canonical_id.to_string();
                 if let Err(e) = create_module_resource(
-                    url, &db_record_id, "action", "", &a.id, &a.name, &manifest.version,
+                    url, &db_record_id, "action", "", &a.id, &canonical, &manifest.version,
                 ).await {
-                    warn!("Failed to record action resource {}: {}", a.id, e);
+                    warn!("Failed to record action resource {}: {}", canonical, e);
                 }
             }
 
-            for wf in &manifest.workflows {
-                wf.register(module_key, url, application_id, &manifest.triggers).await?;
+            for (i, wf) in manifest.workflows.iter().enumerate() {
+                let resolved_wf = &resolved.workflows[i];
+
+                // Build the trigger context: $ref carries the canonical
+                // trigger id; event_subject carries the NATS subject the
+                // workflow engine actually subscribes to.
+                //
+                // Same-module triggers resolve via the local manifest.
+                // Cross-module triggers (canonical id pointing at another
+                // module's trigger declaration) get a db lookup to recover
+                // the trigger row's `event` field — that module must be
+                // installed first or this fails loudly.
+                let resolved_trigger_ctx = if resolved_wf.trigger.module_id() == resolved.module_id {
+                    let trigger_local_id = resolved_wf.trigger.resource_id();
+                    let trigger_event_subject = manifest
+                        .triggers
+                        .iter()
+                        .find(|t| t.id == trigger_local_id)
+                        .map(|t| if t.event.is_empty() { t.id.clone() } else { t.event.clone() })
+                        .ok_or_else(|| anyhow!(
+                            "internal: bundled workflow {} references local trigger {} not found in manifest",
+                            wf.id,
+                            trigger_local_id,
+                        ))?;
+                    ResolvedWorkflowTrigger {
+                        trigger_ref: resolved_wf.trigger.to_string(),
+                        event_subject: trigger_event_subject,
+                    }
+                } else {
+                    let canonical = resolved_wf.trigger.to_string();
+                    let event_subject = super::db_proxy::get_trigger_event_by_canonical_id(
+                        url,
+                        &canonical,
+                    )
+                    .await
+                    .map_err(|e| anyhow!(
+                        "bundled workflow {} references trigger {} but the trigger could not be resolved (is the owning module installed?): {}",
+                        wf.id,
+                        canonical,
+                        e,
+                    ))?;
+                    ResolvedWorkflowTrigger {
+                        trigger_ref: canonical,
+                        event_subject,
+                    }
+                };
+
+                // Build per-step context. Each step references an action
+                // by canonical id. Same-module actions resolve via the
+                // local manifest's resolved actions table. Cross-module
+                // actions get a db lookup to recover the action's `call`
+                // (a canonical function id) so the workflow step's
+                // `function` field can be baked in.
+                //
+                // We can't async-map a Vec inline, so collect step
+                // contexts in a sequential loop.
+                let mut resolved_steps_ctx: Vec<ResolvedWorkflowStep> =
+                    Vec::with_capacity(resolved_wf.step_actions.len());
+                for (si, action_canonical) in resolved_wf.step_actions.iter().enumerate() {
+                    // (engine_action, function_call) — engine_action is
+                    // the workflow handler name (function / alert / …);
+                    // function_call is set only when engine_action is
+                    // "function" (the canonical fn id to invoke).
+                    let (engine_action, function_call): (String, Option<String>) =
+                        if action_canonical.module_id() == resolved.module_id {
+                            let resolved_action = resolved
+                                .actions
+                                .iter()
+                                .find(|a| a.canonical_id.resource_id() == action_canonical.resource_id())
+                                .ok_or_else(|| anyhow!(
+                                    "internal: bundled workflow {} step #{} references action {} not found in resolved actions",
+                                    wf.id,
+                                    si,
+                                    action_canonical,
+                                ))?;
+                            match &resolved_action.implementation {
+                                ResolvedActionImpl::Function { canonical_function_id: cid } => {
+                                    ("function".to_string(), Some(cid.to_string()))
+                                }
+                            }
+                        } else {
+                            let canonical = action_canonical.to_string();
+                            let resolved_ref = super::db_proxy::get_action_ref_by_canonical_id(url, &canonical)
+                                .await
+                                .map_err(|e| anyhow!(
+                                    "bundled workflow {} step #{} references action {} but the action could not be resolved (is the owning module installed?): {}",
+                                    wf.id,
+                                    si,
+                                    canonical,
+                                    e,
+                                ))?;
+                            (resolved_ref.action_type, resolved_ref.function_call)
+                        };
+                    resolved_steps_ctx.push(ResolvedWorkflowStep {
+                        action_ref: action_canonical.to_string(),
+                        engine_action,
+                        function_call,
+                    });
+                }
+
+                wf.register(
+                    module_key,
+                    composite_module_key,
+                    url,
+                    application_id,
+                    &resolved_trigger_ctx,
+                    &resolved_steps_ctx,
+                )
+                .await?;
+                let canonical = resolved_wf.canonical_id.to_string();
                 if let Err(e) = create_module_resource(
-                    url, &db_record_id, "workflow", "", &wf.id, &wf.name, &manifest.version,
+                    url, &db_record_id, "workflow", "", &wf.id, &canonical, &manifest.version,
                 ).await {
-                    warn!("Failed to record workflow resource {}: {}", wf.id, e);
+                    warn!("Failed to record workflow resource {}: {}", canonical, e);
                 }
             }
 
@@ -258,13 +402,22 @@ pub async fn run_install<R: Repository>(
                 _ => String::new(),
             };
 
-            for cmd in &manifest.commands {
-                cmd.register(module_key, url, application_id).await?;
+            for (i, cmd) in manifest.commands.iter().enumerate() {
+                let resolved_cmd = &resolved.commands[i];
+                let resolved_workflow = resolved_cmd.workflow.as_ref().map(|c| c.to_string());
+                cmd.register(
+                    module_key,
+                    url,
+                    application_id,
+                    resolved_workflow.as_deref(),
+                )
+                .await?;
+                let canonical = resolved_cmd.canonical_id.to_string();
                 if !mid.is_empty() {
                     if let Err(e) = create_module_resource(
-                        url, &mid, "command", "", &cmd.id, &cmd.name, &manifest.version,
+                        url, &mid, "command", "", &cmd.id, &canonical, &manifest.version,
                     ).await {
-                        warn!("Failed to record command resource {}: {}", cmd.id, e);
+                        warn!("Failed to record command resource {}: {}", canonical, e);
                     }
                 }
             }

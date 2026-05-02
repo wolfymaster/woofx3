@@ -6,8 +6,13 @@ pub const ACTION: BuiltinAction = BuiltinAction {
     description: "Publish a chat message to the primary chat bus subject. \
 Platform-agnostic; downstream clients bridge to Twitch / Discord / etc.",
     params_schema: r#"[
-      {"id":"message","label":"Message","type":"text","required":true},
-      {"id":"reply_to","label":"Reply to message ID","type":"text","required":false}
+      {"id":"message","label":"Message","type":"text","required":true,
+       "description":"Text to publish to the platform-agnostic chat bus.",
+       "hint":"Downstream bridges (Twitch, Discord) format the message per platform rules."},
+      {"id":"reply_to","label":"Reply to message ID","type":"text","required":false,
+       "description":"Optional. Threads the reply onto an existing chat message.",
+       "hint":"Bridges that don't support threading ignore this field.",
+       "dataSchema":"{\n  \"messageId\": \"abc-123-def\"\n}"}
     ]"#,
     handler: handle,
 };

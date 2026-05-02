@@ -11,8 +11,11 @@ pub const ACTION: BuiltinAction = BuiltinAction {
          {"value":"warn","label":"Warn"},
          {"value":"error","label":"Error"}
        ],
-       "defaultValue":"info"},
-      {"id":"message","label":"Message","type":"text","required":true}
+       "defaultValue":"info",
+       "description":"Severity routes to the matching server log channel."},
+      {"id":"message","label":"Message","type":"text","required":true,
+       "description":"Plain text written verbatim to the log line.",
+       "hint":"Useful for confirming a workflow branch was reached during testing."}
     ]"#,
     handler: handle,
 };

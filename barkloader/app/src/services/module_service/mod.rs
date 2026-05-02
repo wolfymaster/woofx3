@@ -1,4 +1,6 @@
+pub mod canonical_id;
 pub mod db_proxy;
+pub mod manifest_validate;
 pub mod module_delete;
 mod module_file;
 mod module_install;

@@ -17,7 +17,11 @@ const CREATED_BY_REF: &str = "builtin";
 
 /// Register all compile-time built-in actions with the DB proxy. Safe to
 /// call on every startup — the upsert on
-/// (created_by_type, created_by_ref, name) means this is idempotent.
+/// (created_by_type, created_by_ref, manifest_id) means this is idempotent.
+/// Built-in actions use the action's stable `name` as both the manifest id
+/// (for the canonical id `barkloader-builtin:action:{name}`) and the
+/// display name; if a built-in needs a separate display name later,
+/// extend the registry entry.
 pub async fn register_builtin_actions(db_proxy_url: &str) -> anyhow::Result<()> {
     if REGISTRY.is_empty() {
         return Ok(());
@@ -30,6 +34,7 @@ pub async fn register_builtin_actions(db_proxy_url: &str) -> anyhow::Result<()> 
             description: a.description.to_string(),
             call: format!("builtin:{}", a.name),
             params_schema: a.params_schema.to_string(),
+            manifest_id: a.name.to_string(),
         })
         .collect();
 

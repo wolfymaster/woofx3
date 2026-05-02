@@ -35,14 +35,20 @@ impl ModuleRegistry {
         }
     }
 
+    /// Resolve a function by its canonical id
+    /// (`{moduleId}:function:{manifest_id}`). The middle segment must
+    /// be the literal `function` keyword — this matches the canonical
+    /// id format documented in `docs/barkloader/modules.md`. Modules
+    /// are keyed in the in-memory registry by `moduleId`; functions
+    /// within a module are keyed by their manifest_id.
     pub fn get_function(&self, path: &str) -> Result<Function, Error> {
-        let parts: Vec<&str> = path.split('/').collect();
-        if parts.len() != 2 {
+        let parts: Vec<&str> = path.split(':').collect();
+        if parts.len() != 3 || parts[1] != "function" || parts[0].is_empty() || parts[2].is_empty() {
             return Err(Error::InvalidFunctionPath(path.to_string()));
         }
 
         let module_name = parts[0];
-        let function_name = parts[1];
+        let function_name = parts[2];
 
         let modules = self.modules.read().unwrap();
         let module = modules
