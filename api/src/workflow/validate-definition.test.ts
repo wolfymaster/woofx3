@@ -6,7 +6,7 @@ describe("validateWorkflowDefinition", () => {
     const def = {
       id: "x",
       name: "X",
-      trigger: { type: "event" as const, eventType: "cheer.user.twitch" },
+      trigger: { type: "event" as const, event: "cheer.user.twitch" },
       tasks: [{ id: "t1", type: "action" as const, action: "print", parameters: { message: "hi" } }],
     };
     expect(validateWorkflowDefinition(def)).toEqual({ ok: true, value: def });
@@ -24,7 +24,7 @@ describe("validateWorkflowDefinition", () => {
     const r = validateWorkflowDefinition({
       id: "x",
       name: "X",
-      trigger: { type: "event", eventType: "e" },
+      trigger: { type: "event", event: "e" },
       tasks: [{ id: "t1", type: "action", parameters: { message: "hi" } }],
     });
     expect(r.ok).toBe(false);
@@ -37,7 +37,7 @@ describe("validateWorkflowDefinition", () => {
     const r = validateWorkflowDefinition({
       id: "x",
       name: "X",
-      trigger: { type: "event", eventType: "e" },
+      trigger: { type: "event", event: "e" },
       tasks: [{ id: "t1", type: "action", action: "print", dependsOn: ["ghost"], parameters: {} }],
     });
     expect(r.ok).toBe(false);
@@ -50,7 +50,7 @@ describe("validateWorkflowDefinition", () => {
     const r = validateWorkflowDefinition({
       id: "x",
       name: "X",
-      trigger: { type: "event", eventType: "e" },
+      trigger: { type: "event", event: "e" },
       tasks: [
         { id: "t1", type: "action", action: "print", parameters: {} },
         { id: "t1", type: "action", action: "print", parameters: {} },
@@ -63,7 +63,7 @@ describe("validateWorkflowDefinition", () => {
     const r = validateWorkflowDefinition({
       id: "x",
       name: "X",
-      trigger: { type: "event", eventType: "e" },
+      trigger: { type: "event", event: "e" },
       tasks: [
         {
           id: "c1",
@@ -82,7 +82,7 @@ describe("validateWorkflowDefinition", () => {
       name: "X",
       trigger: {
         type: "event",
-        eventType: "e",
+        event: "e",
         conditions: [{ field: "${trigger.data.x}", operator: "like" as never, value: 1 }],
       },
       tasks: [{ id: "t1", type: "action", parameters: {} }],
@@ -94,7 +94,7 @@ describe("validateWorkflowDefinition", () => {
     const r = validateWorkflowDefinition({
       id: "x",
       name: "X",
-      trigger: { type: "event", eventType: "e", conditions: [] },
+      trigger: { type: "event", event: "e", conditions: [] },
       tasks: [{ id: "t1", type: "action", action: "print", parameters: {} }],
     });
     expect(r.ok).toBe(true);

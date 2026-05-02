@@ -63,6 +63,18 @@ export class DbClient {
     return command.ListCommands(req, this.config);
   }
 
+  async createCommand(req: command.CreateCommandRequest): Promise<command.CommandResponse> {
+    return command.CreateCommand(req, this.config);
+  }
+
+  async updateCommand(req: command.UpdateCommandRequest): Promise<command.CommandResponse> {
+    return command.UpdateCommand(req, this.config);
+  }
+
+  async deleteCommand(req: command.DeleteCommandRequest): Promise<common.ResponseStatus> {
+    return command.DeleteCommand(req, this.config);
+  }
+
   async getWorkflow(req: workflow.GetWorkflowRequest): Promise<workflow.WorkflowResponse> {
     return workflow.GetWorkflow(req, this.config);
   }
@@ -188,9 +200,15 @@ export class DbClient {
     return { id: resp.user.id };
   }
 
-  async setSetting(key: string, value: string, applicationId: string): Promise<setting.SettingResponse> {
+  async setSetting(
+    key: string,
+    value: string,
+    applicationId: string,
+    userId?: string
+  ): Promise<setting.SettingResponse> {
     return setting.SetSetting(
       {
+        userId: userId ?? "",
         key,
         value: { stringValue: value },
         applicationId,

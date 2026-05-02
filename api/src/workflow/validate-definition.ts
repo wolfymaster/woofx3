@@ -71,8 +71,8 @@ export function validateWorkflowDefinition(input: unknown): ValidationResult {
   if (!def.trigger || typeof def.trigger !== "object") {
     errors.push({ path: "trigger", message: "required object" });
   } else if (def.trigger.type === "event") {
-    if (typeof def.trigger.eventType !== "string" || def.trigger.eventType.length === 0) {
-      errors.push({ path: "trigger.eventType", message: "required string" });
+    if (typeof def.trigger.event !== "string" || def.trigger.event.length === 0) {
+      errors.push({ path: "trigger.event", message: "required string" });
     }
     validateConditions(def.trigger.conditions, "trigger.conditions", errors);
   } else if (def.trigger.type === "schedule") {

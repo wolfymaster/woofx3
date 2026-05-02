@@ -1,12 +1,24 @@
 import type {
+  AvailableFunction,
+  CommandSnapshot,
+  CommandType,
+  CreateCommandInput,
   CreateWorkflowInput,
+  FieldOptionsDescriptor,
   PingResponse,
+  UpdateCommandInput,
   UpdateWorkflowInput,
   Woofx3EngineApi,
   WorkflowDefinition,
   WorkflowMutationResult,
 } from "@woofx3/api";
-import type { WorkflowCreatedEvent, WorkflowDeletedEvent, WorkflowUpdatedEvent } from "@woofx3/api/webhooks";
+import type {
+  ActionDefinition,
+  TriggerDefinition,
+  WorkflowCreatedEvent,
+  WorkflowDeletedEvent,
+  WorkflowUpdatedEvent,
+} from "@woofx3/api/webhooks";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type * as command from "@woofx3/db/command.pb";
@@ -19,9 +31,21 @@ import type NATSClient from "@woofx3/nats/src/client";
 import { RpcTarget } from "capnweb";
 import * as protoscript from "protoscript";
 import type { DbClient } from "./db-client";
-import { parseModuleActionRegistered, parseModuleTriggerRegistered } from "./module-event-handlers";
+import {
+  parseModuleActionDeregistered,
+  parseModuleActionRegistered,
+  parseModuleFunctionDeregistered,
+  parseModuleFunctionRegistered,
+  parseModuleTriggerDeregistered,
+  parseModuleTriggerRegistered,
+} from "./module-event-handlers";
 import type { WebhookClient } from "./webhook-client";
 import { validateWorkflowDefinition } from "./workflow/validate-definition";
+import {
+  parseWorkflowCreated,
+  parseWorkflowDeleted,
+  parseWorkflowUpdated,
+} from "./workflow-event-handlers";
 
 /**
  * Helper to create a protoscript.Timestamp from a Date
@@ -47,6 +71,103 @@ function timestampToIso(ts: { seconds?: bigint; nanos?: number } | undefined): s
   }
   const ms = Number(ts.seconds) * 1000 + Math.floor((ts.nanos ?? 0) / 1_000_000);
   return new Date(ms).toISOString();
+}
+
+/**
+ * Rebuild a `WorkflowDefinition` from the engine-shape JSON columns
+ * persisted on a Workflow proto. Returns `null` when the workflow has
+ * no trigger (an unrecoverable shape — the engine refuses to register
+ * a workflow without a trigger anyway).
+ *
+ * The pre-Phase-C path stored the full WorkflowDefinition as a single
+ * `_definition` variable; that's gone now and the canonical source is
+ * `stepsJson` + `triggerJson` straight off the workflow row.
+ */
+function rebuildWorkflowDefinition(wf: {
+  id?: string;
+  name?: string;
+  description?: string;
+  stepsJson?: string;
+  triggerJson?: string;
+}): WorkflowDefinition | null {
+  if (!wf.triggerJson) {
+    return null;
+  }
+  let trigger: WorkflowDefinition["trigger"];
+  let tasks: WorkflowDefinition["tasks"];
+  try {
+    trigger = JSON.parse(wf.triggerJson) as WorkflowDefinition["trigger"];
+    tasks = wf.stepsJson ? (JSON.parse(wf.stepsJson) as WorkflowDefinition["tasks"]) : [];
+  } catch {
+    return null;
+  }
+  return {
+    id: wf.id ?? "",
+    name: wf.name ?? "",
+    description: wf.description,
+    trigger,
+    tasks,
+  };
+}
+
+/**
+ * Narrow the engine's protobuf Command type to the shared API
+ * CommandSnapshot. The proto's `type` field is a free-form string but the
+ * UI only ever creates one of three known values; we cast through
+ * `CommandType` so consumers don't have to re-validate.
+ */
+function commandToSnapshot(c: command.Command): CommandSnapshot {
+  return {
+    id: c.id,
+    applicationId: c.applicationId,
+    command: c.command,
+    type: c.type as CommandType,
+    typeValue: c.typeValue,
+    cooldown: c.cooldown,
+    priority: c.priority,
+    enabled: c.enabled,
+  };
+}
+
+/**
+ * Extract the catalog-facing fields the UI surfaces for an installed module
+ * from the manifest JSON the engine stores on `modules.manifest`.
+ *
+ * Author and category come straight from the manifest authored by the
+ * module developer. Both fall back to "Unknown" when missing, blank, or
+ * when the stored manifest is malformed — the UI must always have a
+ * concrete string to render.
+ */
+export function readModuleCatalogFields(rawManifest: string | undefined): {
+  author: string;
+  category: string;
+} {
+  const fallback = { author: "Unknown", category: "Unknown" };
+  if (!rawManifest) {
+    return fallback;
+  }
+  let parsed: { author?: unknown; category?: unknown } = {};
+  try {
+    const v = JSON.parse(rawManifest);
+    if (v && typeof v === "object") {
+      parsed = v as { author?: unknown; category?: unknown };
+    }
+  } catch {
+    return fallback;
+  }
+  const pick = (val: unknown, key: "author" | "category"): string => {
+    if (typeof val === "string") {
+      const trimmed = val.trim();
+      if (trimmed !== "") {
+        return trimmed;
+      }
+    }
+    return fallback[key];
+  };
+  return {
+    author: pick(parsed.author, "author"),
+    category: pick(parsed.category, "category"),
+  };
 }
 
 /**
@@ -173,6 +294,19 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
 
     this.logger.info("Initializing NATS subscriptions for module events");
 
+    // Built-in `alert` workflow action (workflow/actions.go:NewAlertAction)
+    // publishes here. Stub today: log payload so we can verify the
+    // engine-to-api path end to end. UI / overlay subscribers will
+    // attach to the same subject and render the alert.
+    await this.nats.subscribe("ui.notify.alert", async (msg) => {
+      try {
+        const payload = msg.json() as Record<string, unknown>;
+        this.logger.info("alert received", { payload });
+      } catch (err) {
+        this.logger.error("Failed to parse ui.notify.alert payload", { err });
+      }
+    });
+
     await this.nats.subscribe("db.module.trigger.registered.*", async (msg) => {
       this.logger.info("Received NATS message on db.module.trigger.registered.*", { subject: msg.subject });
       try {
@@ -229,6 +363,112 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
       }
     });
 
+    await this.nats.subscribe("db.module.function.registered.*", async (msg) => {
+      this.logger.info("Received NATS message on db.module.function.registered.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { clientId, event } = parseModuleFunctionRegistered(ce);
+        this.logger.info("Parsed module.function.registered", {
+          moduleKey: event.moduleKey,
+          moduleName: event.moduleName,
+          version: event.version,
+          functionCount: event.functions.length,
+          clientId,
+        });
+
+        if (this.webhookClient) {
+          this.logger.info("Sending module.function.registered to webhook client", {
+            moduleKey: event.moduleKey,
+            clientId,
+          });
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for module.function.registered");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle module.function.registered NATS event", { err });
+      }
+    });
+
+    await this.nats.subscribe("db.module.trigger.deregistered.*", async (msg) => {
+      this.logger.info("Received NATS message on db.module.trigger.deregistered.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { clientId, event } = parseModuleTriggerDeregistered(ce);
+        this.logger.info("Parsed module.trigger.deregistered", {
+          modulePrefix: event.modulePrefix,
+          triggerCount: event.triggers.length,
+          clientId,
+        });
+
+        await this.notifyTriggerChange(event.modulePrefix);
+
+        if (this.webhookClient) {
+          this.logger.info("Sending module.trigger.deregistered to webhook client", {
+            modulePrefix: event.modulePrefix,
+            clientId,
+          });
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for module.trigger.deregistered");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle module.trigger.deregistered NATS event", { err });
+      }
+    });
+
+    await this.nats.subscribe("db.module.action.deregistered.*", async (msg) => {
+      this.logger.info("Received NATS message on db.module.action.deregistered.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { clientId, event } = parseModuleActionDeregistered(ce);
+        this.logger.info("Parsed module.action.deregistered", {
+          modulePrefix: event.modulePrefix,
+          actionCount: event.actions.length,
+          clientId,
+        });
+
+        if (this.webhookClient) {
+          this.logger.info("Sending module.action.deregistered to webhook client", {
+            modulePrefix: event.modulePrefix,
+            clientId,
+          });
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for module.action.deregistered");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle module.action.deregistered NATS event", { err });
+      }
+    });
+
+    await this.nats.subscribe("db.module.function.deregistered.*", async (msg) => {
+      this.logger.info("Received NATS message on db.module.function.deregistered.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { clientId, event } = parseModuleFunctionDeregistered(ce);
+        this.logger.info("Parsed module.function.deregistered", {
+          moduleKey: event.moduleKey,
+          moduleName: event.moduleName,
+          version: event.version,
+          functionCount: event.functions.length,
+          clientId,
+        });
+
+        if (this.webhookClient) {
+          this.logger.info("Sending module.function.deregistered to webhook client", {
+            moduleKey: event.moduleKey,
+            clientId,
+          });
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for module.function.deregistered");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle module.function.deregistered NATS event", { err });
+      }
+    });
+
     await this.nats.subscribe("db.module.installed.*", async (msg) => {
       this.logger.info("Received NATS message on db.module.installed.*", { subject: msg.subject });
       try {
@@ -238,12 +478,22 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
           module_name?: string;
           module_key?: string;
           version?: string;
+          author?: string;
+          category?: string;
+          description?: string;
         };
         const clientId = (ce.client_id as string) ?? "";
         this.logger.info("Parsed module.installed event", { payload, clientId });
         const moduleName = payload.module_name ?? "";
         const moduleVersion = payload.version ?? "";
         const moduleKey = payload.module_key ?? "";
+        // Catalog metadata extracted server-side from the stored
+        // manifest. The engine guarantees author/category are non-empty
+        // ("Unknown" when absent); description may be blank when the
+        // manifest declared none.
+        const author = payload.author ?? "";
+        const category = payload.category ?? "";
+        const description = payload.description ?? "";
 
         if (this.webhookClient) {
           this.logger.info("Sending module.installed to webhook client", {
@@ -258,6 +508,9 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
               moduleName,
               version: moduleVersion,
               moduleKey,
+              author,
+              category,
+              description,
             },
             clientId || undefined
           );
@@ -308,6 +561,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
             resource_id?: string;
             resource_type?: string;
             resource_name?: string;
+            resource_display_name?: string;
             used_by?: Array<{ source_type?: string; source_id?: string; source_name?: string; context?: string }>;
           }>;
         };
@@ -319,6 +573,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
           resourceId: r.resource_id ?? "",
           resourceType: r.resource_type ?? "",
           resourceName: r.resource_name ?? "",
+          resourceDisplayName: r.resource_display_name ?? "",
           usedBy: (r.used_by ?? []).map((u) => ({
             sourceType: u.source_type ?? "",
             sourceId: u.source_id ?? "",
@@ -394,6 +649,97 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
         }
       } catch (err) {
         this.logger.error("Failed to handle module install_failed NATS event", { err });
+      }
+    });
+
+    // Workflow lifecycle events from the db proxy. Required so workflows
+    // created by side-channels other than the api's own createWorkflow
+    // RPC reach the UI — most notably the workflows declared in a
+    // module manifest, which barkloader registers via Twirp directly
+    // against the db proxy and never flow through api.ts:createWorkflow.
+    // The inline emits in createWorkflow / updateWorkflow / deleteWorkflow
+    // remain for now; the UI's webhook handler upserts on workflow id
+    // so the duplicate is idempotent.
+    await this.nats.subscribe("db.workflow.created.*", async (msg) => {
+      this.logger.info("Received NATS message on db.workflow.created.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { applicationId, clientId, event } = parseWorkflowCreated(ce);
+        if (!event) {
+          this.logger.warn("workflow.created payload missing required fields, skipping", {
+            applicationId,
+            clientId,
+          });
+          return;
+        }
+        this.logger.info("Parsed workflow.created", {
+          applicationId,
+          clientId,
+          workflowId: event.workflow.id,
+          name: event.workflow.definition?.name,
+        });
+        if (this.webhookClient) {
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for workflow.created");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle workflow.created NATS event", { err });
+      }
+    });
+
+    await this.nats.subscribe("db.workflow.updated.*", async (msg) => {
+      this.logger.info("Received NATS message on db.workflow.updated.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { applicationId, clientId, event } = parseWorkflowUpdated(ce);
+        if (!event) {
+          this.logger.warn("workflow.updated payload missing required fields, skipping", {
+            applicationId,
+            clientId,
+          });
+          return;
+        }
+        this.logger.info("Parsed workflow.updated", {
+          applicationId,
+          clientId,
+          workflowId: event.workflow.id,
+          name: event.workflow.definition?.name,
+        });
+        if (this.webhookClient) {
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for workflow.updated");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle workflow.updated NATS event", { err });
+      }
+    });
+
+    await this.nats.subscribe("db.workflow.deleted.*", async (msg) => {
+      this.logger.info("Received NATS message on db.workflow.deleted.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { applicationId, clientId, event } = parseWorkflowDeleted(ce);
+        if (!event) {
+          this.logger.warn("workflow.deleted payload missing workflow id, skipping", {
+            applicationId,
+            clientId,
+          });
+          return;
+        }
+        this.logger.info("Parsed workflow.deleted", {
+          applicationId,
+          clientId,
+          workflowId: event.workflowId,
+        });
+        if (this.webhookClient) {
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for workflow.deleted");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle workflow.deleted NATS event", { err });
       }
     });
 
@@ -765,6 +1111,26 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
    * Returns commands that the user can execute, with their current state.
    * @param _username - Optional username (reserved for future permission checks)
    */
+  /**
+   * List every chat command for the current application. Used by the
+   * background sync to reconcile Convex's chatCommands mirror against
+   * the engine's authoritative state.
+   *
+   * Distinct from `getAvailableCommands`, which exists to filter by what
+   * a particular user is permitted to run — that's a different semantic.
+   */
+  async listCommands(): Promise<CommandSnapshot[]> {
+    const applicationId = await this.ensureApplicationId();
+    const response = await this.db.listCommands({
+      applicationId,
+      includeDisabled: true,
+    });
+    if (response.status?.code !== "OK") {
+      throw new Error(response.status?.message || "Failed to list commands");
+    }
+    return (response.commands ?? []).map((c) => commandToSnapshot(c));
+  }
+
   async getAvailableCommands(_username?: string): Promise<{
     commands: Array<{
       id: string;
@@ -838,6 +1204,283 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
       success: true,
       message: `Command "${commandName}" executed`,
     };
+  }
+
+  /**
+   * Create a chat command. Persists via dbproxy and broadcasts a
+   * `command.created` cloudevent so consumers (e.g. woofwoofwoof) refresh
+   * their in-memory command list without restarting.
+   */
+  async createCommand(input: CreateCommandInput): Promise<CommandSnapshot> {
+    const applicationId = await this.ensureApplicationId();
+
+    const response = await this.db.createCommand({
+      applicationId,
+      command: input.command,
+      enabled: input.enabled,
+      cooldown: input.cooldown,
+      type: input.type,
+      typeValue: input.typeValue,
+      priority: input.priority ?? 0,
+      createdBy: "",
+      createdByType: "USER",
+      createdByRef: "",
+    });
+    if (response.status?.code !== "OK" || !response.command) {
+      throw new Error(response.status?.message || "Failed to create command");
+    }
+
+    const snapshot = commandToSnapshot(response.command);
+    await this.publishEvent("command.created", { command: snapshot });
+    this.logger.info("Command created", { id: snapshot.id, command: snapshot.command });
+    return snapshot;
+  }
+
+  /**
+   * Update a chat command. Full-replace: every field on UpdateCommandInput
+   * overwrites the stored row. Emits `command.updated` on success.
+   */
+  async updateCommand(id: string, input: UpdateCommandInput): Promise<CommandSnapshot> {
+    const response = await this.db.updateCommand({
+      id,
+      command: input.command,
+      enabled: input.enabled,
+      cooldown: input.cooldown,
+      type: input.type,
+      typeValue: input.typeValue,
+      priority: input.priority,
+    });
+    if (response.status?.code !== "OK" || !response.command) {
+      throw new Error(response.status?.message || "Failed to update command");
+    }
+
+    const snapshot = commandToSnapshot(response.command);
+    await this.publishEvent("command.updated", { command: snapshot });
+    this.logger.info("Command updated", { id: snapshot.id, command: snapshot.command });
+    return snapshot;
+  }
+
+  /**
+   * Persist the broadcaster's Twitch OAuth token in the engine's
+   * settings table. The Twitch service reads this on bootstrap (see
+   * `shared/clients/typescript/twitch/index.ts:88`).
+   *
+   * `convexUserId` (when supplied) is the Convex user that initiated the
+   * connect flow; we resolve it to the engine-side user UUID via the
+   * same `findOrCreateByWoofx3UIUserId` path registerClient uses, then
+   * write that UUID to `settings.user_id` so the row is scoped to the
+   * owning user. The Twitch broadcaster id stays inside the JSON value
+   * because that's what Twurple's `addUserForToken` parses out of
+   * `AccessTokenWithUserId` on bootstrap.
+   *
+   * applicationId is intentionally `""` to match the existing bootstrap
+   * read; per-app scoping is the correct long-term shape but the
+   * bootstrap consumer hasn't been updated yet.
+   */
+  async setTwitchToken(
+    token: {
+      accessToken: string;
+      refreshToken: string;
+      scope: string[];
+      expiresIn: number;
+      obtainmentTimestamp: number;
+      userId: string;
+    },
+    convexUserId?: string
+  ): Promise<{ ok: true }> {
+    let engineUserId: string | undefined;
+    if (convexUserId) {
+      const engineUser = await this.db.findOrCreateByWoofx3UIUserId(convexUserId);
+      engineUserId = engineUser.id;
+    }
+
+    const response = await this.db.setSetting(
+      "twitch_token",
+      JSON.stringify(token),
+      "",
+      engineUserId
+    );
+    if (response.status?.code !== "OK") {
+      throw new Error(response.status?.message || "Failed to set twitch_token");
+    }
+    this.logger.info("Twitch token written to settings", {
+      twitchUserId: token.userId,
+      engineUserId: engineUserId ?? "(unscoped)",
+    });
+
+    // Notify in-process consumers (woofwoofwoof, future bots) that the
+    // integration token was rewritten so they can reload their
+    // RefreshingAuthProvider and pick up new scopes without a service
+    // restart. Best-effort — the row is already persisted, so a missed
+    // event just means a delayed pickup.
+    try {
+      await this.publishEvent("setting.integration.token.updated", {
+        integration: "twitch",
+      });
+    } catch (err) {
+      this.logger.warn("Failed to publish setting.integration.token.updated", { err });
+    }
+
+    return { ok: true };
+  }
+
+  /**
+   * Clear the broadcaster's Twitch OAuth token. Used by the UI's
+   * "Disconnect Twitch" flow. Writes an empty string rather than
+   * deleting the row so the bootstrap's `if (!token)` check trips
+   * cleanly without needing to handle a missing row.
+   */
+  async deleteTwitchToken(): Promise<{ ok: true }> {
+    const response = await this.db.setSetting("twitch_token", "", "");
+    if (response.status?.code !== "OK") {
+      throw new Error(response.status?.message || "Failed to clear twitch_token");
+    }
+    this.logger.info("Twitch token cleared from settings");
+
+    // Same notification as setTwitchToken — the row changed, downstream
+    // consumers should re-read. Their reload path will see an empty
+    // setting and back off (twitchBootstrap already throws on empty).
+    try {
+      await this.publishEvent("setting.integration.token.updated", {
+        integration: "twitch",
+      });
+    } catch (err) {
+      this.logger.warn("Failed to publish setting.integration.token.updated", { err });
+    }
+
+    return { ok: true };
+  }
+
+  /**
+   * Aggregate every function exposed by every installed module. Used by
+   * the UI to populate the function-type chat command dropdown.
+   * `qualifiedName` matches barkloader's ModuleRegistry lookup path
+   * (`module/function`), which is also what command rows persist as
+   * `typeValue`.
+   */
+  async listAvailableFunctions(): Promise<AvailableFunction[]> {
+    const modules = await this.db.listModules();
+    const out: AvailableFunction[] = [];
+    for (const m of modules) {
+      const moduleName = m.name ?? "";
+      const moduleId = m.id ?? "";
+      for (const fn of m.functions ?? []) {
+        if (!fn.manifestId) {
+          continue;
+        }
+        out.push({
+          id: fn.id,
+          moduleId,
+          moduleName,
+          manifestId: fn.manifestId,
+          name: fn.name ?? "",
+          qualifiedName: moduleName ? `${moduleName}/${fn.manifestId}` : fn.manifestId,
+          runtime: fn.runtime ?? "",
+        });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Delete a chat command. Emits `command.deleted` with just the id —
+   * downstream consumers maintain their own id→name index from
+   * created/updated events.
+   */
+  async deleteCommand(id: string): Promise<{ deleted: boolean }> {
+    const status = await this.db.deleteCommand({ id });
+    if (status.code !== "OK") {
+      throw new Error(status.message || "Failed to delete command");
+    }
+
+    await this.publishEvent("command.deleted", { id });
+    this.logger.info("Command deleted", { id });
+    return { deleted: true };
+  }
+
+  // ==================== Generic UI lookups ====================
+
+  /**
+   * Generic dynamic-options dispatch. Convex actions call this when a UI
+   * field's manifest descriptor declares `kind: "internal"`. Fire-and-
+   * forget on the engine side: we publish a NATS request and return
+   * immediately. The reply (whenever it arrives, or a timeout) is
+   * forwarded back to Convex as `engine.response.received` carrying the
+   * correlationKey. Convex matches that to the originating
+   * `transientEvents` row, and the UI's reactive subscription wakes up.
+   *
+   * Workers reply with the standard NATS pattern: `msg.respond(data)`.
+   * No special envelope; the NATS client handles inbox routing.
+   */
+  async dispatchFieldOptionsRequest(
+    descriptor: FieldOptionsDescriptor,
+    correlationKey: string
+  ): Promise<{ dispatched: boolean }> {
+    if (!this.nats) {
+      throw new Error("NATS client not available");
+    }
+    if (descriptor.kind !== "internal") {
+      throw new Error(`Unsupported descriptor kind: ${descriptor.kind}`);
+    }
+
+    const eventId = crypto.randomUUID();
+    const requestEnvelope = {
+      id: eventId,
+      type: descriptor.request.event,
+      source: "api",
+      time: new Date().toISOString(),
+      data: descriptor.request.payload ?? {},
+    };
+    const requestBytes = new TextEncoder().encode(JSON.stringify(requestEnvelope));
+    const timeout = descriptor.timeoutMs ?? 10_000;
+    const nats = this.nats;
+
+    // Fire-and-forget: kick off the request, route the reply (or error)
+    // through the webhook back to Convex without holding this RPC open.
+    nats
+      .request(descriptor.request.event, requestBytes, { timeout })
+      .then(async (reply) => {
+        const text = new TextDecoder().decode(reply.data);
+        let data: unknown;
+        try {
+          const parsed = JSON.parse(text);
+          // Workers may reply with a CloudEvent envelope ({type, data, ...})
+          // or raw data. Prefer envelope.data when present.
+          data =
+            parsed && typeof parsed === "object" && "data" in parsed
+              ? (parsed as { data: unknown }).data
+              : parsed;
+        } catch {
+          data = text;
+        }
+
+        if (this.webhookClient) {
+          await this.webhookClient.send({
+            type: EngineEventType.ENGINE_RESPONSE_RECEIVED,
+            correlationKey,
+            status: "success",
+            data,
+          });
+        }
+      })
+      .catch(async (err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn("dispatchFieldOptionsRequest reply failed", {
+          correlationKey,
+          subject: descriptor.request.event,
+          error: message,
+        });
+        if (this.webhookClient) {
+          await this.webhookClient.send({
+            type: EngineEventType.ENGINE_RESPONSE_RECEIVED,
+            correlationKey,
+            status: "error",
+            error: message,
+          });
+        }
+      });
+
+    return { dispatched: true };
   }
 
   // ==================== User Actions ====================
@@ -1377,16 +2020,19 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     this.logger.info("Got modules", { count: dbModules.length });
     const normalized = dbModules
       .filter((m) => !!m.name)
-      .map((m) => ({
-        id: m.name,
-        name: m.name,
-        description: "",
-        category: "integration",
-        version: m.version ?? "",
-        author: "Engine",
-        isInstalled: true,
-        iconUrl: "",
-      }));
+      .map((m) => {
+        const { author, category } = readModuleCatalogFields(m.manifest);
+        return {
+          id: m.name,
+          name: m.name,
+          description: "",
+          category,
+          version: m.version ?? "",
+          author,
+          isInstalled: true,
+          iconUrl: "",
+        };
+      });
     const page = query?.page || 1;
     const pageSize = query?.pageSize || 8;
     return {
@@ -1409,23 +2055,47 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
   } | null> {
     const found = await this.db.getModuleByName(id);
     if (!found) return null;
+    const { author, category } = readModuleCatalogFields(found.manifest);
     return {
       id: found.name,
       name: found.name,
       description: "",
-      category: "integration",
+      category,
       version: found.version,
-      author: "Engine",
+      author,
       isInstalled: true,
       iconUrl: "",
     };
   }
 
+  /**
+   * Uninstall a module by its composite moduleKey
+   * (`{moduleId}:{version}:{hash}`). moduleKey is the only stable
+   * cross-version identifier the engine has — name + version isn't
+   * unique across re-installs, and barkloader's filesystem identifier
+   * shifts as the module's archive name changes. Resolving via
+   * moduleKey here means the UI can stop guessing at engine-internal
+   * names and pass the same moduleKey it stores in the catalog.
+   *
+   * `context.moduleKey` is preserved on the way to barkloader so the
+   * eventual `module.deleted` / `module.delete_failed` webhook can be
+   * correlated with the originating uninstall request.
+   */
   async uninstallModule(
-    id: string,
-    context?: { clientId?: string; moduleKey?: string }
+    moduleKey: string,
+    context?: { clientId?: string }
   ): Promise<UninstallModuleResponse> {
-    return this.uninstallEngineModule(id, context);
+    if (!moduleKey) {
+      throw new Error("uninstallModule: moduleKey is required");
+    }
+    const found = await this.db.getModuleByModuleKey(moduleKey);
+    if (!found) {
+      throw new Error(`uninstallModule: no module found for moduleKey "${moduleKey}"`);
+    }
+    return this.uninstallEngineModule(found.name, {
+      ...(context ?? {}),
+      moduleKey,
+    });
   }
 
   // ==================== Workflows (Extended) ====================
@@ -1436,19 +2106,18 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     description?: string;
     applicationId?: string;
     enabled?: boolean;
-    variables?: Record<string, string | undefined>;
+    stepsJson?: string;
+    triggerJson?: string;
     createdAt?: { seconds?: bigint; nanos?: number };
     updatedAt?: { seconds?: bigint; nanos?: number };
   }): WorkflowItem {
-    const defRaw = wf.variables?._definition;
-    const definition: WorkflowDefinition | null = defRaw ? (JSON.parse(defRaw) as WorkflowDefinition) : null;
     return {
       id: wf.id ?? "",
       name: wf.name ?? "",
       description: wf.description ?? "",
       accountId: wf.applicationId ?? "",
       isEnabled: wf.enabled ?? false,
-      definition,
+      definition: rebuildWorkflowDefinition(wf),
       stats: { runsToday: 0, successRate: 100 },
       createdAt: timestampToIso(wf.createdAt),
       updatedAt: timestampToIso(wf.updatedAt),
@@ -1510,18 +2179,19 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     this.logger.info("Creating workflow", { name: data.definition.name });
     const applicationId = data.accountId || (await this.ensureApplicationId());
 
-    // The stored _definition blob is patched with the DB-minted id after the
-    // write. The initial write carries a best-effort serialization so the
-    // happy path requires only one DB round trip if the engine is later
-    // updated to accept id-in-input.
+    // Steps and trigger are persisted as raw JSON; the engine reads
+    // them directly off the workflow row. The definition's `id` is
+    // assigned by the DB on insert, so the initial write uses a
+    // placeholder id in the in-memory `storedDefinition`.
     const response = await this.db.createWorkflow({
       name: data.definition.name,
       description: data.definition.description ?? "",
       applicationId,
       createdBy: "",
       enabled: false,
-      steps: [],
-      variables: { _definition: JSON.stringify({ id: placeholderId, ...data.definition }) },
+      stepsJson: JSON.stringify(data.definition.tasks ?? []),
+      triggerJson: JSON.stringify(data.definition.trigger),
+      variables: {},
       onSuccess: "",
       onFailure: "",
       maxRetries: 0,
@@ -1536,33 +2206,10 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     const createdId = response.workflow.id ?? "";
     const storedDefinition: WorkflowDefinition = { id: createdId, ...data.definition };
 
-    // Patch the stored _definition so its `id` matches the DB-assigned one.
-    const patchResp = await this.db.updateWorkflow({
-      id: createdId,
-      name: response.workflow.name ?? storedDefinition.name,
-      description: response.workflow.description ?? storedDefinition.description ?? "",
-      enabled: response.workflow.enabled ?? false,
-      steps: response.workflow.steps ?? [],
-      variables: {
-        ...(response.workflow.variables ?? {}),
-        _definition: JSON.stringify(storedDefinition),
-      },
-      onSuccess: response.workflow.onSuccess ?? "",
-      onFailure: response.workflow.onFailure ?? "",
-      maxRetries: response.workflow.maxRetries ?? 0,
-      timeoutSeconds: response.workflow.timeoutSeconds ?? 0,
-    });
-    if (patchResp.status?.code !== "OK" || !patchResp.workflow) {
-      this.logger.warn("Failed to patch definition id on newly created workflow", {
-        id: createdId,
-        status: patchResp.status?.message,
-      });
-    }
-
     this.logger.info("Created workflow", { id: createdId, name: storedDefinition.name });
 
     const createdAt = timestampToIso(response.workflow.createdAt);
-    const updatedAt = timestampToIso(patchResp.workflow?.updatedAt ?? response.workflow.updatedAt);
+    const updatedAt = timestampToIso(response.workflow.updatedAt);
 
     void this.emitWorkflowWebhook({
       type: EngineEventType.WORKFLOW_CREATED,
@@ -1598,23 +2245,14 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
       return null;
     }
 
-    const variables: Record<string, string> = {
-      ...(existing.workflow.variables ?? {}),
-      _definition: JSON.stringify(data.definition),
-    };
-    // Purge any legacy blobs that may still be present.
-    delete variables._steps;
-    delete variables._trigger;
-    delete variables._nodes;
-    delete variables._edges;
-
     const response = await this.db.updateWorkflow({
       id,
       name: data.definition.name,
       description: data.definition.description ?? "",
       enabled: existing.workflow.enabled ?? false,
-      steps: existing.workflow.steps ?? [],
-      variables,
+      stepsJson: JSON.stringify(data.definition.tasks ?? []),
+      triggerJson: JSON.stringify(data.definition.trigger),
+      variables: existing.workflow.variables ?? {},
       onSuccess: existing.workflow.onSuccess ?? "",
       onFailure: existing.workflow.onFailure ?? "",
       maxRetries: existing.workflow.maxRetries ?? 0,
@@ -1673,12 +2311,15 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     if (existing.status?.code !== "OK" || !existing.workflow) {
       throw new Error("Workflow not found");
     }
+    // Toggle enabled without rewriting the workflow definition —
+    // pass the existing JSON columns through unchanged.
     const response = await this.db.updateWorkflow({
       id,
       name: existing.workflow.name ?? "",
       description: existing.workflow.description ?? "",
       enabled: isEnabled,
-      steps: existing.workflow.steps ?? [],
+      stepsJson: existing.workflow.stepsJson ?? "",
+      triggerJson: existing.workflow.triggerJson ?? "",
       variables: existing.workflow.variables ?? {},
       onSuccess: existing.workflow.onSuccess ?? "",
       onFailure: existing.workflow.onFailure ?? "",
@@ -1690,8 +2331,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     }
 
     const applicationId = await this.ensureApplicationId();
-    const defRaw = existing.workflow.variables?._definition;
-    const definition: WorkflowDefinition | undefined = defRaw ? (JSON.parse(defRaw) as WorkflowDefinition) : undefined;
+    const definition = rebuildWorkflowDefinition(existing.workflow);
     if (definition) {
       const createdAt = timestampToIso(existing.workflow.createdAt);
       const updatedAt = timestampToIso(response.workflow.updatedAt);
@@ -2471,16 +3111,22 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     },
   ];
 
-  async getTriggers(createdByType?: string, createdByRef?: string): Promise<Trigger[]> {
-    return this.db.listTriggers(createdByType, createdByRef);
+  async getTriggers(createdByType?: string, createdByRef?: string): Promise<TriggerDefinition[]> {
+    // Proto Trigger and TriggerDefinition are structurally identical
+    // (camelCase field names introduced by twirpscript), so the conversion
+    // is a no-op cast — kept explicit so the contract / impl stay tied
+    // through the type checker.
+    const rows = await this.db.listTriggers(createdByType, createdByRef);
+    return rows;
   }
 
   async getTrigger(id: string): Promise<(typeof this.triggers)[0] | null> {
     return this.triggers.find((t) => t.id === id) || null;
   }
 
-  async getActions(createdByType?: string, createdByRef?: string): Promise<Action[]> {
-    return this.db.listActions(createdByType, createdByRef);
+  async getActions(createdByType?: string, createdByRef?: string): Promise<ActionDefinition[]> {
+    const rows = await this.db.listActions(createdByType, createdByRef);
+    return rows;
   }
 
   // ==================== User Preferences ====================

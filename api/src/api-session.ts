@@ -31,10 +31,9 @@ export class ApiSession extends RpcTarget {
     });
   }
 
-  async uninstallModule(id: string, context?: { moduleKey?: string }) {
-    return this.api.uninstallModule(id, {
+  async uninstallModule(moduleKey: string) {
+    return this.api.uninstallModule(moduleKey, {
       clientId: this.clientId,
-      moduleKey: context?.moduleKey,
     });
   }
 
