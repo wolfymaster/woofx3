@@ -13,6 +13,8 @@
 // Consumers are free to fall back to defaults when fields are missing —
 // the engine treats presentation as opaque.
 
+import type { ConditionOperator } from "./workflow-definition";
+
 export type ConfigFieldType =
   | "number"
   | "range"
@@ -49,6 +51,42 @@ export interface ConfigField {
   max?: number;
   defaultValue?: unknown;
   mediaType?: "image" | "audio" | "video";
+  /**
+   * Dot path into the event data that this field filters on. Defaults to
+   * `id` when unset. Used by the workflow builder to translate the user's
+   * configured value into a canonical condition like
+   * `{ field: "${trigger.data.<eventPath>}", operator, value }`.
+   *
+   * Needed when the UI field name differs from the event payload key — e.g.
+   * a field labeled "Minimum bits" with id `minBits` targeting `bits`.
+   */
+  eventPath?: string;
+  /**
+   * Comparison operator used when emitting the condition. Defaults to `"eq"`
+   * when unset. Range-typed values with `type: "range"` always emit
+   * `"between"` regardless of this hint, since the value shape requires it.
+   */
+  operator?: ConditionOperator;
+  /**
+   * Short user-facing prose rendered as muted helper text directly below the
+   * input control. Always visible. Use for brief reminders ("max 500 chars",
+   * "leave blank for any value"). Optional.
+   */
+  description?: string;
+  /**
+   * Longer user-facing prose rendered inside the field's info-icon popover.
+   * Use for explanation that doesn't earn permanent screen real estate
+   * (which event payload field this maps to, edge cases, etc.). Optional.
+   */
+  hint?: string;
+  /**
+   * JSON-encoded example payload documenting the shape of the underlying
+   * event or data this field operates on. Rendered with syntax highlighting
+   * inside the field's info-icon popover. Stored as a string so the engine
+   * can forward it verbatim through configSchema/paramsSchema and so the UI
+   * can hand it to a JSON highlighter without re-stringifying. Optional.
+   */
+  dataSchema?: string;
 }
 
 export interface TriggerConfig {

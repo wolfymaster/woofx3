@@ -180,6 +180,109 @@ export interface WorkflowRunsQuery {
   limit?: number;
 }
 
+// ==================== Twitch ====================
+
+/**
+ * Mirrors Twurple's `AccessTokenWithUserId` shape — what
+ * `bootstrap()` parses from the engine's `twitch_token` setting and
+ * passes to `RefreshingAuthProvider.addUserForToken`. Field names
+ * match Twurple's expectations verbatim.
+ */
+export interface TwitchAccessToken {
+  accessToken: string;
+  refreshToken: string;
+  scope: string[];
+  expiresIn: number;
+  obtainmentTimestamp: number;
+  userId: string;
+}
+
+// ==================== Commands ====================
+
+export type CommandType = "static" | "dynamic" | "function";
+
+/**
+ * Snapshot of a chat command as the engine stores it. `typeValue` carries
+ * the type-discriminated payload: response text for `static`, template
+ * string for `dynamic`, function name for `function`.
+ */
+export interface CommandSnapshot {
+  id: string;
+  applicationId: string;
+  command: string;
+  type: CommandType;
+  typeValue: string;
+  cooldown: number;
+  priority: number;
+  enabled: boolean;
+}
+
+export interface CreateCommandInput {
+  command: string;
+  type: CommandType;
+  typeValue: string;
+  cooldown: number;
+  priority?: number;
+  enabled: boolean;
+}
+
+/**
+ * Manifest descriptor for a UI field whose options are populated
+ * dynamically. Today only `internal` (NATS request/reply via the
+ * engine) is supported; `http` is reserved for future use.
+ *
+ * For `internal`, the engine publishes a CloudEvent on `request.event`
+ * via NATS request/reply. Workers reply with `msg.respond(...)`. The
+ * engine forwards the reply back to Convex via the
+ * `engine.response.received` webhook, which lands in the originating
+ * action's `transientEvents` row keyed on correlationKey.
+ */
+export interface FieldOptionsDescriptor {
+  kind: "internal";
+  request: {
+    event: string;
+    payload?: Record<string, unknown>;
+  };
+  timeoutMs?: number;
+}
+
+/**
+ * One function registered by an installed module. Aggregated across all
+ * modules by `listAvailableFunctions`. `qualifiedName` is the form that
+ * chat-command rows store as `typeValue` (matches barkloader's
+ * `module/function` lookup path in ModuleRegistry).
+ */
+export interface AvailableFunction {
+  id: string;
+  moduleId: string;
+  moduleName: string;
+  /** Stable manifest-local function id (was `functionName` before the
+   * rename to align with `triggers.manifest_id` and
+   * `actions.manifest_id`). Forms the canonical id
+   * `{moduleId}:function:{manifestId}`. */
+  manifestId: string;
+  /** Display name of the function. Distinct from `manifestId`. */
+  name: string;
+  /** Slash-separated barkloader invoke path (`{moduleName}/{manifestId}`). */
+  qualifiedName: string;
+  runtime: string;
+}
+
+/**
+ * Full-replace update; the engine's UpdateCommand proto requires every
+ * field, so the contract mirrors that rather than offering partial
+ * patches. Callers should send the merged result of (current snapshot ∪
+ * user changes).
+ */
+export interface UpdateCommandInput {
+  command: string;
+  type: CommandType;
+  typeValue: string;
+  cooldown: number;
+  priority: number;
+  enabled: boolean;
+}
+
 // ==================== Assets ====================
 
 export interface Asset {
@@ -412,7 +515,14 @@ export interface Woofx3EngineApi {
    * `module.delete_failed` webhook, both carrying `moduleKey`. `clientId`
    * is injected by the authenticated session.
    */
-  uninstallModule(id: string, context?: { moduleKey?: string }): Promise<UninstallModuleResponse>;
+  /**
+   * Preferred uninstall path. `moduleKey` is the composite
+   * `{moduleId}:{version}:{hash}` — the only stable cross-version,
+   * cross-engine identifier for an installed module. The engine
+   * resolves it to the underlying module name and forwards the
+   * uninstall to barkloader.
+   */
+  uninstallModule(moduleKey: string): Promise<UninstallModuleResponse>;
 
   /** Lower-level equivalent of uninstallModule keyed on engine module name. */
   uninstallEngineModule(name: string, context?: { moduleKey?: string }): Promise<UninstallModuleResponse>;
@@ -433,6 +543,34 @@ export interface Woofx3EngineApi {
     correlationKey?: string
   ): Promise<{ id: string; isEnabled: boolean }>;
   getWorkflowRuns(query?: WorkflowRunsQuery): Promise<WorkflowRun[]>;
+
+  // Commands (chat command CRUD on the engine — synchronous, emits
+  // command.created / command.updated / command.deleted cloudevents on success)
+  createCommand(data: CreateCommandInput): Promise<CommandSnapshot>;
+  updateCommand(id: string, data: UpdateCommandInput): Promise<CommandSnapshot>;
+  deleteCommand(id: string): Promise<{ deleted: boolean }>;
+  // Sync — full snapshot list for reconciliation against the Convex mirror
+  listCommands(): Promise<CommandSnapshot[]>;
+
+  // Discovery — aggregated module function list for UI dropdowns.
+  // Backed by db.listModules(); each module row carries its functions.
+  listAvailableFunctions(): Promise<AvailableFunction[]>;
+
+  // Twitch token persistence — bridges the UI's OAuth callback to the
+  // engine's bootstrap, which reads `twitch_token` from db settings.
+  // `convexUserId` (optional) gets resolved to an engine-side user UUID
+  // and stored on settings.user_id so the row is properly user-scoped.
+  setTwitchToken(token: TwitchAccessToken, convexUserId?: string): Promise<{ ok: true }>;
+  deleteTwitchToken(): Promise<{ ok: true }>;
+
+  // Generic dynamic-options dispatch. Convex action calls this with the
+  // descriptor parsed from a configFields entry; the engine fires a NATS
+  // request and forwards the reply via webhook ENGINE_RESPONSE_RECEIVED.
+  // Returns immediately (fire-and-forget on the engine side).
+  dispatchFieldOptionsRequest(
+    descriptor: FieldOptionsDescriptor,
+    correlationKey: string
+  ): Promise<{ dispatched: boolean }>;
 
   // Assets
   getAssets(query?: AssetsQuery): Promise<PaginatedAssets>;

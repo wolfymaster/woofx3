@@ -26,6 +26,11 @@ export const EngineEventType = {
   MODULE_DELETE_FAILED: "module.delete_failed",
   MODULE_TRIGGER_REGISTERED: "module.trigger.registered",
   MODULE_ACTION_REGISTERED: "module.action.registered",
+  MODULE_FUNCTION_REGISTERED: "module.function.registered",
+  MODULE_TRIGGER_DEREGISTERED: "module.trigger.deregistered",
+  MODULE_ACTION_DEREGISTERED: "module.action.deregistered",
+  MODULE_FUNCTION_DEREGISTERED: "module.function.deregistered",
+  ENGINE_RESPONSE_RECEIVED: "engine.response.received",
   WORKFLOW_CREATED: "workflow.created",
   WORKFLOW_UPDATED: "workflow.updated",
   WORKFLOW_DELETED: "workflow.deleted",
@@ -39,6 +44,22 @@ export type EngineEventType = (typeof EngineEventType)[keyof typeof EngineEventT
 
 export interface TriggerDefinition {
   id: string;
+  /** Canonical id `{moduleId}:trigger:{event}`. Populated on
+   * deregistration events; eventually on registration events too. */
+  canonicalId?: string;
+  /**
+   * Composite UI-projection identity: `{moduleKey}:trigger:{manifestId}`.
+   * Stable across engine instances (the moduleKey hash is SHA-256 of the
+   * zip, so identical installs produce identical keys), and version-pinned
+   * (v1 and v2 of the same module produce distinct projectionKeys). The
+   * UI uses this — not `id` (a per-engine UUID) and not `canonicalId`
+   * (which omits version) — to dedupe definitions across multiple engine
+   * instances projected into the same UI.
+   *
+   * Optional because non-MODULE triggers (SYSTEM built-ins, future
+   * integrations) and legacy event deliveries don't carry one.
+   */
+  projectionKey?: string;
   category: string;
   name: string;
   description: string;
@@ -51,6 +72,16 @@ export interface TriggerDefinition {
 
 export interface ActionDefinition {
   id: string;
+  /** Canonical id `{moduleId}:action:{manifest_id}`. Optional: not yet
+   * derivable from the action row alone — see the deregistration payload
+   * builder in db/app/services/module_event_payload.go for context. */
+  canonicalId?: string;
+  /**
+   * Composite UI-projection identity: `{moduleKey}:action:{manifestId}`.
+   * See TriggerDefinition.projectionKey for the rationale. Optional for
+   * the same reasons (non-MODULE registrations, legacy events).
+   */
+  projectionKey?: string;
   name: string;
   description: string;
   call: string;
@@ -69,7 +100,20 @@ export interface ModuleUsageRef {
 export interface ModuleResourceUsage {
   resourceId: string;
   resourceType: string;
+  /**
+   * Canonical id for the in-use resource (e.g.
+   * `twitch_platform:trigger:twitch.channel.cheer`). Stable identity,
+   * not user-friendly — UI should display `resourceDisplayName`
+   * instead and keep `resourceName` for tooltips / diagnostics.
+   */
   resourceName: string;
+  /**
+   * Underlying row's `name` column resolved at check time
+   * (e.g. "Channel Cheer" for a trigger). Empty when the engine
+   * couldn't resolve a row — UI should fall back to `resourceName`
+   * in that case.
+   */
+  resourceDisplayName?: string;
   usedBy: ModuleUsageRef[];
 }
 
@@ -89,12 +133,110 @@ export interface ModuleActionRegisteredEvent {
   actions: ActionDefinition[];
 }
 
+/**
+ * One sandbox function exposed by an installed module. Mirrors the
+ * Go-side ModuleFunction proto. Convex stores these in moduleFunctions
+ * to power the chat-command function-type dropdown.
+ */
+export interface FunctionDefinition {
+  id: string;
+  /** Canonical id `{moduleId}:function:{manifestId}`. Populated on
+   * deregistration events; eventually on registration events too. */
+  canonicalId?: string;
+  /**
+   * Composite UI-projection identity: `{moduleKey}:function:{manifestId}`.
+   * See TriggerDefinition.projectionKey. Functions are always
+   * MODULE-owned today, so this is populated on every event from
+   * sources that have the moduleKey context.
+   */
+  projectionKey?: string;
+  moduleId: string;
+  /** Stable manifest-local function id (e.g. "play_alert"). Used for
+   * canonical id construction and as the path segment in barkloader
+   * invocation (`{moduleName}/{manifestId}`). */
+  manifestId: string;
+  /** Display name for UI presentation; never used as an identifier. */
+  name: string;
+  fileName: string;
+  entryPoint: string;
+  runtime: string;
+}
+
+export interface ModuleFunctionRegisteredEvent {
+  type: typeof EngineEventType.MODULE_FUNCTION_REGISTERED;
+  moduleKey: string;
+  moduleName: string;
+  version: string;
+  functions: FunctionDefinition[];
+}
+
+/**
+ * Symmetric counterpart to `ModuleTriggerRegisteredEvent` — fired when a
+ * module's triggers are removed (most commonly during a module delete).
+ * `modulePrefix` is the manifest id (the moduleId segment of the
+ * canonical id) — sufficient on its own for subscribers to drop every
+ * cached trigger belonging to that module wholesale.
+ */
+export interface ModuleTriggerDeregisteredEvent {
+  type: typeof EngineEventType.MODULE_TRIGGER_DEREGISTERED;
+  modulePrefix: string;
+  triggers: TriggerDefinition[];
+}
+
+/** Symmetric counterpart to `ModuleActionRegisteredEvent`. */
+export interface ModuleActionDeregisteredEvent {
+  type: typeof EngineEventType.MODULE_ACTION_DEREGISTERED;
+  modulePrefix: string;
+  actions: ActionDefinition[];
+}
+
+/**
+ * Symmetric counterpart to `ModuleFunctionRegisteredEvent`. Fired during
+ * module delete after the module row (and its function rows via FK
+ * cascade) has been removed.
+ */
+export interface ModuleFunctionDeregisteredEvent {
+  type: typeof EngineEventType.MODULE_FUNCTION_DEREGISTERED;
+  moduleKey: string;
+  moduleName: string;
+  version: string;
+  functions: FunctionDefinition[];
+}
+
+/**
+ * Generic reply envelope: the engine forwards a response to a request it
+ * dispatched on behalf of a Convex action. Carried through to the UI via
+ * the transientEvents row keyed on `correlationKey`.
+ *
+ * `data` is whatever the worker put in its NATS reply — opaque at this
+ * boundary, the originating action knows the schema. `error` is set
+ * instead of `data` when the dispatch failed (NATS timeout, no
+ * subscriber, worker error, etc.).
+ */
+export interface EngineResponseReceivedEvent {
+  type: typeof EngineEventType.ENGINE_RESPONSE_RECEIVED;
+  correlationKey: string;
+  status: "success" | "error";
+  data?: unknown;
+  error?: string;
+}
+
 export interface ModuleInstalledEvent {
   type: typeof EngineEventType.MODULE_INSTALLED;
   moduleName: string;
   version: string;
   moduleKey: string;
   alreadyInstalled?: boolean;
+  /**
+   * Catalog metadata extracted from the stored manifest at install
+   * completion. `author` / `category` are guaranteed non-empty by the
+   * engine — "Unknown" when the manifest omitted the field. `description`
+   * may be blank. All three are optional on the wire so older engines
+   * that pre-date this contract still validate.
+   */
+  author?: string;
+  category?: string;
+  description?: string;
 }
 
 export interface ModuleInstallFailedEvent {
@@ -129,6 +271,13 @@ export interface WorkflowSnapshot {
   isEnabled: boolean;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Composite UI-projection identity for module-installed workflows:
+   * `{moduleKey}:workflow:{manifestId}`. Empty / undefined for
+   * USER-authored workflows. See TriggerDefinition.projectionKey for
+   * the full rationale — same role here for the workflow surface.
+   */
+  projectionKey?: string;
 }
 
 export interface WorkflowCreatedEvent {
@@ -150,6 +299,12 @@ export interface WorkflowDeletedEvent {
   applicationId: string;
   correlationKey?: string;
   workflowId: string;
+  /**
+   * Echoed for module-installed workflows so the UI can dedupe a delete
+   * arriving from multiple engine instances pointing at the same
+   * projection row. Empty / undefined for USER-authored workflows.
+   */
+  projectionKey?: string;
 }
 
 /**
@@ -160,10 +315,15 @@ export interface WorkflowDeletedEvent {
 export type CallbackEvent =
   | ModuleTriggerRegisteredEvent
   | ModuleActionRegisteredEvent
+  | ModuleFunctionRegisteredEvent
+  | ModuleTriggerDeregisteredEvent
+  | ModuleActionDeregisteredEvent
+  | ModuleFunctionDeregisteredEvent
   | ModuleInstalledEvent
   | ModuleInstallFailedEvent
   | ModuleDeletedEvent
   | ModuleDeleteFailedEvent
+  | EngineResponseReceivedEvent
   | WorkflowCreatedEvent
   | WorkflowUpdatedEvent
   | WorkflowDeletedEvent;
@@ -175,10 +335,15 @@ export type CallbackEvent =
 export type CallbackEventByType = {
   [EngineEventType.MODULE_TRIGGER_REGISTERED]: ModuleTriggerRegisteredEvent;
   [EngineEventType.MODULE_ACTION_REGISTERED]: ModuleActionRegisteredEvent;
+  [EngineEventType.MODULE_FUNCTION_REGISTERED]: ModuleFunctionRegisteredEvent;
+  [EngineEventType.MODULE_TRIGGER_DEREGISTERED]: ModuleTriggerDeregisteredEvent;
+  [EngineEventType.MODULE_ACTION_DEREGISTERED]: ModuleActionDeregisteredEvent;
+  [EngineEventType.MODULE_FUNCTION_DEREGISTERED]: ModuleFunctionDeregisteredEvent;
   [EngineEventType.MODULE_INSTALLED]: ModuleInstalledEvent;
   [EngineEventType.MODULE_INSTALL_FAILED]: ModuleInstallFailedEvent;
   [EngineEventType.MODULE_DELETED]: ModuleDeletedEvent;
   [EngineEventType.MODULE_DELETE_FAILED]: ModuleDeleteFailedEvent;
+  [EngineEventType.ENGINE_RESPONSE_RECEIVED]: EngineResponseReceivedEvent;
   [EngineEventType.WORKFLOW_CREATED]: WorkflowCreatedEvent;
   [EngineEventType.WORKFLOW_UPDATED]: WorkflowUpdatedEvent;
   [EngineEventType.WORKFLOW_DELETED]: WorkflowDeletedEvent;

@@ -9,10 +9,20 @@ export type { ChatClient, ChatMessage } from "@twurple/chat";
 export type { EventSubWsListener } from "@twurple/eventsub-ws";
 
 export type GetSettingFn = (key: string) => Promise<string | undefined>;
+export type SetSettingFn = (key: string, value: string) => Promise<void>;
 
 export type TwitchClientArgs = {
   channel: string;
   getSetting: GetSettingFn;
+  /**
+   * Optional persistence hook for refreshed access tokens. When set,
+   * Twurple's `RefreshingAuthProvider.onRefresh` callback writes the
+   * refreshed `AccessTokenWithUserId` back through this function so the
+   * persisted `twitch_token` setting stays in sync with what the
+   * provider holds in memory. Without it, restarts re-load the
+   * pre-refresh token and Twurple has to refresh again from scratch.
+   */
+  setSetting?: SetSettingFn;
 };
 
 export type TwitchAuthCredentials = {
@@ -96,11 +106,25 @@ export default class TwitchClient {
   private async authenticate(credentials: TwitchAuthCredentials): Promise<RefreshingAuthProvider> {
     const authProvider = new RefreshingAuthProvider(credentials);
 
-    authProvider.onRefresh(([userId, _token]) => {
+    authProvider.onRefresh(async (userId, token) => {
       console.log("refreshing token for: ", userId);
+      // Persist the refreshed token back through to the engine's
+      // settings table. Without this, the in-memory provider stays
+      // current but the row stored in dbproxy keeps the original
+      // (pre-refresh) access_token + refresh_token; an engine restart
+      // would load that stale row and have to refresh again — fragile
+      // if Twitch ever invalidates the original refresh_token.
+      if (this.args.setSetting) {
+        try {
+          const persisted = { ...token, userId };
+          await this.args.setSetting("twitch_token", JSON.stringify(persisted));
+        } catch (err) {
+          console.error("failed to persist refreshed twitch_token: ", err);
+        }
+      }
     });
 
-    authProvider.onRefreshFailure(([userId, error]) => {
+    authProvider.onRefreshFailure((userId, error) => {
       console.log("failed to refresh token for: ", userId);
       console.error(error);
     });

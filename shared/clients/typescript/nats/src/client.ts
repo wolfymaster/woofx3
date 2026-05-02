@@ -57,6 +57,31 @@ export default class NATSClient {
 		this.logger.debug?.("Published message", { subject, size: data.length });
 	}
 
+	/**
+	 * NATS request/reply: publishes to `subject` with an inbox reply subject
+	 * managed internally by the NATS client (muxed inbox), waits for the
+	 * first response, and resolves with the reply Msg. Workers that handle
+	 * the request should reply via `msg.respond(data)`.
+	 */
+	async request(
+		subject: string,
+		data: Uint8Array,
+		opts?: { timeout?: number },
+	): Promise<{ subject: string; data: Uint8Array }> {
+		if (!this.connection) {
+			await this.connect();
+		}
+
+		if (!this.connection) {
+			throw new Error("NATS connection not available");
+		}
+
+		const reply = await this.connection.request(subject, data, {
+			timeout: opts?.timeout ?? 10_000,
+		});
+		return { subject: reply.subject, data: reply.data };
+	}
+
 	async subscribe(subject: string, handler: Handler): Promise<Subscription> {
 		if (!this.connection) {
 			await this.connect();
@@ -74,7 +99,7 @@ export default class NATSClient {
 		(async () => {
 			try {
 				for await (const msg of subscription) {
-					const wrappedMsg = new MessageImpl(msg.subject, msg.data);
+					const wrappedMsg = new MessageImpl(msg.subject, msg.data, msg);
 					handler(wrappedMsg);
 				}
 			} catch (error) {

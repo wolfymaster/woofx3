@@ -32,7 +32,7 @@ export interface ConditionConfig {
 // Schedule cron grammar follows robfig/cron/v3 (5-field, no seconds).
 // Examples: "0 * * * *" (top of every hour), "*/15 * * * *" (every 15 min).
 export type TriggerConfig =
-  | { type: "event"; eventType: string; conditions?: ConditionConfig[] }
+  | { type: "event"; event: string; conditions?: ConditionConfig[] }
   | { type: "schedule"; schedule: string; conditions?: ConditionConfig[] };
 
 export interface AggregationConfig {
@@ -44,7 +44,7 @@ export interface AggregationConfig {
 
 export interface WaitConfig {
   type: "event" | "aggregation";
-  eventType: string;
+  event: string;
   conditions?: ConditionConfig[];
   aggregation?: AggregationConfig;
   timeout?: Duration;
@@ -54,7 +54,7 @@ export interface WaitConfig {
 export interface SubWorkflowConfig {
   workflowId: string;
   waitUntilCompletion?: boolean;
-  eventType?: string;
+  event?: string;
   eventData?: Record<string, unknown>;
   timeout?: Duration;
 }
