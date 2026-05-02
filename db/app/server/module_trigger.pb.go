@@ -32,6 +32,12 @@ type Trigger struct {
 	AllowVariants bool                   `protobuf:"varint,9,opt,name=allow_variants,json=allowVariants,proto3" json:"allow_variants,omitempty"`
 	CreatedByType string                 `protobuf:"bytes,10,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
 	CreatedByRef  string                 `protobuf:"bytes,11,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
+	// Stable manifest-local identifier for this trigger declaration
+	// (e.g. "channel_subscribe"). Combined with the moduleId segment of
+	// `created_by_ref` and the literal "trigger" kind, this forms the
+	// canonical id `{moduleId}:trigger:{manifest_id}` used by every
+	// reference and ledger row.
+	ManifestId    string `protobuf:"bytes,12,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -129,6 +135,13 @@ func (x *Trigger) GetCreatedByRef() string {
 	return ""
 }
 
+func (x *Trigger) GetManifestId() string {
+	if x != nil {
+		return x.ManifestId
+	}
+	return ""
+}
+
 type TriggerInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Category      string                 `protobuf:"bytes,1,opt,name=category,proto3" json:"category,omitempty"`
@@ -137,6 +150,7 @@ type TriggerInput struct {
 	Event         string                 `protobuf:"bytes,4,opt,name=event,proto3" json:"event,omitempty"`
 	ConfigSchema  string                 `protobuf:"bytes,5,opt,name=config_schema,json=configSchema,proto3" json:"config_schema,omitempty"` // JSON string
 	AllowVariants bool                   `protobuf:"varint,6,opt,name=allow_variants,json=allowVariants,proto3" json:"allow_variants,omitempty"`
+	ManifestId    string                 `protobuf:"bytes,7,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -211,6 +225,13 @@ func (x *TriggerInput) GetAllowVariants() bool {
 		return x.AllowVariants
 	}
 	return false
+}
+
+func (x *TriggerInput) GetManifestId() string {
+	if x != nil {
+		return x.ManifestId
+	}
+	return ""
 }
 
 type RegisterTriggersRequest struct {
@@ -409,7 +430,7 @@ var File_module_trigger_proto protoreflect.FileDescriptor
 
 const file_module_trigger_proto_rawDesc = "" +
 	"\n" +
-	"\x14module_trigger.proto\x12\x06module\x1a\fcommon.proto\"\x9b\x02\n" +
+	"\x14module_trigger.proto\x12\x06module\x1a\fcommon.proto\"\xbc\x02\n" +
 	"\aTrigger\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\bcategory\x18\x04 \x01(\tR\bcategory\x12\x12\n" +
@@ -420,14 +441,18 @@ const file_module_trigger_proto_rawDesc = "" +
 	"\x0eallow_variants\x18\t \x01(\bR\rallowVariants\x12&\n" +
 	"\x0fcreated_by_type\x18\n" +
 	" \x01(\tR\rcreatedByType\x12$\n" +
-	"\x0ecreated_by_ref\x18\v \x01(\tR\fcreatedByRef\"\xc2\x01\n" +
+	"\x0ecreated_by_ref\x18\v \x01(\tR\fcreatedByRef\x12\x1f\n" +
+	"\vmanifest_id\x18\f \x01(\tR\n" +
+	"manifestId\"\xe3\x01\n" +
 	"\fTriggerInput\x12\x1a\n" +
 	"\bcategory\x18\x01 \x01(\tR\bcategory\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x14\n" +
 	"\x05event\x18\x04 \x01(\tR\x05event\x12#\n" +
 	"\rconfig_schema\x18\x05 \x01(\tR\fconfigSchema\x12%\n" +
-	"\x0eallow_variants\x18\x06 \x01(\bR\rallowVariants\"\xf3\x01\n" +
+	"\x0eallow_variants\x18\x06 \x01(\bR\rallowVariants\x12\x1f\n" +
+	"\vmanifest_id\x18\a \x01(\tR\n" +
+	"manifestId\"\xf3\x01\n" +
 	"\x17RegisterTriggersRequest\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +

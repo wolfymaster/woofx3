@@ -2,11 +2,13 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/wolfymaster/woofx3/common/runtime"
+	"github.com/wolfymaster/woofx3/common/runtime/service"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/repository"
 	"gorm.io/gorm"
@@ -15,6 +17,8 @@ import (
 type WorkerService struct {
 	*runtime.BaseService[*WorkerService]
 	logger          *slog.Logger
+	postgresSvc     *PostgresService
+	natsSvc         *service.NATSService
 	db              *gorm.DB
 	natsConn        *nats.Conn
 	eventCache      *workers.EventCache
@@ -25,33 +29,29 @@ type WorkerService struct {
 	eventPublisher  *workers.EventPublisher
 }
 
-func NewWorkerService(logger *slog.Logger) *WorkerService {
-	service := &WorkerService{
+func NewWorkerService(logger *slog.Logger, postgresSvc *PostgresService, natsSvc *service.NATSService) *WorkerService {
+	svc := &WorkerService{
 		BaseService: runtime.NewBaseServiceWithDeps[*WorkerService]("workers", "workers", nil, false, []string{"postgres", "nats"}), // Workers don't need external heartbeat monitoring
 		logger:      logger,
+		postgresSvc: postgresSvc,
+		natsSvc:     natsSvc,
 	}
 	// Initialize client after struct creation
-	service.SetClient(service)
-	return service
+	svc.SetClient(svc)
+	return svc
 }
 
 func (s *WorkerService) Connect(ctx context.Context, appCtx *runtime.ApplicationContext) error {
 	s.logger.Info("Initializing worker service")
 
-	if postgresSvc, ok := appCtx.GetService("postgres"); ok {
-		if typedSvc, ok := postgresSvc.(interface{ Client() *gorm.DB }); ok {
-			s.db = typedSvc.Client()
-		} else {
-			s.logger.Warn("Postgres service does not implement Client() *gorm.DB")
-		}
+	s.db = s.postgresSvc.Client()
+	if s.db == nil {
+		return fmt.Errorf("postgres service has no client; check service connect order")
 	}
 
-	if natsSvc, ok := appCtx.GetService("nats"); ok {
-		if typedSvc, ok := natsSvc.(interface{ Connection() *nats.Conn }); ok {
-			s.natsConn = typedSvc.Connection()
-		} else {
-			s.logger.Warn("NATS service does not implement Connection() *nats.Conn")
-		}
+	s.natsConn = s.natsSvc.Connection()
+	if s.natsConn == nil {
+		return fmt.Errorf("nats service has no connection; check service connect order")
 	}
 
 	if err := s.initializeWorkers(); err != nil {

@@ -14,6 +14,17 @@ message Action {
   string params_schema = 7;
   string created_by_type = 8;
   string created_by_ref = 9;
+  // Stable manifest-local identifier for this action declaration
+  // (e.g. "play_alert"). Combined with the moduleId segment of
+  // `created_by_ref` and the literal "action" kind, this forms the
+  // canonical id `{moduleId}:action:{manifest_id}` used by every
+  // reference and ledger row.
+  string manifest_id = 10;
+  // Engine action handler this action dispatches to (e.g. "function",
+  // "alert"). For built-in non-function actions the handler is the
+  // entire dispatch (`call` is empty); for function-type actions
+  // `call` holds the canonical function id.
+  string type = 11;
 }
 
 message ActionInput {
@@ -21,6 +32,8 @@ message ActionInput {
   string description = 2;
   string call = 3;
   string params_schema = 4;  // JSON string
+  string manifest_id = 5;
+  string type = 6;
 }
 
 message RegisterActionsRequest {

@@ -10,21 +10,10 @@ import (
 func Migrate(db *gorm.DB) error {
 	m := gormigrate.New(db, gormigrate.DefaultOptions, []*gormigrate.Migration{
 		migrations.CreateInitialSchema(),
-		migrations.CreateWorkerEventsTable(),
-		migrations.CreateWorkflowTables(),
-		migrations.CreateModuleTables(),
-		migrations.CreateModuleTriggerTable(),
-		migrations.AddClientCallbackUrl(),
-		migrations.AddResourceOriginColumns(),
-		migrations.CreateModuleResourcesTable(),
-		migrations.CreateModuleActionsTable(),
-		migrations.RelaxWorkerEventUuidColumns(),
-		migrations.DecoupleTriggerActionsFromModules(),
-		migrations.AddModuleKeyColumn(),
-		migrations.CreateResourceReferencesTable(),
-		migrations.AddApplicationsIsDefault(),
-		migrations.AddUsersWoofx3UIUserID(),
-		migrations.AddUsersDeletedAt(),
+		migrations.AddCanonicalIDColumns(),
+		migrations.AddActionTypeColumn(),
+		migrations.AddWorkflowManifestIDColumn(),
+		migrations.AddWorkflowEnabledColumn(),
 	})
 
 	return m.Migrate()
@@ -34,6 +23,10 @@ func Migrate(db *gorm.DB) error {
 func Rollback(db *gorm.DB) error {
 	m := gormigrate.New(db, gormigrate.DefaultOptions, []*gormigrate.Migration{
 		migrations.CreateInitialSchema(),
+		migrations.AddCanonicalIDColumns(),
+		migrations.AddActionTypeColumn(),
+		migrations.AddWorkflowManifestIDColumn(),
+		migrations.AddWorkflowEnabledColumn(),
 	})
 
 	return m.RollbackLast()

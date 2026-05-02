@@ -11,7 +11,6 @@ require (
 	github.com/go-gormigrate/gormigrate/v2 v2.1.5
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.2
-	github.com/joho/godotenv v1.5.1
 	github.com/nats-io/nats.go v1.48.0
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/wolfymaster/woofx3/clients/db v0.0.0

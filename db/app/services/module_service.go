@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
@@ -79,12 +80,13 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 			functions := make([]models.ModuleFunction, 0, len(req.Functions))
 			for _, f := range req.Functions {
 				functions = append(functions, models.ModuleFunction{
-					ModuleID:     existing.ID,
-					FunctionName: f.FunctionName,
-					FileName:     f.FileName,
-					FileKey:      f.FileKey,
-					EntryPoint:   f.EntryPoint,
-					Runtime:      f.Runtime,
+					ModuleID:   existing.ID,
+					ManifestID: f.ManifestId,
+					Name:       f.Name,
+					FileName:   f.FileName,
+					FileKey:    f.FileKey,
+					EntryPoint: f.EntryPoint,
+					Runtime:    f.Runtime,
 				})
 			}
 			if len(functions) > 0 {
@@ -93,6 +95,16 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 				}
 			}
 			existing.Functions = functions
+
+			if s.publisher != nil && len(functions) > 0 {
+				s.publisher.Publish(workers.PublishOptions{
+					ApplicationID:   "",
+					EntityType:      "module.function",
+					Operation:       "registered",
+					Data:            buildFunctionRegisteredData(existing.ID.String(), existing.ModuleKey, existing.Name, existing.Version, functions),
+					AutoAcknowledge: true,
+				})
+			}
 
 			return &client.ModuleResponse{
 				Status: &client.ResponseStatus{
@@ -117,17 +129,28 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 
 	for _, f := range req.Functions {
 		m.Functions = append(m.Functions, models.ModuleFunction{
-			FunctionName: f.FunctionName,
-			FileName:     f.FileName,
-			FileKey:      f.FileKey,
-			EntryPoint:   f.EntryPoint,
-			Runtime:      f.Runtime,
+			ManifestID: f.ManifestId,
+			Name:       f.Name,
+			FileName:   f.FileName,
+			FileKey:    f.FileKey,
+			EntryPoint: f.EntryPoint,
+			Runtime:    f.Runtime,
 		})
 	}
 
 	err := s.repo.Create(&m)
 	if err != nil {
 		return nil, err
+	}
+
+	if s.publisher != nil && len(m.Functions) > 0 {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   "",
+			EntityType:      "module.function",
+			Operation:       "registered",
+			Data:            buildFunctionRegisteredData(m.ID.String(), m.ModuleKey, m.Name, m.Version, m.Functions),
+			AutoAcknowledge: true,
+		})
 	}
 
 	return &client.ModuleResponse{
@@ -168,12 +191,13 @@ func (s *moduleService) UpdateModule(ctx context.Context, req *client.UpdateModu
 	var functions []models.ModuleFunction
 	for _, f := range req.Functions {
 		functions = append(functions, models.ModuleFunction{
-			ModuleID:     moduleID,
-			FunctionName: f.FunctionName,
-			FileName:     f.FileName,
-			FileKey:      f.FileKey,
-			EntryPoint:   f.EntryPoint,
-			Runtime:      f.Runtime,
+			ModuleID:   moduleID,
+			ManifestID: f.ManifestId,
+			Name:       f.Name,
+			FileName:   f.FileName,
+			FileKey:    f.FileKey,
+			EntryPoint: f.EntryPoint,
+			Runtime:    f.Runtime,
 		})
 	}
 
@@ -183,6 +207,16 @@ func (s *moduleService) UpdateModule(ctx context.Context, req *client.UpdateModu
 	}
 
 	m.Functions = functions
+
+	if s.publisher != nil && len(m.Functions) > 0 {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   "",
+			EntityType:      "module.function",
+			Operation:       "registered",
+			Data:            buildFunctionRegisteredData(m.ID.String(), m.ModuleKey, m.Name, m.Version, m.Functions),
+			AutoAcknowledge: true,
+		})
+	}
 
 	return &client.ModuleResponse{
 		Status: &client.ResponseStatus{
@@ -199,9 +233,24 @@ func (s *moduleService) DeleteModule(ctx context.Context, req *client.DeleteModu
 		return nil, err
 	}
 
+	// Capture function metadata BEFORE deleting the module row — once the
+	// module is gone the FK cascade removes function rows and we can no
+	// longer build the dereg event payload.
+	functions := append([]models.ModuleFunction(nil), m.Functions...)
+
 	err = s.repo.Delete(m)
 	if err != nil {
 		return nil, err
+	}
+
+	if s.publisher != nil && len(functions) > 0 {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   "",
+			EntityType:      "module.function",
+			Operation:       "deregistered",
+			Data:            buildFunctionDeregisteredData(m.ModuleKey, m.Name, m.Version, functions),
+			AutoAcknowledge: true,
+		})
 	}
 
 	return &client.ResponseStatus{
@@ -339,6 +388,7 @@ func (s *moduleService) RegisterTriggers(ctx context.Context, req *client.Regist
 			AllowVariants: in.AllowVariants,
 			CreatedByType: createdByType,
 			CreatedByRef:  createdByRef,
+			ManifestID:    in.ManifestId,
 		}
 		if err := s.repo.UpsertTrigger(t); err != nil {
 			return nil, fmt.Errorf("upsert trigger %q: %w", in.Name, err)
@@ -389,9 +439,55 @@ func (s *moduleService) ListTriggers(ctx context.Context, req *client.ListTrigge
 	}, nil
 }
 
+// GetTriggerByCanonicalId resolves a canonical id
+// (`{moduleId}:trigger:{manifestId}`) to its row. Used by barkloader's
+// install path to bake the trigger's NATS subject into a workflow that
+// references a trigger from another module. Returns NotFound if no
+// matching trigger row exists.
+func (s *moduleService) GetTriggerByCanonicalId(ctx context.Context, req *client.GetByCanonicalIdRequest) (*client.TriggerResponse, error) {
+	moduleID, kind, manifestID, err := parseCanonicalID(req.CanonicalId)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("canonical_id", err.Error())
+	}
+	if kind != "trigger" {
+		return nil, twirp.InvalidArgumentError("canonical_id", fmt.Sprintf("expected kind 'trigger', got %q", kind))
+	}
+	t, err := s.repo.GetTriggerByModuleAndManifestID(moduleID, manifestID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, twirp.NotFoundError(fmt.Sprintf("no trigger %q", req.CanonicalId))
+		}
+		return nil, err
+	}
+	return &client.TriggerResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Trigger retrieved successfully",
+		},
+		Trigger: triggerToProto(t),
+	}, nil
+}
+
 func (s *moduleService) DeleteTriggersByModuleId(ctx context.Context, req *client.DeleteByModuleIdRequest) (*client.ResponseStatus, error) {
+	// Capture rows for the dereg event before deleting them. List then
+	// delete is racy if something else writes triggers under this prefix
+	// in between, but for module-delete (the only caller today) the prefix
+	// is going away so any new writes would be a bug.
+	triggers, err := s.repo.ListTriggersByModulePrefix(req.ModuleId)
+	if err != nil {
+		return nil, err
+	}
 	if err := s.repo.DeleteTriggersByModulePrefix(req.ModuleId); err != nil {
 		return nil, err
+	}
+	if s.publisher != nil && len(triggers) > 0 {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   "",
+			EntityType:      "module.trigger",
+			Operation:       "deregistered",
+			Data:            buildTriggerDeregisteredData(req.ModuleId, triggers),
+			AutoAcknowledge: true,
+		})
 	}
 	return &client.ResponseStatus{
 		Code:    client.ResponseStatus_OK,
@@ -410,6 +506,7 @@ func triggerToProto(t *models.Trigger) *client.Trigger {
 		AllowVariants: t.AllowVariants,
 		CreatedByType: t.CreatedByType,
 		CreatedByRef:  t.CreatedByRef,
+		ManifestId:    t.ManifestID,
 	}
 }
 
@@ -433,6 +530,8 @@ func (s *moduleService) RegisterActions(ctx context.Context, req *client.Registe
 			ParamsSchema:  in.ParamsSchema,
 			CreatedByType: createdByType,
 			CreatedByRef:  createdByRef,
+			ManifestID:    in.ManifestId,
+			Type:          in.Type,
 		}
 		if err := s.repo.UpsertAction(a); err != nil {
 			return nil, fmt.Errorf("upsert action %q: %w", in.Name, err)
@@ -483,9 +582,66 @@ func (s *moduleService) ListActions(ctx context.Context, req *client.ListActions
 	}, nil
 }
 
+// GetActionByCanonicalId mirrors GetTriggerByCanonicalId for actions.
+// Used by barkloader's install path to bake an action's resolved
+// `call` (canonical function id) into a workflow step that references
+// an action from another module.
+func (s *moduleService) GetActionByCanonicalId(ctx context.Context, req *client.GetByCanonicalIdRequest) (*client.ActionResponse, error) {
+	moduleID, kind, manifestID, err := parseCanonicalID(req.CanonicalId)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("canonical_id", err.Error())
+	}
+	if kind != "action" {
+		return nil, twirp.InvalidArgumentError("canonical_id", fmt.Sprintf("expected kind 'action', got %q", kind))
+	}
+	a, err := s.repo.GetActionByModuleAndManifestID(moduleID, manifestID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, twirp.NotFoundError(fmt.Sprintf("no action %q", req.CanonicalId))
+		}
+		return nil, err
+	}
+	return &client.ActionResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Action retrieved successfully",
+		},
+		Action: actionToProto(a),
+	}, nil
+}
+
+// parseCanonicalID splits a canonical id `{moduleId}:{kind}:{manifest_id}`
+// into its three segments. Mirrors barkloader's
+// `looks_like_canonical_id` validation. Returns an error when the id
+// doesn't have exactly three non-empty segments.
+func parseCanonicalID(canonicalID string) (moduleID, kind, manifestID string, err error) {
+	parts := strings.Split(canonicalID, ":")
+	if len(parts) != 3 {
+		return "", "", "", fmt.Errorf("expected `{moduleId}:{kind}:{manifestId}`, got %q", canonicalID)
+	}
+	if parts[0] == "" || parts[1] == "" || parts[2] == "" {
+		return "", "", "", fmt.Errorf("canonical id %q has empty segment", canonicalID)
+	}
+	return parts[0], parts[1], parts[2], nil
+}
+
 func (s *moduleService) DeleteActionsByModuleId(ctx context.Context, req *client.DeleteByModuleIdRequest) (*client.ResponseStatus, error) {
+	// Capture rows for the dereg event before deleting them.
+	actions, err := s.repo.ListActionsByModulePrefix(req.ModuleId)
+	if err != nil {
+		return nil, err
+	}
 	if err := s.repo.DeleteActionsByModulePrefix(req.ModuleId); err != nil {
 		return nil, err
+	}
+	if s.publisher != nil && len(actions) > 0 {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   "",
+			EntityType:      "module.action",
+			Operation:       "deregistered",
+			Data:            buildActionDeregisteredData(req.ModuleId, actions),
+			AutoAcknowledge: true,
+		})
 	}
 	return &client.ResponseStatus{
 		Code:    client.ResponseStatus_OK,
@@ -502,6 +658,8 @@ func actionToProto(a *models.Action) *client.Action {
 		ParamsSchema:  a.ParamsSchema,
 		CreatedByType: a.CreatedByType,
 		CreatedByRef:  a.CreatedByRef,
+		ManifestId:    a.ManifestID,
+		Type:          a.Type,
 	}
 }
 
@@ -509,13 +667,14 @@ func moduleToProto(m *models.Module) *client.Module {
 	protoFunctions := make([]*client.ModuleFunction, len(m.Functions))
 	for i, f := range m.Functions {
 		protoFunctions[i] = &client.ModuleFunction{
-			Id:           f.ID.String(),
-			ModuleId:     f.ModuleID.String(),
-			FunctionName: f.FunctionName,
-			FileName:     f.FileName,
-			FileKey:      f.FileKey,
-			EntryPoint:   f.EntryPoint,
-			Runtime:      f.Runtime,
+			Id:         f.ID.String(),
+			ModuleId:   f.ModuleID.String(),
+			ManifestId: f.ManifestID,
+			Name:       f.Name,
+			FileName:   f.FileName,
+			FileKey:    f.FileKey,
+			EntryPoint: f.EntryPoint,
+			Runtime:    f.Runtime,
 		}
 	}
 
@@ -653,13 +812,25 @@ func (s *moduleService) CompleteModuleInstall(ctx context.Context, req *client.C
 		fmt.Printf("CompleteModuleInstall: RequestContext is NIL\n")
 	}
 
+	// Pull catalog metadata (author, category, description) out of the
+	// stored manifest so the UI's moduleRepository row can render real
+	// values instead of falling back to "Unknown" / blank. Best-effort —
+	// any lookup or parse failure leaves the defaults from
+	// moduleCatalogFields in place rather than blocking the event.
+	author, category, description := "Unknown", "Unknown", ""
+	if moduleID, err := uuid.Parse(req.ModuleId); err == nil {
+		if m, err := s.repo.GetByID(moduleID); err == nil && m != nil {
+			author, category, description = moduleCatalogFields(m.Manifest)
+		}
+	}
+
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
-			ApplicationID:   applicationID,
-			ClientID:        clientID,
-			EntityType:      "module",
-			EntityID:        req.ModuleId,
-			Operation:       operation,
+			ApplicationID: applicationID,
+			ClientID:      clientID,
+			EntityType:    "module",
+			EntityID:      req.ModuleId,
+			Operation:     operation,
 			Data: map[string]interface{}{
 				"module_id":   req.ModuleId,
 				"module_name": req.ModuleName,
@@ -667,6 +838,9 @@ func (s *moduleService) CompleteModuleInstall(ctx context.Context, req *client.C
 				"version":     req.Version,
 				"status":      req.Status,
 				"error":       req.Error,
+				"author":      author,
+				"category":    category,
+				"description": description,
 			},
 			AutoAcknowledge: true,
 		})
@@ -676,6 +850,46 @@ func (s *moduleService) CompleteModuleInstall(ctx context.Context, req *client.C
 		Code:    client.ResponseStatus_OK,
 		Message: fmt.Sprintf("Module install %s notification sent", operation),
 	}, nil
+}
+
+// resolveResourceDisplayName looks up the human-readable `name` of an
+// in-use module resource by querying the underlying domain table. The
+// `module_resources` ledger only stores the canonical id (e.g.
+// `twitch_platform:trigger:twitch.channel.cheer`) — that's the stable
+// identity but it's not what the UI should show users. Falls back to
+// the canonical id when no underlying row can be resolved (legacy
+// rows, cross-module references, or resource types we don't yet
+// resolve here).
+//
+// `moduleIDSegment` is the first segment of the composite moduleKey
+// (the bare manifest id, e.g. `twitch_platform`). `module.Functions`
+// is the preloaded function slice from GetByID.
+//
+// Workflows and commands are not yet resolved — they fall back to the
+// canonical id. Adding them requires a workflow lookup by
+// (created_by_ref, manifest_id) and a command lookup by id.
+func (s *moduleService) resolveResourceDisplayName(
+	module *models.Module,
+	moduleIDSegment string,
+	r *models.ModuleResource,
+) string {
+	switch r.ResourceType {
+	case "trigger":
+		if t, err := s.repo.GetTriggerByModuleAndManifestID(moduleIDSegment, r.ManifestID); err == nil && t != nil && t.Name != "" {
+			return t.Name
+		}
+	case "action":
+		if a, err := s.repo.GetActionByModuleAndManifestID(moduleIDSegment, r.ManifestID); err == nil && a != nil && a.Name != "" {
+			return a.Name
+		}
+	case "function":
+		for _, f := range module.Functions {
+			if f.ManifestID == r.ManifestID && f.Name != "" {
+				return f.Name
+			}
+		}
+	}
+	return r.ResourceName
 }
 
 // CheckModuleResourceUsage returns every resource owned by the given module
@@ -726,6 +940,13 @@ func (s *moduleService) CheckModuleResourceUsage(ctx context.Context, req *clien
 			return nil, fmt.Errorf("find external references: %w", err)
 		}
 
+		// Bare manifest id segment (e.g. "twitch_platform" from
+		// "twitch_platform:1.0.0:abc1234") used to look up triggers /
+		// actions for display-name resolution. ManifestID + this segment
+		// is the (created_by_ref-prefix, manifest_id) tuple that
+		// uniquely identifies a module resource row.
+		moduleIDSegment := moduleIDFromCreatedByRef(module.ModuleKey)
+
 		for _, ref := range refs {
 			res, ok := resourceByKey[key{ref.TargetType, ref.TargetName}]
 			if !ok {
@@ -734,9 +955,10 @@ func (s *moduleService) CheckModuleResourceUsage(ctx context.Context, req *clien
 			usage, ok := usageByResource[res.ID]
 			if !ok {
 				usage = &client.ResourceUsage{
-					ResourceId:   res.ID.String(),
-					ResourceType: res.ResourceType,
-					ResourceName: res.ResourceName,
+					ResourceId:          res.ID.String(),
+					ResourceType:        res.ResourceType,
+					ResourceName:        res.ResourceName,
+					ResourceDisplayName: s.resolveResourceDisplayName(module, moduleIDSegment, res),
 				}
 				usageByResource[res.ID] = usage
 			}
@@ -792,10 +1014,11 @@ func (s *moduleService) CompleteModuleDelete(ctx context.Context, req *client.Co
 			})
 		}
 		inUsePayload = append(inUsePayload, map[string]interface{}{
-			"resource_id":   r.ResourceId,
-			"resource_type": r.ResourceType,
-			"resource_name": r.ResourceName,
-			"used_by":       usedBy,
+			"resource_id":           r.ResourceId,
+			"resource_type":         r.ResourceType,
+			"resource_name":         r.ResourceName,
+			"resource_display_name": r.ResourceDisplayName,
+			"used_by":               usedBy,
 		})
 	}
 

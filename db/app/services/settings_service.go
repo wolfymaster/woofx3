@@ -99,7 +99,20 @@ func (s *settingService) SetSetting(ctx context.Context, req *client.SetSettingR
 		valueStr = req.Value.GetStringValue()
 	}
 
-	err = s.repo.UpsertSetting(applicationId, req.Key, valueStr)
+	// Optional user scope. Empty string means "unscoped"; any non-empty
+	// string is parsed as a UUID. Reject malformed UUIDs early so the
+	// row's user_id either points at a real user or is null — never a
+	// silently-coerced value.
+	var userID *uuid.UUID
+	if req.UserId != "" {
+		parsed, err := uuid.Parse(req.UserId)
+		if err != nil {
+			return nil, err
+		}
+		userID = &parsed
+	}
+
+	err = s.repo.UpsertSetting(applicationId, req.Key, valueStr, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -109,6 +122,7 @@ func (s *settingService) SetSetting(ctx context.Context, req *client.SetSettingR
 			ApplicationId: applicationId.String(),
 			Key:         req.Key,
 			Value:       req.Value,
+			UserId:      req.UserId,
 		},
 	}, nil
 }
@@ -130,7 +144,9 @@ func (s *settingService) SetSettings(ctx context.Context, req *client.SetSetting
 			valueStr = update.Value.GetStringValue()
 		}
 
-		err := s.repo.UpsertSetting(applicationId, update.Key, valueStr)
+		// SetSettings doesn't carry a per-update user scope on the proto
+		// today; pass nil to leave the column as-is on existing rows.
+		err := s.repo.UpsertSetting(applicationId, update.Key, valueStr, nil)
 		if err != nil {
 			return nil, err
 		}

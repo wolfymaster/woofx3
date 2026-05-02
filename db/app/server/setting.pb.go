@@ -31,6 +31,7 @@ type Setting struct {
 	Value         *structpb.Value        `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`                                      // Setting value (can be any JSON-serializable type)
 	ValueType     string                 `protobuf:"bytes,4,opt,name=value_type,json=valueType,proto3" json:"value_type,omitempty"`             // Value type (e.g., "string", "number", "boolean", "object")
 	ApplicationId string                 `protobuf:"bytes,5,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // ID of the application this setting belongs to (for app settings)
+	UserId        string                 `protobuf:"bytes,6,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                      // Optional user scope. For twitch_token this is the broadcaster's Twitch user id.
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -98,6 +99,13 @@ func (x *Setting) GetValueType() string {
 func (x *Setting) GetApplicationId() string {
 	if x != nil {
 		return x.ApplicationId
+	}
+	return ""
+}
+
+func (x *Setting) GetUserId() string {
+	if x != nil {
+		return x.UserId
 	}
 	return ""
 }
@@ -334,6 +342,7 @@ type SetSettingRequest struct {
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`                                          // Setting key
 	Value         *structpb.Value        `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`                                      // New value for the setting
 	ApplicationId string                 `protobuf:"bytes,4,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // Application ID for app-specific settings
+	UserId        string                 `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                      // Optional user scope. For twitch_token, the broadcaster's Twitch user id.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -385,6 +394,13 @@ func (x *SetSettingRequest) GetValue() *structpb.Value {
 func (x *SetSettingRequest) GetApplicationId() string {
 	if x != nil {
 		return x.ApplicationId
+	}
+	return ""
+}
+
+func (x *SetSettingRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
 	}
 	return ""
 }
@@ -710,14 +726,15 @@ var File_setting_proto protoreflect.FileDescriptor
 
 const file_setting_proto_rawDesc = "" +
 	"\n" +
-	"\rsetting.proto\x12\asetting\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cgoogle/protobuf/struct.proto\"\x95\x02\n" +
+	"\rsetting.proto\x12\asetting\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xae\x02\n" +
 	"\aSetting\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12,\n" +
 	"\x05value\x18\x03 \x01(\v2\x16.google.protobuf.ValueR\x05value\x12\x1d\n" +
 	"\n" +
 	"value_type\x18\x04 \x01(\tR\tvalueType\x12%\n" +
-	"\x0eapplication_id\x18\x05 \x01(\tR\rapplicationId\x129\n" +
+	"\x0eapplication_id\x18\x05 \x01(\tR\rapplicationId\x12\x17\n" +
+	"\auser_id\x18\x06 \x01(\tR\x06userId\x129\n" +
 	"\n" +
 	"created_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
@@ -733,11 +750,12 @@ const file_setting_proto_rawDesc = "" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"s\n" +
 	"\x13GetSettingsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12,\n" +
-	"\bsettings\x18\x02 \x03(\v2\x10.setting.SettingR\bsettings\"z\n" +
+	"\bsettings\x18\x02 \x03(\v2\x10.setting.SettingR\bsettings\"\x93\x01\n" +
 	"\x11SetSettingRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12,\n" +
 	"\x05value\x18\x02 \x01(\v2\x16.google.protobuf.ValueR\x05value\x12%\n" +
-	"\x0eapplication_id\x18\x04 \x01(\tR\rapplicationId\"\xd3\x01\n" +
+	"\x0eapplication_id\x18\x04 \x01(\tR\rapplicationId\x12\x17\n" +
+	"\auser_id\x18\x05 \x01(\tR\x06userId\"\xd3\x01\n" +
 	"\x12SetSettingsRequest\x12E\n" +
 	"\bsettings\x18\x01 \x03(\v2).setting.SetSettingsRequest.SettingUpdateR\bsettings\x12%\n" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x1aO\n" +

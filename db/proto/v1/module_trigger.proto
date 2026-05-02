@@ -16,6 +16,12 @@ message Trigger {
   bool allow_variants = 9;
   string created_by_type = 10;
   string created_by_ref = 11;
+  // Stable manifest-local identifier for this trigger declaration
+  // (e.g. "channel_subscribe"). Combined with the moduleId segment of
+  // `created_by_ref` and the literal "trigger" kind, this forms the
+  // canonical id `{moduleId}:trigger:{manifest_id}` used by every
+  // reference and ledger row.
+  string manifest_id = 12;
 }
 
 message TriggerInput {
@@ -25,6 +31,7 @@ message TriggerInput {
   string event = 4;
   string config_schema = 5;   // JSON string
   bool allow_variants = 6;
+  string manifest_id = 7;
 }
 
 message RegisterTriggersRequest {

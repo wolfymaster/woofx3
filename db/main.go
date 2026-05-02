@@ -77,7 +77,7 @@ func main() {
 				return err
 			}
 
-			workerSvc := services.NewWorkerService(logger)
+			workerSvc := services.NewWorkerService(logger, postgresSvc, natsSvc)
 			if err := application.Register("workers", workerSvc); err != nil {
 				return err
 			}

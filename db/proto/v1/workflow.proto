@@ -35,39 +35,38 @@ service WorkflowService {
     rpc CancelWorkflowExecution(CancelWorkflowExecutionRequest) returns (common.ResponseStatus);
 }
 
-// Workflow definition
+// Workflow definition. Execution shape is `steps_json` + `trigger_json`
+// (raw JSON of the engine's TaskDefinition[] / TriggerConfig). The
+// engine reads these JSON strings directly — no typed step proto is
+// needed and none exists. Reserved field numbers prevent accidental
+// reuse for callers that may still expect the old typed field.
 message Workflow {
-    string id = 1;                     // Unique identifier
-    string name = 2;                   // Human-readable name
-    string description = 3;            // Description of the workflow
-    string application_id = 4;         // ID of the application this workflow belongs to
-    string created_by = 5;             // User ID who created the workflow
-    bool enabled = 6;                  // Whether the workflow is enabled
-    repeated WorkflowStep steps = 7;   // Steps in the workflow
+    string id = 1;
+    string name = 2;
+    string description = 3;
+    string application_id = 4;
+    string created_by = 5;
+    bool enabled = 6;
+    reserved 7;                        // was: repeated WorkflowStep steps
+    reserved "steps";
     map<string, string> variables = 8; // Default variables for the workflow
-    string on_success = 9;             // ID of the next workflow to execute on success
-    string on_failure = 10;            // ID of the next workflow to execute on failure
-    int32 max_retries = 11;            // Maximum number of retries for failed steps
-    int32 timeout_seconds = 12;        // Global timeout for the workflow in seconds
+    string on_success = 9;
+    string on_failure = 10;
+    int32 max_retries = 11;
+    int32 timeout_seconds = 12;
     google.protobuf.Timestamp created_at = 13;
     google.protobuf.Timestamp updated_at = 14;
     string created_by_type = 15;
     string created_by_ref = 16;
-}
-
-// A single step in a workflow
-message WorkflowStep {
-    string id = 1;                     // Unique identifier for the step
-    string name = 2;                   // Human-readable name
-    string description = 3;            // Description of the step
-    string type = 4;                   // Type of step (e.g., "command", "http", "condition")
-    map<string, string> parameters = 5; // Step-specific parameters
-    string on_success = 6;             // ID of the next step on success
-    string on_failure = 7;             // ID of the next step on failure
-    int32 timeout_seconds = 8;         // Step-specific timeout in seconds
-    int32 retry_attempts = 9;          // Number of retry attempts for this step
-    bool async = 10;                   // Whether to execute this step asynchronously
-    map<string, string> outputs = 11;  // Output variable mappings
+    // Raw JSON of the workflow's TaskDefinition array (engine shape).
+    string steps_json = 17;
+    // Raw JSON of the workflow's TriggerConfig.
+    string trigger_json = 18;
+    // Manifest-local id for MODULE-owned workflows (e.g. `follow-workflow`).
+    // Empty for USER-authored workflows. Together with `created_by_ref`
+    // (composite moduleKey for MODULE rows) this is what the engine uses
+    // to derive the UI projectionKey.
+    string manifest_id = 19;
 }
 
 // Workflow execution
@@ -108,7 +107,8 @@ message CreateWorkflowRequest {
     string application_id = 3;
     string created_by = 4;
     bool enabled = 5;
-    repeated WorkflowStep steps = 6;
+    reserved 6;                        // was: repeated WorkflowStep steps
+    reserved "steps";
     map<string, string> variables = 7;
     string on_success = 8;
     string on_failure = 9;
@@ -116,6 +116,14 @@ message CreateWorkflowRequest {
     int32 timeout_seconds = 11;
     string created_by_type = 12;
     string created_by_ref = 13;
+    // JSON-encoded TaskDefinition array (workflow engine shape).
+    // Persisted verbatim into `workflow_definitions.steps`.
+    string steps_json = 14;
+    // JSON-encoded TriggerConfig object. Persisted verbatim into
+    // `workflow_definitions.trigger`.
+    string trigger_json = 15;
+    // Manifest-local id for MODULE-owned workflows. See `Workflow.manifest_id`.
+    string manifest_id = 16;
 }
 
 // Request to get a workflow by ID
@@ -129,18 +137,29 @@ message WorkflowResponse {
     Workflow workflow = 2;
 }
 
-// Request to update an existing workflow
+// Request to update an existing workflow.
+//
+// Patch semantics: every scalar field is treated as "leave unchanged
+// unless caller set it" by the service handler. `enabled` is the only
+// boolean update with meaningful "false" — it uses `optional` so the
+// server can distinguish "do not touch" (nil) from "set to false"
+// (`*v == false`). Other fields rely on their zero value as a sentinel
+// for "not provided" today (legacy contract); revisit when migrating
+// the rest of the request to optional.
 message UpdateWorkflowRequest {
     string id = 1;
     string name = 2;
     string description = 3;
-    bool enabled = 4;
-    repeated WorkflowStep steps = 5;
+    optional bool enabled = 4;
+    reserved 5;                        // was: repeated WorkflowStep steps
+    reserved "steps";
     map<string, string> variables = 6;
     string on_success = 7;
     string on_failure = 8;
     int32 max_retries = 9;
     int32 timeout_seconds = 10;
+    string steps_json = 11;
+    string trigger_json = 12;
 }
 
 // Request to delete a workflow

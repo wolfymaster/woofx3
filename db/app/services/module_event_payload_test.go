@@ -89,3 +89,96 @@ func TestBuildActionRegisteredData(t *testing.T) {
 		t.Errorf("params_schema = %v", row["params_schema"])
 	}
 }
+
+func TestBuildWorkflowChangeData(t *testing.T) {
+	t.Run("includes enabled and projection key for module-owned rows", func(t *testing.T) {
+		id := uuid.New()
+		appID := uuid.New()
+		wf := &models.WorkflowDefinition{
+			ID:            id,
+			ApplicationID: appID,
+			Name:          "wolfy_profile/Follow",
+			Steps:         "[]",
+			Trigger:       "{}",
+			Enabled:       true,
+			CreatedByType: "MODULE",
+			CreatedByRef:  "wolfy_profile:1.0.0:abc1234",
+			ManifestID:    "follow-workflow",
+		}
+
+		row := buildWorkflowChangeData(wf)
+
+		if got := row["enabled"]; got != true {
+			t.Errorf("enabled = %v, want true", got)
+		}
+		if got := row["projection_key"]; got != "wolfy_profile:1.0.0:abc1234:workflow:follow-workflow" {
+			t.Errorf("projection_key = %v", got)
+		}
+		if got := row["id"]; got != id.String() {
+			t.Errorf("id = %v", got)
+		}
+	})
+
+	t.Run("emits enabled=false for newly created (inert) workflows", func(t *testing.T) {
+		wf := &models.WorkflowDefinition{
+			ID:            uuid.New(),
+			ApplicationID: uuid.New(),
+			Name:          "fresh",
+			Steps:         "[]",
+			Trigger:       "{}",
+			Enabled:       false,
+			CreatedByType: "USER",
+		}
+		row := buildWorkflowChangeData(wf)
+		if got := row["enabled"]; got != false {
+			t.Errorf("enabled = %v, want false", got)
+		}
+		if _, ok := row["projection_key"]; ok {
+			t.Errorf("USER workflow should not carry projection_key, got %v", row["projection_key"])
+		}
+	})
+}
+
+func TestModuleCatalogFields(t *testing.T) {
+	t.Run("extracts author, category, and description from a well-formed manifest", func(t *testing.T) {
+		manifest := `{"id":"m","name":"M","author":"WolfyMaster LLC","category":"platform","description":"a module"}`
+		author, category, description := moduleCatalogFields(manifest)
+		if author != "WolfyMaster LLC" {
+			t.Errorf("author = %q", author)
+		}
+		if category != "platform" {
+			t.Errorf("category = %q", category)
+		}
+		if description != "a module" {
+			t.Errorf("description = %q", description)
+		}
+	})
+
+	t.Run("defaults author and category to Unknown when missing", func(t *testing.T) {
+		manifest := `{"id":"m","name":"M"}`
+		author, category, description := moduleCatalogFields(manifest)
+		if author != "Unknown" || category != "Unknown" || description != "" {
+			t.Errorf("got (%q, %q, %q)", author, category, description)
+		}
+	})
+
+	t.Run("treats blank values as missing for author and category", func(t *testing.T) {
+		manifest := `{"author":"  ","category":"","description":"  trimmed  "}`
+		author, category, description := moduleCatalogFields(manifest)
+		if author != "Unknown" || category != "Unknown" {
+			t.Errorf("blank fields not defaulted: author=%q category=%q", author, category)
+		}
+		if description != "trimmed" {
+			t.Errorf("description = %q", description)
+		}
+	})
+
+	t.Run("falls back to defaults on empty or malformed input", func(t *testing.T) {
+		for _, raw := range []string{"", "not-json", "{"} {
+			author, category, description := moduleCatalogFields(raw)
+			if author != "Unknown" || category != "Unknown" || description != "" {
+				t.Errorf("input %q: got (%q, %q, %q)", raw, author, category, description)
+			}
+		}
+	})
+}

@@ -77,27 +77,37 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
 	}
 
-	stepsJSON := "[]"
-	if raw, ok := req.Variables["_steps"]; ok && raw != "" {
-		stepsJSON = raw
-	} else if req.Steps != nil {
-		b, err := json.Marshal(req.Steps)
-		if err != nil {
-			return nil, twirp.InternalErrorWith(fmt.Errorf("failed to marshal steps: %w", err))
-		}
-		stepsJSON = string(b)
+	// `steps_json` and `trigger_json` are the canonical workflow
+	// definition. The typed `WorkflowStep` proto array was removed
+	// in favor of these JSON columns, which the engine reads directly.
+	stepsJSON := req.StepsJson
+	if stepsJSON == "" {
+		stepsJSON = "[]"
+	}
+	triggerJSON := req.TriggerJson
+	if triggerJSON == "" {
+		triggerJSON = "{}"
 	}
 
-	triggerJSON := "{}"
-	if raw, ok := req.Variables["_trigger"]; ok && raw != "" {
-		triggerJSON = raw
+	createdByType := req.CreatedByType
+	if createdByType == "" {
+		createdByType = "USER"
 	}
 
+	// Workflows are inert at create time. The contract documented in
+	// `docs/workflow/api.md` (and relied on by the UI) is "always false
+	// on create; enable via setWorkflowEnabled" — the request's
+	// `enabled` field is ignored so callers can't accidentally ship a
+	// workflow live before they intend to.
 	wf := &models.WorkflowDefinition{
 		ApplicationID: applicationID,
 		Name:          req.Name,
 		Steps:         stepsJSON,
 		Trigger:       triggerJSON,
+		CreatedByType: createdByType,
+		CreatedByRef:  req.CreatedByRef,
+		ManifestID:    req.ManifestId,
+		Enabled:       false,
 	}
 
 	err = s.workflowRepo.Create(wf)
@@ -105,7 +115,7 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create workflow: %w", err))
 	}
 
-	s.syncWorkflowEdges(wf, req.CreatedByType, req.CreatedByRef)
+	s.syncWorkflowEdges(wf, wf.CreatedByType, wf.CreatedByRef)
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
@@ -113,7 +123,7 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 			EntityType:      "workflow",
 			EntityID:        wf.ID.String(),
 			Operation:       "created",
-			Data:            wf,
+			Data:            buildWorkflowChangeData(wf),
 			AutoAcknowledge: true,
 		})
 	}
@@ -158,23 +168,24 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 		return nil, twirp.NotFoundError("workflow not found")
 	}
 
-	// Update fields
+	// Update fields. Patch semantics: scalar fields with non-zero values
+	// overwrite; zero values are treated as "not set" (legacy contract
+	// — see UpdateWorkflowRequest doc in workflow.proto). `enabled` is
+	// proto3-`optional` so we can distinguish "do not touch" (nil) from
+	// "set to false" (`*v == false`); the dedicated UI toggle relies on
+	// this to disable a workflow without rewriting any other field.
 	if req.Name != "" {
 		wf.Name = req.Name
 	}
 
-	if raw, ok := req.Variables["_steps"]; ok && raw != "" {
-		wf.Steps = raw
-	} else if req.Steps != nil {
-		stepsJSON, err := json.Marshal(req.Steps)
-		if err != nil {
-			return nil, twirp.InternalErrorWith(fmt.Errorf("failed to marshal steps: %w", err))
-		}
-		wf.Steps = string(stepsJSON)
+	if req.StepsJson != "" {
+		wf.Steps = req.StepsJson
 	}
-
-	if raw, ok := req.Variables["_trigger"]; ok && raw != "" {
-		wf.Trigger = raw
+	if req.TriggerJson != "" {
+		wf.Trigger = req.TriggerJson
+	}
+	if req.Enabled != nil {
+		wf.Enabled = *req.Enabled
 	}
 
 	err = s.workflowRepo.Update(wf)
@@ -182,10 +193,11 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update workflow: %w", err))
 	}
 
-	// UpdateWorkflow does not re-carry created_by metadata, so we rely on what
-	// is already recorded on the existing edge set if any edges exist. Since
-	// the model does not yet persist these columns, we default to USER.
-	s.syncWorkflowEdges(wf, "", "")
+	// UpdateWorkflow does not re-carry created_by metadata in the request;
+	// origin is set at create time and is immutable. Re-sync the edge set
+	// using whatever the row already has, so module-owned workflows keep
+	// their MODULE attribution after an update.
+	s.syncWorkflowEdges(wf, wf.CreatedByType, wf.CreatedByRef)
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
@@ -193,7 +205,7 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 			EntityType:      "workflow",
 			EntityID:        wf.ID.String(),
 			Operation:       "updated",
-			Data:            wf,
+			Data:            buildWorkflowChangeData(wf),
 			AutoAcknowledge: true,
 		})
 	}
@@ -233,12 +245,19 @@ func (s *workflowService) DeleteWorkflow(ctx context.Context, req *client.Delete
 	}
 
 	if s.publisher != nil {
+		// Echo projectionKey on deletes too so the UI can dedupe a delete
+		// that arrives from multiple engine instances pointing at the same
+		// projection row. Empty for USER-authored workflows (no projection).
+		deletePayload := map[string]any{"id": workflowID}
+		if pk := projectionKeyFor(wf.CreatedByType, wf.CreatedByRef, "workflow", wf.ManifestID); pk != "" {
+			deletePayload["projection_key"] = pk
+		}
 		s.publisher.Publish(workers.PublishOptions{
 			ApplicationID:   applicationID,
 			EntityType:      "workflow",
 			EntityID:        workflowID,
 			Operation:       "deleted",
-			Data:            map[string]string{"id": workflowID},
+			Data:            deletePayload,
 			AutoAcknowledge: true,
 		})
 	}
@@ -445,22 +464,23 @@ func (s *workflowService) CancelWorkflowExecution(ctx context.Context, req *clie
 // Helper functions to convert between database models and protobuf messages
 
 func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *client.Workflow {
-	variables := map[string]string{
-		"_steps":   wf.Steps,
-		"_trigger": wf.Trigger,
-	}
-
 	var createdAt, updatedAt *timestamppb.Timestamp
 
+	// `steps_json` and `trigger_json` are the canonical workflow shape
+	// the engine consumes. The typed `WorkflowStep` proto array was
+	// removed in favor of these JSON columns.
 	return &client.Workflow{
 		Id:            wf.ID.String(),
 		Name:          wf.Name,
 		ApplicationId: wf.ApplicationID.String(),
-		Steps:         nil,
-		Enabled:       true,
+		Enabled:       wf.Enabled,
 		CreatedAt:     createdAt,
 		UpdatedAt:     updatedAt,
-		Variables:     variables,
+		StepsJson:     wf.Steps,
+		TriggerJson:   wf.Trigger,
+		CreatedByType: wf.CreatedByType,
+		CreatedByRef:  wf.CreatedByRef,
+		ManifestId:    wf.ManifestID,
 	}
 }
 

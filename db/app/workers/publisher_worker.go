@@ -149,14 +149,21 @@ func (w *PublisherWorker) publishEvent(event *models.WorkerEvent) error {
 	ce.SetType(event.EventType)
 	ce.SetTime(event.CreatedAt)
 
-	ce.SetExtension("application_id", event.ApplicationID)
-	ce.SetExtension("client_id", event.ClientID)
-	ce.SetExtension("entity_type", event.EntityType)
-	ce.SetExtension("entity_id", event.EntityID)
+	// CloudEvents extension names must be lowercase a-z and digits only —
+	// the SDK silently drops names with underscores during JSON marshal,
+	// so consumers never receive them. Only metadata that consumers
+	// actually need is forwarded; client_id and entity_type are kept on
+	// WorkerEvent (DB metadata + subject building) but no consumer reads
+	// them off the wire.
+	ce.SetExtension("applicationid", event.ApplicationID)
+	ce.SetExtension("entityid", event.EntityID)
 	ce.SetExtension("operation", event.Operation)
 
+	// acksubject carries the per-event reply subject for manual
+	// acknowledgment (AckWorker subscribes to db.ack.>). Only set when
+	// the producer chose !AutoAcknowledge — see EventPublisher.Publish.
 	if !event.AutoAcknowledge && event.AckSubject != nil {
-		ce.SetExtension("ack_subject", *event.AckSubject)
+		ce.SetExtension("acksubject", *event.AckSubject)
 	}
 
 	var payloadData interface{}
@@ -312,14 +319,14 @@ func (w *PublisherWorker) retryEvent(cached *CachedEvent) error {
 	ce.SetType(event.EventType)
 	ce.SetTime(event.CreatedAt)
 
-	ce.SetExtension("application_id", event.ApplicationID)
-	ce.SetExtension("client_id", event.ClientID)
-	ce.SetExtension("entity_type", event.EntityType)
-	ce.SetExtension("entity_id", event.EntityID)
+	// CloudEvents extension names must be lowercase a-z and digits only —
+	// see publishEvent for the rationale. Keep this in sync with that path.
+	ce.SetExtension("applicationid", event.ApplicationID)
+	ce.SetExtension("entityid", event.EntityID)
 	ce.SetExtension("operation", event.Operation)
 
 	if event.AckSubject != nil {
-		ce.SetExtension("ack_subject", *event.AckSubject)
+		ce.SetExtension("acksubject", *event.AckSubject)
 	}
 
 	var payloadData interface{}

@@ -34,6 +34,7 @@ message Setting {
     google.protobuf.Value value = 3;   // Setting value (can be any JSON-serializable type)
     string value_type = 4;             // Value type (e.g., "string", "number", "boolean", "object")
     string application_id = 5;         // ID of the application this setting belongs to (for app settings)
+    string user_id = 6;                // Optional user scope. For twitch_token this is the broadcaster's Twitch user id.
     google.protobuf.Timestamp created_at = 14;
     google.protobuf.Timestamp updated_at = 15;
 }
@@ -67,6 +68,7 @@ message SetSettingRequest {
     string key = 1;            // Setting key
     google.protobuf.Value value = 2; // New value for the setting
     string application_id = 4; // Application ID for app-specific settings
+    string user_id = 5;        // Optional user scope. For twitch_token, the broadcaster's Twitch user id.
 }
 
 // Request to set multiple settings at once

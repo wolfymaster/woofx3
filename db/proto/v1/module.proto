@@ -20,9 +20,11 @@ service ModuleService {
   rpc SetModuleState(SetModuleStateRequest) returns (ModuleResponse);
   rpc RegisterTriggers(RegisterTriggersRequest) returns (ListTriggersResponse);
   rpc ListTriggers(ListTriggersRequest) returns (ListTriggersResponse);
+  rpc GetTriggerByCanonicalId(GetByCanonicalIdRequest) returns (TriggerResponse);
   rpc DeleteTriggersByModuleId(DeleteByModuleIdRequest) returns (common.ResponseStatus);
   rpc RegisterActions(RegisterActionsRequest) returns (ListActionsResponse);
   rpc ListActions(ListActionsRequest) returns (ListActionsResponse);
+  rpc GetActionByCanonicalId(GetByCanonicalIdRequest) returns (ActionResponse);
   rpc DeleteActionsByModuleId(DeleteByModuleIdRequest) returns (common.ResponseStatus);
   rpc CreateModuleResource(CreateModuleResourceRequest) returns (ModuleResourceResponse);
   rpc ListModuleResources(ListModuleResourcesRequest) returns (ListModuleResourcesResponse);
@@ -51,11 +53,18 @@ message Module {
 message ModuleFunction {
   string id = 1;
   string module_id = 2;
-  string function_name = 3;
+  // Stable manifest-local function id (e.g. "play_alert"). Forms the
+  // canonical id `{moduleId}:function:{manifest_id}` together with the
+  // parent module's first module_key segment.
+  string manifest_id = 3;
   string file_name = 4;
   string file_key = 5;
   string entry_point = 6;
   string runtime = 7;
+  // Display name for UI presentation. Distinct from the identifier
+  // (`manifest_id`) — display can drift across versions without
+  // changing the canonical id.
+  string name = 8;
 }
 
 message CreateModuleRequest {
@@ -70,11 +79,12 @@ message CreateModuleRequest {
 }
 
 message CreateModuleFunctionRequest {
-  string function_name = 1;
+  string manifest_id = 1;
   string file_name = 2;
   string file_key = 3;
   string entry_point = 4;
   string runtime = 5;
+  string name = 6;
 }
 
 message UpdateModuleRequest {
@@ -138,11 +148,19 @@ message UsageRef {
 }
 
 // ResourceUsage groups all sources that reference a single target resource.
+//
+// `resource_name` is the canonical id (`{moduleId}:{kind}:{manifestId}`) —
+// stable identity, not human-friendly. `resource_display_name` is the
+// underlying row's `name` column resolved at check time (e.g. "Channel
+// Cheer" for `triggers.name`); empty when no row could be resolved
+// (legacy / cross-module / deleted target). UI shows the display name
+// and keeps the canonical id for tooltips / debugging.
 message ResourceUsage {
   string resource_id = 1;     // module_resources.id
   string resource_type = 2;
   string resource_name = 3;
   repeated UsageRef used_by = 4;
+  string resource_display_name = 5;
 }
 
 message CheckModuleResourceUsageRequest {
@@ -166,4 +184,21 @@ message CompleteModuleDeleteRequest {
 
 message DeleteByModuleIdRequest {
   string module_id = 1;  // == manifest.id; server does `created_by_ref LIKE '{module_id}:%'`
+}
+
+// Lookup by canonical id (`{moduleId}:{kind}:{manifest_id}`). Used by
+// barkloader's install path to resolve cross-module references before
+// baking the workflow JSON.
+message GetByCanonicalIdRequest {
+  string canonical_id = 1;
+}
+
+message TriggerResponse {
+  common.ResponseStatus status = 1;
+  Trigger trigger = 2;
+}
+
+message ActionResponse {
+  common.ResponseStatus status = 1;
+  Action action = 2;
 }

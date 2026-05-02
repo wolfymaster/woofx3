@@ -52,14 +52,21 @@ func (r *SettingRepository) DeleteByKey(appID uuid.UUID, key string) error {
 	return r.db.Where("application_id = ? AND key = ?", appID, key).Delete(&models.Setting{}).Error
 }
 
-func (r *SettingRepository) UpsertSetting(appID uuid.UUID, key, value string) error {
+// UpsertSetting writes (or updates) a setting row. `userID` is optional —
+// pass nil for application-scoped settings; pass a non-nil pointer for
+// settings that should be tied to a specific user (e.g., the Twitch
+// broadcaster id stored alongside `twitch_token`). The user_id column is
+// updated on every write so the row's user scope can be re-bound by a
+// subsequent SetSetting call without a separate update path.
+func (r *SettingRepository) UpsertSetting(appID uuid.UUID, key, value string, userID *uuid.UUID) error {
 	setting := models.Setting{
 		ApplicationID: appID,
 		Key:           key,
 		Value:         value,
+		UserID:        userID,
 	}
 	return r.db.Where("application_id = ? AND key = ?", appID, key).
-		Assign(models.Setting{Value: value}).
+		Assign(models.Setting{Value: value, UserID: userID}).
 		FirstOrCreate(&setting).Error
 }
 

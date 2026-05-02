@@ -12,6 +12,24 @@ type WorkflowDefinition struct {
 	Steps         string    `gorm:"type:jsonb"`
 	Trigger       string    `gorm:"type:jsonb"`
 
+	// Origin metadata. CreatedByType is "USER" for UI-authored workflows
+	// and "MODULE" for workflows registered by barkloader during a module
+	// install. CreatedByRef is the composite moduleKey
+	// (`{moduleId}:{version}:{hash}`) for MODULE rows; empty for USER rows.
+	// ManifestID is the manifest-local id (e.g. `follow-workflow`) for
+	// MODULE rows; empty for USER rows. Together with CreatedByRef this
+	// is what the engine derives a UI projectionKey from
+	// (`{CreatedByRef}:workflow:{ManifestID}`).
+	CreatedByType string `gorm:"column:created_by_type;type:text;not null;default:'USER'"`
+	CreatedByRef  string `gorm:"column:created_by_ref;type:text;not null;default:''"`
+	ManifestID    string `gorm:"column:manifest_id;type:text;not null;default:''"`
+
+	// Enabled flips on/off whether the workflow runtime
+	// (`workflow/manager.go`, `workflow/reconcile.go`) considers this row
+	// a candidate to subscribe / execute. Always `false` at create time;
+	// the UI's `setWorkflowEnabled` action is the canonical toggle.
+	Enabled bool `gorm:"column:enabled;not null;default:false;index:idx_workflow_definitions_application_enabled,priority:2"`
+
 	// Relationships
 	Application Application `gorm:"foreignKey:ApplicationID;references:ID"`
 }

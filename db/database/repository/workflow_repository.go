@@ -50,11 +50,13 @@ func (r *WorkflowRepository) GetByApplicationID(applicationID uuid.UUID) ([]*mod
 	return wfs, err
 }
 
-// GetByApplicationIDAndEnabled retrieves enabled WorkflowDefinitions for an application
-// Note: The model doesn't have an 'enabled' field yet, so this currently just returns all workflows
+// GetByApplicationIDAndEnabled retrieves WorkflowDefinitions for an
+// application filtered by enabled status. Backed by the
+// `(application_id, enabled)` composite index added in migration 0005.
 func (r *WorkflowRepository) GetByApplicationIDAndEnabled(applicationID uuid.UUID, enabled bool) ([]*models.WorkflowDefinition, error) {
-	// TODO: Add 'enabled' field to WorkflowDefinition model and implement filtering
-	return r.GetByApplicationID(applicationID)
+	var wfs []*models.WorkflowDefinition
+	err := r.db.Where("application_id = ? AND enabled = ?", applicationID, enabled).Find(&wfs).Error
+	return wfs, err
 }
 
 // GetAll retrieves all WorkflowDefinitions

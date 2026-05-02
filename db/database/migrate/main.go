@@ -5,21 +5,25 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/joho/godotenv"
+	"github.com/wolfymaster/woofx3/common/runtime"
 	db "github.com/wolfymaster/woofx3/db/database"
 )
 
 func main() {
-	_ = godotenv.Load()
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
-	// Parse command line flags
+	env, err := runtime.LoadRuntimeEnv(nil)
+	if err != nil {
+		logger.Info("Failed to load runtime env", "error", err)
+		os.Exit(1)
+	}
+
 	cmd := flag.String("cmd", "up", "migration command (up, down)")
-	dbURL := flag.String("db", os.Getenv("DATABASE_URL"), "database connection string")
+	dbURL := flag.String("db", env["WOOFX3_DATABASE_URL"], "database connection string")
 	flag.Parse()
 
 	if *dbURL == "" {
-		logger.Info("Database URL is required. Use -db flag or set DATABASE_URL environment variable")
+		logger.Info("Database URL is required. Use -db flag, set WOOFX3_DATABASE_URL, or set databaseUrl in .woofx3.json")
 		os.Exit(1)
 	}
 

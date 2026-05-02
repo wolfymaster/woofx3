@@ -2,38 +2,60 @@
 // higher-level definitions (workflows, commands). Each extractor reads the
 // definition and returns a list of edges that should be persisted for that
 // source. Callers are responsible for writing the edges via the repository.
+//
+// Edges are keyed by **canonical id** strings (`{moduleId}:{kind}:{resourceId}`,
+// see `docs/barkloader/modules.md`). For workflows the canonical references
+// live in the persisted JSON under `$ref` keys (trigger and per-step) and
+// the `call` key (function the step invokes); the engine's execution
+// fields (`eventType`, `parameters`) are not consulted by this extractor.
 package resource_reference
 
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
 )
 
-// Supported target resource types for edge extraction.
+// Supported target resource types for edge extraction. Mirrors the
+// reserved kind keywords in barkloader's canonical id format.
 const (
 	TargetTypeAction   = "action"
 	TargetTypeTrigger  = "trigger"
 	TargetTypeFunction = "function"
 	TargetTypeCommand  = "command"
 	TargetTypeWorkflow = "workflow"
+	TargetTypeWidget   = "widget"
+	TargetTypeOverlay  = "overlay"
 )
 
-// WorkflowStepJSON is a minimal shape used to decode persisted workflow steps.
-// We do not try to re-use the proto type because the DB stores the raw JSONB.
+// canonicalIDSeparator must stay in sync with barkloader's
+// `CANONICAL_ID_SEPARATOR` (see `barkloader/app/src/services/module_service/canonical_id.rs`).
+const canonicalIDSeparator = ":"
+
+// WorkflowStepJSON is the minimal shape this extractor reads from a
+// persisted workflow step. Engine-side fields (parameters, etc.) are
+// intentionally absent — the extractor only cares about reference
+// metadata.
+//
+// `Function` is the top-level handler-config field for action steps
+// whose `action: "function"` — it carries the canonical function id
+// the step invokes. The extractor records this as a function
+// dependency so deletion safety knows the workflow needs that
+// function to run.
 type WorkflowStepJSON struct {
-	ID         string            `json:"id"`
-	Name       string            `json:"name"`
-	Type       string            `json:"type"`
-	Parameters map[string]string `json:"parameters"`
+	ID       string `json:"id"`
+	Ref      string `json:"$ref"`
+	Function string `json:"function"`
 }
 
-// WorkflowTriggerJSON is the minimal shape used to decode the trigger JSONB.
+// WorkflowTriggerJSON is the minimal shape this extractor reads from a
+// persisted workflow trigger. The `eventType` field (NATS subject the
+// engine subscribes to) is execution data and not used here.
 type WorkflowTriggerJSON struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
+	Ref string `json:"$ref"`
 }
 
 // WorkflowSource captures the identity of the workflow that owns the edges.
@@ -46,8 +68,10 @@ type WorkflowSource struct {
 }
 
 // ExtractWorkflowEdges parses the workflow's trigger and steps JSONB and
-// returns edges for each referenced resource. Unknown step types and rows
-// without a resolvable target name are skipped silently.
+// returns edges for each `$ref` (and per-step `call`) it finds. Workflows
+// whose JSON does not carry `$ref` values produce no edges — this is the
+// expected state for workflows authored before the `$ref` convention or
+// for workflows that intentionally do not bind to a specific declaration.
 func ExtractWorkflowEdges(
 	src WorkflowSource,
 	stepsJSON string,
@@ -58,8 +82,8 @@ func ExtractWorkflowEdges(
 	if triggerJSON != "" && triggerJSON != "{}" {
 		var trig WorkflowTriggerJSON
 		if err := json.Unmarshal([]byte(triggerJSON), &trig); err == nil {
-			if trig.Name != "" {
-				edges = append(edges, newEdge(src, TargetTypeTrigger, trig.Name, "trigger"))
+			if trig.Ref != "" {
+				edges = append(edges, newEdge(src, TargetTypeTrigger, trig.Ref, "trigger"))
 			}
 		}
 	}
@@ -68,11 +92,18 @@ func ExtractWorkflowEdges(
 		var steps []WorkflowStepJSON
 		if err := json.Unmarshal([]byte(stepsJSON), &steps); err == nil {
 			for i, step := range steps {
-				target, name, ok := resolveStepTarget(step)
-				if !ok {
-					continue
+				if step.Ref != "" {
+					if kind, ok := kindFromCanonicalID(step.Ref); ok {
+						edges = append(edges, newEdge(src, kind, step.Ref, fmt.Sprintf("step[%d]", i)))
+					}
 				}
-				edges = append(edges, newEdge(src, target, name, fmt.Sprintf("step[%d]", i)))
+				if step.Function != "" {
+					// Top-level `function` field on action steps whose
+					// `action: "function"` — the canonical function id
+					// the step invokes. Recorded as a function
+					// dependency for the deletion safety check.
+					edges = append(edges, newEdge(src, TargetTypeFunction, step.Function, fmt.Sprintf("step[%d].function", i)))
+				}
 			}
 		}
 	}
@@ -80,31 +111,26 @@ func ExtractWorkflowEdges(
 	return edges
 }
 
-// resolveStepTarget maps a workflow step to (target_type, target_name) if the
-// step type is one of our known resource kinds. The target name is looked up
-// in parameters using conventional keys.
-func resolveStepTarget(step WorkflowStepJSON) (string, string, bool) {
-	targetType := ""
-	switch step.Type {
-	case "action":
-		targetType = TargetTypeAction
-	case "function":
-		targetType = TargetTypeFunction
-	case "command":
-		targetType = TargetTypeCommand
-	case "workflow":
-		targetType = TargetTypeWorkflow
+// kindFromCanonicalID parses the kind segment from a canonical id of the
+// form `{moduleId}:{kind}:{resourceId}`. Returns (kind, true) when the id
+// has exactly three non-empty segments and the middle segment is a
+// recognized kind keyword; (_, false) otherwise. Defensive — malformed
+// `$ref` values silently skip rather than crashing the extractor.
+func kindFromCanonicalID(s string) (string, bool) {
+	parts := strings.Split(s, canonicalIDSeparator)
+	if len(parts) != 3 {
+		return "", false
+	}
+	if parts[0] == "" || parts[1] == "" || parts[2] == "" {
+		return "", false
+	}
+	switch parts[1] {
+	case TargetTypeAction, TargetTypeTrigger, TargetTypeFunction,
+		TargetTypeCommand, TargetTypeWorkflow, TargetTypeWidget, TargetTypeOverlay:
+		return parts[1], true
 	default:
-		return "", "", false
+		return "", false
 	}
-
-	candidates := []string{"name", step.Type, "target", targetType + "_name"}
-	for _, k := range candidates {
-		if v, ok := step.Parameters[k]; ok && v != "" {
-			return targetType, v, true
-		}
-	}
-	return "", "", false
 }
 
 // CommandSource captures the identity of the command that owns the edges.

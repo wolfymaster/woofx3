@@ -66,13 +66,19 @@ func GetAllModules(db *gorm.DB) ([]*Module, error) {
 }
 
 type ModuleFunction struct {
-	ID           uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	ModuleID     uuid.UUID `gorm:"column:module_id;type:uuid;not null;index"`
-	FunctionName string    `gorm:"column:function_name;type:text;not null"`
-	FileName     string    `gorm:"column:file_name;type:text;not null"`
-	FileKey      string    `gorm:"column:file_key;type:text;not null"`
-	EntryPoint   string    `gorm:"column:entry_point;type:text;default:'main'"`
-	Runtime      string    `gorm:"column:runtime;type:text;not null"`
+	ID         uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	ModuleID   uuid.UUID `gorm:"column:module_id;type:uuid;not null;index"`
+	// Stable manifest-local function id (e.g. "play_alert"). Forms the
+	// canonical id `{moduleId}:function:{manifest_id}`. Used by every
+	// reference and lookup; symmetric with `triggers.manifest_id` and
+	// `actions.manifest_id`.
+	ManifestID string `gorm:"column:manifest_id;type:text;not null;default:''"`
+	// Display name for UI presentation; never used as an identifier.
+	Name       string `gorm:"column:name;type:text;not null;default:''"`
+	FileName   string `gorm:"column:file_name;type:text;not null"`
+	FileKey    string `gorm:"column:file_key;type:text;not null"`
+	EntryPoint string `gorm:"column:entry_point;type:text;default:'main'"`
+	Runtime    string `gorm:"column:runtime;type:text;not null"`
 }
 
 func (ModuleFunction) TableName() string { return "functions" }
@@ -87,6 +93,7 @@ type Trigger struct {
 	AllowVariants bool      `gorm:"column:allow_variants;default:false"`
 	CreatedByType string    `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
 	CreatedByRef  string    `gorm:"column:created_by_ref;type:text;not null;default:''"`
+	ManifestID    string    `gorm:"column:manifest_id;type:text;not null;default:''"`
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
@@ -101,8 +108,15 @@ type Action struct {
 	ParamsSchema  string    `gorm:"column:params_schema;type:jsonb;not null;default:'{}'"`
 	CreatedByType string    `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
 	CreatedByRef  string    `gorm:"column:created_by_ref;type:text;not null;default:''"`
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ManifestID    string    `gorm:"column:manifest_id;type:text;not null;default:''"`
+	// Type names the engine action handler this action dispatches to
+	// (`function`, `alert`, `print`, …). For function-type actions
+	// `Call` holds the canonical function id; for non-function
+	// built-ins (e.g. `alert`) `Call` is empty and `Type` IS the
+	// dispatch.
+	Type      string `gorm:"column:type;type:text;not null;default:'function'"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 func (Action) TableName() string { return "actions" }
