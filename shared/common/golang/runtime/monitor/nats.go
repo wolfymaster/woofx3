@@ -18,12 +18,6 @@ type heartbeatEntry struct {
 	lastSeen time.Time
 }
 
-type NATSClient interface {
-	Publish(subject string, data []byte) error
-	Subscribe(subject string, handler any) (any, error)
-	Close() error
-}
-
 type natsLogger struct {
 	logger runtime.Logger
 	stdlog *log.Logger
@@ -97,7 +91,7 @@ func (n *NATSMonitor) RequiredServices() []string {
 	return []string{n.serviceName}
 }
 
-func (n *NATSMonitor) client() NATSClient {
+func (n *NATSMonitor) client() *natsclient.Client {
 	return n.svc.Client()
 }
 
@@ -132,7 +126,7 @@ func (n *NATSMonitor) Start(ctx context.Context) error {
 
 	n.logger.Info("Starting NATS health monitor", "app", n.appName, "subject", n.subject, "timeout", n.expirationTimeout)
 
-	subAny, err := client.Subscribe(n.subject, func(msg natsclient.Msg) {
+	sub, err := client.Subscribe(n.subject, func(msg natsclient.Msg) {
 		var event cloudevents.Heartbeat
 		if err := msg.JSON(&event); err != nil {
 			n.logger.Debug("Failed to parse heartbeat message", "error", err)
@@ -155,10 +149,6 @@ func (n *NATSMonitor) Start(ctx context.Context) error {
 	})
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to heartbeat subject: %w", err)
-	}
-	sub, ok := subAny.(natsclient.Subscription)
-	if !ok {
-		return fmt.Errorf("Subscribe did not return natsclient.Subscription")
 	}
 	n.subscription = sub
 

@@ -17,12 +17,6 @@ type NATSService struct {
 	conn   *nats.Conn
 }
 
-type NATSClient interface {
-	Publish(subject string, data []byte) error
-	Subscribe(subject string, handler any) (any, error)
-	Close() error
-}
-
 func NewNATS(logger *slog.Logger, name, serviceType string) *NATSService {
 	if name == "" {
 		name = "nats"
@@ -72,21 +66,4 @@ func (s *NATSService) Disconnect(ctx context.Context) error {
 
 func (s *NATSService) Connection() *nats.Conn {
 	return s.conn
-}
-
-// natsClientAdapter adapts *natsclient.Client to runtime.NATSClient (Subscribe uses any for handler/sub).
-type natsClientAdapter struct{ *natsclient.Client }
-
-func (a *natsClientAdapter) Subscribe(subject string, handler any) (any, error) {
-	return a.Client.Subscribe(subject, natsclient.Handler(func(msg natsclient.Msg) {
-		handler.(func(natsclient.Msg))(msg)
-	}))
-}
-
-// Client returns the NATS client as runtime.NATSClient so the service satisfies runtime.NATSClientProvider for the health monitor.
-func (s *NATSService) Client() NATSClient {
-	if s.client == nil {
-		return nil
-	}
-	return &natsClientAdapter{s.client}
 }
