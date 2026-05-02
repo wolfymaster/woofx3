@@ -42,7 +42,7 @@ func TestEventRegistrar_SubscribesOncePerSubject(t *testing.T) {
 	fs := newFakeSubscriber()
 	r := NewEventTriggerRegistrar(fs, nil, nil)
 
-	trig := &types.TriggerConfig{Type: "event", EventType: "message.user.twitch"}
+	trig := &types.TriggerConfig{Type: "event", Event: "message.user.twitch"}
 
 	if err := r.Register("wf-1", trig); err != nil {
 		t.Fatalf("register wf-1: %v", err)
@@ -60,7 +60,7 @@ func TestEventRegistrar_UnsubscribesOnlyWhenRefCountHitsZero(t *testing.T) {
 	fs := newFakeSubscriber()
 	r := NewEventTriggerRegistrar(fs, nil, nil)
 
-	trig := &types.TriggerConfig{Type: "event", EventType: "cheer.user.twitch"}
+	trig := &types.TriggerConfig{Type: "event", Event: "cheer.user.twitch"}
 
 	_ = r.Register("wf-1", trig)
 	_ = r.Register("wf-2", trig)
@@ -84,7 +84,7 @@ func TestEventRegistrar_IdempotentRegisterSameWorkflow(t *testing.T) {
 	fs := newFakeSubscriber()
 	r := NewEventTriggerRegistrar(fs, nil, nil)
 
-	trig := &types.TriggerConfig{Type: "event", EventType: "follow.user.twitch"}
+	trig := &types.TriggerConfig{Type: "event", Event: "follow.user.twitch"}
 
 	_ = r.Register("wf-1", trig)
 	_ = r.Register("wf-1", trig) // duplicate register for same workflow must not double the ref count
@@ -99,7 +99,7 @@ func TestEventRegistrar_IgnoresNonEventTriggers(t *testing.T) {
 	fs := newFakeSubscriber()
 	r := NewEventTriggerRegistrar(fs, nil, nil)
 
-	trig := &types.TriggerConfig{Type: "schedule", EventType: ""}
+	trig := &types.TriggerConfig{Type: "schedule", Event: ""}
 
 	if err := r.Register("wf-1", trig); err != nil {
 		t.Fatalf("register schedule: %v", err)
@@ -115,7 +115,7 @@ func TestEventRegistrar_SubscribeErrorLeavesStateUnchanged(t *testing.T) {
 	fs.subscribeErr = errors.New("nats down")
 	r := NewEventTriggerRegistrar(fs, nil, nil)
 
-	trig := &types.TriggerConfig{Type: "event", EventType: "message.user.twitch"}
+	trig := &types.TriggerConfig{Type: "event", Event: "message.user.twitch"}
 
 	err := r.Register("wf-1", trig)
 	if err == nil {
@@ -140,10 +140,10 @@ func TestEventRegistrar_UpdateReleasesOldSubjectAndSubscribesNew(t *testing.T) {
 	subjectA := "message.user.twitch"
 	subjectB := "cheer.user.twitch"
 
-	if err := r.Register("wf-1", &types.TriggerConfig{Type: "event", EventType: subjectA}); err != nil {
+	if err := r.Register("wf-1", &types.TriggerConfig{Type: "event", Event: subjectA}); err != nil {
 		t.Fatalf("register wf-1 to %s: %v", subjectA, err)
 	}
-	if err := r.Register("wf-1", &types.TriggerConfig{Type: "event", EventType: subjectB}); err != nil {
+	if err := r.Register("wf-1", &types.TriggerConfig{Type: "event", Event: subjectB}); err != nil {
 		t.Fatalf("re-register wf-1 to %s: %v", subjectB, err)
 	}
 

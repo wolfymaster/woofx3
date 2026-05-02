@@ -18,10 +18,22 @@ func NewActionTask[TServices any](actionRegistry *ActionRegistry[TServices]) Tas
 			return nil, fmt.Errorf("action field is required on action tasks")
 		}
 
+		// Merge top-level handler-config fields from TaskDefinition into
+		// the params map so action handlers can read them uniformly via
+		// the params slot. Today only `function` is recognized; future
+		// action handlers add their own keys the same way.
+		merged := make(map[string]any, len(params)+1)
+		for k, v := range params {
+			merged[k] = v
+		}
+		if taskDef.Function != "" {
+			merged["function"] = taskDef.Function
+		}
+
 		return &ActionTask[TServices]{
 			actionRegistry: actionRegistry,
 			actionName:     taskDef.Action,
-			parameters:     params,
+			parameters:     merged,
 		}, nil
 	}
 }

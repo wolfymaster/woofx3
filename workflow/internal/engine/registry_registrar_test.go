@@ -30,7 +30,7 @@ func TestRegistry_RegisterCallsRegistrar(t *testing.T) {
 		ID:      "wf-1",
 		Name:    "x",
 		Tasks:   []types.TaskDefinition{{ID: "t1", Type: "print"}},
-		Trigger: &types.TriggerConfig{Type: "event", EventType: "a"},
+		Trigger: &types.TriggerConfig{Type: "event", Event: "a"},
 	}
 	if err := reg.Register(def); err != nil {
 		t.Fatalf("register: %v", err)
@@ -54,11 +54,11 @@ func TestRegistry_RegisterUpdate_ReplacesTrigger(t *testing.T) {
 
 	defV1 := &types.WorkflowDefinition{
 		ID: "wf-1", Name: "x", Tasks: []types.TaskDefinition{{ID: "t1", Type: "print"}},
-		Trigger: &types.TriggerConfig{Type: "event", EventType: "a"},
+		Trigger: &types.TriggerConfig{Type: "event", Event: "a"},
 	}
 	defV2 := &types.WorkflowDefinition{
 		ID: "wf-1", Name: "x", Tasks: []types.TaskDefinition{{ID: "t1", Type: "print"}},
-		Trigger: &types.TriggerConfig{Type: "event", EventType: "b"},
+		Trigger: &types.TriggerConfig{Type: "event", Event: "b"},
 	}
 	_ = reg.Register(defV1)
 	_ = reg.Register(defV2)

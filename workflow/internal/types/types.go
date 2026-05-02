@@ -16,8 +16,13 @@ type WorkflowDefinition struct {
 }
 
 type TriggerConfig struct {
-	Type       string            `json:"type" yaml:"type"`
-	EventType  string            `json:"eventType,omitempty" yaml:"eventType,omitempty"`
+	Type string `json:"type" yaml:"type"`
+	// Event is the NATS subject this trigger listens for. The same value
+	// lives on the trigger row (`triggers.event`); the workflow's
+	// persisted trigger JSON carries it so the engine can subscribe
+	// without a runtime lookup. Conditions are evaluated against the
+	// matching event payload before the workflow starts.
+	Event      string            `json:"event,omitempty" yaml:"event,omitempty"`
 	Schedule   string            `json:"schedule,omitempty" yaml:"schedule,omitempty"`
 	Conditions []ConditionConfig `json:"conditions,omitempty" yaml:"conditions,omitempty"`
 }
@@ -29,26 +34,36 @@ type ConditionConfig struct {
 }
 
 type TaskDefinition struct {
-	ID             string                 `json:"id" yaml:"id"`
-	Type           string                 `json:"type" yaml:"type"`
-	Action         string                 `json:"action,omitempty" yaml:"action,omitempty"` // Registered action name; required when Type == "action"
-	DependsOn      []string               `json:"dependsOn,omitempty" yaml:"dependsOn,omitempty"`
-	Parameters     map[string]any `json:"parameters" yaml:"parameters"`
-	Exports        map[string]string      `json:"exports,omitempty" yaml:"exports,omitempty"`
-	OnError        string                 `json:"onError,omitempty" yaml:"onError,omitempty"`
-	Timeout        *Duration              `json:"timeout,omitempty" yaml:"timeout,omitempty"`
-	Wait           *WaitConfig            `json:"wait,omitempty" yaml:"wait,omitempty"`
-	Condition      *ConditionConfig       `json:"condition,omitempty" yaml:"condition,omitempty"`           // Single condition (backward compatible)
-	Conditions     []ConditionConfig      `json:"conditions,omitempty" yaml:"conditions,omitempty"`         // Multiple conditions
-	ConditionLogic string                 `json:"conditionLogic,omitempty" yaml:"conditionLogic,omitempty"` // "and" (default) or "or"
-	OnTrue         []string               `json:"onTrue,omitempty" yaml:"onTrue,omitempty"`
-	OnFalse        []string               `json:"onFalse,omitempty" yaml:"onFalse,omitempty"`
-	Workflow       *WorkflowConfig        `json:"workflow,omitempty" yaml:"workflow,omitempty"`
+	ID         string         `json:"id" yaml:"id"`
+	Type       string         `json:"type" yaml:"type"`
+	Action     string         `json:"action,omitempty" yaml:"action,omitempty"` // Registered action handler; required when Type == "action"
+	DependsOn  []string       `json:"dependsOn,omitempty" yaml:"dependsOn,omitempty"`
+	Parameters map[string]any `json:"parameters" yaml:"parameters"`
+	// $ref records the canonical id of the source declaration (e.g.
+	// the module action this step instantiates). Engine ignores it;
+	// the resource_reference extractor uses it for the graph.
+	Ref string `json:"$ref,omitempty" yaml:"$ref,omitempty"`
+	// Function is the canonical function id (e.g.
+	// `twitch_platform:function:play_alert`) when `Action == "function"`.
+	// Top-level handler config — mirrors how `Wait` and `Workflow`
+	// configs sit at the top level next to `Type`. Future action
+	// handlers add their own top-level fields the same way.
+	Function       string            `json:"function,omitempty" yaml:"function,omitempty"`
+	Exports        map[string]string `json:"exports,omitempty" yaml:"exports,omitempty"`
+	OnError        string            `json:"onError,omitempty" yaml:"onError,omitempty"`
+	Timeout        *Duration         `json:"timeout,omitempty" yaml:"timeout,omitempty"`
+	Wait           *WaitConfig       `json:"wait,omitempty" yaml:"wait,omitempty"`
+	Condition      *ConditionConfig  `json:"condition,omitempty" yaml:"condition,omitempty"`           // Single condition (backward compatible)
+	Conditions     []ConditionConfig `json:"conditions,omitempty" yaml:"conditions,omitempty"`         // Multiple conditions
+	ConditionLogic string            `json:"conditionLogic,omitempty" yaml:"conditionLogic,omitempty"` // "and" (default) or "or"
+	OnTrue         []string          `json:"onTrue,omitempty" yaml:"onTrue,omitempty"`
+	OnFalse        []string          `json:"onFalse,omitempty" yaml:"onFalse,omitempty"`
+	Workflow       *WorkflowConfig   `json:"workflow,omitempty" yaml:"workflow,omitempty"`
 }
 
 type WaitConfig struct {
 	Type        string             `json:"type" yaml:"type"`                                   // "event" or "aggregation"
-	EventType   string             `json:"eventType" yaml:"eventType"`                         // Event type to wait for
+	Event       string             `json:"event" yaml:"event"`                                 // NATS subject to wait for
 	Conditions  []ConditionConfig  `json:"conditions,omitempty" yaml:"conditions,omitempty"`   // Conditions to match
 	Aggregation *AggregationConfig `json:"aggregation,omitempty" yaml:"aggregation,omitempty"` // Aggregation settings
 	Timeout     *Duration          `json:"timeout,omitempty" yaml:"timeout,omitempty"`         // Wait timeout
@@ -58,8 +73,8 @@ type WaitConfig struct {
 type WorkflowConfig struct {
 	WorkflowID          string                 `json:"workflowId" yaml:"workflowId"`                   // ID of the workflow to trigger
 	WaitUntilCompletion bool                   `json:"waitUntilCompletion" yaml:"waitUntilCompletion"` // Whether to wait for completion
-	EventType           string                 `json:"eventType,omitempty" yaml:"eventType,omitempty"` // Event type to trigger the workflow
-	EventData           map[string]any `json:"eventData,omitempty" yaml:"eventData,omitempty"` // Data to pass to the workflow
+	Event               string                 `json:"event,omitempty" yaml:"event,omitempty"`         // NATS subject to publish to trigger the workflow
+	EventData           map[string]any         `json:"eventData,omitempty" yaml:"eventData,omitempty"` // Data to pass to the workflow
 	Timeout             *Duration              `json:"timeout,omitempty" yaml:"timeout,omitempty"`     // Timeout when waiting for completion
 }
 
@@ -167,7 +182,7 @@ type TaskExecution struct {
 }
 
 type WaitState struct {
-	EventType      string            `json:"eventType"`
+	Event          string            `json:"event"`
 	Conditions     []ConditionConfig `json:"conditions,omitempty"`
 	Timeout        time.Time         `json:"timeout"`
 	OnTimeout      string            `json:"onTimeout"`

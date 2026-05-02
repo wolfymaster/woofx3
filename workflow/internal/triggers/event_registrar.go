@@ -24,9 +24,11 @@ type Subscriber interface {
 type EventHandler func(payload []byte, subject string)
 
 // Logger is the minimal surface EventTriggerRegistrar needs for recording
-// non-fatal errors (e.g. failed Unsubscribe during an update). A nil logger
-// is a no-op.
+// subscribe/unsubscribe activity and non-fatal errors (e.g. failed Unsubscribe
+// during an update). A nil logger is a no-op.
 type Logger interface {
+	Info(msg string, keysAndValues ...any)
+	Warn(msg string, keysAndValues ...any)
 	Error(msg string, keysAndValues ...any)
 }
 
@@ -62,7 +64,25 @@ func NewEventTriggerRegistrar(sub Subscriber, onEvent EventHandler, logger Logge
 }
 
 func (r *EventTriggerRegistrar) Register(workflowID string, trigger *types.TriggerConfig) error {
-	if trigger == nil || trigger.Type != "event" || trigger.EventType == "" {
+	if trigger == nil {
+		if r.logger != nil {
+			r.logger.Warn("triggers: skipping register, trigger is nil", "workflow_id", workflowID)
+		}
+		return nil
+	}
+	if trigger.Type != "event" {
+		if r.logger != nil {
+			r.logger.Warn("triggers: skipping register, trigger.type != \"event\"",
+				"workflow_id", workflowID,
+				"type", trigger.Type)
+		}
+		return nil
+	}
+	if trigger.Event == "" {
+		if r.logger != nil {
+			r.logger.Warn("triggers: skipping register, trigger.event is empty",
+				"workflow_id", workflowID)
+		}
 		return nil
 	}
 	r.mu.Lock()
@@ -73,7 +93,7 @@ func (r *EventTriggerRegistrar) Register(workflowID string, trigger *types.Trigg
 	// old subject must not abort the move; the caller's intent is to switch to the
 	// new subject, so we log and press on to keep the workflow registered somewhere.
 	if prev, ok := r.workflows[workflowID]; ok {
-		if prev == trigger.EventType {
+		if prev == trigger.Event {
 			return nil
 		}
 		if err := r.releaseLocked(workflowID, prev); err != nil && r.logger != nil {
@@ -84,21 +104,30 @@ func (r *EventTriggerRegistrar) Register(workflowID string, trigger *types.Trigg
 		}
 	}
 
-	entry, ok := r.subjects[trigger.EventType]
+	entry, ok := r.subjects[trigger.Event]
 	if !ok {
-		sub, err := r.sub.Subscribe(trigger.EventType, func(payload []byte, subject string) {
+		sub, err := r.sub.Subscribe(trigger.Event, func(payload []byte, subject string) {
 			if r.onEvent != nil {
 				r.onEvent(payload, subject)
 			}
 		})
 		if err != nil {
-			return fmt.Errorf("subscribe to %s: %w", trigger.EventType, err)
+			return fmt.Errorf("subscribe to %s: %w", trigger.Event, err)
 		}
 		entry = &subjectEntry{sub: sub, refWorkflows: make(map[string]struct{})}
-		r.subjects[trigger.EventType] = entry
+		r.subjects[trigger.Event] = entry
+		if r.logger != nil {
+			r.logger.Info("triggers: subscribed to event subject",
+				"workflow_id", workflowID,
+				"subject", trigger.Event)
+		}
+	} else if r.logger != nil {
+		r.logger.Info("triggers: attached workflow to existing subscription",
+			"workflow_id", workflowID,
+			"subject", trigger.Event)
 	}
 	entry.refWorkflows[workflowID] = struct{}{}
-	r.workflows[workflowID] = trigger.EventType
+	r.workflows[workflowID] = trigger.Event
 	return nil
 }
 

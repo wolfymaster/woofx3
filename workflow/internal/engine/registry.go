@@ -93,11 +93,11 @@ func (r *WorkflowRegistry) Get(id string) (*types.WorkflowDefinition, error) {
 	return wf, nil
 }
 
-// GetByEventType returns workflows whose trigger event-type matches the given
-// concrete event subject. The trigger's EventType may be an exact subject or a
-// NATS-style pattern (`*` for one token, `>` for the remaining tail) — both
-// are handled uniformly by eventmatch.Matches.
-func (r *WorkflowRegistry) GetByEventType(eventType string) []*types.WorkflowDefinition {
+// GetByEvent returns workflows whose trigger event matches the given
+// concrete event subject. The trigger's `event` field may be an exact
+// subject or a NATS-style pattern (`*` for one token, `>` for the
+// remaining tail) — both are handled uniformly by eventmatch.Matches.
+func (r *WorkflowRegistry) GetByEvent(event string) []*types.WorkflowDefinition {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -106,7 +106,7 @@ func (r *WorkflowRegistry) GetByEventType(eventType string) []*types.WorkflowDef
 		if wf.Trigger == nil || wf.Trigger.Type != "event" {
 			continue
 		}
-		if eventmatch.Matches(wf.Trigger.EventType, eventType) {
+		if eventmatch.Matches(wf.Trigger.Event, event) {
 			matched = append(matched, wf)
 		}
 	}

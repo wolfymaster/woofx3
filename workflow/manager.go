@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/common/cloudevents"
@@ -88,8 +87,9 @@ func (m *WorkflowManager) LoadWorkflowsFromDB(ctx context.Context) error {
 	return nil
 }
 
-// HandleWorkflowCreateOrUpdate registers or updates a workflow in memory
-// Note: The event only contains operation and entityID - workflow data must be fetched separately
+// HandleWorkflowCreateOrUpdate registers or updates a workflow in memory.
+// The event only carries operation + workflowID + applicationID; workflow
+// definition data must be fetched separately.
 func (m *WorkflowManager) HandleWorkflowCreateOrUpdate(evt *cloudevents.WorkflowChangeEvent) {
 	changeData, err := evt.Data()
 	if err != nil {
@@ -97,31 +97,29 @@ func (m *WorkflowManager) HandleWorkflowCreateOrUpdate(evt *cloudevents.Workflow
 		return
 	}
 
-	// Fetch workflow data from DB using entityID
 	ctx := context.Background()
 	if m.dbClient == nil {
-		m.logger.Warn("Database client not configured, cannot fetch workflow data", "entity_id", changeData.EntityID)
+		m.logger.Warn("Database client not configured, cannot fetch workflow data", "workflow_id", changeData.WorkflowID)
 		return
 	}
 
-	// Fetch the workflow by ID
 	req := &dbv1.GetWorkflowRequest{
-		Id: changeData.EntityID,
+		Id: changeData.WorkflowID,
 	}
 
 	resp, err := m.dbClient.GetWorkflow(ctx, req)
 	if err != nil {
-		m.logger.Error("Failed to fetch workflow from DB", "error", err, "entity_id", changeData.EntityID)
+		m.logger.Error("Failed to fetch workflow from DB", "error", err, "workflow_id", changeData.WorkflowID)
 		return
 	}
 
 	if resp.Status != nil && resp.Status.Code != 0 {
-		m.logger.Error("Workflow service returned error", "error", resp.Status.Message, "entity_id", changeData.EntityID)
+		m.logger.Error("Workflow service returned error", "error", resp.Status.Message, "workflow_id", changeData.WorkflowID)
 		return
 	}
 
 	if resp.Workflow == nil {
-		m.logger.Warn("Workflow not found in database", "entity_id", changeData.EntityID)
+		m.logger.Warn("Workflow not found in database", "workflow_id", changeData.WorkflowID)
 		return
 	}
 
@@ -132,17 +130,16 @@ func (m *WorkflowManager) HandleWorkflowCreateOrUpdate(evt *cloudevents.Workflow
 	// when the workflow was never registered is safe.
 	if !resp.Workflow.GetEnabled() {
 		if m.registry != nil {
-			if err := m.registry.UnregisterWorkflow(changeData.EntityID); err != nil {
-				m.logger.Warn("Failed to unregister disabled workflow", "error", err, "workflow_id", changeData.EntityID)
+			if err := m.registry.UnregisterWorkflow(changeData.WorkflowID); err != nil {
+				m.logger.Warn("Failed to unregister disabled workflow", "error", err, "workflow_id", changeData.WorkflowID)
 			}
 		}
 		return
 	}
 
-	// Convert DB workflow to engine workflow definition
 	workflowDef, err := convertDBWorkflowToEngineWorkflow(resp.Workflow)
 	if err != nil {
-		m.logger.Error("Failed to convert workflow", "error", err, "entity_id", changeData.EntityID)
+		m.logger.Error("Failed to convert workflow", "error", err, "workflow_id", changeData.WorkflowID)
 		return
 	}
 
@@ -172,88 +169,43 @@ func (m *WorkflowManager) HandleWorkflowDelete(entityID string) {
 	}
 }
 
-// convertDBWorkflowToEngineWorkflow converts a DB workflow proto to an engine workflow definition.
-// The canonical source of truth is variables["_definition"] (a JSON-encoded
-// WorkflowDefinition). If that variable is missing, we fall back to reconstructing
-// a minimal definition from the structured proto fields.
+// convertDBWorkflowToEngineWorkflow converts a DB workflow proto to an
+// engine workflow definition.
+//
+// Sources are `dbWorkflow.GetTriggerJson()` for the trigger config and
+// `dbWorkflow.GetStepsJson()` for the task array. The previous design
+// duplicated the workflow JSON across `variables._definition`,
+// `variables._steps`, and `variables._trigger`; that duplication was
+// removed in the canonical-id rework — see Phase C.
 func convertDBWorkflowToEngineWorkflow(dbWorkflow *dbv1.Workflow) (*types.WorkflowDefinition, error) {
-	if rawDef, ok := dbWorkflow.GetVariables()["_definition"]; ok && rawDef != "" {
-		var def types.WorkflowDefinition
-		if err := json.Unmarshal([]byte(rawDef), &def); err != nil {
-			return nil, fmt.Errorf("unmarshal _definition for workflow %s: %w", dbWorkflow.GetId(), err)
-		}
-		if def.ID == "" {
-			def.ID = dbWorkflow.GetId()
-		}
-		if def.Name == "" {
-			def.Name = dbWorkflow.GetName()
-		}
-		return &def, nil
-	}
-
-	// Legacy path: rebuild tasks from proto steps (no trigger available here).
-	dbSteps := dbWorkflow.GetSteps()
-	taskList := make([]types.TaskDefinition, 0, len(dbSteps))
-	stepIDToTaskIndex := make(map[string]int, len(dbSteps))
-	for i, dbStep := range dbSteps {
-		task, err := convertDBStepToTask(dbStep)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert step %s: %w", dbStep.GetId(), err)
-		}
-		taskList = append(taskList, *task)
-		stepIDToTaskIndex[dbStep.GetId()] = i
-	}
-	for i, dbStep := range dbSteps {
-		stepID := dbStep.GetId()
-		dependsOn := []string{}
-		for _, other := range dbSteps {
-			if other.GetOnSuccess() == stepID || other.GetOnFailure() == stepID {
-				dependsOn = append(dependsOn, other.GetId())
-			}
-		}
-		if len(dependsOn) > 0 {
-			taskList[i].DependsOn = dependsOn
-		}
-	}
-	return &types.WorkflowDefinition{
+	def := &types.WorkflowDefinition{
 		ID:          dbWorkflow.GetId(),
 		Name:        dbWorkflow.GetName(),
 		Description: dbWorkflow.GetDescription(),
-		Tasks:       taskList,
-	}, nil
-}
+	}
 
-// convertDBStepToTask converts a DB workflow step proto to a task definition
-func convertDBStepToTask(dbStep *dbv1.WorkflowStep) (*types.TaskDefinition, error) {
-	// Convert parameters from map[string]string to map[string]any
-	parameters := make(map[string]any)
-	for k, v := range dbStep.GetParameters() {
-		// Try to parse JSON values if they're JSON strings
-		var jsonValue any
-		if err := json.Unmarshal([]byte(v), &jsonValue); err == nil {
-			parameters[k] = jsonValue
-		} else {
-			parameters[k] = v
+	if rawTrigger := dbWorkflow.GetTriggerJson(); rawTrigger != "" && rawTrigger != "{}" {
+		var trigger types.TriggerConfig
+		if err := json.Unmarshal([]byte(rawTrigger), &trigger); err != nil {
+			return nil, fmt.Errorf("unmarshal trigger_json for workflow %s: %w", dbWorkflow.GetId(), err)
 		}
+		def.Trigger = &trigger
 	}
 
-	task := &types.TaskDefinition{
-		ID:         dbStep.GetId(),
-		Type:       dbStep.GetType(),
-		Parameters: parameters,
-		DependsOn:  []string{}, // Will be populated in second pass
+	if rawSteps := dbWorkflow.GetStepsJson(); rawSteps != "" && rawSteps != "[]" {
+		var tasks []types.TaskDefinition
+		if err := json.Unmarshal([]byte(rawSteps), &tasks); err != nil {
+			return nil, fmt.Errorf("unmarshal steps_json for workflow %s: %w", dbWorkflow.GetId(), err)
+		}
+		def.Tasks = tasks
 	}
 
-	// Convert exports from outputs map
-	if len(dbStep.GetOutputs()) > 0 {
-		task.Exports = dbStep.GetOutputs()
-	}
-
-	// Handle timeout if specified
-	if dbStep.GetTimeoutSeconds() > 0 {
-		timeout := types.Duration{Duration: time.Duration(dbStep.GetTimeoutSeconds()) * time.Second}
-		task.Timeout = &timeout
-	}
-
-	return task, nil
+	return def, nil
 }
+
+// convertDBStepToTask was the legacy fallback that rebuilt tasks from
+// the typed `WorkflowStep` proto array when the `_definition` variable
+// was missing. With Phase C the engine reads `steps_json` directly and
+// the typed-step path is gone; this function was removed along with
+// it. If the typed proto array ever needs to be rehydrated for a UI
+// listing, do it at the API boundary, not in the engine path.

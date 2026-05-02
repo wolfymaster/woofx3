@@ -86,8 +86,10 @@ func main() {
 				return err
 			}
 
-			// Wire db clients into the application now that config is loaded
-			app.SetDbClients(dbClient.Workflow, dbClient.Module)
+			// Wire runtime services into the application now that config is loaded
+			// and the post-config services have been constructed. natsSvc was
+			// constructed pre-config in main(); the others are local to this scope.
+			app.SetServices(natsSvc, barkloaderService, dbClient)
 
 			return nil
 		},

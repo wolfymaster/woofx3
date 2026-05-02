@@ -154,12 +154,44 @@ func (e *Engine[TServices]) registerPublishAction() {
 func (e *Engine[TServices]) HandleEvent(event *types.Event) error {
 	e.processWaitingExecutions(event)
 
-	workflows := e.workflowRegistry.GetByEventType(event.Type)
+	workflows := e.workflowRegistry.GetByEvent(event.Type)
+
+	// "I received the event, here's what I'm doing about it" — without
+	// these lines, the most common debug question ("trigger fired but
+	// my workflow didn't run, why?") is invisible. The match step,
+	// per-workflow trigger evaluation, and dispatch decision are all
+	// independently informative.
+	if len(workflows) == 0 {
+		e.logger.Info("Event matched no workflows",
+			"event_type", event.Type,
+			"event_id", event.ID)
+		return nil
+	}
+	e.logger.Info("Event matched workflows",
+		"event_type", event.Type,
+		"event_id", event.ID,
+		"match_count", len(workflows))
 
 	for _, wf := range workflows {
-		if err := e.evaluateTrigger(wf, event); err == nil {
-			go e.executeWorkflow(wf, event)
+		if err := e.evaluateTrigger(wf, event); err != nil {
+			// `evaluateTrigger` returns errors for legitimate
+			// non-matches (event-type mismatch, trigger conditions
+			// false). Log them so users can see why a workflow that
+			// listens on the right subject still didn't fire.
+			e.logger.Info("Trigger evaluation rejected workflow",
+				"workflow", wf.ID,
+				"workflow_name", wf.Name,
+				"event_type", event.Type,
+				"event_id", event.ID,
+				"reason", err.Error())
+			continue
 		}
+		e.logger.Info("Dispatching workflow",
+			"workflow", wf.ID,
+			"workflow_name", wf.Name,
+			"event_type", event.Type,
+			"event_id", event.ID)
+		go e.executeWorkflow(wf, event)
 	}
 
 	return nil
@@ -167,7 +199,7 @@ func (e *Engine[TServices]) HandleEvent(event *types.Event) error {
 
 // FireByWorkflowID runs the named workflow with a synthesized trigger event.
 // Used by non-bus trigger types (schedule, manual) that already know the target
-// and so bypass GetByEventType / evaluateTrigger. Dispatch mirrors HandleEvent:
+// and so bypass GetByEvent / evaluateTrigger. Dispatch mirrors HandleEvent:
 // launch executeWorkflow in a goroutine so callers never block on task execution.
 func (e *Engine[TServices]) FireByWorkflowID(workflowID string, event *types.Event) error {
 	def, err := e.workflowRegistry.Get(workflowID)
@@ -237,10 +269,44 @@ func (e *Engine[TServices]) evaluateTrigger(wf *types.WorkflowDefinition, event 
 		return fmt.Errorf("only event triggers supported in MVP")
 	}
 
-	// EventType may be an exact subject ("twitch.channel.cheer") or a NATS-style
-	// pattern ("*.user.twitch", "workflow.>"). eventmatch.Matches handles both.
-	if !eventmatch.Matches(wf.Trigger.EventType, event.Type) {
-		return fmt.Errorf("event type mismatch: pattern=%q event=%q", wf.Trigger.EventType, event.Type)
+	// `event` may be an exact subject ("twitch.channel.cheer") or a
+	// NATS-style pattern ("*.user.twitch", "workflow.>").
+	// eventmatch.Matches handles both.
+	if !eventmatch.Matches(wf.Trigger.Event, event.Type) {
+		return fmt.Errorf("trigger event mismatch: pattern=%q event=%q", wf.Trigger.Event, event.Type)
+	}
+
+	// Evaluate trigger conditions against the matching event before
+	// the workflow starts. Same expression syntax as step conditions:
+	// `${trigger.data.X}` resolves against the event payload.
+	// Workflows whose trigger has no conditions short-circuit; an
+	// empty result from EvaluateMultiple is treated as success.
+	if len(wf.Trigger.Conditions) > 0 {
+		resolver := expression.NewResolver()
+		resolver.AddSource("trigger", map[string]any{
+			"id":     event.ID,
+			"type":   event.Type,
+			"source": event.Source,
+			"time":   event.Time,
+			"data":   event.Data,
+		})
+		exprConds := make([]expression.Condition, 0, len(wf.Trigger.Conditions))
+		for _, c := range wf.Trigger.Conditions {
+			exprConds = append(exprConds, expression.Condition{
+				Field:    c.Field,
+				Operator: c.Operator,
+				Value:    c.Value,
+			})
+		}
+		// Trigger conditions use AND logic — there's no
+		// `conditionLogic` field on TriggerConfig (yet).
+		ok, err := expression.EvaluateMultiple(exprConds, "and", resolver)
+		if err != nil {
+			return fmt.Errorf("trigger condition evaluation failed: %w", err)
+		}
+		if !ok {
+			return fmt.Errorf("trigger conditions not satisfied")
+		}
 	}
 
 	return nil
@@ -451,8 +517,8 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 						if waitUntilCompletion, ok := params["waitUntilCompletion"].(bool); ok {
 							workflowConfig.WaitUntilCompletion = waitUntilCompletion
 						}
-						if eventType, ok := params["eventType"].(string); ok {
-							workflowConfig.EventType = eventType
+						if event, ok := params["event"].(string); ok {
+							workflowConfig.Event = event
 						}
 						if eventData, ok := params["eventData"].(map[string]any); ok {
 							workflowConfig.EventData = eventData
@@ -592,10 +658,10 @@ func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, t
 			TaskExports:    taskExports,
 			TriggerEvent:   triggerEvent,
 		}
-		e.waitingExecutions[taskDef.Wait.EventType] = append(e.waitingExecutions[taskDef.Wait.EventType], waitingExec)
+		e.waitingExecutions[taskDef.Wait.Event] = append(e.waitingExecutions[taskDef.Wait.Event], waitingExec)
 		e.waitingMu.Unlock()
 
-		e.logger.Info("Task waiting for events", "workflow", execution.WorkflowID, "task", taskDef.ID, "eventType", taskDef.Wait.EventType)
+		e.logger.Info("Task waiting for events", "workflow", execution.WorkflowID, "task", taskDef.ID, "event", taskDef.Wait.Event)
 		return "waiting"
 	}
 
@@ -659,19 +725,21 @@ func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecutio
 			}
 		}
 
-		// Determine event type - use the workflow's trigger event type or a default
-		eventType := taskDef.Workflow.EventType
-		if eventType == "" && wf.Trigger != nil {
-			eventType = wf.Trigger.EventType
+		// Determine the NATS subject — use the sub-workflow task's
+		// explicit `event` if set, then fall back to the target
+		// workflow's trigger event, then a generic default.
+		eventSubject := taskDef.Workflow.Event
+		if eventSubject == "" && wf.Trigger != nil {
+			eventSubject = wf.Trigger.Event
 		}
-		if eventType == "" {
-			eventType = "workflow.trigger"
+		if eventSubject == "" {
+			eventSubject = "workflow.trigger"
 		}
 
 		// Create trigger event for the sub-workflow
 		subEvent := &types.Event{
 			ID:     uuid.New().String(),
-			Type:   eventType,
+			Type:   eventSubject,
 			Source: "workflow-task",
 			Time:   time.Now(),
 			Data:   eventData,
@@ -926,10 +994,33 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 		resolver.AddSource(taskID, exports)
 	}
 
+	// Diagnostic: log what the resolver will see and what it produced.
+	// Workflow authors hit "${trigger.data.X} not substituted" most often
+	// because X isn't actually on event.Data (different field name, or
+	// nested deeper). Logging both sides makes the mismatch obvious.
+	e.logger.Info("Resolving task parameters",
+		"workflow", execution.WorkflowID,
+		"execution", execution.ID,
+		"task", taskDef.ID,
+		"action", taskDef.Action,
+		"trigger.id", event.ID,
+		"trigger.type", event.Type,
+		"trigger.source", event.Source,
+		"trigger.data", event.Data,
+		"taskExports.keys", taskExportKeys(taskExports),
+		"parameters.before", taskDef.Parameters,
+	)
+
 	resolvedParams, err := resolver.Resolve(taskDef.Parameters)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve parameters: %w", err)
 	}
+
+	e.logger.Info("Resolved task parameters",
+		"workflow", execution.WorkflowID,
+		"task", taskDef.ID,
+		"parameters.after", resolvedParams,
+	)
 
 	params, ok := resolvedParams.(map[string]any)
 	if !ok {
@@ -968,6 +1059,19 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 	}
 
 	return result, nil
+}
+
+// taskExportKeys returns just the step ids that have published exports,
+// for diagnostic logging. Logging the full export map would dump
+// arbitrarily large prior-step output into the log; the keys alone are
+// enough for an author to know which `${stepId.X}` references are
+// available in this scope.
+func taskExportKeys(taskExports map[string]map[string]any) []string {
+	keys := make([]string, 0, len(taskExports))
+	for k := range taskExports {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 func (e *Engine[TServices]) GetExecution(id string) (*types.WorkflowExecution, error) {

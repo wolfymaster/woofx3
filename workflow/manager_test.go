@@ -1,33 +1,17 @@
 package main
 
 import (
-	"encoding/json"
 	"testing"
 
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
 )
 
-func TestConvertDBWorkflow_UnpacksCanonicalDefinition(t *testing.T) {
-	definition := map[string]any{
-		"id":   "wf-1",
-		"name": "Test Workflow",
-		"trigger": map[string]any{
-			"type":      "event",
-			"eventType": "message.user.twitch",
-		},
-		"tasks": []map[string]any{
-			{"id": "task-1", "type": "print", "parameters": map[string]any{"msg": "hi"}},
-		},
-	}
-	defJSON, err := json.Marshal(definition)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-
+func TestConvertDBWorkflow_UnpacksJSONColumns(t *testing.T) {
 	dbwf := &dbv1.Workflow{
-		Id:        "wf-1",
-		Name:      "Test Workflow",
-		Variables: map[string]string{"_definition": string(defJSON)},
+		Id:          "wf-1",
+		Name:        "Test Workflow",
+		TriggerJson: `{"type":"event","event":"message.user.twitch"}`,
+		StepsJson:   `[{"id":"task-1","type":"print","parameters":{"msg":"hi"}}]`,
 	}
 
 	got, err := convertDBWorkflowToEngineWorkflow(dbwf)
@@ -36,26 +20,23 @@ func TestConvertDBWorkflow_UnpacksCanonicalDefinition(t *testing.T) {
 	}
 
 	if got.Trigger == nil {
-		t.Fatal("Trigger is nil; expected populated TriggerConfig from _definition")
+		t.Fatal("Trigger is nil; expected populated TriggerConfig from trigger_json")
 	}
 	if got.Trigger.Type != "event" {
 		t.Errorf("Trigger.Type = %q, want %q", got.Trigger.Type, "event")
 	}
-	if got.Trigger.EventType != "message.user.twitch" {
-		t.Errorf("Trigger.EventType = %q, want %q", got.Trigger.EventType, "message.user.twitch")
+	if got.Trigger.Event != "message.user.twitch" {
+		t.Errorf("Trigger.Event = %q, want %q", got.Trigger.Event, "message.user.twitch")
 	}
 	if len(got.Tasks) != 1 {
 		t.Errorf("len(Tasks) = %d, want 1", len(got.Tasks))
 	}
 }
 
-func TestConvertDBWorkflow_FallsBackToProtoFields(t *testing.T) {
+func TestConvertDBWorkflow_EmptyJSONColumnsLeaveDefinitionMinimal(t *testing.T) {
 	dbwf := &dbv1.Workflow{
 		Id:   "wf-2",
-		Name: "Legacy Workflow",
-		Steps: []*dbv1.WorkflowStep{
-			{Id: "step-1", Type: "print"},
-		},
+		Name: "Empty Workflow",
 	}
 
 	got, err := convertDBWorkflowToEngineWorkflow(dbwf)
@@ -63,9 +44,23 @@ func TestConvertDBWorkflow_FallsBackToProtoFields(t *testing.T) {
 		t.Fatalf("convert: %v", err)
 	}
 	if got.Trigger != nil {
-		t.Errorf("Trigger = %+v, want nil (no _definition and proto has no trigger)", got.Trigger)
+		t.Errorf("Trigger = %+v, want nil (no trigger_json)", got.Trigger)
 	}
-	if len(got.Tasks) != 1 {
-		t.Errorf("len(Tasks) = %d, want 1", len(got.Tasks))
+	if len(got.Tasks) != 0 {
+		t.Errorf("len(Tasks) = %d, want 0 (no steps_json)", len(got.Tasks))
+	}
+	if got.ID != "wf-2" {
+		t.Errorf("ID = %q, want %q", got.ID, "wf-2")
+	}
+}
+
+func TestConvertDBWorkflow_RejectsMalformedTriggerJSON(t *testing.T) {
+	dbwf := &dbv1.Workflow{
+		Id:          "wf-3",
+		TriggerJson: `{not json`,
+	}
+	_, err := convertDBWorkflowToEngineWorkflow(dbwf)
+	if err == nil {
+		t.Fatal("expected error for malformed trigger_json")
 	}
 }

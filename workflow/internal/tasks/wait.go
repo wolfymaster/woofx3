@@ -48,7 +48,7 @@ func (t *WaitTask) InitWaitState(taskDef *types.TaskDefinition, execution *types
 	}
 
 	state := &types.WaitState{
-		EventType:      waitConfig.EventType,
+		Event:          waitConfig.Event,
 		Conditions:     waitConfig.Conditions,
 		Timeout:        timeout,
 		OnTimeout:      onTimeout,
@@ -76,7 +76,7 @@ func (t *WaitTask) InitWaitState(taskDef *types.TaskDefinition, execution *types
 }
 
 func (t *WaitTask) ProcessEvent(event *types.Event, waitState *types.WaitState, resolver *expression.Resolver) (bool, error) {
-	if event.Type != waitState.EventType {
+	if event.Type != waitState.Event {
 		return false, nil
 	}
 
