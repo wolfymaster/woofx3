@@ -312,6 +312,32 @@ pub mod module_service_client {
                 .insert(GrpcMethod::new("module.ModuleService", "ListTriggers"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn get_trigger_by_canonical_id(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetByCanonicalIdRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::TriggerResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/GetTriggerByCanonicalId",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("module.ModuleService", "GetTriggerByCanonicalId"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn delete_triggers_by_module_id(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteByModuleIdRequest>,
@@ -384,6 +410,29 @@ pub mod module_service_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("module.ModuleService", "ListActions"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_action_by_canonical_id(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetByCanonicalIdRequest>,
+        ) -> std::result::Result<tonic::Response<super::ActionResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/GetActionByCanonicalId",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("module.ModuleService", "GetActionByCanonicalId"),
+                );
             self.inner.unary(req, path, codec).await
         }
         pub async fn delete_actions_by_module_id(
@@ -658,6 +707,10 @@ pub mod module_service_server {
             tonic::Response<super::ListTriggersResponse>,
             tonic::Status,
         >;
+        async fn get_trigger_by_canonical_id(
+            &self,
+            request: tonic::Request<super::GetByCanonicalIdRequest>,
+        ) -> std::result::Result<tonic::Response<super::TriggerResponse>, tonic::Status>;
         async fn delete_triggers_by_module_id(
             &self,
             request: tonic::Request<super::DeleteByModuleIdRequest>,
@@ -679,6 +732,10 @@ pub mod module_service_server {
             tonic::Response<super::ListActionsResponse>,
             tonic::Status,
         >;
+        async fn get_action_by_canonical_id(
+            &self,
+            request: tonic::Request<super::GetByCanonicalIdRequest>,
+        ) -> std::result::Result<tonic::Response<super::ActionResponse>, tonic::Status>;
         async fn delete_actions_by_module_id(
             &self,
             request: tonic::Request<super::DeleteByModuleIdRequest>,
@@ -1269,6 +1326,55 @@ pub mod module_service_server {
                     };
                     Box::pin(fut)
                 }
+                "/module.ModuleService/GetTriggerByCanonicalId" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetTriggerByCanonicalIdSvc<T: ModuleService>(pub Arc<T>);
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<super::GetByCanonicalIdRequest>
+                    for GetTriggerByCanonicalIdSvc<T> {
+                        type Response = super::TriggerResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetByCanonicalIdRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::get_trigger_by_canonical_id(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetTriggerByCanonicalIdSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/module.ModuleService/DeleteTriggersByModuleId" => {
                     #[allow(non_camel_case_types)]
                     struct DeleteTriggersByModuleIdSvc<T: ModuleService>(pub Arc<T>);
@@ -1394,6 +1500,55 @@ pub mod module_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ListActionsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/module.ModuleService/GetActionByCanonicalId" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetActionByCanonicalIdSvc<T: ModuleService>(pub Arc<T>);
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<super::GetByCanonicalIdRequest>
+                    for GetActionByCanonicalIdSvc<T> {
+                        type Response = super::ActionResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetByCanonicalIdRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::get_action_by_canonical_id(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetActionByCanonicalIdSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

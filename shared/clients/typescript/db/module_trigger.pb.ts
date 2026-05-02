@@ -21,6 +21,14 @@ export interface Trigger {
   allowVariants: boolean;
   createdByType: string;
   createdByRef: string;
+  /**
+   * Stable manifest-local identifier for this trigger declaration
+   * (e.g. "channel_subscribe"). Combined with the moduleId segment of
+   * `created_by_ref` and the literal "trigger" kind, this forms the
+   * canonical id `{moduleId}:trigger:{manifest_id}` used by every
+   * reference and ledger row.
+   */
+  manifestId: string;
 }
 
 export interface TriggerInput {
@@ -30,6 +38,7 @@ export interface TriggerInput {
   event: string;
   configSchema: string;
   allowVariants: boolean;
+  manifestId: string;
 }
 
 export interface RegisterTriggersRequest {
@@ -96,6 +105,7 @@ export const Trigger = {
       allowVariants: false,
       createdByType: "",
       createdByRef: "",
+      manifestId: "",
       ...msg,
     };
   },
@@ -133,6 +143,9 @@ export const Trigger = {
     }
     if (msg.createdByRef) {
       writer.writeString(11, msg.createdByRef);
+    }
+    if (msg.manifestId) {
+      writer.writeString(12, msg.manifestId);
     }
     return writer;
   },
@@ -183,6 +196,10 @@ export const Trigger = {
           msg.createdByRef = reader.readString();
           break;
         }
+        case 12: {
+          msg.manifestId = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -225,6 +242,7 @@ export const TriggerInput = {
       event: "",
       configSchema: "",
       allowVariants: false,
+      manifestId: "",
       ...msg,
     };
   },
@@ -253,6 +271,9 @@ export const TriggerInput = {
     }
     if (msg.allowVariants) {
       writer.writeBool(6, msg.allowVariants);
+    }
+    if (msg.manifestId) {
+      writer.writeString(7, msg.manifestId);
     }
     return writer;
   },
@@ -289,6 +310,10 @@ export const TriggerInput = {
         }
         case 6: {
           msg.allowVariants = reader.readBool();
+          break;
+        }
+        case 7: {
+          msg.manifestId = reader.readString();
           break;
         }
         default: {
@@ -612,6 +637,7 @@ export const TriggerJSON = {
       allowVariants: false,
       createdByType: "",
       createdByRef: "",
+      manifestId: "",
       ...msg,
     };
   },
@@ -647,6 +673,9 @@ export const TriggerJSON = {
     }
     if (msg.createdByRef) {
       json["createdByRef"] = msg.createdByRef;
+    }
+    if (msg.manifestId) {
+      json["manifestId"] = msg.manifestId;
     }
     return json;
   },
@@ -691,6 +720,10 @@ export const TriggerJSON = {
     if (_createdByRef_) {
       msg.createdByRef = _createdByRef_;
     }
+    const _manifestId_ = json["manifestId"] ?? json["manifest_id"];
+    if (_manifestId_) {
+      msg.manifestId = _manifestId_;
+    }
     return msg;
   },
 };
@@ -724,6 +757,7 @@ export const TriggerInputJSON = {
       event: "",
       configSchema: "",
       allowVariants: false,
+      manifestId: "",
       ...msg,
     };
   },
@@ -752,6 +786,9 @@ export const TriggerInputJSON = {
     }
     if (msg.allowVariants) {
       json["allowVariants"] = msg.allowVariants;
+    }
+    if (msg.manifestId) {
+      json["manifestId"] = msg.manifestId;
     }
     return json;
   },
@@ -783,6 +820,10 @@ export const TriggerInputJSON = {
     const _allowVariants_ = json["allowVariants"] ?? json["allow_variants"];
     if (_allowVariants_) {
       msg.allowVariants = _allowVariants_;
+    }
+    const _manifestId_ = json["manifestId"] ?? json["manifest_id"];
+    if (_manifestId_) {
+      msg.manifestId = _manifestId_;
     }
     return msg;
   },

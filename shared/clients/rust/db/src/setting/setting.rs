@@ -18,6 +18,9 @@ pub struct Setting {
     /// ID of the application this setting belongs to (for app settings)
     #[prost(string, tag="5")]
     pub application_id: ::prost::alloc::string::String,
+    /// Optional user scope. For twitch_token this is the broadcaster's Twitch user id.
+    #[prost(string, tag="6")]
+    pub user_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag="14")]
     pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
     #[prost(message, optional, tag="15")]
@@ -71,6 +74,9 @@ pub struct SetSettingRequest {
     /// Application ID for app-specific settings
     #[prost(string, tag="4")]
     pub application_id: ::prost::alloc::string::String,
+    /// Optional user scope. For twitch_token, the broadcaster's Twitch user id.
+    #[prost(string, tag="5")]
+    pub user_id: ::prost::alloc::string::String,
 }
 /// Request to set multiple settings at once
 #[derive(Clone, PartialEq, ::prost::Message)]

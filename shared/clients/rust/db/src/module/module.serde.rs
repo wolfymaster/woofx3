@@ -28,6 +28,12 @@ impl serde::Serialize for Action {
         if !self.created_by_ref.is_empty() {
             len += 1;
         }
+        if !self.manifest_id.is_empty() {
+            len += 1;
+        }
+        if !self.r#type.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.Action", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -50,6 +56,12 @@ impl serde::Serialize for Action {
         if !self.created_by_ref.is_empty() {
             struct_ser.serialize_field("createdByRef", &self.created_by_ref)?;
         }
+        if !self.manifest_id.is_empty() {
+            struct_ser.serialize_field("manifestId", &self.manifest_id)?;
+        }
+        if !self.r#type.is_empty() {
+            struct_ser.serialize_field("type", &self.r#type)?;
+        }
         struct_ser.end()
     }
 }
@@ -70,6 +82,9 @@ impl<'de> serde::Deserialize<'de> for Action {
             "createdByType",
             "created_by_ref",
             "createdByRef",
+            "manifest_id",
+            "manifestId",
+            "type",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -81,6 +96,8 @@ impl<'de> serde::Deserialize<'de> for Action {
             ParamsSchema,
             CreatedByType,
             CreatedByRef,
+            ManifestId,
+            Type,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -109,6 +126,8 @@ impl<'de> serde::Deserialize<'de> for Action {
                             "paramsSchema" | "params_schema" => Ok(GeneratedField::ParamsSchema),
                             "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
                             "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
+                            "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
+                            "type" => Ok(GeneratedField::Type),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -135,6 +154,8 @@ impl<'de> serde::Deserialize<'de> for Action {
                 let mut params_schema__ = None;
                 let mut created_by_type__ = None;
                 let mut created_by_ref__ = None;
+                let mut manifest_id__ = None;
+                let mut r#type__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -179,6 +200,18 @@ impl<'de> serde::Deserialize<'de> for Action {
                             }
                             created_by_ref__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::ManifestId => {
+                            if manifest_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("manifestId"));
+                            }
+                            manifest_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Type => {
+                            if r#type__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("type"));
+                            }
+                            r#type__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Action {
@@ -189,6 +222,8 @@ impl<'de> serde::Deserialize<'de> for Action {
                     params_schema: params_schema__.unwrap_or_default(),
                     created_by_type: created_by_type__.unwrap_or_default(),
                     created_by_ref: created_by_ref__.unwrap_or_default(),
+                    manifest_id: manifest_id__.unwrap_or_default(),
+                    r#type: r#type__.unwrap_or_default(),
                 })
             }
         }
@@ -215,6 +250,12 @@ impl serde::Serialize for ActionInput {
         if !self.params_schema.is_empty() {
             len += 1;
         }
+        if !self.manifest_id.is_empty() {
+            len += 1;
+        }
+        if !self.r#type.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.ActionInput", len)?;
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
@@ -227,6 +268,12 @@ impl serde::Serialize for ActionInput {
         }
         if !self.params_schema.is_empty() {
             struct_ser.serialize_field("paramsSchema", &self.params_schema)?;
+        }
+        if !self.manifest_id.is_empty() {
+            struct_ser.serialize_field("manifestId", &self.manifest_id)?;
+        }
+        if !self.r#type.is_empty() {
+            struct_ser.serialize_field("type", &self.r#type)?;
         }
         struct_ser.end()
     }
@@ -243,6 +290,9 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
             "call",
             "params_schema",
             "paramsSchema",
+            "manifest_id",
+            "manifestId",
+            "type",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -251,6 +301,8 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
             Description,
             Call,
             ParamsSchema,
+            ManifestId,
+            Type,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -276,6 +328,8 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
                             "description" => Ok(GeneratedField::Description),
                             "call" => Ok(GeneratedField::Call),
                             "paramsSchema" | "params_schema" => Ok(GeneratedField::ParamsSchema),
+                            "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
+                            "type" => Ok(GeneratedField::Type),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -299,6 +353,8 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
                 let mut description__ = None;
                 let mut call__ = None;
                 let mut params_schema__ = None;
+                let mut manifest_id__ = None;
+                let mut r#type__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Name => {
@@ -325,6 +381,18 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
                             }
                             params_schema__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::ManifestId => {
+                            if manifest_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("manifestId"));
+                            }
+                            manifest_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Type => {
+                            if r#type__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("type"));
+                            }
+                            r#type__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(ActionInput {
@@ -332,10 +400,120 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
                     description: description__.unwrap_or_default(),
                     call: call__.unwrap_or_default(),
                     params_schema: params_schema__.unwrap_or_default(),
+                    manifest_id: manifest_id__.unwrap_or_default(),
+                    r#type: r#type__.unwrap_or_default(),
                 })
             }
         }
         deserializer.deserialize_struct("module.ActionInput", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for ActionResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.status.is_some() {
+            len += 1;
+        }
+        if self.action.is_some() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.ActionResponse", len)?;
+        if let Some(v) = self.status.as_ref() {
+            struct_ser.serialize_field("status", v)?;
+        }
+        if let Some(v) = self.action.as_ref() {
+            struct_ser.serialize_field("action", v)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for ActionResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "status",
+            "action",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Status,
+            Action,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "status" => Ok(GeneratedField::Status),
+                            "action" => Ok(GeneratedField::Action),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = ActionResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.ActionResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<ActionResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut status__ = None;
+                let mut action__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = map_.next_value()?;
+                        }
+                        GeneratedField::Action => {
+                            if action__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("action"));
+                            }
+                            action__ = map_.next_value()?;
+                        }
+                    }
+                }
+                Ok(ActionResponse {
+                    status: status__,
+                    action: action__,
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.ActionResponse", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for CheckModuleResourceUsageRequest {
@@ -924,7 +1102,7 @@ impl serde::Serialize for CreateModuleFunctionRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.function_name.is_empty() {
+        if !self.manifest_id.is_empty() {
             len += 1;
         }
         if !self.file_name.is_empty() {
@@ -939,9 +1117,12 @@ impl serde::Serialize for CreateModuleFunctionRequest {
         if !self.runtime.is_empty() {
             len += 1;
         }
+        if !self.name.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.CreateModuleFunctionRequest", len)?;
-        if !self.function_name.is_empty() {
-            struct_ser.serialize_field("functionName", &self.function_name)?;
+        if !self.manifest_id.is_empty() {
+            struct_ser.serialize_field("manifestId", &self.manifest_id)?;
         }
         if !self.file_name.is_empty() {
             struct_ser.serialize_field("fileName", &self.file_name)?;
@@ -955,6 +1136,9 @@ impl serde::Serialize for CreateModuleFunctionRequest {
         if !self.runtime.is_empty() {
             struct_ser.serialize_field("runtime", &self.runtime)?;
         }
+        if !self.name.is_empty() {
+            struct_ser.serialize_field("name", &self.name)?;
+        }
         struct_ser.end()
     }
 }
@@ -965,8 +1149,8 @@ impl<'de> serde::Deserialize<'de> for CreateModuleFunctionRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "function_name",
-            "functionName",
+            "manifest_id",
+            "manifestId",
             "file_name",
             "fileName",
             "file_key",
@@ -974,15 +1158,17 @@ impl<'de> serde::Deserialize<'de> for CreateModuleFunctionRequest {
             "entry_point",
             "entryPoint",
             "runtime",
+            "name",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            FunctionName,
+            ManifestId,
             FileName,
             FileKey,
             EntryPoint,
             Runtime,
+            Name,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -1004,11 +1190,12 @@ impl<'de> serde::Deserialize<'de> for CreateModuleFunctionRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "functionName" | "function_name" => Ok(GeneratedField::FunctionName),
+                            "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
                             "fileName" | "file_name" => Ok(GeneratedField::FileName),
                             "fileKey" | "file_key" => Ok(GeneratedField::FileKey),
                             "entryPoint" | "entry_point" => Ok(GeneratedField::EntryPoint),
                             "runtime" => Ok(GeneratedField::Runtime),
+                            "name" => Ok(GeneratedField::Name),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -1028,18 +1215,19 @@ impl<'de> serde::Deserialize<'de> for CreateModuleFunctionRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut function_name__ = None;
+                let mut manifest_id__ = None;
                 let mut file_name__ = None;
                 let mut file_key__ = None;
                 let mut entry_point__ = None;
                 let mut runtime__ = None;
+                let mut name__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::FunctionName => {
-                            if function_name__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("functionName"));
+                        GeneratedField::ManifestId => {
+                            if manifest_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("manifestId"));
                             }
-                            function_name__ = Some(map_.next_value()?);
+                            manifest_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::FileName => {
                             if file_name__.is_some() {
@@ -1065,14 +1253,21 @@ impl<'de> serde::Deserialize<'de> for CreateModuleFunctionRequest {
                             }
                             runtime__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Name => {
+                            if name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("name"));
+                            }
+                            name__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(CreateModuleFunctionRequest {
-                    function_name: function_name__.unwrap_or_default(),
+                    manifest_id: manifest_id__.unwrap_or_default(),
                     file_name: file_name__.unwrap_or_default(),
                     file_key: file_key__.unwrap_or_default(),
                     entry_point: entry_point__.unwrap_or_default(),
                     runtime: runtime__.unwrap_or_default(),
+                    name: name__.unwrap_or_default(),
                 })
             }
         }
@@ -1747,6 +1942,98 @@ impl<'de> serde::Deserialize<'de> for DeleteModuleResourcesRequest {
             }
         }
         deserializer.deserialize_struct("module.DeleteModuleResourcesRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for GetByCanonicalIdRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.canonical_id.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.GetByCanonicalIdRequest", len)?;
+        if !self.canonical_id.is_empty() {
+            struct_ser.serialize_field("canonicalId", &self.canonical_id)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for GetByCanonicalIdRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "canonical_id",
+            "canonicalId",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            CanonicalId,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "canonicalId" | "canonical_id" => Ok(GeneratedField::CanonicalId),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = GetByCanonicalIdRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.GetByCanonicalIdRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<GetByCanonicalIdRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut canonical_id__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::CanonicalId => {
+                            if canonical_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("canonicalId"));
+                            }
+                            canonical_id__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(GetByCanonicalIdRequest {
+                    canonical_id: canonical_id__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.GetByCanonicalIdRequest", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for GetModuleByModuleKeyRequest {
@@ -3174,7 +3461,7 @@ impl serde::Serialize for ModuleFunction {
         if !self.module_id.is_empty() {
             len += 1;
         }
-        if !self.function_name.is_empty() {
+        if !self.manifest_id.is_empty() {
             len += 1;
         }
         if !self.file_name.is_empty() {
@@ -3189,6 +3476,9 @@ impl serde::Serialize for ModuleFunction {
         if !self.runtime.is_empty() {
             len += 1;
         }
+        if !self.name.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.ModuleFunction", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -3196,8 +3486,8 @@ impl serde::Serialize for ModuleFunction {
         if !self.module_id.is_empty() {
             struct_ser.serialize_field("moduleId", &self.module_id)?;
         }
-        if !self.function_name.is_empty() {
-            struct_ser.serialize_field("functionName", &self.function_name)?;
+        if !self.manifest_id.is_empty() {
+            struct_ser.serialize_field("manifestId", &self.manifest_id)?;
         }
         if !self.file_name.is_empty() {
             struct_ser.serialize_field("fileName", &self.file_name)?;
@@ -3210,6 +3500,9 @@ impl serde::Serialize for ModuleFunction {
         }
         if !self.runtime.is_empty() {
             struct_ser.serialize_field("runtime", &self.runtime)?;
+        }
+        if !self.name.is_empty() {
+            struct_ser.serialize_field("name", &self.name)?;
         }
         struct_ser.end()
     }
@@ -3224,8 +3517,8 @@ impl<'de> serde::Deserialize<'de> for ModuleFunction {
             "id",
             "module_id",
             "moduleId",
-            "function_name",
-            "functionName",
+            "manifest_id",
+            "manifestId",
             "file_name",
             "fileName",
             "file_key",
@@ -3233,17 +3526,19 @@ impl<'de> serde::Deserialize<'de> for ModuleFunction {
             "entry_point",
             "entryPoint",
             "runtime",
+            "name",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Id,
             ModuleId,
-            FunctionName,
+            ManifestId,
             FileName,
             FileKey,
             EntryPoint,
             Runtime,
+            Name,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -3267,11 +3562,12 @@ impl<'de> serde::Deserialize<'de> for ModuleFunction {
                         match value {
                             "id" => Ok(GeneratedField::Id),
                             "moduleId" | "module_id" => Ok(GeneratedField::ModuleId),
-                            "functionName" | "function_name" => Ok(GeneratedField::FunctionName),
+                            "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
                             "fileName" | "file_name" => Ok(GeneratedField::FileName),
                             "fileKey" | "file_key" => Ok(GeneratedField::FileKey),
                             "entryPoint" | "entry_point" => Ok(GeneratedField::EntryPoint),
                             "runtime" => Ok(GeneratedField::Runtime),
+                            "name" => Ok(GeneratedField::Name),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -3293,11 +3589,12 @@ impl<'de> serde::Deserialize<'de> for ModuleFunction {
             {
                 let mut id__ = None;
                 let mut module_id__ = None;
-                let mut function_name__ = None;
+                let mut manifest_id__ = None;
                 let mut file_name__ = None;
                 let mut file_key__ = None;
                 let mut entry_point__ = None;
                 let mut runtime__ = None;
+                let mut name__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -3312,11 +3609,11 @@ impl<'de> serde::Deserialize<'de> for ModuleFunction {
                             }
                             module_id__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::FunctionName => {
-                            if function_name__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("functionName"));
+                        GeneratedField::ManifestId => {
+                            if manifest_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("manifestId"));
                             }
-                            function_name__ = Some(map_.next_value()?);
+                            manifest_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::FileName => {
                             if file_name__.is_some() {
@@ -3342,16 +3639,23 @@ impl<'de> serde::Deserialize<'de> for ModuleFunction {
                             }
                             runtime__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Name => {
+                            if name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("name"));
+                            }
+                            name__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(ModuleFunction {
                     id: id__.unwrap_or_default(),
                     module_id: module_id__.unwrap_or_default(),
-                    function_name: function_name__.unwrap_or_default(),
+                    manifest_id: manifest_id__.unwrap_or_default(),
                     file_name: file_name__.unwrap_or_default(),
                     file_key: file_key__.unwrap_or_default(),
                     entry_point: entry_point__.unwrap_or_default(),
                     runtime: runtime__.unwrap_or_default(),
+                    name: name__.unwrap_or_default(),
                 })
             }
         }
@@ -4207,6 +4511,9 @@ impl serde::Serialize for ResourceUsage {
         if !self.used_by.is_empty() {
             len += 1;
         }
+        if !self.resource_display_name.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.ResourceUsage", len)?;
         if !self.resource_id.is_empty() {
             struct_ser.serialize_field("resourceId", &self.resource_id)?;
@@ -4219,6 +4526,9 @@ impl serde::Serialize for ResourceUsage {
         }
         if !self.used_by.is_empty() {
             struct_ser.serialize_field("usedBy", &self.used_by)?;
+        }
+        if !self.resource_display_name.is_empty() {
+            struct_ser.serialize_field("resourceDisplayName", &self.resource_display_name)?;
         }
         struct_ser.end()
     }
@@ -4238,6 +4548,8 @@ impl<'de> serde::Deserialize<'de> for ResourceUsage {
             "resourceName",
             "used_by",
             "usedBy",
+            "resource_display_name",
+            "resourceDisplayName",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -4246,6 +4558,7 @@ impl<'de> serde::Deserialize<'de> for ResourceUsage {
             ResourceType,
             ResourceName,
             UsedBy,
+            ResourceDisplayName,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -4271,6 +4584,7 @@ impl<'de> serde::Deserialize<'de> for ResourceUsage {
                             "resourceType" | "resource_type" => Ok(GeneratedField::ResourceType),
                             "resourceName" | "resource_name" => Ok(GeneratedField::ResourceName),
                             "usedBy" | "used_by" => Ok(GeneratedField::UsedBy),
+                            "resourceDisplayName" | "resource_display_name" => Ok(GeneratedField::ResourceDisplayName),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -4294,6 +4608,7 @@ impl<'de> serde::Deserialize<'de> for ResourceUsage {
                 let mut resource_type__ = None;
                 let mut resource_name__ = None;
                 let mut used_by__ = None;
+                let mut resource_display_name__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::ResourceId => {
@@ -4320,6 +4635,12 @@ impl<'de> serde::Deserialize<'de> for ResourceUsage {
                             }
                             used_by__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::ResourceDisplayName => {
+                            if resource_display_name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("resourceDisplayName"));
+                            }
+                            resource_display_name__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(ResourceUsage {
@@ -4327,6 +4648,7 @@ impl<'de> serde::Deserialize<'de> for ResourceUsage {
                     resource_type: resource_type__.unwrap_or_default(),
                     resource_name: resource_name__.unwrap_or_default(),
                     used_by: used_by__.unwrap_or_default(),
+                    resource_display_name: resource_display_name__.unwrap_or_default(),
                 })
             }
         }
@@ -4476,6 +4798,9 @@ impl serde::Serialize for Trigger {
         if !self.created_by_ref.is_empty() {
             len += 1;
         }
+        if !self.manifest_id.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.Trigger", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -4504,6 +4829,9 @@ impl serde::Serialize for Trigger {
         if !self.created_by_ref.is_empty() {
             struct_ser.serialize_field("createdByRef", &self.created_by_ref)?;
         }
+        if !self.manifest_id.is_empty() {
+            struct_ser.serialize_field("manifestId", &self.manifest_id)?;
+        }
         struct_ser.end()
     }
 }
@@ -4527,6 +4855,8 @@ impl<'de> serde::Deserialize<'de> for Trigger {
             "createdByType",
             "created_by_ref",
             "createdByRef",
+            "manifest_id",
+            "manifestId",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -4540,6 +4870,7 @@ impl<'de> serde::Deserialize<'de> for Trigger {
             AllowVariants,
             CreatedByType,
             CreatedByRef,
+            ManifestId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -4570,6 +4901,7 @@ impl<'de> serde::Deserialize<'de> for Trigger {
                             "allowVariants" | "allow_variants" => Ok(GeneratedField::AllowVariants),
                             "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
                             "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
+                            "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -4598,6 +4930,7 @@ impl<'de> serde::Deserialize<'de> for Trigger {
                 let mut allow_variants__ = None;
                 let mut created_by_type__ = None;
                 let mut created_by_ref__ = None;
+                let mut manifest_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -4654,6 +4987,12 @@ impl<'de> serde::Deserialize<'de> for Trigger {
                             }
                             created_by_ref__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::ManifestId => {
+                            if manifest_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("manifestId"));
+                            }
+                            manifest_id__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Trigger {
@@ -4666,6 +5005,7 @@ impl<'de> serde::Deserialize<'de> for Trigger {
                     allow_variants: allow_variants__.unwrap_or_default(),
                     created_by_type: created_by_type__.unwrap_or_default(),
                     created_by_ref: created_by_ref__.unwrap_or_default(),
+                    manifest_id: manifest_id__.unwrap_or_default(),
                 })
             }
         }
@@ -4698,6 +5038,9 @@ impl serde::Serialize for TriggerInput {
         if self.allow_variants {
             len += 1;
         }
+        if !self.manifest_id.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.TriggerInput", len)?;
         if !self.category.is_empty() {
             struct_ser.serialize_field("category", &self.category)?;
@@ -4717,6 +5060,9 @@ impl serde::Serialize for TriggerInput {
         if self.allow_variants {
             struct_ser.serialize_field("allowVariants", &self.allow_variants)?;
         }
+        if !self.manifest_id.is_empty() {
+            struct_ser.serialize_field("manifestId", &self.manifest_id)?;
+        }
         struct_ser.end()
     }
 }
@@ -4735,6 +5081,8 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
             "configSchema",
             "allow_variants",
             "allowVariants",
+            "manifest_id",
+            "manifestId",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -4745,6 +5093,7 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
             Event,
             ConfigSchema,
             AllowVariants,
+            ManifestId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -4772,6 +5121,7 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
                             "event" => Ok(GeneratedField::Event),
                             "configSchema" | "config_schema" => Ok(GeneratedField::ConfigSchema),
                             "allowVariants" | "allow_variants" => Ok(GeneratedField::AllowVariants),
+                            "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -4797,6 +5147,7 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
                 let mut event__ = None;
                 let mut config_schema__ = None;
                 let mut allow_variants__ = None;
+                let mut manifest_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Category => {
@@ -4835,6 +5186,12 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
                             }
                             allow_variants__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::ManifestId => {
+                            if manifest_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("manifestId"));
+                            }
+                            manifest_id__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(TriggerInput {
@@ -4844,10 +5201,119 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
                     event: event__.unwrap_or_default(),
                     config_schema: config_schema__.unwrap_or_default(),
                     allow_variants: allow_variants__.unwrap_or_default(),
+                    manifest_id: manifest_id__.unwrap_or_default(),
                 })
             }
         }
         deserializer.deserialize_struct("module.TriggerInput", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for TriggerResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.status.is_some() {
+            len += 1;
+        }
+        if self.trigger.is_some() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.TriggerResponse", len)?;
+        if let Some(v) = self.status.as_ref() {
+            struct_ser.serialize_field("status", v)?;
+        }
+        if let Some(v) = self.trigger.as_ref() {
+            struct_ser.serialize_field("trigger", v)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for TriggerResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "status",
+            "trigger",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Status,
+            Trigger,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "status" => Ok(GeneratedField::Status),
+                            "trigger" => Ok(GeneratedField::Trigger),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = TriggerResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.TriggerResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<TriggerResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut status__ = None;
+                let mut trigger__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = map_.next_value()?;
+                        }
+                        GeneratedField::Trigger => {
+                            if trigger__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("trigger"));
+                            }
+                            trigger__ = map_.next_value()?;
+                        }
+                    }
+                }
+                Ok(TriggerResponse {
+                    status: status__,
+                    trigger: trigger__,
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.TriggerResponse", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for UpdateModuleRequest {

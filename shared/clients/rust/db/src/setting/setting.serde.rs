@@ -671,6 +671,9 @@ impl serde::Serialize for SetSettingRequest {
         if !self.application_id.is_empty() {
             len += 1;
         }
+        if !self.user_id.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("setting.SetSettingRequest", len)?;
         if !self.key.is_empty() {
             struct_ser.serialize_field("key", &self.key)?;
@@ -680,6 +683,9 @@ impl serde::Serialize for SetSettingRequest {
         }
         if !self.application_id.is_empty() {
             struct_ser.serialize_field("applicationId", &self.application_id)?;
+        }
+        if !self.user_id.is_empty() {
+            struct_ser.serialize_field("userId", &self.user_id)?;
         }
         struct_ser.end()
     }
@@ -695,6 +701,8 @@ impl<'de> serde::Deserialize<'de> for SetSettingRequest {
             "value",
             "application_id",
             "applicationId",
+            "user_id",
+            "userId",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -702,6 +710,7 @@ impl<'de> serde::Deserialize<'de> for SetSettingRequest {
             Key,
             Value,
             ApplicationId,
+            UserId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -726,6 +735,7 @@ impl<'de> serde::Deserialize<'de> for SetSettingRequest {
                             "key" => Ok(GeneratedField::Key),
                             "value" => Ok(GeneratedField::Value),
                             "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
+                            "userId" | "user_id" => Ok(GeneratedField::UserId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -748,6 +758,7 @@ impl<'de> serde::Deserialize<'de> for SetSettingRequest {
                 let mut key__ = None;
                 let mut value__ = None;
                 let mut application_id__ = None;
+                let mut user_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Key => {
@@ -768,12 +779,19 @@ impl<'de> serde::Deserialize<'de> for SetSettingRequest {
                             }
                             application_id__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::UserId => {
+                            if user_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("userId"));
+                            }
+                            user_id__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(SetSettingRequest {
                     key: key__.unwrap_or_default(),
                     value: value__,
                     application_id: application_id__.unwrap_or_default(),
+                    user_id: user_id__.unwrap_or_default(),
                 })
             }
         }
@@ -1128,6 +1146,9 @@ impl serde::Serialize for Setting {
         if !self.application_id.is_empty() {
             len += 1;
         }
+        if !self.user_id.is_empty() {
+            len += 1;
+        }
         if self.created_at.is_some() {
             len += 1;
         }
@@ -1149,6 +1170,9 @@ impl serde::Serialize for Setting {
         }
         if !self.application_id.is_empty() {
             struct_ser.serialize_field("applicationId", &self.application_id)?;
+        }
+        if !self.user_id.is_empty() {
+            struct_ser.serialize_field("userId", &self.user_id)?;
         }
         if let Some(v) = self.created_at.as_ref() {
             struct_ser.serialize_field("createdAt", v)?;
@@ -1173,6 +1197,8 @@ impl<'de> serde::Deserialize<'de> for Setting {
             "valueType",
             "application_id",
             "applicationId",
+            "user_id",
+            "userId",
             "created_at",
             "createdAt",
             "updated_at",
@@ -1186,6 +1212,7 @@ impl<'de> serde::Deserialize<'de> for Setting {
             Value,
             ValueType,
             ApplicationId,
+            UserId,
             CreatedAt,
             UpdatedAt,
         }
@@ -1214,6 +1241,7 @@ impl<'de> serde::Deserialize<'de> for Setting {
                             "value" => Ok(GeneratedField::Value),
                             "valueType" | "value_type" => Ok(GeneratedField::ValueType),
                             "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
+                            "userId" | "user_id" => Ok(GeneratedField::UserId),
                             "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
                             "updatedAt" | "updated_at" => Ok(GeneratedField::UpdatedAt),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
@@ -1240,6 +1268,7 @@ impl<'de> serde::Deserialize<'de> for Setting {
                 let mut value__ = None;
                 let mut value_type__ = None;
                 let mut application_id__ = None;
+                let mut user_id__ = None;
                 let mut created_at__ = None;
                 let mut updated_at__ = None;
                 while let Some(k) = map_.next_key()? {
@@ -1274,6 +1303,12 @@ impl<'de> serde::Deserialize<'de> for Setting {
                             }
                             application_id__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::UserId => {
+                            if user_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("userId"));
+                            }
+                            user_id__ = Some(map_.next_value()?);
+                        }
                         GeneratedField::CreatedAt => {
                             if created_at__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("createdAt"));
@@ -1294,6 +1329,7 @@ impl<'de> serde::Deserialize<'de> for Setting {
                     value: value__,
                     value_type: value_type__.unwrap_or_default(),
                     application_id: application_id__.unwrap_or_default(),
+                    user_id: user_id__.unwrap_or_default(),
                     created_at: created_at__,
                     updated_at: updated_at__,
                 })

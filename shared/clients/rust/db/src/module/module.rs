@@ -20,6 +20,13 @@ pub struct Trigger {
     pub created_by_type: ::prost::alloc::string::String,
     #[prost(string, tag="11")]
     pub created_by_ref: ::prost::alloc::string::String,
+    /// Stable manifest-local identifier for this trigger declaration
+    /// (e.g. "channel_subscribe"). Combined with the moduleId segment of
+    /// `created_by_ref` and the literal "trigger" kind, this forms the
+    /// canonical id `{moduleId}:trigger:{manifest_id}` used by every
+    /// reference and ledger row.
+    #[prost(string, tag="12")]
+    pub manifest_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct TriggerInput {
@@ -36,6 +43,8 @@ pub struct TriggerInput {
     pub config_schema: ::prost::alloc::string::String,
     #[prost(bool, tag="6")]
     pub allow_variants: bool,
+    #[prost(string, tag="7")]
+    pub manifest_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterTriggersRequest {
@@ -89,6 +98,19 @@ pub struct Action {
     pub created_by_type: ::prost::alloc::string::String,
     #[prost(string, tag="9")]
     pub created_by_ref: ::prost::alloc::string::String,
+    /// Stable manifest-local identifier for this action declaration
+    /// (e.g. "play_alert"). Combined with the moduleId segment of
+    /// `created_by_ref` and the literal "action" kind, this forms the
+    /// canonical id `{moduleId}:action:{manifest_id}` used by every
+    /// reference and ledger row.
+    #[prost(string, tag="10")]
+    pub manifest_id: ::prost::alloc::string::String,
+    /// Engine action handler this action dispatches to (e.g. "function",
+    /// "alert"). For built-in non-function actions the handler is the
+    /// entire dispatch (`call` is empty); for function-type actions
+    /// `call` holds the canonical function id.
+    #[prost(string, tag="11")]
+    pub r#type: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ActionInput {
@@ -101,6 +123,10 @@ pub struct ActionInput {
     /// JSON string
     #[prost(string, tag="4")]
     pub params_schema: ::prost::alloc::string::String,
+    #[prost(string, tag="5")]
+    pub manifest_id: ::prost::alloc::string::String,
+    #[prost(string, tag="6")]
+    pub r#type: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterActionsRequest {
@@ -242,8 +268,11 @@ pub struct ModuleFunction {
     pub id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub module_id: ::prost::alloc::string::String,
+    /// Stable manifest-local function id (e.g. "play_alert"). Forms the
+    /// canonical id `{moduleId}:function:{manifest_id}` together with the
+    /// parent module's first module_key segment.
     #[prost(string, tag="3")]
-    pub function_name: ::prost::alloc::string::String,
+    pub manifest_id: ::prost::alloc::string::String,
     #[prost(string, tag="4")]
     pub file_name: ::prost::alloc::string::String,
     #[prost(string, tag="5")]
@@ -252,6 +281,11 @@ pub struct ModuleFunction {
     pub entry_point: ::prost::alloc::string::String,
     #[prost(string, tag="7")]
     pub runtime: ::prost::alloc::string::String,
+    /// Display name for UI presentation. Distinct from the identifier
+    /// (`manifest_id`) — display can drift across versions without
+    /// changing the canonical id.
+    #[prost(string, tag="8")]
+    pub name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateModuleRequest {
@@ -275,7 +309,7 @@ pub struct CreateModuleRequest {
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateModuleFunctionRequest {
     #[prost(string, tag="1")]
-    pub function_name: ::prost::alloc::string::String,
+    pub manifest_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub file_name: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
@@ -284,6 +318,8 @@ pub struct CreateModuleFunctionRequest {
     pub entry_point: ::prost::alloc::string::String,
     #[prost(string, tag="5")]
     pub runtime: ::prost::alloc::string::String,
+    #[prost(string, tag="6")]
+    pub name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateModuleRequest {
@@ -374,6 +410,13 @@ pub struct UsageRef {
     pub context: ::prost::alloc::string::String,
 }
 /// ResourceUsage groups all sources that reference a single target resource.
+///
+/// `resource_name` is the canonical id (`{moduleId}:{kind}:{manifestId}`) —
+/// stable identity, not human-friendly. `resource_display_name` is the
+/// underlying row's `name` column resolved at check time (e.g. "Channel
+/// Cheer" for `triggers.name`); empty when no row could be resolved
+/// (legacy / cross-module / deleted target). UI shows the display name
+/// and keeps the canonical id for tooltips / debugging.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResourceUsage {
     /// module_resources.id
@@ -385,6 +428,8 @@ pub struct ResourceUsage {
     pub resource_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag="4")]
     pub used_by: ::prost::alloc::vec::Vec<UsageRef>,
+    #[prost(string, tag="5")]
+    pub resource_display_name: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CheckModuleResourceUsageRequest {
@@ -421,6 +466,28 @@ pub struct DeleteByModuleIdRequest {
     /// == manifest.id; server does `created_by_ref LIKE '{module_id}:%'`
     #[prost(string, tag="1")]
     pub module_id: ::prost::alloc::string::String,
+}
+/// Lookup by canonical id (`{moduleId}:{kind}:{manifest_id}`). Used by
+/// barkloader's install path to resolve cross-module references before
+/// baking the workflow JSON.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetByCanonicalIdRequest {
+    #[prost(string, tag="1")]
+    pub canonical_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct TriggerResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, optional, tag="2")]
+    pub trigger: ::core::option::Option<Trigger>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ActionResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, optional, tag="2")]
+    pub action: ::core::option::Option<Action>,
 }
 include!("module.serde.rs");
 include!("module.tonic.rs");

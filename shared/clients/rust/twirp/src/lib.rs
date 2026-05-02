@@ -98,6 +98,6 @@ pub mod types {
         ExecuteWorkflowRequest, ExecuteWorkflowResponse, ExecutionStep, GetWorkflowExecutionRequest,
         GetWorkflowRequest, ListWorkflowExecutionsRequest, ListWorkflowExecutionsResponse,
         ListWorkflowsRequest, ListWorkflowsResponse, UpdateWorkflowRequest, Workflow,
-        WorkflowExecution, WorkflowExecutionResponse, WorkflowResponse, WorkflowStep,
+        WorkflowExecution, WorkflowExecutionResponse, WorkflowResponse,
     };
 }

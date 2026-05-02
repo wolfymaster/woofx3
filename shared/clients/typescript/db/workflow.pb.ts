@@ -17,7 +17,11 @@ import * as common from "./common.pb";
 //========================================//
 
 /**
- * Workflow definition
+ * Workflow definition. Execution shape is `steps_json` + `trigger_json`
+ * (raw JSON of the engine's TaskDefinition[] / TriggerConfig). The
+ * engine reads these JSON strings directly — no typed step proto is
+ * needed and none exists. Reserved field numbers prevent accidental
+ * reuse for callers that may still expect the old typed field.
  */
 export interface Workflow {
   id: string;
@@ -26,7 +30,6 @@ export interface Workflow {
   applicationId: string;
   createdBy: string;
   enabled: boolean;
-  steps: WorkflowStep[];
   variables: Record<string, Workflow.Variables["value"] | undefined>;
   onSuccess: string;
   onFailure: string;
@@ -36,39 +39,25 @@ export interface Workflow {
   updatedAt: protoscript.Timestamp;
   createdByType: string;
   createdByRef: string;
+  /**
+   * Raw JSON of the workflow's TaskDefinition array (engine shape).
+   */
+  stepsJson: string;
+  /**
+   * Raw JSON of the workflow's TriggerConfig.
+   */
+  triggerJson: string;
+  /**
+   * Manifest-local id for MODULE-owned workflows (e.g. `follow-workflow`).
+   * Empty for USER-authored workflows. Together with `created_by_ref`
+   * (composite moduleKey for MODULE rows) this is what the engine uses
+   * to derive the UI projectionKey.
+   */
+  manifestId: string;
 }
 
 export declare namespace Workflow {
   interface Variables {
-    key: string;
-    value: string;
-  }
-}
-
-/**
- * A single step in a workflow
- */
-export interface WorkflowStep {
-  id: string;
-  name: string;
-  description: string;
-  type: string;
-  parameters: Record<string, WorkflowStep.Parameters["value"] | undefined>;
-  onSuccess: string;
-  onFailure: string;
-  timeoutSeconds: number;
-  retryAttempts: number;
-  async: boolean;
-  outputs: Record<string, WorkflowStep.Outputs["value"] | undefined>;
-}
-
-export declare namespace WorkflowStep {
-  interface Parameters {
-    key: string;
-    value: string;
-  }
-
-  interface Outputs {
     key: string;
     value: string;
   }
@@ -142,7 +131,6 @@ export interface CreateWorkflowRequest {
   applicationId: string;
   createdBy: string;
   enabled: boolean;
-  steps: WorkflowStep[];
   variables: Record<
     string,
     CreateWorkflowRequest.Variables["value"] | undefined
@@ -153,6 +141,20 @@ export interface CreateWorkflowRequest {
   timeoutSeconds: number;
   createdByType: string;
   createdByRef: string;
+  /**
+   * JSON-encoded TaskDefinition array (workflow engine shape).
+   * Persisted verbatim into `workflow_definitions.steps`.
+   */
+  stepsJson: string;
+  /**
+   * JSON-encoded TriggerConfig object. Persisted verbatim into
+   * `workflow_definitions.trigger`.
+   */
+  triggerJson: string;
+  /**
+   * Manifest-local id for MODULE-owned workflows. See `Workflow.manifest_id`.
+   */
+  manifestId: string;
 }
 
 export declare namespace CreateWorkflowRequest {
@@ -178,14 +180,21 @@ export interface WorkflowResponse {
 }
 
 /**
- * Request to update an existing workflow
+ * Request to update an existing workflow.
+ *
+ * Patch semantics: every scalar field is treated as "leave unchanged
+ * unless caller set it" by the service handler. `enabled` is the only
+ * boolean update with meaningful "false" — it uses `optional` so the
+ * server can distinguish "do not touch" (nil) from "set to false"
+ * (`*v == false`). Other fields rely on their zero value as a sentinel
+ * for "not provided" today (legacy contract); revisit when migrating
+ * the rest of the request to optional.
  */
 export interface UpdateWorkflowRequest {
   id: string;
   name: string;
   description: string;
-  enabled: boolean;
-  steps: WorkflowStep[];
+  enabled?: boolean | null | undefined;
   variables: Record<
     string,
     UpdateWorkflowRequest.Variables["value"] | undefined
@@ -194,6 +203,8 @@ export interface UpdateWorkflowRequest {
   onFailure: string;
   maxRetries: number;
   timeoutSeconds: number;
+  stepsJson: string;
+  triggerJson: string;
 }
 
 export declare namespace UpdateWorkflowRequest {
@@ -810,7 +821,6 @@ export const Workflow = {
       applicationId: "",
       createdBy: "",
       enabled: false,
-      steps: [],
       variables: {},
       onSuccess: "",
       onFailure: "",
@@ -820,6 +830,9 @@ export const Workflow = {
       updatedAt: protoscript.Timestamp.initialize(),
       createdByType: "",
       createdByRef: "",
+      stepsJson: "",
+      triggerJson: "",
+      manifestId: "",
       ...msg,
     };
   },
@@ -848,13 +861,6 @@ export const Workflow = {
     }
     if (msg.enabled) {
       writer.writeBool(6, msg.enabled);
-    }
-    if (msg.steps?.length) {
-      writer.writeRepeatedMessage(
-        7,
-        msg.steps as any,
-        WorkflowStep._writeMessage,
-      );
     }
     if (msg.variables) {
       writer.writeRepeatedMessage(
@@ -898,6 +904,15 @@ export const Workflow = {
     if (msg.createdByRef) {
       writer.writeString(16, msg.createdByRef);
     }
+    if (msg.stepsJson) {
+      writer.writeString(17, msg.stepsJson);
+    }
+    if (msg.triggerJson) {
+      writer.writeString(18, msg.triggerJson);
+    }
+    if (msg.manifestId) {
+      writer.writeString(19, msg.manifestId);
+    }
     return writer;
   },
 
@@ -933,12 +948,6 @@ export const Workflow = {
         }
         case 6: {
           msg.enabled = reader.readBool();
-          break;
-        }
-        case 7: {
-          const m = WorkflowStep.initialize();
-          reader.readMessage(m, WorkflowStep._readMessage);
-          msg.steps.push(m);
           break;
         }
         case 8: {
@@ -979,6 +988,18 @@ export const Workflow = {
           msg.createdByRef = reader.readString();
           break;
         }
+        case 17: {
+          msg.stepsJson = reader.readString();
+          break;
+        }
+        case 18: {
+          msg.triggerJson = reader.readString();
+          break;
+        }
+        case 19: {
+          msg.manifestId = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -1012,262 +1033,6 @@ export const Workflow = {
       msg: Workflow.Variables,
       reader: protoscript.BinaryReader,
     ): Workflow.Variables {
-      while (reader.nextField()) {
-        const field = reader.getFieldNumber();
-        switch (field) {
-          case 1: {
-            msg.key = reader.readString();
-            break;
-          }
-          case 2: {
-            msg.value = reader.readString();
-            break;
-          }
-          default: {
-            reader.skipField();
-            break;
-          }
-        }
-      }
-      return msg;
-    },
-  },
-};
-
-export const WorkflowStep = {
-  /**
-   * Serializes WorkflowStep to protobuf.
-   */
-  encode: function (msg: PartialDeep<WorkflowStep>): Uint8Array {
-    return WorkflowStep._writeMessage(
-      msg,
-      new protoscript.BinaryWriter(),
-    ).getResultBuffer();
-  },
-
-  /**
-   * Deserializes WorkflowStep from protobuf.
-   */
-  decode: function (bytes: ByteSource): WorkflowStep {
-    return WorkflowStep._readMessage(
-      WorkflowStep.initialize(),
-      new protoscript.BinaryReader(bytes),
-    );
-  },
-
-  /**
-   * Initializes WorkflowStep with all fields set to their default value.
-   */
-  initialize: function (msg?: Partial<WorkflowStep>): WorkflowStep {
-    return {
-      id: "",
-      name: "",
-      description: "",
-      type: "",
-      parameters: {},
-      onSuccess: "",
-      onFailure: "",
-      timeoutSeconds: 0,
-      retryAttempts: 0,
-      async: false,
-      outputs: {},
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<WorkflowStep>,
-    writer: protoscript.BinaryWriter,
-  ): protoscript.BinaryWriter {
-    if (msg.id) {
-      writer.writeString(1, msg.id);
-    }
-    if (msg.name) {
-      writer.writeString(2, msg.name);
-    }
-    if (msg.description) {
-      writer.writeString(3, msg.description);
-    }
-    if (msg.type) {
-      writer.writeString(4, msg.type);
-    }
-    if (msg.parameters) {
-      writer.writeRepeatedMessage(
-        5,
-        Object.entries(msg.parameters).map(([key, value]) => ({
-          key: key as any,
-          value: value as any,
-        })) as any,
-        WorkflowStep.Parameters._writeMessage,
-      );
-    }
-    if (msg.onSuccess) {
-      writer.writeString(6, msg.onSuccess);
-    }
-    if (msg.onFailure) {
-      writer.writeString(7, msg.onFailure);
-    }
-    if (msg.timeoutSeconds) {
-      writer.writeInt32(8, msg.timeoutSeconds);
-    }
-    if (msg.retryAttempts) {
-      writer.writeInt32(9, msg.retryAttempts);
-    }
-    if (msg.async) {
-      writer.writeBool(10, msg.async);
-    }
-    if (msg.outputs) {
-      writer.writeRepeatedMessage(
-        11,
-        Object.entries(msg.outputs).map(([key, value]) => ({
-          key: key as any,
-          value: value as any,
-        })) as any,
-        WorkflowStep.Outputs._writeMessage,
-      );
-    }
-    return writer;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (
-    msg: WorkflowStep,
-    reader: protoscript.BinaryReader,
-  ): WorkflowStep {
-    while (reader.nextField()) {
-      const field = reader.getFieldNumber();
-      switch (field) {
-        case 1: {
-          msg.id = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.name = reader.readString();
-          break;
-        }
-        case 3: {
-          msg.description = reader.readString();
-          break;
-        }
-        case 4: {
-          msg.type = reader.readString();
-          break;
-        }
-        case 5: {
-          const map = {} as WorkflowStep.Parameters;
-          reader.readMessage(map, WorkflowStep.Parameters._readMessage);
-          msg.parameters[map.key.toString()] = map.value;
-          break;
-        }
-        case 6: {
-          msg.onSuccess = reader.readString();
-          break;
-        }
-        case 7: {
-          msg.onFailure = reader.readString();
-          break;
-        }
-        case 8: {
-          msg.timeoutSeconds = reader.readInt32();
-          break;
-        }
-        case 9: {
-          msg.retryAttempts = reader.readInt32();
-          break;
-        }
-        case 10: {
-          msg.async = reader.readBool();
-          break;
-        }
-        case 11: {
-          const map = {} as WorkflowStep.Outputs;
-          reader.readMessage(map, WorkflowStep.Outputs._readMessage);
-          msg.outputs[map.key.toString()] = map.value;
-          break;
-        }
-        default: {
-          reader.skipField();
-          break;
-        }
-      }
-    }
-    return msg;
-  },
-
-  Parameters: {
-    /**
-     * @private
-     */
-    _writeMessage: function (
-      msg: PartialDeep<WorkflowStep.Parameters>,
-      writer: protoscript.BinaryWriter,
-    ): protoscript.BinaryWriter {
-      if (msg.key) {
-        writer.writeString(1, msg.key);
-      }
-      if (msg.value) {
-        writer.writeString(2, msg.value);
-      }
-      return writer;
-    },
-
-    /**
-     * @private
-     */
-    _readMessage: function (
-      msg: WorkflowStep.Parameters,
-      reader: protoscript.BinaryReader,
-    ): WorkflowStep.Parameters {
-      while (reader.nextField()) {
-        const field = reader.getFieldNumber();
-        switch (field) {
-          case 1: {
-            msg.key = reader.readString();
-            break;
-          }
-          case 2: {
-            msg.value = reader.readString();
-            break;
-          }
-          default: {
-            reader.skipField();
-            break;
-          }
-        }
-      }
-      return msg;
-    },
-  },
-
-  Outputs: {
-    /**
-     * @private
-     */
-    _writeMessage: function (
-      msg: PartialDeep<WorkflowStep.Outputs>,
-      writer: protoscript.BinaryWriter,
-    ): protoscript.BinaryWriter {
-      if (msg.key) {
-        writer.writeString(1, msg.key);
-      }
-      if (msg.value) {
-        writer.writeString(2, msg.value);
-      }
-      return writer;
-    },
-
-    /**
-     * @private
-     */
-    _readMessage: function (
-      msg: WorkflowStep.Outputs,
-      reader: protoscript.BinaryReader,
-    ): WorkflowStep.Outputs {
       while (reader.nextField()) {
         const field = reader.getFieldNumber();
         switch (field) {
@@ -1879,7 +1644,6 @@ export const CreateWorkflowRequest = {
       applicationId: "",
       createdBy: "",
       enabled: false,
-      steps: [],
       variables: {},
       onSuccess: "",
       onFailure: "",
@@ -1887,6 +1651,9 @@ export const CreateWorkflowRequest = {
       timeoutSeconds: 0,
       createdByType: "",
       createdByRef: "",
+      stepsJson: "",
+      triggerJson: "",
+      manifestId: "",
       ...msg,
     };
   },
@@ -1912,13 +1679,6 @@ export const CreateWorkflowRequest = {
     }
     if (msg.enabled) {
       writer.writeBool(5, msg.enabled);
-    }
-    if (msg.steps?.length) {
-      writer.writeRepeatedMessage(
-        6,
-        msg.steps as any,
-        WorkflowStep._writeMessage,
-      );
     }
     if (msg.variables) {
       writer.writeRepeatedMessage(
@@ -1947,6 +1707,15 @@ export const CreateWorkflowRequest = {
     }
     if (msg.createdByRef) {
       writer.writeString(13, msg.createdByRef);
+    }
+    if (msg.stepsJson) {
+      writer.writeString(14, msg.stepsJson);
+    }
+    if (msg.triggerJson) {
+      writer.writeString(15, msg.triggerJson);
+    }
+    if (msg.manifestId) {
+      writer.writeString(16, msg.manifestId);
     }
     return writer;
   },
@@ -1981,12 +1750,6 @@ export const CreateWorkflowRequest = {
           msg.enabled = reader.readBool();
           break;
         }
-        case 6: {
-          const m = WorkflowStep.initialize();
-          reader.readMessage(m, WorkflowStep._readMessage);
-          msg.steps.push(m);
-          break;
-        }
         case 7: {
           const map = {} as CreateWorkflowRequest.Variables;
           reader.readMessage(map, CreateWorkflowRequest.Variables._readMessage);
@@ -2015,6 +1778,18 @@ export const CreateWorkflowRequest = {
         }
         case 13: {
           msg.createdByRef = reader.readString();
+          break;
+        }
+        case 14: {
+          msg.stepsJson = reader.readString();
+          break;
+        }
+        case 15: {
+          msg.triggerJson = reader.readString();
+          break;
+        }
+        case 16: {
+          msg.manifestId = reader.readString();
           break;
         }
         default: {
@@ -2247,13 +2022,14 @@ export const UpdateWorkflowRequest = {
       id: "",
       name: "",
       description: "",
-      enabled: false,
-      steps: [],
+      enabled: undefined,
       variables: {},
       onSuccess: "",
       onFailure: "",
       maxRetries: 0,
       timeoutSeconds: 0,
+      stepsJson: "",
+      triggerJson: "",
       ...msg,
     };
   },
@@ -2274,15 +2050,8 @@ export const UpdateWorkflowRequest = {
     if (msg.description) {
       writer.writeString(3, msg.description);
     }
-    if (msg.enabled) {
+    if (msg.enabled != undefined) {
       writer.writeBool(4, msg.enabled);
-    }
-    if (msg.steps?.length) {
-      writer.writeRepeatedMessage(
-        5,
-        msg.steps as any,
-        WorkflowStep._writeMessage,
-      );
     }
     if (msg.variables) {
       writer.writeRepeatedMessage(
@@ -2305,6 +2074,12 @@ export const UpdateWorkflowRequest = {
     }
     if (msg.timeoutSeconds) {
       writer.writeInt32(10, msg.timeoutSeconds);
+    }
+    if (msg.stepsJson) {
+      writer.writeString(11, msg.stepsJson);
+    }
+    if (msg.triggerJson) {
+      writer.writeString(12, msg.triggerJson);
     }
     return writer;
   },
@@ -2335,12 +2110,6 @@ export const UpdateWorkflowRequest = {
           msg.enabled = reader.readBool();
           break;
         }
-        case 5: {
-          const m = WorkflowStep.initialize();
-          reader.readMessage(m, WorkflowStep._readMessage);
-          msg.steps.push(m);
-          break;
-        }
         case 6: {
           const map = {} as UpdateWorkflowRequest.Variables;
           reader.readMessage(map, UpdateWorkflowRequest.Variables._readMessage);
@@ -2361,6 +2130,14 @@ export const UpdateWorkflowRequest = {
         }
         case 10: {
           msg.timeoutSeconds = reader.readInt32();
+          break;
+        }
+        case 11: {
+          msg.stepsJson = reader.readString();
+          break;
+        }
+        case 12: {
+          msg.triggerJson = reader.readString();
           break;
         }
         default: {
@@ -3541,7 +3318,6 @@ export const WorkflowJSON = {
       applicationId: "",
       createdBy: "",
       enabled: false,
-      steps: [],
       variables: {},
       onSuccess: "",
       onFailure: "",
@@ -3551,6 +3327,9 @@ export const WorkflowJSON = {
       updatedAt: protoscript.TimestampJSON.initialize(),
       createdByType: "",
       createdByRef: "",
+      stepsJson: "",
+      triggerJson: "",
+      manifestId: "",
       ...msg,
     };
   },
@@ -3579,9 +3358,6 @@ export const WorkflowJSON = {
     }
     if (msg.enabled) {
       json["enabled"] = msg.enabled;
-    }
-    if (msg.steps?.length) {
-      json["steps"] = msg.steps.map(WorkflowStepJSON._writeMessage);
     }
     if (msg.variables) {
       const _variables_ = Object.fromEntries(
@@ -3618,6 +3394,15 @@ export const WorkflowJSON = {
     if (msg.createdByRef) {
       json["createdByRef"] = msg.createdByRef;
     }
+    if (msg.stepsJson) {
+      json["stepsJson"] = msg.stepsJson;
+    }
+    if (msg.triggerJson) {
+      json["triggerJson"] = msg.triggerJson;
+    }
+    if (msg.manifestId) {
+      json["manifestId"] = msg.manifestId;
+    }
     return json;
   },
 
@@ -3648,14 +3433,6 @@ export const WorkflowJSON = {
     const _enabled_ = json["enabled"];
     if (_enabled_) {
       msg.enabled = _enabled_;
-    }
-    const _steps_ = json["steps"];
-    if (_steps_) {
-      for (const item of _steps_) {
-        const m = WorkflowStepJSON.initialize();
-        WorkflowStepJSON._readMessage(m, item);
-        msg.steps.push(m);
-      }
     }
     const _variables_ = json["variables"];
     if (_variables_) {
@@ -3698,6 +3475,18 @@ export const WorkflowJSON = {
     if (_createdByRef_) {
       msg.createdByRef = _createdByRef_;
     }
+    const _stepsJson_ = json["stepsJson"] ?? json["steps_json"];
+    if (_stepsJson_) {
+      msg.stepsJson = _stepsJson_;
+    }
+    const _triggerJson_ = json["triggerJson"] ?? json["trigger_json"];
+    if (_triggerJson_) {
+      msg.triggerJson = _triggerJson_;
+    }
+    const _manifestId_ = json["manifestId"] ?? json["manifest_id"];
+    if (_manifestId_) {
+      msg.manifestId = _manifestId_;
+    }
     return msg;
   },
 
@@ -3725,237 +3514,6 @@ export const WorkflowJSON = {
       msg: Workflow.Variables,
       json: any,
     ): Workflow.Variables {
-      const _key_ = json["key"];
-      if (_key_) {
-        msg.key = _key_;
-      }
-      const _value_ = json["value"];
-      if (_value_) {
-        msg.value = _value_;
-      }
-      return msg;
-    },
-  },
-};
-
-export const WorkflowStepJSON = {
-  /**
-   * Serializes WorkflowStep to JSON.
-   */
-  encode: function (msg: PartialDeep<WorkflowStep>): string {
-    return JSON.stringify(WorkflowStepJSON._writeMessage(msg));
-  },
-
-  /**
-   * Deserializes WorkflowStep from JSON.
-   */
-  decode: function (json: string): WorkflowStep {
-    return WorkflowStepJSON._readMessage(
-      WorkflowStepJSON.initialize(),
-      JSON.parse(json),
-    );
-  },
-
-  /**
-   * Initializes WorkflowStep with all fields set to their default value.
-   */
-  initialize: function (msg?: Partial<WorkflowStep>): WorkflowStep {
-    return {
-      id: "",
-      name: "",
-      description: "",
-      type: "",
-      parameters: {},
-      onSuccess: "",
-      onFailure: "",
-      timeoutSeconds: 0,
-      retryAttempts: 0,
-      async: false,
-      outputs: {},
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<WorkflowStep>,
-  ): Record<string, unknown> {
-    const json: Record<string, unknown> = {};
-    if (msg.id) {
-      json["id"] = msg.id;
-    }
-    if (msg.name) {
-      json["name"] = msg.name;
-    }
-    if (msg.description) {
-      json["description"] = msg.description;
-    }
-    if (msg.type) {
-      json["type"] = msg.type;
-    }
-    if (msg.parameters) {
-      const _parameters_ = Object.fromEntries(
-        Object.entries(msg.parameters)
-          .map(([key, value]) => ({ key: key as any, value: value as any }))
-          .map(WorkflowStepJSON.Parameters._writeMessage)
-          .map(({ key, value }) => [key, value]),
-      );
-      if (Object.keys(_parameters_).length > 0) {
-        json["parameters"] = _parameters_;
-      }
-    }
-    if (msg.onSuccess) {
-      json["onSuccess"] = msg.onSuccess;
-    }
-    if (msg.onFailure) {
-      json["onFailure"] = msg.onFailure;
-    }
-    if (msg.timeoutSeconds) {
-      json["timeoutSeconds"] = msg.timeoutSeconds;
-    }
-    if (msg.retryAttempts) {
-      json["retryAttempts"] = msg.retryAttempts;
-    }
-    if (msg.async) {
-      json["async"] = msg.async;
-    }
-    if (msg.outputs) {
-      const _outputs_ = Object.fromEntries(
-        Object.entries(msg.outputs)
-          .map(([key, value]) => ({ key: key as any, value: value as any }))
-          .map(WorkflowStepJSON.Outputs._writeMessage)
-          .map(({ key, value }) => [key, value]),
-      );
-      if (Object.keys(_outputs_).length > 0) {
-        json["outputs"] = _outputs_;
-      }
-    }
-    return json;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (msg: WorkflowStep, json: any): WorkflowStep {
-    const _id_ = json["id"];
-    if (_id_) {
-      msg.id = _id_;
-    }
-    const _name_ = json["name"];
-    if (_name_) {
-      msg.name = _name_;
-    }
-    const _description_ = json["description"];
-    if (_description_) {
-      msg.description = _description_;
-    }
-    const _type_ = json["type"];
-    if (_type_) {
-      msg.type = _type_;
-    }
-    const _parameters_ = json["parameters"];
-    if (_parameters_) {
-      msg.parameters = Object.fromEntries(
-        Object.entries(_parameters_)
-          .map(([key, value]) => ({ key: key as any, value: value as any }))
-          .map(WorkflowStepJSON.Parameters._readMessage)
-          .map(({ key, value }) => [key, value]),
-      );
-    }
-    const _onSuccess_ = json["onSuccess"] ?? json["on_success"];
-    if (_onSuccess_) {
-      msg.onSuccess = _onSuccess_;
-    }
-    const _onFailure_ = json["onFailure"] ?? json["on_failure"];
-    if (_onFailure_) {
-      msg.onFailure = _onFailure_;
-    }
-    const _timeoutSeconds_ = json["timeoutSeconds"] ?? json["timeout_seconds"];
-    if (_timeoutSeconds_) {
-      msg.timeoutSeconds = protoscript.parseNumber(_timeoutSeconds_);
-    }
-    const _retryAttempts_ = json["retryAttempts"] ?? json["retry_attempts"];
-    if (_retryAttempts_) {
-      msg.retryAttempts = protoscript.parseNumber(_retryAttempts_);
-    }
-    const _async_ = json["async"];
-    if (_async_) {
-      msg.async = _async_;
-    }
-    const _outputs_ = json["outputs"];
-    if (_outputs_) {
-      msg.outputs = Object.fromEntries(
-        Object.entries(_outputs_)
-          .map(([key, value]) => ({ key: key as any, value: value as any }))
-          .map(WorkflowStepJSON.Outputs._readMessage)
-          .map(({ key, value }) => [key, value]),
-      );
-    }
-    return msg;
-  },
-
-  Parameters: {
-    /**
-     * @private
-     */
-    _writeMessage: function (
-      msg: PartialDeep<WorkflowStep.Parameters>,
-    ): Record<string, unknown> {
-      const json: Record<string, unknown> = {};
-      if (msg.key) {
-        json["key"] = msg.key;
-      }
-      if (msg.value) {
-        json["value"] = msg.value;
-      }
-      return json;
-    },
-
-    /**
-     * @private
-     */
-    _readMessage: function (
-      msg: WorkflowStep.Parameters,
-      json: any,
-    ): WorkflowStep.Parameters {
-      const _key_ = json["key"];
-      if (_key_) {
-        msg.key = _key_;
-      }
-      const _value_ = json["value"];
-      if (_value_) {
-        msg.value = _value_;
-      }
-      return msg;
-    },
-  },
-
-  Outputs: {
-    /**
-     * @private
-     */
-    _writeMessage: function (
-      msg: PartialDeep<WorkflowStep.Outputs>,
-    ): Record<string, unknown> {
-      const json: Record<string, unknown> = {};
-      if (msg.key) {
-        json["key"] = msg.key;
-      }
-      if (msg.value) {
-        json["value"] = msg.value;
-      }
-      return json;
-    },
-
-    /**
-     * @private
-     */
-    _readMessage: function (
-      msg: WorkflowStep.Outputs,
-      json: any,
-    ): WorkflowStep.Outputs {
       const _key_ = json["key"];
       if (_key_) {
         msg.key = _key_;
@@ -4476,7 +4034,6 @@ export const CreateWorkflowRequestJSON = {
       applicationId: "",
       createdBy: "",
       enabled: false,
-      steps: [],
       variables: {},
       onSuccess: "",
       onFailure: "",
@@ -4484,6 +4041,9 @@ export const CreateWorkflowRequestJSON = {
       timeoutSeconds: 0,
       createdByType: "",
       createdByRef: "",
+      stepsJson: "",
+      triggerJson: "",
+      manifestId: "",
       ...msg,
     };
   },
@@ -4509,9 +4069,6 @@ export const CreateWorkflowRequestJSON = {
     }
     if (msg.enabled) {
       json["enabled"] = msg.enabled;
-    }
-    if (msg.steps?.length) {
-      json["steps"] = msg.steps.map(WorkflowStepJSON._writeMessage);
     }
     if (msg.variables) {
       const _variables_ = Object.fromEntries(
@@ -4542,6 +4099,15 @@ export const CreateWorkflowRequestJSON = {
     if (msg.createdByRef) {
       json["createdByRef"] = msg.createdByRef;
     }
+    if (msg.stepsJson) {
+      json["stepsJson"] = msg.stepsJson;
+    }
+    if (msg.triggerJson) {
+      json["triggerJson"] = msg.triggerJson;
+    }
+    if (msg.manifestId) {
+      json["manifestId"] = msg.manifestId;
+    }
     return json;
   },
 
@@ -4571,14 +4137,6 @@ export const CreateWorkflowRequestJSON = {
     const _enabled_ = json["enabled"];
     if (_enabled_) {
       msg.enabled = _enabled_;
-    }
-    const _steps_ = json["steps"];
-    if (_steps_) {
-      for (const item of _steps_) {
-        const m = WorkflowStepJSON.initialize();
-        WorkflowStepJSON._readMessage(m, item);
-        msg.steps.push(m);
-      }
     }
     const _variables_ = json["variables"];
     if (_variables_) {
@@ -4612,6 +4170,18 @@ export const CreateWorkflowRequestJSON = {
     const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
     if (_createdByRef_) {
       msg.createdByRef = _createdByRef_;
+    }
+    const _stepsJson_ = json["stepsJson"] ?? json["steps_json"];
+    if (_stepsJson_) {
+      msg.stepsJson = _stepsJson_;
+    }
+    const _triggerJson_ = json["triggerJson"] ?? json["trigger_json"];
+    if (_triggerJson_) {
+      msg.triggerJson = _triggerJson_;
+    }
+    const _manifestId_ = json["manifestId"] ?? json["manifest_id"];
+    if (_manifestId_) {
+      msg.manifestId = _manifestId_;
     }
     return msg;
   },
@@ -4804,13 +4374,14 @@ export const UpdateWorkflowRequestJSON = {
       id: "",
       name: "",
       description: "",
-      enabled: false,
-      steps: [],
+      enabled: undefined,
       variables: {},
       onSuccess: "",
       onFailure: "",
       maxRetries: 0,
       timeoutSeconds: 0,
+      stepsJson: "",
+      triggerJson: "",
       ...msg,
     };
   },
@@ -4831,11 +4402,8 @@ export const UpdateWorkflowRequestJSON = {
     if (msg.description) {
       json["description"] = msg.description;
     }
-    if (msg.enabled) {
+    if (msg.enabled != undefined) {
       json["enabled"] = msg.enabled;
-    }
-    if (msg.steps?.length) {
-      json["steps"] = msg.steps.map(WorkflowStepJSON._writeMessage);
     }
     if (msg.variables) {
       const _variables_ = Object.fromEntries(
@@ -4859,6 +4427,12 @@ export const UpdateWorkflowRequestJSON = {
     }
     if (msg.timeoutSeconds) {
       json["timeoutSeconds"] = msg.timeoutSeconds;
+    }
+    if (msg.stepsJson) {
+      json["stepsJson"] = msg.stepsJson;
+    }
+    if (msg.triggerJson) {
+      json["triggerJson"] = msg.triggerJson;
     }
     return json;
   },
@@ -4886,14 +4460,6 @@ export const UpdateWorkflowRequestJSON = {
     if (_enabled_) {
       msg.enabled = _enabled_;
     }
-    const _steps_ = json["steps"];
-    if (_steps_) {
-      for (const item of _steps_) {
-        const m = WorkflowStepJSON.initialize();
-        WorkflowStepJSON._readMessage(m, item);
-        msg.steps.push(m);
-      }
-    }
     const _variables_ = json["variables"];
     if (_variables_) {
       msg.variables = Object.fromEntries(
@@ -4918,6 +4484,14 @@ export const UpdateWorkflowRequestJSON = {
     const _timeoutSeconds_ = json["timeoutSeconds"] ?? json["timeout_seconds"];
     if (_timeoutSeconds_) {
       msg.timeoutSeconds = protoscript.parseNumber(_timeoutSeconds_);
+    }
+    const _stepsJson_ = json["stepsJson"] ?? json["steps_json"];
+    if (_stepsJson_) {
+      msg.stepsJson = _stepsJson_;
+    }
+    const _triggerJson_ = json["triggerJson"] ?? json["trigger_json"];
+    if (_triggerJson_) {
+      msg.triggerJson = _triggerJson_;
     }
     return msg;
   },

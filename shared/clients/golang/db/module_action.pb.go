@@ -30,6 +30,17 @@ type Action struct {
 	ParamsSchema  string                 `protobuf:"bytes,7,opt,name=params_schema,json=paramsSchema,proto3" json:"params_schema,omitempty"`
 	CreatedByType string                 `protobuf:"bytes,8,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
 	CreatedByRef  string                 `protobuf:"bytes,9,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
+	// Stable manifest-local identifier for this action declaration
+	// (e.g. "play_alert"). Combined with the moduleId segment of
+	// `created_by_ref` and the literal "action" kind, this forms the
+	// canonical id `{moduleId}:action:{manifest_id}` used by every
+	// reference and ledger row.
+	ManifestId string `protobuf:"bytes,10,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
+	// Engine action handler this action dispatches to (e.g. "function",
+	// "alert"). For built-in non-function actions the handler is the
+	// entire dispatch (`call` is empty); for function-type actions
+	// `call` holds the canonical function id.
+	Type          string `protobuf:"bytes,11,opt,name=type,proto3" json:"type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -113,12 +124,28 @@ func (x *Action) GetCreatedByRef() string {
 	return ""
 }
 
+func (x *Action) GetManifestId() string {
+	if x != nil {
+		return x.ManifestId
+	}
+	return ""
+}
+
+func (x *Action) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
 type ActionInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
 	Call          string                 `protobuf:"bytes,3,opt,name=call,proto3" json:"call,omitempty"`
 	ParamsSchema  string                 `protobuf:"bytes,4,opt,name=params_schema,json=paramsSchema,proto3" json:"params_schema,omitempty"` // JSON string
+	ManifestId    string                 `protobuf:"bytes,5,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
+	Type          string                 `protobuf:"bytes,6,opt,name=type,proto3" json:"type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -177,6 +204,20 @@ func (x *ActionInput) GetCall() string {
 func (x *ActionInput) GetParamsSchema() string {
 	if x != nil {
 		return x.ParamsSchema
+	}
+	return ""
+}
+
+func (x *ActionInput) GetManifestId() string {
+	if x != nil {
+		return x.ManifestId
+	}
+	return ""
+}
+
+func (x *ActionInput) GetType() string {
+	if x != nil {
+		return x.Type
 	}
 	return ""
 }
@@ -377,7 +418,7 @@ var File_module_action_proto protoreflect.FileDescriptor
 
 const file_module_action_proto_rawDesc = "" +
 	"\n" +
-	"\x13module_action.proto\x12\x06module\x1a\fcommon.proto\"\xd5\x01\n" +
+	"\x13module_action.proto\x12\x06module\x1a\fcommon.proto\"\x8a\x02\n" +
 	"\x06Action\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x04 \x01(\tR\x04name\x12 \n" +
@@ -385,12 +426,19 @@ const file_module_action_proto_rawDesc = "" +
 	"\x04call\x18\x06 \x01(\tR\x04call\x12#\n" +
 	"\rparams_schema\x18\a \x01(\tR\fparamsSchema\x12&\n" +
 	"\x0fcreated_by_type\x18\b \x01(\tR\rcreatedByType\x12$\n" +
-	"\x0ecreated_by_ref\x18\t \x01(\tR\fcreatedByRef\"|\n" +
+	"\x0ecreated_by_ref\x18\t \x01(\tR\fcreatedByRef\x12\x1f\n" +
+	"\vmanifest_id\x18\n" +
+	" \x01(\tR\n" +
+	"manifestId\x12\x12\n" +
+	"\x04type\x18\v \x01(\tR\x04type\"\xb1\x01\n" +
 	"\vActionInput\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x12\n" +
 	"\x04call\x18\x03 \x01(\tR\x04call\x12#\n" +
-	"\rparams_schema\x18\x04 \x01(\tR\fparamsSchema\"\xef\x01\n" +
+	"\rparams_schema\x18\x04 \x01(\tR\fparamsSchema\x12\x1f\n" +
+	"\vmanifest_id\x18\x05 \x01(\tR\n" +
+	"manifestId\x12\x12\n" +
+	"\x04type\x18\x06 \x01(\tR\x04type\"\xef\x01\n" +
 	"\x16RegisterActionsRequest\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +

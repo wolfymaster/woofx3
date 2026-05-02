@@ -25,6 +25,7 @@ export interface Setting {
   value: protoscript.Value;
   valueType: string;
   applicationId: string;
+  userId: string;
   createdAt: protoscript.Timestamp;
   updatedAt: protoscript.Timestamp;
 }
@@ -68,6 +69,7 @@ export interface SetSettingRequest {
   key: string;
   value: protoscript.Value;
   applicationId: string;
+  userId: string;
 }
 
 /**
@@ -457,6 +459,7 @@ export const Setting = {
       value: protoscript.Value.initialize(),
       valueType: "",
       applicationId: "",
+      userId: "",
       createdAt: protoscript.Timestamp.initialize(),
       updatedAt: protoscript.Timestamp.initialize(),
       ...msg,
@@ -484,6 +487,9 @@ export const Setting = {
     }
     if (msg.applicationId) {
       writer.writeString(5, msg.applicationId);
+    }
+    if (msg.userId) {
+      writer.writeString(6, msg.userId);
     }
     if (msg.createdAt) {
       writer.writeMessage(
@@ -530,6 +536,10 @@ export const Setting = {
         }
         case 5: {
           msg.applicationId = reader.readString();
+          break;
+        }
+        case 6: {
+          msg.userId = reader.readString();
           break;
         }
         case 14: {
@@ -891,6 +901,7 @@ export const SetSettingRequest = {
       key: "",
       value: protoscript.Value.initialize(),
       applicationId: "",
+      userId: "",
       ...msg,
     };
   },
@@ -910,6 +921,9 @@ export const SetSettingRequest = {
     }
     if (msg.applicationId) {
       writer.writeString(4, msg.applicationId);
+    }
+    if (msg.userId) {
+      writer.writeString(5, msg.userId);
     }
     return writer;
   },
@@ -934,6 +948,10 @@ export const SetSettingRequest = {
         }
         case 4: {
           msg.applicationId = reader.readString();
+          break;
+        }
+        case 5: {
+          msg.userId = reader.readString();
           break;
         }
         default: {
@@ -1509,6 +1527,7 @@ export const SettingJSON = {
       value: protoscript.ValueJSON.initialize(),
       valueType: "",
       applicationId: "",
+      userId: "",
       createdAt: protoscript.TimestampJSON.initialize(),
       updatedAt: protoscript.TimestampJSON.initialize(),
       ...msg,
@@ -1537,6 +1556,9 @@ export const SettingJSON = {
     }
     if (msg.applicationId) {
       json["applicationId"] = msg.applicationId;
+    }
+    if (msg.userId) {
+      json["userId"] = msg.userId;
     }
     if (msg.createdAt && (msg.createdAt.seconds || msg.createdAt.nanos)) {
       json["createdAt"] = protoscript.serializeTimestamp(msg.createdAt);
@@ -1570,6 +1592,10 @@ export const SettingJSON = {
     const _applicationId_ = json["applicationId"] ?? json["application_id"];
     if (_applicationId_) {
       msg.applicationId = _applicationId_;
+    }
+    const _userId_ = json["userId"] ?? json["user_id"];
+    if (_userId_) {
+      msg.userId = _userId_;
     }
     const _createdAt_ = json["createdAt"] ?? json["created_at"];
     if (_createdAt_) {
@@ -1877,6 +1903,7 @@ export const SetSettingRequestJSON = {
       key: "",
       value: protoscript.ValueJSON.initialize(),
       applicationId: "",
+      userId: "",
       ...msg,
     };
   },
@@ -1900,6 +1927,9 @@ export const SetSettingRequestJSON = {
     if (msg.applicationId) {
       json["applicationId"] = msg.applicationId;
     }
+    if (msg.userId) {
+      json["userId"] = msg.userId;
+    }
     return json;
   },
 
@@ -1921,6 +1951,10 @@ export const SetSettingRequestJSON = {
     const _applicationId_ = json["applicationId"] ?? json["application_id"];
     if (_applicationId_) {
       msg.applicationId = _applicationId_;
+    }
+    const _userId_ = json["userId"] ?? json["user_id"];
+    if (_userId_) {
+      msg.userId = _userId_;
     }
     return msg;
   },

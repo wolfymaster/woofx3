@@ -37,11 +37,22 @@ export interface Module {
 export interface ModuleFunction {
   id: string;
   moduleId: string;
-  functionName: string;
+  /**
+   * Stable manifest-local function id (e.g. "play_alert"). Forms the
+   * canonical id `{moduleId}:function:{manifest_id}` together with the
+   * parent module's first module_key segment.
+   */
+  manifestId: string;
   fileName: string;
   fileKey: string;
   entryPoint: string;
   runtime: string;
+  /**
+   * Display name for UI presentation. Distinct from the identifier
+   * (`manifest_id`) — display can drift across versions without
+   * changing the canonical id.
+   */
+  name: string;
 }
 
 export interface CreateModuleRequest {
@@ -56,11 +67,12 @@ export interface CreateModuleRequest {
 }
 
 export interface CreateModuleFunctionRequest {
-  functionName: string;
+  manifestId: string;
   fileName: string;
   fileKey: string;
   entryPoint: string;
   runtime: string;
+  name: string;
 }
 
 export interface UpdateModuleRequest {
@@ -127,12 +139,20 @@ export interface UsageRef {
 
 /**
  * ResourceUsage groups all sources that reference a single target resource.
+ *
+ * `resource_name` is the canonical id (`{moduleId}:{kind}:{manifestId}`) —
+ * stable identity, not human-friendly. `resource_display_name` is the
+ * underlying row's `name` column resolved at check time (e.g. "Channel
+ * Cheer" for `triggers.name`); empty when no row could be resolved
+ * (legacy / cross-module / deleted target). UI shows the display name
+ * and keeps the canonical id for tooltips / debugging.
  */
 export interface ResourceUsage {
   resourceId: string;
   resourceType: string;
   resourceName: string;
   usedBy: UsageRef[];
+  resourceDisplayName: string;
 }
 
 export interface CheckModuleResourceUsageRequest {
@@ -156,6 +176,25 @@ export interface CompleteModuleDeleteRequest {
 
 export interface DeleteByModuleIdRequest {
   moduleId: string;
+}
+
+/**
+ * Lookup by canonical id (`{moduleId}:{kind}:{manifest_id}`). Used by
+ * barkloader's install path to resolve cross-module references before
+ * baking the workflow JSON.
+ */
+export interface GetByCanonicalIdRequest {
+  canonicalId: string;
+}
+
+export interface TriggerResponse {
+  status: common.ResponseStatus;
+  trigger: module_trigger.Trigger;
+}
+
+export interface ActionResponse {
+  status: common.ResponseStatus;
+  action: module_action.Action;
 }
 
 //========================================//
@@ -282,6 +321,18 @@ export async function ListTriggers(
   return module_trigger.ListTriggersResponse.decode(response);
 }
 
+export async function GetTriggerByCanonicalId(
+  getByCanonicalIdRequest: GetByCanonicalIdRequest,
+  config?: ClientConfiguration,
+): Promise<TriggerResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/GetTriggerByCanonicalId",
+    GetByCanonicalIdRequest.encode(getByCanonicalIdRequest),
+    config,
+  );
+  return TriggerResponse.decode(response);
+}
+
 export async function DeleteTriggersByModuleId(
   deleteByModuleIdRequest: DeleteByModuleIdRequest,
   config?: ClientConfiguration,
@@ -316,6 +367,18 @@ export async function ListActions(
     config,
   );
   return module_action.ListActionsResponse.decode(response);
+}
+
+export async function GetActionByCanonicalId(
+  getByCanonicalIdRequest: GetByCanonicalIdRequest,
+  config?: ClientConfiguration,
+): Promise<ActionResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/GetActionByCanonicalId",
+    GetByCanonicalIdRequest.encode(getByCanonicalIdRequest),
+    config,
+  );
+  return ActionResponse.decode(response);
 }
 
 export async function DeleteActionsByModuleId(
@@ -546,6 +609,18 @@ export async function ListTriggersJSON(
   return module_trigger.ListTriggersResponseJSON.decode(response);
 }
 
+export async function GetTriggerByCanonicalIdJSON(
+  getByCanonicalIdRequest: GetByCanonicalIdRequest,
+  config?: ClientConfiguration,
+): Promise<TriggerResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/GetTriggerByCanonicalId",
+    GetByCanonicalIdRequestJSON.encode(getByCanonicalIdRequest),
+    config,
+  );
+  return TriggerResponseJSON.decode(response);
+}
+
 export async function DeleteTriggersByModuleIdJSON(
   deleteByModuleIdRequest: DeleteByModuleIdRequest,
   config?: ClientConfiguration,
@@ -580,6 +655,18 @@ export async function ListActionsJSON(
     config,
   );
   return module_action.ListActionsResponseJSON.decode(response);
+}
+
+export async function GetActionByCanonicalIdJSON(
+  getByCanonicalIdRequest: GetByCanonicalIdRequest,
+  config?: ClientConfiguration,
+): Promise<ActionResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/GetActionByCanonicalId",
+    GetByCanonicalIdRequestJSON.encode(getByCanonicalIdRequest),
+    config,
+  );
+  return ActionResponseJSON.decode(response);
 }
 
 export async function DeleteActionsByModuleIdJSON(
@@ -735,6 +822,10 @@ export interface ModuleService<Context = unknown> {
   ) =>
     | Promise<module_trigger.ListTriggersResponse>
     | module_trigger.ListTriggersResponse;
+  GetTriggerByCanonicalId: (
+    getByCanonicalIdRequest: GetByCanonicalIdRequest,
+    context: Context,
+  ) => Promise<TriggerResponse> | TriggerResponse;
   DeleteTriggersByModuleId: (
     deleteByModuleIdRequest: DeleteByModuleIdRequest,
     context: Context,
@@ -751,6 +842,10 @@ export interface ModuleService<Context = unknown> {
   ) =>
     | Promise<module_action.ListActionsResponse>
     | module_action.ListActionsResponse;
+  GetActionByCanonicalId: (
+    getByCanonicalIdRequest: GetByCanonicalIdRequest,
+    context: Context,
+  ) => Promise<ActionResponse> | ActionResponse;
   DeleteActionsByModuleId: (
     deleteByModuleIdRequest: DeleteByModuleIdRequest,
     context: Context,
@@ -884,6 +979,15 @@ export function createModuleService<Context>(service: ModuleService<Context>) {
           json: module_trigger.ListTriggersResponseJSON,
         },
       },
+      GetTriggerByCanonicalId: {
+        name: "GetTriggerByCanonicalId",
+        handler: service.GetTriggerByCanonicalId,
+        input: {
+          protobuf: GetByCanonicalIdRequest,
+          json: GetByCanonicalIdRequestJSON,
+        },
+        output: { protobuf: TriggerResponse, json: TriggerResponseJSON },
+      },
       DeleteTriggersByModuleId: {
         name: "DeleteTriggersByModuleId",
         handler: service.DeleteTriggersByModuleId,
@@ -919,6 +1023,15 @@ export function createModuleService<Context>(service: ModuleService<Context>) {
           protobuf: module_action.ListActionsResponse,
           json: module_action.ListActionsResponseJSON,
         },
+      },
+      GetActionByCanonicalId: {
+        name: "GetActionByCanonicalId",
+        handler: service.GetActionByCanonicalId,
+        input: {
+          protobuf: GetByCanonicalIdRequest,
+          json: GetByCanonicalIdRequestJSON,
+        },
+        output: { protobuf: ActionResponse, json: ActionResponseJSON },
       },
       DeleteActionsByModuleId: {
         name: "DeleteActionsByModuleId",
@@ -1225,11 +1338,12 @@ export const ModuleFunction = {
     return {
       id: "",
       moduleId: "",
-      functionName: "",
+      manifestId: "",
       fileName: "",
       fileKey: "",
       entryPoint: "",
       runtime: "",
+      name: "",
       ...msg,
     };
   },
@@ -1247,8 +1361,8 @@ export const ModuleFunction = {
     if (msg.moduleId) {
       writer.writeString(2, msg.moduleId);
     }
-    if (msg.functionName) {
-      writer.writeString(3, msg.functionName);
+    if (msg.manifestId) {
+      writer.writeString(3, msg.manifestId);
     }
     if (msg.fileName) {
       writer.writeString(4, msg.fileName);
@@ -1261,6 +1375,9 @@ export const ModuleFunction = {
     }
     if (msg.runtime) {
       writer.writeString(7, msg.runtime);
+    }
+    if (msg.name) {
+      writer.writeString(8, msg.name);
     }
     return writer;
   },
@@ -1284,7 +1401,7 @@ export const ModuleFunction = {
           break;
         }
         case 3: {
-          msg.functionName = reader.readString();
+          msg.manifestId = reader.readString();
           break;
         }
         case 4: {
@@ -1301,6 +1418,10 @@ export const ModuleFunction = {
         }
         case 7: {
           msg.runtime = reader.readString();
+          break;
+        }
+        case 8: {
+          msg.name = reader.readString();
           break;
         }
         default: {
@@ -1473,11 +1594,12 @@ export const CreateModuleFunctionRequest = {
     msg?: Partial<CreateModuleFunctionRequest>,
   ): CreateModuleFunctionRequest {
     return {
-      functionName: "",
+      manifestId: "",
       fileName: "",
       fileKey: "",
       entryPoint: "",
       runtime: "",
+      name: "",
       ...msg,
     };
   },
@@ -1489,8 +1611,8 @@ export const CreateModuleFunctionRequest = {
     msg: PartialDeep<CreateModuleFunctionRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.functionName) {
-      writer.writeString(1, msg.functionName);
+    if (msg.manifestId) {
+      writer.writeString(1, msg.manifestId);
     }
     if (msg.fileName) {
       writer.writeString(2, msg.fileName);
@@ -1503,6 +1625,9 @@ export const CreateModuleFunctionRequest = {
     }
     if (msg.runtime) {
       writer.writeString(5, msg.runtime);
+    }
+    if (msg.name) {
+      writer.writeString(6, msg.name);
     }
     return writer;
   },
@@ -1518,7 +1643,7 @@ export const CreateModuleFunctionRequest = {
       const field = reader.getFieldNumber();
       switch (field) {
         case 1: {
-          msg.functionName = reader.readString();
+          msg.manifestId = reader.readString();
           break;
         }
         case 2: {
@@ -1535,6 +1660,10 @@ export const CreateModuleFunctionRequest = {
         }
         case 5: {
           msg.runtime = reader.readString();
+          break;
+        }
+        case 6: {
+          msg.name = reader.readString();
           break;
         }
         default: {
@@ -2476,6 +2605,7 @@ export const ResourceUsage = {
       resourceType: "",
       resourceName: "",
       usedBy: [],
+      resourceDisplayName: "",
       ...msg,
     };
   },
@@ -2498,6 +2628,9 @@ export const ResourceUsage = {
     }
     if (msg.usedBy?.length) {
       writer.writeRepeatedMessage(4, msg.usedBy as any, UsageRef._writeMessage);
+    }
+    if (msg.resourceDisplayName) {
+      writer.writeString(5, msg.resourceDisplayName);
     }
     return writer;
   },
@@ -2528,6 +2661,10 @@ export const ResourceUsage = {
           const m = UsageRef.initialize();
           reader.readMessage(m, UsageRef._readMessage);
           msg.usedBy.push(m);
+          break;
+        }
+        case 5: {
+          msg.resourceDisplayName = reader.readString();
           break;
         }
         default: {
@@ -2899,6 +3036,228 @@ export const DeleteByModuleIdRequest = {
   },
 };
 
+export const GetByCanonicalIdRequest = {
+  /**
+   * Serializes GetByCanonicalIdRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<GetByCanonicalIdRequest>): Uint8Array {
+    return GetByCanonicalIdRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes GetByCanonicalIdRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): GetByCanonicalIdRequest {
+    return GetByCanonicalIdRequest._readMessage(
+      GetByCanonicalIdRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes GetByCanonicalIdRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetByCanonicalIdRequest>,
+  ): GetByCanonicalIdRequest {
+    return {
+      canonicalId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetByCanonicalIdRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.canonicalId) {
+      writer.writeString(1, msg.canonicalId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetByCanonicalIdRequest,
+    reader: protoscript.BinaryReader,
+  ): GetByCanonicalIdRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.canonicalId = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const TriggerResponse = {
+  /**
+   * Serializes TriggerResponse to protobuf.
+   */
+  encode: function (msg: PartialDeep<TriggerResponse>): Uint8Array {
+    return TriggerResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes TriggerResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): TriggerResponse {
+    return TriggerResponse._readMessage(
+      TriggerResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes TriggerResponse with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<TriggerResponse>): TriggerResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      trigger: module_trigger.Trigger.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<TriggerResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.trigger) {
+      writer.writeMessage(2, msg.trigger, module_trigger.Trigger._writeMessage);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: TriggerResponse,
+    reader: protoscript.BinaryReader,
+  ): TriggerResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          reader.readMessage(msg.trigger, module_trigger.Trigger._readMessage);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ActionResponse = {
+  /**
+   * Serializes ActionResponse to protobuf.
+   */
+  encode: function (msg: PartialDeep<ActionResponse>): Uint8Array {
+    return ActionResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ActionResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): ActionResponse {
+    return ActionResponse._readMessage(
+      ActionResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ActionResponse with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<ActionResponse>): ActionResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      action: module_action.Action.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ActionResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.action) {
+      writer.writeMessage(2, msg.action, module_action.Action._writeMessage);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ActionResponse,
+    reader: protoscript.BinaryReader,
+  ): ActionResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          reader.readMessage(msg.action, module_action.Action._readMessage);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -3068,11 +3427,12 @@ export const ModuleFunctionJSON = {
     return {
       id: "",
       moduleId: "",
-      functionName: "",
+      manifestId: "",
       fileName: "",
       fileKey: "",
       entryPoint: "",
       runtime: "",
+      name: "",
       ...msg,
     };
   },
@@ -3090,8 +3450,8 @@ export const ModuleFunctionJSON = {
     if (msg.moduleId) {
       json["moduleId"] = msg.moduleId;
     }
-    if (msg.functionName) {
-      json["functionName"] = msg.functionName;
+    if (msg.manifestId) {
+      json["manifestId"] = msg.manifestId;
     }
     if (msg.fileName) {
       json["fileName"] = msg.fileName;
@@ -3104,6 +3464,9 @@ export const ModuleFunctionJSON = {
     }
     if (msg.runtime) {
       json["runtime"] = msg.runtime;
+    }
+    if (msg.name) {
+      json["name"] = msg.name;
     }
     return json;
   },
@@ -3120,9 +3483,9 @@ export const ModuleFunctionJSON = {
     if (_moduleId_) {
       msg.moduleId = _moduleId_;
     }
-    const _functionName_ = json["functionName"] ?? json["function_name"];
-    if (_functionName_) {
-      msg.functionName = _functionName_;
+    const _manifestId_ = json["manifestId"] ?? json["manifest_id"];
+    if (_manifestId_) {
+      msg.manifestId = _manifestId_;
     }
     const _fileName_ = json["fileName"] ?? json["file_name"];
     if (_fileName_) {
@@ -3139,6 +3502,10 @@ export const ModuleFunctionJSON = {
     const _runtime_ = json["runtime"];
     if (_runtime_) {
       msg.runtime = _runtime_;
+    }
+    const _name_ = json["name"];
+    if (_name_) {
+      msg.name = _name_;
     }
     return msg;
   },
@@ -3289,11 +3656,12 @@ export const CreateModuleFunctionRequestJSON = {
     msg?: Partial<CreateModuleFunctionRequest>,
   ): CreateModuleFunctionRequest {
     return {
-      functionName: "",
+      manifestId: "",
       fileName: "",
       fileKey: "",
       entryPoint: "",
       runtime: "",
+      name: "",
       ...msg,
     };
   },
@@ -3305,8 +3673,8 @@ export const CreateModuleFunctionRequestJSON = {
     msg: PartialDeep<CreateModuleFunctionRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.functionName) {
-      json["functionName"] = msg.functionName;
+    if (msg.manifestId) {
+      json["manifestId"] = msg.manifestId;
     }
     if (msg.fileName) {
       json["fileName"] = msg.fileName;
@@ -3320,6 +3688,9 @@ export const CreateModuleFunctionRequestJSON = {
     if (msg.runtime) {
       json["runtime"] = msg.runtime;
     }
+    if (msg.name) {
+      json["name"] = msg.name;
+    }
     return json;
   },
 
@@ -3330,9 +3701,9 @@ export const CreateModuleFunctionRequestJSON = {
     msg: CreateModuleFunctionRequest,
     json: any,
   ): CreateModuleFunctionRequest {
-    const _functionName_ = json["functionName"] ?? json["function_name"];
-    if (_functionName_) {
-      msg.functionName = _functionName_;
+    const _manifestId_ = json["manifestId"] ?? json["manifest_id"];
+    if (_manifestId_) {
+      msg.manifestId = _manifestId_;
     }
     const _fileName_ = json["fileName"] ?? json["file_name"];
     if (_fileName_) {
@@ -3349,6 +3720,10 @@ export const CreateModuleFunctionRequestJSON = {
     const _runtime_ = json["runtime"];
     if (_runtime_) {
       msg.runtime = _runtime_;
+    }
+    const _name_ = json["name"];
+    if (_name_) {
+      msg.name = _name_;
     }
     return msg;
   },
@@ -4149,6 +4524,7 @@ export const ResourceUsageJSON = {
       resourceType: "",
       resourceName: "",
       usedBy: [],
+      resourceDisplayName: "",
       ...msg,
     };
   },
@@ -4171,6 +4547,9 @@ export const ResourceUsageJSON = {
     }
     if (msg.usedBy?.length) {
       json["usedBy"] = msg.usedBy.map(UsageRefJSON._writeMessage);
+    }
+    if (msg.resourceDisplayName) {
+      json["resourceDisplayName"] = msg.resourceDisplayName;
     }
     return json;
   },
@@ -4198,6 +4577,11 @@ export const ResourceUsageJSON = {
         UsageRefJSON._readMessage(m, item);
         msg.usedBy.push(m);
       }
+    }
+    const _resourceDisplayName_ =
+      json["resourceDisplayName"] ?? json["resource_display_name"];
+    if (_resourceDisplayName_) {
+      msg.resourceDisplayName = _resourceDisplayName_;
     }
     return msg;
   },
@@ -4513,6 +4897,198 @@ export const DeleteByModuleIdRequestJSON = {
     const _moduleId_ = json["moduleId"] ?? json["module_id"];
     if (_moduleId_) {
       msg.moduleId = _moduleId_;
+    }
+    return msg;
+  },
+};
+
+export const GetByCanonicalIdRequestJSON = {
+  /**
+   * Serializes GetByCanonicalIdRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<GetByCanonicalIdRequest>): string {
+    return JSON.stringify(GetByCanonicalIdRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes GetByCanonicalIdRequest from JSON.
+   */
+  decode: function (json: string): GetByCanonicalIdRequest {
+    return GetByCanonicalIdRequestJSON._readMessage(
+      GetByCanonicalIdRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes GetByCanonicalIdRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetByCanonicalIdRequest>,
+  ): GetByCanonicalIdRequest {
+    return {
+      canonicalId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetByCanonicalIdRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.canonicalId) {
+      json["canonicalId"] = msg.canonicalId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetByCanonicalIdRequest,
+    json: any,
+  ): GetByCanonicalIdRequest {
+    const _canonicalId_ = json["canonicalId"] ?? json["canonical_id"];
+    if (_canonicalId_) {
+      msg.canonicalId = _canonicalId_;
+    }
+    return msg;
+  },
+};
+
+export const TriggerResponseJSON = {
+  /**
+   * Serializes TriggerResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<TriggerResponse>): string {
+    return JSON.stringify(TriggerResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes TriggerResponse from JSON.
+   */
+  decode: function (json: string): TriggerResponse {
+    return TriggerResponseJSON._readMessage(
+      TriggerResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes TriggerResponse with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<TriggerResponse>): TriggerResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      trigger: module_trigger.TriggerJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<TriggerResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.trigger) {
+      const _trigger_ = module_trigger.TriggerJSON._writeMessage(msg.trigger);
+      if (Object.keys(_trigger_).length > 0) {
+        json["trigger"] = _trigger_;
+      }
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (msg: TriggerResponse, json: any): TriggerResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _trigger_ = json["trigger"];
+    if (_trigger_) {
+      module_trigger.TriggerJSON._readMessage(msg.trigger, _trigger_);
+    }
+    return msg;
+  },
+};
+
+export const ActionResponseJSON = {
+  /**
+   * Serializes ActionResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<ActionResponse>): string {
+    return JSON.stringify(ActionResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ActionResponse from JSON.
+   */
+  decode: function (json: string): ActionResponse {
+    return ActionResponseJSON._readMessage(
+      ActionResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ActionResponse with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<ActionResponse>): ActionResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      action: module_action.ActionJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ActionResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.action) {
+      const _action_ = module_action.ActionJSON._writeMessage(msg.action);
+      if (Object.keys(_action_).length > 0) {
+        json["action"] = _action_;
+      }
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (msg: ActionResponse, json: any): ActionResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _action_ = json["action"];
+    if (_action_) {
+      module_action.ActionJSON._readMessage(msg.action, _action_);
     }
     return msg;
   },

@@ -19,6 +19,21 @@ export interface Action {
   paramsSchema: string;
   createdByType: string;
   createdByRef: string;
+  /**
+   * Stable manifest-local identifier for this action declaration
+   * (e.g. "play_alert"). Combined with the moduleId segment of
+   * `created_by_ref` and the literal "action" kind, this forms the
+   * canonical id `{moduleId}:action:{manifest_id}` used by every
+   * reference and ledger row.
+   */
+  manifestId: string;
+  /**
+   * Engine action handler this action dispatches to (e.g. "function",
+   * "alert"). For built-in non-function actions the handler is the
+   * entire dispatch (`call` is empty); for function-type actions
+   * `call` holds the canonical function id.
+   */
+  type: string;
 }
 
 export interface ActionInput {
@@ -26,6 +41,8 @@ export interface ActionInput {
   description: string;
   call: string;
   paramsSchema: string;
+  manifestId: string;
+  type: string;
 }
 
 export interface RegisterActionsRequest {
@@ -90,6 +107,8 @@ export const Action = {
       paramsSchema: "",
       createdByType: "",
       createdByRef: "",
+      manifestId: "",
+      type: "",
       ...msg,
     };
   },
@@ -121,6 +140,12 @@ export const Action = {
     }
     if (msg.createdByRef) {
       writer.writeString(9, msg.createdByRef);
+    }
+    if (msg.manifestId) {
+      writer.writeString(10, msg.manifestId);
+    }
+    if (msg.type) {
+      writer.writeString(11, msg.type);
     }
     return writer;
   },
@@ -163,6 +188,14 @@ export const Action = {
           msg.createdByRef = reader.readString();
           break;
         }
+        case 10: {
+          msg.manifestId = reader.readString();
+          break;
+        }
+        case 11: {
+          msg.type = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -203,6 +236,8 @@ export const ActionInput = {
       description: "",
       call: "",
       paramsSchema: "",
+      manifestId: "",
+      type: "",
       ...msg,
     };
   },
@@ -225,6 +260,12 @@ export const ActionInput = {
     }
     if (msg.paramsSchema) {
       writer.writeString(4, msg.paramsSchema);
+    }
+    if (msg.manifestId) {
+      writer.writeString(5, msg.manifestId);
+    }
+    if (msg.type) {
+      writer.writeString(6, msg.type);
     }
     return writer;
   },
@@ -253,6 +294,14 @@ export const ActionInput = {
         }
         case 4: {
           msg.paramsSchema = reader.readString();
+          break;
+        }
+        case 5: {
+          msg.manifestId = reader.readString();
+          break;
+        }
+        case 6: {
+          msg.type = reader.readString();
           break;
         }
         default: {
@@ -568,6 +617,8 @@ export const ActionJSON = {
       paramsSchema: "",
       createdByType: "",
       createdByRef: "",
+      manifestId: "",
+      type: "",
       ...msg,
     };
   },
@@ -597,6 +648,12 @@ export const ActionJSON = {
     }
     if (msg.createdByRef) {
       json["createdByRef"] = msg.createdByRef;
+    }
+    if (msg.manifestId) {
+      json["manifestId"] = msg.manifestId;
+    }
+    if (msg.type) {
+      json["type"] = msg.type;
     }
     return json;
   },
@@ -633,6 +690,14 @@ export const ActionJSON = {
     if (_createdByRef_) {
       msg.createdByRef = _createdByRef_;
     }
+    const _manifestId_ = json["manifestId"] ?? json["manifest_id"];
+    if (_manifestId_) {
+      msg.manifestId = _manifestId_;
+    }
+    const _type_ = json["type"];
+    if (_type_) {
+      msg.type = _type_;
+    }
     return msg;
   },
 };
@@ -664,6 +729,8 @@ export const ActionInputJSON = {
       description: "",
       call: "",
       paramsSchema: "",
+      manifestId: "",
+      type: "",
       ...msg,
     };
   },
@@ -687,6 +754,12 @@ export const ActionInputJSON = {
     if (msg.paramsSchema) {
       json["paramsSchema"] = msg.paramsSchema;
     }
+    if (msg.manifestId) {
+      json["manifestId"] = msg.manifestId;
+    }
+    if (msg.type) {
+      json["type"] = msg.type;
+    }
     return json;
   },
 
@@ -709,6 +782,14 @@ export const ActionInputJSON = {
     const _paramsSchema_ = json["paramsSchema"] ?? json["params_schema"];
     if (_paramsSchema_) {
       msg.paramsSchema = _paramsSchema_;
+    }
+    const _manifestId_ = json["manifestId"] ?? json["manifest_id"];
+    if (_manifestId_) {
+      msg.manifestId = _manifestId_;
+    }
+    const _type_ = json["type"];
+    if (_type_) {
+      msg.type = _type_;
     }
     return msg;
   },
