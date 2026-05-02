@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  background-color: rgba(0, 0, 0, 0);
+}
+
+#alertBox {
+  display: flex;
+  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  flex: 1;
+  min-height: 100%;
+}
+
+#alertBox.fullscreen {
+  width: 100%;
+  height: auto;
+  background-color: rgba(0, 0, 0, 0);
+}
+
+#alertBox.positionAbsolute {
+  position: absolute;
+  top: 0;
+}
+
+.transparentBlack {
+  mix-blend-mode: screen;
+}
