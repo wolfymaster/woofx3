@@ -1,10 +1,16 @@
 import type { Service } from "@woofx3/common/runtime";
-import TwitchClient, { type ChatClient, type GetSettingFn, type TwitchAuthCredentials } from "@woofx3/twitch";
+import TwitchClient, {
+  type ChatClient,
+  type GetSettingFn,
+  type SetSettingFn,
+  type TwitchAuthCredentials,
+} from "@woofx3/twitch";
 
 export interface TwitchChatConfig {
   channel: string;
   credentials: TwitchAuthCredentials;
   getSetting: GetSettingFn;
+  setSetting?: SetSettingFn;
 }
 
 export default class TwitchChatClientService implements Service<ChatClient> {
@@ -31,6 +37,7 @@ export default class TwitchChatClientService implements Service<ChatClient> {
     const twitchClient = new TwitchClient({
       channel: this.config.channel,
       getSetting: this.config.getSetting,
+      setSetting: this.config.setSetting,
     });
 
     await twitchClient.init(this.config.credentials);
@@ -48,5 +55,17 @@ export default class TwitchChatClientService implements Service<ChatClient> {
     this.client.quit();
     this.connected = false;
     this.healthcheck = false;
+  }
+
+  /**
+   * Reload the chat client by tearing down the current connection and
+   * reconnecting with a freshly-read `twitch_token` setting. Triggered
+   * by the `setting.integration.token.updated` NATS event so a UI-side
+   * Twitch reconnect (which writes a new token + new scopes to engine
+   * settings) takes effect without restarting woofwoofwoof.
+   */
+  async reload(): Promise<void> {
+    await this.disconnect();
+    await this.connect();
   }
 }

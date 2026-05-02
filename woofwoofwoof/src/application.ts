@@ -1,5 +1,11 @@
 import type { BarkloaderMessageResponse } from "@woofx3/barkloader";
 import { EventType as ChatEventType, type SendMessageMessage } from "@woofx3/common/cloudevents/Chat";
+import {
+  type CommandCreatedMessage,
+  type CommandDeletedMessage,
+  EventType as CommandEventType,
+  type CommandUpdatedMessage,
+} from "@woofx3/common/cloudevents/Command";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import { type ChatMessageMessage, EventType } from "@woofx3/common/cloudevents/Twitch";
 import type { ApplicationContext } from "@woofx3/common/runtime";
@@ -36,6 +42,10 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
   readonly context: WoofWoofWoofContext;
   // Type marker for final context - used only for type inference, never accessed at runtime
   readonly __finalContextType!: WoofWoofWoofContext;
+  // Mirror of the engine's command rows keyed by engine id. The id-keyed map
+  // is needed for `command.deleted` events, which only carry the id — we
+  // look up the command name to remove from the in-memory commander.
+  private commandsByEngineId = new Map<string, Command>();
 
   constructor() {
     this.context = {
@@ -104,6 +114,64 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       await ctx.commander.send(text);
     });
 
+    // Reload the Twitch chat client when the engine reports that an
+    // integration token was updated. Triggered by the UI's Settings →
+    // Integrations Connect / Disconnect flow — without this, our
+    // in-memory RefreshingAuthProvider keeps using the pre-reconnect
+    // token (and pre-reconnect scopes) until woofwoofwoof restarts.
+    ctx.services.messageBus.client.subscribe("setting.integration.token.updated", async (msg: Msg) => {
+      const payload = msg.json<{ data?: { integration?: string } }>();
+      const integration = payload?.data?.integration;
+      if (integration !== "twitch") {
+        return;
+      }
+      ctx.logger.info("setting.integration.token.updated received — reloading twitch chat", {
+        integration,
+      });
+      try {
+        await ctx.services.twitchChat.reload();
+      } catch (err) {
+        ctx.logger.error("twitch chat reload failed", { err });
+      }
+    });
+
+    // Hot-reload of chat commands: the engine emits these from Api.create/
+    // update/deleteCommand, so user CRUD in woofx3-ui takes effect without
+    // restarting woofwoofwoof. The events carry CommandSnapshot (created/
+    // updated) or just the engine id (deleted).
+    ctx.services.messageBus.client.subscribe(CommandEventType.Created, async (msg: Msg) => {
+      const payload = msg.json<CommandCreatedMessage>();
+      const snapshot = payload?.data?.command;
+      if (!snapshot) {
+        return;
+      }
+      this.applyCommand(ctx, snapshotToCommand(snapshot));
+    });
+
+    ctx.services.messageBus.client.subscribe(CommandEventType.Updated, async (msg: Msg) => {
+      const payload = msg.json<CommandUpdatedMessage>();
+      const snapshot = payload?.data?.command;
+      if (!snapshot) {
+        return;
+      }
+      // If the command name changed, drop the old entry from the commander
+      // first so we don't leave a phantom matcher behind.
+      const previous = this.commandsByEngineId.get(snapshot.id);
+      if (previous && previous.command !== snapshot.command && ctx.commander) {
+        ctx.commander.remove(previous.command);
+      }
+      this.applyCommand(ctx, snapshotToCommand(snapshot));
+    });
+
+    ctx.services.messageBus.client.subscribe(CommandEventType.Deleted, async (msg: Msg) => {
+      const payload = msg.json<CommandDeletedMessage>();
+      const id = payload?.data?.id;
+      if (!id) {
+        return;
+      }
+      this.removeCommandById(ctx, id);
+    });
+
     ctx.commander = commander;
   }
 
@@ -131,9 +199,8 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       throw new Error(`Failed to load commands: ${commands.status.message}`);
     }
 
-    // TODO: Handle hot reloading of commands
     for (let i = 0; i < commands.commands.length; ++i) {
-      this.addCommand(ctx, commands.commands[i]);
+      this.applyCommand(ctx, commands.commands[i]);
     }
 
     // log every message
@@ -351,8 +418,10 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
 
   async terminate(_ctx: Context) {}
 
-  // Add a new command
-  private addCommand(ctx: Context, command: Command) {
+  // Register or replace a command on the commander, and remember it under
+  // its engine id so a later `command.deleted` (id-only) can resolve back
+  // to the command name we registered.
+  private applyCommand(ctx: Context, command: Command) {
     if (!ctx.commander) {
       throw new Error("Commander is undefined. This should never happen");
     }
@@ -360,15 +429,18 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
     // TODO: add "eval" type for inline evaluation like:
     //      - !setcommand hello eval {caller} says hello to {targetUser[0]}!
     // need to be able to eval the caller or any number of tagged users: !hello @userA @userB
-    ctx.logger.info("adding command", command.command);
+    ctx.logger.info("applying command", command.command);
     if (command.type === "function") {
+      // typeValue is the function name to invoke in barkloader. Fall back
+      // to the command name for legacy rows where typeValue is empty.
+      const funcName = command.typeValue || command.command;
       ctx.commander.add(command.command, async (text: string, user?: string) => {
         try {
           ctx.services.barkloader.client.send(
             JSON.stringify({
               type: "invoke",
               data: {
-                func: command.command,
+                func: funcName,
                 args: [text, user],
               },
             })
@@ -382,8 +454,53 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
         }
         return "";
       });
+    } else {
+      ctx.commander.add(command.command, command.typeValue);
+    }
+
+    this.commandsByEngineId.set(command.id, command);
+  }
+
+  private removeCommandById(ctx: Context, id: string) {
+    if (!ctx.commander) {
       return;
     }
-    ctx.commander.add(command.command, command.typeValue);
+    const existing = this.commandsByEngineId.get(id);
+    if (!existing) {
+      return;
+    }
+    ctx.commander.remove(existing.command);
+    this.commandsByEngineId.delete(id);
+    ctx.logger.info("removed command", existing.command);
   }
+}
+
+// Bridge the engine's CommandSnapshot (shared API shape) into the
+// protobuf Command shape that applyCommand expects. The two diverge only
+// in fields applyCommand doesn't read (createdAt, createdBy*); we fill
+// them with zero values so a round-trip stays type-safe.
+function snapshotToCommand(snapshot: {
+  id: string;
+  applicationId: string;
+  command: string;
+  type: string;
+  typeValue: string;
+  cooldown: number;
+  priority: number;
+  enabled: boolean;
+}): Command {
+  return {
+    id: snapshot.id,
+    applicationId: snapshot.applicationId,
+    command: snapshot.command,
+    type: snapshot.type,
+    typeValue: snapshot.typeValue,
+    cooldown: snapshot.cooldown,
+    priority: snapshot.priority,
+    enabled: snapshot.enabled,
+    createdBy: "",
+    createdAt: { seconds: 0n, nanos: 0 },
+    createdByType: "",
+    createdByRef: "",
+  };
 }

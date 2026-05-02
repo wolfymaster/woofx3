@@ -65,6 +65,16 @@ export class Commands {
     });
   }
 
+  // Remove a command by name. No-op if it doesn't exist; callers that
+  // care about presence should check first.
+  remove(command: string) {
+    const idx = this.commands.findIndex((cmd) => cmd.command === command);
+    if (idx === -1) {
+      return;
+    }
+    this.commands.splice(idx, 1);
+  }
+
   every(cb: ChatWatcherFunction) {
     this.watchers.push(cb);
   }

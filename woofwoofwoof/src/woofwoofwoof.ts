@@ -65,6 +65,14 @@ const runtime = createRuntime({
           const response = await dbService.client.getSetting({ applicationId: "", key });
           return response.setting.value.stringValue ?? undefined;
         },
+        setSetting: async (key, value) => {
+          await dbService.client.setSetting({
+            applicationId: "",
+            key,
+            value: { stringValue: value },
+            userId: "",
+          });
+        },
       })
     );
 

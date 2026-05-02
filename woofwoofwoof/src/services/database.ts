@@ -11,7 +11,13 @@ import {
   RemoveUserFromResource,
   type UserResourceRoleRequest,
 } from "@woofx3/db/permission.pb";
-import { GetSetting, type GetSettingRequest, type SettingResponse } from "@woofx3/db/setting.pb";
+import {
+  GetSetting,
+  type GetSettingRequest,
+  SetSetting,
+  type SetSettingRequest,
+  type SettingResponse,
+} from "@woofx3/db/setting.pb";
 import type { ClientConfiguration } from "twirpscript";
 
 export class DatabaseClient {
@@ -27,6 +33,10 @@ export class DatabaseClient {
 
   async getSetting(req: GetSettingRequest): Promise<SettingResponse> {
     return GetSetting(req, this.config);
+  }
+
+  async setSetting(req: SetSettingRequest): Promise<SettingResponse> {
+    return SetSetting(req, this.config);
   }
 
   async listCommands(req: ListCommandsRequest): Promise<ListCommandsResponse> {
