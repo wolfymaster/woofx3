@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+package scene;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// Per-application widget arrangement.
+//
+// Mirrors `workflow.Workflow` in shape: typed audit fields + opaque
+// JSON strings (`widgets_json`, `layout_json`) the engine forwards
+// verbatim. The streamware overlay (and any future Convex scene
+// editor) interprets the JSON; the engine only stores and delivers it.
+//
+// Why JSON-as-string and not a typed sub-message?
+//   - Widget instances reference module widgets by canonical id; the
+//     engine doesn't know which fields a given widget's `settings`
+//     accepts. A typed schema would either be too narrow (forcing
+//     editor changes when a widget grows a new setting) or
+//     uselessly broad (`map<string, Value>`).
+//   - Mirrors `Workflow.steps_json` / `Workflow.trigger_json` — same
+//     trade-off resolved the same way.
+service SceneService {
+    rpc CreateScene(CreateSceneRequest) returns (SceneResponse);
+    rpc GetScene(GetSceneRequest) returns (SceneResponse);
+    rpc UpdateScene(UpdateSceneRequest) returns (SceneResponse);
+    rpc DeleteScene(DeleteSceneRequest) returns (common.ResponseStatus);
+    rpc ListScenes(ListScenesRequest) returns (ListScenesResponse);
+}
+
+message Scene {
+    string id = 1;
+    string application_id = 2;
+    string name = 3;
+    string description = 4;
+    // JSON array of placed widget instances. Shape:
+    // `[{ id, widgetCanonicalId, position, settings }, ...]`.
+    // Persisted verbatim in `scenes.widgets_json` (JSONB).
+    string widgets_json = 5;
+    // JSON object describing canvas-level layout (dimensions, grid,
+    // theme). Optional; most scenes will store `{}`. Persisted
+    // verbatim in `scenes.layout_json` (JSONB).
+    string layout_json = 6;
+    // Origin metadata. `created_by_type` is "USER" for UI-authored
+    // scenes and "MODULE" if a future manifest surface ships preset
+    // scenes. `created_by_ref` is the composite moduleKey for MODULE
+    // rows, empty for USER rows.
+    string created_by_type = 7;
+    string created_by_ref = 8;
+    google.protobuf.Timestamp created_at = 9;
+    google.protobuf.Timestamp updated_at = 10;
+}
+
+message CreateSceneRequest {
+    string application_id = 1;
+    string name = 2;
+    string description = 3;
+    // JSON-encoded widget-instances array. Persisted verbatim into
+    // `scenes.widgets_json`.
+    string widgets_json = 4;
+    // JSON-encoded layout object. Persisted verbatim into
+    // `scenes.layout_json`.
+    string layout_json = 5;
+    string created_by_type = 6;
+    string created_by_ref = 7;
+}
+
+message GetSceneRequest {
+    string id = 1;
+}
+
+message SceneResponse {
+    common.ResponseStatus status = 1;
+    Scene scene = 2;
+}
+
+// Patch semantics — every scalar field is "leave unchanged unless
+// caller set it." Mirrors `UpdateWorkflowRequest`. Empty string is
+// the sentinel for "not provided" today; revisit when migrating to
+// `optional` scalars.
+message UpdateSceneRequest {
+    string id = 1;
+    string name = 2;
+    string description = 3;
+    string widgets_json = 4;
+    string layout_json = 5;
+}
+
+message DeleteSceneRequest {
+    string id = 1;
+}
+
+message ListScenesRequest {
+    string application_id = 1;
+    int32 page = 2;
+    int32 page_size = 3;
+    string sort_by = 4;  // e.g. "name", "created_at", "updated_at"
+    bool sort_desc = 5;
+}
+
+message ListScenesResponse {
+    common.ResponseStatus status = 1;
+    repeated Scene scenes = 2;
+    int32 total_count = 3;
+    int32 page = 4;
+    int32 page_size = 5;
+}

@@ -121,6 +121,32 @@ type Action struct {
 
 func (Action) TableName() string { return "actions" }
 
+// Asset is the engine's record of a static media file bundled with a
+// module. Mirrors `Trigger` and `Action` in shape — decoupled from
+// `modules` (no FK), idempotent registration via
+// `(created_by_type, created_by_ref, manifest_id)`.
+//
+// `RepositoryKey` is the path the engine wrote the bytes to in its
+// configured repository (file / S3 / future Convex storage). The URL
+// the editor / overlay actually fetches from comes from the
+// deployer's URL pipeline — the engine doesn't carry one on the row.
+type Asset struct {
+	ID            uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	Name          string    `gorm:"column:name;type:text;not null"`
+	Description   string    `gorm:"column:description;type:text;not null;default:''"`
+	ManifestPath  string    `gorm:"column:manifest_path;type:text;not null"`
+	RepositoryKey string    `gorm:"column:repository_key;type:text;not null"`
+	Kind          string    `gorm:"column:kind;type:text;not null;default:''"`
+	ContentType   string    `gorm:"column:content_type;type:text;not null;default:''"`
+	CreatedByType string    `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
+	CreatedByRef  string    `gorm:"column:created_by_ref;type:text;not null;default:''"`
+	ManifestID    string    `gorm:"column:manifest_id;type:text;not null;default:''"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+func (Asset) TableName() string { return "assets" }
+
 type ModuleResource struct {
 	ID              uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
 	ModuleID        uuid.UUID `gorm:"column:module_id;type:uuid;not null;index"`

@@ -1904,7 +1904,7 @@ func (s *applicationServiceServer) serveListApplicationsProtobuf(ctx context.Con
 }
 
 func (s *applicationServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor1, 0
+	return twirpFileDescriptor2, 0
 }
 
 func (s *applicationServiceServer) ProtocGenTwirpVersion() string {
@@ -1918,7 +1918,7 @@ func (s *applicationServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "application", "ApplicationService")
 }
 
-var twirpFileDescriptor1 = []byte{
+var twirpFileDescriptor2 = []byte{
 	// 568 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x94, 0xcb, 0x6f, 0xd3, 0x4e,
 	0x10, 0xc7, 0xe5, 0x24, 0xbf, 0x3c, 0x26, 0x55, 0xdb, 0xec, 0x8f, 0xc7, 0x62, 0xf1, 0x88, 0x2c,

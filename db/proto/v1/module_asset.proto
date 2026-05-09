@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package module;
+
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+
+// A registered static asset bundled with an installed barkloader
+// module. Assets are the fifth module-extension surface alongside
+// triggers, actions, functions, and widgets.
+//
+// Identity:
+//   `id`            engine-generated UUID
+//   `manifest_id`   stable manifest-local id (e.g. "victory_sound")
+//   canonical id    `{module_id}:asset:{manifest_id}` — derived, not stored
+//
+// `repository_key` is the path the engine wrote the asset bytes to
+// in its configured repository (file / S3 / future Convex storage).
+// Resolving this to a public URL is the deployer's concern — the
+// engine doesn't carry one on this row. The editor / overlay obtains
+// the URL through the deployer's URL pipeline (CDN, signed URL
+// service, local proxy) and bakes that URL into action params at
+// workflow-config time.
+//
+// `manifest_path` is the original path declared in `manifest.json`,
+// preserved for diagnostics and for the editor's asset picker
+// ("counter:victory → assets/victory.mp3").
+//
+// `kind` is a free-form category hint ("image" | "audio" | "video"
+// | "font" | "data") the editor uses to filter the asset picker
+// when an action's schema declares `kinds: ["image"]`. The engine
+// doesn't validate values.
+message Asset {
+  string id = 1;
+  string module_id = 2;
+  string manifest_id = 3;
+  string name = 4;
+  string description = 5;
+  string manifest_path = 6;
+  string repository_key = 7;
+  string kind = 8;
+  string content_type = 9;
+  string created_by_type = 10;
+  string created_by_ref = 11;
+}
+
+message AssetInput {
+  string manifest_id = 1;
+  string name = 2;
+  string description = 3;
+  string manifest_path = 4;
+  string repository_key = 5;
+  string kind = 6;
+  string content_type = 7;
+}
+
+message RegisterAssetsRequest {
+  string module_key = 1;   // composite "{id}:{version}:{hash}"
+  string module_name = 2;  // manifest.name — carried to event for display
+  string version = 3;      // manifest.version — carried to event as metadata
+  repeated AssetInput assets = 4;
+  // Optional explicit registration identity. Mirrors the
+  // RegisterTriggersRequest fields. When both are set they override the
+  // default (MODULE, module_key) pairing.
+  string created_by_type = 5;
+  string created_by_ref = 6;
+}
+
+message ListAssetsRequest {
+  string created_by_type = 1;
+  string created_by_ref = 2;
+}
+
+message ListAssetsResponse {
+  common.ResponseStatus status = 1;
+  repeated Asset assets = 2;
+}
+
+message AssetResponse {
+  common.ResponseStatus status = 1;
+  Asset asset = 2;
+}

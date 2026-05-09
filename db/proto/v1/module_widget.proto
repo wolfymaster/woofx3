@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package module;
+
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+
+// A registered widget exposed by an installed barkloader module. Widgets are
+// the fourth module-extension surface alongside triggers, actions, and
+// functions; they're placeable visual components that the Convex scene
+// editor drops onto scene canvases.
+//
+// Identity:
+//   `id`            engine-generated UUID
+//   `manifest_id`   stable manifest-local id (e.g. "raid_counter")
+//   canonical id    `{module_id}:widget:{manifest_id}` — derived, not stored
+//
+// `directory` is the path inside the module zip that contains this widget's
+// frontend assets (HTML/JS/CSS bundle). Convex serves these to OBS browser
+// sources via the widget-asset endpoint.
+//
+// `alert_types` are the wire-format AlertContext.type strings the widget
+// renders (e.g. ["follow"], ["raid"], ["follow","cheer","raid"]).
+// Engine-internal validation operates on canonical event ids; the wire
+// format is projected from those at registration time via the
+// AlertEmitter's lookup table.
+//
+// `settings_schema` is a serialized JSON document describing the widget's
+// configuration surface. Engine treats it as opaque; the UI parses it into
+// WidgetSettingDefinition[] for rendering. Same opacity as triggers.config_schema.
+message Widget {
+  string id = 1;
+  string module_id = 2;
+  string manifest_id = 3;
+  string name = 4;
+  string description = 5;
+  string directory = 6;
+  repeated string alert_types = 7;
+  string settings_schema = 8;
+  string created_by_type = 9;
+  string created_by_ref = 10;
+}
+
+message WidgetInput {
+  string manifest_id = 1;
+  string name = 2;
+  string description = 3;
+  string directory = 4;
+  repeated string alert_types = 5;
+  string settings_schema = 6;
+}
+
+message RegisterWidgetsRequest {
+  string module_key = 1;   // composite "{id}:{version}:{hash}"
+  string module_name = 2;  // manifest.name — carried to event for display
+  string version = 3;      // manifest.version — carried to event as metadata
+  repeated WidgetInput widgets = 4;
+  // Optional explicit registration identity. Mirrors the
+  // RegisterTriggersRequest fields. When both are set they override the
+  // default (MODULE, module_key) pairing.
+  string created_by_type = 5;
+  string created_by_ref = 6;
+}
+
+message ListWidgetsRequest {
+  string created_by_type = 1;
+  string created_by_ref = 2;
+}
+
+message ListWidgetsResponse {
+  common.ResponseStatus status = 1;
+  repeated Widget widgets = 2;
+}
+
+message WidgetResponse {
+  common.ResponseStatus status = 1;
+  Widget widget = 2;
+}

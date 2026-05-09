@@ -59,6 +59,20 @@ type ModuleService interface {
 
 	DeleteActionsByModuleId(context.Context, *DeleteByModuleIdRequest) (*ResponseStatus, error)
 
+	RegisterWidgets(context.Context, *RegisterWidgetsRequest) (*ListWidgetsResponse, error)
+
+	ListWidgets(context.Context, *ListWidgetsRequest) (*ListWidgetsResponse, error)
+
+	GetWidgetByCanonicalId(context.Context, *GetByCanonicalIdRequest) (*WidgetResponse, error)
+
+	DeleteWidgetsByModuleId(context.Context, *DeleteByModuleIdRequest) (*ResponseStatus, error)
+
+	RegisterAssets(context.Context, *RegisterAssetsRequest) (*ListAssetsResponse, error)
+
+	ListAssets(context.Context, *ListAssetsRequest) (*ListAssetsResponse, error)
+
+	DeleteAssetsByModuleId(context.Context, *DeleteByModuleIdRequest) (*ResponseStatus, error)
+
 	CreateModuleResource(context.Context, *CreateModuleResourceRequest) (*ModuleResourceResponse, error)
 
 	ListModuleResources(context.Context, *ListModuleResourcesRequest) (*ListModuleResourcesResponse, error)
@@ -72,6 +86,18 @@ type ModuleService interface {
 	CheckModuleResourceUsage(context.Context, *CheckModuleResourceUsageRequest) (*CheckModuleResourceUsageResponse, error)
 
 	CompleteModuleDelete(context.Context, *CompleteModuleDeleteRequest) (*ResponseStatus, error)
+
+	// Runtime-created instances of module-declared kinds (counters, etc.).
+	// The engine learns identity here; semantics live in the owning module.
+	CreateResourceInstance(context.Context, *CreateResourceInstanceRequest) (*ResourceInstanceResponse, error)
+
+	DeleteResourceInstance(context.Context, *DeleteResourceInstanceRequest) (*ResponseStatus, error)
+
+	GetResourceInstance(context.Context, *GetResourceInstanceRequest) (*ResourceInstanceResponse, error)
+
+	ListResourceInstancesByKind(context.Context, *ListResourceInstancesByKindRequest) (*ListResourceInstancesResponse, error)
+
+	ListResourceInstancesByModule(context.Context, *ListResourceInstancesByModuleRequest) (*ListResourceInstancesResponse, error)
 }
 
 // =============================
@@ -80,7 +106,7 @@ type ModuleService interface {
 
 type moduleServiceProtobufClient struct {
 	client      HTTPClient
-	urls        [23]string
+	urls        [35]string
 	interceptor twirp.Interceptor
 	opts        twirp.ClientOptions
 }
@@ -108,7 +134,7 @@ func NewModuleServiceProtobufClient(baseURL string, client HTTPClient, opts ...t
 	// Build method URLs: <baseURL>[<prefix>]/<package>.<Service>/<Method>
 	serviceURL := sanitizeBaseURL(baseURL)
 	serviceURL += baseServicePath(pathPrefix, "module", "ModuleService")
-	urls := [23]string{
+	urls := [35]string{
 		serviceURL + "CreateModule",
 		serviceURL + "UpdateModule",
 		serviceURL + "DeleteModule",
@@ -125,6 +151,13 @@ func NewModuleServiceProtobufClient(baseURL string, client HTTPClient, opts ...t
 		serviceURL + "ListActions",
 		serviceURL + "GetActionByCanonicalId",
 		serviceURL + "DeleteActionsByModuleId",
+		serviceURL + "RegisterWidgets",
+		serviceURL + "ListWidgets",
+		serviceURL + "GetWidgetByCanonicalId",
+		serviceURL + "DeleteWidgetsByModuleId",
+		serviceURL + "RegisterAssets",
+		serviceURL + "ListAssets",
+		serviceURL + "DeleteAssetsByModuleId",
 		serviceURL + "CreateModuleResource",
 		serviceURL + "ListModuleResources",
 		serviceURL + "DeleteModuleResources",
@@ -132,6 +165,11 @@ func NewModuleServiceProtobufClient(baseURL string, client HTTPClient, opts ...t
 		serviceURL + "CompleteModuleInstall",
 		serviceURL + "CheckModuleResourceUsage",
 		serviceURL + "CompleteModuleDelete",
+		serviceURL + "CreateResourceInstance",
+		serviceURL + "DeleteResourceInstance",
+		serviceURL + "GetResourceInstance",
+		serviceURL + "ListResourceInstancesByKind",
+		serviceURL + "ListResourceInstancesByModule",
 	}
 
 	return &moduleServiceProtobufClient{
@@ -878,6 +916,328 @@ func (c *moduleServiceProtobufClient) callDeleteActionsByModuleId(ctx context.Co
 	return out, nil
 }
 
+func (c *moduleServiceProtobufClient) RegisterWidgets(ctx context.Context, in *RegisterWidgetsRequest) (*ListWidgetsResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "RegisterWidgets")
+	caller := c.callRegisterWidgets
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *RegisterWidgetsRequest) (*ListWidgetsResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*RegisterWidgetsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*RegisterWidgetsRequest) when calling interceptor")
+					}
+					return c.callRegisterWidgets(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListWidgetsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListWidgetsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceProtobufClient) callRegisterWidgets(ctx context.Context, in *RegisterWidgetsRequest) (*ListWidgetsResponse, error) {
+	out := new(ListWidgetsResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[16], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceProtobufClient) ListWidgets(ctx context.Context, in *ListWidgetsRequest) (*ListWidgetsResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "ListWidgets")
+	caller := c.callListWidgets
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *ListWidgetsRequest) (*ListWidgetsResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListWidgetsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListWidgetsRequest) when calling interceptor")
+					}
+					return c.callListWidgets(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListWidgetsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListWidgetsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceProtobufClient) callListWidgets(ctx context.Context, in *ListWidgetsRequest) (*ListWidgetsResponse, error) {
+	out := new(ListWidgetsResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[17], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceProtobufClient) GetWidgetByCanonicalId(ctx context.Context, in *GetByCanonicalIdRequest) (*WidgetResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "GetWidgetByCanonicalId")
+	caller := c.callGetWidgetByCanonicalId
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *GetByCanonicalIdRequest) (*WidgetResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetByCanonicalIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetByCanonicalIdRequest) when calling interceptor")
+					}
+					return c.callGetWidgetByCanonicalId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*WidgetResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*WidgetResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceProtobufClient) callGetWidgetByCanonicalId(ctx context.Context, in *GetByCanonicalIdRequest) (*WidgetResponse, error) {
+	out := new(WidgetResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[18], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceProtobufClient) DeleteWidgetsByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteWidgetsByModuleId")
+	caller := c.callDeleteWidgetsByModuleId
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *DeleteByModuleIdRequest) (*ResponseStatus, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteByModuleIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteByModuleIdRequest) when calling interceptor")
+					}
+					return c.callDeleteWidgetsByModuleId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceProtobufClient) callDeleteWidgetsByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
+	out := new(ResponseStatus)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[19], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceProtobufClient) RegisterAssets(ctx context.Context, in *RegisterAssetsRequest) (*ListAssetsResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "RegisterAssets")
+	caller := c.callRegisterAssets
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *RegisterAssetsRequest) (*ListAssetsResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*RegisterAssetsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*RegisterAssetsRequest) when calling interceptor")
+					}
+					return c.callRegisterAssets(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListAssetsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListAssetsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceProtobufClient) callRegisterAssets(ctx context.Context, in *RegisterAssetsRequest) (*ListAssetsResponse, error) {
+	out := new(ListAssetsResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[20], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceProtobufClient) ListAssets(ctx context.Context, in *ListAssetsRequest) (*ListAssetsResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "ListAssets")
+	caller := c.callListAssets
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *ListAssetsRequest) (*ListAssetsResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListAssetsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListAssetsRequest) when calling interceptor")
+					}
+					return c.callListAssets(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListAssetsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListAssetsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceProtobufClient) callListAssets(ctx context.Context, in *ListAssetsRequest) (*ListAssetsResponse, error) {
+	out := new(ListAssetsResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[21], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceProtobufClient) DeleteAssetsByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteAssetsByModuleId")
+	caller := c.callDeleteAssetsByModuleId
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *DeleteByModuleIdRequest) (*ResponseStatus, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteByModuleIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteByModuleIdRequest) when calling interceptor")
+					}
+					return c.callDeleteAssetsByModuleId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceProtobufClient) callDeleteAssetsByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
+	out := new(ResponseStatus)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[22], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
 func (c *moduleServiceProtobufClient) CreateModuleResource(ctx context.Context, in *CreateModuleResourceRequest) (*ModuleResourceResponse, error) {
 	ctx = ctxsetters.WithPackageName(ctx, "module")
 	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
@@ -909,7 +1269,7 @@ func (c *moduleServiceProtobufClient) CreateModuleResource(ctx context.Context, 
 
 func (c *moduleServiceProtobufClient) callCreateModuleResource(ctx context.Context, in *CreateModuleResourceRequest) (*ModuleResourceResponse, error) {
 	out := new(ModuleResourceResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[16], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[23], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -955,7 +1315,7 @@ func (c *moduleServiceProtobufClient) ListModuleResources(ctx context.Context, i
 
 func (c *moduleServiceProtobufClient) callListModuleResources(ctx context.Context, in *ListModuleResourcesRequest) (*ListModuleResourcesResponse, error) {
 	out := new(ListModuleResourcesResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[17], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[24], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1001,7 +1361,7 @@ func (c *moduleServiceProtobufClient) DeleteModuleResources(ctx context.Context,
 
 func (c *moduleServiceProtobufClient) callDeleteModuleResources(ctx context.Context, in *DeleteModuleResourcesRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[18], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[25], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1047,7 +1407,7 @@ func (c *moduleServiceProtobufClient) UpdateModuleResourceVersion(ctx context.Co
 
 func (c *moduleServiceProtobufClient) callUpdateModuleResourceVersion(ctx context.Context, in *UpdateModuleResourceVersionRequest) (*ModuleResourceResponse, error) {
 	out := new(ModuleResourceResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[19], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[26], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1093,7 +1453,7 @@ func (c *moduleServiceProtobufClient) CompleteModuleInstall(ctx context.Context,
 
 func (c *moduleServiceProtobufClient) callCompleteModuleInstall(ctx context.Context, in *CompleteModuleInstallRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[20], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[27], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1139,7 +1499,7 @@ func (c *moduleServiceProtobufClient) CheckModuleResourceUsage(ctx context.Conte
 
 func (c *moduleServiceProtobufClient) callCheckModuleResourceUsage(ctx context.Context, in *CheckModuleResourceUsageRequest) (*CheckModuleResourceUsageResponse, error) {
 	out := new(CheckModuleResourceUsageResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[21], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[28], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1185,7 +1545,237 @@ func (c *moduleServiceProtobufClient) CompleteModuleDelete(ctx context.Context, 
 
 func (c *moduleServiceProtobufClient) callCompleteModuleDelete(ctx context.Context, in *CompleteModuleDeleteRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[22], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[29], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceProtobufClient) CreateResourceInstance(ctx context.Context, in *CreateResourceInstanceRequest) (*ResourceInstanceResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "CreateResourceInstance")
+	caller := c.callCreateResourceInstance
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *CreateResourceInstanceRequest) (*ResourceInstanceResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*CreateResourceInstanceRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*CreateResourceInstanceRequest) when calling interceptor")
+					}
+					return c.callCreateResourceInstance(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResourceInstanceResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResourceInstanceResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceProtobufClient) callCreateResourceInstance(ctx context.Context, in *CreateResourceInstanceRequest) (*ResourceInstanceResponse, error) {
+	out := new(ResourceInstanceResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[30], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceProtobufClient) DeleteResourceInstance(ctx context.Context, in *DeleteResourceInstanceRequest) (*ResponseStatus, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteResourceInstance")
+	caller := c.callDeleteResourceInstance
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *DeleteResourceInstanceRequest) (*ResponseStatus, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteResourceInstanceRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteResourceInstanceRequest) when calling interceptor")
+					}
+					return c.callDeleteResourceInstance(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceProtobufClient) callDeleteResourceInstance(ctx context.Context, in *DeleteResourceInstanceRequest) (*ResponseStatus, error) {
+	out := new(ResponseStatus)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[31], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceProtobufClient) GetResourceInstance(ctx context.Context, in *GetResourceInstanceRequest) (*ResourceInstanceResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "GetResourceInstance")
+	caller := c.callGetResourceInstance
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *GetResourceInstanceRequest) (*ResourceInstanceResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetResourceInstanceRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetResourceInstanceRequest) when calling interceptor")
+					}
+					return c.callGetResourceInstance(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResourceInstanceResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResourceInstanceResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceProtobufClient) callGetResourceInstance(ctx context.Context, in *GetResourceInstanceRequest) (*ResourceInstanceResponse, error) {
+	out := new(ResourceInstanceResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[32], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceProtobufClient) ListResourceInstancesByKind(ctx context.Context, in *ListResourceInstancesByKindRequest) (*ListResourceInstancesResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "ListResourceInstancesByKind")
+	caller := c.callListResourceInstancesByKind
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *ListResourceInstancesByKindRequest) (*ListResourceInstancesResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListResourceInstancesByKindRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListResourceInstancesByKindRequest) when calling interceptor")
+					}
+					return c.callListResourceInstancesByKind(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListResourceInstancesResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListResourceInstancesResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceProtobufClient) callListResourceInstancesByKind(ctx context.Context, in *ListResourceInstancesByKindRequest) (*ListResourceInstancesResponse, error) {
+	out := new(ListResourceInstancesResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[33], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceProtobufClient) ListResourceInstancesByModule(ctx context.Context, in *ListResourceInstancesByModuleRequest) (*ListResourceInstancesResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "ListResourceInstancesByModule")
+	caller := c.callListResourceInstancesByModule
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *ListResourceInstancesByModuleRequest) (*ListResourceInstancesResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListResourceInstancesByModuleRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListResourceInstancesByModuleRequest) when calling interceptor")
+					}
+					return c.callListResourceInstancesByModule(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListResourceInstancesResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListResourceInstancesResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceProtobufClient) callListResourceInstancesByModule(ctx context.Context, in *ListResourceInstancesByModuleRequest) (*ListResourceInstancesResponse, error) {
+	out := new(ListResourceInstancesResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[34], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1206,7 +1796,7 @@ func (c *moduleServiceProtobufClient) callCompleteModuleDelete(ctx context.Conte
 
 type moduleServiceJSONClient struct {
 	client      HTTPClient
-	urls        [23]string
+	urls        [35]string
 	interceptor twirp.Interceptor
 	opts        twirp.ClientOptions
 }
@@ -1234,7 +1824,7 @@ func NewModuleServiceJSONClient(baseURL string, client HTTPClient, opts ...twirp
 	// Build method URLs: <baseURL>[<prefix>]/<package>.<Service>/<Method>
 	serviceURL := sanitizeBaseURL(baseURL)
 	serviceURL += baseServicePath(pathPrefix, "module", "ModuleService")
-	urls := [23]string{
+	urls := [35]string{
 		serviceURL + "CreateModule",
 		serviceURL + "UpdateModule",
 		serviceURL + "DeleteModule",
@@ -1251,6 +1841,13 @@ func NewModuleServiceJSONClient(baseURL string, client HTTPClient, opts ...twirp
 		serviceURL + "ListActions",
 		serviceURL + "GetActionByCanonicalId",
 		serviceURL + "DeleteActionsByModuleId",
+		serviceURL + "RegisterWidgets",
+		serviceURL + "ListWidgets",
+		serviceURL + "GetWidgetByCanonicalId",
+		serviceURL + "DeleteWidgetsByModuleId",
+		serviceURL + "RegisterAssets",
+		serviceURL + "ListAssets",
+		serviceURL + "DeleteAssetsByModuleId",
 		serviceURL + "CreateModuleResource",
 		serviceURL + "ListModuleResources",
 		serviceURL + "DeleteModuleResources",
@@ -1258,6 +1855,11 @@ func NewModuleServiceJSONClient(baseURL string, client HTTPClient, opts ...twirp
 		serviceURL + "CompleteModuleInstall",
 		serviceURL + "CheckModuleResourceUsage",
 		serviceURL + "CompleteModuleDelete",
+		serviceURL + "CreateResourceInstance",
+		serviceURL + "DeleteResourceInstance",
+		serviceURL + "GetResourceInstance",
+		serviceURL + "ListResourceInstancesByKind",
+		serviceURL + "ListResourceInstancesByModule",
 	}
 
 	return &moduleServiceJSONClient{
@@ -2004,6 +2606,328 @@ func (c *moduleServiceJSONClient) callDeleteActionsByModuleId(ctx context.Contex
 	return out, nil
 }
 
+func (c *moduleServiceJSONClient) RegisterWidgets(ctx context.Context, in *RegisterWidgetsRequest) (*ListWidgetsResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "RegisterWidgets")
+	caller := c.callRegisterWidgets
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *RegisterWidgetsRequest) (*ListWidgetsResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*RegisterWidgetsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*RegisterWidgetsRequest) when calling interceptor")
+					}
+					return c.callRegisterWidgets(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListWidgetsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListWidgetsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceJSONClient) callRegisterWidgets(ctx context.Context, in *RegisterWidgetsRequest) (*ListWidgetsResponse, error) {
+	out := new(ListWidgetsResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[16], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceJSONClient) ListWidgets(ctx context.Context, in *ListWidgetsRequest) (*ListWidgetsResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "ListWidgets")
+	caller := c.callListWidgets
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *ListWidgetsRequest) (*ListWidgetsResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListWidgetsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListWidgetsRequest) when calling interceptor")
+					}
+					return c.callListWidgets(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListWidgetsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListWidgetsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceJSONClient) callListWidgets(ctx context.Context, in *ListWidgetsRequest) (*ListWidgetsResponse, error) {
+	out := new(ListWidgetsResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[17], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceJSONClient) GetWidgetByCanonicalId(ctx context.Context, in *GetByCanonicalIdRequest) (*WidgetResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "GetWidgetByCanonicalId")
+	caller := c.callGetWidgetByCanonicalId
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *GetByCanonicalIdRequest) (*WidgetResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetByCanonicalIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetByCanonicalIdRequest) when calling interceptor")
+					}
+					return c.callGetWidgetByCanonicalId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*WidgetResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*WidgetResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceJSONClient) callGetWidgetByCanonicalId(ctx context.Context, in *GetByCanonicalIdRequest) (*WidgetResponse, error) {
+	out := new(WidgetResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[18], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceJSONClient) DeleteWidgetsByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteWidgetsByModuleId")
+	caller := c.callDeleteWidgetsByModuleId
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *DeleteByModuleIdRequest) (*ResponseStatus, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteByModuleIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteByModuleIdRequest) when calling interceptor")
+					}
+					return c.callDeleteWidgetsByModuleId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceJSONClient) callDeleteWidgetsByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
+	out := new(ResponseStatus)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[19], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceJSONClient) RegisterAssets(ctx context.Context, in *RegisterAssetsRequest) (*ListAssetsResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "RegisterAssets")
+	caller := c.callRegisterAssets
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *RegisterAssetsRequest) (*ListAssetsResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*RegisterAssetsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*RegisterAssetsRequest) when calling interceptor")
+					}
+					return c.callRegisterAssets(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListAssetsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListAssetsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceJSONClient) callRegisterAssets(ctx context.Context, in *RegisterAssetsRequest) (*ListAssetsResponse, error) {
+	out := new(ListAssetsResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[20], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceJSONClient) ListAssets(ctx context.Context, in *ListAssetsRequest) (*ListAssetsResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "ListAssets")
+	caller := c.callListAssets
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *ListAssetsRequest) (*ListAssetsResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListAssetsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListAssetsRequest) when calling interceptor")
+					}
+					return c.callListAssets(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListAssetsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListAssetsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceJSONClient) callListAssets(ctx context.Context, in *ListAssetsRequest) (*ListAssetsResponse, error) {
+	out := new(ListAssetsResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[21], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceJSONClient) DeleteAssetsByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteAssetsByModuleId")
+	caller := c.callDeleteAssetsByModuleId
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *DeleteByModuleIdRequest) (*ResponseStatus, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteByModuleIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteByModuleIdRequest) when calling interceptor")
+					}
+					return c.callDeleteAssetsByModuleId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceJSONClient) callDeleteAssetsByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
+	out := new(ResponseStatus)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[22], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
 func (c *moduleServiceJSONClient) CreateModuleResource(ctx context.Context, in *CreateModuleResourceRequest) (*ModuleResourceResponse, error) {
 	ctx = ctxsetters.WithPackageName(ctx, "module")
 	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
@@ -2035,7 +2959,7 @@ func (c *moduleServiceJSONClient) CreateModuleResource(ctx context.Context, in *
 
 func (c *moduleServiceJSONClient) callCreateModuleResource(ctx context.Context, in *CreateModuleResourceRequest) (*ModuleResourceResponse, error) {
 	out := new(ModuleResourceResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[16], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[23], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2081,7 +3005,7 @@ func (c *moduleServiceJSONClient) ListModuleResources(ctx context.Context, in *L
 
 func (c *moduleServiceJSONClient) callListModuleResources(ctx context.Context, in *ListModuleResourcesRequest) (*ListModuleResourcesResponse, error) {
 	out := new(ListModuleResourcesResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[17], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[24], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2127,7 +3051,7 @@ func (c *moduleServiceJSONClient) DeleteModuleResources(ctx context.Context, in 
 
 func (c *moduleServiceJSONClient) callDeleteModuleResources(ctx context.Context, in *DeleteModuleResourcesRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[18], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[25], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2173,7 +3097,7 @@ func (c *moduleServiceJSONClient) UpdateModuleResourceVersion(ctx context.Contex
 
 func (c *moduleServiceJSONClient) callUpdateModuleResourceVersion(ctx context.Context, in *UpdateModuleResourceVersionRequest) (*ModuleResourceResponse, error) {
 	out := new(ModuleResourceResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[19], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[26], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2219,7 +3143,7 @@ func (c *moduleServiceJSONClient) CompleteModuleInstall(ctx context.Context, in 
 
 func (c *moduleServiceJSONClient) callCompleteModuleInstall(ctx context.Context, in *CompleteModuleInstallRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[20], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[27], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2265,7 +3189,7 @@ func (c *moduleServiceJSONClient) CheckModuleResourceUsage(ctx context.Context, 
 
 func (c *moduleServiceJSONClient) callCheckModuleResourceUsage(ctx context.Context, in *CheckModuleResourceUsageRequest) (*CheckModuleResourceUsageResponse, error) {
 	out := new(CheckModuleResourceUsageResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[21], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[28], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2311,7 +3235,237 @@ func (c *moduleServiceJSONClient) CompleteModuleDelete(ctx context.Context, in *
 
 func (c *moduleServiceJSONClient) callCompleteModuleDelete(ctx context.Context, in *CompleteModuleDeleteRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[22], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[29], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceJSONClient) CreateResourceInstance(ctx context.Context, in *CreateResourceInstanceRequest) (*ResourceInstanceResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "CreateResourceInstance")
+	caller := c.callCreateResourceInstance
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *CreateResourceInstanceRequest) (*ResourceInstanceResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*CreateResourceInstanceRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*CreateResourceInstanceRequest) when calling interceptor")
+					}
+					return c.callCreateResourceInstance(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResourceInstanceResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResourceInstanceResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceJSONClient) callCreateResourceInstance(ctx context.Context, in *CreateResourceInstanceRequest) (*ResourceInstanceResponse, error) {
+	out := new(ResourceInstanceResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[30], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceJSONClient) DeleteResourceInstance(ctx context.Context, in *DeleteResourceInstanceRequest) (*ResponseStatus, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteResourceInstance")
+	caller := c.callDeleteResourceInstance
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *DeleteResourceInstanceRequest) (*ResponseStatus, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteResourceInstanceRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteResourceInstanceRequest) when calling interceptor")
+					}
+					return c.callDeleteResourceInstance(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceJSONClient) callDeleteResourceInstance(ctx context.Context, in *DeleteResourceInstanceRequest) (*ResponseStatus, error) {
+	out := new(ResponseStatus)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[31], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceJSONClient) GetResourceInstance(ctx context.Context, in *GetResourceInstanceRequest) (*ResourceInstanceResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "GetResourceInstance")
+	caller := c.callGetResourceInstance
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *GetResourceInstanceRequest) (*ResourceInstanceResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetResourceInstanceRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetResourceInstanceRequest) when calling interceptor")
+					}
+					return c.callGetResourceInstance(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResourceInstanceResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResourceInstanceResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceJSONClient) callGetResourceInstance(ctx context.Context, in *GetResourceInstanceRequest) (*ResourceInstanceResponse, error) {
+	out := new(ResourceInstanceResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[32], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceJSONClient) ListResourceInstancesByKind(ctx context.Context, in *ListResourceInstancesByKindRequest) (*ListResourceInstancesResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "ListResourceInstancesByKind")
+	caller := c.callListResourceInstancesByKind
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *ListResourceInstancesByKindRequest) (*ListResourceInstancesResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListResourceInstancesByKindRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListResourceInstancesByKindRequest) when calling interceptor")
+					}
+					return c.callListResourceInstancesByKind(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListResourceInstancesResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListResourceInstancesResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceJSONClient) callListResourceInstancesByKind(ctx context.Context, in *ListResourceInstancesByKindRequest) (*ListResourceInstancesResponse, error) {
+	out := new(ListResourceInstancesResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[33], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceJSONClient) ListResourceInstancesByModule(ctx context.Context, in *ListResourceInstancesByModuleRequest) (*ListResourceInstancesResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "ListResourceInstancesByModule")
+	caller := c.callListResourceInstancesByModule
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *ListResourceInstancesByModuleRequest) (*ListResourceInstancesResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListResourceInstancesByModuleRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListResourceInstancesByModuleRequest) when calling interceptor")
+					}
+					return c.callListResourceInstancesByModule(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListResourceInstancesResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListResourceInstancesResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceJSONClient) callListResourceInstancesByModule(ctx context.Context, in *ListResourceInstancesByModuleRequest) (*ListResourceInstancesResponse, error) {
+	out := new(ListResourceInstancesResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[34], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2471,6 +3625,27 @@ func (s *moduleServiceServer) ServeHTTP(resp http.ResponseWriter, req *http.Requ
 	case "DeleteActionsByModuleId":
 		s.serveDeleteActionsByModuleId(ctx, resp, req)
 		return
+	case "RegisterWidgets":
+		s.serveRegisterWidgets(ctx, resp, req)
+		return
+	case "ListWidgets":
+		s.serveListWidgets(ctx, resp, req)
+		return
+	case "GetWidgetByCanonicalId":
+		s.serveGetWidgetByCanonicalId(ctx, resp, req)
+		return
+	case "DeleteWidgetsByModuleId":
+		s.serveDeleteWidgetsByModuleId(ctx, resp, req)
+		return
+	case "RegisterAssets":
+		s.serveRegisterAssets(ctx, resp, req)
+		return
+	case "ListAssets":
+		s.serveListAssets(ctx, resp, req)
+		return
+	case "DeleteAssetsByModuleId":
+		s.serveDeleteAssetsByModuleId(ctx, resp, req)
+		return
 	case "CreateModuleResource":
 		s.serveCreateModuleResource(ctx, resp, req)
 		return
@@ -2491,6 +3666,21 @@ func (s *moduleServiceServer) ServeHTTP(resp http.ResponseWriter, req *http.Requ
 		return
 	case "CompleteModuleDelete":
 		s.serveCompleteModuleDelete(ctx, resp, req)
+		return
+	case "CreateResourceInstance":
+		s.serveCreateResourceInstance(ctx, resp, req)
+		return
+	case "DeleteResourceInstance":
+		s.serveDeleteResourceInstance(ctx, resp, req)
+		return
+	case "GetResourceInstance":
+		s.serveGetResourceInstance(ctx, resp, req)
+		return
+	case "ListResourceInstancesByKind":
+		s.serveListResourceInstancesByKind(ctx, resp, req)
+		return
+	case "ListResourceInstancesByModule":
+		s.serveListResourceInstancesByModule(ctx, resp, req)
 		return
 	default:
 		msg := fmt.Sprintf("no handler for path %q", req.URL.Path)
@@ -5379,6 +6569,1266 @@ func (s *moduleServiceServer) serveDeleteActionsByModuleIdProtobuf(ctx context.C
 	callResponseSent(ctx, s.hooks)
 }
 
+func (s *moduleServiceServer) serveRegisterWidgets(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveRegisterWidgetsJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveRegisterWidgetsProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleServiceServer) serveRegisterWidgetsJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "RegisterWidgets")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(RegisterWidgetsRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleService.RegisterWidgets
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *RegisterWidgetsRequest) (*ListWidgetsResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*RegisterWidgetsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*RegisterWidgetsRequest) when calling interceptor")
+					}
+					return s.ModuleService.RegisterWidgets(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListWidgetsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListWidgetsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ListWidgetsResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ListWidgetsResponse and nil error while calling RegisterWidgets. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveRegisterWidgetsProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "RegisterWidgets")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(RegisterWidgetsRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleService.RegisterWidgets
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *RegisterWidgetsRequest) (*ListWidgetsResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*RegisterWidgetsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*RegisterWidgetsRequest) when calling interceptor")
+					}
+					return s.ModuleService.RegisterWidgets(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListWidgetsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListWidgetsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ListWidgetsResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ListWidgetsResponse and nil error while calling RegisterWidgets. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveListWidgets(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveListWidgetsJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveListWidgetsProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleServiceServer) serveListWidgetsJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "ListWidgets")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(ListWidgetsRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleService.ListWidgets
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *ListWidgetsRequest) (*ListWidgetsResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListWidgetsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListWidgetsRequest) when calling interceptor")
+					}
+					return s.ModuleService.ListWidgets(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListWidgetsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListWidgetsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ListWidgetsResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ListWidgetsResponse and nil error while calling ListWidgets. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveListWidgetsProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "ListWidgets")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(ListWidgetsRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleService.ListWidgets
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *ListWidgetsRequest) (*ListWidgetsResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListWidgetsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListWidgetsRequest) when calling interceptor")
+					}
+					return s.ModuleService.ListWidgets(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListWidgetsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListWidgetsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ListWidgetsResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ListWidgetsResponse and nil error while calling ListWidgets. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveGetWidgetByCanonicalId(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveGetWidgetByCanonicalIdJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveGetWidgetByCanonicalIdProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleServiceServer) serveGetWidgetByCanonicalIdJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "GetWidgetByCanonicalId")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(GetByCanonicalIdRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleService.GetWidgetByCanonicalId
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *GetByCanonicalIdRequest) (*WidgetResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetByCanonicalIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetByCanonicalIdRequest) when calling interceptor")
+					}
+					return s.ModuleService.GetWidgetByCanonicalId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*WidgetResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*WidgetResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *WidgetResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *WidgetResponse and nil error while calling GetWidgetByCanonicalId. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveGetWidgetByCanonicalIdProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "GetWidgetByCanonicalId")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(GetByCanonicalIdRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleService.GetWidgetByCanonicalId
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *GetByCanonicalIdRequest) (*WidgetResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetByCanonicalIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetByCanonicalIdRequest) when calling interceptor")
+					}
+					return s.ModuleService.GetWidgetByCanonicalId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*WidgetResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*WidgetResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *WidgetResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *WidgetResponse and nil error while calling GetWidgetByCanonicalId. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveDeleteWidgetsByModuleId(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveDeleteWidgetsByModuleIdJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveDeleteWidgetsByModuleIdProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleServiceServer) serveDeleteWidgetsByModuleIdJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteWidgetsByModuleId")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(DeleteByModuleIdRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleService.DeleteWidgetsByModuleId
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *DeleteByModuleIdRequest) (*ResponseStatus, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteByModuleIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteByModuleIdRequest) when calling interceptor")
+					}
+					return s.ModuleService.DeleteWidgetsByModuleId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ResponseStatus
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ResponseStatus and nil error while calling DeleteWidgetsByModuleId. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveDeleteWidgetsByModuleIdProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteWidgetsByModuleId")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(DeleteByModuleIdRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleService.DeleteWidgetsByModuleId
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *DeleteByModuleIdRequest) (*ResponseStatus, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteByModuleIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteByModuleIdRequest) when calling interceptor")
+					}
+					return s.ModuleService.DeleteWidgetsByModuleId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ResponseStatus
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ResponseStatus and nil error while calling DeleteWidgetsByModuleId. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveRegisterAssets(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveRegisterAssetsJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveRegisterAssetsProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleServiceServer) serveRegisterAssetsJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "RegisterAssets")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(RegisterAssetsRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleService.RegisterAssets
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *RegisterAssetsRequest) (*ListAssetsResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*RegisterAssetsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*RegisterAssetsRequest) when calling interceptor")
+					}
+					return s.ModuleService.RegisterAssets(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListAssetsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListAssetsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ListAssetsResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ListAssetsResponse and nil error while calling RegisterAssets. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveRegisterAssetsProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "RegisterAssets")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(RegisterAssetsRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleService.RegisterAssets
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *RegisterAssetsRequest) (*ListAssetsResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*RegisterAssetsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*RegisterAssetsRequest) when calling interceptor")
+					}
+					return s.ModuleService.RegisterAssets(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListAssetsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListAssetsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ListAssetsResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ListAssetsResponse and nil error while calling RegisterAssets. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveListAssets(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveListAssetsJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveListAssetsProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleServiceServer) serveListAssetsJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "ListAssets")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(ListAssetsRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleService.ListAssets
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *ListAssetsRequest) (*ListAssetsResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListAssetsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListAssetsRequest) when calling interceptor")
+					}
+					return s.ModuleService.ListAssets(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListAssetsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListAssetsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ListAssetsResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ListAssetsResponse and nil error while calling ListAssets. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveListAssetsProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "ListAssets")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(ListAssetsRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleService.ListAssets
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *ListAssetsRequest) (*ListAssetsResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListAssetsRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListAssetsRequest) when calling interceptor")
+					}
+					return s.ModuleService.ListAssets(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListAssetsResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListAssetsResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ListAssetsResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ListAssetsResponse and nil error while calling ListAssets. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveDeleteAssetsByModuleId(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveDeleteAssetsByModuleIdJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveDeleteAssetsByModuleIdProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleServiceServer) serveDeleteAssetsByModuleIdJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteAssetsByModuleId")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(DeleteByModuleIdRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleService.DeleteAssetsByModuleId
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *DeleteByModuleIdRequest) (*ResponseStatus, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteByModuleIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteByModuleIdRequest) when calling interceptor")
+					}
+					return s.ModuleService.DeleteAssetsByModuleId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ResponseStatus
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ResponseStatus and nil error while calling DeleteAssetsByModuleId. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveDeleteAssetsByModuleIdProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteAssetsByModuleId")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(DeleteByModuleIdRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleService.DeleteAssetsByModuleId
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *DeleteByModuleIdRequest) (*ResponseStatus, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteByModuleIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteByModuleIdRequest) when calling interceptor")
+					}
+					return s.ModuleService.DeleteAssetsByModuleId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ResponseStatus
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ResponseStatus and nil error while calling DeleteAssetsByModuleId. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
 func (s *moduleServiceServer) serveCreateModuleResource(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
 	header := req.Header.Get("Content-Type")
 	i := strings.Index(header, ";")
@@ -6639,8 +9089,908 @@ func (s *moduleServiceServer) serveCompleteModuleDeleteProtobuf(ctx context.Cont
 	callResponseSent(ctx, s.hooks)
 }
 
+func (s *moduleServiceServer) serveCreateResourceInstance(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveCreateResourceInstanceJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveCreateResourceInstanceProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleServiceServer) serveCreateResourceInstanceJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "CreateResourceInstance")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(CreateResourceInstanceRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleService.CreateResourceInstance
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *CreateResourceInstanceRequest) (*ResourceInstanceResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*CreateResourceInstanceRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*CreateResourceInstanceRequest) when calling interceptor")
+					}
+					return s.ModuleService.CreateResourceInstance(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResourceInstanceResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResourceInstanceResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ResourceInstanceResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ResourceInstanceResponse and nil error while calling CreateResourceInstance. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveCreateResourceInstanceProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "CreateResourceInstance")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(CreateResourceInstanceRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleService.CreateResourceInstance
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *CreateResourceInstanceRequest) (*ResourceInstanceResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*CreateResourceInstanceRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*CreateResourceInstanceRequest) when calling interceptor")
+					}
+					return s.ModuleService.CreateResourceInstance(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResourceInstanceResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResourceInstanceResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ResourceInstanceResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ResourceInstanceResponse and nil error while calling CreateResourceInstance. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveDeleteResourceInstance(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveDeleteResourceInstanceJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveDeleteResourceInstanceProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleServiceServer) serveDeleteResourceInstanceJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteResourceInstance")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(DeleteResourceInstanceRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleService.DeleteResourceInstance
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *DeleteResourceInstanceRequest) (*ResponseStatus, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteResourceInstanceRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteResourceInstanceRequest) when calling interceptor")
+					}
+					return s.ModuleService.DeleteResourceInstance(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ResponseStatus
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ResponseStatus and nil error while calling DeleteResourceInstance. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveDeleteResourceInstanceProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteResourceInstance")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(DeleteResourceInstanceRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleService.DeleteResourceInstance
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *DeleteResourceInstanceRequest) (*ResponseStatus, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteResourceInstanceRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteResourceInstanceRequest) when calling interceptor")
+					}
+					return s.ModuleService.DeleteResourceInstance(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ResponseStatus
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ResponseStatus and nil error while calling DeleteResourceInstance. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveGetResourceInstance(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveGetResourceInstanceJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveGetResourceInstanceProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleServiceServer) serveGetResourceInstanceJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "GetResourceInstance")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(GetResourceInstanceRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleService.GetResourceInstance
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *GetResourceInstanceRequest) (*ResourceInstanceResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetResourceInstanceRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetResourceInstanceRequest) when calling interceptor")
+					}
+					return s.ModuleService.GetResourceInstance(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResourceInstanceResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResourceInstanceResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ResourceInstanceResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ResourceInstanceResponse and nil error while calling GetResourceInstance. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveGetResourceInstanceProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "GetResourceInstance")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(GetResourceInstanceRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleService.GetResourceInstance
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *GetResourceInstanceRequest) (*ResourceInstanceResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetResourceInstanceRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetResourceInstanceRequest) when calling interceptor")
+					}
+					return s.ModuleService.GetResourceInstance(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResourceInstanceResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResourceInstanceResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ResourceInstanceResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ResourceInstanceResponse and nil error while calling GetResourceInstance. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveListResourceInstancesByKind(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveListResourceInstancesByKindJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveListResourceInstancesByKindProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleServiceServer) serveListResourceInstancesByKindJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "ListResourceInstancesByKind")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(ListResourceInstancesByKindRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleService.ListResourceInstancesByKind
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *ListResourceInstancesByKindRequest) (*ListResourceInstancesResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListResourceInstancesByKindRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListResourceInstancesByKindRequest) when calling interceptor")
+					}
+					return s.ModuleService.ListResourceInstancesByKind(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListResourceInstancesResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListResourceInstancesResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ListResourceInstancesResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ListResourceInstancesResponse and nil error while calling ListResourceInstancesByKind. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveListResourceInstancesByKindProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "ListResourceInstancesByKind")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(ListResourceInstancesByKindRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleService.ListResourceInstancesByKind
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *ListResourceInstancesByKindRequest) (*ListResourceInstancesResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListResourceInstancesByKindRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListResourceInstancesByKindRequest) when calling interceptor")
+					}
+					return s.ModuleService.ListResourceInstancesByKind(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListResourceInstancesResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListResourceInstancesResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ListResourceInstancesResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ListResourceInstancesResponse and nil error while calling ListResourceInstancesByKind. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveListResourceInstancesByModule(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveListResourceInstancesByModuleJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveListResourceInstancesByModuleProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleServiceServer) serveListResourceInstancesByModuleJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "ListResourceInstancesByModule")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(ListResourceInstancesByModuleRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleService.ListResourceInstancesByModule
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *ListResourceInstancesByModuleRequest) (*ListResourceInstancesResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListResourceInstancesByModuleRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListResourceInstancesByModuleRequest) when calling interceptor")
+					}
+					return s.ModuleService.ListResourceInstancesByModule(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListResourceInstancesResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListResourceInstancesResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ListResourceInstancesResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ListResourceInstancesResponse and nil error while calling ListResourceInstancesByModule. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveListResourceInstancesByModuleProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "ListResourceInstancesByModule")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(ListResourceInstancesByModuleRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleService.ListResourceInstancesByModule
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *ListResourceInstancesByModuleRequest) (*ListResourceInstancesResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListResourceInstancesByModuleRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListResourceInstancesByModuleRequest) when calling interceptor")
+					}
+					return s.ModuleService.ListResourceInstancesByModule(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListResourceInstancesResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListResourceInstancesResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ListResourceInstancesResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ListResourceInstancesResponse and nil error while calling ListResourceInstancesByModule. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
 func (s *moduleServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor4, 0
+	return twirpFileDescriptor5, 0
 }
 
 func (s *moduleServiceServer) ProtocGenTwirpVersion() string {
@@ -6654,100 +10004,111 @@ func (s *moduleServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "module", "ModuleService")
 }
 
-var twirpFileDescriptor4 = []byte{
-	// 1489 bytes of a gzipped FileDescriptorProto
+var twirpFileDescriptor5 = []byte{
+	// 1675 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xcc, 0x58, 0xcd, 0x6e, 0xdb, 0xc6,
-	0x13, 0x07, 0x25, 0x5b, 0x1f, 0x23, 0x59, 0x32, 0x56, 0x96, 0xc3, 0xbf, 0x94, 0x44, 0xfe, 0xd3,
-	0x69, 0x62, 0x07, 0x81, 0x84, 0x3a, 0x45, 0x81, 0x02, 0x09, 0x0a, 0x59, 0x41, 0x02, 0x21, 0x4d,
-	0xd0, 0xd0, 0x71, 0x0f, 0x2d, 0x50, 0x81, 0x26, 0x57, 0x32, 0x11, 0x89, 0x54, 0x49, 0xca, 0x09,
-	0x6f, 0x05, 0x7a, 0xec, 0xcb, 0xf4, 0xd4, 0x6b, 0x4f, 0x7d, 0x88, 0x3e, 0x40, 0xcf, 0x7d, 0x85,
-	0x62, 0xbf, 0xf8, 0x25, 0x92, 0x56, 0xdd, 0x1c, 0x7a, 0xd3, 0xce, 0xcc, 0xce, 0xce, 0xce, 0xfc,
-	0xf6, 0x37, 0x43, 0x41, 0x7d, 0x61, 0x1b, 0xab, 0x39, 0xee, 0x2f, 0x1d, 0xdb, 0xb3, 0x51, 0x89,
-	0xad, 0x3a, 0x75, 0xdd, 0x5e, 0x2c, 0x6c, 0x8b, 0x49, 0x3b, 0xbd, 0x99, 0x6d, 0xcf, 0xe6, 0x78,
-	0x40, 0x57, 0x17, 0xab, 0xe9, 0xc0, 0x33, 0x17, 0xd8, 0xf5, 0xb4, 0xc5, 0x92, 0x1b, 0xec, 0xb1,
-	0x6d, 0x13, 0xcf, 0x31, 0x67, 0x33, 0xec, 0x70, 0x69, 0x8b, 0x4b, 0x35, 0xdd, 0x33, 0x03, 0x5f,
-	0x6d, 0x2e, 0x74, 0xb0, 0x6b, 0xaf, 0x1c, 0x9d, 0x1f, 0xac, 0xfc, 0x5a, 0x84, 0xd2, 0x2b, 0xaa,
-	0x41, 0x0d, 0x28, 0x98, 0x86, 0x2c, 0x1d, 0x48, 0x47, 0x55, 0xb5, 0x60, 0x1a, 0x08, 0xc1, 0x96,
-	0xa5, 0x2d, 0xb0, 0x5c, 0xa0, 0x12, 0xfa, 0x1b, 0xc9, 0x50, 0xbe, 0xc2, 0x8e, 0x6b, 0xda, 0x96,
-	0x5c, 0xa4, 0x62, 0xb1, 0x44, 0x1d, 0xa8, 0x2c, 0x34, 0xcb, 0x9c, 0x62, 0xd7, 0x93, 0xb7, 0xa8,
-	0x2a, 0x58, 0xa3, 0x3d, 0xd8, 0x76, 0x3d, 0xcd, 0xc3, 0xf2, 0x36, 0x55, 0xb0, 0x05, 0xea, 0x41,
-	0x4d, 0x73, 0xf4, 0x4b, 0xf3, 0x0a, 0x4f, 0xde, 0x61, 0x5f, 0x2e, 0x51, 0x1d, 0x70, 0xd1, 0x4b,
-	0xec, 0xa3, 0xcf, 0xa0, 0x3a, 0x5d, 0x59, 0xf4, 0x12, 0xae, 0x5c, 0x3e, 0x28, 0x1e, 0xd5, 0x4e,
-	0xf6, 0xfb, 0x3c, 0x6d, 0x2c, 0xe6, 0xe7, 0x5c, 0xad, 0x86, 0x86, 0xe8, 0x29, 0xd4, 0x4d, 0xcb,
-	0xf5, 0xb4, 0xf9, 0x1c, 0x1b, 0x13, 0xcd, 0x93, 0x2b, 0x07, 0xd2, 0x51, 0xed, 0xa4, 0xd3, 0x67,
-	0xb9, 0xec, 0x8b, 0x5c, 0xf6, 0xdf, 0x8a, 0x5c, 0xaa, 0xb5, 0xc0, 0x7e, 0xe8, 0xa1, 0x2f, 0x00,
-	0x56, 0x4b, 0x43, 0xf3, 0xd8, 0xe6, 0xea, 0xb5, 0x9b, 0xab, 0xdc, 0x7a, 0xe8, 0xa1, 0xfb, 0xd0,
-	0xd4, 0x1d, 0x4c, 0xb7, 0x5e, 0xf8, 0x13, 0xcf, 0x5f, 0x62, 0x19, 0xe8, 0xa5, 0x76, 0xb8, 0xf8,
-	0xd4, 0x7f, 0xeb, 0x2f, 0x31, 0xba, 0x07, 0x8d, 0x88, 0x9d, 0x83, 0xa7, 0x72, 0x8d, 0x9a, 0xd5,
-	0x03, 0x33, 0x15, 0x4f, 0xd1, 0x1d, 0x00, 0x5e, 0x32, 0x92, 0x9d, 0x3a, 0xb5, 0xa8, 0x32, 0xc9,
-	0x4b, 0xec, 0x2b, 0x7f, 0x4a, 0xd0, 0x88, 0x27, 0x61, 0xad, 0x80, 0x5d, 0xe0, 0xf6, 0x13, 0xd3,
-	0xe0, 0x55, 0xac, 0x30, 0xc1, 0xd8, 0x20, 0xd9, 0x17, 0xf5, 0x21, 0x6a, 0x56, 0x4d, 0x10, 0xa2,
-	0x31, 0xdd, 0x3d, 0x35, 0xe7, 0x78, 0x42, 0x31, 0xc0, 0x2b, 0x4a, 0x04, 0xaf, 0x09, 0x0e, 0xfe,
-	0x07, 0xf4, 0x37, 0x0d, 0x8d, 0x15, 0xb5, 0x4c, 0xd6, 0xa4, 0x6a, 0x3d, 0xa8, 0x61, 0xcb, 0x73,
-	0xfc, 0xc9, 0xd2, 0x36, 0x2d, 0x4f, 0x94, 0x95, 0x8a, 0xbe, 0x26, 0x12, 0x82, 0x21, 0x67, 0x65,
-	0x11, 0x28, 0xcb, 0x65, 0xb6, 0x95, 0x2f, 0x03, 0xc4, 0x55, 0x42, 0xc4, 0x29, 0xbf, 0x14, 0xa0,
-	0x35, 0xa2, 0x79, 0x61, 0xb7, 0x55, 0xf1, 0x0f, 0x2b, 0x82, 0x29, 0x61, 0x2b, 0xa5, 0xa3, 0xb3,
-	0x90, 0x8d, 0xce, 0x62, 0x02, 0x9d, 0x09, 0x1c, 0x6e, 0xad, 0xe1, 0x70, 0x18, 0xc5, 0xe1, 0x36,
-	0xc5, 0xe1, 0xa1, 0xc0, 0x61, 0x34, 0xb4, 0x00, 0x8d, 0x2c, 0xc4, 0x28, 0x28, 0x53, 0xa0, 0x51,
-	0xda, 0x0c, 0x1a, 0xe5, 0x6b, 0xa1, 0x51, 0x49, 0x42, 0xe3, 0x77, 0x09, 0xba, 0x39, 0x71, 0x25,
-	0x4b, 0x2f, 0xe5, 0x97, 0xbe, 0x90, 0x53, 0xfa, 0x62, 0x6e, 0xe9, 0xb7, 0xf2, 0x4a, 0xbf, 0x9d,
-	0x5e, 0xfa, 0x52, 0xa4, 0xf4, 0xbf, 0x49, 0xd0, 0x3a, 0xa7, 0xaf, 0x2b, 0x5e, 0xfa, 0x24, 0xce,
-	0xff, 0xb3, 0x65, 0x57, 0x8e, 0xa1, 0xf5, 0x0c, 0xcf, 0xf1, 0x06, 0xd8, 0x55, 0x14, 0xd8, 0x7d,
-	0x81, 0xbd, 0xdc, 0x8b, 0x2a, 0x8f, 0x60, 0x3f, 0xb0, 0x39, 0xf5, 0x49, 0x35, 0xf2, 0x3c, 0x3e,
-	0x81, 0x6e, 0xc4, 0xfa, 0x95, 0x80, 0x87, 0xd8, 0x12, 0x07, 0x91, 0x94, 0x04, 0xd1, 0x43, 0x40,
-	0x5f, 0x99, 0x2e, 0xdf, 0xee, 0x8a, 0x4d, 0x01, 0x93, 0x4b, 0x11, 0x26, 0x57, 0x86, 0xd0, 0x3e,
-	0x13, 0x27, 0x9d, 0x11, 0x49, 0xde, 0x23, 0x0d, 0x5c, 0x14, 0xa2, 0x2e, 0x2e, 0x05, 0x9b, 0xa9,
-	0xd8, 0x5d, 0xda, 0x96, 0x8b, 0x51, 0x1f, 0x4a, 0x44, 0xb5, 0x72, 0xe9, 0x6e, 0x42, 0xfd, 0xbc,
-	0x37, 0x0a, 0x8b, 0x33, 0xaa, 0x55, 0xb9, 0x15, 0xba, 0x0f, 0xbc, 0x89, 0x52, 0xc7, 0xb5, 0x93,
-	0x46, 0xbc, 0x55, 0xa8, 0x5c, 0xab, 0xd8, 0xd0, 0x8a, 0x5d, 0xec, 0x86, 0xc7, 0x1d, 0x41, 0x99,
-	0x39, 0x74, 0xe5, 0x02, 0xc5, 0x46, 0xf2, 0x3c, 0xa1, 0x26, 0x4c, 0x7d, 0x7b, 0x64, 0x2f, 0x96,
-	0x21, 0x0e, 0xc6, 0xac, 0xdf, 0x88, 0x2c, 0xc5, 0x78, 0x5a, 0x4a, 0xe1, 0x69, 0xa6, 0x8c, 0xbc,
-	0x46, 0x5e, 0xb9, 0xd7, 0xf9, 0x2d, 0x79, 0x3f, 0xb8, 0x12, 0x03, 0xb7, 0x08, 0x7d, 0x0f, 0xb6,
-	0xb1, 0xe3, 0xd8, 0x8e, 0x68, 0xc7, 0x74, 0x81, 0xbe, 0x84, 0xa6, 0xc3, 0x02, 0x9a, 0xe8, 0xb6,
-	0xe5, 0xe1, 0x0f, 0x8c, 0xbb, 0x63, 0x99, 0xa0, 0xea, 0x11, 0xd3, 0xaa, 0x0d, 0x27, 0xb6, 0x56,
-	0x7e, 0x92, 0xa0, 0x72, 0xee, 0x6a, 0x33, 0x4c, 0x28, 0xaa, 0x07, 0x35, 0x36, 0x67, 0x30, 0xb2,
-	0xe3, 0x1c, 0xc3, 0x44, 0x94, 0xe9, 0xba, 0x50, 0xe5, 0x06, 0x61, 0x73, 0x62, 0x02, 0x76, 0x69,
-	0xae, 0xa4, 0x97, 0x2e, 0x46, 0x77, 0x8b, 0x4b, 0x8b, 0x20, 0xd9, 0xdd, 0xc4, 0x52, 0xf9, 0x43,
-	0x82, 0x1d, 0x95, 0xcf, 0x38, 0x34, 0x1a, 0xe2, 0x4c, 0x0c, 0x3d, 0x11, 0xba, 0x13, 0xa2, 0xb1,
-	0x81, 0x0e, 0x61, 0x27, 0x30, 0xa0, 0xd1, 0xb2, 0x70, 0xea, 0x42, 0x48, 0xe3, 0x8d, 0x1a, 0x45,
-	0x82, 0x0a, 0x8c, 0x68, 0x58, 0xc7, 0x50, 0x5e, 0xb9, 0x94, 0xbb, 0xe5, 0x2d, 0x0a, 0x8a, 0x5d,
-	0x01, 0x0a, 0x91, 0x18, 0xb5, 0x44, 0x0c, 0x4e, 0x7d, 0x74, 0x02, 0xed, 0xc0, 0x9f, 0x61, 0xba,
-	0xcb, 0xb9, 0xe6, 0x33, 0xbf, 0xac, 0x28, 0x2d, 0xa1, 0x7c, 0xc6, 0x74, 0xc4, 0xbd, 0x82, 0xa1,
-	0x37, 0xba, 0xc4, 0xfa, 0xbb, 0xe0, 0xa5, 0x84, 0xb7, 0xdc, 0x08, 0x4b, 0x9f, 0x40, 0x43, 0x5b,
-	0x2e, 0xe7, 0xa6, 0xae, 0x11, 0x7a, 0x0a, 0x13, 0xbf, 0x13, 0x91, 0x8e, 0x0d, 0xe5, 0x47, 0x09,
-	0x0e, 0xb2, 0xcf, 0xb9, 0xe1, 0x7b, 0x79, 0x04, 0x25, 0xd3, 0x9a, 0xac, 0x5c, 0xcc, 0x9f, 0x4b,
-	0x5b, 0x64, 0x26, 0xee, 0x7e, 0xdb, 0xb4, 0xce, 0x5d, 0xac, 0xfc, 0x5c, 0x80, 0x6e, 0xfc, 0xcd,
-	0x30, 0x1e, 0xfd, 0x38, 0x4f, 0x26, 0x7c, 0x18, 0xc5, 0xf4, 0x87, 0xb1, 0x15, 0x7f, 0x18, 0xbb,
-	0x2c, 0xf2, 0x60, 0x76, 0x16, 0xed, 0x20, 0xe3, 0x0e, 0x0d, 0x7a, 0x07, 0x21, 0x73, 0xff, 0xfd,
-	0xcb, 0xfa, 0x1c, 0x6e, 0xb1, 0xeb, 0x0b, 0x1a, 0x1f, 0x1b, 0x9b, 0x24, 0x42, 0x79, 0x02, 0xb7,
-	0x5e, 0x60, 0xef, 0xd4, 0x1f, 0x69, 0x96, 0x6d, 0x99, 0xba, 0x36, 0x0f, 0xf7, 0xfd, 0x1f, 0xea,
-	0xba, 0x90, 0x86, 0x5b, 0x6b, 0x7a, 0x68, 0xa9, 0xcc, 0xa1, 0xf9, 0x96, 0x7d, 0x57, 0xdc, 0xb8,
-	0xe8, 0xc7, 0x50, 0xe6, 0x9f, 0x26, 0x9c, 0x94, 0x9b, 0x22, 0x63, 0xc2, 0xb3, 0xd0, 0x93, 0x06,
-	0x30, 0xe4, 0x6d, 0xf4, 0xe6, 0x0d, 0x80, 0x7d, 0xf1, 0x24, 0x1b, 0x00, 0xf7, 0xcb, 0xb5, 0x27,
-	0x7f, 0x35, 0x60, 0x87, 0xf7, 0x2a, 0xec, 0x5c, 0x99, 0x3a, 0x46, 0x23, 0xa8, 0x47, 0x1b, 0x3a,
-	0xea, 0xa6, 0xb5, 0x79, 0x9e, 0xb9, 0x4e, 0xe2, 0x13, 0x24, 0x08, 0x77, 0x04, 0xf5, 0xe8, 0xb0,
-	0x12, 0x3a, 0x49, 0x19, 0x61, 0xf2, 0x9c, 0x44, 0x07, 0x86, 0xd0, 0x49, 0xca, 0x18, 0xd1, 0xc9,
-	0x48, 0x08, 0x7a, 0x0a, 0xd5, 0xa0, 0xf1, 0x23, 0x59, 0x78, 0x48, 0x4e, 0x17, 0x99, 0x31, 0x8c,
-	0xa1, 0x99, 0x98, 0x32, 0xd0, 0xdd, 0x35, 0x27, 0xb1, 0xf1, 0x23, 0xd3, 0xd5, 0x19, 0xec, 0xa5,
-	0x8d, 0x20, 0xe8, 0x30, 0xc5, 0x5f, 0x72, 0x40, 0xc9, 0x74, 0xfa, 0x1c, 0x6a, 0x91, 0x06, 0x8e,
-	0x3a, 0xc2, 0x6c, 0x7d, 0x5c, 0xe9, 0x74, 0x53, 0x75, 0xdc, 0xcf, 0x0b, 0x68, 0xc4, 0xa7, 0x16,
-	0x74, 0x47, 0x98, 0xa7, 0x4e, 0x33, 0x99, 0x01, 0xbd, 0x81, 0x5d, 0x15, 0xcf, 0x4c, 0xd7, 0xc3,
-	0x0e, 0x87, 0xb5, 0x8b, 0x7a, 0x21, 0x35, 0xc4, 0x35, 0xc2, 0xd9, 0xed, 0x68, 0x68, 0xa1, 0x32,
-	0xa8, 0x41, 0x3d, 0x2a, 0x47, 0xdd, 0x74, 0xeb, 0x4d, 0x5c, 0x9d, 0x51, 0x12, 0xe0, 0xe2, 0x18,
-	0x17, 0x84, 0x41, 0x66, 0xb0, 0x44, 0xe7, 0x56, 0xf2, 0xb9, 0x86, 0x4e, 0x65, 0x86, 0x48, 0x71,
-	0x5c, 0xc8, 0x4c, 0xa1, 0xd7, 0x0c, 0xce, 0xca, 0xc4, 0xed, 0x6b, 0x68, 0x8a, 0x6c, 0x0d, 0xf9,
-	0x77, 0xd3, 0xdd, 0x64, 0x1a, 0xb9, 0x22, 0xb5, 0xc0, 0x81, 0x2e, 0x0e, 0x14, 0xe1, 0xab, 0x93,
-	0x6a, 0xbb, 0x81, 0x9f, 0x37, 0x74, 0xec, 0x66, 0xd2, 0x7f, 0x98, 0xc0, 0xfd, 0x04, 0x07, 0x09,
-	0x97, 0xaa, 0x60, 0x74, 0x7e, 0xd6, 0xc7, 0x48, 0xdf, 0x77, 0xb0, 0x17, 0xe7, 0x2b, 0xd6, 0x7f,
-	0xd0, 0x61, 0x3a, 0x9b, 0x31, 0xad, 0x70, 0x7a, 0x77, 0x0d, 0xdb, 0x5c, 0xcd, 0x03, 0xfe, 0x3e,
-	0x3a, 0x35, 0x87, 0xad, 0x4d, 0x59, 0x7f, 0x60, 0x81, 0x52, 0xb8, 0x3e, 0xcc, 0xb5, 0xe1, 0xfe,
-	0xcf, 0xa1, 0x1d, 0xa7, 0x38, 0x71, 0xc2, 0xbd, 0x74, 0x06, 0x4c, 0x9c, 0x91, 0x95, 0x13, 0x13,
-	0xba, 0x71, 0xfa, 0x65, 0xfb, 0xbe, 0xe1, 0x13, 0xf2, 0xc3, 0x74, 0x8e, 0x8e, 0x19, 0x6d, 0x9a,
-	0xa1, 0x73, 0x68, 0xa7, 0x4e, 0xf9, 0xe1, 0x0d, 0xf2, 0x3e, 0x02, 0x32, 0x6f, 0xb0, 0x00, 0x39,
-	0x6b, 0x16, 0x43, 0x0f, 0x02, 0xcf, 0xf9, 0x53, 0x61, 0xe7, 0xe8, 0x7a, 0xc3, 0x90, 0xb1, 0xd3,
-	0xe6, 0xae, 0x08, 0x88, 0xb2, 0xa7, 0xb2, 0xac, 0x3b, 0x9c, 0x1e, 0x7f, 0xfb, 0x60, 0x66, 0x7a,
-	0x97, 0xab, 0x0b, 0xa2, 0x1f, 0xbc, 0xb7, 0xe7, 0x53, 0x7f, 0xa1, 0x91, 0xd7, 0x3c, 0x78, 0x6f,
-	0xdb, 0xd3, 0x0f, 0x8f, 0x07, 0xc6, 0xc5, 0x60, 0x86, 0xad, 0xc1, 0xd5, 0xa7, 0x17, 0x25, 0xfa,
-	0x17, 0xdb, 0xe3, 0xbf, 0x03, 0x00, 0x00, 0xff, 0xff, 0xfa, 0x94, 0xd4, 0xf3, 0x1f, 0x15, 0x00,
-	0x00,
+	0x13, 0x07, 0x65, 0x5b, 0xb2, 0x47, 0xb2, 0x6c, 0xac, 0xfc, 0xc1, 0x48, 0xf1, 0xc7, 0x9f, 0xce,
+	0x87, 0x1d, 0x04, 0x16, 0xfe, 0x4e, 0x51, 0xa0, 0x40, 0x82, 0xc2, 0x56, 0x10, 0x43, 0x70, 0x13,
+	0x34, 0x72, 0xdc, 0x00, 0x2d, 0x50, 0x81, 0x16, 0x57, 0x32, 0x11, 0x89, 0x54, 0x49, 0xca, 0x09,
+	0x6f, 0x05, 0x7a, 0xec, 0xb5, 0x0f, 0xd2, 0x53, 0xaf, 0x3d, 0xf5, 0x21, 0xfa, 0x00, 0x7d, 0x8f,
+	0x82, 0xbb, 0x3b, 0xcb, 0x0f, 0x91, 0xb4, 0xea, 0xfa, 0xd0, 0x9b, 0x38, 0x33, 0xfb, 0xdb, 0xd9,
+	0x99, 0xdf, 0xce, 0xcc, 0x0a, 0x2a, 0x23, 0xdb, 0x98, 0x0c, 0xe9, 0xe1, 0xd8, 0xb1, 0x3d, 0x9b,
+	0x14, 0xf9, 0x57, 0xbd, 0xd2, 0xb3, 0x47, 0x23, 0xdb, 0xe2, 0xd2, 0xfa, 0xce, 0xc0, 0xb6, 0x07,
+	0x43, 0xda, 0x64, 0x5f, 0x97, 0x93, 0x7e, 0xd3, 0x33, 0x47, 0xd4, 0xf5, 0xf4, 0xd1, 0x58, 0x18,
+	0xac, 0xf1, 0x65, 0x5d, 0xcf, 0x31, 0x07, 0x03, 0xea, 0x08, 0x69, 0x4d, 0x48, 0xf5, 0x9e, 0x67,
+	0x4a, 0xac, 0x75, 0x21, 0x74, 0xa8, 0x6b, 0x4f, 0x9c, 0x9e, 0xd8, 0xb8, 0xbe, 0x9d, 0x10, 0x77,
+	0x4d, 0xcb, 0xf5, 0x74, 0x4b, 0xea, 0x11, 0xeb, 0xa3, 0x69, 0x0c, 0xa8, 0x27, 0x84, 0x04, 0x37,
+	0x70, 0x5d, 0x94, 0x69, 0xbf, 0xcd, 0x41, 0xf1, 0x35, 0x13, 0x93, 0x2a, 0x14, 0x4c, 0x43, 0x55,
+	0x76, 0x95, 0xfd, 0xa5, 0x4e, 0xc1, 0x34, 0x08, 0x81, 0x79, 0x4b, 0x1f, 0x51, 0xb5, 0xc0, 0x24,
+	0xec, 0x37, 0x51, 0xa1, 0x74, 0x4d, 0x1d, 0xd7, 0xb4, 0x2d, 0x75, 0x8e, 0x89, 0xf1, 0x93, 0xd4,
+	0x61, 0x71, 0xa4, 0x5b, 0x66, 0x9f, 0xba, 0x9e, 0x3a, 0xcf, 0x54, 0xf2, 0x9b, 0xac, 0xc1, 0x82,
+	0xeb, 0xe9, 0x1e, 0x55, 0x17, 0x98, 0x82, 0x7f, 0x90, 0x1d, 0x28, 0xeb, 0x4e, 0xef, 0xca, 0xbc,
+	0xa6, 0xdd, 0x0f, 0xd4, 0x57, 0x8b, 0x4c, 0x07, 0x42, 0x74, 0x46, 0x7d, 0xf2, 0x19, 0x2c, 0xf5,
+	0x27, 0x16, 0x8b, 0x86, 0xab, 0x96, 0x76, 0xe7, 0xf6, 0xcb, 0x47, 0x1b, 0x87, 0x22, 0xfe, 0xdc,
+	0xe7, 0x57, 0x42, 0xdd, 0x09, 0x0d, 0xc9, 0x0b, 0xa8, 0xb0, 0x60, 0x0c, 0x87, 0xd4, 0xe8, 0xea,
+	0x9e, 0xba, 0xb8, 0xab, 0xec, 0x97, 0x8f, 0xea, 0x87, 0x3c, 0x29, 0x87, 0x98, 0x94, 0xc3, 0x77,
+	0x98, 0x94, 0x4e, 0x59, 0xda, 0x1f, 0x7b, 0xe4, 0x0b, 0x80, 0xc9, 0xd8, 0xd0, 0x3d, 0xbe, 0x78,
+	0xe9, 0xc6, 0xc5, 0x4b, 0xc2, 0xfa, 0xd8, 0x23, 0x8f, 0x60, 0xa5, 0xe7, 0x50, 0xb6, 0xf4, 0xd2,
+	0xef, 0x7a, 0xfe, 0x98, 0xaa, 0xc0, 0x0e, 0xb5, 0x2c, 0xc4, 0x27, 0xfe, 0x3b, 0x7f, 0x4c, 0xc9,
+	0x03, 0xa8, 0x46, 0xec, 0x1c, 0xda, 0x57, 0xcb, 0xcc, 0xac, 0x22, 0xcd, 0x3a, 0xb4, 0x4f, 0xb6,
+	0x00, 0x44, 0xbe, 0x82, 0xe8, 0x54, 0x98, 0xc5, 0x12, 0x97, 0x9c, 0x51, 0x5f, 0xfb, 0x4b, 0x81,
+	0x6a, 0x3c, 0x08, 0x53, 0x09, 0x6c, 0x80, 0xb0, 0xef, 0x9a, 0x86, 0xc8, 0xe2, 0x22, 0x17, 0xb4,
+	0x8d, 0x20, 0xfa, 0x98, 0x9f, 0x40, 0xcd, 0xb3, 0x09, 0x28, 0x6a, 0xb3, 0xd5, 0x7d, 0x73, 0x48,
+	0xbb, 0x8c, 0x03, 0x22, 0xa3, 0x81, 0xe0, 0x4d, 0xc0, 0x83, 0x7b, 0xc0, 0x7e, 0x33, 0xd7, 0x78,
+	0x52, 0x4b, 0xc1, 0x77, 0x90, 0xb5, 0x1d, 0x28, 0x53, 0xcb, 0x73, 0xfc, 0xee, 0xd8, 0x36, 0x2d,
+	0x0f, 0xd3, 0xca, 0x44, 0x5f, 0x07, 0x92, 0x80, 0x43, 0xce, 0xc4, 0x0a, 0xee, 0x84, 0x5a, 0xe2,
+	0x4b, 0xc5, 0xa7, 0x64, 0xdc, 0x62, 0xc8, 0x38, 0xed, 0xd7, 0x02, 0xd4, 0x5a, 0x2c, 0x2e, 0xfc,
+	0xb4, 0x1d, 0xfa, 0xc3, 0x24, 0xe0, 0x14, 0xda, 0x2a, 0xe9, 0xec, 0x2c, 0x64, 0xb3, 0x73, 0x2e,
+	0xc1, 0xce, 0x04, 0x0f, 0xe7, 0xa7, 0x78, 0x78, 0x1c, 0xe5, 0xe1, 0x02, 0xe3, 0xe1, 0x1e, 0xf2,
+	0x30, 0xea, 0x9a, 0x64, 0x23, 0x77, 0x31, 0x4a, 0xca, 0x14, 0x6a, 0x14, 0x67, 0xa3, 0x46, 0xe9,
+	0x46, 0x6a, 0x2c, 0x26, 0xa9, 0xf1, 0x87, 0x02, 0x8d, 0x1c, 0xbf, 0x92, 0xa9, 0x57, 0xf2, 0x53,
+	0x5f, 0xc8, 0x49, 0xfd, 0x5c, 0x6e, 0xea, 0xe7, 0xf3, 0x52, 0xbf, 0x90, 0x9e, 0xfa, 0x62, 0x24,
+	0xf5, 0xbf, 0x2b, 0x50, 0xbb, 0x60, 0xb7, 0x2b, 0x9e, 0xfa, 0x24, 0xcf, 0xff, 0xb3, 0x69, 0xd7,
+	0x0e, 0xa0, 0xf6, 0x92, 0x0e, 0xe9, 0x0c, 0xdc, 0xd5, 0x34, 0x58, 0x3d, 0xa5, 0x5e, 0xee, 0x41,
+	0xb5, 0xa7, 0xb0, 0x21, 0x6d, 0x4e, 0xfc, 0x20, 0x1b, 0x79, 0x88, 0xcf, 0xa1, 0x11, 0xb1, 0x7e,
+	0x8d, 0xf4, 0xc0, 0x25, 0x71, 0x12, 0x29, 0x49, 0x12, 0x3d, 0x01, 0xf2, 0x95, 0xe9, 0x8a, 0xe5,
+	0x2e, 0x2e, 0x92, 0x95, 0x5c, 0x89, 0x54, 0x72, 0xed, 0x18, 0xd6, 0xcf, 0x71, 0xa7, 0xf3, 0x40,
+	0x92, 0x77, 0x49, 0x25, 0x44, 0x21, 0x0a, 0x71, 0x85, 0xd5, 0xac, 0x43, 0xdd, 0xb1, 0x6d, 0xb9,
+	0x94, 0x1c, 0x42, 0x31, 0x50, 0x4d, 0x5c, 0xb6, 0x3a, 0x28, 0xfd, 0xa2, 0xc9, 0xa2, 0xc5, 0x39,
+	0xd3, 0x76, 0x84, 0x15, 0x79, 0x04, 0xa2, 0x1b, 0x33, 0xe0, 0xf2, 0x51, 0x35, 0xde, 0x2a, 0x3a,
+	0x42, 0xab, 0xd9, 0x50, 0x8b, 0x1d, 0xec, 0x96, 0xdb, 0xed, 0x43, 0x89, 0x03, 0xba, 0x6a, 0x81,
+	0x71, 0x23, 0xb9, 0x1f, 0xaa, 0x83, 0x4a, 0x7d, 0xbf, 0x65, 0x8f, 0xc6, 0x21, 0x0f, 0xda, 0xbc,
+	0xdf, 0x60, 0x94, 0x62, 0x75, 0x5a, 0x49, 0xa9, 0xd3, 0x5c, 0x19, 0xb9, 0x8d, 0x22, 0x73, 0x6f,
+	0xf2, 0x5b, 0xf2, 0x86, 0x3c, 0x12, 0x27, 0x37, 0xba, 0xbe, 0x06, 0x0b, 0xd4, 0x71, 0x6c, 0x07,
+	0xdb, 0x31, 0xfb, 0x20, 0x5f, 0xc2, 0x8a, 0xc3, 0x1d, 0xea, 0xf6, 0x6c, 0xcb, 0xa3, 0x9f, 0x78,
+	0xed, 0x8e, 0x45, 0x82, 0xa9, 0x5b, 0x5c, 0xdb, 0xa9, 0x3a, 0xb1, 0x6f, 0xed, 0x27, 0x05, 0x16,
+	0x2f, 0x5c, 0x7d, 0x40, 0x83, 0x12, 0xb5, 0x03, 0x65, 0x31, 0x99, 0xb0, 0x62, 0x27, 0x6a, 0x0c,
+	0x17, 0xb1, 0x4a, 0xd7, 0x80, 0x25, 0x1c, 0x5d, 0x64, 0x73, 0xe2, 0x02, 0x7e, 0x68, 0xa1, 0x64,
+	0x87, 0x9e, 0x8b, 0xae, 0xc6, 0x43, 0xa3, 0x93, 0xfc, 0x6c, 0xf8, 0xa9, 0xfd, 0xa9, 0xc0, 0x72,
+	0x47, 0x4c, 0x45, 0xcc, 0x9b, 0x00, 0x2c, 0x1c, 0x93, 0x64, 0xb9, 0x43, 0x51, 0xdb, 0x20, 0x7b,
+	0xb0, 0x2c, 0x0d, 0x98, 0xb7, 0xdc, 0x9d, 0x0a, 0x0a, 0x99, 0xbf, 0x51, 0xa3, 0x88, 0x53, 0xd2,
+	0x88, 0xb9, 0x75, 0x00, 0xa5, 0x89, 0xcb, 0x6a, 0xb7, 0x3a, 0xcf, 0x48, 0xb1, 0x8a, 0xa4, 0xc0,
+	0xc0, 0x74, 0x8a, 0x81, 0xc1, 0x89, 0x4f, 0x8e, 0x60, 0x5d, 0xe2, 0x19, 0xa6, 0x3b, 0x1e, 0xea,
+	0x3e, 0xc7, 0xe5, 0x49, 0xa9, 0xa1, 0xf2, 0x25, 0xd7, 0x05, 0xf0, 0x1a, 0x85, 0x9d, 0xd6, 0x15,
+	0xed, 0x7d, 0x90, 0x37, 0x25, 0x3c, 0xe5, 0x4c, 0x5c, 0x7a, 0x08, 0x55, 0x7d, 0x3c, 0x1e, 0x9a,
+	0x3d, 0x3d, 0x28, 0x4f, 0x61, 0xe0, 0x97, 0x23, 0xd2, 0xb6, 0xa1, 0xfd, 0xa8, 0xc0, 0x6e, 0xf6,
+	0x3e, 0xb7, 0xbc, 0x2f, 0x4f, 0xa1, 0x68, 0x5a, 0xdd, 0x89, 0x4b, 0xc5, 0x75, 0x59, 0xc7, 0xc8,
+	0xc4, 0xe1, 0x17, 0x4c, 0xeb, 0xc2, 0xa5, 0xda, 0xcf, 0x05, 0x68, 0xc4, 0xef, 0x0c, 0xaf, 0xa3,
+	0x77, 0x73, 0x65, 0xc2, 0x8b, 0x31, 0x97, 0x7e, 0x31, 0xe6, 0xe3, 0x17, 0x63, 0x95, 0x7b, 0x2e,
+	0xa7, 0x6d, 0x6c, 0x07, 0x19, 0x67, 0xa8, 0xb2, 0x33, 0xa0, 0xcc, 0xfd, 0xf7, 0x37, 0xeb, 0x73,
+	0xd8, 0xe4, 0xc7, 0xc7, 0x32, 0xde, 0x36, 0x66, 0x09, 0x84, 0xf6, 0x1c, 0x36, 0x4f, 0xa9, 0x77,
+	0xe2, 0xb7, 0x74, 0xcb, 0xb6, 0xcc, 0x9e, 0x3e, 0x0c, 0xd7, 0xfd, 0x0f, 0x2a, 0x3d, 0x94, 0x86,
+	0x4b, 0xcb, 0xbd, 0xd0, 0x52, 0x1b, 0xc2, 0xca, 0x3b, 0xfe, 0x40, 0xb9, 0x75, 0xd2, 0x0f, 0xa0,
+	0x24, 0xde, 0x38, 0xa2, 0x28, 0xaf, 0x60, 0xc4, 0x10, 0x19, 0xf5, 0x41, 0x03, 0x38, 0x16, 0x6d,
+	0xf4, 0xf6, 0x0d, 0x80, 0x3f, 0x9d, 0x92, 0x0d, 0x40, 0xe0, 0x0a, 0xed, 0xd1, 0x2f, 0x9b, 0xb0,
+	0x2c, 0x7a, 0x15, 0x75, 0xae, 0xcd, 0x1e, 0x25, 0x2d, 0xa8, 0x44, 0x1b, 0x3a, 0x69, 0xa4, 0xb5,
+	0x79, 0x11, 0xb9, 0x7a, 0xe2, 0x09, 0x22, 0xdd, 0x6d, 0x41, 0x25, 0x3a, 0xac, 0x84, 0x20, 0x29,
+	0x23, 0x4c, 0x1e, 0x48, 0x74, 0x60, 0x08, 0x41, 0x52, 0xc6, 0x88, 0x7a, 0x46, 0x40, 0xc8, 0x0b,
+	0x58, 0x92, 0x8d, 0x9f, 0xa8, 0x88, 0x90, 0x9c, 0x2e, 0x32, 0x7d, 0x68, 0xc3, 0x4a, 0x62, 0xca,
+	0x20, 0xdb, 0x53, 0x20, 0xb1, 0xf1, 0x23, 0x13, 0xea, 0x1c, 0xd6, 0xd2, 0x46, 0x10, 0xb2, 0x97,
+	0x82, 0x97, 0x1c, 0x50, 0x32, 0x41, 0x5f, 0x41, 0x39, 0xd2, 0xc0, 0x49, 0x1d, 0xcd, 0xa6, 0xc7,
+	0x95, 0x7a, 0x23, 0x55, 0x27, 0x70, 0x4e, 0xa1, 0x1a, 0x9f, 0x5a, 0xc8, 0x16, 0x9a, 0xa7, 0x4e,
+	0x33, 0x99, 0x0e, 0xbd, 0x85, 0xd5, 0x0e, 0x1d, 0x98, 0xae, 0x47, 0x1d, 0x41, 0x6b, 0x97, 0xec,
+	0x84, 0xa5, 0x21, 0xae, 0x41, 0xb0, 0xfb, 0x51, 0xd7, 0x42, 0xa5, 0xcc, 0x41, 0x25, 0x2a, 0x27,
+	0x8d, 0x74, 0xeb, 0x59, 0xa0, 0xce, 0x59, 0x11, 0x10, 0xe2, 0x58, 0x2d, 0x08, 0x9d, 0xcc, 0xa8,
+	0x12, 0xf5, 0xcd, 0xe4, 0x75, 0x0d, 0x41, 0x55, 0xce, 0x48, 0xdc, 0x2e, 0xac, 0x4c, 0x21, 0x6a,
+	0x46, 0xcd, 0xca, 0xe4, 0xed, 0x1b, 0x58, 0xc1, 0x68, 0x1d, 0x8b, 0x77, 0xd3, 0x76, 0x32, 0x8c,
+	0x42, 0x91, 0x9a, 0x60, 0xa9, 0x8b, 0x13, 0x05, 0xb1, 0xea, 0xa9, 0xb6, 0x33, 0xe0, 0xbc, 0x65,
+	0x63, 0x37, 0x97, 0xfe, 0xc3, 0x00, 0x6e, 0x24, 0x6a, 0x10, 0x42, 0x76, 0xb0, 0xa2, 0x8b, 0xbd,
+	0xee, 0x38, 0x7c, 0xef, 0xd9, 0xdf, 0x3e, 0x29, 0xe1, 0x13, 0x8a, 0xd4, 0x63, 0x4b, 0x5d, 0x3c,
+	0x7c, 0x88, 0x55, 0x4f, 0xb5, 0x9d, 0x01, 0x87, 0x87, 0x8f, 0x4b, 0x6f, 0x1b, 0x3e, 0xbe, 0x7a,
+	0x3a, 0x7c, 0x62, 0xaf, 0xbb, 0x08, 0xdf, 0x19, 0x54, 0x25, 0xc9, 0x5c, 0x37, 0x38, 0xf1, 0xd6,
+	0x14, 0xf9, 0x98, 0x1c, 0x81, 0xe2, 0x7c, 0x12, 0x2a, 0x59, 0xc7, 0x21, 0x94, 0x92, 0x7b, 0x69,
+	0x96, 0x37, 0x83, 0xbc, 0x85, 0x0d, 0x41, 0x12, 0x26, 0xbf, 0x8b, 0x43, 0x7e, 0x07, 0x6b, 0xf1,
+	0x9e, 0xc6, 0x67, 0x14, 0xb2, 0x97, 0xde, 0xf1, 0xb8, 0x16, 0x41, 0xb7, 0xa7, 0xea, 0x9f, 0x50,
+	0x0b, 0x7f, 0xbf, 0x8f, 0xbe, 0xac, 0xc2, 0xf1, 0x47, 0x9b, 0x2e, 0xc2, 0x52, 0x89, 0xd0, 0x7b,
+	0xb9, 0x36, 0x02, 0xff, 0x02, 0xd6, 0xe3, 0x6d, 0x10, 0x77, 0x78, 0x90, 0xde, 0x25, 0x13, 0x7b,
+	0x64, 0xc5, 0xc4, 0x84, 0x46, 0xbc, 0x45, 0xf3, 0x75, 0xdf, 0x88, 0x57, 0xd4, 0x93, 0xf4, 0x3e,
+	0x1e, 0x33, 0x9a, 0x35, 0x42, 0x17, 0xb0, 0x9e, 0xfa, 0x12, 0x0c, 0x4f, 0x90, 0xf7, 0x50, 0xcc,
+	0x3c, 0xc1, 0x08, 0xd4, 0xac, 0x79, 0x9d, 0x3c, 0x96, 0xc8, 0xf9, 0x2f, 0x87, 0xfa, 0xfe, 0xcd,
+	0x86, 0x61, 0x57, 0x4f, 0x9b, 0xcd, 0x23, 0x24, 0xca, 0x9e, 0xdc, 0x33, 0xcf, 0xa0, 0xc3, 0x06,
+	0xe7, 0x1e, 0xee, 0xd9, 0x16, 0xff, 0x68, 0x93, 0x87, 0x71, 0x6e, 0x26, 0xf5, 0x08, 0xbc, 0x9b,
+	0x1c, 0xc6, 0x43, 0x03, 0xe1, 0xf7, 0x7b, 0xbc, 0x4f, 0xd9, 0x5b, 0xa4, 0xeb, 0x6f, 0xbe, 0x55,
+	0xb5, 0x53, 0x56, 0x9d, 0xe2, 0xa8, 0x5a, 0xa4, 0xbc, 0xdd, 0xde, 0xeb, 0x31, 0x34, 0x82, 0x4b,
+	0x91, 0xd4, 0xbb, 0x27, 0xfe, 0x99, 0x69, 0x19, 0x21, 0x3d, 0x73, 0x8c, 0x70, 0xb3, 0x87, 0xb9,
+	0xb6, 0x72, 0x47, 0x0f, 0xb6, 0x32, 0xc0, 0xc4, 0x4c, 0xf9, 0xf4, 0x86, 0x3d, 0xe3, 0x73, 0xe6,
+	0x6c, 0xbb, 0x9e, 0x1c, 0x7c, 0xfb, 0x78, 0x60, 0x7a, 0x57, 0x93, 0xcb, 0x20, 0xc8, 0xcd, 0x8f,
+	0xf6, 0xb0, 0xef, 0x8f, 0xf4, 0xa0, 0xea, 0x36, 0x3f, 0xda, 0x76, 0xff, 0xd3, 0xb3, 0xa6, 0x71,
+	0xd9, 0x1c, 0x50, 0xab, 0x79, 0xfd, 0xff, 0xcb, 0x22, 0xfb, 0x1f, 0xfe, 0xd9, 0xdf, 0x01, 0x00,
+	0x00, 0xff, 0xff, 0x5e, 0x67, 0x0f, 0x30, 0x8d, 0x19, 0x00, 0x00,
 }

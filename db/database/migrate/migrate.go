@@ -14,6 +14,10 @@ func Migrate(db *gorm.DB) error {
 		migrations.AddActionTypeColumn(),
 		migrations.AddWorkflowManifestIDColumn(),
 		migrations.AddWorkflowEnabledColumn(),
+		migrations.CreateScenesTable(),
+		migrations.CreateAssetsTable(),
+		migrations.CreateAlertsTable(),
+		migrations.CreateModuleResourceInstancesTable(),
 	})
 
 	return m.Migrate()
@@ -27,6 +31,10 @@ func Rollback(db *gorm.DB) error {
 		migrations.AddActionTypeColumn(),
 		migrations.AddWorkflowManifestIDColumn(),
 		migrations.AddWorkflowEnabledColumn(),
+		migrations.CreateScenesTable(),
+		migrations.CreateAssetsTable(),
+		migrations.CreateAlertsTable(),
+		migrations.CreateModuleResourceInstancesTable(),
 	})
 
 	return m.RollbackLast()

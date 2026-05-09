@@ -12,7 +12,8 @@ import (
 func ModuleRoutes(mux *http.ServeMux, app *types.App) {
 	moduleRepository := repo.NewModuleRepository(app.Db)
 	refRepository := repo.NewResourceReferenceRepository(app.Db)
-	moduleService := svc.NewModuleService(moduleRepository, refRepository, app.EventPublisher)
+	instanceRepository := repo.NewModuleResourceInstanceRepository(app.Db)
+	moduleService := svc.NewModuleService(moduleRepository, refRepository, instanceRepository, app.EventPublisher)
 	moduleHandler := client.NewModuleServiceServer(moduleService)
 	mux.Handle(moduleHandler.PathPrefix(), moduleHandler)
 }

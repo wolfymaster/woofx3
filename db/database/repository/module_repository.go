@@ -235,6 +235,67 @@ func (r *ModuleRepository) GetActionByModuleAndManifestID(moduleID, manifestID s
 	return &action, nil
 }
 
+// Assets — mirror the Action helpers above. Identity comes from
+// (created_by_type, created_by_ref, manifest_id), same as triggers
+// and actions; module-installer registrations carry the composite
+// moduleKey in `created_by_ref` so prefix queries scope cleanly.
+
+func (r *ModuleRepository) UpsertAsset(a *models.Asset) error {
+	var result struct {
+		ID uuid.UUID `gorm:"column:id"`
+	}
+	err := r.db.Raw(`
+		INSERT INTO public.assets (id, name, description, manifest_path, repository_key, kind, content_type, created_by_type, created_by_ref, manifest_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		ON CONFLICT (created_by_type, created_by_ref, manifest_id) DO UPDATE SET
+			name = EXCLUDED.name,
+			description = EXCLUDED.description,
+			manifest_path = EXCLUDED.manifest_path,
+			repository_key = EXCLUDED.repository_key,
+			kind = EXCLUDED.kind,
+			content_type = EXCLUDED.content_type,
+			updated_at = NOW()
+		RETURNING id
+	`, a.ID, a.Name, a.Description, a.ManifestPath, a.RepositoryKey, a.Kind, a.ContentType,
+		a.CreatedByType, a.CreatedByRef, a.ManifestID).Scan(&result).Error
+	if err != nil {
+		return err
+	}
+	a.ID = result.ID
+	return nil
+}
+
+func (r *ModuleRepository) ListAssets(createdByType, createdByRef string) ([]*models.Asset, error) {
+	var assets []*models.Asset
+	q := r.db
+	if createdByType != "" {
+		q = q.Where("created_by_type = ?", createdByType)
+	}
+	if createdByRef != "" {
+		q = q.Where("created_by_ref = ?", createdByRef)
+	}
+	err := q.Find(&assets).Error
+	return assets, err
+}
+
+// ListAssetsByModulePrefix mirrors ListActionsByModulePrefix — used
+// to capture rows for the deregistration event before they're deleted.
+func (r *ModuleRepository) ListAssetsByModulePrefix(moduleID string) ([]*models.Asset, error) {
+	var assets []*models.Asset
+	err := r.db.Where(
+		"created_by_type = ? AND created_by_ref LIKE ?",
+		"MODULE", moduleID+":%",
+	).Find(&assets).Error
+	return assets, err
+}
+
+func (r *ModuleRepository) DeleteAssetsByModulePrefix(moduleID string) error {
+	return r.db.Where(
+		"created_by_type = ? AND created_by_ref LIKE ?",
+		"MODULE", moduleID+":%",
+	).Delete(&models.Asset{}).Error
+}
+
 // Module Resources
 
 func (r *ModuleRepository) CreateModuleResource(res *models.ModuleResource) error {

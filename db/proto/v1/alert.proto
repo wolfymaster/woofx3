@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package alert;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// Append-only log of dispatched alert envelopes. Mirrors the
+// `Workflow` / `Scene` shape: typed audit columns + opaque JSON
+// `payload` the engine never inspects.
+//
+// Replay path: the api gateway calls `GetAlert` to fetch the row,
+// re-publishes `payload` to the `ui.notify.alert` NATS subject (so
+// streamware broadcasts it to overlays exactly like the original
+// dispatch), then calls `UpdateAlertStatus(..., "replayed")`.
+service AlertService {
+  rpc CreateAlert(CreateAlertRequest) returns (AlertResponse);
+  rpc GetAlert(GetAlertRequest) returns (AlertResponse);
+  rpc ListAlerts(ListAlertsRequest) returns (ListAlertsResponse);
+  rpc UpdateAlertStatus(UpdateAlertStatusRequest) returns (AlertResponse);
+  rpc DeleteAlert(DeleteAlertRequest) returns (common.ResponseStatus);
+}
+
+message Alert {
+  string id = 1;
+  string application_id = 2;
+  // Full AlertPayload envelope JSON
+  // (`{ id, parameters, event }`) — same bytes streamware broadcasts.
+  // Persisted verbatim in `alerts.payload` (JSONB).
+  string payload = 3;
+  // Optional attribution. `workflow_id` is the workflow execution
+  // (if any) that fired the alert; `source_event_id` is the
+  // originating CloudEvent id (when available). Empty / blank for
+  // manual / debug dispatches.
+  string workflow_id = 4;
+  string source_event_id = 5;
+  // Lifecycle: `sent` (initial), `replayed`, `failed` (reserved).
+  string status = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message CreateAlertRequest {
+  string application_id = 1;
+  // JSON-encoded AlertPayload. Persisted verbatim into `alerts.payload`.
+  string payload = 2;
+  // Optional attribution (see Alert.workflow_id / source_event_id).
+  string workflow_id = 3;
+  string source_event_id = 4;
+}
+
+message GetAlertRequest {
+  string id = 1;
+}
+
+message AlertResponse {
+  common.ResponseStatus status = 1;
+  Alert alert = 2;
+}
+
+message ListAlertsRequest {
+  string application_id = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message ListAlertsResponse {
+  common.ResponseStatus status = 1;
+  repeated Alert alerts = 2;
+  int64 total_count = 3;
+  int32 limit = 4;
+  int32 offset = 5;
+}
+
+message UpdateAlertStatusRequest {
+  string id = 1;
+  string status = 2;
+}
+
+message DeleteAlertRequest {
+  string id = 1;
+}

@@ -227,6 +227,68 @@ func buildActionDeregisteredData(modulePrefix string, actions []*models.Action) 
 	}
 }
 
+// buildAssetRegisteredData mirrors buildActionRegisteredData for the
+// asset surface. Each row carries the engine-side identifiers plus
+// `repository_key` — the path the deployer's URL pipeline turns into
+// a fetchable URL. The engine deliberately does not carry a public
+// URL here; that's the deployer's concern.
+func buildAssetRegisteredData(moduleKey, moduleName, version string, assets []*models.Asset) map[string]any {
+	rows := make([]map[string]any, 0, len(assets))
+	for _, a := range assets {
+		moduleID := moduleIDFromCreatedByRef(a.CreatedByRef)
+		row := map[string]any{
+			"id":              a.ID.String(),
+			"canonical_id":    canonicalIDFor(moduleID, "asset", a.ManifestID),
+			"manifest_id":     a.ManifestID,
+			"name":            a.Name,
+			"description":     a.Description,
+			"manifest_path":   a.ManifestPath,
+			"repository_key":  a.RepositoryKey,
+			"kind":            a.Kind,
+			"content_type":    a.ContentType,
+			"created_by_type": a.CreatedByType,
+			"created_by_ref":  a.CreatedByRef,
+		}
+		if pk := projectionKeyFor(a.CreatedByType, a.CreatedByRef, "asset", a.ManifestID); pk != "" {
+			row["projection_key"] = pk
+		}
+		rows = append(rows, row)
+	}
+	return map[string]any{
+		"module_key":  moduleKey,
+		"module_name": moduleName,
+		"version":     version,
+		"assets":      rows,
+	}
+}
+
+func buildAssetDeregisteredData(modulePrefix string, assets []*models.Asset) map[string]any {
+	rows := make([]map[string]any, 0, len(assets))
+	for _, a := range assets {
+		moduleID := moduleIDFromCreatedByRef(a.CreatedByRef)
+		row := map[string]any{
+			"id":             a.ID.String(),
+			"canonical_id":   canonicalIDFor(moduleID, "asset", a.ManifestID),
+			"manifest_id":    a.ManifestID,
+			"name":           a.Name,
+			"description":    a.Description,
+			"manifest_path":  a.ManifestPath,
+			"repository_key": a.RepositoryKey,
+			"kind":           a.Kind,
+			"content_type":   a.ContentType,
+			"created_by_ref": a.CreatedByRef,
+		}
+		if pk := projectionKeyFor(a.CreatedByType, a.CreatedByRef, "asset", a.ManifestID); pk != "" {
+			row["projection_key"] = pk
+		}
+		rows = append(rows, row)
+	}
+	return map[string]any{
+		"module_prefix": modulePrefix,
+		"assets":        rows,
+	}
+}
+
 // buildWorkflowChangeData produces the snake_case payload for the
 // `db.workflow.{created,updated}.{appId}` outbox events. Mirrors the
 // trigger / action builders above so every webhook the UI receives uses

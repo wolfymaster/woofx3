@@ -1897,7 +1897,7 @@ func (s *clientServiceServer) serveValidateClientProtobuf(ctx context.Context, r
 }
 
 func (s *clientServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor2, 0
+	return twirpFileDescriptor3, 0
 }
 
 func (s *clientServiceServer) ProtocGenTwirpVersion() string {
@@ -1911,7 +1911,7 @@ func (s *clientServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "client", "ClientService")
 }
 
-var twirpFileDescriptor2 = []byte{
+var twirpFileDescriptor3 = []byte{
 	// 523 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x54, 0xd1, 0x6e, 0xd3, 0x30,
 	0x14, 0x55, 0xd2, 0x91, 0xd1, 0xdb, 0x34, 0x42, 0xae, 0x98, 0xa2, 0x54, 0x48, 0x25, 0x68, 0x30,

@@ -8,6 +8,9 @@ import "google/protobuf/timestamp.proto";
 import "module_trigger.proto";
 import "module_action.proto";
 import "module_resource.proto";
+import "module_resource_instance.proto";
+import "module_widget.proto";
+import "module_asset.proto";
 
 service ModuleService {
   rpc CreateModule(CreateModuleRequest) returns (ModuleResponse);
@@ -26,6 +29,13 @@ service ModuleService {
   rpc ListActions(ListActionsRequest) returns (ListActionsResponse);
   rpc GetActionByCanonicalId(GetByCanonicalIdRequest) returns (ActionResponse);
   rpc DeleteActionsByModuleId(DeleteByModuleIdRequest) returns (common.ResponseStatus);
+  rpc RegisterWidgets(RegisterWidgetsRequest) returns (ListWidgetsResponse);
+  rpc ListWidgets(ListWidgetsRequest) returns (ListWidgetsResponse);
+  rpc GetWidgetByCanonicalId(GetByCanonicalIdRequest) returns (WidgetResponse);
+  rpc DeleteWidgetsByModuleId(DeleteByModuleIdRequest) returns (common.ResponseStatus);
+  rpc RegisterAssets(RegisterAssetsRequest) returns (ListAssetsResponse);
+  rpc ListAssets(ListAssetsRequest) returns (ListAssetsResponse);
+  rpc DeleteAssetsByModuleId(DeleteByModuleIdRequest) returns (common.ResponseStatus);
   rpc CreateModuleResource(CreateModuleResourceRequest) returns (ModuleResourceResponse);
   rpc ListModuleResources(ListModuleResourcesRequest) returns (ListModuleResourcesResponse);
   rpc DeleteModuleResources(DeleteModuleResourcesRequest) returns (common.ResponseStatus);
@@ -33,6 +43,13 @@ service ModuleService {
   rpc CompleteModuleInstall(CompleteModuleInstallRequest) returns (common.ResponseStatus);
   rpc CheckModuleResourceUsage(CheckModuleResourceUsageRequest) returns (CheckModuleResourceUsageResponse);
   rpc CompleteModuleDelete(CompleteModuleDeleteRequest) returns (common.ResponseStatus);
+  // Runtime-created instances of module-declared kinds (counters, etc.).
+  // The engine learns identity here; semantics live in the owning module.
+  rpc CreateResourceInstance(CreateResourceInstanceRequest) returns (ResourceInstanceResponse);
+  rpc DeleteResourceInstance(DeleteResourceInstanceRequest) returns (common.ResponseStatus);
+  rpc GetResourceInstance(GetResourceInstanceRequest) returns (ResourceInstanceResponse);
+  rpc ListResourceInstancesByKind(ListResourceInstancesByKindRequest) returns (ListResourceInstancesResponse);
+  rpc ListResourceInstancesByModule(ListResourceInstancesByModuleRequest) returns (ListResourceInstancesResponse);
 }
 
 message Module {

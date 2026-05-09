@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package module;
+
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// ModuleResourceInstance is a runtime-created instance of a kind that an
+// installed barkloader module declares it provides. This is the K8s
+// custom-resource analog: the engine learns identity (module + kind +
+// instance_id) and owns referential integrity, but never learns what the
+// kind *means*. All semantics (value storage, mutation operations,
+// validation) live in the owning module.
+//
+// Identity:
+//   `module_id`     FK to modules.id (the owning module / "controller")
+//   `kind`          manifest-declared kind string (e.g. "counter")
+//   `instance_id`   instance-local id (e.g. "death_count")
+//   canonical id    `{module_name}:{kind}:{instance_id}` — derived
+//
+// `module_name` is the bare manifest id segment (e.g. "counter"), copied
+// to the wire so consumers don't need a second lookup to render the
+// canonical id.
+//
+// `display_name` is the user-facing label. It can drift across the
+// instance's lifetime without affecting identity.
+message ModuleResourceInstance {
+  string id = 1;
+  string module_id = 2;
+  string module_name = 3;
+  string kind = 4;
+  string instance_id = 5;
+  string display_name = 6;
+  string canonical_id = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message CreateResourceInstanceRequest {
+  // Owning module UUID. Optional when `module_name` is set; the server
+  // resolves the UUID from the name in that case (single Postgres lookup
+  // backed by the unique index on `modules.name`).
+  string module_id = 1;
+  string kind = 2;
+  string instance_id = 3;
+  string display_name = 4;
+  common.RequestContext request_context = 5;
+  // Owning module's manifest id (== `modules.name`). Sandbox callers
+  // (`ctx.resources.create`) typically know the manifest id but not the
+  // UUID — passing this avoids a separate `GetModuleByName` round-trip.
+  // When both are set, `module_id` wins.
+  string module_name = 6;
+}
+
+message ResourceInstanceResponse {
+  common.ResponseStatus status = 1;
+  ModuleResourceInstance instance = 2;
+}
+
+message DeleteResourceInstanceRequest {
+  string canonical_id = 1;
+  common.RequestContext request_context = 2;
+}
+
+message GetResourceInstanceRequest {
+  string canonical_id = 1;
+}
+
+message ListResourceInstancesByKindRequest {
+  string kind = 1;
+}
+
+message ListResourceInstancesByModuleRequest {
+  string module_id = 1;
+}
+
+message ListResourceInstancesResponse {
+  common.ResponseStatus status = 1;
+  repeated ModuleResourceInstance instances = 2;
+}

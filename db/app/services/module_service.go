@@ -17,20 +17,23 @@ import (
 )
 
 type moduleService struct {
-	repo      *repo.ModuleRepository
-	refRepo   *repo.ResourceReferenceRepository
-	publisher *workers.EventPublisher
+	repo         *repo.ModuleRepository
+	refRepo      *repo.ResourceReferenceRepository
+	instanceRepo *repo.ModuleResourceInstanceRepository
+	publisher    *workers.EventPublisher
 }
 
 func NewModuleService(
 	moduleRepo *repo.ModuleRepository,
 	refRepo *repo.ResourceReferenceRepository,
+	instanceRepo *repo.ModuleResourceInstanceRepository,
 	publisher *workers.EventPublisher,
 ) *moduleService {
 	return &moduleService{
-		repo:      moduleRepo,
-		refRepo:   refRepo,
-		publisher: publisher,
+		repo:         moduleRepo,
+		refRepo:      refRepo,
+		instanceRepo: instanceRepo,
+		publisher:    publisher,
 	}
 }
 
@@ -1064,5 +1067,155 @@ func moduleResourceToProto(r *models.ModuleResource) *client.ModuleResource {
 		CurrentVersion:  r.CurrentVersion,
 		InstalledAt:     timestamppb.New(r.InstalledAt),
 		UpdatedAt:       timestamppb.New(r.UpdatedAt),
+	}
+}
+
+// ---------------------------------------------------------------------
+// Widget RPC stubs.
+//
+// The widget surface is declared in `db/proto/v1/module.proto` but no
+// model / repository / service work has landed yet — the proto stub
+// pre-dates the implementation. These `twirp.Unimplemented`-returning
+// methods exist solely to satisfy the generated `client.ModuleService`
+// interface so unrelated services (scenes, assets, etc.) can be wired
+// into the mux without touching this half-finished feature.
+//
+// When the widget feature lands properly: replace these with real
+// implementations (mirror the trigger / action / asset patterns) and
+// remove this comment block.
+// ---------------------------------------------------------------------
+
+func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.RegisterWidgetsRequest) (*client.ListWidgetsResponse, error) {
+	return nil, twirp.NewError(twirp.Unimplemented, "RegisterWidgets is not implemented")
+}
+
+func (s *moduleService) ListWidgets(ctx context.Context, req *client.ListWidgetsRequest) (*client.ListWidgetsResponse, error) {
+	return nil, twirp.NewError(twirp.Unimplemented, "ListWidgets is not implemented")
+}
+
+func (s *moduleService) GetWidgetByCanonicalId(ctx context.Context, req *client.GetByCanonicalIdRequest) (*client.WidgetResponse, error) {
+	return nil, twirp.NewError(twirp.Unimplemented, "GetWidgetByCanonicalId is not implemented")
+}
+
+func (s *moduleService) DeleteWidgetsByModuleId(ctx context.Context, req *client.DeleteByModuleIdRequest) (*client.ResponseStatus, error) {
+	return nil, twirp.NewError(twirp.Unimplemented, "DeleteWidgetsByModuleId is not implemented")
+}
+
+// ---------------------------------------------------------------------
+// Asset RPCs.
+//
+// Module-extension surface for static media (images / audio / video /
+// fonts / data). Mirrors the action surface shape: idempotent upsert
+// keyed on (created_by_type, created_by_ref, manifest_id), outbox
+// events on `module.asset.{registered,deregistered}` so downstream
+// consumers (Convex editor, etc.) can react.
+// ---------------------------------------------------------------------
+
+func (s *moduleService) RegisterAssets(ctx context.Context, req *client.RegisterAssetsRequest) (*client.ListAssetsResponse, error) {
+	createdByType := "MODULE"
+	createdByRef := req.ModuleKey
+	if req.CreatedByType != "" && req.CreatedByRef != "" {
+		createdByType = req.CreatedByType
+		createdByRef = req.CreatedByRef
+	}
+	saved := make([]*models.Asset, 0, len(req.Assets))
+	for _, in := range req.Assets {
+		a := &models.Asset{
+			ID:            uuid.New(),
+			Name:          in.Name,
+			Description:   in.Description,
+			ManifestPath:  in.ManifestPath,
+			RepositoryKey: in.RepositoryKey,
+			Kind:          in.Kind,
+			ContentType:   in.ContentType,
+			CreatedByType: createdByType,
+			CreatedByRef:  createdByRef,
+			ManifestID:    in.ManifestId,
+		}
+		if err := s.repo.UpsertAsset(a); err != nil {
+			return nil, fmt.Errorf("upsert asset %q: %w", in.Name, err)
+		}
+		saved = append(saved, a)
+	}
+
+	if s.publisher != nil {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   "",
+			EntityType:      "module.asset",
+			Operation:       "registered",
+			Data:            buildAssetRegisteredData(req.ModuleKey, req.ModuleName, req.Version, saved),
+			AutoAcknowledge: true,
+		})
+	}
+
+	protoAssets := make([]*client.Asset, len(saved))
+	for i, a := range saved {
+		protoAssets[i] = assetToProto(a)
+	}
+	return &client.ListAssetsResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Assets registered successfully",
+		},
+		Assets: protoAssets,
+	}, nil
+}
+
+func (s *moduleService) ListAssets(ctx context.Context, req *client.ListAssetsRequest) (*client.ListAssetsResponse, error) {
+	assets, err := s.repo.ListAssets(req.CreatedByType, req.CreatedByRef)
+	if err != nil {
+		return nil, err
+	}
+	protoAssets := make([]*client.Asset, len(assets))
+	for i, a := range assets {
+		protoAssets[i] = assetToProto(a)
+	}
+	return &client.ListAssetsResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Assets retrieved successfully",
+		},
+		Assets: protoAssets,
+	}, nil
+}
+
+func (s *moduleService) DeleteAssetsByModuleId(ctx context.Context, req *client.DeleteByModuleIdRequest) (*client.ResponseStatus, error) {
+	// Capture rows for the deregistration event before deletion —
+	// mirrors DeleteActionsByModuleId.
+	assets, err := s.repo.ListAssetsByModulePrefix(req.ModuleId)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.DeleteAssetsByModulePrefix(req.ModuleId); err != nil {
+		return nil, err
+	}
+	if s.publisher != nil && len(assets) > 0 {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   "",
+			EntityType:      "module.asset",
+			Operation:       "deregistered",
+			Data:            buildAssetDeregisteredData(req.ModuleId, assets),
+			AutoAcknowledge: true,
+		})
+	}
+	return &client.ResponseStatus{
+		Code:    client.ResponseStatus_OK,
+		Message: "Assets deleted successfully",
+	}, nil
+}
+
+func assetToProto(a *models.Asset) *client.Asset {
+	return &client.Asset{
+		Id:            a.ID.String(),
+		ModuleId:      moduleIDFromCreatedByRef(a.CreatedByRef),
+		ManifestId:    a.ManifestID,
+		Name:          a.Name,
+		Description:   a.Description,
+		ManifestPath:  a.ManifestPath,
+		RepositoryKey: a.RepositoryKey,
+		Kind:          a.Kind,
+		ContentType:   a.ContentType,
+		CreatedByType: a.CreatedByType,
+		CreatedByRef:  a.CreatedByRef,
 	}
 }
