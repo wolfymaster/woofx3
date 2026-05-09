@@ -50,12 +50,27 @@ export default function AlertAudio({ id, url, duration, onDone }: AlertAudioProp
       player
         .play()
         .then(() => {
-          if (duration) {
+          if (duration !== undefined) {
+            // Author specified a duration — that's the hard ceiling
+            // for the alert. Truncate audio at duration even when
+            // the audio's natural length is longer.
             audioTimeout = setTimeout(() => {
               player.pause();
               setDone(true);
             }, duration * 1000);
+            return;
           }
+          // No duration set → audio plays to natural end via
+          // `ended`. Safety net: force completion at the audio's
+          // natural length + 500ms in case the browser silently
+          // skips dispatching `ended` for this media type.
+          const audioLen = Number.isFinite(player.duration) && player.duration > 0
+            ? player.duration
+            : 60;
+          audioTimeout = setTimeout(() => {
+            player.pause();
+            setDone(true);
+          }, (audioLen + 0.5) * 1000);
         })
         .catch((err) => {
           console.log("error", err);

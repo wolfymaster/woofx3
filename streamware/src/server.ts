@@ -1,11 +1,13 @@
 import { existsSync } from "node:fs";
 import { join, normalize, resolve } from "node:path";
+import type { WebSocketHandler } from "bun";
 import { createServiceLogger } from "@woofx3/common/logging";
 import { createMessageBus } from "@woofx3/nats";
 import { AlertBroadcaster } from "./alert-broadcaster";
 import { loadConfig } from "./config";
 import { initSubscriptions } from "./nats-subscriptions";
 import { connectObs } from "./obs/manager";
+import { StorageBroadcaster } from "./storage-broadcaster";
 
 async function main() {
   const config = loadConfig();
@@ -31,8 +33,41 @@ async function main() {
   const obs = await connectObs(config.obs, logger);
 
   const broadcaster = new AlertBroadcaster(logger);
+  const storageBroadcaster = new StorageBroadcaster(logger);
 
-  await initSubscriptions({ nats, obs, broadcaster, logger });
+  await initSubscriptions({ nats, obs, broadcaster, storageBroadcaster, logger });
+
+  // Bun.serve takes a single `websocket` handler, so we dispatch
+  // open / close / message events to the right broadcaster based
+  // on the `kind` discriminator each one stamps onto its connection
+  // data at upgrade time. Default branch is `alerts` so the existing
+  // overlay path keeps working even if a future client doesn't
+  // populate `data.kind` on the upgrade.
+  const alertHandlers = broadcaster.handlers();
+  const stateHandlers = storageBroadcaster.handlers();
+  const websocket: WebSocketHandler<{ kind: string; id: string }> = {
+    open: (ws) => {
+      if (ws.data?.kind === "module-state") {
+        stateHandlers.open?.(ws as any);
+      } else {
+        alertHandlers.open?.(ws as any);
+      }
+    },
+    close: (ws, code, reason) => {
+      if (ws.data?.kind === "module-state") {
+        stateHandlers.close?.(ws as any, code, reason);
+      } else {
+        alertHandlers.close?.(ws as any, code, reason);
+      }
+    },
+    message: (ws, message) => {
+      if (ws.data?.kind === "module-state") {
+        stateHandlers.message?.(ws as any, message);
+      } else {
+        alertHandlers.message?.(ws as any, message);
+      }
+    },
+  };
 
   const uiDist = resolve(config.uiDistDir);
   const publicDir = resolve(config.publicDir);
@@ -61,8 +96,26 @@ async function main() {
         return new Response("upgrade failed", { status: 400 });
       }
 
-      // Friendly browser-source URL → SPA shell.
-      if (url.pathname === "/" || url.pathname === "/overlay/alerts") {
+      if (url.pathname === "/ws/module-state") {
+        const upgraded = server.upgrade(req, {
+          data: storageBroadcaster.nextConnectionData(),
+        });
+        if (upgraded) {
+          return undefined;
+        }
+        return new Response("upgrade failed", { status: 400 });
+      }
+
+      // Friendly browser-source URL → SPA shell. Both the alert
+      // overlay and the scene-composing overlay are served from the
+      // same SPA bundle; main.tsx picks the right component based
+      // on `location.pathname`.
+      if (
+        url.pathname === "/" ||
+        url.pathname === "/overlay/alerts" ||
+        url.pathname === "/overlay/scene" ||
+        url.pathname.startsWith("/overlay/scene/")
+      ) {
         return serveFile(indexHtml);
       }
 
@@ -80,13 +133,15 @@ async function main() {
 
       return new Response("Not Found", { status: 404 });
     },
-    websocket: broadcaster.handlers(),
+    websocket: websocket as WebSocketHandler<unknown>,
   });
 
   logger.info("streamware listening", {
     port: config.port,
     overlayUrl: `http://localhost:${config.port}/overlay/alerts`,
+    sceneOverlayUrl: `http://localhost:${config.port}/overlay/scene`,
     wsUrl: `ws://localhost:${config.port}/ws/alerts`,
+    moduleStateWsUrl: `ws://localhost:${config.port}/ws/module-state`,
   });
 }
 

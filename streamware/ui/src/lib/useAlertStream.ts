@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AlertPayload, AlertType } from "../types";
+import type { AlertPayload } from "../types";
 
 interface UseAlertStreamResult {
   current: AlertPayload | null;
@@ -15,6 +15,10 @@ const RECONNECT_MAX_MS = 10_000;
  * Maintains a FIFO queue and exposes the head as `current`. Reconnects
  * with exponential backoff on disconnect — overlay typically lives in an
  * OBS browser source, so connection blips must self-heal.
+ *
+ * Each queued item is an AlertPayload envelope (`{ id, parameters, event }`).
+ * Widget dispatch + render happen in AlertOverlay; this hook is a pure
+ * transport.
  */
 export function useAlertStream(url: string): UseAlertStreamResult {
   const [queue, setQueue] = useState<AlertPayload[]>([]);
@@ -49,7 +53,6 @@ export function useAlertStream(url: string): UseAlertStreamResult {
         if (!payload.id) {
           payload.id = crypto.randomUUID();
         }
-        payload.type = inferType(payload);
         setQueue((q) => [...q, payload]);
       };
 
@@ -95,15 +98,4 @@ export function useAlertStream(url: string): UseAlertStreamResult {
     dismiss,
     connected,
   };
-}
-
-function inferType(p: AlertPayload): AlertType {
-  if (p.type) {
-    return p.type;
-  }
-  const hasMediaOrText = Boolean(p.mediaUrl) || Boolean(p.text);
-  if (!hasMediaOrText && p.audioUrl) {
-    return "play_audio";
-  }
-  return "alert_message";
 }

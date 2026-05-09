@@ -13,7 +13,7 @@
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
-    "types": ["vite/client"]
+    "types": ["vite/client", "bun"]
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

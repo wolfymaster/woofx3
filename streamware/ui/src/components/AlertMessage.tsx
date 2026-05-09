@@ -99,14 +99,35 @@ export function AlertMessage({
   }, [done, id, onDone]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDone(([_, audioDone]) => [true, audioDone]);
-    }, (duration || 5) * 1000);
-    return () => clearTimeout(timer);
-  }, [duration]);
+    // Text/media display window:
+    //   - duration set        → text disappears at duration (hard ceiling)
+    //   - duration unset, no audio  → fallback to 5s default
+    //   - duration unset, with audio → wait for audio's `onDone` to
+    //       flip textDone (handled in audioDoneCallback below) so the
+    //       alert lasts exactly as long as the audio plays.
+    if (duration !== undefined) {
+      const timer = setTimeout(() => {
+        setDone(([_, audioDone]) => [true, audioDone]);
+      }, duration * 1000);
+      return () => clearTimeout(timer);
+    }
+    if (!audioUrl) {
+      const timer = setTimeout(() => {
+        setDone(([_, audioDone]) => [true, audioDone]);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, [duration, audioUrl]);
 
   function audioDoneCallback() {
-    setDone(([txtDone, _]) => [txtDone, true]);
+    setDone(([txtDone, _]) => {
+      // No duration set → text/media disappears with the audio so the
+      // alert ends in lockstep. With duration set, leave textDone
+      // alone — the timer above governs it.
+      const nextText = duration !== undefined ? txtDone : true;
+      return [nextText, true];
+    });
   }
 
   const classnames: string[] = [];

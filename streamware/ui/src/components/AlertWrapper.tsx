@@ -1,8 +1,8 @@
-import type { AlertPayload, MessageOptions, OnDoneCallback } from "../types";
+import type { LegacyAlertPayload, MessageOptions, OnDoneCallback } from "../types";
 import { AlertMessage } from "./AlertMessage";
 
 type AlertWrapperProps = {
-  message: AlertPayload | null;
+  message: LegacyAlertPayload | null;
   onDone: OnDoneCallback;
 };
 
@@ -68,9 +68,9 @@ export default function AlertWrapper({ message, onDone }: AlertWrapperProps) {
       onDone={onDone}
       audioUrl={Array.isArray(message.audioUrl) ? message.audioUrl[0] : message.audioUrl}
       mediaUrl={Array.isArray(message.mediaUrl) ? message.mediaUrl[0] : message.mediaUrl}
-      textPattern={message.text}
+      textPattern={Array.isArray(message.text) ? message.text[0] : message.text}
       duration={message.duration}
-      options={message.options}
+      options={Array.isArray(message.options) ? message.options[0] : message.options}
     />
   );
 }

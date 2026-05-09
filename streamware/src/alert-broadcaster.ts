@@ -1,10 +1,34 @@
 import type { ServerWebSocket, WebSocketHandler } from "bun";
 import type { SharedLogger } from "@woofx3/common/logging";
 
-export type AlertPayload = Record<string, unknown> & {
+/**
+ * Envelope published by the engine's `builtin:action:alert` to the
+ * `ui.notify.alert` NATS subject after the widget refactor (see
+ * woofx3-ui/docs/superpowers/specs/2026-05-02-streamware-widget-encapsulation-design.md).
+ *
+ * - `parameters`: workflow-author config; convention requires a `widget`
+ *   key naming a streamware widget. Other keys (text, mediaUrl, audioUrl,
+ *   duration, options, custom) are widget-specific.
+ * - `event`: the originating CloudEvent that triggered the workflow, or
+ *   `null` for non-event triggers (manual, scheduled, chat command).
+ *
+ * The broadcaster forwards this verbatim to overlay clients — widget
+ * dispatch / substitution / rendering happens in the UI.
+ */
+export interface CloudEventLike {
   id?: string;
-  type?: "alert_message" | "play_audio";
-};
+  type?: string;
+  source?: string;
+  time?: string;
+  subject?: string;
+  data?: Record<string, unknown>;
+}
+
+export interface AlertPayload {
+  id?: string;
+  parameters: Record<string, unknown>;
+  event: CloudEventLike | null;
+}
 
 interface ConnectionData {
   kind: "alerts";
@@ -32,8 +56,8 @@ export class AlertBroadcaster {
       return;
     }
     const enriched: AlertPayload = {
-      id: payload.id ?? crypto.randomUUID(),
       ...payload,
+      id: payload.id ?? crypto.randomUUID(),
     };
     const json = JSON.stringify(enriched);
     let sent = 0;

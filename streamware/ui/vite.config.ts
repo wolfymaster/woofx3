@@ -17,9 +17,13 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       proxy: {
-        // Only the WS push and health-check go to the backend in dev;
-        // public assets are served directly by Vite from publicDir above.
+        // Only the WS push streams and health-check go to the backend
+        // in dev; public assets are served directly by Vite from
+        // publicDir above. Both alert + module-state sockets need
+        // forwarding so the SPA can connect to either overlay path
+        // (`/overlay/alerts` and `/overlay/scene`) under `bun run dev`.
         "/ws/alerts": { target: backendUrl, ws: true, changeOrigin: true },
+        "/ws/module-state": { target: backendUrl, ws: true, changeOrigin: true },
         "/health": { target: backendUrl, changeOrigin: true },
       },
     },
