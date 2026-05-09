@@ -1,14 +1,25 @@
 import type {
   ActionDefinition,
+  AssetDefinition,
   FunctionDefinition,
   ModuleActionDeregisteredEvent,
   ModuleActionRegisteredEvent,
+  ModuleAssetDeregisteredEvent,
+  ModuleAssetRegisteredEvent,
   ModuleFunctionDeregisteredEvent,
   ModuleFunctionRegisteredEvent,
+  ModuleResourceInstanceCreatedEvent,
+  ModuleResourceInstanceDeletedEvent,
   ModuleTriggerDeregisteredEvent,
   ModuleTriggerRegisteredEvent,
+  ModuleWidgetDeregisteredEvent,
+  ModuleWidgetRegisteredEvent,
+  ResourceInstanceDefinition,
   TriggerDefinition,
+  WidgetDefinition,
+  WidgetSettingDefinition,
 } from "./webhook-client";
+import { EngineEventType } from "@woofx3/api/webhooks";
 
 interface RawTrigger {
   id?: unknown;
@@ -48,6 +59,31 @@ interface RawFunction {
   runtime?: unknown;
 }
 
+interface RawWidgetSetting {
+  key?: unknown;
+  field_type?: unknown;
+  fieldType?: unknown;
+  label?: unknown;
+  default_value?: unknown;
+  defaultValue?: unknown;
+  options?: unknown;
+}
+
+interface RawWidget {
+  id?: unknown;
+  canonical_id?: unknown;
+  projection_key?: unknown;
+  manifest_id?: unknown;
+  name?: unknown;
+  description?: unknown;
+  directory?: unknown;
+  alert_types?: unknown;
+  alertTypes?: unknown;
+  settings?: unknown;
+  created_by_type?: unknown;
+  created_by_ref?: unknown;
+}
+
 interface RawModuleRegistered {
   module_key?: unknown;
   module_name?: unknown;
@@ -55,13 +91,31 @@ interface RawModuleRegistered {
   triggers?: unknown;
   actions?: unknown;
   functions?: unknown;
+  widgets?: unknown;
+  assets?: unknown;
+}
+
+interface RawAsset {
+  id?: unknown;
+  canonical_id?: unknown;
+  projection_key?: unknown;
+  manifest_id?: unknown;
+  name?: unknown;
+  description?: unknown;
+  manifest_path?: unknown;
+  repository_key?: unknown;
+  kind?: unknown;
+  content_type?: unknown;
+  created_by_type?: unknown;
+  created_by_ref?: unknown;
 }
 
 interface RawModuleResourceDeregistered {
-  // Trigger / action dereg events use `module_prefix` (the manifest id);
-  // function dereg events carry the full `module_key` plus name/version
-  // because they're emitted on full-module-delete and the parent module
-  // row's metadata is still in scope.
+  // Trigger / action / asset dereg events use `module_prefix` (the
+  // manifest id); function and widget dereg events carry the full
+  // `module_key` plus name/version because they're emitted on
+  // full-module-delete and the parent module row's metadata is still
+  // in scope.
   module_prefix?: unknown;
   module_key?: unknown;
   module_name?: unknown;
@@ -69,6 +123,8 @@ interface RawModuleResourceDeregistered {
   triggers?: unknown;
   actions?: unknown;
   functions?: unknown;
+  widgets?: unknown;
+  assets?: unknown;
 }
 
 const asString = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -135,6 +191,86 @@ function mapFunction(raw: RawFunction): FunctionDefinition {
   const projectionKey = asString(raw.projection_key);
   if (projectionKey !== "") {
     def.projectionKey = projectionKey;
+  }
+  return def;
+}
+
+function mapWidgetSetting(raw: RawWidgetSetting): WidgetSettingDefinition {
+  // Accept both snake_case (NATS payload) and camelCase (manifest pass-through)
+  // for tolerance during the producer rollout.
+  const fieldType = asString(raw.field_type) || asString(raw.fieldType);
+  const defaultValue = raw.default_value !== undefined ? raw.default_value : raw.defaultValue;
+  const setting: WidgetSettingDefinition = {
+    key: asString(raw.key),
+    fieldType,
+    label: asString(raw.label),
+    defaultValue: defaultValue ?? null,
+  };
+  if (Array.isArray(raw.options)) {
+    const opts: Array<{ label: string; value: string }> = [];
+    for (const o of raw.options) {
+      if (o && typeof o === "object") {
+        const obj = o as { label?: unknown; value?: unknown };
+        opts.push({ label: asString(obj.label), value: asString(obj.value) });
+      }
+    }
+    setting.options = opts;
+  }
+  return setting;
+}
+
+function mapWidget(raw: RawWidget): WidgetDefinition {
+  const alertTypesRaw = (Array.isArray(raw.alert_types) ? raw.alert_types : raw.alertTypes) ?? [];
+  const alertTypes = Array.isArray(alertTypesRaw) ? alertTypesRaw.map((a) => asString(a)) : [];
+  const settingsRaw = Array.isArray(raw.settings) ? raw.settings : [];
+  const def: WidgetDefinition = {
+    id: asString(raw.id),
+    manifestId: asString(raw.manifest_id),
+    name: asString(raw.name),
+    directory: asString(raw.directory),
+    alertTypes,
+    settings: settingsRaw.map((s) => mapWidgetSetting(s as RawWidgetSetting)),
+    createdByType: asString(raw.created_by_type),
+    createdByRef: asString(raw.created_by_ref),
+  };
+  const description = asString(raw.description);
+  if (description !== "") {
+    def.description = description;
+  }
+  const canonicalId = asString(raw.canonical_id);
+  if (canonicalId !== "") {
+    def.canonicalId = canonicalId;
+  }
+  const projectionKey = asString(raw.projection_key);
+  if (projectionKey !== "") {
+    def.projectionKey = projectionKey;
+  }
+  return def;
+}
+
+function mapAsset(raw: RawAsset): AssetDefinition {
+  const def: AssetDefinition = {
+    id: asString(raw.id),
+    canonicalId: asString(raw.canonical_id),
+    projectionKey: asString(raw.projection_key),
+    manifestId: asString(raw.manifest_id),
+    name: asString(raw.name),
+    repositoryKey: asString(raw.repository_key),
+    manifestPath: asString(raw.manifest_path),
+    createdByType: asString(raw.created_by_type),
+    createdByRef: asString(raw.created_by_ref),
+  };
+  const description = asString(raw.description);
+  if (description !== "") {
+    def.description = description;
+  }
+  const kind = asString(raw.kind);
+  if (kind !== "") {
+    def.kind = kind;
+  }
+  const contentType = asString(raw.content_type);
+  if (contentType !== "") {
+    def.contentType = contentType;
   }
   return def;
 }
@@ -255,6 +391,136 @@ export function parseModuleFunctionDeregistered(ce: Record<string, unknown>): {
       moduleName: asString(payload.module_name),
       version: asString(payload.version),
       functions: rawFunctions.map((f) => mapFunction(f as RawFunction)),
+    },
+  };
+}
+
+export function parseModuleWidgetRegistered(ce: Record<string, unknown>): {
+  clientId: string;
+  event: ModuleWidgetRegisteredEvent;
+} {
+  const payload = readPayload(ce);
+  const rawWidgets = Array.isArray(payload.widgets) ? payload.widgets : [];
+  return {
+    clientId: asString(ce.client_id),
+    event: {
+      type: "module.widget.registered",
+      moduleKey: asString(payload.module_key),
+      moduleName: asString(payload.module_name),
+      version: asString(payload.version),
+      widgets: rawWidgets.map((w) => mapWidget(w as RawWidget)),
+    },
+  };
+}
+
+export function parseModuleWidgetDeregistered(ce: Record<string, unknown>): {
+  clientId: string;
+  event: ModuleWidgetDeregisteredEvent;
+} {
+  const payload = readDeregPayload(ce);
+  const rawWidgets = Array.isArray(payload.widgets) ? payload.widgets : [];
+  return {
+    clientId: asString(ce.client_id),
+    event: {
+      type: "module.widget.deregistered",
+      moduleKey: asString(payload.module_key),
+      moduleName: asString(payload.module_name),
+      version: asString(payload.version),
+      widgets: rawWidgets.map((w) => mapWidget(w as RawWidget)),
+    },
+  };
+}
+
+export function parseModuleAssetRegistered(ce: Record<string, unknown>): {
+  clientId: string;
+  event: ModuleAssetRegisteredEvent;
+} {
+  const payload = readPayload(ce);
+  const rawAssets = Array.isArray(payload.assets) ? payload.assets : [];
+  return {
+    clientId: asString(ce.client_id),
+    event: {
+      type: EngineEventType.MODULE_ASSET_REGISTERED,
+      moduleKey: asString(payload.module_key),
+      moduleName: asString(payload.module_name),
+      version: asString(payload.version),
+      assets: rawAssets.map((a) => mapAsset(a as RawAsset)),
+    },
+  };
+}
+
+export function parseModuleAssetDeregistered(ce: Record<string, unknown>): {
+  clientId: string;
+  event: ModuleAssetDeregisteredEvent;
+} {
+  const payload = readDeregPayload(ce);
+  const rawAssets = Array.isArray(payload.assets) ? payload.assets : [];
+  return {
+    clientId: asString(ce.client_id),
+    event: {
+      type: EngineEventType.MODULE_ASSET_DEREGISTERED,
+      moduleKey: asString(payload.module_key),
+      moduleName: asString(payload.module_name),
+      version: asString(payload.version),
+      assets: rawAssets.map((a) => mapAsset(a as RawAsset)),
+    },
+  };
+}
+
+// ---------------------------------------------------------------------
+// Module resource instances — runtime-created rows of a kind that some
+// installed module declared it provides. Single instance per event
+// (distinct from the trigger / action / widget batch shape) since the
+// underlying CreateResourceInstance / DeleteResourceInstance RPCs each
+// touch one row.
+// ---------------------------------------------------------------------
+
+interface RawResourceInstance {
+  id?: unknown;
+  module_id?: unknown;
+  module_name?: unknown;
+  kind?: unknown;
+  instance_id?: unknown;
+  display_name?: unknown;
+  canonical_id?: unknown;
+}
+
+function mapResourceInstance(raw: RawResourceInstance): ResourceInstanceDefinition {
+  return {
+    id: asString(raw.id),
+    moduleId: asString(raw.module_id),
+    moduleName: asString(raw.module_name),
+    kind: asString(raw.kind),
+    instanceId: asString(raw.instance_id),
+    displayName: asString(raw.display_name),
+    canonicalId: asString(raw.canonical_id),
+  };
+}
+
+export function parseModuleResourceInstanceCreated(ce: Record<string, unknown>): {
+  clientId: string;
+  event: ModuleResourceInstanceCreatedEvent;
+} {
+  const payload = readPayload(ce) as RawResourceInstance;
+  return {
+    clientId: asString(ce.client_id),
+    event: {
+      type: EngineEventType.MODULE_RESOURCE_INSTANCE_CREATED,
+      instance: mapResourceInstance(payload),
+    },
+  };
+}
+
+export function parseModuleResourceInstanceDeleted(ce: Record<string, unknown>): {
+  clientId: string;
+  event: ModuleResourceInstanceDeletedEvent;
+} {
+  const payload = readPayload(ce) as RawResourceInstance;
+  return {
+    clientId: asString(ce.client_id),
+    event: {
+      type: EngineEventType.MODULE_RESOURCE_INSTANCE_DELETED,
+      instance: mapResourceInstance(payload),
     },
   };
 }

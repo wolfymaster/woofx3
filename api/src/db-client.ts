@@ -1,3 +1,4 @@
+import * as alert from "@woofx3/db/alert.pb";
 import * as application from "@woofx3/db/application.pb";
 import * as clientPb from "@woofx3/db/client.pb";
 import * as command from "@woofx3/db/command.pb";
@@ -111,6 +112,26 @@ export class DbClient {
 
   async cancelWorkflowExecution(req: workflow.CancelWorkflowExecutionRequest): Promise<common.ResponseStatus> {
     return workflow.CancelWorkflowExecution(req, this.config);
+  }
+
+  async createAlert(req: alert.CreateAlertRequest): Promise<alert.AlertResponse> {
+    return alert.CreateAlert(req, this.config);
+  }
+
+  async getAlert(req: alert.GetAlertRequest): Promise<alert.AlertResponse> {
+    return alert.GetAlert(req, this.config);
+  }
+
+  async listAlerts(req: alert.ListAlertsRequest): Promise<alert.ListAlertsResponse> {
+    return alert.ListAlerts(req, this.config);
+  }
+
+  async updateAlertStatus(req: alert.UpdateAlertStatusRequest): Promise<alert.AlertResponse> {
+    return alert.UpdateAlertStatus(req, this.config);
+  }
+
+  async deleteAlert(req: alert.DeleteAlertRequest): Promise<common.ResponseStatus> {
+    return alert.DeleteAlert(req, this.config);
   }
 
   async getUser(req: user.GetUserRequest): Promise<user.UserResponse> {

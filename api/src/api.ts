@@ -34,10 +34,16 @@ import type { DbClient } from "./db-client";
 import {
   parseModuleActionDeregistered,
   parseModuleActionRegistered,
+  parseModuleAssetDeregistered,
+  parseModuleAssetRegistered,
   parseModuleFunctionDeregistered,
   parseModuleFunctionRegistered,
+  parseModuleResourceInstanceCreated,
+  parseModuleResourceInstanceDeleted,
   parseModuleTriggerDeregistered,
   parseModuleTriggerRegistered,
+  parseModuleWidgetDeregistered,
+  parseModuleWidgetRegistered,
 } from "./module-event-handlers";
 import type { WebhookClient } from "./webhook-client";
 import { validateWorkflowDefinition } from "./workflow/validate-definition";
@@ -46,6 +52,15 @@ import {
   parseWorkflowDeleted,
   parseWorkflowUpdated,
 } from "./workflow-event-handlers";
+import {
+  parseSceneCreated,
+  parseSceneDeleted,
+  parseSceneUpdated,
+} from "./scene-event-handlers";
+import {
+  parseAlertCreated,
+  parseAlertUpdated,
+} from "./alert-log-handlers";
 
 /**
  * Helper to create a protoscript.Timestamp from a Date
@@ -295,15 +310,91 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     this.logger.info("Initializing NATS subscriptions for module events");
 
     // Built-in `alert` workflow action (workflow/actions.go:NewAlertAction)
-    // publishes here. Stub today: log payload so we can verify the
-    // engine-to-api path end to end. UI / overlay subscribers will
-    // attach to the same subject and render the alert.
+    // publishes the AlertPayload envelope here. We record every
+    // dispatch in the engine's `alerts` table via the db proxy so the
+    // Convex alert-log page (replay UI) has a durable history. The
+    // streamware backend independently subscribes to the same subject
+    // to broadcast to overlays — both consumers run, neither blocks
+    // the other.
+    //
+    // applicationId resolution order:
+    //   1. envelope.applicationId — the workflow stamps this onto
+    //      every envelope it publishes (see workflow's
+    //      buildAlertEnvelope). Authoritative attribution.
+    //   2. this.applicationId — warmed default-app id, set during
+    //      server startup or the first registerClient call. Covers
+    //      manual / debug publishers that don't go through a
+    //      workflow at all.
+    //   3. JIT lookup of the default application via the db proxy.
+    //      Last resort — handles startup-race scenarios where the
+    //      alert subscription fires before the warmup mutation
+    //      finishes.
     await this.nats.subscribe("ui.notify.alert", async (msg) => {
       try {
-        const payload = msg.json() as Record<string, unknown>;
-        this.logger.info("alert received", { payload });
+        const rawPayload = msg.json() as Record<string, unknown>;
+        const payloadJson = JSON.stringify(rawPayload);
+
+        const envelopeAppId = typeof rawPayload.applicationId === "string"
+          ? (rawPayload.applicationId as string)
+          : "";
+
+        let applicationId = envelopeAppId || this.applicationId;
+        if (!applicationId) {
+          // JIT fallback: ask db for the default application. Cache
+          // on `this.applicationId` so subsequent alerts skip the
+          // round-trip until the process exits.
+          try {
+            const existing = await this.db.getDefaultApplication();
+            if (existing) {
+              this.setApplicationId(existing.id);
+              applicationId = existing.id;
+            }
+          } catch (err) {
+            this.logger.warn("Alert log: JIT default-application lookup failed", {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+        if (!applicationId) {
+          this.logger.warn(
+            "Alert dropped from log — no applicationId on envelope and no default registered yet",
+            { subject: msg.subject }
+          );
+          return;
+        }
+
+        // Best-effort attribution: the `alert` action stamps these
+        // when it has them; skip when absent.
+        const workflowId = typeof rawPayload.workflow_id === "string"
+          ? (rawPayload.workflow_id as string)
+          : "";
+        const sourceEventId = typeof rawPayload.source_event_id === "string"
+          ? (rawPayload.source_event_id as string)
+          : "";
+
+        await this.db.createAlert({
+          applicationId,
+          payload: payloadJson,
+          workflowId,
+          sourceEventId,
+        });
+        this.logger.info("alert recorded", {
+          applicationId,
+          // Where the id came from — useful when log-spelunking to
+          // confirm workflow plumbing is delivering attribution
+          // rather than falling back to the singleton.
+          source: envelopeAppId
+            ? "envelope"
+            : applicationId === this.applicationId
+              ? "warmed-default"
+              : "jit-lookup",
+          workflowId,
+          sourceEventId,
+        });
       } catch (err) {
-        this.logger.error("Failed to parse ui.notify.alert payload", { err });
+        this.logger.error("Failed to record ui.notify.alert payload", {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     });
 
@@ -466,6 +557,153 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
         }
       } catch (err) {
         this.logger.error("Failed to handle module.function.deregistered NATS event", { err });
+      }
+    });
+
+    await this.nats.subscribe("db.module.widget.registered.*", async (msg) => {
+      this.logger.info("Received NATS message on db.module.widget.registered.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { clientId, event } = parseModuleWidgetRegistered(ce);
+        this.logger.info("Parsed module.widget.registered", {
+          moduleKey: event.moduleKey,
+          moduleName: event.moduleName,
+          version: event.version,
+          widgetCount: event.widgets.length,
+          clientId,
+        });
+
+        if (this.webhookClient) {
+          this.logger.info("Sending module.widget.registered to webhook client", {
+            moduleKey: event.moduleKey,
+            clientId,
+          });
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for module.widget.registered");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle module.widget.registered NATS event", { err });
+      }
+    });
+
+    await this.nats.subscribe("db.module.widget.deregistered.*", async (msg) => {
+      this.logger.info("Received NATS message on db.module.widget.deregistered.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { clientId, event } = parseModuleWidgetDeregistered(ce);
+        this.logger.info("Parsed module.widget.deregistered", {
+          moduleKey: event.moduleKey,
+          moduleName: event.moduleName,
+          version: event.version,
+          widgetCount: event.widgets.length,
+          clientId,
+        });
+
+        if (this.webhookClient) {
+          this.logger.info("Sending module.widget.deregistered to webhook client", {
+            moduleKey: event.moduleKey,
+            clientId,
+          });
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for module.widget.deregistered");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle module.widget.deregistered NATS event", { err });
+      }
+    });
+
+    // Module asset registration / deregistration outbox. Mirror of the
+    // widget rails: db proxy publishes after RegisterAssets /
+    // DeleteAssetsByModuleId; api forwards to the registered callback
+    // so the editor can refresh its asset picker.
+    await this.nats.subscribe("db.module.asset.registered.*", async (msg) => {
+      this.logger.info("Received NATS message on db.module.asset.registered.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { clientId, event } = parseModuleAssetRegistered(ce);
+        this.logger.info("Parsed module.asset.registered", {
+          moduleKey: event.moduleKey,
+          moduleName: event.moduleName,
+          version: event.version,
+          assetCount: event.assets.length,
+          clientId,
+        });
+        if (this.webhookClient) {
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for module.asset.registered");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle module.asset.registered NATS event", { err });
+      }
+    });
+
+    await this.nats.subscribe("db.module.asset.deregistered.*", async (msg) => {
+      this.logger.info("Received NATS message on db.module.asset.deregistered.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { clientId, event } = parseModuleAssetDeregistered(ce);
+        this.logger.info("Parsed module.asset.deregistered", {
+          moduleKey: event.moduleKey,
+          moduleName: event.moduleName,
+          version: event.version,
+          assetCount: event.assets.length,
+          clientId,
+        });
+        if (this.webhookClient) {
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for module.asset.deregistered");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle module.asset.deregistered NATS event", { err });
+      }
+    });
+
+    // Module resource instance lifecycle — fired by db-proxy after each
+    // CreateResourceInstance / DeleteResourceInstance RPC. Forwarded to
+    // the registered Convex webhook so UI pickers backed by
+    // `resource_ref(kind=...)` ConfigFields refresh live.
+    await this.nats.subscribe("db.module.resource.instance.created.*", async (msg) => {
+      this.logger.info("Received NATS message on db.module.resource.instance.created.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { clientId, event } = parseModuleResourceInstanceCreated(ce);
+        this.logger.info("Parsed module.resource.instance.created", {
+          canonicalId: event.instance.canonicalId,
+          kind: event.instance.kind,
+          displayName: event.instance.displayName,
+          clientId,
+        });
+        if (this.webhookClient) {
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for module.resource.instance.created");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle module.resource.instance.created NATS event", { err });
+      }
+    });
+
+    await this.nats.subscribe("db.module.resource.instance.deleted.*", async (msg) => {
+      this.logger.info("Received NATS message on db.module.resource.instance.deleted.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { clientId, event } = parseModuleResourceInstanceDeleted(ce);
+        this.logger.info("Parsed module.resource.instance.deleted", {
+          canonicalId: event.instance.canonicalId,
+          kind: event.instance.kind,
+          clientId,
+        });
+        if (this.webhookClient) {
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for module.resource.instance.deleted");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle module.resource.instance.deleted NATS event", { err });
       }
     });
 
@@ -740,6 +978,151 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
         }
       } catch (err) {
         this.logger.error("Failed to handle workflow.deleted NATS event", { err });
+      }
+    });
+
+    // Scene CRUD outbox — db proxy publishes on
+    // `db.scene.{created,updated,deleted}.<applicationId>` after every
+    // scene mutation. Forward each through the Bearer-auth callback
+    // channel so Convex can sync its scene editor without polling.
+    await this.nats.subscribe("db.scene.created.*", async (msg) => {
+      this.logger.info("Received NATS message on db.scene.created.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { applicationId, clientId, event } = parseSceneCreated(ce);
+        if (!event) {
+          this.logger.warn("scene.created payload missing required fields, skipping", {
+            applicationId,
+            clientId,
+          });
+          return;
+        }
+        this.logger.info("Parsed scene.created", {
+          applicationId,
+          clientId,
+          sceneId: event.scene.id,
+          name: event.scene.name,
+        });
+        if (this.webhookClient) {
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for scene.created");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle scene.created NATS event", { err });
+      }
+    });
+
+    await this.nats.subscribe("db.scene.updated.*", async (msg) => {
+      this.logger.info("Received NATS message on db.scene.updated.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { applicationId, clientId, event } = parseSceneUpdated(ce);
+        if (!event) {
+          this.logger.warn("scene.updated payload missing required fields, skipping", {
+            applicationId,
+            clientId,
+          });
+          return;
+        }
+        this.logger.info("Parsed scene.updated", {
+          applicationId,
+          clientId,
+          sceneId: event.scene.id,
+          name: event.scene.name,
+        });
+        if (this.webhookClient) {
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for scene.updated");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle scene.updated NATS event", { err });
+      }
+    });
+
+    await this.nats.subscribe("db.scene.deleted.*", async (msg) => {
+      this.logger.info("Received NATS message on db.scene.deleted.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { applicationId, clientId, event } = parseSceneDeleted(ce);
+        if (!event) {
+          this.logger.warn("scene.deleted payload missing scene id, skipping", {
+            applicationId,
+            clientId,
+          });
+          return;
+        }
+        this.logger.info("Parsed scene.deleted", {
+          applicationId,
+          clientId,
+          sceneId: event.sceneId,
+        });
+        if (this.webhookClient) {
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for scene.deleted");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle scene.deleted NATS event", { err });
+      }
+    });
+
+    // Alert log outbox. db proxy publishes when a row is created
+    // (every recorded ui.notify.alert dispatch) or updated (today
+    // only the replay status flip surfaces). We project both into
+    // webhook events so the Convex alert-log page sees new rows in
+    // real time without polling.
+    await this.nats.subscribe("db.alert.created.*", async (msg) => {
+      this.logger.info("Received NATS message on db.alert.created.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { applicationId, clientId, event } = parseAlertCreated(ce);
+        if (!event) {
+          this.logger.warn("alert.created payload missing required fields, skipping", {
+            applicationId,
+            clientId,
+          });
+          return;
+        }
+        this.logger.info("Parsed alert.recorded", {
+          applicationId,
+          clientId,
+          alertId: event.alert.id,
+          status: event.alert.status,
+        });
+        if (this.webhookClient) {
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for alert.recorded");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle alert.created NATS event", { err });
+      }
+    });
+
+    await this.nats.subscribe("db.alert.updated.*", async (msg) => {
+      this.logger.info("Received NATS message on db.alert.updated.*", { subject: msg.subject });
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const { applicationId, clientId, event } = parseAlertUpdated(ce);
+        if (!event) {
+          // Non-replayed status updates are intentionally dropped —
+          // see `parseAlertUpdated` for the contract.
+          return;
+        }
+        this.logger.info("Parsed alert.replayed", {
+          applicationId,
+          clientId,
+          alertId: event.alert.id,
+        });
+        if (this.webhookClient) {
+          await this.webhookClient.send(event, clientId || undefined);
+        } else {
+          this.logger.warn("No webhook client set, skipping callback for alert.replayed");
+        }
+      } catch (err) {
+        this.logger.error("Failed to handle alert.updated NATS event", { err });
       }
     });
 
@@ -1435,10 +1818,50 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     const timeout = descriptor.timeoutMs ?? 10_000;
     const nats = this.nats;
 
+    this.logger.info("dispatchFieldOptionsRequest dispatching", {
+      correlationKey,
+      subject: descriptor.request.event,
+      payload: descriptor.request.payload,
+      timeoutMs: timeout,
+    });
+
+    // `no responders` is NATS's immediate "zero subscribers on this
+    // subject right now" reply — common in dev when a worker is still
+    // booting (Twurple + EventSub setup, etc.) at the moment the user
+    // opens a dropdown. Retry on `no responders` only — other errors
+    // (timeout from a slow handler, malformed reply, etc.) propagate
+    // immediately so we don't paper over real bugs.
+    const requestWithBootRetry = async (): Promise<{ data: Uint8Array }> => {
+      const backoffsMs = [250, 500, 1000, 2000];
+      let lastError: unknown;
+      for (let attempt = 0; attempt <= backoffsMs.length; attempt++) {
+        try {
+          return await nats.request(descriptor.request.event, requestBytes, { timeout });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (!message.includes("no responders")) {
+            throw err;
+          }
+          lastError = err;
+          if (attempt === backoffsMs.length) {
+            break;
+          }
+          const delay = backoffsMs[attempt];
+          this.logger.info("dispatchFieldOptionsRequest no responders, retrying", {
+            correlationKey,
+            subject: descriptor.request.event,
+            attempt: attempt + 1,
+            nextDelayMs: delay,
+          });
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
+      throw lastError instanceof Error ? lastError : new Error(String(lastError));
+    };
+
     // Fire-and-forget: kick off the request, route the reply (or error)
     // through the webhook back to Convex without holding this RPC open.
-    nats
-      .request(descriptor.request.event, requestBytes, { timeout })
+    requestWithBootRetry()
       .then(async (reply) => {
         const text = new TextDecoder().decode(reply.data);
         let data: unknown;
@@ -1453,6 +1876,30 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
         } catch {
           data = text;
         }
+
+        // Result-shape summary mirrors the twitch worker side so the
+        // request and response sides line up in the logs. An empty array
+        // here usually means the worker ran fine and just returned []
+        // (e.g. broadcaster has no manageable rewards) — distinct from
+        // the .catch path which means the request never got a reply.
+        let dataSummary: string;
+        if (Array.isArray(data)) {
+          dataSummary = `array(len=${data.length})${
+            data.length > 0 ? ` first=${JSON.stringify(data[0]).slice(0, 200)}` : ""
+          }`;
+        } else if (data === null || data === undefined) {
+          dataSummary = String(data);
+        } else if (typeof data === "object") {
+          dataSummary = `object keys=[${Object.keys(data as Record<string, unknown>).join(", ")}]`;
+        } else {
+          dataSummary = `${typeof data} ${JSON.stringify(data).slice(0, 200)}`;
+        }
+        this.logger.info("dispatchFieldOptionsRequest reply received", {
+          correlationKey,
+          subject: descriptor.request.event,
+          dataSummary,
+          willForward: !!this.webhookClient,
+        });
 
         if (this.webhookClient) {
           await this.webhookClient.send({
@@ -3217,5 +3664,62 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
       eventId,
       subject: eventSubject,
     });
+  }
+
+  /**
+   * Replay a previously recorded alert. Loads the original
+   * AlertPayload envelope from the engine's alert log, re-publishes
+   * it to `ui.notify.alert` (so streamware broadcasts it to overlays
+   * exactly like the live dispatch did), then flips the row's
+   * status to `replayed` so the UI's alert-log can mark the entry.
+   *
+   * Returns `false` when the alert id doesn't exist or the payload
+   * fails to parse — the gateway turns that into a 404 / 400 for
+   * the caller. Throws on transport failures (NATS down, db proxy
+   * unreachable) so the UI shows a real error rather than silent
+   * success.
+   */
+  async replayAlert(id: string): Promise<boolean> {
+    if (!this.nats) {
+      throw new Error("NATS client not available");
+    }
+    if (!id) {
+      throw new Error("alert id is required");
+    }
+    this.logger.info("Replaying alert", { id });
+
+    const response = await this.db.getAlert({ id });
+    if (response.status?.code !== "OK" || !response.alert) {
+      this.logger.warn("Replay aborted — alert not found", { id });
+      return false;
+    }
+    let payload: unknown;
+    try {
+      payload = JSON.parse(response.alert.payload);
+    } catch (err) {
+      this.logger.error("Replay aborted — stored payload is not valid JSON", {
+        id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+    if (!payload || typeof payload !== "object") {
+      this.logger.error("Replay aborted — stored payload is not an object", { id });
+      return false;
+    }
+
+    // Re-publish the verbatim envelope. The streamware backend's
+    // existing `ui.notify.alert` subscription broadcasts it to
+    // overlay clients without any awareness that this is a replay.
+    const data = new TextEncoder().encode(JSON.stringify(payload));
+    await this.nats.publish("ui.notify.alert", data);
+
+    // Mark the source row as replayed. The status update fires a
+    // `db.alert.updated.*` outbox which the same api instance
+    // projects to an `alert.replayed` webhook so the UI sees it.
+    await this.db.updateAlertStatus({ id, status: "replayed" });
+
+    this.logger.info("Alert replayed", { id });
+    return true;
   }
 }

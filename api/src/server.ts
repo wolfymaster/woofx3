@@ -2,11 +2,14 @@ import { createServiceLogger, type SharedLogger } from "@woofx3/common/logging";
 import { createMessageBus } from "@woofx3/nats";
 import type { ServerWebSocket } from "bun";
 import { newHttpBatchRpcResponse, newWebSocketRpcSession } from "capnweb";
+import { AlertEmitter } from "./alert-emitter";
 import { Api } from "./api";
 import { ClientAuth } from "./auth";
 import { loadConfig } from "./config";
+import { ConvexWebhookClient } from "./convex-webhook-client";
 import { DbClient } from "./db-client";
 import { ApiGateway } from "./gateway";
+import { StorageChangeEmitter } from "./storage-change-emitter";
 import { WebhookClient } from "./webhook-client";
 
 /**
@@ -162,12 +165,33 @@ async function main() {
   const webhookClient = new WebhookClient(dbClient, logger, null);
   api.setWebhookClient(webhookClient);
 
+  let convexWebhookClient: ConvexWebhookClient | null = null;
+  let alertEmitter: AlertEmitter | null = null;
+  let storageChangeEmitter: StorageChangeEmitter | null = null;
+
   try {
     const existing = await dbClient.getDefaultApplication();
     if (existing) {
       api.setApplicationId(existing.id);
       await webhookClient.refreshCallbackUrls();
       logger.info("Warmed applicationId cache from existing default", { applicationId: existing.id });
+
+      convexWebhookClient = new ConvexWebhookClient({
+        db: dbClient,
+        logger,
+        applicationId: existing.id,
+      });
+      await convexWebhookClient.loadConfig();
+
+      if (natsClient) {
+        alertEmitter = new AlertEmitter(natsClient, convexWebhookClient, existing.id, logger);
+        await alertEmitter.start();
+
+        storageChangeEmitter = new StorageChangeEmitter(natsClient, webhookClient, logger);
+        await storageChangeEmitter.start();
+      } else {
+        logger.warn("Skipping AlertEmitter and StorageChangeEmitter; NATS client is not connected");
+      }
     } else {
       logger.info("No default application yet; waiting for UI onboarding");
     }

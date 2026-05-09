@@ -8,12 +8,18 @@ import type { DbClient } from "./db-client";
 // import from "@woofx3/api/webhooks" directly.
 export type {
   ActionDefinition,
+  AssetDefinition,
   CallbackEnvelope,
   CallbackEvent,
   EngineResponseReceivedEvent,
   FunctionDefinition,
   ModuleActionDeregisteredEvent,
   ModuleActionRegisteredEvent,
+  ModuleAssetDeregisteredEvent,
+  ModuleAssetRegisteredEvent,
+  ModuleResourceInstanceCreatedEvent,
+  ModuleResourceInstanceDeletedEvent,
+  ResourceInstanceDefinition,
   ModuleDeletedEvent,
   ModuleDeleteFailedEvent,
   ModuleFunctionDeregisteredEvent,
