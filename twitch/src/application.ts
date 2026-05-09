@@ -112,13 +112,8 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     const isRequest = !!msg.reply;
     let request: TwitchApiRequest | null = null;
     try {
-      const envelope = msg.json<{ data?: TwitchApiRequest } | TwitchApiRequest>();
-      // Accept either a CloudEvent envelope or a bare {command, args}
-      // payload — same accommodation the engine RPC handler makes.
-      request =
-        envelope && typeof envelope === "object" && "data" in envelope && envelope.data
-          ? (envelope.data as TwitchApiRequest)
-          : (envelope as TwitchApiRequest);
+      const envelope = msg.json<{ data?: TwitchApiRequest }>();
+      request = envelope.data as TwitchApiRequest;
     } catch (err) {
       ctx.logger.error("twitchapi: failed to parse request", { err });
       if (isRequest) {
@@ -142,13 +137,10 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       return;
     }
 
-    const handler = (ctx.twitchApi as unknown as Record<string, (input: unknown) => Promise<unknown>>)[
-      request.command
-    ];
+    const twitchApi = ctx.twitchApi as unknown as Record<string, (input: unknown) => Promise<unknown>>;
 
     try {
-      const result = await handler(request.args ?? {});
-      ctx.logger.info("twitchapi: handled command", { command: request.command });
+      const result = await twitchApi[request.command](request.args ?? {});
       if (isRequest) {
         this.respondSuccess(msg, request.command, result);
       }

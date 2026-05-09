@@ -41,21 +41,34 @@ export default class TwitchApi {
    * List the broadcaster's custom channel-point rewards. Powers the
    * UI's rewards dropdown — the shape mirrors `FieldOption` so the
    * default `useFieldOptions` transform doesn't need overriding.
-   *
-   * Twurple's `getCustomRewards(broadcaster, onlyManageable=true)` calls
-   * GET https://api.twitch.tv/helix/channel_points/custom_rewards under
-   * the hood; `onlyManageable=true` filters to rewards this app owns,
-   * which matches what UI authors expect when wiring up redeem-driven
-   * triggers/actions.
    */
   async listChannelPointRewards(_args: unknown): Promise<ChannelPointRewardOption[]> {
-    const rewards = await this.apiClient.channelPoints.getCustomRewards(this.broadcaster, true);
-    return rewards.map((r) => ({
-      value: r.id,
-      label: r.title,
-      cost: r.cost,
-      prompt: r.prompt,
-      isEnabled: r.isEnabled,
-    }));
+    try {
+      const rewards = await this.apiClient.channelPoints.getCustomRewards(this.broadcaster, false);
+      return rewards.map((r) => ({
+        value: r.id,
+        label: r.title,
+        cost: r.cost,
+        prompt: r.prompt,
+        isEnabled: r.isEnabled,
+      }));
+    } catch (err) {
+      const msg = err instanceof Error ? `${err.message}\n${err.stack ?? ""}` : String(err);
+      console.error(`[twitchapi] listChannelPointRewards: getCustomRewards threw — ${msg}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Promote a user to channel moderator. Requires the broadcaster
+   * token to carry the `channel:manage:moderators` scope; if absent,
+   * Twurple will surface a 401 via the dispatcher's error path.
+   */
+  async addChannelModerator(args: { userId: string }): Promise<{ ok: true; userId: string }> {
+    if (!args?.userId) {
+      throw new Error("addChannelModerator: userId is required");
+    }
+    await this.apiClient.moderation.addModerator(this.broadcaster, args.userId);
+    return { ok: true, userId: args.userId };
   }
 }
