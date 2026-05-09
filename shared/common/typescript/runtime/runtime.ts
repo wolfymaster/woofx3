@@ -53,6 +53,12 @@ export interface RuntimeConfig<TContext extends { services: ServicesRegistry }, 
   /** Health monitor. When set, runtime uses health_monitor_init -> health_monitor_ready -> services_connect flow. */
   healthMonitor?: HealthMonitor;
 
+  /** Milliseconds between liveness calls. Default 3000. */
+  livenessInterval?: number;
+
+  /** Milliseconds between heartbeat calls. Default 5000. */
+  heartbeatInterval?: number;
+
   /** Logger; defaults to console. */
   logger?: Pick<Console, "info" | "error" | "warn" | "debug">;
 
@@ -289,12 +295,14 @@ export function createRuntimeMachine<
         }) => {
           const monitor = input.config.healthMonitor;
           if (!monitor) return;
+          const livenessMs = input.config.livenessInterval ?? 3000;
+          const heartbeatMs = input.config.heartbeatInterval ?? 5000;
           const livenessId = setInterval(() => {
             monitor.liveness().catch(() => sendBack({ type: "HEALTH_MONITOR_FAILED" }));
-          }, 3000);
+          }, livenessMs);
           const heartbeatId = setInterval(() => {
             monitor.heartbeat().catch(() => {});
-          }, 5000);
+          }, heartbeatMs);
           const healthId = setInterval(() => {
             monitor
               .healthCheck(input.application.context.services)
