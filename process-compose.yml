@@ -20,6 +20,7 @@ processes:
 
   cloudflare:
     command: cloudflared tunnel --url http://localhost:9001
+    disabled: true
 
   db:
     command: go run .
@@ -38,6 +39,11 @@ processes:
   #   depends_on:
   #     woofwoofwoof:
   #       condition: process_started
+
+  streamware:
+    command: bun dev
+    description: Overlays & Stream software
+    working_dir: streamware
 
   twitch:
     command: bun run src/api.ts

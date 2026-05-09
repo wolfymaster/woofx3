@@ -28,14 +28,7 @@ extension.local.woofx3.tv {
 }
 
 streamlabs.local.woofx3.tv {
-	# Devserver websocket
-	@websockets {
-		header Connection *Upgrade*
-		header Upgrade websocket
-	}
-	reverse_proxy @websockets localhost:24678
-
-	reverse_proxy localhost:5175
+	reverse_proxy localhost:9101
 	tls internal
 }
 

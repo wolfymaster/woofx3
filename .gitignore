@@ -45,6 +45,13 @@ docs/superpowers
 # pids
 pids
 
+# barkloader
+barkloader/modules
+
+# streamware
+streamware/public
+streamware/ui/dist
+
 # workflow
 workflow/workflow
 
