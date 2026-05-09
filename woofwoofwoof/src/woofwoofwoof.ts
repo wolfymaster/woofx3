@@ -43,6 +43,8 @@ const runtime = createRuntime({
     applicationName: "woofwoofwoof",
     requiredServices: ["messageBus", "db", "barkloader"],
   }),
+  heartbeatInterval: 250_000,
+  livenessInterval: 300_000,
   runtimeInit: async (application: WoofWoofWoofApplication) => {
     const config = application.context.config;
 

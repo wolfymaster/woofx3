@@ -33,6 +33,8 @@ const runtime = createRuntime({
     applicationName: "twitchapi",
     requiredServices: ["messageBus", "dbProxy"],
   }),
+  heartbeatInterval: 250_000,
+  livenessInterval: 300_000,
   runtimeInit: async (app: TwitchApiApplication) => {
     app.register("messageBus", new MessageBusService(bus));
     app.register("dbProxy", new DbProxyService(loadedConfig.getConfig("woofx3DatabaseProxyUrl") as string));
