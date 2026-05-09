@@ -39,13 +39,51 @@ const (
 	SubjectDbWorkflowDeletedPattern Subject = "db.workflow.deleted.*"
 
 	// Module events
-	SubjectModuleChange            Subject = "module.change"
-	SubjectModuleAdd               Subject = "module.change.add"
-	SubjectModuleUpdate            Subject = "module.change.update"
-	SubjectModuleDelete            Subject = "module.change.delete"
-	SubjectModuleState             Subject = "module.change.state"
-	SubjectModuleTriggerRegistered Subject = "module.trigger.registered"
-	SubjectModuleActionRegistered  Subject = "module.action.registered"
+	SubjectModuleChange               Subject = "module.change"
+	SubjectModuleAdd                  Subject = "module.change.add"
+	SubjectModuleUpdate               Subject = "module.change.update"
+	SubjectModuleDelete               Subject = "module.change.delete"
+	SubjectModuleState                Subject = "module.change.state"
+	SubjectModuleTriggerRegistered    Subject = "module.trigger.registered"
+	SubjectModuleActionRegistered     Subject = "module.action.registered"
+	SubjectModuleFunctionRegistered   Subject = "module.function.registered"
+	SubjectModuleWidgetRegistered     Subject = "module.widget.registered"
+	SubjectModuleTriggerDeregistered  Subject = "module.trigger.deregistered"
+	SubjectModuleActionDeregistered   Subject = "module.action.deregistered"
+	SubjectModuleFunctionDeregistered Subject = "module.function.deregistered"
+	SubjectModuleWidgetDeregistered   Subject = "module.widget.deregistered"
+	SubjectModuleAssetRegistered      Subject = "module.asset.registered"
+	SubjectModuleAssetDeregistered    Subject = "module.asset.deregistered"
+
+	// Module resource-instance lifecycle. Instances are runtime-created
+	// rows of a kind that some installed module declares it provides
+	// (counters, future timers / polls / leaderboards, etc.). The engine
+	// owns identity; the module owns semantics.
+	SubjectModuleResourceInstanceCreated Subject = "module.resource.instance.created"
+	SubjectModuleResourceInstanceDeleted Subject = "module.resource.instance.deleted"
+
+	// Module persistent-storage change events. Publishers emit on the
+	// per-module subject `module.storage.<moduleId>.changed`; subscribers
+	// (api/src/storage-change-emitter.ts) wildcard on the pattern. The
+	// CloudEvents `type` is the canonical, non-wildcard string.
+	SubjectModuleStorageChanged        Subject = "module.storage.changed"
+	SubjectModuleStorageChangedPattern Subject = "module.storage.*.changed"
+
+	// DB-proxy outbox patterns. Format mirrors publisher.go:
+	// "db.{entityType}.{operation}.{appId}". The api/ TypeScript service
+	// subscribes via these wildcards.
+	SubjectDbModuleTriggerRegisteredPattern    Subject = "db.module.trigger.registered.*"
+	SubjectDbModuleActionRegisteredPattern     Subject = "db.module.action.registered.*"
+	SubjectDbModuleFunctionRegisteredPattern   Subject = "db.module.function.registered.*"
+	SubjectDbModuleWidgetRegisteredPattern     Subject = "db.module.widget.registered.*"
+	SubjectDbModuleTriggerDeregisteredPattern  Subject = "db.module.trigger.deregistered.*"
+	SubjectDbModuleActionDeregisteredPattern   Subject = "db.module.action.deregistered.*"
+	SubjectDbModuleFunctionDeregisteredPattern Subject = "db.module.function.deregistered.*"
+	SubjectDbModuleWidgetDeregisteredPattern   Subject = "db.module.widget.deregistered.*"
+	SubjectDbModuleAssetRegisteredPattern      Subject = "db.module.asset.registered.*"
+	SubjectDbModuleAssetDeregisteredPattern    Subject = "db.module.asset.deregistered.*"
+	SubjectDbModuleResourceInstanceCreatedPattern Subject = "db.module.resource.instance.created.*"
+	SubjectDbModuleResourceInstanceDeletedPattern Subject = "db.module.resource.instance.deleted.*"
 
 	// System events
 	SubjectHeartbeat    Subject = "HEARTBEAT"

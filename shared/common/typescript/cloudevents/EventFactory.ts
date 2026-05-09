@@ -4,6 +4,9 @@ import SlobsEvents from './Slobs';
 import ChatEvents from './Chat';
 import ChatCommandEvents from './Chat/commands';
 import CommandEvents from './Command';
+import AlertEvents from './Alert';
+import ObsEvents from './Obs';
+import ModuleEvents from './Module';
 
 export interface EventFactoryOpts {
     source: string;
@@ -38,5 +41,17 @@ export default class EventFactory {
 
     Command() {
         return new CommandEvents(this.source);
+    }
+
+    Alert() {
+        return new AlertEvents(this.source);
+    }
+
+    Obs() {
+        return new ObsEvents(this.source);
+    }
+
+    Module() {
+        return new ModuleEvents(this.source);
     }
 }

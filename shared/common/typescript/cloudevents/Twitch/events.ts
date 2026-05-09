@@ -3,6 +3,8 @@ export enum EventType {
     Cheer = 'cheer.user.twitch',
     Follow = 'follow.user.twitch',
     HypeTrainBegin = 'hypetrain.channel.twitch',
+    Raid = 'raid.user.twitch',
+    Redeem = 'redeem.channelpoints.twitch',
     StreamOnline = 'online.user.twitch',
     Subscribe = 'subscribe.user.twitch',
     SubscriptionGift = 'subscription.gift.twitch',
@@ -32,6 +34,23 @@ export interface Follow {
 }
 
 export interface HypeTrainBegin {}
+
+// An incoming raid into the broadcaster's channel.
+export interface Raid {
+    fromBroadcasterUserId: string;
+    fromBroadcasterUserName: string;
+    viewers: number;
+}
+
+// A channel-points custom reward redemption (channel.channel_points_custom_reward_redemption.add).
+export interface Redeem {
+    redeemId: string;
+    rewardId: string;
+    rewardTitle: string;
+    userId: string;
+    userName: string;
+    message?: string;
+}
 
 export interface StreamOnline {}
 
