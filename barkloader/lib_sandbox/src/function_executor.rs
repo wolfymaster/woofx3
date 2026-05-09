@@ -74,6 +74,7 @@ mod tests {
             event,
             user: Value::Null,
             host: noop_host_context(),
+            module_id: String::new(),
         }
     }
 

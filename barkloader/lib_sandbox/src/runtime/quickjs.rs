@@ -202,6 +202,7 @@ fn build_ctx_object<'js>(
     build_http_namespace(ctx, &ctx_obj, invocation)?;
     build_env_namespace(ctx, &ctx_obj, invocation)?;
     build_chat_namespace(ctx, &ctx_obj, invocation)?;
+    build_resources_namespace(ctx, &ctx_obj, invocation)?;
 
     Ok(ctx_obj)
 }
@@ -279,6 +280,15 @@ fn build_twitch_namespace<'js>(
     }).map_err(map)?;
     twitch.set("updateStream", update_stream).map_err(map)?;
 
+    let nats = invocation.host.nats.clone();
+    let add_moderator = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, args: JsValue<'_>| -> rquickjs::Result<()> {
+        let json_args = js_to_json(&args).map_err(|e| host_err(e.to_string()))?;
+        let data = serde_json::json!({"command": "addChannelModerator", "args": json_args});
+        nats.publish("twitchapi", data).map_err(|e| host_err(e))?;
+        Ok(())
+    }).map_err(map)?;
+    twitch.set("addModerator", add_moderator).map_err(map)?;
+
     ctx_obj.set("twitch", twitch).map_err(map)?;
     Ok(())
 }
@@ -349,9 +359,12 @@ fn build_storage_namespace<'js>(
     storage.set("get", get_fn).map_err(map)?;
 
     let store = invocation.host.storage.clone();
+    let nats = invocation.host.nats.clone();
+    let module_id = invocation.module_id.clone();
     let set_fn = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, key: String, value: JsValue<'_>| -> rquickjs::Result<()> {
         let json_val = js_to_json(&value).map_err(|e| host_err(e.to_string()))?;
-        store.set(&key, json_val).map_err(|e| host_err(e))?;
+        store.set(&key, json_val.clone()).map_err(|e| host_err(e))?;
+        crate::runtime::storage_event::publish_storage_changed(&nats, &module_id, &key, &json_val);
         Ok(())
     }).map_err(map)?;
     storage.set("set", set_fn).map_err(map)?;
@@ -401,5 +414,72 @@ fn build_env_namespace<'js>(
     env.set("get", get_fn).map_err(map)?;
 
     ctx_obj.set("env", env).map_err(map)?;
+    Ok(())
+}
+
+/// `ctx.resources` — runtime-instance lifecycle for kinds the calling
+/// module declared in its manifest's `resources[]` block.
+///
+///   - `ctx.resources.create(kind, instanceId, displayName?)` →
+///     `{ canonicalId, moduleName, kind, instanceId, displayName }`
+///   - `ctx.resources.delete(canonicalId)` → no return
+///   - `ctx.resources.list(kind)` → array of the same instance objects
+///
+/// `owning_module_name` is bound from `invocation.module_id` (the
+/// manifest-local id baked into the function's canonical path) so JS
+/// callers don't need to thread it explicitly.
+fn build_resources_namespace<'js>(
+    ctx: &Ctx<'js>,
+    ctx_obj: &Object<'js>,
+    invocation: &InvocationContext,
+) -> Result<(), Error> {
+    let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
+    let resources = Object::new(ctx.clone()).map_err(map)?;
+
+    let client = invocation.host.resources.clone();
+    let module_name = invocation.module_id.clone();
+    let create_fn = JsFunction::new(
+        ctx.clone(),
+        move |ctx, kind: String, instance_id: String, display_name: Option<String>| {
+            let display = display_name.unwrap_or_default();
+            match client.create(&module_name, &kind, &instance_id, &display) {
+                Ok(inst) => {
+                    let v = serde_json::to_value(&inst)
+                        .map_err(|e| host_err(e.to_string()))?;
+                    json_to_js(&ctx, &v).map_err(|e| host_err(e.to_string()))
+                }
+                Err(e) => Err(host_err(e)),
+            }
+        },
+    )
+    .map_err(map)?;
+    resources.set("create", create_fn).map_err(map)?;
+
+    let client = invocation.host.resources.clone();
+    let delete_fn = JsFunction::new(
+        ctx.clone(),
+        move |_ctx: Ctx<'_>, canonical_id: String| -> rquickjs::Result<()> {
+            client.delete(&canonical_id).map_err(host_err)?;
+            Ok(())
+        },
+    )
+    .map_err(map)?;
+    resources.set("delete", delete_fn).map_err(map)?;
+
+    let client = invocation.host.resources.clone();
+    let list_fn = JsFunction::new(ctx.clone(), move |ctx, kind: String| {
+        match client.list_by_kind(&kind) {
+            Ok(items) => {
+                let v = serde_json::to_value(&items)
+                    .map_err(|e| host_err(e.to_string()))?;
+                json_to_js(&ctx, &v).map_err(|e| host_err(e.to_string()))
+            }
+            Err(e) => Err(host_err(e)),
+        }
+    })
+    .map_err(map)?;
+    resources.set("list", list_fn).map_err(map)?;
+
+    ctx_obj.set("resources", resources).map_err(map)?;
     Ok(())
 }

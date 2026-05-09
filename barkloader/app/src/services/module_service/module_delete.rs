@@ -18,7 +18,8 @@ use std::sync::Arc;
 use super::db_proxy::{
     self, complete_module_delete, delete_actions_by_module_id, delete_commands_by_module,
     delete_module, delete_module_resources, delete_triggers_by_module_id, delete_workflows_by_module,
-    check_module_resource_usage, get_module_by_name, ResourceUsage,
+    check_module_resource_usage, get_module_by_name, list_resource_instances_by_module,
+    ResourceInstanceJson, ResourceUsage, UsageRef,
 };
 
 pub struct DeleteContext<'a, R: Repository> {
@@ -306,14 +307,32 @@ pub async fn run_delete_resolved<R: Repository>(
     repository: &R,
     registry: Arc<ModuleRegistry>,
 ) -> Result<(), DeleteError> {
-    // 1) usage check — abort if any external references exist
-    let usage = check_module_resource_usage(
+    // 1) usage check — abort if any external references exist OR if the
+    // module owns runtime-created resource instances. Instance presence
+    // is folded into the same `InUse` channel so the UI's existing
+    // "still in use" surface handles both cases; the synthetic
+    // `resource_type` ("instance:<kind>") lets the UI render an
+    // instance-specific affordance ("Delete this counter first").
+    let mut usage = check_module_resource_usage(
         db_proxy_url,
         &resolved.module_id,
         application_id,
     )
     .await
     .map_err(DeleteError::Other)?;
+
+    let instances = list_resource_instances_by_module(db_proxy_url, &resolved.module_id)
+        .await
+        .map_err(DeleteError::Other)?;
+    if !instances.is_empty() {
+        info!(
+            "module {} has {} resource instance(s); blocking uninstall (delete instances first or use the delete commands)",
+            module_name,
+            instances.len()
+        );
+        usage.extend(instances.into_iter().map(instance_to_usage));
+    }
+
     if !usage.is_empty() {
         return Err(DeleteError::InUse(usage));
     }
@@ -336,6 +355,25 @@ pub async fn run_delete_resolved<R: Repository>(
     plan.execute(&ctx, registry).await.map_err(DeleteError::Other)?;
 
     Ok(())
+}
+
+/// Project a `ResourceInstanceJson` into the `ResourceUsage` shape so
+/// instance presence rides the existing in-use channel back to the UI.
+/// `resource_type` is namespaced as `instance:<kind>` to distinguish
+/// from the surface kinds the engine reserves (trigger / action / etc.);
+/// `used_by` is empty because instances are owned, not externally
+/// referenced — the row itself blocks the uninstall.
+fn instance_to_usage(inst: ResourceInstanceJson) -> ResourceUsage {
+    ResourceUsage {
+        resource_id: inst.id,
+        resource_type: format!("instance:{}", inst.kind),
+        resource_name: if inst.canonical_id.is_empty() {
+            inst.instance_id
+        } else {
+            inst.canonical_id
+        },
+        used_by: Vec::<UsageRef>::new(),
+    }
 }
 
 /// Send the completion callback. Wraps `complete_module_delete` so routes do

@@ -75,6 +75,26 @@ pub struct ManifestAction {
     /// `ConfigField[]` — engine treats it as opaque and forwards as
     /// `paramsSchema` for the UI to render. Distinct from a workflow
     /// step's `parameters` (the values the user provides per invocation).
+    ///
+    /// Supported field `type` values (the editor knows how to render
+    /// each; the engine itself does not validate type strings):
+    ///
+    ///   - `"text"`     — single-line string
+    ///   - `"number"`   — numeric input with optional `min` / `max`
+    ///   - `"boolean"`  — checkbox / toggle
+    ///   - `"select"`   — dropdown driven by `options[]`
+    ///   - `"color"`    — color picker (CSS color string)
+    ///   - `"asset"`    — picker scoped to the declaring module's
+    ///                    `assets[]`. Field shape:
+    ///                    `{ id, label, type: "asset", required?,
+    ///                       kinds?: string[] }`.
+    ///                    `kinds` filters the picker by
+    ///                    `ManifestAsset.kind` (e.g. `["image"]`).
+    ///                    The value stored in the workflow's `parameters`
+    ///                    map is the asset's canonical id; the editor
+    ///                    resolves to a public URL at config time and
+    ///                    bakes that URL into the saved workflow so the
+    ///                    runtime never has to re-resolve.
     #[serde(default)]
     pub schema: serde_json::Value,
 }
@@ -149,6 +169,78 @@ pub struct ManifestOverlay {
     pub entry: String,
 }
 
+/// A static asset bundled with a module — typically image / audio /
+/// video / font files that workflow authors reference from action
+/// parameters. The engine uploads each declared asset into the
+/// configured repository at install time (mirroring the function and
+/// widget upload paths) and emits a `module.asset.registered` event so
+/// the workflow editor can present an asset picker for actions whose
+/// schema declares an `"asset"`-typed field.
+///
+/// Asset URL resolution (repository key → public CDN URL) is the
+/// deployer's concern; the engine only declares "this file exists in
+/// my repository at this path."
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestAsset {
+    /// Manifest-local id, scoped to this module. Combined with the
+    /// module id at install to form `{moduleId}:asset:{id}`. Workflow
+    /// definitions reference assets by canonical id, never by raw path.
+    pub id: String,
+    /// Display name for the asset picker.
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Relative path inside the module zip. Resolved via
+    /// `resolve_zip_file` at install time; the resulting bytes are
+    /// written into the repository under
+    /// `modules/{module_key}/assets/{path}`.
+    pub path: String,
+    /// Optional broad-category hint for the editor's UI filter:
+    /// `"image" | "audio" | "video" | "font" | "data"`. Free-form;
+    /// the engine doesn't validate values.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// Optional MIME type override. When omitted, the deployer / CDN
+    /// derives one from the file extension.
+    #[serde(default)]
+    pub content_type: Option<String>,
+}
+
+/// Resource-kind declaration. Lists the kinds of runtime instances this
+/// module is the controller for — the K8s CRD analog. Each declared
+/// kind enables `resource_ref(kind=...)` config fields elsewhere in the
+/// system to pick instances of this kind, and lets the engine attribute
+/// instance ownership at uninstall time.
+///
+/// The engine learns identity (kind name, owning module) but never
+/// learns what the kind *means*. Mutation operations, value storage,
+/// and validation all live in the owning module's functions / commands.
+///
+/// `value_schema` is opaque to the engine — modules may use it to drive
+/// a UI create-form, or omit it entirely. The engine forwards it as
+/// part of the manifest payload so consumers (the UI) can inspect.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestResourceKind {
+    /// Open kind string. Validates per `validate_segment`
+    /// (`[A-Za-z0-9._-]+`). Forms the middle segment of instance
+    /// canonical ids: `{moduleId}:{kind}:{instanceId}`.
+    pub kind: String,
+    /// Display name (singular) shown in pickers and management UIs.
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Optional asset-or-icon canonical id for picker UX.
+    #[serde(default)]
+    pub icon: Option<String>,
+    /// Opaque value schema. The engine does not validate values of
+    /// this kind; modules may publish a JSON-schema-like document
+    /// here to drive a create-form in the UI.
+    #[serde(default)]
+    pub value_schema: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModuleWidget {
@@ -162,8 +254,23 @@ pub struct ModuleWidget {
     pub assets: Option<String>,
     #[serde(default)]
     pub settings_schema: Option<serde_json::Value>,
+    /// Canonical trigger ids (e.g. `twitch_platform:trigger:follow.user.twitch`)
+    /// the widget consumes. Resolved at install via `manifest_validate.rs` to
+    /// confirm those triggers actually exist in the engine — this is the
+    /// engine-internal reference graph.
     #[serde(default)]
     pub accepted_events: Vec<String>,
+    /// AlertContext.type strings the widget renders (e.g. `["follow"]`,
+    /// `["raid"]`, `["follow", "cheer", "raid"]`). What the Convex scene
+    /// manager filters on when wiring widgets to slot pipelines. When
+    /// omitted, the engine derives this list at emission time by mapping
+    /// each `accepted_events` canonical id to its AlertContext type via
+    /// the same table the api/ AlertEmitter uses (see
+    /// `api/src/alert-emitter.ts`). Authors typically only set this when
+    /// the widget cares about a coarser bucket than the canonical ids
+    /// imply, or wants to opt in to events the engine doesn't emit yet.
+    #[serde(default)]
+    pub alert_types: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -199,6 +306,20 @@ pub struct ModuleManifest {
     pub widgets: Vec<ModuleWidget>,
     #[serde(default)]
     pub overlays: Vec<ManifestOverlay>,
+    /// Static media bundled with the module — see [`ManifestAsset`]. The
+    /// engine treats these as opaque blobs: writes them to the
+    /// repository at install, lists them in the
+    /// `module.asset.registered` webhook event, then steps out of the
+    /// way. Action schemas reference them via `"asset"`-typed fields.
+    #[serde(default)]
+    pub assets: Vec<ManifestAsset>,
+    /// Runtime-instance kind declarations — the K8s CRD analog. Other
+    /// parts of the system (pickers, workflows, widgets) reference
+    /// instances of these kinds by canonical id; the engine relies on
+    /// the owning module to provide create / mutate / delete operations
+    /// (typically as `commands` and `actions`).
+    #[serde(default)]
+    pub resources: Vec<ManifestResourceKind>,
 }
 
 impl ModuleManifest {
@@ -226,6 +347,17 @@ impl ModuleManifest {
         let short_hash = &hash[..7];
         format!("{}:{}:{}", self.id_component(), self.version, short_hash)
     }
+}
+
+fn dedup_preserve_order(items: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(items.len());
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for s in items {
+        if seen.insert(s.clone()) {
+            out.push(s.clone());
+        }
+    }
+    out
 }
 
 fn to_snake_case(s: &str) -> String {
@@ -304,6 +436,59 @@ impl ManifestFunction {
     }
 }
 
+impl ManifestAsset {
+    /// Resolve the asset's path inside the module zip and write the
+    /// bytes into the engine's repository under
+    /// `modules/{module_key}/assets/{rel_in_module}`. Mirror of
+    /// `ManifestFunction::upload_to_repository` — same failure modes,
+    /// same key shape (just `assets/` instead of `functions/`).
+    pub async fn upload_to_repository<R: Repository>(
+        &self,
+        module_key: &str,
+        files: &[ModuleFile],
+        repository: &R,
+    ) -> Result<String> {
+        let file = resolve_zip_file(files, &self.path).ok_or_else(|| {
+            anyhow!(
+                "Asset {}: path '{}' not found in module archive",
+                self.id,
+                self.path
+            )
+        })?;
+        let rel_in_module = normalize_rel_path(&self.path);
+        let repo_key = format!("modules/{module_key}/assets/{rel_in_module}");
+        let ext = extension_for_path(&self.path);
+        let req = CreateFileRequest {
+            content: Some(file.contents.clone()),
+            extension: Some(ext),
+            file_name: repo_key.clone(),
+        };
+        let mut failed = Vec::new();
+        repository.create([req], &mut failed).await?;
+        if failed.is_empty() {
+            info!("Stored asset {} at {}", self.id, repo_key);
+            Ok(repo_key)
+        } else {
+            Err(anyhow!("Failed to store asset {}", self.id))
+        }
+    }
+
+    /// Build the Twirp `AssetInput` JSON for bulk registration. Pairs
+    /// the manifest fields with the engine-side `repository_key`
+    /// produced by `upload_to_repository`.
+    pub fn to_input(&self, repository_key: String) -> super::db_proxy::AssetInputJson {
+        super::db_proxy::AssetInputJson {
+            manifest_id: self.id.clone(),
+            name: self.name.clone(),
+            description: self.description.clone().unwrap_or_default(),
+            manifest_path: self.path.clone(),
+            repository_key,
+            kind: self.kind.clone().unwrap_or_default(),
+            content_type: self.content_type.clone().unwrap_or_default(),
+        }
+    }
+}
+
 impl ManifestTrigger {
     /// Category for `RegisterTrigger` and install-time grouping: manifest `category` when set
     /// (non-empty after trim), otherwise transport/type (`type` field, e.g. `eventbus`).
@@ -361,7 +546,74 @@ fn widget_asset_prefix(assets: &str) -> String {
     normalize_rel_path(assets).trim_end_matches('/').to_string() + "/"
 }
 
+/// Map a canonical trigger id (e.g.
+/// `twitch_platform:trigger:follow.user.twitch`) to the AlertContext.type
+/// the engine emits for that event. Returns `None` for triggers that
+/// don't translate to an alert (chat messages, internal events, etc.) —
+/// those widgets must declare `alert_types` explicitly in the manifest.
+///
+/// This table mirrors `api/src/alert-emitter.ts` mappers — keep in sync
+/// when the AlertContext type union grows.
+pub fn alert_type_for_canonical(canonical: &str) -> Option<&'static str> {
+    let event = canonical.rsplit(':').next().unwrap_or(canonical);
+    match event {
+        "follow.user.twitch" => Some("follow"),
+        "cheer.user.twitch" => Some("cheer"),
+        "subscribe.user.twitch" => Some("subscribe"),
+        "subscription.gift.twitch" => Some("sub_gift"),
+        "hypetrain.channel.twitch" => Some("hypetrain"),
+        "raid.user.twitch" => Some("raid"),
+        "online.user.twitch" => Some("stream_online"),
+        _ => None,
+    }
+}
+
 impl ModuleWidget {
+    /// Resolve the wire-format alert_types this widget exposes to the
+    /// Convex scene manager. Prefers the manifest's explicit `alert_types`
+    /// if present; otherwise derives the list from `accepted_events` using
+    /// the AlertContext.type lookup table. Canonical ids that don't map to
+    /// an AlertContext type are skipped. Order is preserved, duplicates
+    /// removed.
+    pub fn resolved_alert_types(&self) -> Vec<String> {
+        if !self.alert_types.is_empty() {
+            return dedup_preserve_order(&self.alert_types);
+        }
+        let mut out: Vec<String> = Vec::new();
+        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for ev in &self.accepted_events {
+            if let Some(t) = alert_type_for_canonical(ev) {
+                if seen.insert(t) {
+                    out.push(t.to_string());
+                }
+            }
+        }
+        out
+    }
+
+    /// Build the Twirp WidgetInput JSON for bulk registration. The engine
+    /// db-proxy persists this and emits the NATS outbox event that the
+    /// api/ service forwards to Convex as `module.widget.registered`.
+    ///
+    /// `directory` defaults to `assets` (the manifest's bundle path) — that's
+    /// what Convex needs to address widget files via the asset HTTP route.
+    /// `settings_schema` is the manifest's `settingsSchema` value serialized;
+    /// engine treats it opaquely.
+    pub fn to_input(&self) -> super::db_proxy::WidgetInputJson {
+        super::db_proxy::WidgetInputJson {
+            manifest_id: self.id.clone(),
+            name: self.name.clone(),
+            description: self.description.clone().unwrap_or_default(),
+            directory: self.assets.clone().unwrap_or_default(),
+            alert_types: self.resolved_alert_types(),
+            settings_schema: self
+                .settings_schema
+                .as_ref()
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "{}".to_string()),
+        }
+    }
+
     async fn upload_one_file<R: Repository>(
         &self,
         module_key: &str,
@@ -843,5 +1095,217 @@ mod tests {
         }))
         .expect("parse");
         assert_eq!(t.register_category(), "eventbus");
+    }
+
+    #[test]
+    fn parses_widget_with_entry_assets_accepted_events_and_settings_schema() {
+        // Mirrors the shape used by the bundled `scene_widgets` reference
+        // module: entry + assets directory + accepted canonical event ids
+        // + a structured settingsSchema with field descriptors.
+        let j = r##"{
+            "id": "scene_widgets",
+            "name": "Scene Widgets",
+            "version": "0.1.0",
+            "widgets": [
+                {
+                    "id": "raid_counter",
+                    "name": "Raid Counter",
+                    "description": "Counts incoming raids.",
+                    "entry": "widgets/raid_counter/index.html",
+                    "assets": "widgets/raid_counter",
+                    "acceptedEvents": ["twitch_platform:trigger:raid.user.twitch"],
+                    "settingsSchema": {
+                        "fields": [
+                            {
+                                "key": "minViewers",
+                                "fieldType": "number",
+                                "label": "Minimum viewers",
+                                "defaultValue": 1
+                            },
+                            {
+                                "key": "accentColor",
+                                "fieldType": "color",
+                                "label": "Accent color",
+                                "defaultValue": "#ff5e3a"
+                            }
+                        ]
+                    }
+                }
+            ]
+        }"##;
+        let m: ModuleManifest = serde_json::from_str(j).expect("parse");
+        assert_eq!(m.widgets.len(), 1);
+        let w = &m.widgets[0];
+        assert_eq!(w.id, "raid_counter");
+        assert_eq!(w.entry.as_deref(), Some("widgets/raid_counter/index.html"));
+        assert_eq!(w.assets.as_deref(), Some("widgets/raid_counter"));
+        assert_eq!(w.accepted_events, vec!["twitch_platform:trigger:raid.user.twitch"]);
+        let schema = w.settings_schema.as_ref().expect("settings_schema present");
+        let fields = schema.get("fields").and_then(|v| v.as_array()).expect("fields array");
+        assert_eq!(fields.len(), 2);
+    }
+
+    #[test]
+    fn parses_multi_widget_manifest_with_mixed_accepted_events() {
+        // Exercises the alert_feed shape: a widget that subscribes to
+        // multiple canonical event ids, alongside two single-event widgets.
+        let j = r#"{
+            "id": "scene_widgets",
+            "name": "Scene Widgets",
+            "version": "0.1.0",
+            "widgets": [
+                {
+                    "id": "recent_followers",
+                    "name": "Recent Followers",
+                    "entry": "widgets/recent_followers/index.html",
+                    "assets": "widgets/recent_followers",
+                    "acceptedEvents": ["twitch_platform:trigger:follow.user.twitch"]
+                },
+                {
+                    "id": "alert_feed",
+                    "name": "Alert Feed",
+                    "entry": "widgets/alert_feed/index.html",
+                    "assets": "widgets/alert_feed",
+                    "acceptedEvents": [
+                        "twitch_platform:trigger:follow.user.twitch",
+                        "twitch_platform:trigger:cheer.user.twitch",
+                        "twitch_platform:trigger:raid.user.twitch"
+                    ]
+                }
+            ]
+        }"#;
+        let m: ModuleManifest = serde_json::from_str(j).expect("parse");
+        assert_eq!(m.widgets.len(), 2);
+        assert_eq!(m.widgets[0].accepted_events.len(), 1);
+        assert_eq!(m.widgets[1].accepted_events.len(), 3);
+    }
+
+    #[test]
+    fn resolved_alert_types_uses_explicit_field_when_set() {
+        let w: ModuleWidget = serde_json::from_value(serde_json::json!({
+            "id": "x",
+            "name": "X",
+            "acceptedEvents": ["twitch_platform:trigger:follow.user.twitch"],
+            "alertTypes": ["follow", "raid"]
+        }))
+        .expect("parse");
+        assert_eq!(w.resolved_alert_types(), vec!["follow", "raid"]);
+    }
+
+    #[test]
+    fn resolved_alert_types_derives_from_accepted_events_when_absent() {
+        let w: ModuleWidget = serde_json::from_value(serde_json::json!({
+            "id": "x",
+            "name": "X",
+            "acceptedEvents": [
+                "twitch_platform:trigger:follow.user.twitch",
+                "twitch_platform:trigger:raid.user.twitch",
+                "twitch_platform:trigger:cheer.user.twitch"
+            ]
+        }))
+        .expect("parse");
+        assert_eq!(w.resolved_alert_types(), vec!["follow", "raid", "cheer"]);
+    }
+
+    #[test]
+    fn resolved_alert_types_skips_canonicals_with_no_mapping() {
+        // chat.message has no AlertContext type — should be skipped silently.
+        let w: ModuleWidget = serde_json::from_value(serde_json::json!({
+            "id": "x",
+            "name": "X",
+            "acceptedEvents": [
+                "twitch_platform:trigger:message.user.twitch",
+                "twitch_platform:trigger:follow.user.twitch"
+            ]
+        }))
+        .expect("parse");
+        assert_eq!(w.resolved_alert_types(), vec!["follow"]);
+    }
+
+    #[test]
+    fn resolved_alert_types_deduplicates() {
+        let w: ModuleWidget = serde_json::from_value(serde_json::json!({
+            "id": "x",
+            "name": "X",
+            "acceptedEvents": [
+                "twitch_platform:trigger:follow.user.twitch",
+                "twitch_platform:trigger:follow.user.twitch"
+            ]
+        }))
+        .expect("parse");
+        assert_eq!(w.resolved_alert_types(), vec!["follow"]);
+    }
+
+    #[test]
+    fn alert_type_for_canonical_recognizes_full_alert_set() {
+        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:follow.user.twitch"), Some("follow"));
+        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:cheer.user.twitch"), Some("cheer"));
+        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:subscribe.user.twitch"), Some("subscribe"));
+        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:subscription.gift.twitch"), Some("sub_gift"));
+        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:hypetrain.channel.twitch"), Some("hypetrain"));
+        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:raid.user.twitch"), Some("raid"));
+        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:online.user.twitch"), Some("stream_online"));
+        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:message.user.twitch"), None);
+    }
+
+    #[test]
+    fn to_input_projects_manifest_into_wire_format() {
+        let w: ModuleWidget = serde_json::from_value(serde_json::json!({
+            "id": "raid_counter",
+            "name": "Raid Counter",
+            "description": "Counts incoming raids.",
+            "entry": "widgets/raid_counter/index.html",
+            "assets": "widgets/raid_counter",
+            "acceptedEvents": ["twitch_platform:trigger:raid.user.twitch"],
+            "settingsSchema": {
+                "fields": [
+                    { "key": "minViewers", "fieldType": "number", "label": "Minimum viewers", "defaultValue": 1 }
+                ]
+            }
+        }))
+        .expect("parse");
+        let input = w.to_input();
+        assert_eq!(input.manifest_id, "raid_counter");
+        assert_eq!(input.name, "Raid Counter");
+        assert_eq!(input.description, "Counts incoming raids.");
+        assert_eq!(input.directory, "widgets/raid_counter");
+        assert_eq!(input.alert_types, vec!["raid"]);
+        // settings_schema is serialized JSON of the original Value.
+        assert!(input.settings_schema.contains("minViewers"));
+    }
+
+    #[test]
+    fn to_input_falls_back_to_empty_strings_for_omitted_optional_fields() {
+        let w: ModuleWidget = serde_json::from_value(serde_json::json!({
+            "id": "raid_counter",
+            "name": "Raid Counter"
+        }))
+        .expect("parse");
+        let input = w.to_input();
+        assert_eq!(input.description, "");
+        assert_eq!(input.directory, "");
+        // No settings_schema -> default "{}" (parses cleanly server-side).
+        assert_eq!(input.settings_schema, "{}");
+        assert!(input.alert_types.is_empty());
+    }
+
+    #[test]
+    fn widget_round_trips_through_serialization() {
+        let j = r#"{
+            "id": "raid_counter",
+            "name": "Raid Counter",
+            "entry": "widgets/raid_counter/index.html",
+            "assets": "widgets/raid_counter",
+            "acceptedEvents": ["twitch_platform:trigger:raid.user.twitch"]
+        }"#;
+        let w: ModuleWidget = serde_json::from_str(j).expect("parse");
+        let s = serde_json::to_string(&w).expect("serialize");
+        let reparsed: serde_json::Value = serde_json::from_str(&s).expect("reparse");
+        // Confirm the camelCase rename survives the round trip.
+        assert_eq!(
+            reparsed.get("acceptedEvents").and_then(|v| v.as_array()).map(|a| a.len()),
+            Some(1)
+        );
+        assert!(reparsed.get("accepted_events").is_none());
     }
 }

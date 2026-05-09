@@ -72,10 +72,22 @@ impl Sandbox {
 
         let function = self.registry.get_function(&request.function)?;
 
+        // Canonical function path is `<module_id>:function:<func_id>`
+        // (validated by `ModuleRegistry::get_function`). The leading
+        // segment is the manifest-local module id, which the storage
+        // namespace uses to scope auto-emitted change events.
+        let module_id = request
+            .function
+            .split(':')
+            .next()
+            .unwrap_or("")
+            .to_string();
+
         let invocation = InvocationContext {
             event: request.event,
             user: request.user.unwrap_or(Value::Null),
             host: self.host_ctx.clone(),
+            module_id,
         };
 
         self.function_executor.execute(&function, &invocation)

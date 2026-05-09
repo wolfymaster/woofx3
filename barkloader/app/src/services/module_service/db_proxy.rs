@@ -85,6 +85,78 @@ pub struct DeleteByModuleIdJson {
     pub module_id: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetInputJson {
+    /// Stable manifest-local id (e.g. "raid_counter"). Forms the canonical
+    /// id `{moduleId}:widget:{manifest_id}`. Required for the dedupe/upsert
+    /// key on the widgets table.
+    pub manifest_id: String,
+    pub name: String,
+    pub description: String,
+    /// Path inside the module zip that contains the widget's bundled
+    /// frontend assets. Engine uploads everything under this prefix to the
+    /// file repository at install time (see `ModuleWidget::upload_assets`).
+    pub directory: String,
+    /// Wire-format AlertContext.type strings the widget renders. Derived
+    /// from manifest `accepted_events` via the canonical → alert-type
+    /// lookup, or supplied explicitly by manifest `alert_types`.
+    pub alert_types: Vec<String>,
+    /// Serialized JSON of the manifest's `settingsSchema` field. Engine
+    /// stores opaquely; UI parses to render configuration controls.
+    pub settings_schema: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterWidgetsJson {
+    pub module_key: String,
+    pub module_name: String,
+    pub version: String,
+    pub widgets: Vec<WidgetInputJson>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub created_by_type: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub created_by_ref: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetInputJson {
+    /// Stable manifest-local id (e.g. "victory_sound"). Forms the
+    /// canonical id `{moduleId}:asset:{manifest_id}`.
+    pub manifest_id: String,
+    pub name: String,
+    pub description: String,
+    /// Original path declared in `manifest.json`. Preserved for
+    /// diagnostics and the editor's asset picker display.
+    pub manifest_path: String,
+    /// Repository key the engine wrote the bytes to (e.g.
+    /// `modules/<moduleKey>/assets/<path>`). Resolving this to a
+    /// public URL is the deployer's concern.
+    pub repository_key: String,
+    /// Free-form category hint: `image` | `audio` | `video` | `font`
+    /// | `data`. Optional.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub kind: String,
+    /// Optional MIME type override declared in the manifest.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub content_type: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterAssetsJson {
+    pub module_key: String,
+    pub module_name: String,
+    pub version: String,
+    pub assets: Vec<AssetInputJson>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub created_by_type: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub created_by_ref: String,
+}
+
 /// Twirp JSON for `module.ModuleService/RegisterTriggers`.
 pub async fn register_triggers(
     db_proxy_url: &str,
@@ -197,6 +269,74 @@ pub async fn delete_triggers_by_module_id(
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
         return Err(anyhow!("DeleteTriggersByModuleId failed {}: {}", status, text));
+    }
+    Ok(())
+}
+
+/// Twirp JSON for `module.ModuleService/RegisterWidgets`. Mirrors
+/// `register_triggers` / `register_actions` — the db-proxy persists rows,
+/// emits `db.module.widget.registered.{appId}` on the NATS outbox, and the
+/// api/ TypeScript service forwards the resulting `module.widget.registered`
+/// CallbackEvent to the registered Convex webhook.
+///
+/// Wired pending the Go server-side handler — see
+/// `~/.claude/plans/widget-producer-wiring.md` for the full execution plan.
+/// Calling this against an engine that hasn't shipped the Go handler will
+/// 404; install_flow integration is gated on that.
+pub async fn register_widgets(
+    db_proxy_url: &str,
+    module_key: &str,
+    module_name: &str,
+    version: &str,
+    widgets: Vec<WidgetInputJson>,
+) -> Result<()> {
+    let url = format!("{}/twirp/module.ModuleService/RegisterWidgets", db_proxy_url);
+    let body = RegisterWidgetsJson {
+        module_key: module_key.to_string(),
+        module_name: module_name.to_string(),
+        version: version.to_string(),
+        widgets,
+        created_by_type: String::new(),
+        created_by_ref: String::new(),
+    };
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("RegisterWidgets request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("RegisterWidgets failed {}: {}", status, text));
+    }
+    Ok(())
+}
+
+/// Twirp JSON for `module.ModuleService/DeleteWidgetsByModuleId`.
+/// Server-side prefix match on `created_by_ref LIKE '{module_id}:%'`.
+pub async fn delete_widgets_by_module_id(
+    db_proxy_url: &str,
+    module_id: &str,
+) -> Result<()> {
+    let url = format!("{}/twirp/module.ModuleService/DeleteWidgetsByModuleId", db_proxy_url);
+    let body = DeleteByModuleIdJson { module_id: module_id.to_string() };
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("DeleteWidgetsByModuleId request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("DeleteWidgetsByModuleId failed {}: {}", status, text));
     }
     Ok(())
 }
@@ -882,4 +1022,233 @@ pub async fn get_module_by_name(
         .map_err(|e| anyhow!("parse GetModuleByName response: {}", e))?;
 
     Ok(Some(text))
+}
+
+/// Twirp JSON for `module.ModuleService/RegisterAssets`. Mirrors
+/// `register_actions` — idempotent upsert keyed on
+/// (created_by_type, created_by_ref, manifest_id) on the server side.
+pub async fn register_assets(
+    db_proxy_url: &str,
+    module_key: &str,
+    module_name: &str,
+    version: &str,
+    assets: Vec<AssetInputJson>,
+) -> Result<()> {
+    let url = format!("{}/twirp/module.ModuleService/RegisterAssets", db_proxy_url);
+    let body = RegisterAssetsJson {
+        module_key: module_key.to_string(),
+        module_name: module_name.to_string(),
+        version: version.to_string(),
+        assets,
+        created_by_type: String::new(),
+        created_by_ref: String::new(),
+    };
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("RegisterAssets request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("RegisterAssets failed {}: {}", status, text));
+    }
+    Ok(())
+}
+
+// -----------------------------------------------------------------------
+// Resource-instance lifecycle.
+//
+// The runtime-instance kind system (see `module_resource_instance.proto`).
+// Modules call these from sandbox host primitives (`ctx.resources.*`)
+// when their commands create or delete instances of declared kinds. The
+// engine learns identity (canonical id, owning module); semantics live in
+// the calling module.
+// -----------------------------------------------------------------------
+
+/// Brief view of a resource instance returned by list/get RPCs. Mirrors
+/// the proto `ModuleResourceInstance` message but only deserializes the
+/// fields the sandbox actually needs (canonical_id and the parts that
+/// reconstruct it). Extra fields on the wire are ignored.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceInstanceJson {
+    pub id: String,
+    pub module_id: String,
+    pub module_name: String,
+    pub kind: String,
+    pub instance_id: String,
+    pub display_name: String,
+    pub canonical_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResourceInstanceResponseJson {
+    instance: Option<ResourceInstanceJson>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListResourceInstancesResponseJson {
+    #[serde(default)]
+    instances: Vec<ResourceInstanceJson>,
+}
+
+/// Twirp JSON for `module.ModuleService/CreateResourceInstance`. Returns
+/// the persisted row including its derived canonical id, which callers
+/// typically use as the storage key for the instance's value.
+///
+/// Pass either `module_id` (UUID, when known) or `module_name` (manifest
+/// id, when known) — server resolves whichever is non-empty. Sandbox
+/// callers (`ctx.resources.create`) typically only know the manifest id;
+/// install-time callers usually have the UUID. Pass empty strings for
+/// the unused argument.
+pub async fn create_resource_instance(
+    db_proxy_url: &str,
+    module_id: &str,
+    module_name: &str,
+    kind: &str,
+    instance_id: &str,
+    display_name: &str,
+    request_context: Option<&RequestContext>,
+) -> Result<ResourceInstanceJson> {
+    let url = format!(
+        "{}/twirp/module.ModuleService/CreateResourceInstance",
+        db_proxy_url
+    );
+    let body = serde_json::json!({
+        "module_id": module_id,
+        "module_name": module_name,
+        "kind": kind,
+        "instance_id": instance_id,
+        "display_name": display_name,
+        "request_context": request_context,
+    });
+    let response = reqwest::Client::new()
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("CreateResourceInstance request failed: {}", e))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("CreateResourceInstance failed {}: {}", status, text));
+    }
+    let parsed: ResourceInstanceResponseJson = response
+        .json()
+        .await
+        .map_err(|e| anyhow!("parse CreateResourceInstance response: {}", e))?;
+    parsed
+        .instance
+        .ok_or_else(|| anyhow!("CreateResourceInstance returned no instance"))
+}
+
+/// Twirp JSON for `module.ModuleService/DeleteResourceInstance`. Idempotent
+/// from the caller's perspective — a NotFound from the server is surfaced
+/// as a normal error since a missing instance usually indicates a bug in
+/// the calling code.
+pub async fn delete_resource_instance(
+    db_proxy_url: &str,
+    canonical_id: &str,
+    request_context: Option<&RequestContext>,
+) -> Result<()> {
+    let url = format!(
+        "{}/twirp/module.ModuleService/DeleteResourceInstance",
+        db_proxy_url
+    );
+    let body = serde_json::json!({
+        "canonical_id": canonical_id,
+        "request_context": request_context,
+    });
+    let response = reqwest::Client::new()
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("DeleteResourceInstance request failed: {}", e))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("DeleteResourceInstance failed {}: {}", status, text));
+    }
+    Ok(())
+}
+
+/// Twirp JSON for `module.ModuleService/ListResourceInstancesByKind`.
+/// Returns every instance of the kind across every installed module — the
+/// flat list the UI picker for `resource_ref(kind=...)` ConfigField
+/// values consumes.
+pub async fn list_resource_instances_by_kind(
+    db_proxy_url: &str,
+    kind: &str,
+) -> Result<Vec<ResourceInstanceJson>> {
+    let url = format!(
+        "{}/twirp/module.ModuleService/ListResourceInstancesByKind",
+        db_proxy_url
+    );
+    let body = serde_json::json!({ "kind": kind });
+    let response = reqwest::Client::new()
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("ListResourceInstancesByKind request failed: {}", e))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "ListResourceInstancesByKind failed {}: {}",
+            status,
+            text
+        ));
+    }
+    let parsed: ListResourceInstancesResponseJson = response
+        .json()
+        .await
+        .map_err(|e| anyhow!("parse ListResourceInstancesByKind response: {}", e))?;
+    Ok(parsed.instances)
+}
+
+/// Twirp JSON for `module.ModuleService/ListResourceInstancesByModule`.
+/// Used at uninstall time to surface or cascade-delete the instances a
+/// module owns.
+pub async fn list_resource_instances_by_module(
+    db_proxy_url: &str,
+    module_id: &str,
+) -> Result<Vec<ResourceInstanceJson>> {
+    let url = format!(
+        "{}/twirp/module.ModuleService/ListResourceInstancesByModule",
+        db_proxy_url
+    );
+    let body = serde_json::json!({ "module_id": module_id });
+    let response = reqwest::Client::new()
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("ListResourceInstancesByModule request failed: {}", e))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "ListResourceInstancesByModule failed {}: {}",
+            status,
+            text
+        ));
+    }
+    let parsed: ListResourceInstancesResponseJson = response
+        .json()
+        .await
+        .map_err(|e| anyhow!("parse ListResourceInstancesByModule response: {}", e))?;
+    Ok(parsed.instances)
 }

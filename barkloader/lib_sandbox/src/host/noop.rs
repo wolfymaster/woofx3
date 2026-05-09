@@ -46,6 +46,28 @@ impl ChatSender for NoopChatSender {
     }
 }
 
+pub struct NoopResourceClient;
+
+impl ResourceClient for NoopResourceClient {
+    fn create(
+        &self,
+        _owning_module_name: &str,
+        _kind: &str,
+        _instance_id: &str,
+        _display_name: &str,
+    ) -> Result<ResourceInstance, String> {
+        Err("resource client not configured".to_string())
+    }
+
+    fn delete(&self, _canonical_id: &str) -> Result<(), String> {
+        Err("resource client not configured".to_string())
+    }
+
+    fn list_by_kind(&self, _kind: &str) -> Result<Vec<ResourceInstance>, String> {
+        Ok(Vec::new())
+    }
+}
+
 pub fn noop_host_context() -> HostContext {
     HostContext {
         nats: Arc::new(NoopNatsPublisher),
@@ -53,5 +75,6 @@ pub fn noop_host_context() -> HostContext {
         env: Arc::new(NoopEnvReader),
         http: Arc::new(NoopHttpClient),
         chat: Arc::new(NoopChatSender),
+        resources: Arc::new(NoopResourceClient),
     }
 }

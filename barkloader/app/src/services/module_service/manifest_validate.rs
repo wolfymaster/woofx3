@@ -28,8 +28,9 @@ use super::canonical_id::{
     CANONICAL_ID_SEPARATOR,
 };
 use super::module_manifest::{
-    ManifestAction, ManifestActionImpl, ManifestCommand, ManifestFunction, ManifestOverlay,
-    ManifestTrigger, ManifestWorkflow, ModuleManifest, ModuleWidget,
+    ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestFunction,
+    ManifestOverlay, ManifestResourceKind, ManifestTrigger, ManifestWorkflow, ModuleManifest,
+    ModuleWidget,
 };
 
 /// Resolved action implementation. Mirrors `ManifestActionImpl` but
@@ -90,6 +91,24 @@ pub struct ResolvedOverlay {
 }
 
 #[derive(Debug, Clone)]
+pub struct ResolvedAsset {
+    pub canonical_id: CanonicalId,
+    pub manifest_index: usize,
+}
+
+/// A validated resource-kind declaration. Resource kinds are open-ended
+/// strings (no fixed enum) declared by modules to describe the runtime
+/// instances they're the controller for — see [`ManifestResourceKind`]
+/// and `docs/barkloader/modules.md`. Unlike surface kinds, they don't
+/// carry their own canonical id; instead, instances of the kind get
+/// `{moduleId}:{kind}:{instanceId}` canonical ids at runtime.
+#[derive(Debug, Clone)]
+pub struct ResolvedResourceKind {
+    pub kind: String,
+    pub manifest_index: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct ResolvedManifest {
     pub module_id: String,
     pub triggers: Vec<ResolvedTrigger>,
@@ -99,6 +118,8 @@ pub struct ResolvedManifest {
     pub workflows: Vec<ResolvedWorkflow>,
     pub widgets: Vec<ResolvedWidget>,
     pub overlays: Vec<ResolvedOverlay>,
+    pub assets: Vec<ResolvedAsset>,
+    pub resource_kinds: Vec<ResolvedResourceKind>,
 }
 
 /// Validate the manifest and resolve all intra-manifest references.
@@ -148,6 +169,14 @@ pub fn validate(manifest: &ModuleManifest) -> Result<ResolvedManifest> {
         &manifest.overlays,
         |o: &ManifestOverlay| &o.id,
     )?;
+    let assets_table = build_kind_table(
+        &module_id,
+        ResourceKind::Asset,
+        &manifest.assets,
+        |a: &ManifestAsset| &a.id,
+    )?;
+    validate_asset_paths(&manifest.assets)?;
+    let resource_kinds = validate_resource_kinds(&manifest.resources)?;
 
     // Pass 2: resolve references for kinds that have them.
     let triggers = entries_to_resolved(&triggers_table, |e| ResolvedTrigger {
@@ -159,6 +188,10 @@ pub fn validate(manifest: &ModuleManifest) -> Result<ResolvedManifest> {
         manifest_index: e.manifest_index,
     });
     let overlays = entries_to_resolved(&overlays_table, |e| ResolvedOverlay {
+        canonical_id: e.canonical_id.clone(),
+        manifest_index: e.manifest_index,
+    });
+    let assets = entries_to_resolved(&assets_table, |e| ResolvedAsset {
         canonical_id: e.canonical_id.clone(),
         manifest_index: e.manifest_index,
     });
@@ -177,7 +210,73 @@ pub fn validate(manifest: &ModuleManifest) -> Result<ResolvedManifest> {
         workflows,
         widgets,
         overlays,
+        assets,
+        resource_kinds,
     })
+}
+
+/// Validate `manifest.resources[]`: every kind must be non-empty,
+/// well-formed per [`validate_segment`], and unique within this manifest.
+/// Resource kinds are not canonical-id'd themselves (instances are), so
+/// this is intentionally a flat check rather than a [`build_kind_table`]
+/// call.
+fn validate_resource_kinds(items: &[ManifestResourceKind]) -> Result<Vec<ResolvedResourceKind>> {
+    let mut seen: HashMap<String, usize> = HashMap::with_capacity(items.len());
+    let mut out = Vec::with_capacity(items.len());
+    for (i, r) in items.iter().enumerate() {
+        let kind = r.kind.trim();
+        if kind.is_empty() {
+            return Err(anyhow!(
+                "resource #{i}: `kind` is required and must be non-empty"
+            ));
+        }
+        validate_segment(kind, &format!("resource #{i} kind"))?;
+        if let Some(prior) = seen.insert(kind.to_string(), i) {
+            return Err(anyhow!(
+                "resource #{i}: duplicate kind {kind:?} (already declared at resource #{prior})"
+            ));
+        }
+        out.push(ResolvedResourceKind {
+            kind: kind.to_string(),
+            manifest_index: i,
+        });
+    }
+    Ok(out)
+}
+
+/// Cheap manifest-time validation for `assets[]`: each entry must have
+/// a non-empty `path` that doesn't try to escape the module root.
+/// Existence inside the zip is checked at install time by the upload
+/// path (via `resolve_zip_file`) so this stays pure / IO-free.
+fn validate_asset_paths(assets: &[ManifestAsset]) -> Result<()> {
+    for (i, a) in assets.iter().enumerate() {
+        let trimmed = a.path.trim();
+        if trimmed.is_empty() {
+            return Err(anyhow!(
+                "asset #{i} ({}): `path` is required and must be non-empty",
+                a.id
+            ));
+        }
+        if trimmed.starts_with('/') || trimmed.starts_with('\\') {
+            return Err(anyhow!(
+                "asset #{i} ({}): `path` must be relative to the module root, got {:?}",
+                a.id,
+                a.path
+            ));
+        }
+        // Reject `..` segments — same guard the asset proxy used to apply,
+        // applied earlier in the pipeline.
+        for segment in trimmed.split(['/', '\\']) {
+            if segment == ".." {
+                return Err(anyhow!(
+                    "asset #{i} ({}): `path` must not contain `..` segments, got {:?}",
+                    a.id,
+                    a.path
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Validate and return the manifest's top-level id.
@@ -622,5 +721,103 @@ mod tests {
             "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix" }]"#);
         let r = validate(&m).expect("ok");
         assert!(r.commands[0].workflow.is_none());
+    }
+
+    // ---------------------------------------------------------------
+    // Asset validation
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn validates_asset_array_and_resolves_canonical_ids() {
+        let m = minimal(
+            r#",
+            "assets": [
+              { "id": "victory", "name": "Victory", "path": "assets/victory.mp3", "kind": "audio" },
+              { "id": "logo",    "name": "Logo",    "path": "assets/logo.png",    "kind": "image" }
+            ]"#,
+        );
+        let r = validate(&m).expect("ok");
+        assert_eq!(r.assets.len(), 2);
+        assert_eq!(r.assets[0].canonical_id.to_string(), "test_mod:asset:victory");
+        assert_eq!(r.assets[1].canonical_id.to_string(), "test_mod:asset:logo");
+    }
+
+    #[test]
+    fn rejects_duplicate_asset_ids() {
+        let m = minimal(
+            r#",
+            "assets": [
+              { "id": "a", "name": "A", "path": "assets/a.png" },
+              { "id": "a", "name": "B", "path": "assets/b.png" }
+            ]"#,
+        );
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("duplicate"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_asset_missing_id() {
+        let m = minimal(
+            r#",
+            "assets": [{ "id": "", "name": "X", "path": "assets/x.png" }]"#,
+        );
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("asset #0"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_asset_with_empty_path() {
+        let m = minimal(
+            r#",
+            "assets": [{ "id": "x", "name": "X", "path": "" }]"#,
+        );
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("`path` is required"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_asset_with_absolute_path() {
+        let m = minimal(
+            r#",
+            "assets": [{ "id": "x", "name": "X", "path": "/etc/passwd" }]"#,
+        );
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("must be relative"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_asset_path_traversal() {
+        let m = minimal(
+            r#",
+            "assets": [{ "id": "x", "name": "X", "path": "assets/../../etc/passwd" }]"#,
+        );
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains(".."), "got: {err}");
+    }
+
+    #[test]
+    fn assets_array_is_optional() {
+        let m = minimal("");
+        let r = validate(&m).expect("ok");
+        assert!(r.assets.is_empty());
+    }
+
+    #[test]
+    fn asset_kind_and_content_type_are_optional_passthrough() {
+        let m = minimal(
+            r#",
+            "assets": [{
+              "id": "raw",
+              "name": "Raw",
+              "path": "assets/data.bin"
+            }]"#,
+        );
+        let r = validate(&m).expect("ok");
+        assert_eq!(r.assets.len(), 1);
+        // The raw manifest fields aren't projected onto ResolvedAsset
+        // today (they're consumed at install time + emitted in the
+        // webhook event), but the entry must still be present and
+        // canonicalized so cross-references resolve.
+        assert_eq!(r.assets[0].canonical_id.to_string(), "test_mod:asset:raw");
     }
 }

@@ -142,6 +142,16 @@ pub async fn run_install<R: Repository>(
         o.upload_entry(&module_key, files, repository).await?;
     }
 
+    // Upload static assets declared in manifest.assets[]. Each asset
+    // is written to the repository under
+    // `modules/<moduleKey>/assets/<path>` and the resulting key is
+    // captured for the RegisterAssets call further down.
+    let mut asset_keys: Vec<String> = Vec::with_capacity(manifest.assets.len());
+    for a in &manifest.assets {
+        let repo_key = a.upload_to_repository(&module_key, files, repository).await?;
+        asset_keys.push(repo_key);
+    }
+
     if let Some(url) = db_proxy_url {
         if cleanup_old {
             cleanup_old_version(module_key, Some(url), application_id).await?;
@@ -273,6 +283,42 @@ pub async fn run_install<R: Repository>(
                     url, &db_record_id, "action", "", &a.id, &canonical, &manifest.version,
                 ).await {
                     warn!("Failed to record action resource {}: {}", canonical, e);
+                }
+            }
+
+            // Register module assets — same idempotent pattern as
+            // actions. `asset_keys[i]` was captured during the upload
+            // pass earlier in this function, so the order matches
+            // `manifest.assets[i]`.
+            if !manifest.assets.is_empty() {
+                let asset_inputs: Vec<_> = manifest
+                    .assets
+                    .iter()
+                    .enumerate()
+                    .map(|(i, a)| a.to_input(asset_keys[i].clone()))
+                    .collect();
+                info!(
+                    "Registering {} asset(s) for module {} (moduleKey={})",
+                    asset_inputs.len(),
+                    module_key,
+                    composite_module_key
+                );
+                super::db_proxy::register_assets(
+                    url,
+                    composite_module_key,
+                    &manifest.name,
+                    &manifest.version,
+                    asset_inputs,
+                )
+                .await?;
+
+                for (i, a) in manifest.assets.iter().enumerate() {
+                    let canonical = resolved.assets[i].canonical_id.to_string();
+                    if let Err(e) = create_module_resource(
+                        url, &db_record_id, "asset", "", &a.id, &canonical, &manifest.version,
+                    ).await {
+                        warn!("Failed to record asset resource {}: {}", canonical, e);
+                    }
                 }
             }
 

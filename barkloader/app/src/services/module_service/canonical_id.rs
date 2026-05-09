@@ -2,8 +2,21 @@
 //!
 //! A canonical id has the shape `{moduleId}:{kind}:{resourceId}` where:
 //!   - `moduleId` is the manifest's top-level `id` (required, namespace-claimed)
-//!   - `kind` is a reserved keyword identifying the resource type
-//!   - `resourceId` is the resource's manifest-local `id` (required)
+//!   - `kind` identifies the resource type (see two flavors below)
+//!   - `resourceId` is the manifest-local id (for surfaces) or the
+//!     instance-local id (for runtime instances) — required either way
+//!
+//! Two flavors of canonical id share this format:
+//!   - **Surface canonical ids** — `kind` is one of the engine-reserved
+//!     [`ResourceKind`] variants (trigger / action / function / command /
+//!     workflow / widget / overlay / asset). The engine knows the shape
+//!     and behavior of each. Used for module-installation registrations
+//!     and for cross-module references in workflow definitions.
+//!   - **Instance canonical ids** — `kind` is a free-form module-declared
+//!     string (e.g. `counter` declared via `manifest.resources[]`). The
+//!     engine learns identity but not semantics; the owning module is
+//!     the controller. Used for `resource_ref` ConfigField values and
+//!     for the `module_resource_instances` ledger.
 //!
 //! See `docs/barkloader/modules.md` for the full contract. This module is
 //! the single source of truth for the format and validation rules — any
@@ -33,6 +46,7 @@ pub enum ResourceKind {
     Workflow,
     Widget,
     Overlay,
+    Asset,
 }
 
 impl ResourceKind {
@@ -45,6 +59,7 @@ impl ResourceKind {
             ResourceKind::Workflow => "workflow",
             ResourceKind::Widget => "widget",
             ResourceKind::Overlay => "overlay",
+            ResourceKind::Asset => "asset",
         }
     }
 }
@@ -226,11 +241,19 @@ pub fn resolve_resource_segment(
     })
 }
 
-/// Returns true if `s` already looks like a fully-qualified canonical id —
-/// i.e. it contains the separator and has three non-empty segments with a
-/// recognized kind in the middle. Used to detect cross-module references in
-/// fields like `workflows[].trigger` so the validator knows to pass them
-/// through verbatim instead of looking them up in the local symbol table.
+/// Returns true if `s` already looks like a fully-qualified **surface**
+/// canonical id — i.e. it contains the separator and has three non-empty
+/// segments with one of the engine-reserved [`ResourceKind`] strings in
+/// the middle. Used to detect cross-module references in fields like
+/// `workflows[].trigger` so the validator knows to pass them through
+/// verbatim instead of looking them up in the local symbol table.
+///
+/// This is intentionally strict: a typo in the kind segment fails the
+/// check rather than being silently passed through, so the validator
+/// catches it as an unresolved local reference.
+///
+/// For instance canonical ids (free-form kind strings), use
+/// [`looks_like_instance_canonical_id`] instead.
 pub fn looks_like_canonical_id(s: &str) -> bool {
     let parts: Vec<&str> = s.split(CANONICAL_ID_SEPARATOR).collect();
     if parts.len() != 3 {
@@ -241,8 +264,25 @@ pub fn looks_like_canonical_id(s: &str) -> bool {
     }
     matches!(
         parts[1],
-        "trigger" | "action" | "function" | "command" | "workflow" | "widget" | "overlay"
+        "trigger" | "action" | "function" | "command" | "workflow" | "widget" | "overlay" | "asset"
     )
+}
+
+/// Returns true if `s` looks like a fully-qualified **instance** canonical
+/// id — three non-empty segments where every segment passes
+/// [`validate_segment`]. Unlike [`looks_like_canonical_id`], the middle
+/// segment is not constrained to a fixed list — kinds are open and
+/// declared by modules in their `resources[]` manifest field.
+///
+/// Used for `resource_ref` ConfigField values, where the engine accepts
+/// any well-formed canonical id and defers semantic validation to the
+/// owning module.
+pub fn looks_like_instance_canonical_id(s: &str) -> bool {
+    let parts: Vec<&str> = s.split(CANONICAL_ID_SEPARATOR).collect();
+    if parts.len() != 3 {
+        return false;
+    }
+    parts.iter().all(|p| validate_segment(p, "segment").is_ok())
 }
 
 #[cfg(test)]
@@ -390,5 +430,31 @@ mod tests {
         assert!(!looks_like_canonical_id("mod:bad_kind:foo"));
         assert!(!looks_like_canonical_id("mod::foo"));
         assert!(!looks_like_canonical_id(""));
+    }
+
+    // --- looks_like_instance_canonical_id ---
+
+    #[test]
+    fn detects_instance_canonical_form_open_kinds() {
+        assert!(looks_like_instance_canonical_id("counter:counter:death_count"));
+        assert!(looks_like_instance_canonical_id("timer:race_clock:warmup"));
+        assert!(looks_like_instance_canonical_id("polls:poll:lunch_choice"));
+    }
+
+    #[test]
+    fn instance_form_accepts_reserved_kinds_too() {
+        // Surface canonical ids are also valid instance canonical ids
+        // by shape; consumers that need to distinguish should use
+        // looks_like_canonical_id first.
+        assert!(looks_like_instance_canonical_id("mod:trigger:foo"));
+    }
+
+    #[test]
+    fn instance_form_rejects_malformed() {
+        assert!(!looks_like_instance_canonical_id("just_a_slug"));
+        assert!(!looks_like_instance_canonical_id("two:segments"));
+        assert!(!looks_like_instance_canonical_id("mod::foo"));
+        assert!(!looks_like_instance_canonical_id("mod:has space:foo"));
+        assert!(!looks_like_instance_canonical_id(""));
     }
 }

@@ -2411,6 +2411,7 @@ name = "lib_sandbox"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "log",
  "mlua",
  "rquickjs",
  "serde",

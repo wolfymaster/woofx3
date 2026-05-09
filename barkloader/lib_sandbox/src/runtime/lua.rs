@@ -120,6 +120,17 @@ fn build_lua_ctx(
             Ok(())
         })?;
         twitch.set("updateStream", update_stream)?;
+
+        let nats = invocation.host.nats.clone();
+        let add_moderator = lua.create_function(move |_lua, args: LuaValue| {
+            let json_args: Value =
+                serde_json::to_value(&args).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+            let data = serde_json::json!({"command": "addChannelModerator", "args": json_args});
+            nats.publish("twitchapi", data)
+                .map_err(mlua::Error::RuntimeError)?;
+            Ok(())
+        })?;
+        twitch.set("addModerator", add_moderator)?;
     }
     ctx.set("twitch", twitch)?;
 
@@ -181,12 +192,15 @@ fn build_lua_ctx(
         storage.set("get", get_fn)?;
 
         let store = invocation.host.storage.clone();
+        let nats = invocation.host.nats.clone();
+        let module_id = invocation.module_id.clone();
         let set_fn = lua.create_function(move |_, (key, value): (String, LuaValue)| {
             let json_val: Value = serde_json::to_value(&value)
                 .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
             store
-                .set(&key, json_val)
+                .set(&key, json_val.clone())
                 .map_err(mlua::Error::RuntimeError)?;
+            crate::runtime::storage_event::publish_storage_changed(&nats, &module_id, &key, &json_val);
             Ok(())
         })?;
         storage.set("set", set_fn)?;
@@ -232,6 +246,48 @@ fn build_lua_ctx(
         chat.set("sendMessage", send_message)?;
     }
     ctx.set("chat", chat)?;
+
+    // resources namespace — runtime-instance lifecycle for kinds the
+    // calling module declared in its manifest's `resources[]` block.
+    // `owning_module_name` is bound from `invocation.module_id`.
+    let resources = lua.create_table()?;
+    {
+        let client = invocation.host.resources.clone();
+        let module_name = invocation.module_id.clone();
+        let create_fn = lua.create_function(
+            move |lua, (kind, instance_id, display_name): (String, String, Option<String>)| {
+                let display = display_name.unwrap_or_default();
+                match client.create(&module_name, &kind, &instance_id, &display) {
+                    Ok(inst) => {
+                        let v = serde_json::to_value(&inst)
+                            .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                        lua.to_value(&v)
+                    }
+                    Err(e) => Err(mlua::Error::RuntimeError(e)),
+                }
+            },
+        )?;
+        resources.set("create", create_fn)?;
+
+        let client = invocation.host.resources.clone();
+        let delete_fn = lua.create_function(move |_lua, canonical_id: String| {
+            client.delete(&canonical_id).map_err(mlua::Error::RuntimeError)?;
+            Ok(())
+        })?;
+        resources.set("delete", delete_fn)?;
+
+        let client = invocation.host.resources.clone();
+        let list_fn = lua.create_function(move |lua, kind: String| match client.list_by_kind(&kind) {
+            Ok(items) => {
+                let v = serde_json::to_value(&items)
+                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                lua.to_value(&v)
+            }
+            Err(e) => Err(mlua::Error::RuntimeError(e)),
+        })?;
+        resources.set("list", list_fn)?;
+    }
+    ctx.set("resources", resources)?;
 
     Ok(ctx)
 }

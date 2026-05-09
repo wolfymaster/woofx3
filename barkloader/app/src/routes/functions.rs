@@ -511,7 +511,7 @@ async fn delete_handler(
                     &resolved.module_id,
                     &module_name_task,
                     "failed",
-                    "One or more resources are still in use by other workflows or commands",
+                    "One or more module resources are still in use — by external workflows/commands or as runtime instances of declared kinds (see in_use_resources for details)",
                     &list,
                     Some(&request_context),
                 ).await;

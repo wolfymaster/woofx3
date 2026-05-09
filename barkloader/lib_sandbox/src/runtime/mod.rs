@@ -5,6 +5,7 @@ use serde_json::Value;
 pub mod echo;
 pub mod lua;
 pub mod quickjs;
+pub mod storage_event;
 
 pub trait RuntimeAdapter: Send {
     fn execute(

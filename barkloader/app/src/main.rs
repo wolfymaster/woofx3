@@ -6,6 +6,7 @@ use lib_repository::{FileRepositoryConfig, Repository, RepositoryConfig, Reposit
 use futures::executor::block_on;
 use lib_sandbox::host::grpc::GrpcStorageClient;
 use lib_sandbox::host::noop::noop_host_context;
+use crate::services::sandbox_resources::HttpResourceClient;
 use lib_sandbox::{ModuleRegistry, ModuleMetadata, ModuleState, RegisteredModule, SandboxFactory};
 use lib_sandbox::models::function::Function;
 use log::{info, warn};
@@ -64,6 +65,23 @@ async fn setup() -> Result<AppContext> {
             }
         } else {
             info!("messagebusUrl not set; using noop NATS publisher and noop chat sender");
+        }
+
+        // Resource-instance lifecycle (`ctx.resources.*`) — backed by the
+        // db-proxy via Twirp. When DB_PROXY_ADDR is unset the noop impl
+        // stays in place, returning errors for create/delete and an
+        // empty list for list_by_kind so module code at least surfaces
+        // a clear failure mode in dev.
+        let resource_proxy_url =
+            get_env_or_default_with_key("DB_PROXY_ADDR", Some("databaseProxyUrl"), "");
+        if !resource_proxy_url.is_empty() {
+            info!(
+                "Wiring HttpResourceClient against db-proxy {}",
+                resource_proxy_url
+            );
+            ctx.resources = Arc::new(HttpResourceClient::new(resource_proxy_url));
+        } else {
+            info!("DB_PROXY_ADDR not set; using noop resource client");
         }
 
         ctx
