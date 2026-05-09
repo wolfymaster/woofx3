@@ -21,6 +21,7 @@ function createMockListener() {
     onChannelCheer: mock(() => subscriptionStub()),
     onChannelFollow: mock(() => subscriptionStub()),
     onChannelHypeTrainBegin: mock(() => subscriptionStub()),
+    onChannelRaidTo: mock(() => subscriptionStub()),
     onChannelSubscription: mock(() => subscriptionStub()),
     onChannelSubscriptionGift: mock(() => subscriptionStub()),
     onStreamOnline: mock(() => subscriptionStub()),
@@ -88,6 +89,7 @@ describe("TwitchEventBus", () => {
     expect(listener.onChannelCheer).toHaveBeenCalledTimes(1);
     expect(listener.onChannelFollow).toHaveBeenCalledTimes(1);
     expect(listener.onChannelHypeTrainBegin).toHaveBeenCalledTimes(1);
+    expect(listener.onChannelRaidTo).toHaveBeenCalledTimes(1);
     expect(listener.onChannelSubscription).toHaveBeenCalledTimes(1);
     expect(listener.onChannelSubscriptionGift).toHaveBeenCalledTimes(1);
     expect(listener.onStreamOnline).toHaveBeenCalledTimes(1);

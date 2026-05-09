@@ -6,6 +6,8 @@ import onChannelChatmessage from "./subscriptions/onChannelChatMessage";
 import onChannelCheer from "./subscriptions/onChannelCheer";
 import onChannelFollow from "./subscriptions/onChannelFollow";
 import onChannelHypeTrainBegin from "./subscriptions/onChannelHypeTrainBegin";
+import onChannelRaid from "./subscriptions/onChannelRaid";
+import onChannelRedemptionAdd from "./subscriptions/onChannelRedemptionAdd";
 import onChannelSubscription from "./subscriptions/onChannelSubscription";
 import onChannelSubscriptionGift from "./subscriptions/onChannelSubscriptionGift";
 import onStreamOnline from "./subscriptions/onStreamOnline";
@@ -56,6 +58,8 @@ export default class TwitchEventBus {
       onChannelCheer,
       onChannelFollow,
       onChannelHypeTrainBegin,
+      onChannelRaid,
+      onChannelRedemptionAdd,
       onChannelSubscription,
       onChannelSubscriptionGift,
       onStreamOnline,
