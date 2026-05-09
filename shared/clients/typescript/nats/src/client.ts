@@ -4,121 +4,118 @@ import { MessageImpl } from "./msg";
 import type { Handler, Logger, NATSConfig } from "./types";
 
 export default class NATSClient {
-	private connection: NatsConnection | null = null;
-	private logger: Logger;
+  private connection: NatsConnection | null = null;
+  private logger: Logger;
 
-	constructor(
-		private config: NATSConfig,
-		logger?: Logger,
-	) {
-		this.logger = logger || console;
-	}
+  constructor(
+    private config: NATSConfig,
+    logger?: Logger
+  ) {
+    this.logger = logger || console;
+  }
 
-	async connect(): Promise<void> {
-		if (this.connection) {
-			return;
-		}
-		try {
-			const options: any = {
-				name: this.config.name,
-				servers: this.config.url,
-			};
+  async connect(): Promise<void> {
+    if (this.connection) {
+      return;
+    }
+    try {
+      const options: any = {
+        name: this.config.name,
+        servers: this.config.url,
+      };
 
-			// Add JWT authentication if provided
-			if (this.config.jwt && this.config.nkeySeed) {
-				const authenticator = jwtAuthenticator(
-					this.config.jwt,
-					Buffer.from(this.config.nkeySeed),
-				);
-				options.authenticator = authenticator;
-			}
+      // Add JWT authentication if provided
+      if (this.config.jwt && this.config.nkeySeed) {
+        const authenticator = jwtAuthenticator(this.config.jwt, Buffer.from(this.config.nkeySeed));
+        options.authenticator = authenticator;
+      }
 
-			this.connection = await wsconnect(options);
-			this.logger.info("Connected to NATS", {
-				url: options.servers,
-				name: options.name,
-			});
-		} catch (error) {
-			this.logger.error("Failed to connect to NATS:", error);
-			throw error;
-		}
-	}
+      this.connection = await wsconnect(options);
+      this.logger.info("Connected to NATS", {
+        url: options.servers,
+        name: options.name,
+      });
+    } catch (error) {
+      this.logger.error("Failed to connect to NATS:", error);
+      throw error;
+    }
+  }
 
-	async publish(subject: string, data: Uint8Array): Promise<void> {
-		if (!this.connection) {
-			await this.connect();
-		}
+  async publish(subject: string, data: Uint8Array): Promise<void> {
+    if (!this.connection) {
+      await this.connect();
+    }
 
-		if (!this.connection) {
-			throw new Error("NATS connection not available");
-		}
+    if (!this.connection) {
+      throw new Error("NATS connection not available");
+    }
 
-		this.connection.publish(subject, data);
-		this.logger.debug?.("Published message", { subject, size: data.length });
-	}
+    this.connection.publish(subject, data);
+    this.logger.debug?.("Published message", { subject, size: data.length });
+  }
 
-	/**
-	 * NATS request/reply: publishes to `subject` with an inbox reply subject
-	 * managed internally by the NATS client (muxed inbox), waits for the
-	 * first response, and resolves with the reply Msg. Workers that handle
-	 * the request should reply via `msg.respond(data)`.
-	 */
-	async request(
-		subject: string,
-		data: Uint8Array,
-		opts?: { timeout?: number },
-	): Promise<{ subject: string; data: Uint8Array }> {
-		if (!this.connection) {
-			await this.connect();
-		}
+  /**
+   * NATS request/reply: publishes to `subject` with an inbox reply subject
+   * managed internally by the NATS client (muxed inbox), waits for the
+   * first response, and resolves with the reply Msg. Workers that handle
+   * the request should reply via `msg.respond(data)`.
+   */
+  async request(
+    subject: string,
+    data: Uint8Array,
+    opts?: { timeout?: number }
+  ): Promise<{ subject: string; data: Uint8Array }> {
+    if (!this.connection) {
+      await this.connect();
+    }
 
-		if (!this.connection) {
-			throw new Error("NATS connection not available");
-		}
+    if (!this.connection) {
+      throw new Error("NATS connection not available");
+    }
 
-		const reply = await this.connection.request(subject, data, {
-			timeout: opts?.timeout ?? 10_000,
-		});
-		return { subject: reply.subject, data: reply.data };
-	}
+    const reply = await this.connection.request(subject, data, {
+      timeout: opts?.timeout ?? 10_000,
+    });
+    return { subject: reply.subject, data: reply.data };
+  }
 
-	async subscribe(subject: string, handler: Handler): Promise<Subscription> {
-		if (!this.connection) {
-			await this.connect();
-		}
+  async subscribe(subject: string, handler: Handler): Promise<Subscription> {
+    if (!this.connection) {
+      await this.connect();
+    }
 
-		if (!this.connection) {
-			throw new Error("NATS connection not available");
-		}
+    if (!this.connection) {
+      throw new Error("NATS connection not available");
+    }
 
-		// Create subscription using correct NATS API
-		const subscription = this.connection.subscribe(subject);
-		this.logger.debug?.("Subscribed to subject", { subject });
+    // Create subscription using correct NATS API
+    const subscription = this.connection.subscribe(subject);
+    this.logger.debug?.("Subscribed to subject", { subject });
 
-		// Start consuming messages asynchronously
-		(async () => {
-			try {
-				for await (const msg of subscription) {
-					const wrappedMsg = new MessageImpl(msg.subject, msg.data, msg);
-					handler(wrappedMsg);
-				}
-			} catch (error) {
-				this.logger.error?.("Subscription error:", error);
-			}
-		})();
+    // Start consuming messages asynchronously
+    (async () => {
+      try {
+        for await (const msg of subscription) {
+          const wrappedMsg = new MessageImpl(msg.subject, msg.data, msg);
+          handler(wrappedMsg);
+        }
+      } catch (error) {
+        this.logger.error?.("Subscription error:", error);
+      }
+    })();
 
-		return subscription;
-	}
+    return subscription;
+  }
 
-	async close(): Promise<void> {
-		if (this.connection) {
-			await this.connection.close();
-			this.connection = null;
-			this.logger.info("NATS connection closed");
-		}
-	}
+  async close(): Promise<void> {
+    if (this.connection) {
+      await this.connection.close();
+      this.connection = null;
+      this.logger.info("NATS connection closed");
+    }
+  }
 
-	asNATS(): NatsConnection | null {
-		return this.connection;
-	}
+  asNATS(): NatsConnection | null {
+    return this.connection;
+  }
 }

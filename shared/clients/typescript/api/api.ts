@@ -612,4 +612,87 @@ export interface Woofx3EngineApi {
   getDashboardStats(): Promise<DashboardStats>;
   getDashboardLayout(accountId: string): Promise<DashboardModule[]>;
   saveDashboardLayout(accountId: string, modules: DashboardModule[]): Promise<boolean>;
+
+  // Alert log replay — re-publishes a previously recorded alert
+  // envelope to `ui.notify.alert`. Returns `false` when the id
+  // doesn't exist or the stored payload is malformed; throws on
+  // transport failures (NATS / db proxy unreachable).
+  replayAlert(id: string): Promise<boolean>;
+}
+
+// ==================== Widgets ====================
+//
+// Widgets are user-facing components that the Convex scene editor places
+// onto a scene canvas. They render alerts and module-supplied data inside
+// browser sources. There are two distinct concepts in this contract — keep
+// them straight:
+//
+//   - WidgetDefinition  (in webhooks.ts): a *registered* widget exposed by
+//     an installed barkloader module. One row per (module, manifestId).
+//     Engine-owned, projected to the UI via the
+//     module.widget.{registered,deregistered} webhooks.
+//
+//   - WidgetInstance    (here):           a *placement* of a registered
+//     widget onto a specific scene canvas. UI-owned. Scene-specific.
+//     Many instances can reference the same WidgetDefinition; many
+//     scenes can share the same WidgetDefinition catalog.
+//
+// The boundary: the engine never sees WidgetInstances. The UI never owns
+// WidgetDefinitions (only consumes them). They communicate through the
+// `widgetDefinitionRef` field below, which is the canonical or projection
+// id of the WidgetDefinition.
+
+/**
+ * A widget *placement* on a scene canvas. Persisted by the UI on
+ * `scenes.widgets`. Consumed by the browser source at render time to
+ * position + configure each on-screen widget.
+ */
+export interface WidgetInstance {
+  /** Stable id within a scene. UI-generated. The engine never sees this. */
+  id: string;
+  /**
+   * Reference to the registered WidgetDefinition. Prefer the definition's
+   * `projectionKey` (`{moduleKey}:widget:{manifestId}`) for cross-instance
+   * stability; fall back to `canonicalId` (`{moduleId}:widget:{manifestId}`)
+   * for legacy rows. Resolution is the UI's responsibility.
+   */
+  widgetDefinitionRef: string;
+  /** Optional human label displayed in the scene editor only. */
+  label?: string;
+  /**
+   * When set, the widget is anchored to a `sceneSlots` row — `position`
+   * and `size` are interpreted relative to the slot's bounds. When unset,
+   * they're absolute on the scene canvas.
+   */
+  slotId?: string;
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  /**
+   * Per-instance configuration values, keyed by
+   * `WidgetSettingDefinition.key`. Values must conform to the corresponding
+   * setting's `fieldType`; the UI validates on save.
+   */
+  settings: Record<string, unknown>;
+  /** z-order; higher renders on top. Defaults to 0 when omitted. */
+  zIndex?: number;
+  /** Toggle for hiding without deleting. Defaults to true when omitted. */
+  visible?: boolean;
+}
+
+/**
+ * Catalog response shape — what the engine returns when the UI asks "what
+ * widgets does this module expose?". Mirrors `WidgetDefinition` but adds
+ * fields the UI may want for richer presentation (install time, source
+ * module summary). Used by the optional `listWidgets` Cap'n Web RPC; not
+ * required for the webhook-driven path which carries `WidgetDefinition`
+ * directly.
+ */
+export interface WidgetCatalogEntry {
+  definition: import("./webhooks").WidgetDefinition;
+  /** Composite moduleKey of the source module — surfaces parent context. */
+  moduleKey: string;
+  moduleName: string;
+  moduleVersion: string;
+  /** Registration timestamp, ISO 8601, set by the engine on insert. */
+  installedAt: string;
 }

@@ -1618,7 +1618,7 @@ func (s *userServiceServer) serveFindOrCreateByWoofx3UIUserIdProtobuf(ctx contex
 }
 
 func (s *userServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor9, 0
+	return twirpFileDescriptor11, 0
 }
 
 func (s *userServiceServer) ProtocGenTwirpVersion() string {
@@ -1632,7 +1632,7 @@ func (s *userServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "user", "UserService")
 }
 
-var twirpFileDescriptor9 = []byte{
+var twirpFileDescriptor11 = []byte{
 	// 629 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x54, 0x4d, 0x6e, 0xd3, 0x40,
 	0x14, 0x96, 0x9d, 0x34, 0xad, 0x5f, 0xda, 0x48, 0x19, 0x2a, 0x1a, 0xb9, 0xfc, 0x54, 0xae, 0x10,

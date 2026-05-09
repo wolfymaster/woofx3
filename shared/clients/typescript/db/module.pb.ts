@@ -13,7 +13,10 @@ import type { ClientConfiguration } from "twirpscript";
 import * as common from "./common.pb";
 import * as module_trigger from "./module_trigger.pb";
 import * as module_action from "./module_action.pb";
+import * as module_widget from "./module_widget.pb";
+import * as module_asset from "./module_asset.pb";
 import * as module_resource from "./module_resource.pb";
+import * as module_resource_instance from "./module_resource_instance.pb";
 
 //========================================//
 //                 Types                  //
@@ -393,6 +396,90 @@ export async function DeleteActionsByModuleId(
   return common.ResponseStatus.decode(response);
 }
 
+export async function RegisterWidgets(
+  registerWidgetsRequest: module_widget.RegisterWidgetsRequest,
+  config?: ClientConfiguration,
+): Promise<module_widget.ListWidgetsResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/RegisterWidgets",
+    module_widget.RegisterWidgetsRequest.encode(registerWidgetsRequest),
+    config,
+  );
+  return module_widget.ListWidgetsResponse.decode(response);
+}
+
+export async function ListWidgets(
+  listWidgetsRequest: module_widget.ListWidgetsRequest,
+  config?: ClientConfiguration,
+): Promise<module_widget.ListWidgetsResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/ListWidgets",
+    module_widget.ListWidgetsRequest.encode(listWidgetsRequest),
+    config,
+  );
+  return module_widget.ListWidgetsResponse.decode(response);
+}
+
+export async function GetWidgetByCanonicalId(
+  getByCanonicalIdRequest: GetByCanonicalIdRequest,
+  config?: ClientConfiguration,
+): Promise<module_widget.WidgetResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/GetWidgetByCanonicalId",
+    GetByCanonicalIdRequest.encode(getByCanonicalIdRequest),
+    config,
+  );
+  return module_widget.WidgetResponse.decode(response);
+}
+
+export async function DeleteWidgetsByModuleId(
+  deleteByModuleIdRequest: DeleteByModuleIdRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/module.ModuleService/DeleteWidgetsByModuleId",
+    DeleteByModuleIdRequest.encode(deleteByModuleIdRequest),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
+}
+
+export async function RegisterAssets(
+  registerAssetsRequest: module_asset.RegisterAssetsRequest,
+  config?: ClientConfiguration,
+): Promise<module_asset.ListAssetsResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/RegisterAssets",
+    module_asset.RegisterAssetsRequest.encode(registerAssetsRequest),
+    config,
+  );
+  return module_asset.ListAssetsResponse.decode(response);
+}
+
+export async function ListAssets(
+  listAssetsRequest: module_asset.ListAssetsRequest,
+  config?: ClientConfiguration,
+): Promise<module_asset.ListAssetsResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/ListAssets",
+    module_asset.ListAssetsRequest.encode(listAssetsRequest),
+    config,
+  );
+  return module_asset.ListAssetsResponse.decode(response);
+}
+
+export async function DeleteAssetsByModuleId(
+  deleteByModuleIdRequest: DeleteByModuleIdRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/module.ModuleService/DeleteAssetsByModuleId",
+    DeleteByModuleIdRequest.encode(deleteByModuleIdRequest),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
+}
+
 export async function CreateModuleResource(
   createModuleResourceRequest: module_resource.CreateModuleResourceRequest,
   config?: ClientConfiguration,
@@ -483,6 +570,84 @@ export async function CompleteModuleDelete(
     config,
   );
   return common.ResponseStatus.decode(response);
+}
+
+/**
+ * Runtime-created instances of module-declared kinds (counters, etc.).
+ * The engine learns identity here; semantics live in the owning module.
+ */
+export async function CreateResourceInstance(
+  createResourceInstanceRequest: module_resource_instance.CreateResourceInstanceRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource_instance.ResourceInstanceResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/CreateResourceInstance",
+    module_resource_instance.CreateResourceInstanceRequest.encode(
+      createResourceInstanceRequest,
+    ),
+    config,
+  );
+  return module_resource_instance.ResourceInstanceResponse.decode(response);
+}
+
+export async function DeleteResourceInstance(
+  deleteResourceInstanceRequest: module_resource_instance.DeleteResourceInstanceRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/module.ModuleService/DeleteResourceInstance",
+    module_resource_instance.DeleteResourceInstanceRequest.encode(
+      deleteResourceInstanceRequest,
+    ),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
+}
+
+export async function GetResourceInstance(
+  getResourceInstanceRequest: module_resource_instance.GetResourceInstanceRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource_instance.ResourceInstanceResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/GetResourceInstance",
+    module_resource_instance.GetResourceInstanceRequest.encode(
+      getResourceInstanceRequest,
+    ),
+    config,
+  );
+  return module_resource_instance.ResourceInstanceResponse.decode(response);
+}
+
+export async function ListResourceInstancesByKind(
+  listResourceInstancesByKindRequest: module_resource_instance.ListResourceInstancesByKindRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource_instance.ListResourceInstancesResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/ListResourceInstancesByKind",
+    module_resource_instance.ListResourceInstancesByKindRequest.encode(
+      listResourceInstancesByKindRequest,
+    ),
+    config,
+  );
+  return module_resource_instance.ListResourceInstancesResponse.decode(
+    response,
+  );
+}
+
+export async function ListResourceInstancesByModule(
+  listResourceInstancesByModuleRequest: module_resource_instance.ListResourceInstancesByModuleRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource_instance.ListResourceInstancesResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/ListResourceInstancesByModule",
+    module_resource_instance.ListResourceInstancesByModuleRequest.encode(
+      listResourceInstancesByModuleRequest,
+    ),
+    config,
+  );
+  return module_resource_instance.ListResourceInstancesResponse.decode(
+    response,
+  );
 }
 
 //========================================//
@@ -681,6 +846,90 @@ export async function DeleteActionsByModuleIdJSON(
   return common.ResponseStatusJSON.decode(response);
 }
 
+export async function RegisterWidgetsJSON(
+  registerWidgetsRequest: module_widget.RegisterWidgetsRequest,
+  config?: ClientConfiguration,
+): Promise<module_widget.ListWidgetsResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/RegisterWidgets",
+    module_widget.RegisterWidgetsRequestJSON.encode(registerWidgetsRequest),
+    config,
+  );
+  return module_widget.ListWidgetsResponseJSON.decode(response);
+}
+
+export async function ListWidgetsJSON(
+  listWidgetsRequest: module_widget.ListWidgetsRequest,
+  config?: ClientConfiguration,
+): Promise<module_widget.ListWidgetsResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/ListWidgets",
+    module_widget.ListWidgetsRequestJSON.encode(listWidgetsRequest),
+    config,
+  );
+  return module_widget.ListWidgetsResponseJSON.decode(response);
+}
+
+export async function GetWidgetByCanonicalIdJSON(
+  getByCanonicalIdRequest: GetByCanonicalIdRequest,
+  config?: ClientConfiguration,
+): Promise<module_widget.WidgetResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/GetWidgetByCanonicalId",
+    GetByCanonicalIdRequestJSON.encode(getByCanonicalIdRequest),
+    config,
+  );
+  return module_widget.WidgetResponseJSON.decode(response);
+}
+
+export async function DeleteWidgetsByModuleIdJSON(
+  deleteByModuleIdRequest: DeleteByModuleIdRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/module.ModuleService/DeleteWidgetsByModuleId",
+    DeleteByModuleIdRequestJSON.encode(deleteByModuleIdRequest),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
+export async function RegisterAssetsJSON(
+  registerAssetsRequest: module_asset.RegisterAssetsRequest,
+  config?: ClientConfiguration,
+): Promise<module_asset.ListAssetsResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/RegisterAssets",
+    module_asset.RegisterAssetsRequestJSON.encode(registerAssetsRequest),
+    config,
+  );
+  return module_asset.ListAssetsResponseJSON.decode(response);
+}
+
+export async function ListAssetsJSON(
+  listAssetsRequest: module_asset.ListAssetsRequest,
+  config?: ClientConfiguration,
+): Promise<module_asset.ListAssetsResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/ListAssets",
+    module_asset.ListAssetsRequestJSON.encode(listAssetsRequest),
+    config,
+  );
+  return module_asset.ListAssetsResponseJSON.decode(response);
+}
+
+export async function DeleteAssetsByModuleIdJSON(
+  deleteByModuleIdRequest: DeleteByModuleIdRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/module.ModuleService/DeleteAssetsByModuleId",
+    DeleteByModuleIdRequestJSON.encode(deleteByModuleIdRequest),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
 export async function CreateModuleResourceJSON(
   createModuleResourceRequest: module_resource.CreateModuleResourceRequest,
   config?: ClientConfiguration,
@@ -773,6 +1022,84 @@ export async function CompleteModuleDeleteJSON(
   return common.ResponseStatusJSON.decode(response);
 }
 
+/**
+ * Runtime-created instances of module-declared kinds (counters, etc.).
+ * The engine learns identity here; semantics live in the owning module.
+ */
+export async function CreateResourceInstanceJSON(
+  createResourceInstanceRequest: module_resource_instance.CreateResourceInstanceRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource_instance.ResourceInstanceResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/CreateResourceInstance",
+    module_resource_instance.CreateResourceInstanceRequestJSON.encode(
+      createResourceInstanceRequest,
+    ),
+    config,
+  );
+  return module_resource_instance.ResourceInstanceResponseJSON.decode(response);
+}
+
+export async function DeleteResourceInstanceJSON(
+  deleteResourceInstanceRequest: module_resource_instance.DeleteResourceInstanceRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/module.ModuleService/DeleteResourceInstance",
+    module_resource_instance.DeleteResourceInstanceRequestJSON.encode(
+      deleteResourceInstanceRequest,
+    ),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
+export async function GetResourceInstanceJSON(
+  getResourceInstanceRequest: module_resource_instance.GetResourceInstanceRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource_instance.ResourceInstanceResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/GetResourceInstance",
+    module_resource_instance.GetResourceInstanceRequestJSON.encode(
+      getResourceInstanceRequest,
+    ),
+    config,
+  );
+  return module_resource_instance.ResourceInstanceResponseJSON.decode(response);
+}
+
+export async function ListResourceInstancesByKindJSON(
+  listResourceInstancesByKindRequest: module_resource_instance.ListResourceInstancesByKindRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource_instance.ListResourceInstancesResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/ListResourceInstancesByKind",
+    module_resource_instance.ListResourceInstancesByKindRequestJSON.encode(
+      listResourceInstancesByKindRequest,
+    ),
+    config,
+  );
+  return module_resource_instance.ListResourceInstancesResponseJSON.decode(
+    response,
+  );
+}
+
+export async function ListResourceInstancesByModuleJSON(
+  listResourceInstancesByModuleRequest: module_resource_instance.ListResourceInstancesByModuleRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource_instance.ListResourceInstancesResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/ListResourceInstancesByModule",
+    module_resource_instance.ListResourceInstancesByModuleRequestJSON.encode(
+      listResourceInstancesByModuleRequest,
+    ),
+    config,
+  );
+  return module_resource_instance.ListResourceInstancesResponseJSON.decode(
+    response,
+  );
+}
+
 //========================================//
 //             ModuleService              //
 //========================================//
@@ -850,6 +1177,42 @@ export interface ModuleService<Context = unknown> {
     deleteByModuleIdRequest: DeleteByModuleIdRequest,
     context: Context,
   ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  RegisterWidgets: (
+    registerWidgetsRequest: module_widget.RegisterWidgetsRequest,
+    context: Context,
+  ) =>
+    | Promise<module_widget.ListWidgetsResponse>
+    | module_widget.ListWidgetsResponse;
+  ListWidgets: (
+    listWidgetsRequest: module_widget.ListWidgetsRequest,
+    context: Context,
+  ) =>
+    | Promise<module_widget.ListWidgetsResponse>
+    | module_widget.ListWidgetsResponse;
+  GetWidgetByCanonicalId: (
+    getByCanonicalIdRequest: GetByCanonicalIdRequest,
+    context: Context,
+  ) => Promise<module_widget.WidgetResponse> | module_widget.WidgetResponse;
+  DeleteWidgetsByModuleId: (
+    deleteByModuleIdRequest: DeleteByModuleIdRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  RegisterAssets: (
+    registerAssetsRequest: module_asset.RegisterAssetsRequest,
+    context: Context,
+  ) =>
+    | Promise<module_asset.ListAssetsResponse>
+    | module_asset.ListAssetsResponse;
+  ListAssets: (
+    listAssetsRequest: module_asset.ListAssetsRequest,
+    context: Context,
+  ) =>
+    | Promise<module_asset.ListAssetsResponse>
+    | module_asset.ListAssetsResponse;
+  DeleteAssetsByModuleId: (
+    deleteByModuleIdRequest: DeleteByModuleIdRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
   CreateModuleResource: (
     createModuleResourceRequest: module_resource.CreateModuleResourceRequest,
     context: Context,
@@ -886,6 +1249,38 @@ export interface ModuleService<Context = unknown> {
     completeModuleDeleteRequest: CompleteModuleDeleteRequest,
     context: Context,
   ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  /**
+   * Runtime-created instances of module-declared kinds (counters, etc.).
+   * The engine learns identity here; semantics live in the owning module.
+   */
+  CreateResourceInstance: (
+    createResourceInstanceRequest: module_resource_instance.CreateResourceInstanceRequest,
+    context: Context,
+  ) =>
+    | Promise<module_resource_instance.ResourceInstanceResponse>
+    | module_resource_instance.ResourceInstanceResponse;
+  DeleteResourceInstance: (
+    deleteResourceInstanceRequest: module_resource_instance.DeleteResourceInstanceRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  GetResourceInstance: (
+    getResourceInstanceRequest: module_resource_instance.GetResourceInstanceRequest,
+    context: Context,
+  ) =>
+    | Promise<module_resource_instance.ResourceInstanceResponse>
+    | module_resource_instance.ResourceInstanceResponse;
+  ListResourceInstancesByKind: (
+    listResourceInstancesByKindRequest: module_resource_instance.ListResourceInstancesByKindRequest,
+    context: Context,
+  ) =>
+    | Promise<module_resource_instance.ListResourceInstancesResponse>
+    | module_resource_instance.ListResourceInstancesResponse;
+  ListResourceInstancesByModule: (
+    listResourceInstancesByModuleRequest: module_resource_instance.ListResourceInstancesByModuleRequest,
+    context: Context,
+  ) =>
+    | Promise<module_resource_instance.ListResourceInstancesResponse>
+    | module_resource_instance.ListResourceInstancesResponse;
 }
 
 export function createModuleService<Context>(service: ModuleService<Context>) {
@@ -1045,6 +1440,90 @@ export function createModuleService<Context>(service: ModuleService<Context>) {
           json: common.ResponseStatusJSON,
         },
       },
+      RegisterWidgets: {
+        name: "RegisterWidgets",
+        handler: service.RegisterWidgets,
+        input: {
+          protobuf: module_widget.RegisterWidgetsRequest,
+          json: module_widget.RegisterWidgetsRequestJSON,
+        },
+        output: {
+          protobuf: module_widget.ListWidgetsResponse,
+          json: module_widget.ListWidgetsResponseJSON,
+        },
+      },
+      ListWidgets: {
+        name: "ListWidgets",
+        handler: service.ListWidgets,
+        input: {
+          protobuf: module_widget.ListWidgetsRequest,
+          json: module_widget.ListWidgetsRequestJSON,
+        },
+        output: {
+          protobuf: module_widget.ListWidgetsResponse,
+          json: module_widget.ListWidgetsResponseJSON,
+        },
+      },
+      GetWidgetByCanonicalId: {
+        name: "GetWidgetByCanonicalId",
+        handler: service.GetWidgetByCanonicalId,
+        input: {
+          protobuf: GetByCanonicalIdRequest,
+          json: GetByCanonicalIdRequestJSON,
+        },
+        output: {
+          protobuf: module_widget.WidgetResponse,
+          json: module_widget.WidgetResponseJSON,
+        },
+      },
+      DeleteWidgetsByModuleId: {
+        name: "DeleteWidgetsByModuleId",
+        handler: service.DeleteWidgetsByModuleId,
+        input: {
+          protobuf: DeleteByModuleIdRequest,
+          json: DeleteByModuleIdRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
+      },
+      RegisterAssets: {
+        name: "RegisterAssets",
+        handler: service.RegisterAssets,
+        input: {
+          protobuf: module_asset.RegisterAssetsRequest,
+          json: module_asset.RegisterAssetsRequestJSON,
+        },
+        output: {
+          protobuf: module_asset.ListAssetsResponse,
+          json: module_asset.ListAssetsResponseJSON,
+        },
+      },
+      ListAssets: {
+        name: "ListAssets",
+        handler: service.ListAssets,
+        input: {
+          protobuf: module_asset.ListAssetsRequest,
+          json: module_asset.ListAssetsRequestJSON,
+        },
+        output: {
+          protobuf: module_asset.ListAssetsResponse,
+          json: module_asset.ListAssetsResponseJSON,
+        },
+      },
+      DeleteAssetsByModuleId: {
+        name: "DeleteAssetsByModuleId",
+        handler: service.DeleteAssetsByModuleId,
+        input: {
+          protobuf: DeleteByModuleIdRequest,
+          json: DeleteByModuleIdRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
+      },
       CreateModuleResource: {
         name: "CreateModuleResource",
         handler: service.CreateModuleResource,
@@ -1127,6 +1606,67 @@ export function createModuleService<Context>(service: ModuleService<Context>) {
         output: {
           protobuf: common.ResponseStatus,
           json: common.ResponseStatusJSON,
+        },
+      },
+      CreateResourceInstance: {
+        name: "CreateResourceInstance",
+        handler: service.CreateResourceInstance,
+        input: {
+          protobuf: module_resource_instance.CreateResourceInstanceRequest,
+          json: module_resource_instance.CreateResourceInstanceRequestJSON,
+        },
+        output: {
+          protobuf: module_resource_instance.ResourceInstanceResponse,
+          json: module_resource_instance.ResourceInstanceResponseJSON,
+        },
+      },
+      DeleteResourceInstance: {
+        name: "DeleteResourceInstance",
+        handler: service.DeleteResourceInstance,
+        input: {
+          protobuf: module_resource_instance.DeleteResourceInstanceRequest,
+          json: module_resource_instance.DeleteResourceInstanceRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
+      },
+      GetResourceInstance: {
+        name: "GetResourceInstance",
+        handler: service.GetResourceInstance,
+        input: {
+          protobuf: module_resource_instance.GetResourceInstanceRequest,
+          json: module_resource_instance.GetResourceInstanceRequestJSON,
+        },
+        output: {
+          protobuf: module_resource_instance.ResourceInstanceResponse,
+          json: module_resource_instance.ResourceInstanceResponseJSON,
+        },
+      },
+      ListResourceInstancesByKind: {
+        name: "ListResourceInstancesByKind",
+        handler: service.ListResourceInstancesByKind,
+        input: {
+          protobuf: module_resource_instance.ListResourceInstancesByKindRequest,
+          json: module_resource_instance.ListResourceInstancesByKindRequestJSON,
+        },
+        output: {
+          protobuf: module_resource_instance.ListResourceInstancesResponse,
+          json: module_resource_instance.ListResourceInstancesResponseJSON,
+        },
+      },
+      ListResourceInstancesByModule: {
+        name: "ListResourceInstancesByModule",
+        handler: service.ListResourceInstancesByModule,
+        input: {
+          protobuf:
+            module_resource_instance.ListResourceInstancesByModuleRequest,
+          json: module_resource_instance.ListResourceInstancesByModuleRequestJSON,
+        },
+        output: {
+          protobuf: module_resource_instance.ListResourceInstancesResponse,
+          json: module_resource_instance.ListResourceInstancesResponseJSON,
         },
       },
     },

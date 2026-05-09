@@ -35,8 +35,31 @@ export interface ConfigFieldOption {
  * `source`. Currently only the `commands` kind is recognized; future
  * additions follow the same discriminated-union pattern.
  */
+/**
+ * Internal-source descriptor — the field's options come from a NATS
+ * request/reply against any subject the engine can dispatch on. Mirrors
+ * `FieldOptionsDescriptor` from `./api.ts` (the engine RPC contract);
+ * declared inline here so the UI's catalog normalizer can validate the
+ * shape without taking on a runtime dependency on the engine RPC types.
+ *
+ * Worker reply shape: `[{value, label}]` (the default `useFieldOptions`
+ * transform); workers may include extra fields.
+ */
+export interface InternalConfigFieldSource {
+  kind: "internal";
+  request: {
+    /** NATS subject the engine fires `nats.request(...)` on. */
+    event: string;
+    /** Opaque payload — wrapped in a CloudEvent envelope before dispatch. */
+    payload?: Record<string, unknown>;
+  };
+  /** Defaults to 10s when omitted. */
+  timeoutMs?: number;
+}
+
 export type ConfigFieldSource =
-  | { kind: "commands" };
+  | { kind: "commands" }
+  | InternalConfigFieldSource;
 
 export interface ConfigField {
   id: string;

@@ -235,6 +235,316 @@ pub struct UpdateModuleResourceVersionRequest {
     #[prost(string, tag="2")]
     pub version: ::prost::alloc::string::String,
 }
+/// ModuleResourceInstance is a runtime-created instance of a kind that an
+/// installed barkloader module declares it provides. This is the K8s
+/// custom-resource analog: the engine learns identity (module + kind +
+/// instance_id) and owns referential integrity, but never learns what the
+/// kind *means*. All semantics (value storage, mutation operations,
+/// validation) live in the owning module.
+///
+/// Identity:
+///    `module_id`     FK to modules.id (the owning module / "controller")
+///    `kind`          manifest-declared kind string (e.g. "counter")
+///    `instance_id`   instance-local id (e.g. "death_count")
+///    canonical id    `{module_name}:{kind}:{instance_id}` — derived
+///
+/// `module_name` is the bare manifest id segment (e.g. "counter"), copied
+/// to the wire so consumers don't need a second lookup to render the
+/// canonical id.
+///
+/// `display_name` is the user-facing label. It can drift across the
+/// instance's lifetime without affecting identity.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ModuleResourceInstance {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub module_id: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub module_name: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub kind: ::prost::alloc::string::String,
+    #[prost(string, tag="5")]
+    pub instance_id: ::prost::alloc::string::String,
+    #[prost(string, tag="6")]
+    pub display_name: ::prost::alloc::string::String,
+    #[prost(string, tag="7")]
+    pub canonical_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="8")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag="9")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CreateResourceInstanceRequest {
+    /// Owning module UUID. Optional when `module_name` is set; the server
+    /// resolves the UUID from the name in that case (single Postgres lookup
+    /// backed by the unique index on `modules.name`).
+    #[prost(string, tag="1")]
+    pub module_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub kind: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub instance_id: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub display_name: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="5")]
+    pub request_context: ::core::option::Option<super::common::RequestContext>,
+    /// Owning module's manifest id (== `modules.name`). Sandbox callers
+    /// (`ctx.resources.create`) typically know the manifest id but not the
+    /// UUID — passing this avoids a separate `GetModuleByName` round-trip.
+    /// When both are set, `module_id` wins.
+    #[prost(string, tag="6")]
+    pub module_name: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ResourceInstanceResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, optional, tag="2")]
+    pub instance: ::core::option::Option<ModuleResourceInstance>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteResourceInstanceRequest {
+    #[prost(string, tag="1")]
+    pub canonical_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="2")]
+    pub request_context: ::core::option::Option<super::common::RequestContext>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetResourceInstanceRequest {
+    #[prost(string, tag="1")]
+    pub canonical_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListResourceInstancesByKindRequest {
+    #[prost(string, tag="1")]
+    pub kind: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListResourceInstancesByModuleRequest {
+    #[prost(string, tag="1")]
+    pub module_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListResourceInstancesResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, repeated, tag="2")]
+    pub instances: ::prost::alloc::vec::Vec<ModuleResourceInstance>,
+}
+/// A registered widget exposed by an installed barkloader module. Widgets are
+/// the fourth module-extension surface alongside triggers, actions, and
+/// functions; they're placeable visual components that the Convex scene
+/// editor drops onto scene canvases.
+///
+/// Identity:
+///    `id`            engine-generated UUID
+///    `manifest_id`   stable manifest-local id (e.g. "raid_counter")
+///    canonical id    `{module_id}:widget:{manifest_id}` — derived, not stored
+///
+/// `directory` is the path inside the module zip that contains this widget's
+/// frontend assets (HTML/JS/CSS bundle). Convex serves these to OBS browser
+/// sources via the widget-asset endpoint.
+///
+/// `alert_types` are the wire-format AlertContext.type strings the widget
+/// renders (e.g. \["follow"\], \["raid"\], \["follow","cheer","raid"\]).
+/// Engine-internal validation operates on canonical event ids; the wire
+/// format is projected from those at registration time via the
+/// AlertEmitter's lookup table.
+///
+/// `settings_schema` is a serialized JSON document describing the widget's
+/// configuration surface. Engine treats it as opaque; the UI parses it into
+/// WidgetSettingDefinition\[\] for rendering. Same opacity as triggers.config_schema.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Widget {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub module_id: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub manifest_id: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag="5")]
+    pub description: ::prost::alloc::string::String,
+    #[prost(string, tag="6")]
+    pub directory: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag="7")]
+    pub alert_types: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, tag="8")]
+    pub settings_schema: ::prost::alloc::string::String,
+    #[prost(string, tag="9")]
+    pub created_by_type: ::prost::alloc::string::String,
+    #[prost(string, tag="10")]
+    pub created_by_ref: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WidgetInput {
+    #[prost(string, tag="1")]
+    pub manifest_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub description: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub directory: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag="5")]
+    pub alert_types: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, tag="6")]
+    pub settings_schema: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RegisterWidgetsRequest {
+    /// composite "{id}:{version}:{hash}"
+    #[prost(string, tag="1")]
+    pub module_key: ::prost::alloc::string::String,
+    /// manifest.name — carried to event for display
+    #[prost(string, tag="2")]
+    pub module_name: ::prost::alloc::string::String,
+    /// manifest.version — carried to event as metadata
+    #[prost(string, tag="3")]
+    pub version: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag="4")]
+    pub widgets: ::prost::alloc::vec::Vec<WidgetInput>,
+    /// Optional explicit registration identity. Mirrors the
+    /// RegisterTriggersRequest fields. When both are set they override the
+    /// default (MODULE, module_key) pairing.
+    #[prost(string, tag="5")]
+    pub created_by_type: ::prost::alloc::string::String,
+    #[prost(string, tag="6")]
+    pub created_by_ref: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListWidgetsRequest {
+    #[prost(string, tag="1")]
+    pub created_by_type: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub created_by_ref: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListWidgetsResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, repeated, tag="2")]
+    pub widgets: ::prost::alloc::vec::Vec<Widget>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WidgetResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, optional, tag="2")]
+    pub widget: ::core::option::Option<Widget>,
+}
+/// A registered static asset bundled with an installed barkloader
+/// module. Assets are the fifth module-extension surface alongside
+/// triggers, actions, functions, and widgets.
+///
+/// Identity:
+///    `id`            engine-generated UUID
+///    `manifest_id`   stable manifest-local id (e.g. "victory_sound")
+///    canonical id    `{module_id}:asset:{manifest_id}` — derived, not stored
+///
+/// `repository_key` is the path the engine wrote the asset bytes to
+/// in its configured repository (file / S3 / future Convex storage).
+/// Resolving this to a public URL is the deployer's concern — the
+/// engine doesn't carry one on this row. The editor / overlay obtains
+/// the URL through the deployer's URL pipeline (CDN, signed URL
+/// service, local proxy) and bakes that URL into action params at
+/// workflow-config time.
+///
+/// `manifest_path` is the original path declared in `manifest.json`,
+/// preserved for diagnostics and for the editor's asset picker
+/// ("counter:victory → assets/victory.mp3").
+///
+/// `kind` is a free-form category hint ("image" | "audio" | "video"
+/// | "font" | "data") the editor uses to filter the asset picker
+/// when an action's schema declares `kinds: \["image"\]`. The engine
+/// doesn't validate values.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Asset {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub module_id: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub manifest_id: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag="5")]
+    pub description: ::prost::alloc::string::String,
+    #[prost(string, tag="6")]
+    pub manifest_path: ::prost::alloc::string::String,
+    #[prost(string, tag="7")]
+    pub repository_key: ::prost::alloc::string::String,
+    #[prost(string, tag="8")]
+    pub kind: ::prost::alloc::string::String,
+    #[prost(string, tag="9")]
+    pub content_type: ::prost::alloc::string::String,
+    #[prost(string, tag="10")]
+    pub created_by_type: ::prost::alloc::string::String,
+    #[prost(string, tag="11")]
+    pub created_by_ref: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AssetInput {
+    #[prost(string, tag="1")]
+    pub manifest_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub description: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub manifest_path: ::prost::alloc::string::String,
+    #[prost(string, tag="5")]
+    pub repository_key: ::prost::alloc::string::String,
+    #[prost(string, tag="6")]
+    pub kind: ::prost::alloc::string::String,
+    #[prost(string, tag="7")]
+    pub content_type: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RegisterAssetsRequest {
+    /// composite "{id}:{version}:{hash}"
+    #[prost(string, tag="1")]
+    pub module_key: ::prost::alloc::string::String,
+    /// manifest.name — carried to event for display
+    #[prost(string, tag="2")]
+    pub module_name: ::prost::alloc::string::String,
+    /// manifest.version — carried to event as metadata
+    #[prost(string, tag="3")]
+    pub version: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag="4")]
+    pub assets: ::prost::alloc::vec::Vec<AssetInput>,
+    /// Optional explicit registration identity. Mirrors the
+    /// RegisterTriggersRequest fields. When both are set they override the
+    /// default (MODULE, module_key) pairing.
+    #[prost(string, tag="5")]
+    pub created_by_type: ::prost::alloc::string::String,
+    #[prost(string, tag="6")]
+    pub created_by_ref: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListAssetsRequest {
+    #[prost(string, tag="1")]
+    pub created_by_type: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub created_by_ref: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListAssetsResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, repeated, tag="2")]
+    pub assets: ::prost::alloc::vec::Vec<Asset>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AssetResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, optional, tag="2")]
+    pub asset: ::core::option::Option<Asset>,
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Module {
     #[prost(string, tag="1")]
