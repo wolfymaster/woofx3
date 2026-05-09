@@ -51,7 +51,10 @@ func (t *ActionTask[TServices]) Execute(ctx *TaskContext) (*types.TaskResult, er
 		}, err
 	}
 
-	result, err := action(ActionContext[TServices]{}, t.parameters)
+	result, err := action(ActionContext[TServices]{
+		ApplicationID: ctx.ApplicationID,
+		TriggerEvent:  ctx.TriggerEvent,
+	}, t.parameters)
 	if err != nil {
 		return &types.TaskResult{
 			Status: types.TaskStatusFailed,

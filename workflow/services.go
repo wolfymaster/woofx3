@@ -60,9 +60,10 @@ func buildAppServices() AppServices {
 }
 
 func WithServices[TServices any](services TServices, action tasks.ActionFunc[TServices]) tasks.ActionFunc[TServices] {
-	return func(_ tasks.ActionContext[TServices], params map[string]any) (map[string]any, error) {
+	return func(incoming tasks.ActionContext[TServices], params map[string]any) (map[string]any, error) {
 		ctx := tasks.ActionContext[TServices]{
-			Services: services,
+			Services:     services,
+			TriggerEvent: incoming.TriggerEvent,
 		}
 		return action(ctx, params)
 	}

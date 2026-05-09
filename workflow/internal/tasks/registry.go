@@ -13,12 +13,20 @@ type Task interface {
 }
 
 type TaskContext struct {
-	WorkflowID   string
-	TaskID       string
-	TriggerEvent *types.Event
-	Variables    map[string]any
-	TaskExports  map[string]map[string]any // task ID -> exports
-	Logger       Logger
+	WorkflowID string
+	// ApplicationID scopes the executing workflow to a specific
+	// application — populated by the engine from the workflow
+	// definition before each task runs. Action handlers stamp this
+	// onto outbound envelopes (e.g. the `alert` action) so downstream
+	// recorders can attribute dispatches without a singleton fallback.
+	// Empty string when the engine couldn't resolve it (e.g.
+	// in-memory test workflows registered without an application).
+	ApplicationID string
+	TaskID        string
+	TriggerEvent  *types.Event
+	Variables     map[string]any
+	TaskExports   map[string]map[string]any // task ID -> exports
+	Logger        Logger
 }
 
 type Logger interface {
@@ -83,6 +91,11 @@ func (r *TaskRegistry) List() []string {
 
 type ActionContext[TServices any] struct {
 	Services TServices
+	// ApplicationID is forwarded from TaskContext so action handlers
+	// (e.g. NewAlertAction) can attribute their side effects to the
+	// owning application. Empty when unresolved.
+	ApplicationID string
+	TriggerEvent  *types.Event
 }
 
 type ActionFunc[TServices any] func(ctx ActionContext[TServices], params map[string]any) (map[string]any, error)

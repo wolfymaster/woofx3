@@ -1032,13 +1032,24 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 		return nil, fmt.Errorf("failed to create task: %w", err)
 	}
 
+	// Resolve the owning workflow's applicationId so action handlers can
+	// attribute their side effects (e.g. NewAlertAction stamps it onto
+	// the published envelope). A missing definition is non-fatal — we
+	// just leave ApplicationID empty and let downstream consumers fall
+	// back to their own resolution.
+	applicationID := ""
+	if def, err := e.workflowRegistry.Get(execution.WorkflowID); err == nil && def != nil {
+		applicationID = def.ApplicationID
+	}
+
 	taskCtx := &tasks.TaskContext{
-		WorkflowID:   execution.WorkflowID,
-		TaskID:       taskDef.ID,
-		TriggerEvent: event,
-		Variables:    execution.Variables,
-		TaskExports:  taskExports,
-		Logger:       e.logger,
+		WorkflowID:    execution.WorkflowID,
+		ApplicationID: applicationID,
+		TaskID:        taskDef.ID,
+		TriggerEvent:  event,
+		Variables:     execution.Variables,
+		TaskExports:   taskExports,
+		Logger:        e.logger,
 	}
 
 	result, err := task.Execute(taskCtx)

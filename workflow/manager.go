@@ -179,9 +179,10 @@ func (m *WorkflowManager) HandleWorkflowDelete(entityID string) {
 // removed in the canonical-id rework — see Phase C.
 func convertDBWorkflowToEngineWorkflow(dbWorkflow *dbv1.Workflow) (*types.WorkflowDefinition, error) {
 	def := &types.WorkflowDefinition{
-		ID:          dbWorkflow.GetId(),
-		Name:        dbWorkflow.GetName(),
-		Description: dbWorkflow.GetDescription(),
+		ID:            dbWorkflow.GetId(),
+		Name:          dbWorkflow.GetName(),
+		Description:   dbWorkflow.GetDescription(),
+		ApplicationID: dbWorkflow.GetApplicationId(),
 	}
 
 	if rawTrigger := dbWorkflow.GetTriggerJson(); rawTrigger != "" && rawTrigger != "{}" {

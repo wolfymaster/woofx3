@@ -6,6 +6,7 @@ import (
 
 	barkloader "github.com/wolfymaster/woofx3/clients/barkloader"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
+	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
 // NewBarkloaderAction is the engine handler registered as `function`.
@@ -66,14 +67,24 @@ func NewBarkloaderAction() tasks.ActionFunc[AppServices] {
 }
 
 // NewAlertAction is the engine handler registered as `alert`. A workflow
-// step with `type: "action"` and `action: "alert"` publishes the entire
-// `parameters` object to the NATS subject `ui.notify.alert`. Subscribers
-// (UI / overlays) consume that subject and render the alert; the handler
+// step with `type: "action"` and `action: "alert"` publishes an envelope
+// to the NATS subject `ui.notify.alert`. Subscribers (UI / overlays)
+// consume that subject and render the alert via a widget; the handler
 // itself is fire-and-forget and returns immediately.
 //
-// The action carries no schema validation today — the alert payload
-// shape is whatever the workflow author writes, evaluated by the UI.
-// Common keys: `mediaUrl`, `audioUrl`, `text`, `duration`, `options`.
+// The published envelope is `{ parameters, event }`:
+//   - `parameters`: the workflow author's params verbatim (text, mediaUrl,
+//     audioUrl, duration, options, custom keys). Convention: include a
+//     `widget` key naming a streamware widget that knows how to render
+//     this alert. Substitution / pluralization / formatting happen inside
+//     the widget at render time.
+//   - `event`: the originating CloudEvent that triggered the workflow,
+//     attached so widgets can read raw event fields directly without the
+//     author having to manually map every field into parameters. `null`
+//     for non-event triggers (manual, scheduled, chat command).
+//
+// The action carries no schema validation today — the contract is "the
+// widget reads what it needs from parameters + event."
 //
 // Canonical id of the corresponding action declaration row:
 // `builtin:action:alert` (registered by the workflow service on startup;
@@ -84,13 +95,37 @@ func NewAlertAction() tasks.ActionFunc[AppServices] {
 		if bus == nil {
 			return nil, fmt.Errorf("message bus not available")
 		}
-		payload, err := json.Marshal(params)
+		payload, err := buildAlertEnvelope(ctx.ApplicationID, params, ctx.TriggerEvent)
 		if err != nil {
-			return nil, fmt.Errorf("marshal alert payload: %w", err)
+			return nil, err
 		}
 		if err := bus.Publish("ui.notify.alert", payload); err != nil {
 			return nil, fmt.Errorf("publish ui.notify.alert: %w", err)
 		}
 		return map[string]any{"published": true}, nil
 	}
+}
+
+// buildAlertEnvelope constructs the ui.notify.alert payload. Pure for
+// testing — given the same args it always produces the same JSON bytes
+// (modulo Go's map iteration order, which json.Marshal sorts).
+//
+// `applicationId` is stamped on the envelope so subscribers can
+// attribute the dispatch without falling back to a singleton lookup.
+// Empty string is omitted from the JSON so envelopes from non-workflow
+// publishers (manual / debug / ad-hoc) round-trip cleanly without
+// stamping a misleading id.
+func buildAlertEnvelope(applicationID string, params map[string]any, event *types.Event) ([]byte, error) {
+	envelope := map[string]any{
+		"parameters": params,
+		"event":      event,
+	}
+	if applicationID != "" {
+		envelope["applicationId"] = applicationID
+	}
+	payload, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("marshal alert envelope: %w", err)
+	}
+	return payload, nil
 }

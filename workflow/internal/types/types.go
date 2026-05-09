@@ -10,9 +10,17 @@ type WorkflowDefinition struct {
 	ID          string           `json:"id" yaml:"id"`
 	Name        string           `json:"name" yaml:"name"`
 	Description string           `json:"description,omitempty" yaml:"description,omitempty"`
-	Trigger     *TriggerConfig   `json:"trigger" yaml:"trigger"`
-	Tasks       []TaskDefinition `json:"tasks" yaml:"tasks"`
-	Options     *WorkflowOptions `json:"options,omitempty" yaml:"options,omitempty"`
+	// ApplicationID scopes this workflow to a specific application. Source
+	// of truth is the `workflow_definitions.application_id` column;
+	// populated by `convertDBWorkflowToEngineWorkflow` when the engine
+	// loads the row. Action handlers that need application context (the
+	// `alert` action stamps it onto the published envelope so api/'s
+	// alert log can attribute the dispatch without falling back to a
+	// singleton "default application" lookup) read it via TaskContext.
+	ApplicationID string           `json:"applicationId,omitempty" yaml:"applicationId,omitempty"`
+	Trigger       *TriggerConfig   `json:"trigger" yaml:"trigger"`
+	Tasks         []TaskDefinition `json:"tasks" yaml:"tasks"`
+	Options       *WorkflowOptions `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
 type TriggerConfig struct {
