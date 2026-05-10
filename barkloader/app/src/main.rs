@@ -4,8 +4,12 @@ use anyhow::Result;
 use env_logger::Env;
 use lib_repository::{FileRepositoryConfig, Repository, RepositoryConfig, RepositoryFactory, RepositoryImpl};
 use futures::executor::block_on;
+use lib_sandbox::extensions::{
+    ChatExtension, PlatformAlertsExtension, PlatformChatExtension, TwitchExtension,
+};
 use lib_sandbox::host::grpc::GrpcStorageClient;
-use lib_sandbox::host::noop::noop_host_context;
+use lib_sandbox::host::noop::{noop_host_context, NoopChatSender};
+use lib_sandbox::host::{ChatSender, ExtensionRegistry};
 use crate::services::sandbox_resources::HttpResourceClient;
 use lib_sandbox::{ModuleRegistry, ModuleMetadata, ModuleState, RegisteredModule, SandboxFactory};
 use lib_sandbox::models::function::Function;
@@ -47,17 +51,18 @@ async fn setup() -> Result<AppContext> {
             info!("STORAGE_ADDR not set; using noop storage client");
         }
 
+        let mut chat_sender: Arc<dyn ChatSender> = Arc::new(NoopChatSender);
+
         let messagebus_url = get_env_or_default_with_key("MESSAGEBUS_URL", Some("messagebusUrl"), "");
         if !messagebus_url.is_empty() {
             match crate::services::nats::NatsService::connect(&messagebus_url).await {
                 Ok(nats) => {
                     info!("Connected to messagebus at {}", messagebus_url);
-                    let chat_sender = Arc::new(crate::services::chat::BusChatSender::new(
+                    chat_sender = Arc::new(crate::services::chat::BusChatSender::new(
                         nats.clone(),
                         "twitch",
                     ));
                     ctx.nats = nats;
-                    ctx.chat = chat_sender;
                 }
                 Err(e) => {
                     warn!("Failed to connect to messagebus: {}; falling back to noop publisher", e);
@@ -66,6 +71,18 @@ async fn setup() -> Result<AppContext> {
         } else {
             info!("messagebusUrl not set; using noop NATS publisher and noop chat sender");
         }
+
+        // Platform integrations (twitch / streamlabs / platform.chat / chat)
+        // are bound through the extension registry. Each extension owns its
+        // own Arc<dyn …> of the relevant transport, so the runtime adapters
+        // stay agnostic to which platforms exist.
+        ctx.extensions = Arc::new(
+            ExtensionRegistry::new()
+                .with(Arc::new(TwitchExtension::new(ctx.nats.clone())))
+                .with(Arc::new(PlatformAlertsExtension::new(ctx.nats.clone())))
+                .with(Arc::new(PlatformChatExtension::new(ctx.nats.clone())))
+                .with(Arc::new(ChatExtension::new(chat_sender))),
+        );
 
         // Resource-instance lifecycle (`ctx.resources.*`) — backed by the
         // db-proxy via Twirp. When DB_PROXY_ADDR is unset the noop impl

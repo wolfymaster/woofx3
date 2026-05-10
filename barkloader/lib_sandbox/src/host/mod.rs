@@ -1,5 +1,8 @@
+pub mod extension;
 pub mod grpc;
 pub mod noop;
+
+pub use extension::{ExtensionRegistry, HandlerFn, HostExtension, HostFunction};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -65,8 +68,8 @@ pub struct HostContext {
     pub storage: Arc<dyn StorageClient>,
     pub env: Arc<dyn EnvReader>,
     pub http: Arc<dyn HttpClient>,
-    pub chat: Arc<dyn ChatSender>,
     pub resources: Arc<dyn ResourceClient>,
+    pub extensions: Arc<ExtensionRegistry>,
 }
 
 pub struct InvocationContext {

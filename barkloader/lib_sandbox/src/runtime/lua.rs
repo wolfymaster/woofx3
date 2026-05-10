@@ -87,97 +87,6 @@ fn build_lua_ctx(
     }
     ctx.set("events", events)?;
 
-    // twitch namespace
-    let twitch = lua.create_table()?;
-    {
-        let nats = invocation.host.nats.clone();
-        let clip = lua.create_function(move |_, ()| {
-            let data = serde_json::json!({"command": "clip"});
-            nats.publish("twitchapi", data)
-                .map_err(mlua::Error::RuntimeError)?;
-            Ok(())
-        })?;
-        twitch.set("clip", clip)?;
-
-        let nats = invocation.host.nats.clone();
-        let timeout_fn = lua.create_function(move |_lua, args: LuaValue| {
-            let json_args: Value =
-                serde_json::to_value(&args).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-            let data = serde_json::json!({"command": "timeout", "args": json_args});
-            nats.publish("twitchapi", data)
-                .map_err(mlua::Error::RuntimeError)?;
-            Ok(())
-        })?;
-        twitch.set("timeout", timeout_fn)?;
-
-        let nats = invocation.host.nats.clone();
-        let update_stream = lua.create_function(move |_lua, args: LuaValue| {
-            let json_args: Value =
-                serde_json::to_value(&args).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-            let data = serde_json::json!({"command": "updateStream", "args": json_args});
-            nats.publish("twitchapi", data)
-                .map_err(mlua::Error::RuntimeError)?;
-            Ok(())
-        })?;
-        twitch.set("updateStream", update_stream)?;
-
-        let nats = invocation.host.nats.clone();
-        let add_moderator = lua.create_function(move |_lua, args: LuaValue| {
-            let json_args: Value =
-                serde_json::to_value(&args).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-            let data = serde_json::json!({"command": "addChannelModerator", "args": json_args});
-            nats.publish("twitchapi", data)
-                .map_err(mlua::Error::RuntimeError)?;
-            Ok(())
-        })?;
-        twitch.set("addModerator", add_moderator)?;
-    }
-    ctx.set("twitch", twitch)?;
-
-    // platform namespace
-    let platform = lua.create_table()?;
-    {
-        // platform.alerts
-        let alerts = lua.create_table()?;
-        let nats = invocation.host.nats.clone();
-        let alert_fn = lua.create_function(move |_lua, args: LuaValue| {
-            let json_args: Value =
-                serde_json::to_value(&args).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-            let data = serde_json::json!({"command": "alert_message", "args": json_args});
-            nats.publish("slobs", data)
-                .map_err(mlua::Error::RuntimeError)?;
-            Ok(())
-        })?;
-        alerts.set("alert", alert_fn)?;
-
-        let nats = invocation.host.nats.clone();
-        let set_timer = lua.create_function(move |_lua, args: LuaValue| {
-            let json_args: Value =
-                serde_json::to_value(&args).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-            let data = serde_json::json!({"command": "setTime", "args": json_args});
-            nats.publish("slobs", data)
-                .map_err(mlua::Error::RuntimeError)?;
-            Ok(())
-        })?;
-        alerts.set("setTimer", set_timer)?;
-        platform.set("alerts", alerts)?;
-
-        // platform.chat
-        let chat = lua.create_table()?;
-        let nats = invocation.host.nats.clone();
-        let register_fn = lua.create_function(move |_lua, args: LuaValue| {
-            let json_args: Value =
-                serde_json::to_value(&args).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-            let data = serde_json::json!({"command": "register", "args": json_args});
-            nats.publish("woofwoofwoof", data)
-                .map_err(mlua::Error::RuntimeError)?;
-            Ok(())
-        })?;
-        chat.set("register", register_fn)?;
-        platform.set("chat", chat)?;
-    }
-    ctx.set("platform", platform)?;
-
     // storage namespace
     let storage = lua.create_table()?;
     {
@@ -235,18 +144,6 @@ fn build_lua_ctx(
     }
     ctx.set("env", env)?;
 
-    // chat namespace
-    let chat = lua.create_table()?;
-    {
-        let sender = invocation.host.chat.clone();
-        let send_message = lua.create_function(move |_lua, text: String| {
-            sender.send_message(&text).map_err(mlua::Error::RuntimeError)?;
-            Ok(())
-        })?;
-        chat.set("sendMessage", send_message)?;
-    }
-    ctx.set("chat", chat)?;
-
     // resources namespace — runtime-instance lifecycle for kinds the
     // calling module declared in its manifest's `resources[]` block.
     // `owning_module_name` is bound from `invocation.module_id`.
@@ -289,5 +186,49 @@ fn build_lua_ctx(
     }
     ctx.set("resources", resources)?;
 
+    bind_extensions(lua, &ctx, invocation)?;
+
     Ok(ctx)
+}
+
+fn ensure_namespace_table(
+    lua: &Lua,
+    parent: &mlua::Table,
+    namespace: &str,
+) -> mlua::Result<mlua::Table> {
+    let mut current = parent.clone();
+    for segment in namespace.split('.') {
+        let existing: mlua::Result<mlua::Table> = current.get(segment);
+        let next = match existing {
+            Ok(t) => t,
+            Err(_) => {
+                let t = lua.create_table()?;
+                current.set(segment, t.clone())?;
+                t
+            }
+        };
+        current = next;
+    }
+    Ok(current)
+}
+
+fn bind_extensions(
+    lua: &Lua,
+    ctx: &mlua::Table,
+    invocation: &InvocationContext,
+) -> mlua::Result<()> {
+    for ext in invocation.host.extensions.iter() {
+        let target = ensure_namespace_table(lua, ctx, ext.namespace())?;
+        for func in ext.functions() {
+            let handler = func.handler.clone();
+            let f = lua.create_function(move |lua, arg: LuaValue| {
+                let value: Value = serde_json::to_value(&arg)
+                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                let result = handler(value).map_err(mlua::Error::RuntimeError)?;
+                lua.to_value(&result)
+            })?;
+            target.set(func.name.as_str(), f)?;
+        }
+    }
+    Ok(())
 }

@@ -150,7 +150,7 @@ mod tests {
             .register_module("example".to_string(), test_module("example"))
             .unwrap();
 
-        let function = registry.get_function("example/hello").unwrap();
+        let function = registry.get_function("example:function:hello").unwrap();
         assert_eq!(function.name, "hello");
     }
 
@@ -176,7 +176,7 @@ mod tests {
             .set_module_state("example", ModuleState::Disabled)
             .unwrap();
 
-        let result = registry.get_function("example/hello");
+        let result = registry.get_function("example:function:hello");
         assert!(matches!(result, Err(Error::ModuleDisabled(_))));
     }
 

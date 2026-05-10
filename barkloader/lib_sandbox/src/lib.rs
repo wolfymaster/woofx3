@@ -1,5 +1,6 @@
 pub mod builtin_dispatch;
 mod error;
+pub mod extensions;
 mod function_executor;
 pub mod host;
 pub mod models;

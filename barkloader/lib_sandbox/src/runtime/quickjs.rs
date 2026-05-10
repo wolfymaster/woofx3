@@ -4,6 +4,7 @@ use crate::runtime::RuntimeAdapter;
 use rquickjs::{
     Array, Context, Ctx, Function as JsFunction, Object, Runtime,
     Value as JsValue,
+    function::Opt,
 };
 use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -196,33 +197,62 @@ fn build_ctx_object<'js>(
     ctx_obj.set("user", user_js).map_err(map)?;
 
     build_events_namespace(ctx, &ctx_obj, invocation)?;
-    build_twitch_namespace(ctx, &ctx_obj, invocation)?;
-    build_platform_namespace(ctx, &ctx_obj, invocation)?;
     build_storage_namespace(ctx, &ctx_obj, invocation)?;
     build_http_namespace(ctx, &ctx_obj, invocation)?;
     build_env_namespace(ctx, &ctx_obj, invocation)?;
-    build_chat_namespace(ctx, &ctx_obj, invocation)?;
     build_resources_namespace(ctx, &ctx_obj, invocation)?;
+    bind_extensions(ctx, &ctx_obj, invocation)?;
 
     Ok(ctx_obj)
 }
 
-fn build_chat_namespace<'js>(
+fn ensure_namespace_object<'js>(
+    ctx: &Ctx<'js>,
+    parent: &Object<'js>,
+    namespace: &str,
+) -> Result<Object<'js>, Error> {
+    let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
+    let mut current = parent.clone();
+    for segment in namespace.split('.') {
+        let existing: Option<Object<'js>> = current.get(segment).ok();
+        let next = match existing {
+            Some(obj) => obj,
+            None => {
+                let obj = Object::new(ctx.clone()).map_err(map)?;
+                current.set(segment, obj.clone()).map_err(map)?;
+                obj
+            }
+        };
+        current = next;
+    }
+    Ok(current)
+}
+
+fn bind_extensions<'js>(
     ctx: &Ctx<'js>,
     ctx_obj: &Object<'js>,
     invocation: &InvocationContext,
 ) -> Result<(), Error> {
     let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
-    let chat = Object::new(ctx.clone()).map_err(map)?;
-
-    let sender = invocation.host.chat.clone();
-    let send_message = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, text: String| -> rquickjs::Result<()> {
-        sender.send_message(&text).map_err(host_err)?;
-        Ok(())
-    }).map_err(map)?;
-    chat.set("sendMessage", send_message).map_err(map)?;
-
-    ctx_obj.set("chat", chat).map_err(map)?;
+    for ext in invocation.host.extensions.iter() {
+        let target = ensure_namespace_object(ctx, ctx_obj, ext.namespace())?;
+        for func in ext.functions() {
+            let handler = func.handler.clone();
+            let js_func = JsFunction::new(
+                ctx.clone(),
+                move |ctx, arg: Opt<JsValue<'_>>| {
+                    let value = match arg.0 {
+                        Some(v) => js_to_json(&v).map_err(|e| host_err(e.to_string()))?,
+                        None => Value::Null,
+                    };
+                    let result = handler(value).map_err(host_err)?;
+                    json_to_js(&ctx, &result).map_err(|e| host_err(e.to_string()))
+                },
+            )
+            .map_err(map)?;
+            target.set(func.name.as_str(), js_func).map_err(map)?;
+        }
+    }
     Ok(())
 }
 
@@ -243,100 +273,6 @@ fn build_events_namespace<'js>(
     events.set("publish", publish).map_err(map)?;
 
     ctx_obj.set("events", events).map_err(map)?;
-    Ok(())
-}
-
-fn build_twitch_namespace<'js>(
-    ctx: &Ctx<'js>,
-    ctx_obj: &Object<'js>,
-    invocation: &InvocationContext,
-) -> Result<(), Error> {
-    let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
-    let twitch = Object::new(ctx.clone()).map_err(map)?;
-
-    let nats = invocation.host.nats.clone();
-    let clip = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>| -> rquickjs::Result<()> {
-        let data = serde_json::json!({"command": "clip"});
-        nats.publish("twitchapi", data).map_err(|e| host_err(e))?;
-        Ok(())
-    }).map_err(map)?;
-    twitch.set("clip", clip).map_err(map)?;
-
-    let nats = invocation.host.nats.clone();
-    let timeout_fn = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, args: JsValue<'_>| -> rquickjs::Result<()> {
-        let json_args = js_to_json(&args).map_err(|e| host_err(e.to_string()))?;
-        let data = serde_json::json!({"command": "timeout", "args": json_args});
-        nats.publish("twitchapi", data).map_err(|e| host_err(e))?;
-        Ok(())
-    }).map_err(map)?;
-    twitch.set("timeout", timeout_fn).map_err(map)?;
-
-    let nats = invocation.host.nats.clone();
-    let update_stream = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, args: JsValue<'_>| -> rquickjs::Result<()> {
-        let json_args = js_to_json(&args).map_err(|e| host_err(e.to_string()))?;
-        let data = serde_json::json!({"command": "updateStream", "args": json_args});
-        nats.publish("twitchapi", data).map_err(|e| host_err(e))?;
-        Ok(())
-    }).map_err(map)?;
-    twitch.set("updateStream", update_stream).map_err(map)?;
-
-    let nats = invocation.host.nats.clone();
-    let add_moderator = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, args: JsValue<'_>| -> rquickjs::Result<()> {
-        let json_args = js_to_json(&args).map_err(|e| host_err(e.to_string()))?;
-        let data = serde_json::json!({"command": "addChannelModerator", "args": json_args});
-        nats.publish("twitchapi", data).map_err(|e| host_err(e))?;
-        Ok(())
-    }).map_err(map)?;
-    twitch.set("addModerator", add_moderator).map_err(map)?;
-
-    ctx_obj.set("twitch", twitch).map_err(map)?;
-    Ok(())
-}
-
-fn build_platform_namespace<'js>(
-    ctx: &Ctx<'js>,
-    ctx_obj: &Object<'js>,
-    invocation: &InvocationContext,
-) -> Result<(), Error> {
-    let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
-    let platform = Object::new(ctx.clone()).map_err(map)?;
-
-    // platform.alerts
-    let alerts = Object::new(ctx.clone()).map_err(map)?;
-
-    let nats = invocation.host.nats.clone();
-    let alert_fn = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, args: JsValue<'_>| -> rquickjs::Result<()> {
-        let json_args = js_to_json(&args).map_err(|e| host_err(e.to_string()))?;
-        let data = serde_json::json!({"command": "alert_message", "args": json_args});
-        nats.publish("slobs", data).map_err(|e| host_err(e))?;
-        Ok(())
-    }).map_err(map)?;
-    alerts.set("alert", alert_fn).map_err(map)?;
-
-    let nats = invocation.host.nats.clone();
-    let set_timer = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, args: JsValue<'_>| -> rquickjs::Result<()> {
-        let json_args = js_to_json(&args).map_err(|e| host_err(e.to_string()))?;
-        let data = serde_json::json!({"command": "setTime", "args": json_args});
-        nats.publish("slobs", data).map_err(|e| host_err(e))?;
-        Ok(())
-    }).map_err(map)?;
-    alerts.set("setTimer", set_timer).map_err(map)?;
-    platform.set("alerts", alerts).map_err(map)?;
-
-    // platform.chat
-    let chat = Object::new(ctx.clone()).map_err(map)?;
-
-    let nats = invocation.host.nats.clone();
-    let register_fn = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, args: JsValue<'_>| -> rquickjs::Result<()> {
-        let json_args = js_to_json(&args).map_err(|e| host_err(e.to_string()))?;
-        let data = serde_json::json!({"command": "register", "args": json_args});
-        nats.publish("woofwoofwoof", data).map_err(|e| host_err(e))?;
-        Ok(())
-    }).map_err(map)?;
-    chat.set("register", register_fn).map_err(map)?;
-    platform.set("chat", chat).map_err(map)?;
-
-    ctx_obj.set("platform", platform).map_err(map)?;
     Ok(())
 }
 

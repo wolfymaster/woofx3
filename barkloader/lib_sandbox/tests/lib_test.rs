@@ -1,5 +1,6 @@
+use lib_sandbox::extensions::{ChatExtension, PlatformAlertsExtension, TwitchExtension};
 use lib_sandbox::host::noop::noop_host_context;
-use lib_sandbox::host::ChatSender;
+use lib_sandbox::host::{ChatSender, ExtensionRegistry, NatsPublisher};
 use lib_sandbox::models::function::Function;
 use lib_sandbox::models::request::InvokeRequest;
 use lib_sandbox::builtin_dispatch::BuiltinDispatcher;
@@ -58,7 +59,7 @@ fn test_sandbox() {
 
     let result = sandbox
         .invoke(InvokeRequest {
-            function: "example/example".to_string(),
+            function: "example:function:example".to_string(),
             event: serde_json::json!({ "input": "test" }),
             user: None,
             params: serde_json::Value::Null,
@@ -81,7 +82,7 @@ fn test_lua_adapter() {
 
     let result = sandbox
         .invoke(InvokeRequest {
-            function: "example/helloworld".to_string(),
+            function: "example:function:helloworld".to_string(),
             event: serde_json::json!({ "name": "wolfy" }),
             user: None,
             params: serde_json::Value::Null,
@@ -97,7 +98,7 @@ fn test_quickjs_adapter() {
 
     let result = sandbox
         .invoke(InvokeRequest {
-            function: "example/sayhello".to_string(),
+            function: "example:function:sayhello".to_string(),
             event: serde_json::json!({ "name": "wolfy" }),
             user: None,
             params: serde_json::Value::Null,
@@ -113,7 +114,7 @@ fn test_null_event() {
 
     let result = sandbox
         .invoke(InvokeRequest {
-            function: "example/sayhello".to_string(),
+            function: "example:function:sayhello".to_string(),
             event: serde_json::Value::Null,
             user: None,
             params: serde_json::Value::Null,
@@ -150,7 +151,7 @@ fn test_js_instruction_limit() {
     let sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
 
     let result = sandbox.invoke(InvokeRequest {
-        function: "limits/infinite".to_string(),
+        function: "limits:function:infinite".to_string(),
         event: serde_json::Value::Null,
         user: None,
         params: serde_json::Value::Null,
@@ -201,7 +202,7 @@ function main(ctx) {
 
     let result1 = sandbox
         .invoke(InvokeRequest {
-            function: "example/isolation".to_string(),
+            function: "example:function:isolation".to_string(),
             event: serde_json::Value::Null,
             user: None,
             params: serde_json::Value::Null,
@@ -210,7 +211,7 @@ function main(ctx) {
 
     let result2 = sandbox
         .invoke(InvokeRequest {
-            function: "example/isolation".to_string(),
+            function: "example:function:isolation".to_string(),
             event: serde_json::Value::Null,
             user: None,
             params: serde_json::Value::Null,
@@ -260,7 +261,7 @@ fn test_ctx_event_data() {
 
     let result = sandbox
         .invoke(InvokeRequest {
-            function: "example/ctx_test".to_string(),
+            function: "example:function:ctx_test".to_string(),
             event: serde_json::json!({ "amount": 500 }),
             user: None,
             params: serde_json::Value::Null,
@@ -310,12 +311,14 @@ fn test_ctx_chat_send_message_routes_to_host() {
 
     let capturing = Arc::new(CapturingChatSender::default());
     let mut host_ctx = noop_host_context();
-    host_ctx.chat = capturing.clone();
+    host_ctx.extensions = Arc::new(
+        ExtensionRegistry::new().with(Arc::new(ChatExtension::new(capturing.clone()))),
+    );
 
     let sandbox = Sandbox::new(registry, host_ctx).unwrap();
     let result = sandbox
         .invoke(InvokeRequest {
-            function: "chat_test/send".to_string(),
+            function: "chat_test:function:send".to_string(),
             event: serde_json::json!({ "text": "hi from sandbox" }),
             user: None,
             params: serde_json::Value::Null,
@@ -325,6 +328,211 @@ fn test_ctx_chat_send_message_routes_to_host() {
     assert_eq!(result["ok"], serde_json::json!(true));
     let captured = capturing.sent.lock().unwrap();
     assert_eq!(captured.as_slice(), &["hi from sandbox".to_string()]);
+}
+
+#[derive(Default)]
+struct CapturingNats {
+    published: Mutex<Vec<(String, serde_json::Value)>>,
+}
+
+impl NatsPublisher for CapturingNats {
+    fn publish(&self, subject: &str, data: serde_json::Value) -> Result<(), String> {
+        self.published
+            .lock()
+            .unwrap()
+            .push((subject.to_string(), data));
+        Ok(())
+    }
+}
+
+fn extension_test_module(name: &str, func_name: &str, code: &str, ext: &str) -> Arc<ModuleRegistry> {
+    let registry = Arc::new(ModuleRegistry::new());
+    let mut functions = HashMap::new();
+    functions.insert(
+        func_name.to_string(),
+        Function::new(
+            func_name.to_string(),
+            format!("{}.{}", func_name, ext),
+            code.to_string(),
+            false,
+        ),
+    );
+    let module = RegisteredModule {
+        metadata: ModuleMetadata {
+            name: name.to_string(),
+            version: "1.0.0".to_string(),
+            installed_at: 0,
+            updated_at: 0,
+        },
+        functions,
+        state: ModuleState::Active,
+    };
+    registry.register_module(name.to_string(), module).unwrap();
+    registry
+}
+
+#[test]
+fn test_quickjs_twitch_extension_publishes_canonical_command() {
+    let code = r#"function main(ctx) {
+    ctx.twitch.addModerator({ userId: "u1" });
+    return { ok: true };
+}"#;
+    let registry = extension_test_module("twitch_test", "moderate", code, "js");
+
+    let nats = Arc::new(CapturingNats::default());
+    let mut host_ctx = noop_host_context();
+    host_ctx.nats = nats.clone();
+    host_ctx.extensions = Arc::new(
+        ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(nats.clone()))),
+    );
+
+    let sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    sandbox
+        .invoke(InvokeRequest {
+            function: "twitch_test:function:moderate".to_string(),
+            event: serde_json::Value::Null,
+            user: None,
+            params: serde_json::Value::Null,
+        })
+        .unwrap();
+
+    let published = nats.published.lock().unwrap();
+    assert_eq!(published.len(), 1);
+    assert_eq!(published[0].0, "twitchapi");
+    assert_eq!(
+        published[0].1,
+        serde_json::json!({
+            "command": "addChannelModerator",
+            "args": { "userId": "u1" }
+        })
+    );
+}
+
+#[test]
+fn test_lua_twitch_extension_publishes_canonical_command() {
+    let code = r#"
+function main(ctx)
+    ctx.twitch.addModerator({ userId = "u1" })
+    return { ok = true }
+end
+"#;
+    let registry = extension_test_module("twitch_test", "moderate", code, "lua");
+
+    let nats = Arc::new(CapturingNats::default());
+    let mut host_ctx = noop_host_context();
+    host_ctx.nats = nats.clone();
+    host_ctx.extensions = Arc::new(
+        ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(nats.clone()))),
+    );
+
+    let sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    sandbox
+        .invoke(InvokeRequest {
+            function: "twitch_test:function:moderate".to_string(),
+            event: serde_json::Value::Null,
+            user: None,
+            params: serde_json::Value::Null,
+        })
+        .unwrap();
+
+    let published = nats.published.lock().unwrap();
+    assert_eq!(published.len(), 1);
+    assert_eq!(published[0].0, "twitchapi");
+    assert_eq!(
+        published[0].1,
+        serde_json::json!({
+            "command": "addChannelModerator",
+            "args": { "userId": "u1" }
+        })
+    );
+}
+
+#[test]
+fn test_quickjs_zero_arg_extension_function() {
+    let code = r#"function main(ctx) {
+    ctx.twitch.clip();
+    return { ok: true };
+}"#;
+    let registry = extension_test_module("twitch_test", "clip_test", code, "js");
+
+    let nats = Arc::new(CapturingNats::default());
+    let mut host_ctx = noop_host_context();
+    host_ctx.extensions = Arc::new(
+        ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(nats.clone()))),
+    );
+
+    let sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    sandbox
+        .invoke(InvokeRequest {
+            function: "twitch_test:function:clip_test".to_string(),
+            event: serde_json::Value::Null,
+            user: None,
+            params: serde_json::Value::Null,
+        })
+        .unwrap();
+
+    let published = nats.published.lock().unwrap();
+    assert_eq!(published.len(), 1);
+    assert_eq!(published[0].0, "twitchapi");
+    assert_eq!(published[0].1, serde_json::json!({ "command": "clip" }));
+}
+
+#[test]
+fn test_quickjs_nested_namespace_platform_alerts() {
+    let code = r#"function main(ctx) {
+    ctx.platform.alerts.alert({ type: "follow", message: "hi" });
+    return { ok: true };
+}"#;
+    let registry = extension_test_module("alerts_test", "alert_test", code, "js");
+
+    let nats = Arc::new(CapturingNats::default());
+    let mut host_ctx = noop_host_context();
+    host_ctx.extensions = Arc::new(
+        ExtensionRegistry::new()
+            .with(Arc::new(PlatformAlertsExtension::new(nats.clone()))),
+    );
+
+    let sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    sandbox
+        .invoke(InvokeRequest {
+            function: "alerts_test:function:alert_test".to_string(),
+            event: serde_json::Value::Null,
+            user: None,
+            params: serde_json::Value::Null,
+        })
+        .unwrap();
+
+    let published = nats.published.lock().unwrap();
+    assert_eq!(published.len(), 1);
+    assert_eq!(published[0].0, "slobs");
+    assert_eq!(
+        published[0].1,
+        serde_json::json!({
+            "command": "alert_message",
+            "args": { "type": "follow", "message": "hi" }
+        })
+    );
+}
+
+#[test]
+fn test_unregistered_extension_namespace_is_undefined() {
+    let code = r#"function main(ctx) {
+    return { has_twitch: typeof ctx.twitch !== "undefined" };
+}"#;
+    let registry = extension_test_module("noext_test", "probe", code, "js");
+
+    let host_ctx = noop_host_context();
+    let sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    let result = sandbox
+        .invoke(InvokeRequest {
+            function: "noext_test:function:probe".to_string(),
+            event: serde_json::Value::Null,
+            user: None,
+            params: serde_json::Value::Null,
+        })
+        .unwrap();
+
+    assert_eq!(result["has_twitch"], serde_json::json!(false));
 }
 
 struct RecordingBuiltinDispatcher {

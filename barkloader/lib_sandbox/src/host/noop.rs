@@ -74,7 +74,7 @@ pub fn noop_host_context() -> HostContext {
         storage: Arc::new(NoopStorageClient),
         env: Arc::new(NoopEnvReader),
         http: Arc::new(NoopHttpClient),
-        chat: Arc::new(NoopChatSender),
         resources: Arc::new(NoopResourceClient),
+        extensions: Arc::new(ExtensionRegistry::new()),
     }
 }
