@@ -31,6 +31,21 @@ impl serde::Serialize for Alert {
         if self.updated_at.is_some() {
             len += 1;
         }
+        if !self.envelope_id.is_empty() {
+            len += 1;
+        }
+        if self.dispatched_at.is_some() {
+            len += 1;
+        }
+        if self.played_at.is_some() {
+            len += 1;
+        }
+        if self.completed_at.is_some() {
+            len += 1;
+        }
+        if !self.error.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("alert.Alert", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -56,6 +71,21 @@ impl serde::Serialize for Alert {
         if let Some(v) = self.updated_at.as_ref() {
             struct_ser.serialize_field("updatedAt", v)?;
         }
+        if !self.envelope_id.is_empty() {
+            struct_ser.serialize_field("envelopeId", &self.envelope_id)?;
+        }
+        if let Some(v) = self.dispatched_at.as_ref() {
+            struct_ser.serialize_field("dispatchedAt", v)?;
+        }
+        if let Some(v) = self.played_at.as_ref() {
+            struct_ser.serialize_field("playedAt", v)?;
+        }
+        if let Some(v) = self.completed_at.as_ref() {
+            struct_ser.serialize_field("completedAt", v)?;
+        }
+        if !self.error.is_empty() {
+            struct_ser.serialize_field("error", &self.error)?;
+        }
         struct_ser.end()
     }
 }
@@ -79,6 +109,15 @@ impl<'de> serde::Deserialize<'de> for Alert {
             "createdAt",
             "updated_at",
             "updatedAt",
+            "envelope_id",
+            "envelopeId",
+            "dispatched_at",
+            "dispatchedAt",
+            "played_at",
+            "playedAt",
+            "completed_at",
+            "completedAt",
+            "error",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -91,6 +130,11 @@ impl<'de> serde::Deserialize<'de> for Alert {
             Status,
             CreatedAt,
             UpdatedAt,
+            EnvelopeId,
+            DispatchedAt,
+            PlayedAt,
+            CompletedAt,
+            Error,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -120,6 +164,11 @@ impl<'de> serde::Deserialize<'de> for Alert {
                             "status" => Ok(GeneratedField::Status),
                             "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
                             "updatedAt" | "updated_at" => Ok(GeneratedField::UpdatedAt),
+                            "envelopeId" | "envelope_id" => Ok(GeneratedField::EnvelopeId),
+                            "dispatchedAt" | "dispatched_at" => Ok(GeneratedField::DispatchedAt),
+                            "playedAt" | "played_at" => Ok(GeneratedField::PlayedAt),
+                            "completedAt" | "completed_at" => Ok(GeneratedField::CompletedAt),
+                            "error" => Ok(GeneratedField::Error),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -147,6 +196,11 @@ impl<'de> serde::Deserialize<'de> for Alert {
                 let mut status__ = None;
                 let mut created_at__ = None;
                 let mut updated_at__ = None;
+                let mut envelope_id__ = None;
+                let mut dispatched_at__ = None;
+                let mut played_at__ = None;
+                let mut completed_at__ = None;
+                let mut error__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -197,6 +251,36 @@ impl<'de> serde::Deserialize<'de> for Alert {
                             }
                             updated_at__ = map_.next_value()?;
                         }
+                        GeneratedField::EnvelopeId => {
+                            if envelope_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("envelopeId"));
+                            }
+                            envelope_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::DispatchedAt => {
+                            if dispatched_at__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("dispatchedAt"));
+                            }
+                            dispatched_at__ = map_.next_value()?;
+                        }
+                        GeneratedField::PlayedAt => {
+                            if played_at__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("playedAt"));
+                            }
+                            played_at__ = map_.next_value()?;
+                        }
+                        GeneratedField::CompletedAt => {
+                            if completed_at__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("completedAt"));
+                            }
+                            completed_at__ = map_.next_value()?;
+                        }
+                        GeneratedField::Error => {
+                            if error__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("error"));
+                            }
+                            error__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Alert {
@@ -208,6 +292,11 @@ impl<'de> serde::Deserialize<'de> for Alert {
                     status: status__.unwrap_or_default(),
                     created_at: created_at__,
                     updated_at: updated_at__,
+                    envelope_id: envelope_id__.unwrap_or_default(),
+                    dispatched_at: dispatched_at__,
+                    played_at: played_at__,
+                    completed_at: completed_at__,
+                    error: error__.unwrap_or_default(),
                 })
             }
         }
@@ -342,6 +431,9 @@ impl serde::Serialize for CreateAlertRequest {
         if !self.source_event_id.is_empty() {
             len += 1;
         }
+        if !self.envelope_id.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("alert.CreateAlertRequest", len)?;
         if !self.application_id.is_empty() {
             struct_ser.serialize_field("applicationId", &self.application_id)?;
@@ -354,6 +446,9 @@ impl serde::Serialize for CreateAlertRequest {
         }
         if !self.source_event_id.is_empty() {
             struct_ser.serialize_field("sourceEventId", &self.source_event_id)?;
+        }
+        if !self.envelope_id.is_empty() {
+            struct_ser.serialize_field("envelopeId", &self.envelope_id)?;
         }
         struct_ser.end()
     }
@@ -372,6 +467,8 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
             "workflowId",
             "source_event_id",
             "sourceEventId",
+            "envelope_id",
+            "envelopeId",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -380,6 +477,7 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
             Payload,
             WorkflowId,
             SourceEventId,
+            EnvelopeId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -405,6 +503,7 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
                             "payload" => Ok(GeneratedField::Payload),
                             "workflowId" | "workflow_id" => Ok(GeneratedField::WorkflowId),
                             "sourceEventId" | "source_event_id" => Ok(GeneratedField::SourceEventId),
+                            "envelopeId" | "envelope_id" => Ok(GeneratedField::EnvelopeId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -428,6 +527,7 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
                 let mut payload__ = None;
                 let mut workflow_id__ = None;
                 let mut source_event_id__ = None;
+                let mut envelope_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::ApplicationId => {
@@ -454,6 +554,12 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
                             }
                             source_event_id__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::EnvelopeId => {
+                            if envelope_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("envelopeId"));
+                            }
+                            envelope_id__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(CreateAlertRequest {
@@ -461,6 +567,7 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
                     payload: payload__.unwrap_or_default(),
                     workflow_id: workflow_id__.unwrap_or_default(),
                     source_event_id: source_event_id__.unwrap_or_default(),
+                    envelope_id: envelope_id__.unwrap_or_default(),
                 })
             }
         }
@@ -556,6 +663,116 @@ impl<'de> serde::Deserialize<'de> for DeleteAlertRequest {
             }
         }
         deserializer.deserialize_struct("alert.DeleteAlertRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for GetAlertByEnvelopeIdRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.application_id.is_empty() {
+            len += 1;
+        }
+        if !self.envelope_id.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("alert.GetAlertByEnvelopeIdRequest", len)?;
+        if !self.application_id.is_empty() {
+            struct_ser.serialize_field("applicationId", &self.application_id)?;
+        }
+        if !self.envelope_id.is_empty() {
+            struct_ser.serialize_field("envelopeId", &self.envelope_id)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for GetAlertByEnvelopeIdRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "application_id",
+            "applicationId",
+            "envelope_id",
+            "envelopeId",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            ApplicationId,
+            EnvelopeId,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
+                            "envelopeId" | "envelope_id" => Ok(GeneratedField::EnvelopeId),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = GetAlertByEnvelopeIdRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct alert.GetAlertByEnvelopeIdRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<GetAlertByEnvelopeIdRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut application_id__ = None;
+                let mut envelope_id__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::ApplicationId => {
+                            if application_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("applicationId"));
+                            }
+                            application_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::EnvelopeId => {
+                            if envelope_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("envelopeId"));
+                            }
+                            envelope_id__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(GetAlertByEnvelopeIdRequest {
+                    application_id: application_id__.unwrap_or_default(),
+                    envelope_id: envelope_id__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("alert.GetAlertByEnvelopeIdRequest", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for GetAlertRequest {
@@ -945,6 +1162,150 @@ impl<'de> serde::Deserialize<'de> for ListAlertsResponse {
             }
         }
         deserializer.deserialize_struct("alert.ListAlertsResponse", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for UpdateAlertLifecycleRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.application_id.is_empty() {
+            len += 1;
+        }
+        if !self.envelope_id.is_empty() {
+            len += 1;
+        }
+        if !self.status.is_empty() {
+            len += 1;
+        }
+        if !self.error.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("alert.UpdateAlertLifecycleRequest", len)?;
+        if !self.application_id.is_empty() {
+            struct_ser.serialize_field("applicationId", &self.application_id)?;
+        }
+        if !self.envelope_id.is_empty() {
+            struct_ser.serialize_field("envelopeId", &self.envelope_id)?;
+        }
+        if !self.status.is_empty() {
+            struct_ser.serialize_field("status", &self.status)?;
+        }
+        if !self.error.is_empty() {
+            struct_ser.serialize_field("error", &self.error)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for UpdateAlertLifecycleRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "application_id",
+            "applicationId",
+            "envelope_id",
+            "envelopeId",
+            "status",
+            "error",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            ApplicationId,
+            EnvelopeId,
+            Status,
+            Error,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
+                            "envelopeId" | "envelope_id" => Ok(GeneratedField::EnvelopeId),
+                            "status" => Ok(GeneratedField::Status),
+                            "error" => Ok(GeneratedField::Error),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = UpdateAlertLifecycleRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct alert.UpdateAlertLifecycleRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<UpdateAlertLifecycleRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut application_id__ = None;
+                let mut envelope_id__ = None;
+                let mut status__ = None;
+                let mut error__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::ApplicationId => {
+                            if application_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("applicationId"));
+                            }
+                            application_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::EnvelopeId => {
+                            if envelope_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("envelopeId"));
+                            }
+                            envelope_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Error => {
+                            if error__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("error"));
+                            }
+                            error__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(UpdateAlertLifecycleRequest {
+                    application_id: application_id__.unwrap_or_default(),
+                    envelope_id: envelope_id__.unwrap_or_default(),
+                    status: status__.unwrap_or_default(),
+                    error: error__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("alert.UpdateAlertLifecycleRequest", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for UpdateAlertStatusRequest {

@@ -34,11 +34,41 @@ export interface Alert {
   workflowId: string;
   sourceEventId: string;
   /**
-   * Lifecycle: `sent` (initial), `replayed`, `failed` (reserved).
+   * Lifecycle:
+   *   `sent`       — engine published; overlay has not yet ack'd
+   *   `playing`    — overlay reported the widget mounted
+   *   `completed`  — overlay reported the widget finished playing
+   *   `failed`     — overlay reported a render / playback error
+   *   `replayed`   — operator re-fired this row from the UI
+   * Phase 2 will add `pending`, `dispatched`, `timed_out`, `skipped`.
    */
   status: string;
   createdAt: protoscript.Timestamp;
   updatedAt: protoscript.Timestamp;
+  /**
+   * Denormalised AlertPayload envelope id (`payload->>'id'`). The
+   * overlay's status reports key on this value, not the row id.
+   */
+  envelopeId: string;
+  /**
+   * Set when the engine published the envelope to NATS. Phase 2
+   * (backend queue) will treat the absence of this stamp as
+   * "still pending"; Phase 1 stamps it on insert.
+   */
+  dispatchedAt: protoscript.Timestamp;
+  /**
+   * Set when the overlay reported `playing`.
+   */
+  playedAt: protoscript.Timestamp;
+  /**
+   * Set when the overlay reported `completed` or `failed`.
+   */
+  completedAt: protoscript.Timestamp;
+  /**
+   * Failure reason captured from a `failed` ack. Empty when
+   * status is not `failed`.
+   */
+  error: string;
 }
 
 export interface CreateAlertRequest {
@@ -52,10 +82,43 @@ export interface CreateAlertRequest {
    */
   workflowId: string;
   sourceEventId: string;
+  /**
+   * AlertPayload envelope id (`payload.id`). Persisted to the
+   * denormalised `envelope_id` column for fast lookup on the overlay
+   * ack path. Optional for backwards compatibility — older callers that
+   * don't supply this still create rows, just without the index hit.
+   */
+  envelopeId: string;
 }
 
 export interface GetAlertRequest {
   id: string;
+}
+
+/**
+ * Lookup by the AlertPayload envelope id (`payload->>'id'`). Returns
+ * `NOT_FOUND` if no row carries that envelope id. Used by the api when
+ * the overlay reports `playing` / `completed` / `failed`.
+ */
+export interface GetAlertByEnvelopeIdRequest {
+  applicationId: string;
+  envelopeId: string;
+}
+
+/**
+ * Atomic transition of the lifecycle columns keyed on envelope id.
+ * The status string is the target state (`playing` / `completed` /
+ * `failed`); the db service decides which timestamp column to stamp:
+ *   - playing   → played_at = NOW()
+ *   - completed → completed_at = NOW()
+ *   - failed    → completed_at = NOW(), error = <provided message>
+ * `error` is ignored unless status is `failed`.
+ */
+export interface UpdateAlertLifecycleRequest {
+  applicationId: string;
+  envelopeId: string;
+  status: string;
+  error: string;
 }
 
 export interface AlertResponse {
@@ -114,6 +177,18 @@ export async function GetAlert(
   return AlertResponse.decode(response);
 }
 
+export async function GetAlertByEnvelopeId(
+  getAlertByEnvelopeIdRequest: GetAlertByEnvelopeIdRequest,
+  config?: ClientConfiguration,
+): Promise<AlertResponse> {
+  const response = await PBrequest(
+    "/alert.AlertService/GetAlertByEnvelopeId",
+    GetAlertByEnvelopeIdRequest.encode(getAlertByEnvelopeIdRequest),
+    config,
+  );
+  return AlertResponse.decode(response);
+}
+
 export async function ListAlerts(
   listAlertsRequest: ListAlertsRequest,
   config?: ClientConfiguration,
@@ -133,6 +208,18 @@ export async function UpdateAlertStatus(
   const response = await PBrequest(
     "/alert.AlertService/UpdateAlertStatus",
     UpdateAlertStatusRequest.encode(updateAlertStatusRequest),
+    config,
+  );
+  return AlertResponse.decode(response);
+}
+
+export async function UpdateAlertLifecycle(
+  updateAlertLifecycleRequest: UpdateAlertLifecycleRequest,
+  config?: ClientConfiguration,
+): Promise<AlertResponse> {
+  const response = await PBrequest(
+    "/alert.AlertService/UpdateAlertLifecycle",
+    UpdateAlertLifecycleRequest.encode(updateAlertLifecycleRequest),
     config,
   );
   return AlertResponse.decode(response);
@@ -178,6 +265,18 @@ export async function GetAlertJSON(
   return AlertResponseJSON.decode(response);
 }
 
+export async function GetAlertByEnvelopeIdJSON(
+  getAlertByEnvelopeIdRequest: GetAlertByEnvelopeIdRequest,
+  config?: ClientConfiguration,
+): Promise<AlertResponse> {
+  const response = await JSONrequest(
+    "/alert.AlertService/GetAlertByEnvelopeId",
+    GetAlertByEnvelopeIdRequestJSON.encode(getAlertByEnvelopeIdRequest),
+    config,
+  );
+  return AlertResponseJSON.decode(response);
+}
+
 export async function ListAlertsJSON(
   listAlertsRequest: ListAlertsRequest,
   config?: ClientConfiguration,
@@ -197,6 +296,18 @@ export async function UpdateAlertStatusJSON(
   const response = await JSONrequest(
     "/alert.AlertService/UpdateAlertStatus",
     UpdateAlertStatusRequestJSON.encode(updateAlertStatusRequest),
+    config,
+  );
+  return AlertResponseJSON.decode(response);
+}
+
+export async function UpdateAlertLifecycleJSON(
+  updateAlertLifecycleRequest: UpdateAlertLifecycleRequest,
+  config?: ClientConfiguration,
+): Promise<AlertResponse> {
+  const response = await JSONrequest(
+    "/alert.AlertService/UpdateAlertLifecycle",
+    UpdateAlertLifecycleRequestJSON.encode(updateAlertLifecycleRequest),
     config,
   );
   return AlertResponseJSON.decode(response);
@@ -227,6 +338,12 @@ export async function DeleteAlertJSON(
  * re-publishes `payload` to the `ui.notify.alert` NATS subject (so
  * streamware broadcasts it to overlays exactly like the original
  * dispatch), then calls `UpdateAlertStatus(..., "replayed")`.
+ *
+ * Lifecycle path (Phase 1 widget-completion ack): the overlay sends
+ * `playing` / `completed` / `failed` reports keyed on the AlertPayload
+ * envelope id; the api forwards them via `UpdateAlertLifecycle` which
+ * atomically advances `status` and stamps the matching timestamp
+ * (played_at / completed_at) and optional error.
  */
 export interface AlertService<Context = unknown> {
   CreateAlert: (
@@ -237,12 +354,20 @@ export interface AlertService<Context = unknown> {
     getAlertRequest: GetAlertRequest,
     context: Context,
   ) => Promise<AlertResponse> | AlertResponse;
+  GetAlertByEnvelopeId: (
+    getAlertByEnvelopeIdRequest: GetAlertByEnvelopeIdRequest,
+    context: Context,
+  ) => Promise<AlertResponse> | AlertResponse;
   ListAlerts: (
     listAlertsRequest: ListAlertsRequest,
     context: Context,
   ) => Promise<ListAlertsResponse> | ListAlertsResponse;
   UpdateAlertStatus: (
     updateAlertStatusRequest: UpdateAlertStatusRequest,
+    context: Context,
+  ) => Promise<AlertResponse> | AlertResponse;
+  UpdateAlertLifecycle: (
+    updateAlertLifecycleRequest: UpdateAlertLifecycleRequest,
     context: Context,
   ) => Promise<AlertResponse> | AlertResponse;
   DeleteAlert: (
@@ -267,6 +392,15 @@ export function createAlertService<Context>(service: AlertService<Context>) {
         input: { protobuf: GetAlertRequest, json: GetAlertRequestJSON },
         output: { protobuf: AlertResponse, json: AlertResponseJSON },
       },
+      GetAlertByEnvelopeId: {
+        name: "GetAlertByEnvelopeId",
+        handler: service.GetAlertByEnvelopeId,
+        input: {
+          protobuf: GetAlertByEnvelopeIdRequest,
+          json: GetAlertByEnvelopeIdRequestJSON,
+        },
+        output: { protobuf: AlertResponse, json: AlertResponseJSON },
+      },
       ListAlerts: {
         name: "ListAlerts",
         handler: service.ListAlerts,
@@ -279,6 +413,15 @@ export function createAlertService<Context>(service: AlertService<Context>) {
         input: {
           protobuf: UpdateAlertStatusRequest,
           json: UpdateAlertStatusRequestJSON,
+        },
+        output: { protobuf: AlertResponse, json: AlertResponseJSON },
+      },
+      UpdateAlertLifecycle: {
+        name: "UpdateAlertLifecycle",
+        handler: service.UpdateAlertLifecycle,
+        input: {
+          protobuf: UpdateAlertLifecycleRequest,
+          json: UpdateAlertLifecycleRequestJSON,
         },
         output: { protobuf: AlertResponse, json: AlertResponseJSON },
       },
@@ -333,6 +476,11 @@ export const Alert = {
       status: "",
       createdAt: protoscript.Timestamp.initialize(),
       updatedAt: protoscript.Timestamp.initialize(),
+      envelopeId: "",
+      dispatchedAt: protoscript.Timestamp.initialize(),
+      playedAt: protoscript.Timestamp.initialize(),
+      completedAt: protoscript.Timestamp.initialize(),
+      error: "",
       ...msg,
     };
   },
@@ -376,6 +524,33 @@ export const Alert = {
         protoscript.Timestamp._writeMessage,
       );
     }
+    if (msg.envelopeId) {
+      writer.writeString(9, msg.envelopeId);
+    }
+    if (msg.dispatchedAt) {
+      writer.writeMessage(
+        10,
+        msg.dispatchedAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    if (msg.playedAt) {
+      writer.writeMessage(
+        11,
+        msg.playedAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    if (msg.completedAt) {
+      writer.writeMessage(
+        12,
+        msg.completedAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    if (msg.error) {
+      writer.writeString(13, msg.error);
+    }
     return writer;
   },
 
@@ -418,6 +593,32 @@ export const Alert = {
           reader.readMessage(msg.updatedAt, protoscript.Timestamp._readMessage);
           break;
         }
+        case 9: {
+          msg.envelopeId = reader.readString();
+          break;
+        }
+        case 10: {
+          reader.readMessage(
+            msg.dispatchedAt,
+            protoscript.Timestamp._readMessage,
+          );
+          break;
+        }
+        case 11: {
+          reader.readMessage(msg.playedAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 12: {
+          reader.readMessage(
+            msg.completedAt,
+            protoscript.Timestamp._readMessage,
+          );
+          break;
+        }
+        case 13: {
+          msg.error = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -458,6 +659,7 @@ export const CreateAlertRequest = {
       payload: "",
       workflowId: "",
       sourceEventId: "",
+      envelopeId: "",
       ...msg,
     };
   },
@@ -480,6 +682,9 @@ export const CreateAlertRequest = {
     }
     if (msg.sourceEventId) {
       writer.writeString(4, msg.sourceEventId);
+    }
+    if (msg.envelopeId) {
+      writer.writeString(5, msg.envelopeId);
     }
     return writer;
   },
@@ -508,6 +713,10 @@ export const CreateAlertRequest = {
         }
         case 4: {
           msg.sourceEventId = reader.readString();
+          break;
+        }
+        case 5: {
+          msg.envelopeId = reader.readString();
           break;
         }
         default: {
@@ -576,6 +785,178 @@ export const GetAlertRequest = {
       switch (field) {
         case 1: {
           msg.id = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const GetAlertByEnvelopeIdRequest = {
+  /**
+   * Serializes GetAlertByEnvelopeIdRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<GetAlertByEnvelopeIdRequest>): Uint8Array {
+    return GetAlertByEnvelopeIdRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes GetAlertByEnvelopeIdRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): GetAlertByEnvelopeIdRequest {
+    return GetAlertByEnvelopeIdRequest._readMessage(
+      GetAlertByEnvelopeIdRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes GetAlertByEnvelopeIdRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetAlertByEnvelopeIdRequest>,
+  ): GetAlertByEnvelopeIdRequest {
+    return {
+      applicationId: "",
+      envelopeId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetAlertByEnvelopeIdRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.applicationId) {
+      writer.writeString(1, msg.applicationId);
+    }
+    if (msg.envelopeId) {
+      writer.writeString(2, msg.envelopeId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetAlertByEnvelopeIdRequest,
+    reader: protoscript.BinaryReader,
+  ): GetAlertByEnvelopeIdRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.applicationId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.envelopeId = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const UpdateAlertLifecycleRequest = {
+  /**
+   * Serializes UpdateAlertLifecycleRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<UpdateAlertLifecycleRequest>): Uint8Array {
+    return UpdateAlertLifecycleRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes UpdateAlertLifecycleRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): UpdateAlertLifecycleRequest {
+    return UpdateAlertLifecycleRequest._readMessage(
+      UpdateAlertLifecycleRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes UpdateAlertLifecycleRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<UpdateAlertLifecycleRequest>,
+  ): UpdateAlertLifecycleRequest {
+    return {
+      applicationId: "",
+      envelopeId: "",
+      status: "",
+      error: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<UpdateAlertLifecycleRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.applicationId) {
+      writer.writeString(1, msg.applicationId);
+    }
+    if (msg.envelopeId) {
+      writer.writeString(2, msg.envelopeId);
+    }
+    if (msg.status) {
+      writer.writeString(3, msg.status);
+    }
+    if (msg.error) {
+      writer.writeString(4, msg.error);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: UpdateAlertLifecycleRequest,
+    reader: protoscript.BinaryReader,
+  ): UpdateAlertLifecycleRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.applicationId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.envelopeId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.status = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.error = reader.readString();
           break;
         }
         default: {
@@ -1028,6 +1409,11 @@ export const AlertJSON = {
       status: "",
       createdAt: protoscript.TimestampJSON.initialize(),
       updatedAt: protoscript.TimestampJSON.initialize(),
+      envelopeId: "",
+      dispatchedAt: protoscript.TimestampJSON.initialize(),
+      playedAt: protoscript.TimestampJSON.initialize(),
+      completedAt: protoscript.TimestampJSON.initialize(),
+      error: "",
       ...msg,
     };
   },
@@ -1060,6 +1446,24 @@ export const AlertJSON = {
     }
     if (msg.updatedAt && (msg.updatedAt.seconds || msg.updatedAt.nanos)) {
       json["updatedAt"] = protoscript.serializeTimestamp(msg.updatedAt);
+    }
+    if (msg.envelopeId) {
+      json["envelopeId"] = msg.envelopeId;
+    }
+    if (
+      msg.dispatchedAt &&
+      (msg.dispatchedAt.seconds || msg.dispatchedAt.nanos)
+    ) {
+      json["dispatchedAt"] = protoscript.serializeTimestamp(msg.dispatchedAt);
+    }
+    if (msg.playedAt && (msg.playedAt.seconds || msg.playedAt.nanos)) {
+      json["playedAt"] = protoscript.serializeTimestamp(msg.playedAt);
+    }
+    if (msg.completedAt && (msg.completedAt.seconds || msg.completedAt.nanos)) {
+      json["completedAt"] = protoscript.serializeTimestamp(msg.completedAt);
+    }
+    if (msg.error) {
+      json["error"] = msg.error;
     }
     return json;
   },
@@ -1100,6 +1504,26 @@ export const AlertJSON = {
     if (_updatedAt_) {
       msg.updatedAt = protoscript.parseTimestamp(_updatedAt_);
     }
+    const _envelopeId_ = json["envelopeId"] ?? json["envelope_id"];
+    if (_envelopeId_) {
+      msg.envelopeId = _envelopeId_;
+    }
+    const _dispatchedAt_ = json["dispatchedAt"] ?? json["dispatched_at"];
+    if (_dispatchedAt_) {
+      msg.dispatchedAt = protoscript.parseTimestamp(_dispatchedAt_);
+    }
+    const _playedAt_ = json["playedAt"] ?? json["played_at"];
+    if (_playedAt_) {
+      msg.playedAt = protoscript.parseTimestamp(_playedAt_);
+    }
+    const _completedAt_ = json["completedAt"] ?? json["completed_at"];
+    if (_completedAt_) {
+      msg.completedAt = protoscript.parseTimestamp(_completedAt_);
+    }
+    const _error_ = json["error"];
+    if (_error_) {
+      msg.error = _error_;
+    }
     return msg;
   },
 };
@@ -1131,6 +1555,7 @@ export const CreateAlertRequestJSON = {
       payload: "",
       workflowId: "",
       sourceEventId: "",
+      envelopeId: "",
       ...msg,
     };
   },
@@ -1153,6 +1578,9 @@ export const CreateAlertRequestJSON = {
     }
     if (msg.sourceEventId) {
       json["sourceEventId"] = msg.sourceEventId;
+    }
+    if (msg.envelopeId) {
+      json["envelopeId"] = msg.envelopeId;
     }
     return json;
   },
@@ -1179,6 +1607,10 @@ export const CreateAlertRequestJSON = {
     const _sourceEventId_ = json["sourceEventId"] ?? json["source_event_id"];
     if (_sourceEventId_) {
       msg.sourceEventId = _sourceEventId_;
+    }
+    const _envelopeId_ = json["envelopeId"] ?? json["envelope_id"];
+    if (_envelopeId_) {
+      msg.envelopeId = _envelopeId_;
     }
     return msg;
   },
@@ -1232,6 +1664,154 @@ export const GetAlertRequestJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
+    }
+    return msg;
+  },
+};
+
+export const GetAlertByEnvelopeIdRequestJSON = {
+  /**
+   * Serializes GetAlertByEnvelopeIdRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<GetAlertByEnvelopeIdRequest>): string {
+    return JSON.stringify(GetAlertByEnvelopeIdRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes GetAlertByEnvelopeIdRequest from JSON.
+   */
+  decode: function (json: string): GetAlertByEnvelopeIdRequest {
+    return GetAlertByEnvelopeIdRequestJSON._readMessage(
+      GetAlertByEnvelopeIdRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes GetAlertByEnvelopeIdRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetAlertByEnvelopeIdRequest>,
+  ): GetAlertByEnvelopeIdRequest {
+    return {
+      applicationId: "",
+      envelopeId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetAlertByEnvelopeIdRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.applicationId) {
+      json["applicationId"] = msg.applicationId;
+    }
+    if (msg.envelopeId) {
+      json["envelopeId"] = msg.envelopeId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetAlertByEnvelopeIdRequest,
+    json: any,
+  ): GetAlertByEnvelopeIdRequest {
+    const _applicationId_ = json["applicationId"] ?? json["application_id"];
+    if (_applicationId_) {
+      msg.applicationId = _applicationId_;
+    }
+    const _envelopeId_ = json["envelopeId"] ?? json["envelope_id"];
+    if (_envelopeId_) {
+      msg.envelopeId = _envelopeId_;
+    }
+    return msg;
+  },
+};
+
+export const UpdateAlertLifecycleRequestJSON = {
+  /**
+   * Serializes UpdateAlertLifecycleRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<UpdateAlertLifecycleRequest>): string {
+    return JSON.stringify(UpdateAlertLifecycleRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes UpdateAlertLifecycleRequest from JSON.
+   */
+  decode: function (json: string): UpdateAlertLifecycleRequest {
+    return UpdateAlertLifecycleRequestJSON._readMessage(
+      UpdateAlertLifecycleRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes UpdateAlertLifecycleRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<UpdateAlertLifecycleRequest>,
+  ): UpdateAlertLifecycleRequest {
+    return {
+      applicationId: "",
+      envelopeId: "",
+      status: "",
+      error: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<UpdateAlertLifecycleRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.applicationId) {
+      json["applicationId"] = msg.applicationId;
+    }
+    if (msg.envelopeId) {
+      json["envelopeId"] = msg.envelopeId;
+    }
+    if (msg.status) {
+      json["status"] = msg.status;
+    }
+    if (msg.error) {
+      json["error"] = msg.error;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: UpdateAlertLifecycleRequest,
+    json: any,
+  ): UpdateAlertLifecycleRequest {
+    const _applicationId_ = json["applicationId"] ?? json["application_id"];
+    if (_applicationId_) {
+      msg.applicationId = _applicationId_;
+    }
+    const _envelopeId_ = json["envelopeId"] ?? json["envelope_id"];
+    if (_envelopeId_) {
+      msg.envelopeId = _envelopeId_;
+    }
+    const _status_ = json["status"];
+    if (_status_) {
+      msg.status = _status_;
+    }
+    const _error_ = json["error"];
+    if (_error_) {
+      msg.error = _error_;
     }
     return msg;
   },

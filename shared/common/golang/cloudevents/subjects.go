@@ -32,6 +32,25 @@ const (
 	// Workflow events
 	SubjectWorkflowExecute Subject = "workflow.execute"
 
+	// Unified widget event channel (R2 of the widget refactor).
+	// Single inbound subject for everything an overlay reports about a
+	// widget — alert lifecycle acks, counter increments, timer state,
+	// goal hits, generic completion. CloudEvent data shape:
+	//   { applicationId, moduleId, instanceId, widgetCanonicalId?,
+	//     key, value, occurredAt }
+	// Dispatch on `key`:
+	//   "alert.lifecycle" → AlertQueueManager.handleStatus
+	//   anything else     → db.upsertWidgetStatus
+	SubjectWidgetEvent Subject = "widget.event"
+
+	// Backend-authoritative alert dispatch (Phase 2). The workflow alert
+	// action publishes to `ui.notify.alert` (intent); only the api
+	// subscribes and enqueues. The api's AlertQueueManager publishes
+	// here when it dispatches the next leased alert; streamware
+	// subscribes and broadcasts to connected overlays. Decouples
+	// "alert was authored" from "alert is currently being shown."
+	SubjectUIAlertBroadcast Subject = "ui.alert.broadcast"
+
 	// DB proxy workflow lifecycle events — match publisher.go:58 format:
 	// "db.{entityType}.{operation}.{appId}"
 	SubjectDbWorkflowCreatedPattern Subject = "db.workflow.created.*"
@@ -68,6 +87,9 @@ const (
 	// CloudEvents `type` is the canonical, non-wildcard string.
 	SubjectModuleStorageChanged        Subject = "module.storage.changed"
 	SubjectModuleStorageChangedPattern Subject = "module.storage.*.changed"
+
+	// (Phase 4 `module.widget.status.changed` collapsed into
+	//  `widget.event` during R2 — see SubjectWidgetEvent above.)
 
 	// DB-proxy outbox patterns. Format mirrors publisher.go:
 	// "db.{entityType}.{operation}.{appId}". The api/ TypeScript service

@@ -27,8 +27,20 @@ type Alert struct {
 	WorkflowID    *uuid.UUID `gorm:"column:workflow_id;type:uuid"`
 	SourceEventID string     `gorm:"column:source_event_id;type:text;not null;default:''"`
 	Status        string     `gorm:"column:status;type:varchar(32);not null;default:'sent'"`
-	CreatedAt     time.Time  `gorm:"column:created_at;index:idx_alerts_application_created_at,priority:2,sort:desc"`
-	UpdatedAt     time.Time
+	// EnvelopeID is the AlertPayload envelope id (`payload->>'id'`).
+	// Denormalised so the api can fast-update the row by id when the
+	// overlay reports `playing` / `completed` / `failed` over the new
+	// `ui.widget.status` channel. Empty for legacy / manual rows.
+	EnvelopeID   string     `gorm:"column:envelope_id;type:text;not null;default:''"`
+	DispatchedAt *time.Time `gorm:"column:dispatched_at"`
+	PlayedAt     *time.Time `gorm:"column:played_at"`
+	CompletedAt  *time.Time `gorm:"column:completed_at"`
+	// Error captures the failure reason from a `failed` overlay ack
+	// (autoplay block, missing media, etc.). Empty string = "no error",
+	// matching the source_event_id convention.
+	Error     string    `gorm:"column:error;type:text;not null;default:''"`
+	CreatedAt time.Time `gorm:"column:created_at;index:idx_alerts_application_created_at,priority:2,sort:desc"`
+	UpdatedAt time.Time
 
 	// Relationships
 	Application Application `gorm:"foreignKey:ApplicationID;references:ID"`

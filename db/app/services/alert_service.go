@@ -2,7 +2,9 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
@@ -11,6 +13,7 @@ import (
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"gorm.io/gorm"
 )
 
 // alertService implements `client.AlertService` (Twirp-generated).
@@ -60,12 +63,15 @@ func (s *alertService) CreateAlert(ctx context.Context, req *client.CreateAlertR
 		workflowID = &parsed
 	}
 
+	now := time.Now().UTC()
 	alert := &models.Alert{
 		ApplicationID: applicationID,
 		Payload:       req.Payload,
 		WorkflowID:    workflowID,
 		SourceEventID: req.SourceEventId,
+		EnvelopeID:    req.EnvelopeId,
 		Status:        "sent",
+		DispatchedAt:  &now,
 	}
 	if err := s.repo.Create(alert); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create alert: %w", err))
@@ -146,6 +152,70 @@ func (s *alertService) ListAlerts(ctx context.Context, req *client.ListAlertsReq
 	}, nil
 }
 
+func (s *alertService) GetAlertByEnvelopeId(ctx context.Context, req *client.GetAlertByEnvelopeIdRequest) (*client.AlertResponse, error) {
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	applicationID, err := uuid.Parse(appIDStr)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
+	}
+	if req.EnvelopeId == "" {
+		return nil, twirp.RequiredArgumentError("envelope_id")
+	}
+	alert, err := s.repo.GetByEnvelopeID(applicationID, req.EnvelopeId)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, twirp.NotFoundError("alert not found for envelope")
+		}
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to load alert: %w", err))
+	}
+	return &client.AlertResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Alert retrieved successfully",
+		},
+		Alert: s.alertToProto(alert),
+	}, nil
+}
+
+func (s *alertService) UpdateAlertLifecycle(ctx context.Context, req *client.UpdateAlertLifecycleRequest) (*client.AlertResponse, error) {
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	applicationID, err := uuid.Parse(appIDStr)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
+	}
+	if req.EnvelopeId == "" {
+		return nil, twirp.RequiredArgumentError("envelope_id")
+	}
+	switch req.Status {
+	case "dispatched", "playing", "completed", "failed", "timed_out", "skipped":
+		// allowed
+	default:
+		return nil, twirp.InvalidArgumentError("status",
+			"must be one of: dispatched, playing, completed, failed, timed_out, skipped")
+	}
+	alert, err := s.repo.UpdateLifecycle(applicationID, req.EnvelopeId, req.Status, req.Error)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, twirp.NotFoundError("alert not found for envelope")
+		}
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update alert lifecycle: %w", err))
+	}
+	s.publishChange(alert.ApplicationID.String(), alert, "updated")
+	return &client.AlertResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Alert lifecycle updated successfully",
+		},
+		Alert: s.alertToProto(alert),
+	}, nil
+}
+
 func (s *alertService) UpdateAlertStatus(ctx context.Context, req *client.UpdateAlertStatusRequest) (*client.AlertResponse, error) {
 	id, err := uuid.Parse(req.Id)
 	if err != nil {
@@ -195,16 +265,28 @@ func (s *alertService) alertToProto(m *models.Alert) *client.Alert {
 	if m.WorkflowID != nil {
 		wf = m.WorkflowID.String()
 	}
-	return &client.Alert{
+	out := &client.Alert{
 		Id:            m.ID.String(),
 		ApplicationId: m.ApplicationID.String(),
 		Payload:       m.Payload,
 		WorkflowId:    wf,
 		SourceEventId: m.SourceEventID,
 		Status:        m.Status,
+		EnvelopeId:    m.EnvelopeID,
+		Error:         m.Error,
 		CreatedAt:     timestamppb.New(m.CreatedAt),
 		UpdatedAt:     timestamppb.New(m.UpdatedAt),
 	}
+	if m.DispatchedAt != nil {
+		out.DispatchedAt = timestamppb.New(*m.DispatchedAt)
+	}
+	if m.PlayedAt != nil {
+		out.PlayedAt = timestamppb.New(*m.PlayedAt)
+	}
+	if m.CompletedAt != nil {
+		out.CompletedAt = timestamppb.New(*m.CompletedAt)
+	}
+	return out
 }
 
 func (s *alertService) publishChange(applicationID string, alert *models.Alert, op string) {
@@ -226,14 +308,26 @@ func buildAlertChangeData(alert *models.Alert) map[string]interface{} {
 	if alert.WorkflowID != nil {
 		wf = alert.WorkflowID.String()
 	}
-	return map[string]interface{}{
+	out := map[string]interface{}{
 		"id":              alert.ID.String(),
 		"application_id":  alert.ApplicationID.String(),
 		"payload":         alert.Payload,
 		"workflow_id":     wf,
 		"source_event_id": alert.SourceEventID,
+		"envelope_id":     alert.EnvelopeID,
 		"status":          alert.Status,
+		"error":           alert.Error,
 		"created_at":      alert.CreatedAt.Format("2006-01-02T15:04:05.000Z07:00"),
 		"updated_at":      alert.UpdatedAt.Format("2006-01-02T15:04:05.000Z07:00"),
 	}
+	if alert.DispatchedAt != nil {
+		out["dispatched_at"] = alert.DispatchedAt.Format("2006-01-02T15:04:05.000Z07:00")
+	}
+	if alert.PlayedAt != nil {
+		out["played_at"] = alert.PlayedAt.Format("2006-01-02T15:04:05.000Z07:00")
+	}
+	if alert.CompletedAt != nil {
+		out["completed_at"] = alert.CompletedAt.Format("2006-01-02T15:04:05.000Z07:00")
+	}
+	return out
 }

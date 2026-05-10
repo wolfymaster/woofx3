@@ -1,6 +1,6 @@
 // @generated
 /// Generated client implementations.
-pub mod alert_service_client {
+pub mod widget_status_service_client {
     #![allow(
         unused_variables,
         dead_code,
@@ -11,10 +11,10 @@ pub mod alert_service_client {
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
-    pub struct AlertServiceClient<T> {
+    pub struct WidgetStatusServiceClient<T> {
         inner: tonic::client::Grpc<T>,
     }
-    impl AlertServiceClient<tonic::transport::Channel> {
+    impl WidgetStatusServiceClient<tonic::transport::Channel> {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
@@ -25,7 +25,7 @@ pub mod alert_service_client {
             Ok(Self::new(conn))
         }
     }
-    impl<T> AlertServiceClient<T>
+    impl<T> WidgetStatusServiceClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::Body>,
         T::Error: Into<StdError>,
@@ -43,7 +43,7 @@ pub mod alert_service_client {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> AlertServiceClient<InterceptedService<T, F>>
+        ) -> WidgetStatusServiceClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
@@ -57,7 +57,7 @@ pub mod alert_service_client {
                 http::Request<tonic::body::Body>,
             >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
         {
-            AlertServiceClient::new(InterceptedService::new(inner, interceptor))
+            WidgetStatusServiceClient::new(InterceptedService::new(inner, interceptor))
         }
         /// Compress requests with the given encoding.
         ///
@@ -90,74 +90,11 @@ pub mod alert_service_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        pub async fn create_alert(
+        pub async fn upsert_widget_status(
             &mut self,
-            request: impl tonic::IntoRequest<super::CreateAlertRequest>,
-        ) -> std::result::Result<tonic::Response<super::AlertResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/alert.AlertService/CreateAlert",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("alert.AlertService", "CreateAlert"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn get_alert(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetAlertRequest>,
-        ) -> std::result::Result<tonic::Response<super::AlertResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/alert.AlertService/GetAlert",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("alert.AlertService", "GetAlert"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn get_alert_by_envelope_id(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetAlertByEnvelopeIdRequest>,
-        ) -> std::result::Result<tonic::Response<super::AlertResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic_prost::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/alert.AlertService/GetAlertByEnvelopeId",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("alert.AlertService", "GetAlertByEnvelopeId"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn list_alerts(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ListAlertsRequest>,
+            request: impl tonic::IntoRequest<super::UpsertWidgetStatusRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::ListAlertsResponse>,
+            tonic::Response<super::WidgetStatusResponse>,
             tonic::Status,
         > {
             self.inner
@@ -170,17 +107,25 @@ pub mod alert_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/alert.AlertService/ListAlerts",
+                "/widget_status.WidgetStatusService/UpsertWidgetStatus",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("alert.AlertService", "ListAlerts"));
+                .insert(
+                    GrpcMethod::new(
+                        "widget_status.WidgetStatusService",
+                        "UpsertWidgetStatus",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
-        pub async fn update_alert_status(
+        pub async fn get_widget_status(
             &mut self,
-            request: impl tonic::IntoRequest<super::UpdateAlertStatusRequest>,
-        ) -> std::result::Result<tonic::Response<super::AlertResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::GetWidgetStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::WidgetStatusResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -191,17 +136,25 @@ pub mod alert_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/alert.AlertService/UpdateAlertStatus",
+                "/widget_status.WidgetStatusService/GetWidgetStatus",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("alert.AlertService", "UpdateAlertStatus"));
+                .insert(
+                    GrpcMethod::new(
+                        "widget_status.WidgetStatusService",
+                        "GetWidgetStatus",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
-        pub async fn update_alert_lifecycle(
+        pub async fn list_widget_status(
             &mut self,
-            request: impl tonic::IntoRequest<super::UpdateAlertLifecycleRequest>,
-        ) -> std::result::Result<tonic::Response<super::AlertResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::ListWidgetStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListWidgetStatusResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -212,16 +165,21 @@ pub mod alert_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/alert.AlertService/UpdateAlertLifecycle",
+                "/widget_status.WidgetStatusService/ListWidgetStatus",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("alert.AlertService", "UpdateAlertLifecycle"));
+                .insert(
+                    GrpcMethod::new(
+                        "widget_status.WidgetStatusService",
+                        "ListWidgetStatus",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
-        pub async fn delete_alert(
+        pub async fn delete_widget_status(
             &mut self,
-            request: impl tonic::IntoRequest<super::DeleteAlertRequest>,
+            request: impl tonic::IntoRequest<super::DeleteWidgetStatusRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
@@ -236,17 +194,22 @@ pub mod alert_service_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/alert.AlertService/DeleteAlert",
+                "/widget_status.WidgetStatusService/DeleteWidgetStatus",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("alert.AlertService", "DeleteAlert"));
+                .insert(
+                    GrpcMethod::new(
+                        "widget_status.WidgetStatusService",
+                        "DeleteWidgetStatus",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
     }
 }
 /// Generated server implementations.
-pub mod alert_service_server {
+pub mod widget_status_service_server {
     #![allow(
         unused_variables,
         dead_code,
@@ -255,53 +218,47 @@ pub mod alert_service_server {
         clippy::let_unit_value,
     )]
     use tonic::codegen::*;
-    /// Generated trait containing gRPC methods that should be implemented for use with AlertServiceServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with WidgetStatusServiceServer.
     #[async_trait]
-    pub trait AlertService: std::marker::Send + std::marker::Sync + 'static {
-        async fn create_alert(
+    pub trait WidgetStatusService: std::marker::Send + std::marker::Sync + 'static {
+        async fn upsert_widget_status(
             &self,
-            request: tonic::Request<super::CreateAlertRequest>,
-        ) -> std::result::Result<tonic::Response<super::AlertResponse>, tonic::Status>;
-        async fn get_alert(
-            &self,
-            request: tonic::Request<super::GetAlertRequest>,
-        ) -> std::result::Result<tonic::Response<super::AlertResponse>, tonic::Status>;
-        async fn get_alert_by_envelope_id(
-            &self,
-            request: tonic::Request<super::GetAlertByEnvelopeIdRequest>,
-        ) -> std::result::Result<tonic::Response<super::AlertResponse>, tonic::Status>;
-        async fn list_alerts(
-            &self,
-            request: tonic::Request<super::ListAlertsRequest>,
+            request: tonic::Request<super::UpsertWidgetStatusRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::ListAlertsResponse>,
+            tonic::Response<super::WidgetStatusResponse>,
             tonic::Status,
         >;
-        async fn update_alert_status(
+        async fn get_widget_status(
             &self,
-            request: tonic::Request<super::UpdateAlertStatusRequest>,
-        ) -> std::result::Result<tonic::Response<super::AlertResponse>, tonic::Status>;
-        async fn update_alert_lifecycle(
+            request: tonic::Request<super::GetWidgetStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::WidgetStatusResponse>,
+            tonic::Status,
+        >;
+        async fn list_widget_status(
             &self,
-            request: tonic::Request<super::UpdateAlertLifecycleRequest>,
-        ) -> std::result::Result<tonic::Response<super::AlertResponse>, tonic::Status>;
-        async fn delete_alert(
+            request: tonic::Request<super::ListWidgetStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListWidgetStatusResponse>,
+            tonic::Status,
+        >;
+        async fn delete_widget_status(
             &self,
-            request: tonic::Request<super::DeleteAlertRequest>,
+            request: tonic::Request<super::DeleteWidgetStatusRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
     }
     #[derive(Debug)]
-    pub struct AlertServiceServer<T> {
+    pub struct WidgetStatusServiceServer<T> {
         inner: Arc<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
         max_decoding_message_size: Option<usize>,
         max_encoding_message_size: Option<usize>,
     }
-    impl<T> AlertServiceServer<T> {
+    impl<T> WidgetStatusServiceServer<T> {
         pub fn new(inner: T) -> Self {
             Self::from_arc(Arc::new(inner))
         }
@@ -352,9 +309,9 @@ pub mod alert_service_server {
             self
         }
     }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for AlertServiceServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for WidgetStatusServiceServer<T>
     where
-        T: AlertService,
+        T: WidgetStatusService,
         B: Body + std::marker::Send + 'static,
         B::Error: Into<StdError> + std::marker::Send + 'static,
     {
@@ -369,115 +326,25 @@ pub mod alert_service_server {
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             match req.uri().path() {
-                "/alert.AlertService/CreateAlert" => {
+                "/widget_status.WidgetStatusService/UpsertWidgetStatus" => {
                     #[allow(non_camel_case_types)]
-                    struct CreateAlertSvc<T: AlertService>(pub Arc<T>);
+                    struct UpsertWidgetStatusSvc<T: WidgetStatusService>(pub Arc<T>);
                     impl<
-                        T: AlertService,
-                    > tonic::server::UnaryService<super::CreateAlertRequest>
-                    for CreateAlertSvc<T> {
-                        type Response = super::AlertResponse;
+                        T: WidgetStatusService,
+                    > tonic::server::UnaryService<super::UpsertWidgetStatusRequest>
+                    for UpsertWidgetStatusSvc<T> {
+                        type Response = super::WidgetStatusResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::CreateAlertRequest>,
+                            request: tonic::Request<super::UpsertWidgetStatusRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as AlertService>::create_alert(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = CreateAlertSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/alert.AlertService/GetAlert" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetAlertSvc<T: AlertService>(pub Arc<T>);
-                    impl<
-                        T: AlertService,
-                    > tonic::server::UnaryService<super::GetAlertRequest>
-                    for GetAlertSvc<T> {
-                        type Response = super::AlertResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetAlertRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as AlertService>::get_alert(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = GetAlertSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/alert.AlertService/GetAlertByEnvelopeId" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetAlertByEnvelopeIdSvc<T: AlertService>(pub Arc<T>);
-                    impl<
-                        T: AlertService,
-                    > tonic::server::UnaryService<super::GetAlertByEnvelopeIdRequest>
-                    for GetAlertByEnvelopeIdSvc<T> {
-                        type Response = super::AlertResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetAlertByEnvelopeIdRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as AlertService>::get_alert_by_envelope_id(
+                                <T as WidgetStatusService>::upsert_widget_status(
                                         &inner,
                                         request,
                                     )
@@ -492,7 +359,7 @@ pub mod alert_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = GetAlertByEnvelopeIdSvc(inner);
+                        let method = UpsertWidgetStatusSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -508,70 +375,28 @@ pub mod alert_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/alert.AlertService/ListAlerts" => {
+                "/widget_status.WidgetStatusService/GetWidgetStatus" => {
                     #[allow(non_camel_case_types)]
-                    struct ListAlertsSvc<T: AlertService>(pub Arc<T>);
+                    struct GetWidgetStatusSvc<T: WidgetStatusService>(pub Arc<T>);
                     impl<
-                        T: AlertService,
-                    > tonic::server::UnaryService<super::ListAlertsRequest>
-                    for ListAlertsSvc<T> {
-                        type Response = super::ListAlertsResponse;
+                        T: WidgetStatusService,
+                    > tonic::server::UnaryService<super::GetWidgetStatusRequest>
+                    for GetWidgetStatusSvc<T> {
+                        type Response = super::WidgetStatusResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ListAlertsRequest>,
+                            request: tonic::Request<super::GetWidgetStatusRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as AlertService>::list_alerts(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ListAlertsSvc(inner);
-                        let codec = tonic_prost::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/alert.AlertService/UpdateAlertStatus" => {
-                    #[allow(non_camel_case_types)]
-                    struct UpdateAlertStatusSvc<T: AlertService>(pub Arc<T>);
-                    impl<
-                        T: AlertService,
-                    > tonic::server::UnaryService<super::UpdateAlertStatusRequest>
-                    for UpdateAlertStatusSvc<T> {
-                        type Response = super::AlertResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::UpdateAlertStatusRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as AlertService>::update_alert_status(&inner, request)
+                                <T as WidgetStatusService>::get_widget_status(
+                                        &inner,
+                                        request,
+                                    )
                                     .await
                             };
                             Box::pin(fut)
@@ -583,7 +408,7 @@ pub mod alert_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = UpdateAlertStatusSvc(inner);
+                        let method = GetWidgetStatusSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -599,25 +424,28 @@ pub mod alert_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/alert.AlertService/UpdateAlertLifecycle" => {
+                "/widget_status.WidgetStatusService/ListWidgetStatus" => {
                     #[allow(non_camel_case_types)]
-                    struct UpdateAlertLifecycleSvc<T: AlertService>(pub Arc<T>);
+                    struct ListWidgetStatusSvc<T: WidgetStatusService>(pub Arc<T>);
                     impl<
-                        T: AlertService,
-                    > tonic::server::UnaryService<super::UpdateAlertLifecycleRequest>
-                    for UpdateAlertLifecycleSvc<T> {
-                        type Response = super::AlertResponse;
+                        T: WidgetStatusService,
+                    > tonic::server::UnaryService<super::ListWidgetStatusRequest>
+                    for ListWidgetStatusSvc<T> {
+                        type Response = super::ListWidgetStatusResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::UpdateAlertLifecycleRequest>,
+                            request: tonic::Request<super::ListWidgetStatusRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as AlertService>::update_alert_lifecycle(&inner, request)
+                                <T as WidgetStatusService>::list_widget_status(
+                                        &inner,
+                                        request,
+                                    )
                                     .await
                             };
                             Box::pin(fut)
@@ -629,7 +457,7 @@ pub mod alert_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = UpdateAlertLifecycleSvc(inner);
+                        let method = ListWidgetStatusSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -645,13 +473,13 @@ pub mod alert_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/alert.AlertService/DeleteAlert" => {
+                "/widget_status.WidgetStatusService/DeleteWidgetStatus" => {
                     #[allow(non_camel_case_types)]
-                    struct DeleteAlertSvc<T: AlertService>(pub Arc<T>);
+                    struct DeleteWidgetStatusSvc<T: WidgetStatusService>(pub Arc<T>);
                     impl<
-                        T: AlertService,
-                    > tonic::server::UnaryService<super::DeleteAlertRequest>
-                    for DeleteAlertSvc<T> {
+                        T: WidgetStatusService,
+                    > tonic::server::UnaryService<super::DeleteWidgetStatusRequest>
+                    for DeleteWidgetStatusSvc<T> {
                         type Response = super::super::common::ResponseStatus;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -659,11 +487,15 @@ pub mod alert_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::DeleteAlertRequest>,
+                            request: tonic::Request<super::DeleteWidgetStatusRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as AlertService>::delete_alert(&inner, request).await
+                                <T as WidgetStatusService>::delete_widget_status(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
                             };
                             Box::pin(fut)
                         }
@@ -674,7 +506,7 @@ pub mod alert_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = DeleteAlertSvc(inner);
+                        let method = DeleteWidgetStatusSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -712,7 +544,7 @@ pub mod alert_service_server {
             }
         }
     }
-    impl<T> Clone for AlertServiceServer<T> {
+    impl<T> Clone for WidgetStatusServiceServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
             Self {
@@ -725,8 +557,8 @@ pub mod alert_service_server {
         }
     }
     /// Generated gRPC service name
-    pub const SERVICE_NAME: &str = "alert.AlertService";
-    impl<T> tonic::server::NamedService for AlertServiceServer<T> {
+    pub const SERVICE_NAME: &str = "widget_status.WidgetStatusService";
+    impl<T> tonic::server::NamedService for WidgetStatusServiceServer<T> {
         const NAME: &'static str = SERVICE_NAME;
     }
 }

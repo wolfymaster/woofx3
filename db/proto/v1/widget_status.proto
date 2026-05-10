@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package widget_status;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// Per-widget-instance state surface (Phase 4 of the widget-completion
+// plan). Mirrors `module_storage` in shape but is keyed at the
+// widget-instance level instead of the module level — each scene
+// placement of a widget has its own state.
+//
+// Update path:
+//   - Scene overlay's widgetHost.reportStatus(key, value) →
+//     streamware republishes to NATS module.widget.status.changed →
+//     api consumes and calls UpsertWidgetStatus here → dashboard sees
+//     the value via WIDGET_STATUS_CHANGED webhook.
+//
+// Read path:
+//   - Dashboard backfill on connect: ListWidgetStatus(applicationId).
+//   - Future workflow trigger: GetWidgetStatus(applicationId,
+//     instanceId, key).
+service WidgetStatusService {
+  rpc UpsertWidgetStatus(UpsertWidgetStatusRequest) returns (WidgetStatusResponse);
+  rpc GetWidgetStatus(GetWidgetStatusRequest) returns (WidgetStatusResponse);
+  rpc ListWidgetStatus(ListWidgetStatusRequest) returns (ListWidgetStatusResponse);
+  rpc DeleteWidgetStatus(DeleteWidgetStatusRequest) returns (common.ResponseStatus);
+}
+
+message WidgetStatus {
+  string id = 1;
+  string application_id = 2;
+  // Module that owns the widget definition. Denormalised from the
+  // scene's widgets_json so consumers can group by module without
+  // joining.
+  string module_id = 3;
+  // Stable per-placement instance id from `WidgetInstance.id`.
+  string instance_id = 4;
+  // Canonical `{moduleId}:widget:{manifestId}`. Empty when the
+  // placement didn't surface it.
+  string widget_canonical_id = 5;
+  // Caller-defined report key (e.g. "count", "goalReached",
+  // "elapsedSeconds").
+  string key = 6;
+  // Opaque JSON-encoded value. Engine treats as bytes — consumers
+  // parse based on the widget's documented schema.
+  string value = 7;
+  // When the widget reported this value (set by the scene overlay,
+  // not the engine). Carried verbatim so dashboards display the
+  // event time, not the persistence time.
+  google.protobuf.Timestamp occurred_at = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+message UpsertWidgetStatusRequest {
+  string application_id = 1;
+  string module_id = 2;
+  string instance_id = 3;
+  string widget_canonical_id = 4;
+  string key = 5;
+  // JSON-encoded value (string).
+  string value = 6;
+  // Optional ISO-8601 timestamp from the overlay; the service stamps
+  // `now()` when omitted.
+  string occurred_at = 7;
+}
+
+message GetWidgetStatusRequest {
+  string application_id = 1;
+  string instance_id = 2;
+  string key = 3;
+}
+
+message WidgetStatusResponse {
+  common.ResponseStatus status = 1;
+  WidgetStatus widget_status = 2;
+}
+
+message ListWidgetStatusRequest {
+  string application_id = 1;
+  // Optional filters. Empty string = no filter.
+  string module_id = 2;
+  string instance_id = 3;
+  int32 limit = 4;
+  int32 offset = 5;
+}
+
+message ListWidgetStatusResponse {
+  common.ResponseStatus status = 1;
+  repeated WidgetStatus rows = 2;
+  int64 total_count = 3;
+  int32 limit = 4;
+  int32 offset = 5;
+}
+
+message DeleteWidgetStatusRequest {
+  string application_id = 1;
+  string instance_id = 2;
+  // Optional: when omitted, deletes every row for the instance.
+  string key = 3;
+}

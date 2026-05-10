@@ -46,6 +46,11 @@ export const EngineEventType = {
   SCENE_DELETED: "scene.deleted",
   ALERT_RECORDED: "alert.recorded",
   ALERT_REPLAYED: "alert.replayed",
+  ALERT_COMPLETED: "alert.completed",
+  ALERT_FAILED: "alert.failed",
+  ALERT_TIMED_OUT: "alert.timed_out",
+  ALERT_SKIPPED: "alert.skipped",
+  WIDGET_STATUS_CHANGED: "module.widget.status.changed",
 } as const;
 
 export type EngineEventType = (typeof EngineEventType)[keyof typeof EngineEventType];
@@ -622,9 +627,30 @@ export interface AlertSnapshot {
   workflowId: string;
   /** Originating CloudEvent id from the trigger, when known. */
   sourceEventId: string;
-  /** Lifecycle: `"sent"` (initial) | `"replayed"` | `"failed"`
-   *  (reserved). */
+  /** Lifecycle:
+   *   `"sent"`       — engine published; overlay has not yet ack'd
+   *   `"playing"`    — overlay reported the widget mounted
+   *   `"completed"`  — overlay reported the widget finished playing
+   *   `"failed"`     — overlay reported a render / playback error
+   *   `"replayed"`   — operator re-fired this row from the UI
+   *  Phase 2 will add `"pending"`, `"dispatched"`, `"timed_out"`,
+   *  `"skipped"`. */
   status: string;
+  /**
+   * Denormalised AlertPayload envelope id (`payload->>'id'`). Stable
+   * across the alert's lifetime; the overlay's status reports key on
+   * this. Empty for legacy / manual rows that pre-date the column.
+   */
+  envelopeId?: string;
+  /** Set when the engine published the envelope to NATS. */
+  dispatchedAt?: string;
+  /** Set when the overlay reported `playing`. */
+  playedAt?: string;
+  /** Set when the overlay reported `completed` or `failed`. */
+  completedAt?: string;
+  /** Failure reason captured from a `failed` ack. Empty unless
+   *  status === `"failed"`. */
+  error?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -649,6 +675,82 @@ export interface AlertReplayedEvent {
   type: typeof EngineEventType.ALERT_REPLAYED;
   applicationId: string;
   alert: AlertSnapshot;
+}
+
+/**
+ * Fired when the overlay reports an alert finished playing
+ * (`status: "completed"`). Lets the dashboard show terminal state
+ * for an alert without polling. The `alert.completedAt` and
+ * `alert.playedAt` timestamps narrate the full lifecycle.
+ */
+export interface AlertCompletedEvent {
+  type: typeof EngineEventType.ALERT_COMPLETED;
+  applicationId: string;
+  alert: AlertSnapshot;
+}
+
+/**
+ * Fired when the overlay reports an alert failed to render or play
+ * (`status: "failed"`). `alert.error` carries the captured reason
+ * (autoplay block, missing media, codec issue, etc.).
+ */
+export interface AlertFailedEvent {
+  type: typeof EngineEventType.ALERT_FAILED;
+  applicationId: string;
+  alert: AlertSnapshot;
+}
+
+/**
+ * Fired when the api's AlertQueueManager (Phase 2) gives up on a
+ * dispatched alert because the overlay never reported `playing` /
+ * `completed` within the lease window (typically `duration + 5s`).
+ * Reasons include: no overlay connected, browser tab frozen,
+ * autoplay block with no error event. The queue advances to the
+ * next pending alert; operators can `replayAlert(id)` to retry.
+ */
+export interface AlertTimedOutEvent {
+  type: typeof EngineEventType.ALERT_TIMED_OUT;
+  applicationId: string;
+  alert: AlertSnapshot;
+}
+
+/**
+ * Fired when an operator skips the currently-playing alert or
+ * clears pending alerts via the Phase 3 controls
+ * (`skipCurrentAlert` / `clearAlertQueue`). The alert row's
+ * lifecycle ends at `skipped` rather than `completed` /
+ * `timed_out`. Useful for the dashboard's alert log so it can
+ * distinguish operator-driven dismissals from natural completion.
+ */
+export interface AlertSkippedEvent {
+  type: typeof EngineEventType.ALERT_SKIPPED;
+  applicationId: string;
+  alert: AlertSnapshot;
+}
+
+/**
+ * Fired when a scene widget reports a status update via
+ * `widgetHost.reportStatus(key, value)` /
+ * `widgetHost.reportComplete(reason?)` (Phase 4). Generic surface for
+ * counters, timers, goals, anything the widget wants to surface to
+ * the dashboard.
+ *
+ * `value` is whatever the widget chose to send — opaque at this
+ * boundary. The dashboard renders it based on the widget's known
+ * schema (e.g. raid_counter publishes `key: "count"` with `value:
+ * number`).
+ */
+export interface WidgetStatusChangedEvent {
+  type: typeof EngineEventType.WIDGET_STATUS_CHANGED;
+  applicationId: string;
+  moduleId: string;
+  instanceId: string;
+  /** Canonical `{moduleId}:widget:{manifestId}`. Optional because
+   *  some scene placements may not surface the canonical id today. */
+  widgetCanonicalId?: string;
+  key: string;
+  value: unknown;
+  occurredAt: string;
 }
 
 /**
@@ -682,7 +784,12 @@ export type CallbackEvent =
   | SceneUpdatedEvent
   | SceneDeletedEvent
   | AlertRecordedEvent
-  | AlertReplayedEvent;
+  | AlertReplayedEvent
+  | AlertCompletedEvent
+  | AlertFailedEvent
+  | AlertTimedOutEvent
+  | AlertSkippedEvent
+  | WidgetStatusChangedEvent;
 
 /**
  * Lookup from event-type string → payload type. Useful for emitter code
@@ -715,6 +822,11 @@ export type CallbackEventByType = {
   [EngineEventType.SCENE_DELETED]: SceneDeletedEvent;
   [EngineEventType.ALERT_RECORDED]: AlertRecordedEvent;
   [EngineEventType.ALERT_REPLAYED]: AlertReplayedEvent;
+  [EngineEventType.ALERT_COMPLETED]: AlertCompletedEvent;
+  [EngineEventType.ALERT_FAILED]: AlertFailedEvent;
+  [EngineEventType.ALERT_TIMED_OUT]: AlertTimedOutEvent;
+  [EngineEventType.ALERT_SKIPPED]: AlertSkippedEvent;
+  [EngineEventType.WIDGET_STATUS_CHANGED]: WidgetStatusChangedEvent;
 };
 
 // ---------------------------------------------------------------------------

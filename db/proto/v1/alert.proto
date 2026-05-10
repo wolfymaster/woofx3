@@ -14,11 +14,19 @@ import "google/protobuf/timestamp.proto";
 // re-publishes `payload` to the `ui.notify.alert` NATS subject (so
 // streamware broadcasts it to overlays exactly like the original
 // dispatch), then calls `UpdateAlertStatus(..., "replayed")`.
+//
+// Lifecycle path (Phase 1 widget-completion ack): the overlay sends
+// `playing` / `completed` / `failed` reports keyed on the AlertPayload
+// envelope id; the api forwards them via `UpdateAlertLifecycle` which
+// atomically advances `status` and stamps the matching timestamp
+// (played_at / completed_at) and optional error.
 service AlertService {
   rpc CreateAlert(CreateAlertRequest) returns (AlertResponse);
   rpc GetAlert(GetAlertRequest) returns (AlertResponse);
+  rpc GetAlertByEnvelopeId(GetAlertByEnvelopeIdRequest) returns (AlertResponse);
   rpc ListAlerts(ListAlertsRequest) returns (ListAlertsResponse);
   rpc UpdateAlertStatus(UpdateAlertStatusRequest) returns (AlertResponse);
+  rpc UpdateAlertLifecycle(UpdateAlertLifecycleRequest) returns (AlertResponse);
   rpc DeleteAlert(DeleteAlertRequest) returns (common.ResponseStatus);
 }
 
@@ -35,10 +43,30 @@ message Alert {
   // manual / debug dispatches.
   string workflow_id = 4;
   string source_event_id = 5;
-  // Lifecycle: `sent` (initial), `replayed`, `failed` (reserved).
+  // Lifecycle:
+  //   `sent`       — engine published; overlay has not yet ack'd
+  //   `playing`    — overlay reported the widget mounted
+  //   `completed`  — overlay reported the widget finished playing
+  //   `failed`     — overlay reported a render / playback error
+  //   `replayed`   — operator re-fired this row from the UI
+  // Phase 2 will add `pending`, `dispatched`, `timed_out`, `skipped`.
   string status = 6;
   google.protobuf.Timestamp created_at = 7;
   google.protobuf.Timestamp updated_at = 8;
+  // Denormalised AlertPayload envelope id (`payload->>'id'`). The
+  // overlay's status reports key on this value, not the row id.
+  string envelope_id = 9;
+  // Set when the engine published the envelope to NATS. Phase 2
+  // (backend queue) will treat the absence of this stamp as
+  // "still pending"; Phase 1 stamps it on insert.
+  google.protobuf.Timestamp dispatched_at = 10;
+  // Set when the overlay reported `playing`.
+  google.protobuf.Timestamp played_at = 11;
+  // Set when the overlay reported `completed` or `failed`.
+  google.protobuf.Timestamp completed_at = 12;
+  // Failure reason captured from a `failed` ack. Empty when
+  // status is not `failed`.
+  string error = 13;
 }
 
 message CreateAlertRequest {
@@ -48,10 +76,37 @@ message CreateAlertRequest {
   // Optional attribution (see Alert.workflow_id / source_event_id).
   string workflow_id = 3;
   string source_event_id = 4;
+  // AlertPayload envelope id (`payload.id`). Persisted to the
+  // denormalised `envelope_id` column for fast lookup on the overlay
+  // ack path. Optional for backwards compatibility — older callers that
+  // don't supply this still create rows, just without the index hit.
+  string envelope_id = 5;
 }
 
 message GetAlertRequest {
   string id = 1;
+}
+
+// Lookup by the AlertPayload envelope id (`payload->>'id'`). Returns
+// `NOT_FOUND` if no row carries that envelope id. Used by the api when
+// the overlay reports `playing` / `completed` / `failed`.
+message GetAlertByEnvelopeIdRequest {
+  string application_id = 1;
+  string envelope_id = 2;
+}
+
+// Atomic transition of the lifecycle columns keyed on envelope id.
+// The status string is the target state (`playing` / `completed` /
+// `failed`); the db service decides which timestamp column to stamp:
+//   - playing   → played_at = NOW()
+//   - completed → completed_at = NOW()
+//   - failed    → completed_at = NOW(), error = <provided message>
+// `error` is ignored unless status is `failed`.
+message UpdateAlertLifecycleRequest {
+  string application_id = 1;
+  string envelope_id = 2;
+  string status = 3;
+  string error = 4;
 }
 
 message AlertResponse {

@@ -36,10 +36,32 @@ type Alert struct {
 	// manual / debug dispatches.
 	WorkflowId    string `protobuf:"bytes,4,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`
 	SourceEventId string `protobuf:"bytes,5,opt,name=source_event_id,json=sourceEventId,proto3" json:"source_event_id,omitempty"`
-	// Lifecycle: `sent` (initial), `replayed`, `failed` (reserved).
-	Status        string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// Lifecycle:
+	//
+	//	`sent`       — engine published; overlay has not yet ack'd
+	//	`playing`    — overlay reported the widget mounted
+	//	`completed`  — overlay reported the widget finished playing
+	//	`failed`     — overlay reported a render / playback error
+	//	`replayed`   — operator re-fired this row from the UI
+	//
+	// Phase 2 will add `pending`, `dispatched`, `timed_out`, `skipped`.
+	Status    string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// Denormalised AlertPayload envelope id (`payload->>'id'`). The
+	// overlay's status reports key on this value, not the row id.
+	EnvelopeId string `protobuf:"bytes,9,opt,name=envelope_id,json=envelopeId,proto3" json:"envelope_id,omitempty"`
+	// Set when the engine published the envelope to NATS. Phase 2
+	// (backend queue) will treat the absence of this stamp as
+	// "still pending"; Phase 1 stamps it on insert.
+	DispatchedAt *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=dispatched_at,json=dispatchedAt,proto3" json:"dispatched_at,omitempty"`
+	// Set when the overlay reported `playing`.
+	PlayedAt *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=played_at,json=playedAt,proto3" json:"played_at,omitempty"`
+	// Set when the overlay reported `completed` or `failed`.
+	CompletedAt *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
+	// Failure reason captured from a `failed` ack. Empty when
+	// status is not `failed`.
+	Error         string `protobuf:"bytes,13,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -130,6 +152,41 @@ func (x *Alert) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Alert) GetEnvelopeId() string {
+	if x != nil {
+		return x.EnvelopeId
+	}
+	return ""
+}
+
+func (x *Alert) GetDispatchedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DispatchedAt
+	}
+	return nil
+}
+
+func (x *Alert) GetPlayedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PlayedAt
+	}
+	return nil
+}
+
+func (x *Alert) GetCompletedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CompletedAt
+	}
+	return nil
+}
+
+func (x *Alert) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 type CreateAlertRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
@@ -138,6 +195,11 @@ type CreateAlertRequest struct {
 	// Optional attribution (see Alert.workflow_id / source_event_id).
 	WorkflowId    string `protobuf:"bytes,3,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`
 	SourceEventId string `protobuf:"bytes,4,opt,name=source_event_id,json=sourceEventId,proto3" json:"source_event_id,omitempty"`
+	// AlertPayload envelope id (`payload.id`). Persisted to the
+	// denormalised `envelope_id` column for fast lookup on the overlay
+	// ack path. Optional for backwards compatibility — older callers that
+	// don't supply this still create rows, just without the index hit.
+	EnvelopeId    string `protobuf:"bytes,5,opt,name=envelope_id,json=envelopeId,proto3" json:"envelope_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -200,6 +262,13 @@ func (x *CreateAlertRequest) GetSourceEventId() string {
 	return ""
 }
 
+func (x *CreateAlertRequest) GetEnvelopeId() string {
+	if x != nil {
+		return x.EnvelopeId
+	}
+	return ""
+}
+
 type GetAlertRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -244,6 +313,137 @@ func (x *GetAlertRequest) GetId() string {
 	return ""
 }
 
+// Lookup by the AlertPayload envelope id (`payload->>'id'`). Returns
+// `NOT_FOUND` if no row carries that envelope id. Used by the api when
+// the overlay reports `playing` / `completed` / `failed`.
+type GetAlertByEnvelopeIdRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	EnvelopeId    string                 `protobuf:"bytes,2,opt,name=envelope_id,json=envelopeId,proto3" json:"envelope_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAlertByEnvelopeIdRequest) Reset() {
+	*x = GetAlertByEnvelopeIdRequest{}
+	mi := &file_alert_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAlertByEnvelopeIdRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAlertByEnvelopeIdRequest) ProtoMessage() {}
+
+func (x *GetAlertByEnvelopeIdRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_alert_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAlertByEnvelopeIdRequest.ProtoReflect.Descriptor instead.
+func (*GetAlertByEnvelopeIdRequest) Descriptor() ([]byte, []int) {
+	return file_alert_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *GetAlertByEnvelopeIdRequest) GetApplicationId() string {
+	if x != nil {
+		return x.ApplicationId
+	}
+	return ""
+}
+
+func (x *GetAlertByEnvelopeIdRequest) GetEnvelopeId() string {
+	if x != nil {
+		return x.EnvelopeId
+	}
+	return ""
+}
+
+// Atomic transition of the lifecycle columns keyed on envelope id.
+// The status string is the target state (`playing` / `completed` /
+// `failed`); the db service decides which timestamp column to stamp:
+//   - playing   → played_at = NOW()
+//   - completed → completed_at = NOW()
+//   - failed    → completed_at = NOW(), error = <provided message>
+//
+// `error` is ignored unless status is `failed`.
+type UpdateAlertLifecycleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	EnvelopeId    string                 `protobuf:"bytes,2,opt,name=envelope_id,json=envelopeId,proto3" json:"envelope_id,omitempty"`
+	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Error         string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateAlertLifecycleRequest) Reset() {
+	*x = UpdateAlertLifecycleRequest{}
+	mi := &file_alert_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateAlertLifecycleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateAlertLifecycleRequest) ProtoMessage() {}
+
+func (x *UpdateAlertLifecycleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_alert_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateAlertLifecycleRequest.ProtoReflect.Descriptor instead.
+func (*UpdateAlertLifecycleRequest) Descriptor() ([]byte, []int) {
+	return file_alert_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *UpdateAlertLifecycleRequest) GetApplicationId() string {
+	if x != nil {
+		return x.ApplicationId
+	}
+	return ""
+}
+
+func (x *UpdateAlertLifecycleRequest) GetEnvelopeId() string {
+	if x != nil {
+		return x.EnvelopeId
+	}
+	return ""
+}
+
+func (x *UpdateAlertLifecycleRequest) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *UpdateAlertLifecycleRequest) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 type AlertResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
@@ -254,7 +454,7 @@ type AlertResponse struct {
 
 func (x *AlertResponse) Reset() {
 	*x = AlertResponse{}
-	mi := &file_alert_proto_msgTypes[3]
+	mi := &file_alert_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -266,7 +466,7 @@ func (x *AlertResponse) String() string {
 func (*AlertResponse) ProtoMessage() {}
 
 func (x *AlertResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_alert_proto_msgTypes[3]
+	mi := &file_alert_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -279,7 +479,7 @@ func (x *AlertResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AlertResponse.ProtoReflect.Descriptor instead.
 func (*AlertResponse) Descriptor() ([]byte, []int) {
-	return file_alert_proto_rawDescGZIP(), []int{3}
+	return file_alert_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *AlertResponse) GetStatus() *ResponseStatus {
@@ -307,7 +507,7 @@ type ListAlertsRequest struct {
 
 func (x *ListAlertsRequest) Reset() {
 	*x = ListAlertsRequest{}
-	mi := &file_alert_proto_msgTypes[4]
+	mi := &file_alert_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -319,7 +519,7 @@ func (x *ListAlertsRequest) String() string {
 func (*ListAlertsRequest) ProtoMessage() {}
 
 func (x *ListAlertsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_alert_proto_msgTypes[4]
+	mi := &file_alert_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -332,7 +532,7 @@ func (x *ListAlertsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAlertsRequest.ProtoReflect.Descriptor instead.
 func (*ListAlertsRequest) Descriptor() ([]byte, []int) {
-	return file_alert_proto_rawDescGZIP(), []int{4}
+	return file_alert_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListAlertsRequest) GetApplicationId() string {
@@ -369,7 +569,7 @@ type ListAlertsResponse struct {
 
 func (x *ListAlertsResponse) Reset() {
 	*x = ListAlertsResponse{}
-	mi := &file_alert_proto_msgTypes[5]
+	mi := &file_alert_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -381,7 +581,7 @@ func (x *ListAlertsResponse) String() string {
 func (*ListAlertsResponse) ProtoMessage() {}
 
 func (x *ListAlertsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_alert_proto_msgTypes[5]
+	mi := &file_alert_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -394,7 +594,7 @@ func (x *ListAlertsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAlertsResponse.ProtoReflect.Descriptor instead.
 func (*ListAlertsResponse) Descriptor() ([]byte, []int) {
-	return file_alert_proto_rawDescGZIP(), []int{5}
+	return file_alert_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListAlertsResponse) GetStatus() *ResponseStatus {
@@ -442,7 +642,7 @@ type UpdateAlertStatusRequest struct {
 
 func (x *UpdateAlertStatusRequest) Reset() {
 	*x = UpdateAlertStatusRequest{}
-	mi := &file_alert_proto_msgTypes[6]
+	mi := &file_alert_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -454,7 +654,7 @@ func (x *UpdateAlertStatusRequest) String() string {
 func (*UpdateAlertStatusRequest) ProtoMessage() {}
 
 func (x *UpdateAlertStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_alert_proto_msgTypes[6]
+	mi := &file_alert_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -467,7 +667,7 @@ func (x *UpdateAlertStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateAlertStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateAlertStatusRequest) Descriptor() ([]byte, []int) {
-	return file_alert_proto_rawDescGZIP(), []int{6}
+	return file_alert_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *UpdateAlertStatusRequest) GetId() string {
@@ -493,7 +693,7 @@ type DeleteAlertRequest struct {
 
 func (x *DeleteAlertRequest) Reset() {
 	*x = DeleteAlertRequest{}
-	mi := &file_alert_proto_msgTypes[7]
+	mi := &file_alert_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -505,7 +705,7 @@ func (x *DeleteAlertRequest) String() string {
 func (*DeleteAlertRequest) ProtoMessage() {}
 
 func (x *DeleteAlertRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_alert_proto_msgTypes[7]
+	mi := &file_alert_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -518,7 +718,7 @@ func (x *DeleteAlertRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteAlertRequest.ProtoReflect.Descriptor instead.
 func (*DeleteAlertRequest) Descriptor() ([]byte, []int) {
-	return file_alert_proto_rawDescGZIP(), []int{7}
+	return file_alert_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *DeleteAlertRequest) GetId() string {
@@ -532,7 +732,7 @@ var File_alert_proto protoreflect.FileDescriptor
 
 const file_alert_proto_rawDesc = "" +
 	"\n" +
-	"\valert.proto\x12\x05alert\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xaf\x02\n" +
+	"\valert.proto\x12\x05alert\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9f\x04\n" +
 	"\x05Alert\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x18\n" +
@@ -544,15 +744,34 @@ const file_alert_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x9e\x01\n" +
+	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1f\n" +
+	"\venvelope_id\x18\t \x01(\tR\n" +
+	"envelopeId\x12?\n" +
+	"\rdispatched_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\fdispatchedAt\x127\n" +
+	"\tplayed_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\bplayedAt\x12=\n" +
+	"\fcompleted_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12\x14\n" +
+	"\x05error\x18\r \x01(\tR\x05error\"\xbf\x01\n" +
 	"\x12CreateAlertRequest\x12%\n" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\tR\apayload\x12\x1f\n" +
 	"\vworkflow_id\x18\x03 \x01(\tR\n" +
 	"workflowId\x12&\n" +
-	"\x0fsource_event_id\x18\x04 \x01(\tR\rsourceEventId\"!\n" +
+	"\x0fsource_event_id\x18\x04 \x01(\tR\rsourceEventId\x12\x1f\n" +
+	"\venvelope_id\x18\x05 \x01(\tR\n" +
+	"envelopeId\"!\n" +
 	"\x0fGetAlertRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"c\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"e\n" +
+	"\x1bGetAlertByEnvelopeIdRequest\x12%\n" +
+	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x1f\n" +
+	"\venvelope_id\x18\x02 \x01(\tR\n" +
+	"envelopeId\"\x93\x01\n" +
+	"\x1bUpdateAlertLifecycleRequest\x12%\n" +
+	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x1f\n" +
+	"\venvelope_id\x18\x02 \x01(\tR\n" +
+	"envelopeId\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12\x14\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\"c\n" +
 	"\rAlertResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12\"\n" +
 	"\x05alert\x18\x02 \x01(\v2\f.alert.AlertR\x05alert\"h\n" +
@@ -571,13 +790,15 @@ const file_alert_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\"$\n" +
 	"\x12DeleteAlertRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id2\xd9\x02\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id2\xfd\x03\n" +
 	"\fAlertService\x12>\n" +
 	"\vCreateAlert\x12\x19.alert.CreateAlertRequest\x1a\x14.alert.AlertResponse\x128\n" +
-	"\bGetAlert\x12\x16.alert.GetAlertRequest\x1a\x14.alert.AlertResponse\x12A\n" +
+	"\bGetAlert\x12\x16.alert.GetAlertRequest\x1a\x14.alert.AlertResponse\x12P\n" +
+	"\x14GetAlertByEnvelopeId\x12\".alert.GetAlertByEnvelopeIdRequest\x1a\x14.alert.AlertResponse\x12A\n" +
 	"\n" +
 	"ListAlerts\x12\x18.alert.ListAlertsRequest\x1a\x19.alert.ListAlertsResponse\x12J\n" +
-	"\x11UpdateAlertStatus\x12\x1f.alert.UpdateAlertStatusRequest\x1a\x14.alert.AlertResponse\x12@\n" +
+	"\x11UpdateAlertStatus\x12\x1f.alert.UpdateAlertStatusRequest\x1a\x14.alert.AlertResponse\x12P\n" +
+	"\x14UpdateAlertLifecycle\x12\".alert.UpdateAlertLifecycleRequest\x1a\x14.alert.AlertResponse\x12@\n" +
 	"\vDeleteAlert\x12\x19.alert.DeleteAlertRequest\x1a\x16.common.ResponseStatusB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
@@ -592,41 +813,50 @@ func file_alert_proto_rawDescGZIP() []byte {
 	return file_alert_proto_rawDescData
 }
 
-var file_alert_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_alert_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_alert_proto_goTypes = []any{
-	(*Alert)(nil),                    // 0: alert.Alert
-	(*CreateAlertRequest)(nil),       // 1: alert.CreateAlertRequest
-	(*GetAlertRequest)(nil),          // 2: alert.GetAlertRequest
-	(*AlertResponse)(nil),            // 3: alert.AlertResponse
-	(*ListAlertsRequest)(nil),        // 4: alert.ListAlertsRequest
-	(*ListAlertsResponse)(nil),       // 5: alert.ListAlertsResponse
-	(*UpdateAlertStatusRequest)(nil), // 6: alert.UpdateAlertStatusRequest
-	(*DeleteAlertRequest)(nil),       // 7: alert.DeleteAlertRequest
-	(*timestamppb.Timestamp)(nil),    // 8: google.protobuf.Timestamp
-	(*ResponseStatus)(nil),           // 9: common.ResponseStatus
+	(*Alert)(nil),                       // 0: alert.Alert
+	(*CreateAlertRequest)(nil),          // 1: alert.CreateAlertRequest
+	(*GetAlertRequest)(nil),             // 2: alert.GetAlertRequest
+	(*GetAlertByEnvelopeIdRequest)(nil), // 3: alert.GetAlertByEnvelopeIdRequest
+	(*UpdateAlertLifecycleRequest)(nil), // 4: alert.UpdateAlertLifecycleRequest
+	(*AlertResponse)(nil),               // 5: alert.AlertResponse
+	(*ListAlertsRequest)(nil),           // 6: alert.ListAlertsRequest
+	(*ListAlertsResponse)(nil),          // 7: alert.ListAlertsResponse
+	(*UpdateAlertStatusRequest)(nil),    // 8: alert.UpdateAlertStatusRequest
+	(*DeleteAlertRequest)(nil),          // 9: alert.DeleteAlertRequest
+	(*timestamppb.Timestamp)(nil),       // 10: google.protobuf.Timestamp
+	(*ResponseStatus)(nil),              // 11: common.ResponseStatus
 }
 var file_alert_proto_depIdxs = []int32{
-	8,  // 0: alert.Alert.created_at:type_name -> google.protobuf.Timestamp
-	8,  // 1: alert.Alert.updated_at:type_name -> google.protobuf.Timestamp
-	9,  // 2: alert.AlertResponse.status:type_name -> common.ResponseStatus
-	0,  // 3: alert.AlertResponse.alert:type_name -> alert.Alert
-	9,  // 4: alert.ListAlertsResponse.status:type_name -> common.ResponseStatus
-	0,  // 5: alert.ListAlertsResponse.alerts:type_name -> alert.Alert
-	1,  // 6: alert.AlertService.CreateAlert:input_type -> alert.CreateAlertRequest
-	2,  // 7: alert.AlertService.GetAlert:input_type -> alert.GetAlertRequest
-	4,  // 8: alert.AlertService.ListAlerts:input_type -> alert.ListAlertsRequest
-	6,  // 9: alert.AlertService.UpdateAlertStatus:input_type -> alert.UpdateAlertStatusRequest
-	7,  // 10: alert.AlertService.DeleteAlert:input_type -> alert.DeleteAlertRequest
-	3,  // 11: alert.AlertService.CreateAlert:output_type -> alert.AlertResponse
-	3,  // 12: alert.AlertService.GetAlert:output_type -> alert.AlertResponse
-	5,  // 13: alert.AlertService.ListAlerts:output_type -> alert.ListAlertsResponse
-	3,  // 14: alert.AlertService.UpdateAlertStatus:output_type -> alert.AlertResponse
-	9,  // 15: alert.AlertService.DeleteAlert:output_type -> common.ResponseStatus
-	11, // [11:16] is the sub-list for method output_type
-	6,  // [6:11] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	10, // 0: alert.Alert.created_at:type_name -> google.protobuf.Timestamp
+	10, // 1: alert.Alert.updated_at:type_name -> google.protobuf.Timestamp
+	10, // 2: alert.Alert.dispatched_at:type_name -> google.protobuf.Timestamp
+	10, // 3: alert.Alert.played_at:type_name -> google.protobuf.Timestamp
+	10, // 4: alert.Alert.completed_at:type_name -> google.protobuf.Timestamp
+	11, // 5: alert.AlertResponse.status:type_name -> common.ResponseStatus
+	0,  // 6: alert.AlertResponse.alert:type_name -> alert.Alert
+	11, // 7: alert.ListAlertsResponse.status:type_name -> common.ResponseStatus
+	0,  // 8: alert.ListAlertsResponse.alerts:type_name -> alert.Alert
+	1,  // 9: alert.AlertService.CreateAlert:input_type -> alert.CreateAlertRequest
+	2,  // 10: alert.AlertService.GetAlert:input_type -> alert.GetAlertRequest
+	3,  // 11: alert.AlertService.GetAlertByEnvelopeId:input_type -> alert.GetAlertByEnvelopeIdRequest
+	6,  // 12: alert.AlertService.ListAlerts:input_type -> alert.ListAlertsRequest
+	8,  // 13: alert.AlertService.UpdateAlertStatus:input_type -> alert.UpdateAlertStatusRequest
+	4,  // 14: alert.AlertService.UpdateAlertLifecycle:input_type -> alert.UpdateAlertLifecycleRequest
+	9,  // 15: alert.AlertService.DeleteAlert:input_type -> alert.DeleteAlertRequest
+	5,  // 16: alert.AlertService.CreateAlert:output_type -> alert.AlertResponse
+	5,  // 17: alert.AlertService.GetAlert:output_type -> alert.AlertResponse
+	5,  // 18: alert.AlertService.GetAlertByEnvelopeId:output_type -> alert.AlertResponse
+	7,  // 19: alert.AlertService.ListAlerts:output_type -> alert.ListAlertsResponse
+	5,  // 20: alert.AlertService.UpdateAlertStatus:output_type -> alert.AlertResponse
+	5,  // 21: alert.AlertService.UpdateAlertLifecycle:output_type -> alert.AlertResponse
+	11, // 22: alert.AlertService.DeleteAlert:output_type -> common.ResponseStatus
+	16, // [16:23] is the sub-list for method output_type
+	9,  // [9:16] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_alert_proto_init() }
@@ -641,7 +871,7 @@ func file_alert_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_alert_proto_rawDesc), len(file_alert_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

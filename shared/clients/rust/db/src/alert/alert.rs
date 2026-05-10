@@ -19,13 +19,38 @@ pub struct Alert {
     pub workflow_id: ::prost::alloc::string::String,
     #[prost(string, tag="5")]
     pub source_event_id: ::prost::alloc::string::String,
-    /// Lifecycle: `sent` (initial), `replayed`, `failed` (reserved).
+    /// Lifecycle:
+    ///    `sent`       — engine published; overlay has not yet ack'd
+    ///    `playing`    — overlay reported the widget mounted
+    ///    `completed`  — overlay reported the widget finished playing
+    ///    `failed`     — overlay reported a render / playback error
+    ///    `replayed`   — operator re-fired this row from the UI
+    /// Phase 2 will add `pending`, `dispatched`, `timed_out`, `skipped`.
     #[prost(string, tag="6")]
     pub status: ::prost::alloc::string::String,
     #[prost(message, optional, tag="7")]
     pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
     #[prost(message, optional, tag="8")]
     pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Denormalised AlertPayload envelope id (`payload->>'id'`). The
+    /// overlay's status reports key on this value, not the row id.
+    #[prost(string, tag="9")]
+    pub envelope_id: ::prost::alloc::string::String,
+    /// Set when the engine published the envelope to NATS. Phase 2
+    /// (backend queue) will treat the absence of this stamp as
+    /// "still pending"; Phase 1 stamps it on insert.
+    #[prost(message, optional, tag="10")]
+    pub dispatched_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Set when the overlay reported `playing`.
+    #[prost(message, optional, tag="11")]
+    pub played_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Set when the overlay reported `completed` or `failed`.
+    #[prost(message, optional, tag="12")]
+    pub completed_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Failure reason captured from a `failed` ack. Empty when
+    /// status is not `failed`.
+    #[prost(string, tag="13")]
+    pub error: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateAlertRequest {
@@ -39,11 +64,45 @@ pub struct CreateAlertRequest {
     pub workflow_id: ::prost::alloc::string::String,
     #[prost(string, tag="4")]
     pub source_event_id: ::prost::alloc::string::String,
+    /// AlertPayload envelope id (`payload.id`). Persisted to the
+    /// denormalised `envelope_id` column for fast lookup on the overlay
+    /// ack path. Optional for backwards compatibility — older callers that
+    /// don't supply this still create rows, just without the index hit.
+    #[prost(string, tag="5")]
+    pub envelope_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetAlertRequest {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
+}
+/// Lookup by the AlertPayload envelope id (`payload->>'id'`). Returns
+/// `NOT_FOUND` if no row carries that envelope id. Used by the api when
+/// the overlay reports `playing` / `completed` / `failed`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetAlertByEnvelopeIdRequest {
+    #[prost(string, tag="1")]
+    pub application_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub envelope_id: ::prost::alloc::string::String,
+}
+/// Atomic transition of the lifecycle columns keyed on envelope id.
+/// The status string is the target state (`playing` / `completed` /
+/// `failed`); the db service decides which timestamp column to stamp:
+///    - playing   → played_at = NOW()
+///    - completed → completed_at = NOW()
+///    - failed    → completed_at = NOW(), error = <provided message>
+/// `error` is ignored unless status is `failed`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UpdateAlertLifecycleRequest {
+    #[prost(string, tag="1")]
+    pub application_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub envelope_id: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub status: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub error: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AlertResponse {
