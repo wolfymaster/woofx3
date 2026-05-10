@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "declaration": true,
+    "declarationMap": false,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "skipLibCheck": true,
+    "lib": ["es2022", "dom"]
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.d.ts", "src/**/*.lua", "tests/**/*", "dist/**/*"]
+}

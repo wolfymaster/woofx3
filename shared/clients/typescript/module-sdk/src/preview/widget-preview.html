@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>woofx3 widget preview</title>
+<style>
+  :root { color-scheme: dark; --fg: #e6e6e6; --bg: #14141a; --panel: #1d1d24; --accent: #7ad7ff; --warn: #ff8a5b; --pad: 12px; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.4 ui-monospace, monospace; }
+  #app { display: grid; grid-template-columns: 1fr 360px; height: 100vh; }
+  #stage { position: relative; background: #000; overflow: hidden; }
+  #stage iframe { width: 100%; height: 100%; border: 0; background: transparent; }
+  #panel { display: grid; grid-template-rows: auto auto auto 1fr; border-left: 1px solid #2a2a35; }
+  .section { padding: var(--pad); border-bottom: 1px solid #2a2a35; }
+  .section h2 { margin: 0 0 8px 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #999; }
+  label { display: block; margin: 4px 0; font-size: 12px; color: #ccc; }
+  label input, label textarea { width: 100%; padding: 4px 6px; background: #11111a; color: var(--fg); border: 1px solid #333; border-radius: 3px; box-sizing: border-box; font: inherit; }
+  textarea { font-family: ui-monospace, monospace; min-height: 70px; }
+  button { margin: 6px 4px 0 0; padding: 6px 10px; background: var(--accent); color: #000; border: 0; border-radius: 3px; cursor: pointer; font-weight: 600; }
+  button.warn { background: var(--warn); }
+  button.ghost { background: #2a2a35; color: var(--fg); }
+  #log { font-size: 12px; padding: var(--pad); overflow: auto; background: #0a0a10; }
+  #log .row { padding: 4px 0; border-bottom: 1px dashed #1f1f29; white-space: pre-wrap; word-break: break-word; }
+  #log .row.report { color: var(--accent); }
+  #log .row.event  { color: #b48cff; }
+  #log .row.console { color: #8d8d97; }
+  #log .row.warn { color: var(--warn); }
+  small.kbd { background: #2a2a35; color: var(--fg); padding: 1px 4px; border-radius: 2px; font-size: 11px; }
+  .url-bar { display: flex; gap: 4px; }
+  .url-bar input { flex: 1; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <iframe id="frame" sandbox="allow-scripts allow-same-origin"></iframe>
+  </div>
+  <div id="panel">
+    <div class="section">
+      <h2>Widget URL</h2>
+      <div class="url-bar">
+        <input id="url" type="text" placeholder="?widget=file:///path/to/index.html" />
+        <button id="reload" class="ghost">Load</button>
+      </div>
+      <small style="color:#888">Or pass <small class="kbd">?widget=URL</small> in the location bar.</small>
+    </div>
+    <div class="section">
+      <h2>Identity / settings</h2>
+      <label>moduleId <input id="moduleId" type="text" value="preview" /></label>
+      <label>instanceId <input id="instanceId" type="text" value="preview-1" /></label>
+      <label>settings (JSON)
+        <textarea id="settings">{}</textarea>
+      </label>
+      <button id="apply" class="ghost">Apply &amp; reload</button>
+    </div>
+    <div class="section">
+      <h2>Fire event</h2>
+      <label>type
+        <input id="evType" type="text" value="twitch_platform:trigger:follow.user.twitch" />
+      </label>
+      <label>data (JSON)
+        <textarea id="evData">{ "userName": "alice" }</textarea>
+      </label>
+      <button id="fire">Fire onEvent</button>
+      <button id="clearLog" class="ghost">Clear log</button>
+    </div>
+    <div id="log"></div>
+  </div>
+</div>
+<script type="module">
+// The harness imports the SDK from a peer path so it works whether the
+// HTML is opened directly off disk (relative path) or served from a
+// node_modules install (sibling file). Pick whichever resolves.
+let createMockHost;
+try {
+  ({ createMockHost } = await import("./widget-preview.js"));
+} catch {
+  ({ createMockHost } = await import("../../dist/preview/widget-preview.js"));
+}
+
+const params = new URLSearchParams(location.search);
+const initialWidget = params.get("widget") ?? "";
+document.getElementById("url").value = initialWidget;
+
+const log = document.getElementById("log");
+function logRow(cls, text) {
+  const div = document.createElement("div");
+  div.className = "row " + cls;
+  div.textContent = text;
+  log.prepend(div);
+}
+
+let ctrl = null;
+
+function install() {
+  if (ctrl) ctrl.reset();
+  const moduleId = document.getElementById("moduleId").value || "preview";
+  const instanceId = document.getElementById("instanceId").value || "preview-1";
+  let settings = {};
+  try { settings = JSON.parse(document.getElementById("settings").value || "{}"); }
+  catch (e) { logRow("warn", `settings parse error: ${e.message}`); }
+  ctrl = createMockHost({ moduleId, instanceId, settings });
+  ctrl.onReport(r => logRow("report", `report ${r.key} = ${JSON.stringify(r.value)}`));
+}
+
+function loadWidget() {
+  const url = document.getElementById("url").value.trim();
+  if (!url) { logRow("warn", "no widget URL"); return; }
+  install();
+  const frame = document.getElementById("frame");
+  // Mirror the harness's mock host into the iframe once it loads.
+  // Because the iframe is sandboxed allow-same-origin, we can write to
+  // its window directly when the bundle is on the same origin as the
+  // harness; for cross-origin URLs the host won't inject and the
+  // widget should fail loud (point a local dev server at the bundle).
+  const onLoad = () => {
+    try {
+      const win = frame.contentWindow;
+      if (!win) return;
+      win.widgetHost = ctrl.host;
+      // Mirror console.log/warn/error from the iframe into the panel.
+      const orig = { log: win.console.log, warn: win.console.warn, error: win.console.error };
+      win.console.log = (...a) => { orig.log(...a); logRow("console", a.map(String).join(" ")); };
+      win.console.warn = (...a) => { orig.warn(...a); logRow("warn", a.map(String).join(" ")); };
+      win.console.error = (...a) => { orig.error(...a); logRow("warn", a.map(String).join(" ")); };
+      logRow("event", `widget loaded: ${url}`);
+    } catch (e) {
+      logRow("warn", `host injection failed (cross-origin?): ${e.message}`);
+    }
+  };
+  frame.addEventListener("load", onLoad, { once: true });
+  frame.src = url;
+}
+
+document.getElementById("reload").addEventListener("click", loadWidget);
+document.getElementById("apply").addEventListener("click", loadWidget);
+document.getElementById("fire").addEventListener("click", () => {
+  if (!ctrl) { logRow("warn", "load a widget first"); return; }
+  let data = null;
+  try { data = JSON.parse(document.getElementById("evData").value || "null"); }
+  catch (e) { logRow("warn", `event data parse error: ${e.message}`); return; }
+  const event = {
+    type: document.getElementById("evType").value,
+    source: "preview-harness",
+    time: new Date().toISOString(),
+    data,
+  };
+  ctrl.fireEvent(event);
+  logRow("event", `fire ${event.type}`);
+});
+document.getElementById("clearLog").addEventListener("click", () => { log.innerHTML = ""; });
+
+if (initialWidget) loadWidget();
+</script>
+</body>
+</html>

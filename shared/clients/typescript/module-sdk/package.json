@@ -1,0 +1,47 @@
+{
+  "name": "@woofx3/module-sdk",
+  "version": "0.1.0",
+  "description": "Type definitions, runtime stubs, and dev-loop helpers for authoring barkloader modules (functions + widgets) for the woofx3 streaming control plane.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/",
+    "src/function-ctx.d.ts",
+    "src/function-ctx.lua",
+    "src/preview/widget-preview.html",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./function-ctx": "./src/function-ctx.d.ts",
+    "./lua": "./src/function-ctx.lua",
+    "./preview": {
+      "types": "./dist/preview/widget-preview.d.ts",
+      "import": "./dist/preview/widget-preview.js"
+    },
+    "./preview.html": "./src/preview/widget-preview.html"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "bun test",
+    "publish:dry": "npm publish --dry-run --access public"
+  },
+  "keywords": [
+    "woofx3",
+    "barkloader",
+    "module-sdk",
+    "widget"
+  ],
+  "license": "BUSL-1.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  }
+}
