@@ -34,6 +34,12 @@ export interface WidgetInstance {
    *  `settingsSchema`. Frozen and forwarded to the widget as
    *  `widgetHost.settings`. */
   settings: Record<string, unknown>;
+  /** Canonical trigger ids the widget declared interest in via its
+   *  manifest's `acceptedEvents[]`. Drives the SceneOverlay's per-
+   *  widget event filtering: only events whose canonical id is in
+   *  this list reach the widget's `widgetHost.onEvent` handler.
+   *  Empty array (or absent) means the widget receives no events. */
+  acceptedEvents?: string[];
 }
 
 export interface SceneLayout {
@@ -97,6 +103,12 @@ function validateWidgetInstance(raw: unknown): WidgetInstance | null {
   if (typeof r.bundleUrl !== "string" || !r.bundleUrl) return null;
   if (!isPosition(r.position)) return null;
   const settings = r.settings && typeof r.settings === "object" ? (r.settings as Record<string, unknown>) : {};
+  // acceptedEvents is optional — widgets without declared interest
+  // receive no events, which is the right default for static
+  // display-only widgets.
+  const acceptedEvents = Array.isArray(r.acceptedEvents)
+    ? r.acceptedEvents.filter((e): e is string => typeof e === "string" && e !== "")
+    : undefined;
   return {
     id: r.id,
     widgetCanonicalId: r.widgetCanonicalId,
@@ -104,6 +116,7 @@ function validateWidgetInstance(raw: unknown): WidgetInstance | null {
     bundleUrl: r.bundleUrl,
     position: r.position,
     settings,
+    ...(acceptedEvents && acceptedEvents.length > 0 ? { acceptedEvents } : {}),
   };
 }
 

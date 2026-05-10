@@ -1,70 +1,57 @@
-// Contract injected onto `window.widgetHost` inside every widget iframe.
+// Streamware-side `widgetHost` implementation. The PUBLIC TYPES (the
+// contract widget authors target) live in `@woofx3/module-sdk` —
+// re-exported below for streamware-internal consumers, but external
+// modules pull them from the SDK package directly. This file owns the
+// runtime: the `createWidgetHost` factory, the storage cache wiring,
+// the upstream-transport callback. Nothing widget-author-facing.
 //
-// Widget authors target this surface — `settings`, `storage.get`,
-// `storage.subscribe` — and the streamware shell wires the actual
-// transport (WebSocket -> /ws/module-state, in-memory cache, etc.)
-// underneath without the widget ever knowing.
-//
-// Convex-served widgets are expected to expose the same shape with
-// their own implementation. Keeping the contract host-agnostic means
-// the same widget bundle works in both.
+// Anything that changes the public WidgetHost interface goes in
+// `shared/clients/typescript/module-sdk/src/widget-host.ts` — bumping
+// the SDK package version is the right way to communicate the change
+// to authors.
 
-export interface WidgetHostStorage {
-  /** Resolve to the latest cached value for `key`, or `null` if no
-   *  value has been seen since the host opened. The host fulfils
-   *  this from the most recent module-state payload it has observed
-   *  for `(moduleId, key)`; if none, it falls back to `null` rather
-   *  than blocking on a fetch. */
-  get(key: string): Promise<unknown>;
+export type {
+  StorageChangeStream,
+  StorageChangedFrame,
+  WidgetEvent,
+  WidgetEventHandler,
+  WidgetEventSource,
+  WidgetHost,
+  WidgetHostStorage,
+  WidgetStatusReport,
+} from "@woofx3/module-sdk";
 
-  /** Register `cb` for every subsequent change to `(moduleId, key)`.
-   *  Returns an unsubscribe function. The callback fires synchronously
-   *  with the current value at subscription time when one is cached. */
-  subscribe(key: string, cb: (value: unknown) => void): () => void;
-}
-
-export interface WidgetHost {
-  /** Per-instance settings resolved by the scene editor. Frozen at
-   *  load time — settings changes today require a widget reload (the
-   *  Convex spec calls this out as out-of-scope for v1). */
-  readonly settings: Readonly<Record<string, unknown>>;
-
-  /** Module id this widget belongs to — same as
-   *  `WidgetInstance.moduleId`. Surfaced so widgets can scope their
-   *  storage calls without the shell having to bind it. */
-  readonly moduleId: string;
-
-  /** Persistent module-storage surface. */
-  readonly storage: WidgetHostStorage;
-}
-
-/**
- * Stream of `module.storage.changed` events the host consumes — same
- * shape as `StorageChangedPayload` in `../types`, narrowed to what
- * the host actually reads.
- */
-export interface StorageChangeStream {
-  /** Subscribe to every storage change the stream surfaces. The host
-   *  filters by `(moduleId, key)` before invoking widget callbacks.
-   *  Returns an unsubscribe function. */
-  subscribe(cb: (payload: StorageChangedFrame) => void): () => void;
-
-  /** Latest value the stream has seen for `(moduleId, key)`, or
-   *  `undefined` if none. Used by `widgetHost.storage.get` to fulfill
-   *  the contract without a separate REST round-trip. */
-  peek(moduleId: string, key: string): unknown;
-}
-
-export interface StorageChangedFrame {
-  moduleId: string;
-  key: string;
-  value: unknown;
-}
+import type {
+  StorageChangeStream,
+  WidgetEventHandler,
+  WidgetEventSource,
+  WidgetHost,
+  WidgetHostStorage,
+  WidgetStatusReport,
+} from "@woofx3/module-sdk";
 
 interface CreateWidgetHostOptions {
   moduleId: string;
+  instanceId: string;
+  widgetCanonicalId?: string;
   settings: Record<string, unknown>;
   stream: StorageChangeStream;
+  /**
+   * Best-effort transport for status reports. The shell wires this
+   * to whatever upstream channel is available (today: the
+   * `/ws/module-state` socket on scene overlays, the `/ws/alerts`
+   * socket on the alert overlay). When `undefined`, reports are
+   * dropped after a single console warning. Never throws.
+   */
+  sendStatus?: (report: WidgetStatusReport) => void;
+  /**
+   * Source for downstream-delivered events filtered by this
+   * widget's `acceptedEvents`. When `undefined`, the host's
+   * `onEvent` is a no-op subscriber (returns an empty unsubscribe).
+   * The alert overlay's host omits this — alerts arrive via the
+   * queue-driven dispatch path, not the generic event channel.
+   */
+  events?: WidgetEventSource;
 }
 
 /**
@@ -74,7 +61,7 @@ interface CreateWidgetHostOptions {
  * than in the transport, so the transport stays a dumb pipe.
  */
 export function createWidgetHost(opts: CreateWidgetHostOptions): WidgetHost {
-  const { moduleId, settings, stream } = opts;
+  const { moduleId, instanceId, widgetCanonicalId, settings, stream, sendStatus, events } = opts;
   const frozen = Object.freeze({ ...settings });
 
   const storage: WidgetHostStorage = {
@@ -97,9 +84,54 @@ export function createWidgetHost(opts: CreateWidgetHostOptions): WidgetHost {
     },
   };
 
+  function emit(key: string, value: unknown): void {
+    if (!sendStatus) {
+      console.warn("[widgetHost] reportStatus dropped — no transport wired", {
+        moduleId,
+        instanceId,
+        key,
+      });
+      return;
+    }
+    try {
+      sendStatus({
+        kind: "widget.event",
+        moduleId,
+        instanceId,
+        widgetCanonicalId,
+        key,
+        value,
+        ts: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error("[widgetHost] reportStatus send failed", {
+        moduleId,
+        instanceId,
+        key,
+        error: err,
+      });
+    }
+  }
+
   return {
     moduleId,
+    instanceId,
     settings: frozen,
     storage,
+    onEvent(handler: WidgetEventHandler): () => void {
+      if (!events) {
+        // No transport wired (e.g. the alert overlay's host, which
+        // doesn't go through the generic event channel). Returning a
+        // no-op unsubscribe keeps widget code path-clean.
+        return () => {};
+      }
+      return events.subscribe(handler);
+    },
+    reportStatus(key: string, value: unknown): void {
+      emit(key, value);
+    },
+    reportComplete(reason?: string): void {
+      emit("complete", reason !== undefined ? { reason } : null);
+    },
   };
 }

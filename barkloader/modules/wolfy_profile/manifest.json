@@ -1,34 +1,25 @@
 {
   "id": "wolfy_profile",
   "name": "Wolfy profile",
+  "author": "WolfyMaster LLC",
   "version": "1.0.0",
-  "description": "Bundled workflows migrated from woofx3/wooflow/workflows/*.sh (legacy workflow-definition API shape preserved in steps). Twitch event triggers are registered by the twitch_platform module.",
+  "description": "Bundled workflows migrated from woofx3/wooflow/workflows/*.sh. Triggers are provided by the `twitch_platform` module; alerts use the workflow engine's built-in `builtin:action:alert`. Install `twitch_platform` first.",
   "workflows": [
     {
       "id": "follow-workflow",
       "name": "Someone Follows the Stream",
-      "trigger": "twitch.channel.follow",
+      "trigger": "twitch_platform:trigger:follow.user.twitch",
       "steps": [
         {
-          "action": "media_alert",
-          "params": {
-            "_stepId": "step1",
-            "_stepType": "action",
-            "_stepName": "someone followed",
+          "id": "alert",
+          "type": "action",
+          "action": "builtin:action:alert",
+          "parameters": {
+            "widget": "MediaWidget",
             "audioUrl": "https://streamlabs.local.woofx3.tv/pleasure.mp3",
             "mediaUrl": "https://media.tenor.com/LdHGHWDh0Y8AAAPo/look-at-you-i-see-you.mp4",
-            "text": "<3  {primary}{userDisplayName}{primary} followed <3",
+            "text": "<3  {primary}${trigger.data.userName}{primary} followed <3",
             "duration": 6
-          }
-        },
-        {
-          "action": "update_timer",
-          "params": {
-            "_stepId": "step2",
-            "_stepType": "action",
-            "_stepName": "add time to the timer",
-            "timerId": "49b3fa3b-5eeb-40c3-bdc2-4d0e97192391",
-            "valueInSeconds": 60
           }
         }
       ]
@@ -36,17 +27,17 @@
     {
       "id": "subscription-workflow",
       "name": "Someone Subs",
-      "trigger": "twitch.channel.subscribe",
+      "trigger": "twitch_platform:trigger:subscribe.user.twitch",
       "steps": [
         {
-          "action": "media_alert",
-          "params": {
-            "_stepId": "step1",
-            "_stepType": "action",
-            "_stepName": "someone subscribed",
+          "id": "alert",
+          "type": "action",
+          "action": "builtin:action:alert",
+          "parameters": {
+            "widget": "MediaWidget",
             "audioUrl": "https://streamlabs.local.woofx3.tv/wolf-hype.mp3",
             "mediaUrl": "https://media.tenor.com/bj2uMQRTdSEAAAPo/dog-husky.mp4",
-            "text": "<3  {primary}${userDisplayName}{primary} subscribed <3"
+            "text": "<3  {primary}${trigger.data.userName}{primary} subscribed <3"
           }
         }
       ]
@@ -54,14 +45,14 @@
     {
       "id": "bits-workflow",
       "name": "Someone Cheers Bits",
-      "trigger": "twitch.channel.cheer",
+      "trigger": "twitch_platform:trigger:cheer.user.twitch",
       "steps": [
         {
-          "action": "media_alert",
-          "params": {
-            "_stepId": "step1",
-            "_stepType": "action",
-            "_stepName": "Trigger confetti",
+          "id": "confetti",
+          "type": "action",
+          "action": "builtin:action:alert",
+          "parameters": {
+            "widget": "MediaWidget",
             "mediaUrl": [
               "https://streamlabs.local.woofx3.tv/bit_overlay.json",
               "https://streamlabs.local.woofx3.tv/confetti2.gif"
@@ -87,7 +78,7 @@
                     "s",
                     "t"
                   ],
-                  "value": "{amount} BITS"
+                  "value": "${trigger.data.amount} BITS"
                 }
               },
               {
@@ -104,17 +95,17 @@
     {
       "id": "gifted-subscription-workflow",
       "name": "Someone Gifted Subs",
-      "trigger": "twitch.channel.subscription.gift",
+      "trigger": "twitch_platform:trigger:subscription.gift.twitch",
       "steps": [
         {
-          "action": "media_alert",
-          "params": {
-            "_stepId": "step1",
-            "_stepType": "action",
-            "_stepName": "someone gifted subscription",
+          "id": "alert",
+          "type": "action",
+          "action": "builtin:action:alert",
+          "parameters": {
+            "widget": "MediaWidget",
             "audioUrl": "https://streamlabs.local.woofx3.tv/allinthistogether.mp3",
             "mediaUrl": "https://media.tenor.com/MojW2yr1vFoAAAPo/money-money-money.mp4",
-            "text": "$$ {primary}${gifterDisplayName}{primary} gifted {primary}${amount}{primary} ${suborsubs} $$"
+            "text": "$$ {primary}${trigger.data.gifterName}{primary} gifted {primary}${trigger.data.amount}{primary} {event.data.amount > 1 ? 'subs' : 'sub'} $$"
           }
         }
       ]

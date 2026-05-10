@@ -1,25 +1,26 @@
 {
   "id": "twitch_platform",
   "name": "Twitch Platform",
+  "author": "WolfyMaster LLC",
   "version": "1.0.0",
   "description": "Twitch EventSub subscription types as eventbus triggers. IDs are twitch.<EventSub subscription type>. See https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/",
   "triggers": [
     {
-      "id": "twitch.channel.follow",
+      "id": "follow.user.twitch",
       "name": "Channel follow",
       "description": "Twitch EventSub: channel.follow",
       "type": "eventbus",
       "category": "platform.twitch"
     },
     {
-      "id": "twitch.channel.chat.message",
+      "id": "message.user.twitch",
       "name": "Channel chat message",
       "description": "Twitch EventSub: channel.chat.message",
       "type": "eventbus",
       "category": "platform.twitch"
     },
     {
-      "id": "twitch.channel.subscribe",
+      "id": "subscribe.user.twitch",
       "name": "Channel subscribe",
       "description": "Twitch EventSub: channel.subscribe",
       "type": "eventbus",
@@ -50,7 +51,7 @@
       ]
     },
     {
-      "id": "twitch.channel.subscription.gift",
+      "id": "subscription.gift.twitch",
       "name": "Channel subscription gift",
       "description": "Twitch EventSub: channel.subscription.gift",
       "type": "eventbus",
@@ -85,12 +86,14 @@
           "required": true,
           "min": 1,
           "defaultValue": 1,
-          "placeholder": "e.g. 5"
+          "placeholder": "e.g. 5",
+          "eventPath": "total",
+          "operator": "gte"
         }
       ]
     },
     {
-      "id": "twitch.channel.cheer",
+      "id": "cheer.user.twitch",
       "name": "Channel cheer",
       "description": "Twitch EventSub: channel.cheer",
       "type": "eventbus",
@@ -103,45 +106,58 @@
           "required": true,
           "min": 1,
           "defaultValue": 100,
-          "placeholder": "e.g. 100"
+          "placeholder": "e.g. 100",
+          "eventPath": "bits",
+          "operator": "gte",
+          "description": "Only fire when the cheer meets or exceeds this amount.",
+          "hint": "Compares against the 'bits' field on the Twitch channel.cheer event payload.",
+          "dataSchema": "{\n  \"bits\": 1000,\n  \"isAnonymous\": false,\n  \"userName\": \"viewer42\",\n  \"userId\": \"123456\",\n  \"message\": \"Cheer1000 woof\"\n}"
         }
       ],
       "allowVariants": true
     },
     {
-      "id": "twitch.channel.raid",
-      "name": "Channel raid",
-      "description": "Twitch EventSub: channel.raid",
-      "type": "eventbus",
-      "category": "platform.twitch"
-    },
-    {
-      "id": "twitch.channel.hype_train.begin",
+      "id": "hypetrain.channel.twitch",
       "name": "Hype train begin",
       "description": "Twitch EventSub: channel.hype_train.begin",
       "type": "eventbus",
       "category": "platform.twitch"
     },
     {
-      "id": "twitch.channel.hype_train.progress",
-      "name": "Hype train progress",
-      "description": "Twitch EventSub: channel.hype_train.progress",
-      "type": "eventbus",
-      "category": "platform.twitch"
-    },
-    {
-      "id": "twitch.channel.hype_train.end",
-      "name": "Hype train end",
-      "description": "Twitch EventSub: channel.hype_train.end",
-      "type": "eventbus",
-      "category": "platform.twitch"
-    },
-    {
-      "id": "twitch.stream.online",
+      "id": "online.user.twitch",
       "name": "Stream online",
       "description": "Twitch EventSub: stream.online",
       "type": "eventbus",
       "category": "platform.twitch"
+    },
+    {
+      "id": "redeem.channelpoints.twitch",
+      "name": "Channel point redemption",
+      "description": "Twitch EventSub: channel.channel_points_custom_reward_redemption.add",
+      "type": "eventbus",
+      "category": "platform.twitch",
+      "allowVariants": true,
+      "schema": [
+        {
+          "id": "rewardId",
+          "label": "Reward",
+          "type": "select",
+          "source": {
+            "kind": "internal",
+            "request": {
+              "event": "twitchapi",
+              "payload": { "command": "listChannelPointRewards", "args": {} }
+            },
+            "timeoutMs": 10000
+          },
+          "required": true,
+          "description": "Only fire when the redemption matches this reward.",
+          "hint": "Options are loaded live from every custom channel-point reward configured on the broadcaster's channel via twitchapi.listChannelPointRewards. If the list is empty, create a custom reward in the Twitch creator dashboard.",
+          "eventPath": "rewardId",
+          "operator": "eq",
+          "dataSchema": "{\n  \"redeemId\": \"...\",\n  \"rewardId\": \"...\",\n  \"rewardTitle\": \"...\",\n  \"userId\": \"...\",\n  \"userName\": \"...\",\n  \"message\": \"\"\n}"
+        }
+      ]
     },
     {
       "id": "twitch.stream.offline",
@@ -165,14 +181,17 @@
       "id": "twitch.chat.send",
       "name": "Send chat message",
       "description": "Publish a message to Twitch chat on the broadcaster channel.",
-      "call": "sendChatMessage",
+      "type": "function",
+      "function": "sendChatMessage",
       "schema": [
         {
           "id": "message",
           "label": "Message",
           "type": "text",
           "required": true,
-          "placeholder": "What should the bot say?"
+          "placeholder": "What should the bot say?",
+          "description": "Plain text. Twitch chat enforces a 500-character limit.",
+          "hint": "Supports template substitution from the trigger event (e.g. {user.name})."
         }
       ]
     }

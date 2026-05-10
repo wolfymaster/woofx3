@@ -76,6 +76,48 @@ describe("parseSceneConfigFromUrl", () => {
     expect(result.widgets[0].settings).toEqual({});
   });
 
+  it("parses acceptedEvents when present and drops non-string entries", () => {
+    const search = searchFor({
+      widgets: [
+        {
+          id: "w",
+          widgetCanonicalId: "m:widget:w",
+          moduleId: "m",
+          bundleUrl: "u",
+          position: { x: 0, y: 0, width: 1, height: 1 },
+          acceptedEvents: [
+            "twitch_platform:trigger:follow.user.twitch",
+            42,
+            "",
+            "twitch_platform:trigger:cheer.user.twitch",
+          ],
+        },
+      ],
+    });
+    const result = parseSceneConfigFromUrl(search);
+    expect(result.widgets[0]?.acceptedEvents).toEqual([
+      "twitch_platform:trigger:follow.user.twitch",
+      "twitch_platform:trigger:cheer.user.twitch",
+    ]);
+  });
+
+  it("omits acceptedEvents entirely when none are valid", () => {
+    const search = searchFor({
+      widgets: [
+        {
+          id: "w",
+          widgetCanonicalId: "m:widget:w",
+          moduleId: "m",
+          bundleUrl: "u",
+          position: { x: 0, y: 0, width: 1, height: 1 },
+          acceptedEvents: [42, ""],
+        },
+      ],
+    });
+    const result = parseSceneConfigFromUrl(search);
+    expect(result.widgets[0]?.acceptedEvents).toBeUndefined();
+  });
+
   it("preserves a valid layout block", () => {
     const search = searchFor({
       widgets: [],

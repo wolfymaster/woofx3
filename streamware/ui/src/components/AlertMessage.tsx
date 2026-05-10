@@ -93,7 +93,25 @@ export function AlertMessage({
   ]);
 
   useEffect(() => {
+    console.log("[alert:message] mount", {
+      id,
+      hasText: !!textPattern,
+      hasMedia: !!mediaUrl,
+      hasAudio: !!audioUrl,
+      duration,
+      initialDone: [!(textPattern || mediaUrl), !audioUrl],
+    });
+    return () => {
+      console.log("[alert:message] unmount", { id });
+    };
+    // Mount/unmount logging only — keep deps empty intentionally.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    console.log("[alert:message] done state", { id, textDone: done[0], audioDone: done[1] });
     if (done.every((d) => d)) {
+      console.log("[alert:message] onDone fired", { id });
       onDone({ id, error: false });
     }
   }, [done, id, onDone]);
@@ -106,21 +124,27 @@ export function AlertMessage({
     //       flip textDone (handled in audioDoneCallback below) so the
     //       alert lasts exactly as long as the audio plays.
     if (duration !== undefined) {
+      console.log("[alert:message] starting duration timer", { id, duration });
       const timer = setTimeout(() => {
+        console.log("[alert:message] duration timer fired", { id, duration });
         setDone(([_, audioDone]) => [true, audioDone]);
       }, duration * 1000);
       return () => clearTimeout(timer);
     }
     if (!audioUrl) {
+      console.log("[alert:message] starting fallback 5s timer", { id });
       const timer = setTimeout(() => {
+        console.log("[alert:message] fallback timer fired", { id });
         setDone(([_, audioDone]) => [true, audioDone]);
       }, 5000);
       return () => clearTimeout(timer);
     }
+    console.log("[alert:message] no timer (audio governs lifetime)", { id });
     return undefined;
-  }, [duration, audioUrl]);
+  }, [id, duration, audioUrl]);
 
   function audioDoneCallback() {
+    console.log("[alert:message] audioDoneCallback", { id });
     setDone(([txtDone, _]) => {
       // No duration set → text/media disappears with the audio so the
       // alert ends in lockstep. With duration set, leave textDone

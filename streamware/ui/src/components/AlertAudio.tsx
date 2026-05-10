@@ -18,6 +18,7 @@ export default function AlertAudio({ id, url, duration, onDone }: AlertAudioProp
 
   useEffect(() => {
     if (url === "") {
+      console.log("[alert:audio] empty url — done immediately", { id });
       onDone({ id, error: true, errorMsg: "url is empty" });
     }
   }, [id, url, onDone]);
@@ -26,6 +27,7 @@ export default function AlertAudio({ id, url, duration, onDone }: AlertAudioProp
     if (!done) {
       return;
     }
+    console.log("[alert:audio] onDone fired", { id, error: !!error, errorMsg: error });
     onDone({ id, error: !!error, errorMsg: error });
   }, [done, error, id, onDone]);
 
@@ -36,7 +38,10 @@ export default function AlertAudio({ id, url, duration, onDone }: AlertAudioProp
       return;
     }
 
+    console.log("[alert:audio] mount", { id, url, duration });
+
     function handleEnded() {
+      console.log("[alert:audio] natural ended", { id });
       setDone(true);
       if (audioTimeout) {
         clearTimeout(audioTimeout);
@@ -47,6 +52,7 @@ export default function AlertAudio({ id, url, duration, onDone }: AlertAudioProp
       if (!player) {
         return;
       }
+      console.log("[alert:audio] canplaythrough → play()", { id, naturalDuration: player.duration });
       player
         .play()
         .then(() => {
@@ -54,7 +60,9 @@ export default function AlertAudio({ id, url, duration, onDone }: AlertAudioProp
             // Author specified a duration — that's the hard ceiling
             // for the alert. Truncate audio at duration even when
             // the audio's natural length is longer.
+            console.log("[alert:audio] duration cap timer started", { id, duration });
             audioTimeout = setTimeout(() => {
+              console.log("[alert:audio] duration cap fired", { id, duration });
               player.pause();
               setDone(true);
             }, duration * 1000);
@@ -67,13 +75,15 @@ export default function AlertAudio({ id, url, duration, onDone }: AlertAudioProp
           const audioLen = Number.isFinite(player.duration) && player.duration > 0
             ? player.duration
             : 60;
+          console.log("[alert:audio] safety timer started", { id, audioLen });
           audioTimeout = setTimeout(() => {
+            console.log("[alert:audio] safety timer fired", { id });
             player.pause();
             setDone(true);
           }, (audioLen + 0.5) * 1000);
         })
         .catch((err) => {
-          console.log("error", err);
+          console.log("[alert:audio] play() rejected", { id, error: err });
           setDone(true);
           setError(err instanceof Error ? err.message : String(err));
         });
@@ -84,6 +94,7 @@ export default function AlertAudio({ id, url, duration, onDone }: AlertAudioProp
     player.addEventListener("canplaythrough", handleCanPlayThrough);
 
     return () => {
+      console.log("[alert:audio] cleanup", { id });
       if (audioTimeout) {
         clearTimeout(audioTimeout);
       }

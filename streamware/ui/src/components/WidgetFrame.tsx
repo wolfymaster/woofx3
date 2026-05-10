@@ -1,10 +1,23 @@
 import { useEffect, useRef } from "react";
-import { createWidgetHost, type StorageChangeStream } from "../lib/widgetHost";
+import {
+  createWidgetHost,
+  type StorageChangeStream,
+  type WidgetEventSource,
+  type WidgetStatusReport,
+} from "../lib/widgetHost";
 import type { WidgetInstance } from "../lib/sceneConfig";
 
 interface WidgetFrameProps {
   instance: WidgetInstance;
   stream: StorageChangeStream;
+  /** Per-widget event source already filtered by `acceptedEvents`.
+   *  When omitted, the widget's `widgetHost.onEvent` is a no-op. */
+  events?: WidgetEventSource;
+  /** Upstream sender for `widgetHost.reportStatus`; passed through
+   *  from the SceneOverlay's module-state socket. Optional during
+   *  rollout — when absent, status reports log a warning and are
+   *  dropped. */
+  onWidgetEvent?: (report: WidgetStatusReport) => void;
 }
 
 /**
@@ -23,7 +36,7 @@ interface WidgetFrameProps {
  * own DOM / cookies / parent navigation. `allow-scripts` is required
  * for widgets to run; everything else stays denied.
  */
-export default function WidgetFrame({ instance, stream }: WidgetFrameProps) {
+export default function WidgetFrame({ instance, stream, events, onWidgetEvent }: WidgetFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEffect(() => {
@@ -36,8 +49,12 @@ export default function WidgetFrame({ instance, stream }: WidgetFrameProps) {
       try {
         win.widgetHost = createWidgetHost({
           moduleId: instance.moduleId,
+          instanceId: instance.id,
+          widgetCanonicalId: instance.widgetCanonicalId,
           settings: instance.settings,
           stream,
+          events,
+          sendStatus: onWidgetEvent,
         });
       } catch (err) {
         // Cross-origin frames throw on contentWindow access; this is
@@ -52,7 +69,16 @@ export default function WidgetFrame({ instance, stream }: WidgetFrameProps) {
 
     iframe.addEventListener("load", inject);
     return () => iframe.removeEventListener("load", inject);
-  }, [instance.id, instance.moduleId, instance.bundleUrl, instance.settings, stream]);
+  }, [
+    instance.id,
+    instance.moduleId,
+    instance.widgetCanonicalId,
+    instance.bundleUrl,
+    instance.settings,
+    stream,
+    events,
+    onWidgetEvent,
+  ]);
 
   const { x, y, width, height } = instance.position;
   return (
