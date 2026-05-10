@@ -252,6 +252,55 @@ interface SourceChangeArgs {
 
 ---
 
+## Go — Widget & Alert Subjects
+
+The widget refactor introduced a single inbound channel from overlays and a small set of NATS request/reply subjects for operator controls. All four are defined in `shared/common/golang/cloudevents/subjects.go` and form the contract between the workflow engine, the api boundary, and the streamware orchestrator.
+
+```go
+// shared/common/golang/cloudevents/subjects.go
+const (
+    // Workflow alert action → streamware (intent).
+    // Subject is conventional, not a constant — the workflow engine
+    // publishes literal "ui.notify.alert" from workflow/actions.go.
+
+    // Streamware queue manager → streamware broadcaster (dispatch).
+    SubjectUIAlertBroadcast Subject = "ui.alert.broadcast"
+
+    // Overlay → backend (unified widget event channel).
+    SubjectWidgetEvent Subject = "widget.event"
+)
+```
+
+| Subject | Direction | Payload | Pattern |
+|---------|-----------|---------|---------|
+| `ui.notify.alert` | workflow → streamware | `AlertEnvelope` JSON: `{ id, applicationId?, parameters, event }` | publish/subscribe |
+| `ui.alert.broadcast` | streamware queue → streamware broadcaster | The same `AlertEnvelope`, re-emitted when it's the alert's turn to play | publish/subscribe |
+| `widget.event` | overlay → streamware | CloudEvents 1.0 envelope; `data` is `{ applicationId, moduleId, instanceId, widgetCanonicalId?, key, value, occurredAt }` | publish/subscribe |
+| `widget.queue.skip` | api → streamware | `{ applicationId? }` | NATS request/reply |
+| `widget.queue.clear` | api → streamware | `{ applicationId? }` | NATS request/reply |
+| `widget.queue.replay` | api → streamware | `{ id }` (alert row id) | NATS request/reply |
+
+Routing rules for `widget.event` are handled in `streamware/src/widget-event-handlers.ts`. Dispatch is keyed on `data.key`:
+
+- `data.key === "alert.lifecycle"` and `data.instanceId === "alert-overlay"` → `AlertQueueManager.handleStatus` (state transitions on the in-flight alert lease).
+- Anything else → `db.upsertWidgetStatus` (latest-value upsert per `(applicationId, instanceId, key)`).
+
+See [Widget event channel](./widget-events.md) for the full message shape, queue semantics, and host API contract.
+
+## Go — DB-Outbox Subjects (engine → api)
+
+The api/ boundary projects db-proxy outbox events to outbound HTTPS webhooks. Every db.proxy CRUD operation publishes a CloudEvent on `db.{entityType}.{operation}.{appId}`. The api subscribes to the wildcards and forwards typed events to the registered callback URL — see `api/src/api.ts:325` and `shared/clients/typescript/api/webhooks.ts`.
+
+Alert-related outbox subjects:
+
+| Subject (wildcard) | Fired when | Webhook event |
+|---------------------|------------|----------------|
+| `db.alert.created.*` | streamware records a fresh alert envelope (`db.createAlert`) | `ALERT_RECORDED` |
+| `db.alert.updated.*` | streamware updates lifecycle (`dispatched` / `playing` / `completed` / `failed` / `timed_out` / `skipped` / `replayed`) | `ALERT_COMPLETED` / `ALERT_FAILED` / `ALERT_TIMED_OUT` / `ALERT_SKIPPED` / `ALERT_REPLAYED` (chosen by `alert.status`) |
+| `db.widget_status.updated.*` | streamware upserts a non-alert widget event (`db.upsertWidgetStatus`) | `WIDGET_STATUS_CHANGED` |
+
+The full set of webhook event types is defined in `shared/clients/typescript/api/webhooks.ts`.
+
 ## Go — Workflow Subjects
 
 The Go shared package defines NATS subjects for workflow-related events:
@@ -299,6 +348,25 @@ const (
 | `module.change.update` | An existing module was updated or reloaded |
 | `module.change.delete` | A module was unregistered |
 | `module.change.state` | A module was enabled or disabled |
+
+### Module resource-instance lifecycle
+
+Runtime-created instances of module-declared kinds (counters, future timers/polls/etc. — see [`docs/barkloader/modules.md` § Runtime resource instances](../barkloader/modules.md#runtime-resource-instances)). The db-proxy emits these on the standard `db.{entityType}.{operation}.{appId}` outbox shape; the api/ service forwards them to the registered Convex webhook.
+
+```go
+// shared/common/golang/cloudevents/subjects.go
+const (
+    SubjectModuleResourceInstanceCreated         Subject = "module.resource.instance.created"
+    SubjectModuleResourceInstanceDeleted         Subject = "module.resource.instance.deleted"
+    SubjectDbModuleResourceInstanceCreatedPattern Subject = "db.module.resource.instance.created.*"
+    SubjectDbModuleResourceInstanceDeletedPattern Subject = "db.module.resource.instance.deleted.*"
+)
+```
+
+| Subject (wildcard) | Fired when | Payload |
+|---------------------|------------|---------|
+| `db.module.resource.instance.created.*` | A module function calls `ctx.resources.create()` (db-proxy persists the row before publishing). | `{ id, module_id, module_name, kind, instance_id, display_name, canonical_id }` |
+| `db.module.resource.instance.deleted.*` | A module function calls `ctx.resources.delete()`, or a future cascade path runs. | Same shape as above. |
 
 ---
 

@@ -2,6 +2,8 @@
 
 Tasks are the units of execution within a workflow. Each task has a `type` that determines its behavior and the shape of its `parameters`.
 
+> **Strings inside `parameters` carry `${…}` expressions resolved by the engine before the task runs.** The grammar is path-only — no operators, no ternary. See [Expressions](./expressions.md) for what's in scope and where to use the streamware-side `{…}` syntax instead.
+
 ## action
 
 Executes a registered action. Actions are the primary way workflows interact with external systems.
@@ -55,6 +57,41 @@ Invokes a function registered in the Barkloader module system.
 | `parameters.params` | `any[]` | No | Arguments to pass to the function. Each element supports expressions. |
 
 Returns the function's result as a map.
+
+#### `alert`
+
+Publishes an alert envelope onto NATS `ui.notify.alert`. Streamware subscribes there, persists the envelope to the `alerts` table, and runs the per-application FIFO queue that broadcasts one alert at a time to connected overlay clients. The workflow engine's role ends at the publish — queue, lease semantics, overlay dispatch, and lifecycle persistence are all owned by streamware.
+
+```json
+{
+  "id": "follower-alert",
+  "type": "action",
+  "action": "alert",
+  "parameters": {
+    "widget": "follow-alert",
+    "text": "${trigger.data.userName} just followed!",
+    "duration": 5
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | `string` | Yes | Must be `"alert"`. Set at the task top level. |
+| `parameters.widget` | `string` | No (convention: yes) | Streamware widget id used to render the alert. |
+| `parameters.id` | `string` | No | Pin the envelope id (useful for tests / replays). When omitted, the action stamps a UUID — see below. |
+| `parameters.duration` | `number` | No | Display duration in seconds. Defaults to 5; lease is `duration + 5`, capped at 60. |
+| Other `parameters` keys | any | No | Widget-specific (`text`, `mediaUrl`, `audioUrl`, `options`, `custom`, ...) — passed verbatim to the rendering widget. |
+
+The action stamps a stable `id` onto every envelope at publish time (see `workflow/actions.go` `buildAlertEnvelope`). All three downstream layers — the api alert log, the streamware queue, and the overlay's lifecycle reports — key on this value end-to-end. A caller-supplied `parameters.id` overrides the generated UUID; this is useful for replays and deterministic tests.
+
+The action also stamps `applicationId` from the workflow context onto the envelope so streamware can attribute the dispatch without falling back to a default lookup.
+
+Returns:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `published` | `boolean` | Always `true` on success |
 
 #### `publish_event`
 

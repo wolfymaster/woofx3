@@ -34,8 +34,9 @@ Defines the event that starts a workflow execution.
 
 ```json
 {
+  "$ref": "twitch_platform:trigger:channel_cheer",
   "type": "event",
-  "eventType": "cheer.user.twitch",
+  "event": "cheer.user.twitch",
   "conditions": [
     { "field": "${trigger.data.amount}", "operator": "gte", "value": 100 }
   ]
@@ -44,9 +45,12 @@ Defines the event that starts a workflow execution.
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
+| `$ref` | `string` | No | Canonical id of the trigger declaration this workflow references (see [Canonical IDs and References](../barkloader/modules.md#canonical-ids-and-references)). Recorded in `resource_references` so the system knows which trigger declaration — and which module — this workflow depends on. The engine **ignores `$ref` at execution time**; subscription is driven by `event`. Module-bundled workflows populate `$ref` automatically; UI-created workflows should populate it from the user's trigger selection so module deletion can detect the dependency. |
 | `type` | `string` | Yes | Trigger type. Currently only `"event"` is supported. |
-| `eventType` | `string` | Yes | The CloudEvents `type` field to match against incoming events. Uses dot notation (e.g., `cheer.user.twitch`). Must match a NATS subscription pattern. |
-| `conditions` | [ConditionConfig[]](#conditionconfig) | No | Optional conditions that must be satisfied for the trigger to fire. All conditions are evaluated with AND logic. If omitted, any event matching `eventType` will trigger the workflow. |
+| `event` | `string` | Yes | NATS subject to subscribe to. Uses dot notation (e.g., `cheer.user.twitch`). Supports NATS-style wildcards (`*` for one token, `>` for the remaining tail). Same value lives on the underlying trigger row's `event` column. |
+| `conditions` | [ConditionConfig[]](#conditionconfig) | No | Optional conditions evaluated against the matching event payload before the workflow starts. All conditions are evaluated with AND logic; if any returns false the workflow does not run. The same `${trigger.data.X}` expression syntax used in step conditions is available here. If omitted, any event matching `event` triggers the workflow. |
+
+> **Why `$ref` and `event` are both present.** `event` is execution data — the actual NATS subject the workflow engine subscribes to, baked into the workflow at create time so the engine never needs a runtime lookup. `$ref` is reference metadata — the canonical id of the trigger declaration that owns that event, used only by the reference graph (in-use checks, upgrade tracking, "what depends on this module"). They live together in the same JSON object because they describe the same trigger from two different angles, but neither is derived from the other; both are populated at workflow create time.
 
 ---
 
@@ -59,10 +63,11 @@ A single unit of work within a workflow. Tasks execute in dependency order deter
   "id": "send-message",
   "type": "action",
   "action": "function",
+  "function": "twitch_platform:function:sendChatMessage",
+  "$ref": "twitch_platform:action:send_chat_message",
   "dependsOn": ["check-amount"],
   "parameters": {
-    "functionName": "sendChatMessage",
-    "params": ["Thank you ${trigger.data.userName}!"]
+    "message": "Thank you ${trigger.data.userName}!"
   },
   "exports": {
     "messageId": "result.id"
@@ -78,9 +83,11 @@ A single unit of work within a workflow. Tasks execute in dependency order deter
 |----------|------|----------|-------------|
 | `id` | `string` | Yes | Unique identifier within the workflow. Referenced by `dependsOn`, `onTrue`, and `onFalse` in other tasks. |
 | `type` | `string` | Yes | Task type. One of: `action`, `log`, `wait`, `condition`, `workflow`. See [Task Types](./tasks.md). |
-| `action` | `string` | Yes (when `type` is `"action"`) | Registered action name to dispatch. Separated from `parameters` so dispatch config never collides with handler-specific inputs. Ignored for other task types. |
+| `action` | `string` | Yes (when `type` is `"action"`) | Registered action handler name. Currently `"function"` is the only handler. Mirrors the manifest action's `type` field for module-contributed actions. |
+| `function` | `string` | Yes (when `action` is `"function"`) | Canonical id of the function this step invokes (e.g. `twitch_platform:function:play_alert`). Top-level handler config — same shape as `wait` and `workflow` configs sit at the top level for their step types. The `function` action handler reads it at runtime and dispatches to the barkloader sandbox without any DB lookup. |
+| `$ref` | `string` | No | Canonical id of the source action declaration this step instantiates (e.g. `twitch_platform:action:play_alert`). Recorded in `resource_references` for ownership tracking and the in-use check. The engine **ignores `$ref` at execution time** — dispatch is driven by `action` + `function`. Module-bundled workflows populate `$ref` automatically; UI-created workflows should populate it from the user's action selection. |
 | `dependsOn` | `string[]` | No | List of task IDs that must complete before this task runs. The engine builds a directed acyclic graph from these relationships and executes tasks in topological order. |
-| `parameters` | `map<string, any>` | Yes | Task-specific inputs passed to the handler. All string values support [expression resolution](#expression-syntax). The shape depends on the task `type` / `action`. |
+| `parameters` | `map<string, any>` | Yes | Task-specific inputs passed to the handler. For `function` actions the entire object is forwarded as a single argument to the sandboxed function. All string values support [expression resolution](#expression-syntax). |
 | `exports` | `map<string, string>` | No | Extracts values from the task result and makes them available to downstream tasks. Keys are the export names, values are dot-notation paths into the task's result data. |
 | `onError` | `string` | No | Error handling strategy. `"fail"` (default) stops the workflow. `"continue"` marks the task as failed but continues execution. |
 | `timeout` | [Duration](#duration) | No | Maximum time the task is allowed to run before being considered failed. |
@@ -155,7 +162,7 @@ Configuration for `wait` type tasks. Pauses workflow execution until a matching 
 ```json
 {
   "type": "aggregation",
-  "eventType": "cheer.user.twitch",
+  "event": "cheer.user.twitch",
   "conditions": [
     { "field": "${trigger.data.channelId}", "operator": "eq", "value": "${trigger.data.channelId}" }
   ],
@@ -173,7 +180,7 @@ Configuration for `wait` type tasks. Pauses workflow execution until a matching 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `type` | `string` | Yes | Wait type. `"event"` waits for a single matching event. `"aggregation"` collects multiple events and checks an aggregation threshold. |
-| `eventType` | `string` | Yes | The CloudEvents type to listen for while waiting. |
+| `event` | `string` | Yes | NATS subject to listen for while waiting. |
 | `conditions` | [ConditionConfig[]](#conditionconfig) | No | Conditions that incoming events must match to be counted. |
 | `aggregation` | [AggregationConfig](#aggregationconfig) | No | Required when `type` is `"aggregation"`. Defines the aggregation strategy. |
 | `timeout` | [Duration](#duration) | No | Maximum time to wait. If exceeded, behavior is determined by `onTimeout`. |
@@ -211,7 +218,7 @@ Configuration for `workflow` type tasks. Executes another workflow as a sub-work
 {
   "workflowId": "reward-sub-workflow",
   "waitUntilCompletion": true,
-  "eventType": "custom.trigger.type",
+  "event": "custom.trigger.type",
   "eventData": {
     "userId": "${trigger.data.userId}",
     "amount": "${trigger.data.amount}"
@@ -224,7 +231,7 @@ Configuration for `workflow` type tasks. Executes another workflow as a sub-work
 |----------|------|----------|-------------|
 | `workflowId` | `string` | Yes | ID of the workflow to execute. Must be registered in the engine. Supports expression syntax. |
 | `waitUntilCompletion` | `boolean` | No | If `true`, the parent workflow pauses until the sub-workflow completes. If `false` (default), the sub-workflow is fire-and-forget. |
-| `eventType` | `string` | No | CloudEvents type for the trigger event sent to the sub-workflow. If omitted, uses the sub-workflow's own trigger event type. Falls back to `"workflow.trigger"`. |
+| `event` | `string` | No | NATS subject for the trigger event sent to the sub-workflow. If omitted, uses the sub-workflow's own trigger event. Falls back to `"workflow.trigger"`. |
 | `eventData` | `map<string, any>` | No | Data payload for the sub-workflow's trigger event. Supports expression syntax for passing data from the parent workflow. |
 | `timeout` | [Duration](#duration) | No | Timeout when waiting for sub-workflow completion. Defaults to 5 minutes. Only relevant when `waitUntilCompletion` is `true`. |
 

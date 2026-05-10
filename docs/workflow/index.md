@@ -77,6 +77,10 @@ Additionally subscribes to workflow lifecycle events:
 | `workflow.change` | Workflow create/update/delete notifications from DB |
 | `workflow.execute` | Direct workflow execution requests |
 
+## Alert action
+
+Workflows that need to drive overlays use the built-in `alert` action. The engine's role ends at NATS publish — `workflow/actions.go` `buildAlertEnvelope` stamps a stable envelope `id` (UUID) onto every payload and publishes to `ui.notify.alert`. From there, streamware owns the queue, lease lifecycle, overlay dispatch, and `alerts` table persistence. See [Task Types — `alert`](./tasks.md#alert) and [Streamware → Alert queue](../streamware/alert-queue.md).
+
 ## API
 
 Workflow CRUD and execution is exposed through two API layers -- the DB Proxy (Twirp RPC) for internal services and the API Server (Cap'n Web RPC) for UI clients. See the [API documentation](./api) for endpoint details, request/response schemas, and examples.
