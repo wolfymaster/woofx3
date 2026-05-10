@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/google/uuid"
 	barkloader "github.com/wolfymaster/woofx3/clients/barkloader"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
@@ -116,7 +117,20 @@ func NewAlertAction() tasks.ActionFunc[AppServices] {
 // publishers (manual / debug / ad-hoc) round-trip cleanly without
 // stamping a misleading id.
 func buildAlertEnvelope(applicationID string, params map[string]any, event *types.Event) ([]byte, error) {
+	// Generate a stable envelope id at publish time so every consumer
+	// (api alert log, streamware broadcaster, overlay widget) keys on
+	// the same value. Honors a caller-supplied `parameters.id` so
+	// authors can pin an id for tests / replays. The envelope-level
+	// `id` field is the canonical handle used by the widget-completion
+	// ack channel (`ui.widget.status` reports key on it).
+	envelopeID := ""
+	if v, ok := params["id"].(string); ok && v != "" {
+		envelopeID = v
+	} else {
+		envelopeID = uuid.NewString()
+	}
 	envelope := map[string]any{
+		"id":         envelopeID,
 		"parameters": params,
 		"event":      event,
 	}

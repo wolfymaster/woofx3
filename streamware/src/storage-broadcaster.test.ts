@@ -177,3 +177,101 @@ describe("StorageBroadcaster", () => {
     expect(data.id).toMatch(/^module-state-\d+$/);
   });
 });
+
+function fakeNats() {
+  const published: Array<{ subject: string; payload: unknown }> = [];
+  const client: any = {
+    published,
+    publish: mock((subject: string, data: Uint8Array) => {
+      published.push({ subject, payload: JSON.parse(new TextDecoder().decode(data)) });
+      return Promise.resolve();
+    }),
+  };
+  return client;
+}
+
+describe("StorageBroadcaster widget.event inbound", () => {
+  it("forwards a valid widget.event to NATS widget.event", () => {
+    const logger = fakeLogger();
+    const nats = fakeNats();
+    const b = new StorageBroadcaster(logger, nats);
+    const handlers = b.handlers();
+    const ws = fakeWs("client-1") as any;
+    handlers.open?.(ws);
+    handlers.message?.(
+      ws,
+      JSON.stringify({
+        kind: "widget.event",
+        moduleId: "counter",
+        instanceId: "inst-1",
+        widgetCanonicalId: "counter:widget:raid_counter",
+        key: "count",
+        value: 42,
+      })
+    );
+    expect(nats.published).toHaveLength(1);
+    const env = nats.published[0]!;
+    expect(env.subject).toBe("widget.event");
+    expect((env.payload as any).type).toBe("widget.event");
+    expect((env.payload as any).data.moduleId).toBe("counter");
+    expect((env.payload as any).data.instanceId).toBe("inst-1");
+    expect((env.payload as any).data.key).toBe("count");
+    expect((env.payload as any).data.value).toBe(42);
+    expect(typeof (env.payload as any).data.occurredAt).toBe("string");
+  });
+
+  it("drops widget.event without moduleId / instanceId / key", () => {
+    const logger = fakeLogger();
+    const nats = fakeNats();
+    const b = new StorageBroadcaster(logger, nats);
+    const handlers = b.handlers();
+    const ws = fakeWs("client-1") as any;
+    handlers.open?.(ws);
+    handlers.message?.(
+      ws,
+      JSON.stringify({ kind: "widget.event", moduleId: "counter", key: "count" })
+    );
+    expect(nats.published).toHaveLength(0);
+  });
+
+  it("ignores messages with unknown kind", () => {
+    const logger = fakeLogger();
+    const nats = fakeNats();
+    const b = new StorageBroadcaster(logger, nats);
+    const handlers = b.handlers();
+    const ws = fakeWs("client-1") as any;
+    handlers.open?.(ws);
+    handlers.message?.(ws, JSON.stringify({ kind: "garbage" }));
+    expect(nats.published).toHaveLength(0);
+  });
+
+  it("survives malformed JSON without throwing", () => {
+    const logger = fakeLogger();
+    const nats = fakeNats();
+    const b = new StorageBroadcaster(logger, nats);
+    const handlers = b.handlers();
+    const ws = fakeWs("client-1") as any;
+    handlers.open?.(ws);
+    expect(() => handlers.message?.(ws, "not json")).not.toThrow();
+    expect(nats.published).toHaveLength(0);
+  });
+
+  it("logs and drops when NATS is unavailable", () => {
+    const logger = fakeLogger();
+    const b = new StorageBroadcaster(logger, null);
+    const handlers = b.handlers();
+    const ws = fakeWs("client-1") as any;
+    handlers.open?.(ws);
+    handlers.message?.(
+      ws,
+      JSON.stringify({
+        kind: "widget.event",
+        moduleId: "counter",
+        instanceId: "inst-1",
+        key: "count",
+        value: 1,
+      })
+    );
+    expect(logger.warn).toHaveBeenCalled();
+  });
+});

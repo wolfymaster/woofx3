@@ -4,10 +4,13 @@ import type { WebSocketHandler } from "bun";
 import { createServiceLogger } from "@woofx3/common/logging";
 import { createMessageBus } from "@woofx3/nats";
 import { AlertBroadcaster } from "./alert-broadcaster";
+import { AlertQueueManager } from "./alert-queue-manager";
 import { loadConfig } from "./config";
+import { DbClient } from "./db";
 import { initSubscriptions } from "./nats-subscriptions";
 import { connectObs } from "./obs/manager";
 import { StorageBroadcaster } from "./storage-broadcaster";
+import { initWidgetEventHandlers } from "./widget-event-handlers";
 
 async function main() {
   const config = loadConfig();
@@ -32,10 +35,55 @@ async function main() {
 
   const obs = await connectObs(config.obs, logger);
 
-  const broadcaster = new AlertBroadcaster(logger);
-  const storageBroadcaster = new StorageBroadcaster(logger);
+  const broadcaster = new AlertBroadcaster(logger, nats);
+  const storageBroadcaster = new StorageBroadcaster(logger, nats);
 
   await initSubscriptions({ nats, obs, broadcaster, storageBroadcaster, logger });
+
+  // Phase R1: streamware now owns alert orchestration. The api keeps
+  // db-outbox → webhook projection (its actual boundary work);
+  // streamware pulls intents off NATS, runs the queue, and writes to
+  // the db proxy directly.
+  if (nats && config.databaseProxyUrl) {
+    const db = new DbClient(config.databaseProxyUrl);
+    const alertQueue = new AlertQueueManager(db, nats, logger);
+    await initWidgetEventHandlers({
+      nats,
+      db,
+      queue: alertQueue,
+      storageBroadcaster,
+      logger,
+      // Streamware doesn't carry an authenticated session today, so
+      // it has no authoritative applicationId. Envelopes must
+      // either supply one (workflow does, see workflow/actions.go)
+      // or the api warmup must publish a "welcome" with the default.
+      // For now, fall back to null and let the resolveApplicationId
+      // hook do JIT lookups.
+      applicationId: null,
+      resolveApplicationId: async () => {
+        // Light JIT: ask the db proxy for the default application.
+        // Tolerated: this is the same fallback the api previously
+        // performed against a fresh boot before onboarding ran.
+        try {
+          // ApplicationService isn't exposed on streamware's slim
+          // DbClient (only alert + widget_status), so JIT requires
+          // the api to seed the default — which it does today via
+          // the warmup at api/src/server.ts. Until we re-evaluate
+          // whether streamware should also resolve applicationId
+          // independently, return null and let envelopes carry it.
+          return null;
+        } catch {
+          return null;
+        }
+      },
+    });
+    logger.info("Alert orchestration initialised", { databaseProxyUrl: config.databaseProxyUrl });
+  } else {
+    logger.warn(
+      "Alert orchestration disabled — set WOOFX3_DATABASE_PROXY_URL to enable",
+      { hasNats: !!nats, hasDbUrl: !!config.databaseProxyUrl }
+    );
+  }
 
   // Bun.serve takes a single `websocket` handler, so we dispatch
   // open / close / message events to the right broadcaster based

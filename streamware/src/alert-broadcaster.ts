@@ -1,5 +1,7 @@
 import type { ServerWebSocket, WebSocketHandler } from "bun";
 import type { SharedLogger } from "@woofx3/common/logging";
+import type NATSClient from "@woofx3/nats/src/client";
+import { publishWidgetEvent } from "./widget-event-wire";
 
 /**
  * Envelope published by the engine's `builtin:action:alert` to the
@@ -36,15 +38,52 @@ interface ConnectionData {
 }
 
 /**
+ * Inbound widget event from an overlay client. Mirrors
+ * `streamware/ui/src/lib/widgetHost.ts:WidgetStatusReport`.
+ *
+ * Single message kind for everything an overlay reports — alert
+ * lifecycle acks, counter increments, timer state, goal hits. The
+ * broadcaster validates and republishes onto NATS `widget.event`;
+ * the orchestrator dispatches by `key`:
+ *   "alert.lifecycle" → AlertQueueManager.handleStatus
+ *   anything else     → db.upsertWidgetStatus
+ *
+ * For alert-overlay reports, the carrying value contains
+ * `{ envelopeId, state, error? }`. For raid_counter increments it's
+ * a number, etc. — opaque at this boundary.
+ */
+export interface OverlayInboundMessage {
+  kind: "widget.event";
+  moduleId: string;
+  instanceId: string;
+  widgetCanonicalId?: string;
+  applicationId?: string;
+  key: string;
+  value: unknown;
+  ts?: string;
+}
+
+/**
  * Tracks connected overlay WebSockets and pushes alert payloads to all
- * of them. The browser overlay is a thin renderer; ordering and queueing
- * happen client-side.
+ * of them. Also accepts inbound status reports from those overlays and
+ * republishes them onto NATS `ui.widget.status` so the api can advance
+ * the matching `alerts` row.
+ *
+ * The browser overlay is a thin renderer; ordering and queueing happen
+ * client-side in Phase 1 (Phase 2 moves the queue to the api).
  */
 export class AlertBroadcaster {
   private readonly clients = new Set<ServerWebSocket<ConnectionData>>();
   private nextId = 1;
+  private nats: NATSClient | null;
 
-  constructor(private readonly logger: SharedLogger) {}
+  constructor(private readonly logger: SharedLogger, nats: NATSClient | null = null) {
+    this.nats = nats;
+  }
+
+  setNats(nats: NATSClient | null): void {
+    this.nats = nats;
+  }
 
   clientCount(): number {
     return this.clients.size;
@@ -93,11 +132,21 @@ export class AlertBroadcaster {
           totalClients: this.clients.size,
         });
       },
-      message: (ws, _message) => {
-        // Overlays are receive-only today; ignore inbound traffic.
-        this.logger.debug("Ignoring inbound overlay message", { clientId: ws.data.id });
+      message: (ws, message) => {
+        this.handleInbound(ws, message);
       },
     };
+  }
+
+  /**
+   * Decode and forward an overlay-originated widget event. Validation
+   * is permissive — bad shapes are dropped with a single warning so a
+   * misbehaving overlay can't fill the log. Anything recognised as a
+   * `widget.event` is republished to NATS `widget.event` so the
+   * orchestrator can react.
+   */
+  private handleInbound(ws: ServerWebSocket<ConnectionData>, raw: string | Buffer): void {
+    publishWidgetEvent(ws, raw, this.nats, this.logger);
   }
 
   nextConnectionData(): ConnectionData {

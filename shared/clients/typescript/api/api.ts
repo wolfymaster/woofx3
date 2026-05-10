@@ -614,10 +614,34 @@ export interface Woofx3EngineApi {
   saveDashboardLayout(accountId: string, modules: DashboardModule[]): Promise<boolean>;
 
   // Alert log replay — re-publishes a previously recorded alert
-  // envelope to `ui.notify.alert`. Returns `false` when the id
+  // envelope to `ui.notify.alert` with a fresh envelope id, so it
+  // flows through the queue manager as a new dispatch. The
+  // original row is marked `replayed`. Returns `false` when the id
   // doesn't exist or the stored payload is malformed; throws on
   // transport failures (NATS / db proxy unreachable).
   replayAlert(id: string): Promise<boolean>;
+
+  // Operator controls (Phase 3) over the backend-authoritative
+  // alert queue (`api/src/alert-queue-manager.ts`).
+  //
+  // `applicationId` is optional on each method: when omitted we
+  // resolve to the authenticated session's application or the
+  // engine's default application — matches the convention used by
+  // listAlerts / getAlert.
+
+  /**
+   * Mark the currently-playing alert (if any) as `skipped`,
+   * advance the queue to the next pending envelope. No-op when
+   * nothing is in flight. Returns whether an alert was skipped.
+   */
+  skipCurrentAlert(applicationId?: string): Promise<{ skipped: boolean }>;
+
+  /**
+   * Mark every pending (not-yet-dispatched) alert as `skipped`.
+   * Does not touch the in-flight lease; pair with `skipCurrentAlert`
+   * for a full clear. Returns the number of pending alerts dropped.
+   */
+  clearAlertQueue(applicationId?: string): Promise<{ cleared: number }>;
 }
 
 // ==================== Widgets ====================

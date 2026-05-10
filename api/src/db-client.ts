@@ -9,6 +9,7 @@ import type * as module_trigger from "@woofx3/db/module_trigger.pb";
 import * as setting from "@woofx3/db/setting.pb";
 import * as treat from "@woofx3/db/treat.pb";
 import * as user from "@woofx3/db/user.pb";
+import * as widget_status from "@woofx3/db/widget_status.pb";
 import * as workflow from "@woofx3/db/workflow.pb";
 import type { ClientConfiguration } from "twirpscript";
 
@@ -122,6 +123,10 @@ export class DbClient {
     return alert.GetAlert(req, this.config);
   }
 
+  async getAlertByEnvelopeId(req: alert.GetAlertByEnvelopeIdRequest): Promise<alert.AlertResponse> {
+    return alert.GetAlertByEnvelopeId(req, this.config);
+  }
+
   async listAlerts(req: alert.ListAlertsRequest): Promise<alert.ListAlertsResponse> {
     return alert.ListAlerts(req, this.config);
   }
@@ -130,8 +135,36 @@ export class DbClient {
     return alert.UpdateAlertStatus(req, this.config);
   }
 
+  async updateAlertLifecycle(req: alert.UpdateAlertLifecycleRequest): Promise<alert.AlertResponse> {
+    return alert.UpdateAlertLifecycle(req, this.config);
+  }
+
   async deleteAlert(req: alert.DeleteAlertRequest): Promise<common.ResponseStatus> {
     return alert.DeleteAlert(req, this.config);
+  }
+
+  async upsertWidgetStatus(
+    req: widget_status.UpsertWidgetStatusRequest
+  ): Promise<widget_status.WidgetStatusResponse> {
+    return widget_status.UpsertWidgetStatus(req, this.config);
+  }
+
+  async getWidgetStatus(
+    req: widget_status.GetWidgetStatusRequest
+  ): Promise<widget_status.WidgetStatusResponse> {
+    return widget_status.GetWidgetStatus(req, this.config);
+  }
+
+  async listWidgetStatus(
+    req: widget_status.ListWidgetStatusRequest
+  ): Promise<widget_status.ListWidgetStatusResponse> {
+    return widget_status.ListWidgetStatus(req, this.config);
+  }
+
+  async deleteWidgetStatus(
+    req: widget_status.DeleteWidgetStatusRequest
+  ): Promise<common.ResponseStatus> {
+    return widget_status.DeleteWidgetStatus(req, this.config);
   }
 
   async getUser(req: user.GetUserRequest): Promise<user.UserResponse> {

@@ -6,6 +6,12 @@ export interface StreamwareConfig {
   rootDir: string;
   uiDistDir: string;
   publicDir: string;
+  /** db proxy gRPC base URL. Streamware now talks to the db proxy
+   *  directly to persist alert lifecycle and widget status — see
+   *  `streamware/src/db.ts`. Empty string disables the orchestration
+   *  path (alerts will still WS-broadcast for live overlays but no
+   *  durable record is written). */
+  databaseProxyUrl: string;
   obs: {
     url: string;
     token?: string;
@@ -36,6 +42,8 @@ const envSchema = z
     obsPort: z.union([z.number(), z.string()]).optional(),
     woofx3ObsRpcToken: z.string().optional(),
     obsRpcToken: z.string().optional(),
+    woofx3DatabaseProxyUrl: z.string().optional(),
+    databaseProxyUrl: z.string().optional(),
   })
   .passthrough();
 
@@ -68,11 +76,16 @@ export function loadConfig(): StreamwareConfig {
       ? String(c.obsRpcToken)
       : undefined;
 
+  const databaseProxyUrl = String(
+    c.woofx3DatabaseProxyUrl ?? c.databaseProxyUrl ?? "",
+  );
+
   return {
     port,
     rootDir,
     uiDistDir: `${import.meta.dir}/../ui/dist`,
     publicDir: `${import.meta.dir}/../public`,
+    databaseProxyUrl,
     obs: {
       url: `ws://${obsHost}:${obsPort}`,
       token: obsToken,

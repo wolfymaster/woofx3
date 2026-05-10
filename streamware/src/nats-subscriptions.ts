@@ -25,13 +25,18 @@ export async function initSubscriptions({
     return;
   }
 
-  // Workflow `alert` action publishes raw JSON here (workflow/actions.go:NewAlertAction).
-  await nats.subscribe("ui.notify.alert", (msg) => {
+  // Phase 2: broadcast subscriptions moved from `ui.notify.alert`
+  // (workflow → engine intent) to `ui.alert.broadcast` (engine →
+  // overlay dispatch). The api's AlertQueueManager owns the queue
+  // and publishes here when it's a given alert's turn to play. The
+  // workflow alert action still publishes to `ui.notify.alert` —
+  // we just don't broadcast it directly anymore.
+  await nats.subscribe("ui.alert.broadcast", (msg) => {
     let payload: AlertPayload;
     try {
       payload = msg.json<AlertPayload>();
     } catch (err) {
-      logger.error("ui.notify.alert: malformed JSON payload", {
+      logger.error("ui.alert.broadcast: malformed JSON payload", {
         error: err instanceof Error ? err.message : String(err),
         raw: msg.string().slice(0, 200),
       });
@@ -39,7 +44,7 @@ export async function initSubscriptions({
     }
     broadcaster.broadcast(payload);
   });
-  logger.info("Subscribed to ui.notify.alert");
+  logger.info("Subscribed to ui.alert.broadcast");
 
   // Module persistent-storage change events (auto-emitted by the
   // QuickJS / Lua sandbox after every successful ctx.storage.set()).

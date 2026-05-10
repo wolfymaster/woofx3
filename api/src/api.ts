@@ -309,94 +309,18 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
 
     this.logger.info("Initializing NATS subscriptions for module events");
 
-    // Built-in `alert` workflow action (workflow/actions.go:NewAlertAction)
-    // publishes the AlertPayload envelope here. We record every
-    // dispatch in the engine's `alerts` table via the db proxy so the
-    // Convex alert-log page (replay UI) has a durable history. The
-    // streamware backend independently subscribes to the same subject
-    // to broadcast to overlays — both consumers run, neither blocks
-    // the other.
+    // R1: orchestration relocated to streamware. The api keeps only
+    // db-outbox → webhook projection (its boundary role). Streamware
+    // now subscribes to `ui.notify.alert`, `ui.widget.status`, and
+    // `module.widget.status.changed`; see streamware/src/widget-event-
+    // handlers.ts. The api subscribes below to the resulting outbox
+    // events (`db.alert.{created,updated}.*`,
+    // `db.widget_status.updated.*`) and projects them to webhooks.
     //
-    // applicationId resolution order:
-    //   1. envelope.applicationId — the workflow stamps this onto
-    //      every envelope it publishes (see workflow's
-    //      buildAlertEnvelope). Authoritative attribution.
-    //   2. this.applicationId — warmed default-app id, set during
-    //      server startup or the first registerClient call. Covers
-    //      manual / debug publishers that don't go through a
-    //      workflow at all.
-    //   3. JIT lookup of the default application via the db proxy.
-    //      Last resort — handles startup-race scenarios where the
-    //      alert subscription fires before the warmup mutation
-    //      finishes.
-    await this.nats.subscribe("ui.notify.alert", async (msg) => {
-      try {
-        const rawPayload = msg.json() as Record<string, unknown>;
-        const payloadJson = JSON.stringify(rawPayload);
-
-        const envelopeAppId = typeof rawPayload.applicationId === "string"
-          ? (rawPayload.applicationId as string)
-          : "";
-
-        let applicationId = envelopeAppId || this.applicationId;
-        if (!applicationId) {
-          // JIT fallback: ask db for the default application. Cache
-          // on `this.applicationId` so subsequent alerts skip the
-          // round-trip until the process exits.
-          try {
-            const existing = await this.db.getDefaultApplication();
-            if (existing) {
-              this.setApplicationId(existing.id);
-              applicationId = existing.id;
-            }
-          } catch (err) {
-            this.logger.warn("Alert log: JIT default-application lookup failed", {
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
-        }
-        if (!applicationId) {
-          this.logger.warn(
-            "Alert dropped from log — no applicationId on envelope and no default registered yet",
-            { subject: msg.subject }
-          );
-          return;
-        }
-
-        // Best-effort attribution: the `alert` action stamps these
-        // when it has them; skip when absent.
-        const workflowId = typeof rawPayload.workflow_id === "string"
-          ? (rawPayload.workflow_id as string)
-          : "";
-        const sourceEventId = typeof rawPayload.source_event_id === "string"
-          ? (rawPayload.source_event_id as string)
-          : "";
-
-        await this.db.createAlert({
-          applicationId,
-          payload: payloadJson,
-          workflowId,
-          sourceEventId,
-        });
-        this.logger.info("alert recorded", {
-          applicationId,
-          // Where the id came from — useful when log-spelunking to
-          // confirm workflow plumbing is delivering attribution
-          // rather than falling back to the singleton.
-          source: envelopeAppId
-            ? "envelope"
-            : applicationId === this.applicationId
-              ? "warmed-default"
-              : "jit-lookup",
-          workflowId,
-          sourceEventId,
-        });
-      } catch (err) {
-        this.logger.error("Failed to record ui.notify.alert payload", {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    });
+    // applicationId resolution that used to live here also moved to
+    // the orchestrator. The api still tracks `this.applicationId` for
+    // its own RPC paths (e.g. resolving default app on operator
+    // controls) but doesn't need to consult it here.
 
     await this.nats.subscribe("db.module.trigger.registered.*", async (msg) => {
       this.logger.info("Received NATS message on db.module.trigger.registered.*", { subject: msg.subject });
@@ -1107,22 +1031,121 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
         const ce = msg.json() as Record<string, unknown>;
         const { applicationId, clientId, event } = parseAlertUpdated(ce);
         if (!event) {
-          // Non-replayed status updates are intentionally dropped —
-          // see `parseAlertUpdated` for the contract.
+          // Lifecycle transitions that don't have a webhook surface
+          // (today: `"playing"`) intentionally drop here — see
+          // `parseAlertUpdated` for the projection map.
           return;
         }
-        this.logger.info("Parsed alert.replayed", {
+        this.logger.info("Parsed alert lifecycle update", {
           applicationId,
           clientId,
           alertId: event.alert.id,
+          eventType: event.type,
+          status: event.alert.status,
         });
         if (this.webhookClient) {
           await this.webhookClient.send(event, clientId || undefined);
         } else {
-          this.logger.warn("No webhook client set, skipping callback for alert.replayed");
+          this.logger.warn("No webhook client set, skipping callback", {
+            eventType: event.type,
+          });
         }
       } catch (err) {
         this.logger.error("Failed to handle alert.updated NATS event", { err });
+      }
+    });
+
+    // db.widget_status.updated.{appId} — db proxy outbox event fired
+    // by `widgetStatusService.publishChange` whenever the streamware
+    // orchestrator upserts a widget_status row. Project to the
+    // dashboard via the WIDGET_STATUS_CHANGED webhook. Same boundary
+    // pattern as the alert / module / scene / workflow projections.
+    await this.nats.subscribe("db.widget_status.updated.*", async (msg) => {
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const data = (ce.data as Record<string, unknown> | undefined) ?? (ce as Record<string, unknown>);
+        const moduleId = typeof data.module_id === "string"
+          ? (data.module_id as string)
+          : typeof data.ModuleID === "string"
+            ? (data.ModuleID as string)
+            : "";
+        const instanceId = typeof data.instance_id === "string"
+          ? (data.instance_id as string)
+          : typeof data.InstanceID === "string"
+            ? (data.InstanceID as string)
+            : "";
+        const key = typeof data.key === "string"
+          ? (data.key as string)
+          : typeof data.Key === "string"
+            ? (data.Key as string)
+            : "";
+        if (!moduleId || !instanceId || !key) {
+          this.logger.warn("db.widget_status.updated: missing required fields; dropping", {
+            moduleId,
+            instanceId,
+            key,
+          });
+          return;
+        }
+        const widgetCanonicalId = typeof data.widget_canonical_id === "string"
+          ? (data.widget_canonical_id as string)
+          : typeof data.WidgetCanonicalID === "string"
+            ? (data.WidgetCanonicalID as string)
+            : "";
+        const occurredAt = typeof data.occurred_at === "string"
+          ? (data.occurred_at as string)
+          : typeof data.OccurredAt === "string"
+            ? (data.OccurredAt as string)
+            : new Date().toISOString();
+        const applicationId = typeof ce.application_id === "string"
+          ? (ce.application_id as string)
+          : typeof data.application_id === "string"
+            ? (data.application_id as string)
+            : "";
+        if (!applicationId) {
+          this.logger.warn("db.widget_status.updated: missing applicationId; dropping", {
+            moduleId,
+            instanceId,
+            key,
+          });
+          return;
+        }
+        // The db proxy serialises `value` as a JSONB-stringified form.
+        // Round-trip parse so the webhook payload carries the typed
+        // shape consumers expect.
+        let parsedValue: unknown = null;
+        const rawValue = data.value ?? data.Value;
+        if (typeof rawValue === "string") {
+          try {
+            parsedValue = JSON.parse(rawValue);
+          } catch {
+            parsedValue = rawValue;
+          }
+        } else if (rawValue !== undefined) {
+          parsedValue = rawValue;
+        }
+        if (this.webhookClient) {
+          await this.webhookClient.send({
+            type: EngineEventType.WIDGET_STATUS_CHANGED,
+            applicationId,
+            moduleId,
+            instanceId,
+            widgetCanonicalId: widgetCanonicalId || undefined,
+            key,
+            value: parsedValue,
+            occurredAt,
+          });
+        }
+        this.logger.info("widget status webhook dispatched", {
+          applicationId,
+          moduleId,
+          instanceId,
+          key,
+        });
+      } catch (err) {
+        this.logger.error("db.widget_status.updated: handler failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     });
 
@@ -3667,17 +3690,12 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
   }
 
   /**
-   * Replay a previously recorded alert. Loads the original
-   * AlertPayload envelope from the engine's alert log, re-publishes
-   * it to `ui.notify.alert` (so streamware broadcasts it to overlays
-   * exactly like the live dispatch did), then flips the row's
-   * status to `replayed` so the UI's alert-log can mark the entry.
-   *
-   * Returns `false` when the alert id doesn't exist or the payload
-   * fails to parse — the gateway turns that into a 404 / 400 for
-   * the caller. Throws on transport failures (NATS down, db proxy
-   * unreachable) so the UI shows a real error rather than silent
-   * success.
+   * Replay a previously recorded alert. After R1 the queue manager
+   * lives in streamware, so this method forwards via NATS request/
+   * reply. Streamware loads the original payload, stamps a fresh
+   * envelope id, re-publishes to `ui.notify.alert`, and marks the
+   * source row `replayed`. Returns `false` when the alert id can't
+   * be found or the payload is malformed.
    */
   async replayAlert(id: string): Promise<boolean> {
     if (!this.nats) {
@@ -3686,40 +3704,61 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     if (!id) {
       throw new Error("alert id is required");
     }
-    this.logger.info("Replaying alert", { id });
-
-    const response = await this.db.getAlert({ id });
-    if (response.status?.code !== "OK" || !response.alert) {
-      this.logger.warn("Replay aborted — alert not found", { id });
+    this.logger.info("Replaying alert (forwarding to streamware)", { id });
+    const reply = await this.nats.request(
+      "widget.queue.replay",
+      new TextEncoder().encode(JSON.stringify({ id }))
+    );
+    const result = JSON.parse(new TextDecoder().decode(reply.data)) as {
+      ok: boolean;
+      message: string;
+      replayEnvelopeId?: string;
+    };
+    if (!result.ok) {
+      this.logger.warn("Replay rejected", { id, reason: result.message });
       return false;
     }
-    let payload: unknown;
-    try {
-      payload = JSON.parse(response.alert.payload);
-    } catch (err) {
-      this.logger.error("Replay aborted — stored payload is not valid JSON", {
-        id,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return false;
-    }
-    if (!payload || typeof payload !== "object") {
-      this.logger.error("Replay aborted — stored payload is not an object", { id });
-      return false;
-    }
-
-    // Re-publish the verbatim envelope. The streamware backend's
-    // existing `ui.notify.alert` subscription broadcasts it to
-    // overlay clients without any awareness that this is a replay.
-    const data = new TextEncoder().encode(JSON.stringify(payload));
-    await this.nats.publish("ui.notify.alert", data);
-
-    // Mark the source row as replayed. The status update fires a
-    // `db.alert.updated.*` outbox which the same api instance
-    // projects to an `alert.replayed` webhook so the UI sees it.
-    await this.db.updateAlertStatus({ id, status: "replayed" });
-
-    this.logger.info("Alert replayed", { id });
+    this.logger.info("Alert replayed", { id, replayEnvelopeId: result.replayEnvelopeId });
     return true;
+  }
+
+  /**
+   * Forward a "skip the current alert" RPC to streamware's queue
+   * manager. The orchestrator marks the in-flight alert `skipped`,
+   * dispatches the next pending, and the standard
+   * `db.alert.updated.*` outbox event drives the ALERT_SKIPPED
+   * webhook from the api boundary.
+   */
+  async skipCurrentAlert(applicationId?: string): Promise<{ skipped: boolean }> {
+    if (!this.nats) {
+      throw new Error("NATS client not available");
+    }
+    const appId = applicationId || (await this.ensureApplicationId());
+    const reply = await this.nats.request(
+      "widget.queue.skip",
+      new TextEncoder().encode(JSON.stringify({ applicationId: appId }))
+    );
+    const result = JSON.parse(new TextDecoder().decode(reply.data)) as { skipped: boolean };
+    this.logger.info("skipCurrentAlert", { applicationId: appId, skipped: result.skipped });
+    return result;
+  }
+
+  /**
+   * Forward a "clear pending" RPC to streamware. The orchestrator
+   * marks every pending alert `skipped` (without touching the
+   * in-flight lease) and returns the count.
+   */
+  async clearAlertQueue(applicationId?: string): Promise<{ cleared: number }> {
+    if (!this.nats) {
+      throw new Error("NATS client not available");
+    }
+    const appId = applicationId || (await this.ensureApplicationId());
+    const reply = await this.nats.request(
+      "widget.queue.clear",
+      new TextEncoder().encode(JSON.stringify({ applicationId: appId }))
+    );
+    const result = JSON.parse(new TextDecoder().decode(reply.data)) as { cleared: number };
+    this.logger.info("clearAlertQueue", { applicationId: appId, cleared: result.cleared });
+    return result;
   }
 }

@@ -32,6 +32,7 @@ func TestBuildAlertEnvelope_WithTriggerEvent(t *testing.T) {
 	}
 
 	var got struct {
+		ID            string         `json:"id"`
 		ApplicationID string         `json:"applicationId"`
 		Parameters    map[string]any `json:"parameters"`
 		Event         *types.Event   `json:"event"`
@@ -40,6 +41,9 @@ func TestBuildAlertEnvelope_WithTriggerEvent(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
+	if got.ID == "" {
+		t.Errorf("envelope id is empty; expected an auto-generated UUID")
+	}
 	if got.ApplicationID != "app-uuid-1" {
 		t.Errorf("applicationId = %q, want app-uuid-1", got.ApplicationID)
 	}

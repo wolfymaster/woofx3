@@ -62,7 +62,7 @@ describe("parseAlertCreated", () => {
 });
 
 describe("parseAlertUpdated", () => {
-  it("emits ALERT_REPLAYED only for status='replayed'", () => {
+  it("emits ALERT_REPLAYED for status='replayed'", () => {
     const replayed = snakeCe({
       id: ALERT_ID,
       payload: "{}",
@@ -73,12 +73,65 @@ describe("parseAlertUpdated", () => {
     expect(event?.alert.id).toBe(ALERT_ID);
   });
 
-  it("drops non-replayed status updates (no UI surface today)", () => {
+  it("emits ALERT_COMPLETED for status='completed'", () => {
+    const completed = snakeCe({
+      id: ALERT_ID,
+      payload: "{}",
+      status: "completed",
+      envelope_id: "env-7",
+      played_at: "2026-05-03T01:02:03.000Z",
+      completed_at: "2026-05-03T01:02:09.000Z",
+    });
+    const { event } = parseAlertUpdated(completed);
+    expect(event?.type).toBe(EngineEventType.ALERT_COMPLETED);
+    expect(event?.alert.envelopeId).toBe("env-7");
+    expect(event?.alert.playedAt).toBe("2026-05-03T01:02:03.000Z");
+    expect(event?.alert.completedAt).toBe("2026-05-03T01:02:09.000Z");
+  });
+
+  it("emits ALERT_FAILED for status='failed' with error", () => {
+    const failed = snakeCe({
+      id: ALERT_ID,
+      payload: "{}",
+      status: "failed",
+      envelope_id: "env-8",
+      error: "autoplay blocked",
+      completed_at: "2026-05-03T01:02:09.000Z",
+    });
+    const { event } = parseAlertUpdated(failed);
+    expect(event?.type).toBe(EngineEventType.ALERT_FAILED);
+    expect(event?.alert.error).toBe("autoplay blocked");
+  });
+
+  it("emits ALERT_TIMED_OUT for status='timed_out'", () => {
+    const ce = snakeCe({
+      id: ALERT_ID,
+      payload: "{}",
+      status: "timed_out",
+      envelope_id: "env-9",
+      error: "lease timeout",
+    });
+    const { event } = parseAlertUpdated(ce);
+    expect(event?.type).toBe(EngineEventType.ALERT_TIMED_OUT);
+    expect(event?.alert.error).toBe("lease timeout");
+  });
+
+  it("emits ALERT_SKIPPED for status='skipped'", () => {
+    const ce = snakeCe({
+      id: ALERT_ID,
+      payload: "{}",
+      status: "skipped",
+      envelope_id: "env-10",
+    });
+    const { event } = parseAlertUpdated(ce);
+    expect(event?.type).toBe(EngineEventType.ALERT_SKIPPED);
+  });
+
+  it("drops transitions without a webhook surface (e.g. status='playing')", () => {
+    const playing = snakeCe({ id: ALERT_ID, payload: "{}", status: "playing" });
+    expect(parseAlertUpdated(playing).event).toBeNull();
     const sent = snakeCe({ id: ALERT_ID, payload: "{}", status: "sent" });
     expect(parseAlertUpdated(sent).event).toBeNull();
-
-    const failed = snakeCe({ id: ALERT_ID, payload: "{}", status: "failed" });
-    expect(parseAlertUpdated(failed).event).toBeNull();
   });
 
   it("returns null when id is missing", () => {
