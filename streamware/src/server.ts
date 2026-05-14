@@ -40,12 +40,17 @@ async function main() {
 
   await initSubscriptions({ nats, obs, broadcaster, storageBroadcaster, logger });
 
+  // db-proxy client — used by the alert orchestration block below
+  // AND by the scene-fetch HTTP route (which serves the overlay
+  // config for `/overlay/scene/{id}`). Outlives the NATS branch so
+  // the route works even when the message bus is unavailable.
+  const db = config.databaseProxyUrl ? new DbClient(config.databaseProxyUrl) : null;
+
   // Phase R1: streamware now owns alert orchestration. The api keeps
   // db-outbox → webhook projection (its actual boundary work);
   // streamware pulls intents off NATS, runs the queue, and writes to
   // the db proxy directly.
-  if (nats && config.databaseProxyUrl) {
-    const db = new DbClient(config.databaseProxyUrl);
+  if (nats && db) {
     const alertQueue = new AlertQueueManager(db, nats, logger);
     await initWidgetEventHandlers({
       nats,
@@ -154,6 +159,21 @@ async function main() {
         return new Response("upgrade failed", { status: 400 });
       }
 
+      // Scene fetch — the SceneOverlay SPA calls this on load to
+      // resolve a path-style `/overlay/scene/{id}` URL into the
+      // SceneConfig JSON it needs to render. Returns the same shape
+      // the `?config=<urlencoded>` dev path uses so the client just
+      // hands it to `<SceneOverlay scene={...} />`.
+      //
+      // Permissive CORS: the editor preview iframe (woofx3-ui scene
+      // editor) lives on a different origin and fetches this through
+      // the iframe wrapper. The browser-source endpoint stays
+      // unauthenticated by design — sourceKey is what scopes access,
+      // not this read.
+      if (url.pathname.startsWith("/api/scene/")) {
+        return handleSceneFetch(url.pathname, db, logger);
+      }
+
       // Friendly browser-source URL → SPA shell. Both the alert
       // overlay and the scene-composing overlay are served from the
       // same SPA bundle; main.tsx picks the right component based
@@ -199,6 +219,71 @@ async function serveFile(absPath: string): Promise<Response> {
     return new Response("Not Found", { status: 404 });
   }
   return new Response(file);
+}
+
+const SCENE_CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+/**
+ * Resolve `/api/scene/{id}` to the SceneConfig JSON the SPA renders.
+ * Reads through the db-proxy. The wire shape matches
+ * `streamware/ui/src/lib/sceneConfig.ts` — widget instances parsed
+ * from `widgets_json`, layout parsed from `layout_json`. The engine
+ * never inspects these fields so the UI's writes round-trip
+ * unchanged.
+ *
+ * Returns 404 when the scene doesn't exist or the db-proxy is
+ * unconfigured (the same error class — neither case is recoverable
+ * client-side).
+ */
+async function handleSceneFetch(
+  pathname: string,
+  db: DbClient | null,
+  logger: ReturnType<typeof createServiceLogger>,
+): Promise<Response> {
+  const sceneId = decodeURIComponent(pathname.slice("/api/scene/".length));
+  if (!sceneId) {
+    return new Response("Missing scene id", { status: 400, headers: SCENE_CORS_HEADERS });
+  }
+  if (!db) {
+    return new Response("db proxy unavailable", {
+      status: 503,
+      headers: SCENE_CORS_HEADERS,
+    });
+  }
+  try {
+    const response = await db.getScene({ id: sceneId });
+    if (response.status?.code !== "OK" || !response.scene) {
+      return new Response("Scene not found", { status: 404, headers: SCENE_CORS_HEADERS });
+    }
+    const s = response.scene;
+    const widgets = (() => {
+      try {
+        const parsed = JSON.parse(s.widgetsJson || "[]");
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    })();
+    const layout = (() => {
+      try {
+        const parsed = JSON.parse(s.layoutJson || "{}");
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch {
+        return {};
+      }
+    })();
+    return Response.json(
+      { id: s.id, applicationId: s.applicationId, name: s.name, widgets, layout },
+      { headers: SCENE_CORS_HEADERS },
+    );
+  } catch (err) {
+    logger.warn("scene fetch failed", { sceneId, err });
+    return new Response("Internal error", { status: 500, headers: SCENE_CORS_HEADERS });
+  }
 }
 
 async function tryServeUnder(rootDir: string, pathname: string): Promise<Response | null> {

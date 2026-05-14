@@ -1,4 +1,5 @@
 import * as alert from "@woofx3/db/alert.pb";
+import * as scene from "@woofx3/db/scene.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
 
 // twirpscript ClientConfiguration is { baseURL: string }; we inline
@@ -89,6 +90,14 @@ export class DbClient {
     req: widget_status.UpsertWidgetStatusRequest
   ): Promise<widget_status.WidgetStatusResponse> {
     return widget_status.UpsertWidgetStatus(req, this.config);
+  }
+
+  // Scene reads — streamware fetches a scene by id when the
+  // `/overlay/scene/{id}` overlay loads in OBS / the editor preview.
+  // Write paths (create/update/delete) stay on the api service;
+  // streamware is read-only for scenes.
+  async getScene(req: scene.GetSceneRequest): Promise<scene.SceneResponse> {
+    return scene.GetScene(req, this.config);
   }
 }
 
