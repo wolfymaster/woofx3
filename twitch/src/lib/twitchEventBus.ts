@@ -10,6 +10,7 @@ import onChannelRaid from "./subscriptions/onChannelRaid";
 import onChannelRedemptionAdd from "./subscriptions/onChannelRedemptionAdd";
 import onChannelSubscription from "./subscriptions/onChannelSubscription";
 import onChannelSubscriptionGift from "./subscriptions/onChannelSubscriptionGift";
+import onStreamOffline from "./subscriptions/onStreamOffline";
 import onStreamOnline from "./subscriptions/onStreamOnline";
 
 export default class TwitchEventBus {
@@ -63,6 +64,7 @@ export default class TwitchEventBus {
       onChannelSubscription,
       onChannelSubscriptionGift,
       onStreamOnline,
+      onStreamOffline,
     ];
 
     for (const f of funcs) {

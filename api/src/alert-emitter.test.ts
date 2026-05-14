@@ -116,7 +116,13 @@ describe("Alert mappers", () => {
   });
 
   it("maps stream online", () => {
-    expect(mapStreamOnline({})).toEqual({ type: "stream_online", user: "" });
+    expect(
+      mapStreamOnline({
+        broadcasterUserId: "b1",
+        broadcasterUserName: "Streamer",
+        startedAt: "2024-01-01T00:00:00.000Z",
+      })
+    ).toEqual({ type: "stream_online", user: "" });
   });
 });
 

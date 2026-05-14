@@ -51,6 +51,8 @@ export const EngineEventType = {
   ALERT_TIMED_OUT: "alert.timed_out",
   ALERT_SKIPPED: "alert.skipped",
   WIDGET_STATUS_CHANGED: "module.widget.status.changed",
+  STREAM_ONLINE: "stream.online",
+  STREAM_OFFLINE: "stream.offline",
 } as const;
 
 export type EngineEventType = (typeof EngineEventType)[keyof typeof EngineEventType];
@@ -254,6 +256,19 @@ export interface WidgetDefinition {
   alertTypes: string[];
   /** Configuration surface offered to the scene editor. */
   settings: WidgetSettingDefinition[];
+  /**
+   * Render surface this widget targets.
+   *
+   * - `"scene"` (default when omitted): scene-overlay widget rendered by the
+   *   browser source / scene editor as an iframe inside an OBS canvas.
+   * - `"dashboard"`: control-plane widget rendered as a card in the
+   *   broadcaster's woofx3-ui dashboard at `/`.
+   *
+   * Optional and omitted on most legacy payloads — consumers must
+   * default to `"scene"` when absent so pre-extension manifests keep
+   * their meaning.
+   */
+  surface?: "scene" | "dashboard";
   createdByType: string;
   createdByRef: string;
 }
@@ -753,6 +768,47 @@ export interface WidgetStatusChangedEvent {
   occurredAt: string;
 }
 
+// ---------------------------------------------------------------------------
+// Stream lifecycle events (Twitch EventSub bridge)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fired when the engine's Twitch EventSub listener observes
+ * `stream.online` for the bootstrapped broadcaster. Carries enough
+ * context for the UI to flip its header pill to LIVE and start a
+ * client-side uptime ticker.
+ *
+ * `applicationId` scopes the event to a single tenant; the UI uses it
+ * to route to the right instance. `startedAt` is the absolute Twitch
+ * start timestamp (ISO-8601), authoritative over local clocks.
+ *
+ * `viewerCount`, `streamTitle`, `gameName` are best-effort — the raw
+ * `stream.online` EventSub payload doesn't include them, so the
+ * engine either omits them or backfills via a follow-up Helix
+ * `getStreamByUserId` lookup before emitting. UI consumers must
+ * tolerate any of them being absent.
+ */
+export interface StreamOnlineEvent {
+  type: typeof EngineEventType.STREAM_ONLINE;
+  applicationId: string;
+  twitchUserId: string;
+  startedAt: string;
+  streamTitle?: string;
+  gameName?: string;
+  viewerCount?: number;
+}
+
+/**
+ * Fired when the engine's Twitch EventSub listener observes
+ * `stream.offline` for the bootstrapped broadcaster. The UI flips
+ * to OFFLINE and clears uptime / viewer count.
+ */
+export interface StreamOfflineEvent {
+  type: typeof EngineEventType.STREAM_OFFLINE;
+  applicationId: string;
+  twitchUserId: string;
+}
+
 /**
  * Discriminated union of every event the engine can deliver via webhook.
  * Consumers should narrow on `event.type` — TypeScript will pick the right
@@ -789,7 +845,9 @@ export type CallbackEvent =
   | AlertFailedEvent
   | AlertTimedOutEvent
   | AlertSkippedEvent
-  | WidgetStatusChangedEvent;
+  | WidgetStatusChangedEvent
+  | StreamOnlineEvent
+  | StreamOfflineEvent;
 
 /**
  * Lookup from event-type string → payload type. Useful for emitter code
@@ -827,6 +885,8 @@ export type CallbackEventByType = {
   [EngineEventType.ALERT_TIMED_OUT]: AlertTimedOutEvent;
   [EngineEventType.ALERT_SKIPPED]: AlertSkippedEvent;
   [EngineEventType.WIDGET_STATUS_CHANGED]: WidgetStatusChangedEvent;
+  [EngineEventType.STREAM_ONLINE]: StreamOnlineEvent;
+  [EngineEventType.STREAM_OFFLINE]: StreamOfflineEvent;
 };
 
 // ---------------------------------------------------------------------------

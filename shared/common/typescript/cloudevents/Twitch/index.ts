@@ -38,6 +38,10 @@ export default class TwitchEvents {
     return this.encodeEvent(TwitchEvent.EventType.StreamOnline, event);
   }
 
+  streamOffline(event: TwitchEvent.StreamOffline): EventTuple {
+    return this.encodeEvent(TwitchEvent.EventType.StreamOffline, event);
+  }
+
   subscribe(event: TwitchEvent.Subscribe): EventTuple {
     return this.encodeEvent(TwitchEvent.EventType.Subscribe, event);
   }

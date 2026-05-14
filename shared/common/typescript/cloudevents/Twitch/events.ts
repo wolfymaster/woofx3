@@ -6,6 +6,7 @@ export enum EventType {
     Raid = 'raid.user.twitch',
     Redeem = 'redeem.channelpoints.twitch',
     StreamOnline = 'online.user.twitch',
+    StreamOffline = 'offline.user.twitch',
     Subscribe = 'subscribe.user.twitch',
     SubscriptionGift = 'subscription.gift.twitch',
 }
@@ -52,7 +53,22 @@ export interface Redeem {
     message?: string;
 }
 
-export interface StreamOnline {}
+// Twitch's `stream.online` EventSub payload identifies the broadcaster
+// and carries a start timestamp; everything else (title, game, viewer
+// count) requires a follow-up Helix lookup. Subscribers that just need
+// the on/off transition can ignore the optional fields.
+export interface StreamOnline {
+    broadcasterUserId: string;
+    broadcasterUserName: string;
+    startedAt: string;
+}
+
+// Counterpart to `StreamOnline`. The raw `stream.offline` EventSub
+// notification doesn't carry a payload beyond broadcaster identity.
+export interface StreamOffline {
+    broadcasterUserId: string;
+    broadcasterUserName: string;
+}
 
 export interface Subscribe {
     isGift: boolean;
