@@ -28,7 +28,7 @@ extension.local.woofx3.tv {
 }
 
 streamlabs.local.woofx3.tv {
-	reverse_proxy localhost:9101
+	reverse_proxy localhost:5174
 	tls internal
 }
 
