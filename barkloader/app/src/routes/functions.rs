@@ -332,7 +332,7 @@ async fn register_handler(
     let module_name = path.into_inner();
 
     let prefix = format!("modules/{}/", module_name);
-    let file_keys = ctx.repository.list_prefix(&prefix)
+    let file_keys = ctx.repository.list_prefix(&prefix).await
         .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
 
     if file_keys.is_empty() {
@@ -357,7 +357,7 @@ async fn register_handler(
             .and_then(|n| n.to_str())
             .unwrap_or("");
 
-        let bytes = ctx.repository.read_file(key)
+        let bytes = ctx.repository.read_file(key).await
             .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
         let code = String::from_utf8_lossy(&bytes).to_string();
 
@@ -608,7 +608,7 @@ async fn versions_handler(
     let module_name = path.into_inner();
 
     let prefix = format!("archives/{}/", module_name);
-    let archive_keys = ctx.repository.list_prefix(&prefix)
+    let archive_keys = ctx.repository.list_prefix(&prefix).await
         .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
 
     let versions: Vec<String> = archive_keys.iter()
@@ -635,7 +635,7 @@ async fn rollback_handler(
     let version = &query.version;
 
     let archive_key = format!("archives/{}/{}.zip", module_name, version);
-    let zip_bytes = ctx.repository.read_file(&archive_key)
+    let zip_bytes = ctx.repository.read_file(&archive_key).await
         .map_err(|e| actix_web::error::ErrorNotFound(
             format!("Archive not found for module '{}' version '{}': {}", module_name, version, e)
         ))?;
@@ -653,7 +653,7 @@ async fn rollback_handler(
         .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
 
     let module_prefix = format!("modules/{}", module_name);
-    let _ = ctx.repository.delete_prefix(&module_prefix);
+    let _ = ctx.repository.delete_prefix(&module_prefix).await;
 
     let mut functions = HashMap::new();
     for i in 0..archive.len() {

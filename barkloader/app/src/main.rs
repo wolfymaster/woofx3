@@ -1,8 +1,8 @@
-use crate::util::{get_env_or_default, get_env_or_default_with_key, get_path_from_env, validate_required_config};
+use crate::util::{get_env_or_default, get_env_or_default_with_key, validate_required_config};
 use actix_web::{App, HttpServer, middleware::Logger, web::Data};
 use anyhow::Result;
 use env_logger::Env;
-use lib_repository::{FileRepositoryConfig, Repository, RepositoryConfig, RepositoryFactory, RepositoryImpl};
+use lib_repository::{Repository, RepositoryFactory, RepositoryImpl};
 use futures::executor::block_on;
 use lib_sandbox::extensions::{
     ChatExtension, PlatformAlertsExtension, PlatformChatExtension, TwitchExtension,
@@ -25,12 +25,9 @@ mod services;
 mod types;
 mod util;
 mod websocket;
-const DEFAULT_REPOSITORY_TYPE: &str = "file";
 const DEFAULT_MODULE_DIR: &str = "modules";
 
 async fn setup() -> Result<AppContext> {
-    let destination = get_path_from_env("MODULES_DIR", DEFAULT_MODULE_DIR);
-
     let registry = Arc::new(ModuleRegistry::new());
 
     let host_ctx = {
@@ -118,31 +115,30 @@ async fn setup() -> Result<AppContext> {
     let sandbox = SandboxFactory::new(registry.clone(), host_ctx)
         .with_builtin_dispatcher(builtin_dispatcher);
 
-    let repository_config = RepositoryConfig::File(FileRepositoryConfig {
-        destination
-    });
-
-    let repository =
-        match get_env_or_default("REPOSITORY_TYPE", DEFAULT_REPOSITORY_TYPE).as_str() {
-            "file" => RepositoryFactory::new(&repository_config),
-            "s3" => RepositoryFactory::new(&repository_config),
-            _ => return Err(anyhow::anyhow!("Invalid repository type")),
-        }
-        .await;
-
-    repository.setup()?;
-
-    boot_modules(&registry, &repository)?;
-
+    // Resolve db-proxy URL BEFORE building the repository so the
+    // storage settings can be fetched from it. Falls through to None
+    // when unset, in which case the storage_settings module falls
+    // back to environment variables (legacy dev path).
     let db_proxy_url = {
         let val = get_env_or_default_with_key("DB_PROXY_ADDR", Some("databaseProxyUrl"), "");
         if val.is_empty() {
-            warn!("DB_PROXY_ADDR not set; trigger registration will be skipped");
+            warn!("DB_PROXY_ADDR not set; storage settings + trigger registration will fall back to env vars only");
             None
         } else {
             Some(val)
         }
     };
+
+    let repository_config = crate::services::storage_settings::resolve_repository_config(
+        db_proxy_url.as_deref(),
+        DEFAULT_MODULE_DIR,
+    )
+    .await?;
+
+    let repository = RepositoryFactory::new(&repository_config).await?;
+    repository.setup()?;
+
+    boot_modules(&registry, &repository).await?;
 
     // Register compile-time built-in actions (see builtin_actions::REGISTRY).
     // Idempotent upsert keyed on (created_by_type, created_by_ref, name);
@@ -164,8 +160,8 @@ async fn setup() -> Result<AppContext> {
     Ok(ctx)
 }
 
-fn boot_modules(registry: &Arc<ModuleRegistry>, repository: &RepositoryImpl) -> Result<()> {
-    let module_files = repository.list_prefix("modules/")?;
+async fn boot_modules(registry: &Arc<ModuleRegistry>, repository: &RepositoryImpl) -> Result<()> {
+    let module_files = repository.list_prefix("modules/").await?;
     if module_files.is_empty() {
         info!("No modules found in repository");
         return Ok(());
@@ -196,7 +192,7 @@ fn boot_modules(registry: &Arc<ModuleRegistry>, repository: &RepositoryImpl) -> 
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
 
-            match repository.read_file(key) {
+            match repository.read_file(key).await {
                 Ok(bytes) => {
                     let code = String::from_utf8_lossy(&bytes).to_string();
                     functions.insert(func_name.to_string(), Function::new(
