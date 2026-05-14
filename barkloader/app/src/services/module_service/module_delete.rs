@@ -186,12 +186,14 @@ impl ModuleDeletePlan {
                 let prefix = format!("modules/{}/widgets/", ctx.module_key);
                 ctx.repository
                     .delete_prefix(&prefix)
+                    .await
                     .map_err(|e| anyhow!("delete widget prefix {}: {}", prefix, e))
             }
             DeleteStep::OverlayFiles => {
                 let prefix = format!("modules/{}/overlays/", ctx.module_key);
                 ctx.repository
                     .delete_prefix(&prefix)
+                    .await
                     .map_err(|e| anyhow!("delete overlay prefix {}: {}", prefix, e))
             }
             DeleteStep::FunctionFiles => {
@@ -202,6 +204,7 @@ impl ModuleDeletePlan {
                 let prefix = format!("modules/{}", ctx.module_key);
                 ctx.repository
                     .delete_prefix(&prefix)
+                    .await
                     .map_err(|e| anyhow!("delete module file prefix {}: {}", prefix, e))
             }
             DeleteStep::Archive => {
@@ -209,6 +212,7 @@ impl ModuleDeletePlan {
                 // delete_prefix handles single files too after the lib_repository change.
                 ctx.repository
                     .delete_prefix(&key)
+                    .await
                     .map_err(|e| anyhow!("delete archive {}: {}", key, e))
             }
             DeleteStep::ModuleResourcesLedger => {

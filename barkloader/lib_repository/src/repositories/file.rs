@@ -5,19 +5,23 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
 
-fn collect_files_recursive(dir: &Path, base: &Path, results: &mut Vec<String>) -> Result<()> {
-    for entry in std::fs::read_dir(dir)
-        .map_err(|e| anyhow::anyhow!("failed to read directory {}: {}", dir.display(), e))?
-    {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_files_recursive(&path, base, results)?;
-        } else {
-            let relative = path
-                .strip_prefix(base)
-                .map_err(|e| anyhow::anyhow!("failed to compute relative path: {}", e))?;
-            results.push(relative.to_string_lossy().into_owned());
+async fn collect_files_recursive(dir: PathBuf, base: PathBuf, results: &mut Vec<String>) -> Result<()> {
+    let mut stack: Vec<PathBuf> = vec![dir];
+    while let Some(current) = stack.pop() {
+        let mut read_dir = fs::read_dir(&current)
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to read directory {}: {}", current.display(), e))?;
+        while let Some(entry) = read_dir.next_entry().await? {
+            let path = entry.path();
+            let metadata = entry.metadata().await?;
+            if metadata.is_dir() {
+                stack.push(path);
+            } else {
+                let relative = path
+                    .strip_prefix(&base)
+                    .map_err(|e| anyhow::anyhow!("failed to compute relative path: {}", e))?;
+                results.push(relative.to_string_lossy().into_owned());
+            }
         }
     }
     Ok(())
@@ -48,40 +52,43 @@ impl Repository for FileRepository {
                 "Creating destination directory: {}",
                 self.config.destination.display()
             );
-            std::fs::create_dir_all(&self.config.destination).map_err(|e| anyhow::Error::new(e))?;
+            std::fs::create_dir_all(&self.config.destination).map_err(anyhow::Error::new)?;
         }
         Ok(())
     }
 
-    fn read_file(&self, key: &str) -> Result<Vec<u8>> {
+    async fn read_file(&self, key: &str) -> Result<Vec<u8>> {
         let path = self.config.destination.join(key);
-        std::fs::read(&path)
+        fs::read(&path)
+            .await
             .map_err(|e| anyhow::anyhow!("failed to read file {}: {}", path.display(), e))
     }
 
-    fn delete_prefix(&self, prefix: &str) -> Result<()> {
+    async fn delete_prefix(&self, prefix: &str) -> Result<()> {
         let path = self.config.destination.join(prefix);
         if !path.exists() {
             return Ok(());
         }
         if path.is_dir() {
-            std::fs::remove_dir_all(&path)
+            fs::remove_dir_all(&path)
+                .await
                 .map_err(|e| anyhow::anyhow!("failed to delete directory {}: {}", path.display(), e))?;
         } else {
-            std::fs::remove_file(&path)
+            fs::remove_file(&path)
+                .await
                 .map_err(|e| anyhow::anyhow!("failed to delete file {}: {}", path.display(), e))?;
         }
         Ok(())
     }
 
-    fn list_prefix(&self, prefix: &str) -> Result<Vec<String>> {
+    async fn list_prefix(&self, prefix: &str) -> Result<Vec<String>> {
         let dir = self.config.destination.join(prefix);
         if !dir.exists() {
             return Ok(Vec::new());
         }
 
         let mut results = Vec::new();
-        collect_files_recursive(&dir, &self.config.destination, &mut results)?;
+        collect_files_recursive(dir, self.config.destination.clone(), &mut results).await?;
         Ok(results)
     }
 
@@ -94,7 +101,11 @@ impl Repository for FileRepository {
         Ok(())
     }
 
-    async fn create<I: IntoIterator<Item = CreateFileRequest> + Send>(&self, req: I, failed: &mut Vec<String>) -> Result<()> {
+    async fn create<I: IntoIterator<Item = CreateFileRequest> + Send>(
+        &self,
+        req: I,
+        failed: &mut Vec<String>,
+    ) -> Result<()> {
         let requests: Vec<CreateFileRequest> = req.into_iter().collect();
 
         for create_request in requests {

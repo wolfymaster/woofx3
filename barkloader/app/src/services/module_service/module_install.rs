@@ -547,6 +547,7 @@ mod tests {
 
         let stored = repo
             .read_file("modules/test-mod/functions/functions/f1.lua")
+            .await
             .expect("read");
         assert_eq!(stored, b"return 1");
     }
@@ -597,10 +598,12 @@ mod tests {
 
         let html = repo
             .read_file("modules/wm/widgets/w1/w/index.html")
+            .await
             .expect("html");
         assert_eq!(html, b"<!doctype html>");
         let css = repo
             .read_file("modules/wm/widgets/w1/theme.css")
+            .await
             .expect("css");
         assert_eq!(css, b"body{}");
     }
@@ -641,6 +644,7 @@ mod tests {
 
         let html = repo
             .read_file("modules/om/overlays/o1/overlays/o1/index.html")
+            .await
             .expect("overlay html");
         assert_eq!(html, b"<html/>");
     }
