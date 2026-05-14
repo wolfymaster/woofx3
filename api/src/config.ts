@@ -6,6 +6,13 @@ export interface ApiConfig {
   rootDir: string;
   databaseProxyUrl: string;
   barkloaderUrl: string;
+  /**
+   * URL of the streamware service that serves scene overlays. The UI's
+   * browser-source page iframes `${streamwareUrl}/overlay/scene/{id}`
+   * for streamware-backed scenes. Defaults to localhost:9101 (the
+   * streamware default port) — override via `STREAMWARE_URL` env.
+   */
+  streamwareUrl: string;
   nats: {
     url: string;
     name: string;
@@ -22,6 +29,8 @@ const apiEnvSchema = z
     databaseProxyUrl: z.string().optional(),
     woofx3BarkloaderUrl: z.string().optional(),
     barkloaderUrl: z.string().optional(),
+    woofx3StreamwareUrl: z.string().optional(),
+    streamwareUrl: z.string().optional(),
     woofx3MessagebusUrl: z.string().optional(),
     messagebusUrl: z.string().optional(),
     woofx3MessagebusJwt: z.string().optional(),
@@ -40,6 +49,9 @@ export function loadConfig(): ApiConfig {
   const rootDir = String(config.woofx3RootPath);
   const databaseProxyUrl = String(config.woofx3DatabaseProxyUrl ?? config.databaseProxyUrl ?? "");
   const barkloaderUrl = String(config.woofx3BarkloaderUrl ?? config.barkloaderUrl ?? "http://127.0.0.1:3005");
+  const streamwareUrl = String(
+    config.woofx3StreamwareUrl ?? config.streamwareUrl ?? "http://127.0.0.1:9101",
+  );
 
   if (!databaseProxyUrl) {
     throw new Error("databaseProxyUrl (or DATABASE_PROXY_URL) is required");
@@ -63,6 +75,7 @@ export function loadConfig(): ApiConfig {
     port,
     databaseProxyUrl,
     barkloaderUrl,
+    streamwareUrl,
     rootDir,
     nats: {
       url: messageBusUrl,

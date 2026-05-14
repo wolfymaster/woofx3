@@ -441,6 +441,23 @@ export interface StreamStatus {
   uptime: string;
   viewerCount: number;
   startedAt?: string;
+  /**
+   * Current stream title from Helix `getStreamByUserId`. Optional —
+   * the mock implementation omits it; older engines that pre-date the
+   * Helix-backed impl will too.
+   */
+  streamTitle?: string;
+  /**
+   * Game / category name from Helix. Same optionality contract as
+   * `streamTitle`.
+   */
+  gameName?: string;
+  /**
+   * Broadcaster's Twitch user id, echoed back so the UI can correlate
+   * the row with its own platform-link record. Optional — same reasons
+   * as the other extended fields.
+   */
+  twitchUserId?: string;
 }
 
 export interface TriggerWorkflowResponse {
@@ -469,8 +486,104 @@ export interface Woofx3EngineGateway {
   ): Promise<{ clientId: string; clientSecret: string }>;
 }
 
+/**
+ * Deployment-level information the UI needs to construct URLs and
+ * compose widget previews. Returned by `getEngineInfo()` — typically
+ * called once per UI session and cached.
+ *
+ * `widgetAssetBaseUrl` is the URL prefix that serves widget assets
+ * from whichever storage backend the engine's repository is
+ * configured to write to (Convex storage, R2/S3 public bucket,
+ * CloudFront in front of S3, etc.). The operator sets this via the
+ * UI settings form; it lives in the engine's `settings` table.
+ *
+ * Composition pattern (subject to the storage backend's URL scheme):
+ *   `${widgetAssetBaseUrl}/${moduleKey}/${manifestId}/${entry}`
+ *
+ * Empty string is a valid value — it signals "storage not
+ * configured." The UI editor falls back to a "widget unavailable"
+ * placeholder in that state.
+ *
+ * `engineSceneOverlayBaseUrl` is the URL prefix that serves the
+ * streamware overlay HTML. The full per-scene URL is
+ * `${engineSceneOverlayBaseUrl}/${engineSceneId}`. The UI's browser-
+ * source page iframes that URL.
+ */
+export interface EngineInfo {
+  widgetAssetBaseUrl: string;
+  engineSceneOverlayBaseUrl: string;
+}
+
+/**
+ * Storage backend configuration the engine reads at startup to
+ * construct its Repository. Persisted in the engine `settings` table
+ * keyed by `storage.*` keys; barkloader fetches these on boot via
+ * the db-proxy GetSetting RPC and rebuilds the repository from them.
+ *
+ * Restart is required after changing the provider — barkloader does
+ * not hot-reload repository configuration today.
+ *
+ * Provider semantics:
+ *   - "file": local disk via FileRepository. `destination` is the
+ *     filesystem path; everything else is ignored.
+ *   - "s3": S3-compatible (AWS S3, Cloudflare R2, MinIO). Uses
+ *     `bucket` + `region` for AWS S3; add `endpoint` to point at R2
+ *     (`https://<account>.r2.cloudflarestorage.com`) or MinIO. Set
+ *     `forcePathStyle: true` for MinIO.
+ *
+ * Credentials are persisted in the settings table — the operator is
+ * responsible for protecting that surface. AWS S3 deployments can
+ * leave `accessKey` / `secretKey` empty to use the engine's default
+ * AWS credential chain (instance profile, env vars, etc.).
+ */
+export interface StorageConfig {
+  provider: "file" | "s3";
+  // File-backed
+  destination?: string;
+  // S3 / R2 / MinIO
+  bucket?: string;
+  prefix?: string;
+  region?: string;
+  endpoint?: string;
+  accessKey?: string;
+  secretKey?: string;
+  forcePathStyle?: boolean;
+}
+
 export interface Woofx3EngineApi {
   ping(): Promise<PingResponse>;
+
+  /**
+   * Deployment URLs the UI needs to compose iframe sources. Returned
+   * once per session and cached client-side. Stable for the lifetime
+   * of a given engine deployment; if it changes (e.g. CDN reconfig)
+   * the UI must re-fetch.
+   */
+  getEngineInfo(): Promise<EngineInfo>;
+
+  /**
+   * Set the widget asset base URL that `getEngineInfo()` returns.
+   * The operator wires this to whichever storage backend the
+   * engine's repository writes to — Convex storage URL, R2 public
+   * bucket, S3 with CDN, etc. Empty string clears the setting.
+   * Wired to the UI settings form.
+   */
+  setWidgetAssetBaseUrl(value: string): Promise<{ success: boolean }>;
+
+  /**
+   * Read the current storage backend configuration from engine
+   * settings. Credentials (accessKey/secretKey) are masked or
+   * returned blank to the UI — the operator can write new values
+   * but cannot read existing ones.
+   */
+  getStorageConfig(): Promise<StorageConfig>;
+
+  /**
+   * Persist storage backend configuration to engine settings. The
+   * engine reads these on next startup to construct its Repository.
+   * Restart required after changing the provider.
+   */
+  setStorageConfig(config: StorageConfig): Promise<{ success: boolean }>;
 
   // Client Management
   deleteClient(clientId: string): Promise<{ success: boolean; message: string }>;
@@ -585,11 +698,39 @@ export interface Woofx3EngineApi {
   deleteAsset(id: string): Promise<{ success: boolean }>;
 
   // Scenes
+  //
+  // Mirrors the workflow CRUD shape: the engine treats widgetsJson +
+  // layoutJson as opaque strings (same pattern as workflows'
+  // stepsJson + triggerJson). The UI composes the widget-instance
+  // array and layout object, JSON-encodes them, and forwards. Engine
+  // persists verbatim and emits `scene.*` webhooks with the
+  // SceneSnapshot for reactive UI mirrors to consume.
   getScenes(query?: ScenesQuery): Promise<PaginatedScenes>;
   getScene(id: string): Promise<Scene | null>;
-  createScene(data: { name: string; accountId: string }): Promise<{ id: string }>;
-  updateScene(id: string, data: Partial<Scene>): Promise<{ success: boolean }>;
-  deleteScene(id: string): Promise<{ success: boolean }>;
+  createScene(data: {
+    name: string;
+    accountId: string;
+    description?: string;
+    widgetsJson?: string;
+    layoutJson?: string;
+    correlationKey?: string;
+  }): Promise<{ id: string }>;
+  /**
+   * Patch semantics — omit a field to leave it unchanged. Empty
+   * string for `name` / `description` is allowed (clears it); pass
+   * `undefined` to leave alone.
+   */
+  updateScene(
+    id: string,
+    data: {
+      name?: string;
+      description?: string;
+      widgetsJson?: string;
+      layoutJson?: string;
+      correlationKey?: string;
+    }
+  ): Promise<{ success: boolean }>;
+  deleteScene(id: string, correlationKey?: string): Promise<{ success: boolean }>;
 
   // Chat & Events
   getChatMessages(accountId: string, limit?: number): Promise<ChatMessage[]>;

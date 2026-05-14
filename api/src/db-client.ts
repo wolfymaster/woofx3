@@ -6,6 +6,7 @@ import type * as common from "@woofx3/db/common.pb";
 import * as module from "@woofx3/db/module.pb";
 import type * as module_action from "@woofx3/db/module_action.pb";
 import type * as module_trigger from "@woofx3/db/module_trigger.pb";
+import * as scene from "@woofx3/db/scene.pb";
 import * as setting from "@woofx3/db/setting.pb";
 import * as treat from "@woofx3/db/treat.pb";
 import * as user from "@woofx3/db/user.pb";
@@ -95,6 +96,29 @@ export class DbClient {
 
   async deleteWorkflow(req: workflow.DeleteWorkflowRequest): Promise<common.ResponseStatus> {
     return workflow.DeleteWorkflow(req, this.config);
+  }
+
+  // SceneService — per-application widget arrangement persistence.
+  // The engine treats widgets_json / layout_json as opaque strings,
+  // mirroring the workflow steps_json / trigger_json pattern.
+  async getScene(req: scene.GetSceneRequest): Promise<scene.SceneResponse> {
+    return scene.GetScene(req, this.config);
+  }
+
+  async listScenes(req: scene.ListScenesRequest): Promise<scene.ListScenesResponse> {
+    return scene.ListScenes(req, this.config);
+  }
+
+  async createScene(req: scene.CreateSceneRequest): Promise<scene.SceneResponse> {
+    return scene.CreateScene(req, this.config);
+  }
+
+  async updateScene(req: scene.UpdateSceneRequest): Promise<scene.SceneResponse> {
+    return scene.UpdateScene(req, this.config);
+  }
+
+  async deleteScene(req: scene.DeleteSceneRequest): Promise<common.ResponseStatus> {
+    return scene.DeleteScene(req, this.config);
   }
 
   async executeWorkflow(req: workflow.ExecuteWorkflowRequest): Promise<workflow.ExecuteWorkflowResponse> {

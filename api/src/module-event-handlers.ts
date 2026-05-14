@@ -80,6 +80,7 @@ interface RawWidget {
   alert_types?: unknown;
   alertTypes?: unknown;
   settings?: unknown;
+  surface?: unknown;
   created_by_type?: unknown;
   created_by_ref?: unknown;
 }
@@ -244,6 +245,14 @@ function mapWidget(raw: RawWidget): WidgetDefinition {
   const projectionKey = asString(raw.projection_key);
   if (projectionKey !== "") {
     def.projectionKey = projectionKey;
+  }
+  // Pass through the manifest's `surface` declaration. The UI defaults
+  // omitted values to "scene"; only forward the discriminator when the
+  // manifest explicitly opts into a non-default surface so the wire
+  // payload stays minimal for the common case.
+  const surface = asString(raw.surface);
+  if (surface === "dashboard" || surface === "scene") {
+    def.surface = surface;
   }
   return def;
 }

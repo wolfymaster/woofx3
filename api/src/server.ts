@@ -159,6 +159,7 @@ async function main() {
     db: dbClient,
     nats: natsClient,
     barkloaderUrl: config.barkloaderUrl,
+    streamwareUrl: config.streamwareUrl,
     logger,
   });
 

@@ -6,6 +6,8 @@ import type {
   CreateWorkflowInput,
   FieldOptionsDescriptor,
   PingResponse,
+  Scene,
+  StorageConfig,
   UpdateCommandInput,
   UpdateWorkflowInput,
   Woofx3EngineApi,
@@ -14,6 +16,10 @@ import type {
 } from "@woofx3/api";
 import type {
   ActionDefinition,
+  SceneCreatedEvent,
+  SceneDeletedEvent,
+  SceneSnapshot,
+  SceneUpdatedEvent,
   TriggerDefinition,
   WorkflowCreatedEvent,
   WorkflowDeletedEvent,
@@ -24,6 +30,7 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type * as command from "@woofx3/db/command.pb";
 import type { Action } from "@woofx3/db/module_action.pb";
 import type { Trigger } from "@woofx3/db/module_trigger.pb";
+import type * as scene from "@woofx3/db/scene.pb";
 import type * as treat from "@woofx3/db/treat.pb";
 import type * as user from "@woofx3/db/user.pb";
 import type * as workflow from "@woofx3/db/workflow.pb";
@@ -86,6 +93,84 @@ function timestampToIso(ts: { seconds?: bigint; nanos?: number } | undefined): s
   }
   const ms = Number(ts.seconds) * 1000 + Math.floor((ts.nanos ?? 0) / 1_000_000);
   return new Date(ms).toISOString();
+}
+
+/**
+ * Convert a db-proxy `Scene` row into the lightweight wire shape the
+ * shared API exposes (`{ id, name, accountId, widgets, createdAt }`).
+ * `widgets_json` is parsed best-effort — the engine never inspects it,
+ * but the wire `SceneWidget[]` interface is structurally compatible
+ * with the editor's instance shape (a superset is fine).
+ */
+function dbSceneToWire(s: scene.Scene): Scene {
+  const widgets = parseSceneWidgets(s.widgetsJson ?? "");
+  return {
+    id: s.id ?? "",
+    name: s.name ?? "",
+    accountId: s.applicationId ?? "",
+    widgets,
+    createdAt: timestampToIso(s.createdAt),
+  };
+}
+
+/**
+ * Convert a db-proxy `Scene` row into the rich `SceneSnapshot` shape
+ * the webhook event carries. The engine doesn't peek inside the JSON
+ * columns — they round-trip verbatim so the Convex side can parse
+ * them with the full widget-instance shape it knows about.
+ */
+function dbSceneToSnapshot(s: scene.Scene): SceneSnapshot {
+  return {
+    id: s.id ?? "",
+    applicationId: s.applicationId ?? "",
+    name: s.name ?? "",
+    description: s.description ?? "",
+    widgetsJson: s.widgetsJson ?? "[]",
+    layoutJson: s.layoutJson ?? "{}",
+    createdByType: s.createdByType ?? "USER",
+    createdByRef: s.createdByRef ?? "",
+    createdAt: timestampToIso(s.createdAt),
+    updatedAt: timestampToIso(s.updatedAt),
+  };
+}
+
+/**
+ * Parse `widgetsJson` for the wire `Scene.widgets` array. Drops
+ * entries that lack the minimum shape (id + position + size) — a
+ * defensive call since the engine has never validated this column.
+ */
+function parseSceneWidgets(raw: string): Scene["widgets"] {
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    const out: Scene["widgets"] = [];
+    for (const entry of parsed) {
+      if (!entry || typeof entry !== "object") {
+        continue;
+      }
+      const obj = entry as Record<string, unknown>;
+      const id = typeof obj.id === "string" ? obj.id : null;
+      if (!id) {
+        continue;
+      }
+      const positionRaw = obj.position as Record<string, unknown> | undefined;
+      const sizeRaw = obj.size as Record<string, unknown> | undefined;
+      const x = positionRaw && typeof positionRaw.x === "number" ? positionRaw.x : 0;
+      const y = positionRaw && typeof positionRaw.y === "number" ? positionRaw.y : 0;
+      const w = sizeRaw && typeof sizeRaw.w === "number" ? sizeRaw.w : 0;
+      const h = sizeRaw && typeof sizeRaw.h === "number" ? sizeRaw.h : 0;
+      const type = typeof obj.type === "string" ? obj.type : "";
+      out.push({ id, type, position: { x, y }, size: { w, h } });
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -216,6 +301,13 @@ interface ApiOptions {
   db: DbClient;
   nats: NATSClient | null;
   barkloaderUrl: string;
+  /**
+   * Streamware service URL, used in `getEngineInfo()` to tell the UI
+   * where to load scene overlays from. Optional in tests; defaults
+   * to empty string when omitted (callers should provide it in real
+   * deployments).
+   */
+  streamwareUrl?: string;
   logger: SharedLogger;
 }
 
@@ -230,6 +322,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
   private nats: NATSClient | null;
   private applicationId: string | null = null;
   private barkloaderUrl: string;
+  private streamwareUrl: string;
   private logger: SharedLogger;
 
   constructor(opts: ApiOptions) {
@@ -243,11 +336,152 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     this.db = opts.db;
     this.nats = opts.nats;
     this.barkloaderUrl = opts.barkloaderUrl;
+    this.streamwareUrl = opts.streamwareUrl ?? "";
     this.logger = opts.logger;
   }
 
   async ping(): Promise<PingResponse> {
     return { status: "ok", instanceId: this.applicationId ?? "pending" };
+  }
+
+  /**
+   * Surface deployment URLs to the UI so it can compose iframe
+   * sources and asset URLs deterministically. Called once per UI
+   * session and cached.
+   *
+   * `widgetAssetBaseUrl` is sourced from the engine's settings
+   * (`widget_asset_base_url`), which the operator configures to point
+   * at whatever storage backend hosts module assets — Convex
+   * storage, an S3/R2 public bucket, a CDN, or a local static
+   * server in dev. Barkloader only writes to the configured
+   * repository; serving the files is the repository's concern, not
+   * a barkloader HTTP route.
+   *
+   * `engineSceneOverlayBaseUrl` is the streamware URL (always
+   * served by streamware itself — overlay HTML is engine-owned).
+   *
+   * Both URLs strip trailing slashes so callers can join with `/`
+   * without worrying about double-slashes. An empty
+   * `widgetAssetBaseUrl` is a valid response — it signals to the UI
+   * that storage isn't configured yet, and the editor renders the
+   * "widget unavailable" placeholder instead of a broken iframe.
+   */
+  async getEngineInfo(): Promise<{
+    widgetAssetBaseUrl: string;
+    engineSceneOverlayBaseUrl: string;
+  }> {
+    const applicationId = await this.ensureApplicationId();
+    const configured = (await this.db.getSetting("widget_asset_base_url", applicationId)) ?? "";
+    const streamware = this.streamwareUrl.replace(/\/+$/, "");
+    return {
+      widgetAssetBaseUrl: configured.replace(/\/+$/, ""),
+      engineSceneOverlayBaseUrl: `${streamware}/overlay/scene`,
+    };
+  }
+
+  /**
+   * Update the engine-stored widget asset base URL. Used by the UI
+   * settings form; the operator points it at whichever storage
+   * backend they've configured barkloader's repository to write to
+   * (Convex storage signed URL pattern, R2 public bucket, S3 with
+   * CloudFront, etc.).
+   *
+   * Empty string is allowed and clears the setting — the UI
+   * displays widgets as unavailable until a URL is configured.
+   */
+  async setWidgetAssetBaseUrl(value: string): Promise<{ success: boolean }> {
+    const applicationId = await this.ensureApplicationId();
+    const normalized = value.trim().replace(/\/+$/, "");
+    const response = await this.db.setSetting("widget_asset_base_url", normalized, applicationId);
+    return { success: response.status?.code === "OK" };
+  }
+
+  /**
+   * Read the active storage backend configuration. Returns the
+   * provider plus whichever fields are populated; missing values
+   * are returned as undefined. Secret values (`accessKey`,
+   * `secretKey`) are masked — read returns `"***"` when set, empty
+   * when unset. Writes pass through directly via setStorageConfig.
+   */
+  async getStorageConfig(): Promise<StorageConfig> {
+    // Storage settings are not application-scoped — the repository
+    // is a process-wide singleton in barkloader, so we read with an
+    // empty applicationId which the db-proxy treats as the default
+    // application (same convention barkloader uses on read).
+    const applicationId = "";
+    const provider = (await this.db.getSetting("storage.provider", applicationId)) || "file";
+    if (provider !== "file" && provider !== "s3") {
+      throw new Error(`Unknown storage.provider value: ${provider}`);
+    }
+    const result: StorageConfig = {
+      provider: provider as "file" | "s3",
+    };
+    if (provider === "file") {
+      const dest = await this.db.getSetting("storage.file.destination", applicationId);
+      if (dest) {
+        result.destination = dest;
+      }
+    } else {
+      const [bucket, prefix, region, endpoint, accessKey, secretKey, forcePathStyle] =
+        await Promise.all([
+          this.db.getSetting("storage.s3.bucket", applicationId),
+          this.db.getSetting("storage.s3.prefix", applicationId),
+          this.db.getSetting("storage.s3.region", applicationId),
+          this.db.getSetting("storage.s3.endpoint", applicationId),
+          this.db.getSetting("storage.s3.access_key", applicationId),
+          this.db.getSetting("storage.s3.secret_key", applicationId),
+          this.db.getSetting("storage.s3.force_path_style", applicationId),
+        ]);
+      if (bucket) result.bucket = bucket;
+      if (prefix) result.prefix = prefix;
+      if (region) result.region = region;
+      if (endpoint) result.endpoint = endpoint;
+      // Mask credentials on read so a curious UI doesn't leak them.
+      // The form sends the literal "***" back unchanged when the user
+      // didn't touch the field, and we treat that as "leave unchanged"
+      // in setStorageConfig.
+      if (accessKey) result.accessKey = "***";
+      if (secretKey) result.secretKey = "***";
+      result.forcePathStyle = forcePathStyle === "true";
+    }
+    return result;
+  }
+
+  /**
+   * Persist storage backend configuration to engine settings. Empty
+   * strings clear individual fields. The literal `"***"` for
+   * accessKey / secretKey means "leave the existing value alone" —
+   * the operator can edit endpoint/bucket/region without re-typing
+   * credentials every time.
+   */
+  async setStorageConfig(config: StorageConfig): Promise<{ success: boolean }> {
+    const applicationId = "";
+    if (config.provider !== "file" && config.provider !== "s3") {
+      throw new Error(`Unknown provider: ${config.provider}`);
+    }
+    const updates: Array<[string, string]> = [["storage.provider", config.provider]];
+    if (config.provider === "file") {
+      updates.push(["storage.file.destination", config.destination ?? ""]);
+    } else {
+      updates.push(["storage.s3.bucket", config.bucket ?? ""]);
+      updates.push(["storage.s3.prefix", config.prefix ?? ""]);
+      updates.push(["storage.s3.region", config.region ?? ""]);
+      updates.push(["storage.s3.endpoint", config.endpoint ?? ""]);
+      if (config.accessKey !== undefined && config.accessKey !== "***") {
+        updates.push(["storage.s3.access_key", config.accessKey]);
+      }
+      if (config.secretKey !== undefined && config.secretKey !== "***") {
+        updates.push(["storage.s3.secret_key", config.secretKey]);
+      }
+      updates.push(["storage.s3.force_path_style", config.forcePathStyle ? "true" : "false"]);
+    }
+    for (const [key, value] of updates) {
+      const response = await this.db.setSetting(key, value, applicationId);
+      if (response.status?.code !== "OK") {
+        return { success: false };
+      }
+    }
+    return { success: true };
   }
 
   async deleteClient(clientId: string): Promise<{ success: boolean; message: string }> {
@@ -1144,6 +1378,105 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
         });
       } catch (err) {
         this.logger.error("db.widget_status.updated: handler failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    });
+
+    // Twitch stream lifecycle. The twitch service publishes
+    // `online.user.twitch` / `offline.user.twitch` cloudevents from
+    // its EventSub listener; we translate them to the webhook
+    // `stream.online` / `stream.offline` events the UI subscribes to.
+    //
+    // applicationId is resolved lazily from the default application —
+    // the engine is single-broadcaster-per-deployment today, so every
+    // emitted event scopes to the same id. The `_d` is the raw
+    // CloudEvent data; we read the broadcaster fields directly.
+    await this.nats.subscribe("online.user.twitch", async (msg) => {
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const data = (ce.data as Record<string, unknown> | undefined) ?? ce;
+        const twitchUserId =
+          typeof data.broadcasterUserId === "string"
+            ? (data.broadcasterUserId as string)
+            : typeof data.broadcaster_user_id === "string"
+              ? (data.broadcaster_user_id as string)
+              : "";
+        const startedAt =
+          typeof data.startedAt === "string"
+            ? (data.startedAt as string)
+            : typeof data.started_at === "string"
+              ? (data.started_at as string)
+              : new Date().toISOString();
+        if (!this.webhookClient) {
+          return;
+        }
+        // Best-effort enrichment via the live-state RPC path so the UI
+        // can render title / game / viewer count on the same event.
+        // Failures degrade silently — the minimal payload is still
+        // useful (the UI polls every minute as backup).
+        let enrichment: Awaited<ReturnType<typeof this.getStreamStatus>> | null = null;
+        try {
+          enrichment = await this.getStreamStatus("");
+        } catch (err) {
+          this.logger.warn("stream.online enrichment failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        let applicationId = this.applicationId;
+        if (!applicationId) {
+          try {
+            applicationId = await this.ensureApplicationId();
+          } catch {
+            this.logger.warn("stream.online: no applicationId yet; skipping webhook");
+            return;
+          }
+        }
+        await this.webhookClient.send({
+          type: EngineEventType.STREAM_ONLINE,
+          applicationId,
+          twitchUserId,
+          startedAt: enrichment?.startedAt ?? startedAt,
+          streamTitle: enrichment?.streamTitle,
+          gameName: enrichment?.gameName,
+          viewerCount: enrichment?.viewerCount,
+        });
+      } catch (err) {
+        this.logger.error("online.user.twitch: handler failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    });
+
+    await this.nats.subscribe("offline.user.twitch", async (msg) => {
+      try {
+        const ce = msg.json() as Record<string, unknown>;
+        const data = (ce.data as Record<string, unknown> | undefined) ?? ce;
+        const twitchUserId =
+          typeof data.broadcasterUserId === "string"
+            ? (data.broadcasterUserId as string)
+            : typeof data.broadcaster_user_id === "string"
+              ? (data.broadcaster_user_id as string)
+              : "";
+        if (!this.webhookClient) {
+          return;
+        }
+        let applicationId = this.applicationId;
+        if (!applicationId) {
+          try {
+            applicationId = await this.ensureApplicationId();
+          } catch {
+            this.logger.warn("stream.offline: no applicationId yet; skipping webhook");
+            return;
+          }
+        }
+        await this.webhookClient.send({
+          type: EngineEventType.STREAM_OFFLINE,
+          applicationId,
+          twitchUserId,
+        });
+      } catch (err) {
+        this.logger.error("offline.user.twitch: handler failed", {
           error: err instanceof Error ? err.message : String(err),
         });
       }
@@ -2340,25 +2673,100 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     return { ...account };
   }
 
-  async getStreamStatus(accountId: string): Promise<{
+  /**
+   * Resolve the broadcaster's live stream state by calling Twitch
+   * Helix `GET /helix/streams` with the OAuth token stored in the
+   * `twitch_token` setting (same source `twitchBootstrap.ts` reads).
+   *
+   * `accountId` is accepted for backward compatibility with the legacy
+   * mock signature but is currently unused — the engine is
+   * single-broadcaster-per-deployment, so the bootstrapped Twitch user
+   * is the only one to query. Per-application platform-link resolution
+   * lands when the engine grows true multi-application support.
+   *
+   * Returns `{ isLive: false, uptime: "00:00:00", viewerCount: 0 }`
+   * on any error so the UI never sees an exception just because the
+   * stream is offline or the token is briefly stale — the polling
+   * cron retries every minute.
+   */
+  async getStreamStatus(_accountId: string): Promise<{
     isLive: boolean;
     uptime: string;
     viewerCount: number;
     startedAt?: string;
+    streamTitle?: string;
+    gameName?: string;
+    twitchUserId?: string;
   }> {
-    // Simulate live status for account-1, offline for others
-    if (accountId === "account-1") {
-      return {
-        isLive: true,
-        uptime: "02:34:56",
-        viewerCount: 1247,
-        startedAt: new Date(Date.now() - 2 * 60 * 60 * 1000 - 34 * 60 * 1000 - 56 * 1000).toISOString(),
-      };
+    const offline = { isLive: false as const, uptime: "00:00:00", viewerCount: 0 };
+
+    const clientId = process.env.TWITCH_WOLFY_CLIENT_ID;
+    if (!clientId) {
+      this.logger.warn("getStreamStatus: TWITCH_WOLFY_CLIENT_ID not set");
+      return offline;
     }
+
+    let token: { accessToken?: string; userId?: string };
+    try {
+      const raw = await this.db.getSetting("twitch_token", "");
+      if (!raw) {
+        return offline;
+      }
+      token = JSON.parse(raw);
+    } catch (err) {
+      this.logger.warn("getStreamStatus: failed to read twitch_token", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return offline;
+    }
+
+    if (!token.accessToken || !token.userId) {
+      return offline;
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`https://api.twitch.tv/helix/streams?user_id=${encodeURIComponent(token.userId)}`, {
+        headers: {
+          Authorization: `Bearer ${token.accessToken}`,
+          "Client-Id": clientId,
+        },
+      });
+    } catch (err) {
+      this.logger.warn("getStreamStatus: helix fetch failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return offline;
+    }
+
+    if (!response.ok) {
+      this.logger.warn("getStreamStatus: helix non-2xx", { status: response.status });
+      return offline;
+    }
+
+    const body = (await response.json()) as { data?: Array<Record<string, unknown>> };
+    const stream = body.data?.[0];
+    if (!stream) {
+      // Empty array == offline (Twitch Helix contract).
+      return { ...offline, twitchUserId: token.userId };
+    }
+
+    const startedAt = typeof stream.started_at === "string" ? stream.started_at : new Date().toISOString();
+    const startedAtMs = Date.parse(startedAt);
+    const elapsedSec = Number.isFinite(startedAtMs) ? Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000)) : 0;
+    const hh = Math.floor(elapsedSec / 3600);
+    const mm = Math.floor((elapsedSec % 3600) / 60);
+    const ss = elapsedSec % 60;
+    const uptime = [hh, mm, ss].map((n) => n.toString().padStart(2, "0")).join(":");
+
     return {
-      isLive: false,
-      uptime: "00:00:00",
-      viewerCount: 0,
+      isLive: true,
+      uptime,
+      viewerCount: typeof stream.viewer_count === "number" ? stream.viewer_count : 0,
+      startedAt,
+      streamTitle: typeof stream.title === "string" ? stream.title : undefined,
+      gameName: typeof stream.game_name === "string" ? stream.game_name : undefined,
+      twitchUserId: token.userId,
     };
   }
 
@@ -3143,64 +3551,161 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
   }
 
   // ==================== Scenes ====================
-
-  private mockScenes = [
-    {
-      id: "scene-1",
-      name: "Main Gaming",
-      accountId: "account-1",
-      widgets: [{ id: "w1", type: "camera", position: { x: 0, y: 0 }, size: { w: 400, h: 300 } }],
-      createdAt: "2024-01-15T00:00:00Z",
-    },
-    {
-      id: "scene-2",
-      name: "Just Chatting",
-      accountId: "account-1",
-      widgets: [{ id: "w2", type: "chat", position: { x: 0, y: 0 }, size: { w: 300, h: 600 } }],
-      createdAt: "2024-02-01T00:00:00Z",
-    },
-    {
-      id: "scene-3",
-      name: "BRB Screen",
-      accountId: "account-1",
-      widgets: [{ id: "w3", type: "image", position: { x: 0, y: 0 }, size: { w: 1920, h: 1080 } }],
-      createdAt: "2024-03-01T00:00:00Z",
-    },
-  ];
+  //
+  // Persistence: db-proxy SceneService. The engine treats
+  // `widgets_json` / `layout_json` as opaque strings — only the UI
+  // (woofx3-ui scene editor) and the streamware overlay (renderer)
+  // parse them. Same trade-off as workflow `steps_json` /
+  // `trigger_json`.
+  //
+  // Webhooks: every successful create / update / delete fires the
+  // corresponding `scene.*` CloudEvent to registered clients via the
+  // WebhookClient. The Convex mirror at `convex/sceneWebhook.ts`
+  // consumes these so editor tabs converge without polling.
 
   async getScenes(query?: { accountId?: string; page?: number; pageSize?: number }): Promise<{
-    scenes: typeof this.mockScenes;
+    scenes: Scene[];
     total: number;
     page: number;
     pageSize: number;
   }> {
-    let filtered = [...this.mockScenes];
-    if (query?.accountId) filtered = filtered.filter((s) => s.accountId === query.accountId);
+    const applicationId = query?.accountId || (await this.ensureApplicationId());
     const page = query?.page || 1;
     const pageSize = query?.pageSize || 10;
-    return { scenes: filtered.slice((page - 1) * pageSize, page * pageSize), total: filtered.length, page, pageSize };
+    const response = await this.db.listScenes({
+      applicationId,
+      page,
+      pageSize,
+      sortBy: "updated_at",
+      sortDesc: true,
+    });
+    if (response.status?.code !== "OK") {
+      throw new Error(response.status?.message || "Failed to list scenes");
+    }
+    return {
+      scenes: (response.scenes ?? []).map((s) => dbSceneToWire(s)),
+      total: response.totalCount ?? 0,
+      page: response.page ?? page,
+      pageSize: response.pageSize ?? pageSize,
+    };
   }
 
-  async getScene(id: string): Promise<(typeof this.mockScenes)[0] | null> {
-    return this.mockScenes.find((s) => s.id === id) || null;
+  async getScene(id: string): Promise<Scene | null> {
+    const response = await this.db.getScene({ id });
+    if (response.status?.code !== "OK" || !response.scene) {
+      return null;
+    }
+    return dbSceneToWire(response.scene);
   }
 
-  async createScene(data: { name: string; accountId: string }): Promise<{ id: string }> {
-    const id = `scene-${Date.now()}`;
-    this.mockScenes.push({ ...data, id, widgets: [], createdAt: new Date().toISOString() });
-    return { id };
+  async createScene(data: {
+    name: string;
+    accountId: string;
+    description?: string;
+    widgetsJson?: string;
+    layoutJson?: string;
+    correlationKey?: string;
+  }): Promise<{ id: string }> {
+    const applicationId = data.accountId || (await this.ensureApplicationId());
+    this.logger.info("Creating scene", { name: data.name, applicationId });
+    const response = await this.db.createScene({
+      applicationId,
+      name: data.name,
+      description: data.description ?? "",
+      widgetsJson: data.widgetsJson ?? "[]",
+      layoutJson: data.layoutJson ?? "{}",
+      createdByType: "USER",
+      createdByRef: "",
+    });
+    if (response.status?.code !== "OK" || !response.scene) {
+      throw new Error(response.status?.message || "Failed to create scene");
+    }
+    const created = response.scene;
+    this.logger.info("Created scene", { id: created.id, name: created.name });
+
+    void this.emitSceneWebhook({
+      type: EngineEventType.SCENE_CREATED,
+      applicationId,
+      correlationKey: data.correlationKey,
+      scene: dbSceneToSnapshot(created),
+    });
+    return { id: created.id ?? "" };
   }
 
-  async updateScene(id: string, data: Partial<(typeof this.mockScenes)[0]>): Promise<{ success: boolean }> {
-    const idx = this.mockScenes.findIndex((s) => s.id === id);
-    if (idx >= 0) Object.assign(this.mockScenes[idx], data);
-    return { success: idx >= 0 };
+  async updateScene(
+    id: string,
+    data: {
+      name?: string;
+      description?: string;
+      widgetsJson?: string;
+      layoutJson?: string;
+      correlationKey?: string;
+    }
+  ): Promise<{ success: boolean }> {
+    this.logger.info("Updating scene", { id });
+    // Patch semantics — db-proxy's UpdateSceneRequest uses empty
+    // strings for "leave alone", so map `undefined` → "" (no change)
+    // and a real value → the value. Callers that genuinely want to
+    // clear a field set it to empty string; today that's only
+    // `description`. `widgetsJson` / `layoutJson` of `""` would be
+    // invalid JSON, so empty here always means "leave unchanged".
+    const response = await this.db.updateScene({
+      id,
+      name: data.name ?? "",
+      description: data.description ?? "",
+      widgetsJson: data.widgetsJson ?? "",
+      layoutJson: data.layoutJson ?? "",
+    });
+    if (response.status?.code !== "OK" || !response.scene) {
+      return { success: false };
+    }
+    const updated = response.scene;
+    this.logger.info("Updated scene", { id, name: updated.name });
+
+    void this.emitSceneWebhook({
+      type: EngineEventType.SCENE_UPDATED,
+      applicationId: updated.applicationId ?? "",
+      correlationKey: data.correlationKey,
+      scene: dbSceneToSnapshot(updated),
+    });
+    return { success: true };
   }
 
-  async deleteScene(id: string): Promise<{ success: boolean }> {
-    const idx = this.mockScenes.findIndex((s) => s.id === id);
-    if (idx >= 0) this.mockScenes.splice(idx, 1);
-    return { success: idx >= 0 };
+  async deleteScene(id: string, correlationKey?: string): Promise<{ success: boolean }> {
+    this.logger.info("Deleting scene", { id });
+    // Fetch first so we know the applicationId for the webhook —
+    // the delete RPC just returns ResponseStatus.
+    const existing = await this.db.getScene({ id });
+    const applicationId =
+      existing.status?.code === "OK" && existing.scene
+        ? existing.scene.applicationId ?? ""
+        : "";
+
+    const response = await this.db.deleteScene({ id });
+    const success = response.code === "OK";
+    if (success) {
+      void this.emitSceneWebhook({
+        type: EngineEventType.SCENE_DELETED,
+        applicationId,
+        correlationKey,
+        sceneId: id,
+      });
+    }
+    return { success };
+  }
+
+  private async emitSceneWebhook(
+    event: SceneCreatedEvent | SceneUpdatedEvent | SceneDeletedEvent
+  ): Promise<void> {
+    if (!this.webhookClient) {
+      this.logger.warn("No webhook client set, skipping scene webhook", { type: event.type });
+      return;
+    }
+    try {
+      await this.webhookClient.send(event);
+    } catch (err) {
+      this.logger.error("Failed to send scene webhook", { type: event.type, err });
+    }
   }
 
   // ==================== Dashboard Stats ====================
