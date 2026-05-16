@@ -52,6 +52,12 @@ message CreateResourceInstanceRequest {
   // UUID — passing this avoids a separate `GetModuleByName` round-trip.
   // When both are set, `module_id` wins.
   string module_name = 6;
+  // Connection kind for connection resources (e.g., "websocket", "grpc").
+  // When kind indicates a connection resource, this specifies the protocol.
+  string connection_kind = 7;
+  // JSON-encoded connection configuration (URL, headers, auth, etc.).
+  // Required when connection_kind is set.
+  string connection_config = 8;
 }
 
 message ResourceInstanceResponse {
@@ -79,4 +85,37 @@ message ListResourceInstancesByModuleRequest {
 message ListResourceInstancesResponse {
   common.ResponseStatus status = 1;
   repeated ModuleResourceInstance instances = 2;
+}
+
+// ConnectionState represents the current state of a connection resource.
+message ConnectionState {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    STATUS_CONNECTING = 1;
+    STATUS_CONNECTED = 2;
+    STATUS_DISCONNECTED = 3;
+    STATUS_ERROR = 4;
+  }
+  Status status = 1;
+  string error = 2;
+  google.protobuf.Timestamp last_connected = 3;
+  int32 reconnect_count = 4;
+}
+
+message GetConnectionStateRequest {
+  string canonical_id = 1;
+}
+
+message ConnectionStateResponse {
+  common.ResponseStatus status = 1;
+  ConnectionState state = 2;
+}
+
+message SendConnectionMessageRequest {
+  string canonical_id = 1;
+  bytes message = 2;
+}
+
+message ConnectionMessageResponse {
+  common.ResponseStatus status = 1;
 }

@@ -2,12 +2,14 @@ package services
 
 import (
 	"context"
+	"errors"
 	"strconv"
 
 	"github.com/google/uuid"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/database/repository"
 	"google.golang.org/protobuf/types/known/structpb"
+	"gorm.io/gorm"
 )
 
 type settingService struct {
@@ -30,6 +32,9 @@ func (s *settingService) GetSetting(ctx context.Context, req *client.GetSettingR
 
 	setting, err := s.repo.GetSettingByKey(applicationId, req.Key)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &client.SettingResponse{}, nil
+		}
 		return nil, err
 	}
 
@@ -120,9 +125,9 @@ func (s *settingService) SetSetting(ctx context.Context, req *client.SetSettingR
 	return &client.SettingResponse{
 		Setting: &client.Setting{
 			ApplicationId: applicationId.String(),
-			Key:         req.Key,
-			Value:       req.Value,
-			UserId:      req.UserId,
+			Key:           req.Key,
+			Value:         req.Value,
+			UserId:        req.UserId,
 		},
 	}, nil
 }

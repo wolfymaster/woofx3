@@ -19,7 +19,6 @@ export {
 export type { CreateNATSMonitorOptions } from "./monitor/nats";
 export { createNATSMonitor } from "./monitor/nats";
 export type {
-  EnvConfigSchema,
   HealthMonitor,
   HealthMonitorService,
   RequiredServicesProvider,

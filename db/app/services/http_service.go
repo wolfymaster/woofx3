@@ -15,9 +15,9 @@ type RouteSetupFunc func(mux *http.ServeMux, app *types.App, casbinMiddleware *m
 
 type HTTPServerService struct {
 	*runtime.BaseService[*http.Server]
-	logger     *slog.Logger
-	httpPort   string
-	app        interface{}
+	logger           *slog.Logger
+	httpPort         string
+	app              interface{}
 	server           *http.Server
 	routeSetup       RouteSetupFunc
 	casbinMiddleware interface {
@@ -74,7 +74,15 @@ func (s *HTTPServerService) lazyInitHandler(w http.ResponseWriter, r *http.Reque
 		}); ok {
 			app := appWithMethods.App()
 
-			// Assert Casbin is initialized - fail fast per Tiger Style
+			// Wait up to 30s for Init() to complete (Casbin may not be set yet
+			// since HTTP starts in service batch 1 and Init() runs after all
+			// services connect).
+			deadline := time.Now().Add(30 * time.Second)
+			for app.Casbin == nil && time.Now().Before(deadline) {
+				time.Sleep(100 * time.Millisecond)
+				app = appWithMethods.App()
+			}
+
 			if app.Casbin == nil {
 				s.logger.Error("FATAL: app.Casbin is nil - application Init() must be called before HTTP requests")
 				http.Error(w, "Service not initialized", http.StatusServiceUnavailable)
