@@ -47,6 +47,7 @@ export interface Widget {
   settingsSchema: string;
   createdByType: string;
   createdByRef: string;
+  surface: string;
 }
 
 export interface WidgetInput {
@@ -56,6 +57,7 @@ export interface WidgetInput {
   directory: string;
   alertTypes: string[];
   settingsSchema: string;
+  surface: string;
 }
 
 export interface RegisterWidgetsRequest {
@@ -127,6 +129,7 @@ export const Widget = {
       settingsSchema: "",
       createdByType: "",
       createdByRef: "",
+      surface: "",
       ...msg,
     };
   },
@@ -167,6 +170,9 @@ export const Widget = {
     }
     if (msg.createdByRef) {
       writer.writeString(10, msg.createdByRef);
+    }
+    if (msg.surface) {
+      writer.writeString(11, msg.surface);
     }
     return writer;
   },
@@ -221,6 +227,10 @@ export const Widget = {
           msg.createdByRef = reader.readString();
           break;
         }
+        case 11: {
+          msg.surface = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -263,6 +273,7 @@ export const WidgetInput = {
       directory: "",
       alertTypes: [],
       settingsSchema: "",
+      surface: "",
       ...msg,
     };
   },
@@ -291,6 +302,9 @@ export const WidgetInput = {
     }
     if (msg.settingsSchema) {
       writer.writeString(6, msg.settingsSchema);
+    }
+    if (msg.surface) {
+      writer.writeString(7, msg.surface);
     }
     return writer;
   },
@@ -327,6 +341,10 @@ export const WidgetInput = {
         }
         case 6: {
           msg.settingsSchema = reader.readString();
+          break;
+        }
+        case 7: {
+          msg.surface = reader.readString();
           break;
         }
         default: {
@@ -721,6 +739,7 @@ export const WidgetJSON = {
       settingsSchema: "",
       createdByType: "",
       createdByRef: "",
+      surface: "",
       ...msg,
     };
   },
@@ -759,6 +778,9 @@ export const WidgetJSON = {
     }
     if (msg.createdByRef) {
       json["createdByRef"] = msg.createdByRef;
+    }
+    if (msg.surface) {
+      json["surface"] = msg.surface;
     }
     return json;
   },
@@ -807,6 +829,10 @@ export const WidgetJSON = {
     if (_createdByRef_) {
       msg.createdByRef = _createdByRef_;
     }
+    const _surface_ = json["surface"];
+    if (_surface_) {
+      msg.surface = _surface_;
+    }
     return msg;
   },
 };
@@ -840,6 +866,7 @@ export const WidgetInputJSON = {
       directory: "",
       alertTypes: [],
       settingsSchema: "",
+      surface: "",
       ...msg,
     };
   },
@@ -868,6 +895,9 @@ export const WidgetInputJSON = {
     }
     if (msg.settingsSchema) {
       json["settingsSchema"] = msg.settingsSchema;
+    }
+    if (msg.surface) {
+      json["surface"] = msg.surface;
     }
     return json;
   },
@@ -899,6 +929,10 @@ export const WidgetInputJSON = {
     const _settingsSchema_ = json["settingsSchema"] ?? json["settings_schema"];
     if (_settingsSchema_) {
       msg.settingsSchema = _settingsSchema_;
+    }
+    const _surface_ = json["surface"];
+    if (_surface_) {
+      msg.surface = _surface_;
     }
     return msg;
   },

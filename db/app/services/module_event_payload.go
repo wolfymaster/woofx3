@@ -320,6 +320,77 @@ func buildWorkflowChangeData(wf *models.WorkflowDefinition) map[string]any {
 // Functions live under a parent Module row; canonical id is derived from
 // the parent module's `module_key` (first segment) plus the function
 // row's `manifest_id`.
+func buildWidgetRegisteredData(moduleKey, moduleName, version string, widgets []*models.Widget) map[string]any {
+	rows := make([]map[string]any, 0, len(widgets))
+	for _, w := range widgets {
+		var alertTypes []string
+		if w.AlertTypes != "" {
+			json.Unmarshal([]byte(w.AlertTypes), &alertTypes)
+		}
+		if alertTypes == nil {
+			alertTypes = []string{}
+		}
+		moduleID := moduleIDFromCreatedByRef(w.CreatedByRef)
+		row := map[string]any{
+			"id":              w.ID.String(),
+			"canonical_id":    canonicalIDFor(moduleID, "widget", w.ManifestID),
+			"manifest_id":     w.ManifestID,
+			"name":            w.Name,
+			"description":     w.Description,
+			"directory":       w.Directory,
+			"alert_types":     alertTypes,
+			"settings_schema": w.SettingsSchema,
+			"surface":         w.Surface,
+			"created_by_type": w.CreatedByType,
+			"created_by_ref":  w.CreatedByRef,
+		}
+		if pk := projectionKeyFor(w.CreatedByType, w.CreatedByRef, "widget", w.ManifestID); pk != "" {
+			row["projection_key"] = pk
+		}
+		rows = append(rows, row)
+	}
+	return map[string]any{
+		"module_key":  moduleKey,
+		"module_name": moduleName,
+		"version":     version,
+		"widgets":     rows,
+	}
+}
+
+func buildWidgetDeregisteredData(modulePrefix string, widgets []*models.Widget) map[string]any {
+	rows := make([]map[string]any, 0, len(widgets))
+	for _, w := range widgets {
+		moduleID := moduleIDFromCreatedByRef(w.CreatedByRef)
+		var alertTypes []string
+		if w.AlertTypes != "" {
+			json.Unmarshal([]byte(w.AlertTypes), &alertTypes)
+		}
+		if alertTypes == nil {
+			alertTypes = []string{}
+		}
+		row := map[string]any{
+			"id":              w.ID.String(),
+			"canonical_id":    canonicalIDFor(moduleID, "widget", w.ManifestID),
+			"manifest_id":     w.ManifestID,
+			"name":            w.Name,
+			"description":     w.Description,
+			"directory":       w.Directory,
+			"alert_types":     alertTypes,
+			"settings_schema": w.SettingsSchema,
+			"surface":         w.Surface,
+			"created_by_ref":  w.CreatedByRef,
+		}
+		if pk := projectionKeyFor(w.CreatedByType, w.CreatedByRef, "widget", w.ManifestID); pk != "" {
+			row["projection_key"] = pk
+		}
+		rows = append(rows, row)
+	}
+	return map[string]any{
+		"module_prefix": modulePrefix,
+		"widgets":       rows,
+	}
+}
+
 func buildFunctionDeregisteredData(moduleKey, moduleName, version string, functions []models.ModuleFunction) map[string]any {
 	moduleID := moduleIDFromCreatedByRef(moduleKey)
 	rows := make([]map[string]any, 0, len(functions))

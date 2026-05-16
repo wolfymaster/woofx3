@@ -19,7 +19,7 @@ type Module struct {
 	CreatedByRef  string           `gorm:"column:created_by_ref;type:text;not null;default:''"`
 	InstalledAt   time.Time        `gorm:"column:installed_at;default:CURRENT_TIMESTAMP;not null"`
 	UpdatedAt     time.Time        `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;not null"`
-	Functions []ModuleFunction `gorm:"foreignKey:ModuleID;references:ID"`
+	Functions     []ModuleFunction `gorm:"foreignKey:ModuleID;references:ID"`
 }
 
 func (Module) TableName() string { return "modules" }
@@ -66,8 +66,8 @@ func GetAllModules(db *gorm.DB) ([]*Module, error) {
 }
 
 type ModuleFunction struct {
-	ID         uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	ModuleID   uuid.UUID `gorm:"column:module_id;type:uuid;not null;index"`
+	ID       uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	ModuleID uuid.UUID `gorm:"column:module_id;type:uuid;not null;index"`
 	// Stable manifest-local function id (e.g. "play_alert"). Forms the
 	// canonical id `{moduleId}:function:{manifest_id}`. Used by every
 	// reference and lookup; symmetric with `triggers.manifest_id` and
@@ -147,17 +147,48 @@ type Asset struct {
 
 func (Asset) TableName() string { return "assets" }
 
+// Widget is the engine's record of a visual component bundled with a
+// module. Mirrors the module-extension surface pattern (Trigger, Action,
+// Asset) in shape — decoupled from `modules` (no FK), idempotent
+// registration via (created_by_type, created_by_ref, manifest_id).
+//
+// `AlertTypes` is a JSON-serialized string array of wire-format event
+// type strings the widget renders (e.g. `["follow","raid"]`). Stored as
+// JSONB, same pattern as triggers.config_schema and actions.params_schema.
+//
+// `SettingsSchema` is a serialized JSON document describing the widget's
+// configuration surface (WidgetSettingDefinition[]). Engine treats it as
+// opaque; the UI parses it.
+//
+// `Surface` indicates where the widget can be placed: "scene" or "dashboard".
+type Widget struct {
+	ID             uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	Name           string    `gorm:"column:name;type:text;not null"`
+	Description    string    `gorm:"column:description;type:text;not null;default:''"`
+	Directory      string    `gorm:"column:directory;type:text;not null"`
+	AlertTypes     string    `gorm:"column:alert_types;type:jsonb;not null;default:'[]'"`
+	SettingsSchema string    `gorm:"column:settings_schema;type:jsonb;not null;default:'[]'"`
+	Surface        string    `gorm:"column:surface;type:text;not null;default:'scene'"`
+	CreatedByType  string    `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
+	CreatedByRef   string    `gorm:"column:created_by_ref;type:text;not null;default:''"`
+	ManifestID     string    `gorm:"column:manifest_id;type:text;not null;default:''"`
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+func (Widget) TableName() string { return "module_widgets" }
+
 type ModuleResource struct {
-	ID              uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	ModuleID        uuid.UUID `gorm:"column:module_id;type:uuid;not null;index"`
-	ResourceType    string    `gorm:"column:resource_type;type:text;not null"`
+	ID              uuid.UUID  `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	ModuleID        uuid.UUID  `gorm:"column:module_id;type:uuid;not null;index"`
+	ResourceType    string     `gorm:"column:resource_type;type:text;not null"`
 	ResourceID      *uuid.UUID `gorm:"column:resource_id;type:uuid"`
-	ManifestID      string    `gorm:"column:manifest_id;type:text;not null"`
-	ResourceName    string    `gorm:"column:resource_name;type:text;not null"`
-	OriginalVersion string    `gorm:"column:original_version;type:text;not null"`
-	CurrentVersion  string    `gorm:"column:current_version;type:text;not null"`
-	InstalledAt     time.Time `gorm:"column:installed_at;default:CURRENT_TIMESTAMP;not null"`
-	UpdatedAt       time.Time `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;not null"`
+	ManifestID      string     `gorm:"column:manifest_id;type:text;not null"`
+	ResourceName    string     `gorm:"column:resource_name;type:text;not null"`
+	OriginalVersion string     `gorm:"column:original_version;type:text;not null"`
+	CurrentVersion  string     `gorm:"column:current_version;type:text;not null"`
+	InstalledAt     time.Time  `gorm:"column:installed_at;default:CURRENT_TIMESTAMP;not null"`
+	UpdatedAt       time.Time  `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;not null"`
 }
 
 func (ModuleResource) TableName() string { return "module_resources" }

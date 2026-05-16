@@ -378,6 +378,8 @@ pub struct Widget {
     pub created_by_type: ::prost::alloc::string::String,
     #[prost(string, tag="10")]
     pub created_by_ref: ::prost::alloc::string::String,
+    #[prost(string, tag="11")]
+    pub surface: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WidgetInput {
@@ -393,6 +395,8 @@ pub struct WidgetInput {
     pub alert_types: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, tag="6")]
     pub settings_schema: ::prost::alloc::string::String,
+    #[prost(string, tag="7")]
+    pub surface: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterWidgetsRequest {

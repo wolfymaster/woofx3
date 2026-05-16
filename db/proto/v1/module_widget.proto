@@ -40,6 +40,7 @@ message Widget {
   string settings_schema = 8;
   string created_by_type = 9;
   string created_by_ref = 10;
+  string surface = 11;
 }
 
 message WidgetInput {
@@ -49,6 +50,7 @@ message WidgetInput {
   string directory = 4;
   repeated string alert_types = 5;
   string settings_schema = 6;
+  string surface = 7;
 }
 
 message RegisterWidgetsRequest {

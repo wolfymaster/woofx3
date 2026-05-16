@@ -316,6 +316,81 @@ func (r *ModuleRepository) DeleteModuleResources(moduleID uuid.UUID) error {
 	return r.db.Where("module_id = ?", moduleID).Delete(&models.ModuleResource{}).Error
 }
 
+// Widgets — mirror the Asset helpers above. Identity comes from
+// (created_by_type, created_by_ref, manifest_id), same as triggers,
+// actions, and assets.
+
+func (r *ModuleRepository) UpsertWidget(w *models.Widget) error {
+	var result struct {
+		ID uuid.UUID `gorm:"column:id"`
+	}
+	err := r.db.Raw(`
+		INSERT INTO public.module_widgets (id, name, description, directory, alert_types, settings_schema, surface, created_by_type, created_by_ref, manifest_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		ON CONFLICT (created_by_type, created_by_ref, manifest_id) DO UPDATE SET
+			name = EXCLUDED.name,
+			description = EXCLUDED.description,
+			directory = EXCLUDED.directory,
+			alert_types = EXCLUDED.alert_types,
+			settings_schema = EXCLUDED.settings_schema,
+			surface = EXCLUDED.surface,
+			updated_at = NOW()
+		RETURNING id
+	`, w.ID, w.Name, w.Description, w.Directory, w.AlertTypes, w.SettingsSchema, w.Surface, w.CreatedByType, w.CreatedByRef, w.ManifestID).Scan(&result).Error
+	if err != nil {
+		return err
+	}
+	w.ID = result.ID
+	return nil
+}
+
+func (r *ModuleRepository) ListWidgets(createdByType, createdByRef string) ([]*models.Widget, error) {
+	var widgets []*models.Widget
+	q := r.db
+	if createdByType != "" {
+		q = q.Where("created_by_type = ?", createdByType)
+	}
+	if createdByRef != "" {
+		q = q.Where("created_by_ref = ?", createdByRef)
+	}
+	err := q.Find(&widgets).Error
+	return widgets, err
+}
+
+// ListWidgetsByModulePrefix mirrors ListAssetsByModulePrefix — used
+// to capture rows for the deregistration event before they're deleted.
+func (r *ModuleRepository) ListWidgetsByModulePrefix(moduleID string) ([]*models.Widget, error) {
+	var widgets []*models.Widget
+	err := r.db.Where(
+		"created_by_type = ? AND created_by_ref LIKE ?",
+		"MODULE", moduleID+":%",
+	).Find(&widgets).Error
+	return widgets, err
+}
+
+// GetWidgetByModuleAndManifestID mirrors the trigger helper for widgets.
+// See GetTriggerByModuleAndManifestID for the two registration shapes
+// (MODULE composite ref vs non-MODULE bare ref) that share the
+// canonical-id space.
+func (r *ModuleRepository) GetWidgetByModuleAndManifestID(moduleID, manifestID string) (*models.Widget, error) {
+	var widget models.Widget
+	err := r.db.Where(
+		"manifest_id = ? AND ((created_by_type = ? AND created_by_ref LIKE ?) OR (created_by_type <> ? AND created_by_ref = ?))",
+		manifestID, "MODULE", moduleID+":%", "MODULE", moduleID,
+	).First(&widget).Error
+	if err != nil {
+		return nil, err
+	}
+	return &widget, nil
+}
+
+func (r *ModuleRepository) DeleteWidgetsByModulePrefix(moduleID string) error {
+	return r.db.Where(
+		"created_by_type = ? AND created_by_ref LIKE ?",
+		"MODULE", moduleID+":%",
+	).Delete(&models.Widget{}).Error
+}
+
 func (r *ModuleRepository) UpdateModuleResourceVersion(id uuid.UUID, version string) (*models.ModuleResource, error) {
 	var res models.ModuleResource
 	if err := r.db.First(&res, "id = ?", id).Error; err != nil {

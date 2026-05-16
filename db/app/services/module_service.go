@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -1071,34 +1072,155 @@ func moduleResourceToProto(r *models.ModuleResource) *client.ModuleResource {
 }
 
 // ---------------------------------------------------------------------
-// Widget RPC stubs.
+// Widget RPCs.
 //
-// The widget surface is declared in `db/proto/v1/module.proto` but no
-// model / repository / service work has landed yet — the proto stub
-// pre-dates the implementation. These `twirp.Unimplemented`-returning
-// methods exist solely to satisfy the generated `client.ModuleService`
-// interface so unrelated services (scenes, assets, etc.) can be wired
-// into the mux without touching this half-finished feature.
-//
-// When the widget feature lands properly: replace these with real
-// implementations (mirror the trigger / action / asset patterns) and
-// remove this comment block.
+// Module-extension surface for placeable visual components (widgets).
+// Mirrors the asset surface shape: idempotent upsert keyed on
+// (created_by_type, created_by_ref, manifest_id), outbox events on
+// `module.widget.{registered,deregistered}` so downstream consumers
+// (Convex editor, etc.) can react.
 // ---------------------------------------------------------------------
 
 func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.RegisterWidgetsRequest) (*client.ListWidgetsResponse, error) {
-	return nil, twirp.NewError(twirp.Unimplemented, "RegisterWidgets is not implemented")
+	createdByType := "MODULE"
+	createdByRef := req.ModuleKey
+	if req.CreatedByType != "" && req.CreatedByRef != "" {
+		createdByType = req.CreatedByType
+		createdByRef = req.CreatedByRef
+	}
+	saved := make([]*models.Widget, 0, len(req.Widgets))
+	for _, in := range req.Widgets {
+		alertTypesJSON, err := json.Marshal(in.AlertTypes)
+		if err != nil {
+			return nil, fmt.Errorf("marshal alert_types for widget %q: %w", in.Name, err)
+		}
+		w := &models.Widget{
+			ID:             uuid.New(),
+			Name:           in.Name,
+			Description:    in.Description,
+			Directory:      in.Directory,
+			AlertTypes:     string(alertTypesJSON),
+			SettingsSchema: in.SettingsSchema,
+			Surface:        in.Surface,
+			CreatedByType:  createdByType,
+			CreatedByRef:   createdByRef,
+			ManifestID:     in.ManifestId,
+		}
+		if err := s.repo.UpsertWidget(w); err != nil {
+			return nil, fmt.Errorf("upsert widget %q: %w", in.Name, err)
+		}
+		saved = append(saved, w)
+	}
+
+	if s.publisher != nil {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   "",
+			EntityType:      "module.widget",
+			Operation:       "registered",
+			Data:            buildWidgetRegisteredData(req.ModuleKey, req.ModuleName, req.Version, saved),
+			AutoAcknowledge: true,
+		})
+	}
+
+	protoWidgets := make([]*client.Widget, len(saved))
+	for i, w := range saved {
+		protoWidgets[i] = widgetToProto(w)
+	}
+	return &client.ListWidgetsResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Widgets registered successfully",
+		},
+		Widgets: protoWidgets,
+	}, nil
 }
 
 func (s *moduleService) ListWidgets(ctx context.Context, req *client.ListWidgetsRequest) (*client.ListWidgetsResponse, error) {
-	return nil, twirp.NewError(twirp.Unimplemented, "ListWidgets is not implemented")
+	widgets, err := s.repo.ListWidgets(req.CreatedByType, req.CreatedByRef)
+	if err != nil {
+		return nil, err
+	}
+	protoWidgets := make([]*client.Widget, len(widgets))
+	for i, w := range widgets {
+		protoWidgets[i] = widgetToProto(w)
+	}
+	return &client.ListWidgetsResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Widgets retrieved successfully",
+		},
+		Widgets: protoWidgets,
+	}, nil
 }
 
 func (s *moduleService) GetWidgetByCanonicalId(ctx context.Context, req *client.GetByCanonicalIdRequest) (*client.WidgetResponse, error) {
-	return nil, twirp.NewError(twirp.Unimplemented, "GetWidgetByCanonicalId is not implemented")
+	moduleID, kind, manifestID, err := parseCanonicalID(req.CanonicalId)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("canonical_id", err.Error())
+	}
+	if kind != "widget" {
+		return nil, twirp.InvalidArgumentError("canonical_id", fmt.Sprintf("expected kind 'widget', got %q", kind))
+	}
+	w, err := s.repo.GetWidgetByModuleAndManifestID(moduleID, manifestID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, twirp.NotFoundError(fmt.Sprintf("no widget %q", req.CanonicalId))
+		}
+		return nil, err
+	}
+	return &client.WidgetResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Widget retrieved successfully",
+		},
+		Widget: widgetToProto(w),
+	}, nil
 }
 
 func (s *moduleService) DeleteWidgetsByModuleId(ctx context.Context, req *client.DeleteByModuleIdRequest) (*client.ResponseStatus, error) {
-	return nil, twirp.NewError(twirp.Unimplemented, "DeleteWidgetsByModuleId is not implemented")
+	widgets, err := s.repo.ListWidgetsByModulePrefix(req.ModuleId)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.DeleteWidgetsByModulePrefix(req.ModuleId); err != nil {
+		return nil, err
+	}
+	if s.publisher != nil && len(widgets) > 0 {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   "",
+			EntityType:      "module.widget",
+			Operation:       "deregistered",
+			Data:            buildWidgetDeregisteredData(req.ModuleId, widgets),
+			AutoAcknowledge: true,
+		})
+	}
+	return &client.ResponseStatus{
+		Code:    client.ResponseStatus_OK,
+		Message: "Widgets deleted successfully",
+	}, nil
+}
+
+func widgetToProto(w *models.Widget) *client.Widget {
+	var alertTypes []string
+	if w.AlertTypes != "" {
+		json.Unmarshal([]byte(w.AlertTypes), &alertTypes)
+	}
+	if alertTypes == nil {
+		alertTypes = []string{}
+	}
+	return &client.Widget{
+		Id:             w.ID.String(),
+		ModuleId:       moduleIDFromCreatedByRef(w.CreatedByRef),
+		ManifestId:     w.ManifestID,
+		Name:           w.Name,
+		Description:    w.Description,
+		Directory:      w.Directory,
+		AlertTypes:     alertTypes,
+		SettingsSchema: w.SettingsSchema,
+		Surface:        w.Surface,
+		CreatedByType:  w.CreatedByType,
+		CreatedByRef:   w.CreatedByRef,
+	}
 }
 
 // ---------------------------------------------------------------------
