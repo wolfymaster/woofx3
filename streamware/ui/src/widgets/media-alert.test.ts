@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CloudEventLike } from "../types";
-import { mediaWidget } from "./media-widget";
+import { mediaAlertWidget } from "./media-alert";
 
 function event(data: Record<string, unknown>): CloudEventLike {
   return {
@@ -13,10 +13,10 @@ function event(data: Record<string, unknown>): CloudEventLike {
 
 // Test helper: default WidgetInput.id so tests don't repeat boilerplate.
 function render(input: { parameters: Record<string, unknown>; event: CloudEventLike | null; id?: string }) {
-  return mediaWidget.render({ id: input.id ?? "envelope-1", parameters: input.parameters, event: input.event });
+  return mediaAlertWidget.render({ id: input.id ?? "envelope-1", parameters: input.parameters, event: input.event });
 }
 
-describe("MediaWidget", () => {
+describe("MediaAlert", () => {
   test("interpolates a path from event.data", () => {
     const out = render({
       parameters: { text: "{event.data.userName}" },
@@ -152,10 +152,7 @@ describe("MediaWidget", () => {
   });
 
   test("options array passes through (paired with mediaUrl indices in AlertWrapper)", () => {
-    const optsArr = [
-      { view: { fullScreen: true } },
-      { view: { fullScreen: false } },
-    ];
+    const optsArr = [{ view: { fullScreen: true } }, { view: { fullScreen: false } }];
     const out = render({
       parameters: {
         mediaUrl: ["a.gif", "b.gif"],
