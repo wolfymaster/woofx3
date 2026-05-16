@@ -1,6 +1,8 @@
 import * as alert from "@woofx3/db/alert.pb";
 import * as scene from "@woofx3/db/scene.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
+import { RegisterWidgets } from "@woofx3/db/module.pb";
+import type * as module_widget from "@woofx3/db/module_widget.pb";
 
 // twirpscript ClientConfiguration is { baseURL: string }; we inline
 // rather than importing the type so streamware doesn't need
@@ -80,15 +82,11 @@ export class DbClient {
     return alert.UpdateAlertStatus(req, this.config);
   }
 
-  async updateAlertLifecycle(
-    req: alert.UpdateAlertLifecycleRequest
-  ): Promise<alert.AlertResponse> {
+  async updateAlertLifecycle(req: alert.UpdateAlertLifecycleRequest): Promise<alert.AlertResponse> {
     return alert.UpdateAlertLifecycle(req, this.config);
   }
 
-  async upsertWidgetStatus(
-    req: widget_status.UpsertWidgetStatusRequest
-  ): Promise<widget_status.WidgetStatusResponse> {
+  async upsertWidgetStatus(req: widget_status.UpsertWidgetStatusRequest): Promise<widget_status.WidgetStatusResponse> {
     return widget_status.UpsertWidgetStatus(req, this.config);
   }
 
@@ -98,6 +96,15 @@ export class DbClient {
   // streamware is read-only for scenes.
   async getScene(req: scene.GetSceneRequest): Promise<scene.SceneResponse> {
     return scene.GetScene(req, this.config);
+  }
+
+  async registerWidgets(req: module_widget.RegisterWidgetsRequest): Promise<module_widget.ListWidgetsResponse> {
+    return RegisterWidgets(req, this.config);
+  }
+
+  async listWidgets(req: module_widget.ListWidgetsRequest): Promise<module_widget.ListWidgetsResponse> {
+    const { ListWidgets } = await import("@woofx3/db/module.pb");
+    return ListWidgets(req, this.config);
   }
 }
 
@@ -116,3 +123,8 @@ export type {
   WidgetStatusResponse,
 } from "@woofx3/db/widget_status.pb";
 export type { ResponseStatus } from "@woofx3/db/common.pb";
+export type {
+  RegisterWidgetsRequest,
+  ListWidgetsResponse,
+  WidgetInput,
+} from "@woofx3/db/module_widget.pb";

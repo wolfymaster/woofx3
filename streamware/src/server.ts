@@ -3,17 +3,59 @@ import { join, normalize, resolve } from "node:path";
 import type { WebSocketHandler } from "bun";
 import { createServiceLogger } from "@woofx3/common/logging";
 import { createMessageBus } from "@woofx3/nats";
+import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { AlertBroadcaster } from "./alert-broadcaster";
 import { AlertQueueManager } from "./alert-queue-manager";
-import { loadConfig } from "./config";
+import { buildBuiltinWidgetDefinitions, initBuiltinWidgets } from "./builtin-widgets";
+import { StreamwareEnvSchema, type StreamwareRuntimeConfig } from "./config";
 import { DbClient } from "./db";
 import { initSubscriptions } from "./nats-subscriptions";
 import { connectObs } from "./obs/manager";
 import { StorageBroadcaster } from "./storage-broadcaster";
 import { initWidgetEventHandlers } from "./widget-event-handlers";
 
+const loadedConfig = loadRuntimeEnv({
+  schema: StreamwareEnvSchema,
+  injectIntoProcess: true,
+});
+
+function getConfig(): StreamwareRuntimeConfig {
+  const c = loadedConfig.config as Record<string, unknown>;
+
+  const port = Number(c.woofx3StreamwarePort ?? c.streamwarePort ?? 9101);
+  const rootDir = String((c.woofx3RootPath ?? c.rootPath ?? process.cwd()) as string);
+
+  const messagebusUrl = String(c.woofx3MessagebusUrl ?? c.messagebusUrl ?? "ws://localhost:4225");
+  const jwt = c.woofx3MessagebusJwt ? String(c.woofx3MessagebusJwt) : c.messagebusJwt ? String(c.messagebusJwt) : undefined;
+  const nkeySeed = c.woofx3MessagebusNkey ? String(c.woofx3MessagebusNkey) : c.messagebusNkey ? String(c.messagebusNkey) : undefined;
+
+  const obsHost = String(c.woofx3ObsHost ?? c.obsHost ?? "127.0.0.1");
+  const obsPort = String(c.woofx3ObsPort ?? c.obsPort ?? "4455");
+  const obsToken = c.woofx3ObsRpcToken ? String(c.woofx3ObsRpcToken) : c.obsRpcToken ? String(c.obsRpcToken) : undefined;
+
+  const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? c.databaseProxyUrl ?? "");
+
+  return {
+    port,
+    rootDir,
+    uiDistDir: `${import.meta.dir}/../ui/dist`,
+    publicDir: `${import.meta.dir}/../public`,
+    databaseProxyUrl,
+    obs: {
+      url: `ws://${obsHost}:${obsPort}`,
+      token: obsToken,
+    },
+    nats: {
+      url: messagebusUrl,
+      name: "woofx3-streamware",
+      jwt,
+      nkeySeed,
+    },
+  };
+}
+
 async function main() {
-  const config = loadConfig();
+  const config = getConfig();
   const logger = createServiceLogger({
     serviceName: "streamware",
     logDir: `${config.rootDir}/logs`,
@@ -40,62 +82,43 @@ async function main() {
 
   await initSubscriptions({ nats, obs, broadcaster, storageBroadcaster, logger });
 
-  // db-proxy client — used by the alert orchestration block below
-  // AND by the scene-fetch HTTP route (which serves the overlay
-  // config for `/overlay/scene/{id}`). Outlives the NATS branch so
-  // the route works even when the message bus is unavailable.
   const db = config.databaseProxyUrl ? new DbClient(config.databaseProxyUrl) : null;
 
-  // Phase R1: streamware now owns alert orchestration. The api keeps
-  // db-outbox → webhook projection (its actual boundary work);
-  // streamware pulls intents off NATS, runs the queue, and writes to
-  // the db proxy directly.
+  let alertQueue: AlertQueueManager | null = null;
   if (nats && db) {
-    const alertQueue = new AlertQueueManager(db, nats, logger);
+    alertQueue = new AlertQueueManager(db, nats, logger);
     await initWidgetEventHandlers({
       nats,
       db,
       queue: alertQueue,
       storageBroadcaster,
       logger,
-      // Streamware doesn't carry an authenticated session today, so
-      // it has no authoritative applicationId. Envelopes must
-      // either supply one (workflow does, see workflow/actions.go)
-      // or the api warmup must publish a "welcome" with the default.
-      // For now, fall back to null and let the resolveApplicationId
-      // hook do JIT lookups.
-      applicationId: null,
-      resolveApplicationId: async () => {
-        // Light JIT: ask the db proxy for the default application.
-        // Tolerated: this is the same fallback the api previously
-        // performed against a fresh boot before onboarding ran.
-        try {
-          // ApplicationService isn't exposed on streamware's slim
-          // DbClient (only alert + widget_status), so JIT requires
-          // the api to seed the default — which it does today via
-          // the warmup at api/src/server.ts. Until we re-evaluate
-          // whether streamware should also resolve applicationId
-          // independently, return null and let envelopes carry it.
-          return null;
-        } catch {
-          return null;
-        }
-      },
     });
     logger.info("Alert orchestration initialised", { databaseProxyUrl: config.databaseProxyUrl });
   } else {
-    logger.warn(
-      "Alert orchestration disabled — set WOOFX3_DATABASE_PROXY_URL to enable",
-      { hasNats: !!nats, hasDbUrl: !!config.databaseProxyUrl }
-    );
+    logger.warn("Alert orchestration disabled — set WOOFX3_DATABASE_PROXY_URL to enable", {
+      hasNats: !!nats,
+      hasDbUrl: !!config.databaseProxyUrl,
+    });
   }
 
-  // Bun.serve takes a single `websocket` handler, so we dispatch
-  // open / close / message events to the right broadcaster based
-  // on the `kind` discriminator each one stamps onto its connection
-  // data at upgrade time. Default branch is `alerts` so the existing
-  // overlay path keeps working even if a future client doesn't
-  // populate `data.kind` on the upgrade.
+  await initBuiltinWidgets(logger, db, nats);
+
+  startHttpServer(config, broadcaster, storageBroadcaster, db, logger);
+}
+
+main().catch((err) => {
+  console.error("Failed to start streamware:", err);
+  process.exit(1);
+});
+
+function startHttpServer(
+  config: StreamwareRuntimeConfig,
+  broadcaster: AlertBroadcaster,
+  storageBroadcaster: StorageBroadcaster,
+  db: DbClient | null,
+  logger: ReturnType<typeof createServiceLogger>
+): void {
   const alertHandlers = broadcaster.handlers();
   const stateHandlers = storageBroadcaster.handlers();
   const websocket: WebSocketHandler<{ kind: string; id: string }> = {
@@ -159,25 +182,32 @@ async function main() {
         return new Response("upgrade failed", { status: 400 });
       }
 
-      // Scene fetch — the SceneOverlay SPA calls this on load to
-      // resolve a path-style `/overlay/scene/{id}` URL into the
-      // SceneConfig JSON it needs to render. Returns the same shape
-      // the `?config=<urlencoded>` dev path uses so the client just
-      // hands it to `<SceneOverlay scene={...} />`.
-      //
-      // Permissive CORS: the editor preview iframe (woofx3-ui scene
-      // editor) lives on a different origin and fetches this through
-      // the iframe wrapper. The browser-source endpoint stays
-      // unauthenticated by design — sourceKey is what scopes access,
-      // not this read.
+      if (url.pathname === "/api/builtin-widgets") {
+        return Response.json(buildBuiltinWidgetDefinitions(), {
+          headers: SCENE_CORS_HEADERS,
+        });
+      }
+
+      if (url.pathname === "/api/widgets") {
+        if (!db) {
+          return Response.json({ status: "error", message: "db not available" }, { status: 503 });
+        }
+        try {
+          const response = await db.listWidgets({ createdByType: "", createdByRef: "" });
+          return Response.json(
+            { widgets: response.widgets },
+            { headers: SCENE_CORS_HEADERS }
+          );
+        } catch (err) {
+          logger.warn("listWidgets failed", { err });
+          return Response.json({ status: "error", message: String(err) }, { status: 500 });
+        }
+      }
+
       if (url.pathname.startsWith("/api/scene/")) {
         return handleSceneFetch(url.pathname, db, logger);
       }
 
-      // Friendly browser-source URL → SPA shell. Both the alert
-      // overlay and the scene-composing overlay are served from the
-      // same SPA bundle; main.tsx picks the right component based
-      // on `location.pathname`.
       if (
         url.pathname === "/" ||
         url.pathname === "/overlay/alerts" ||
@@ -187,9 +217,6 @@ async function main() {
         return serveFile(indexHtml);
       }
 
-      // Try the built SPA first (vite copies publicDir contents into
-      // dist/ during build, so production assets like /woof1.mp3 land
-      // here). For dev/no-build runs, fall back to publicDir directly.
       const fromUi = await tryServeUnder(uiDist, url.pathname);
       if (fromUi) {
         return fromUi;
@@ -227,22 +254,10 @@ const SCENE_CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-/**
- * Resolve `/api/scene/{id}` to the SceneConfig JSON the SPA renders.
- * Reads through the db-proxy. The wire shape matches
- * `streamware/ui/src/lib/sceneConfig.ts` — widget instances parsed
- * from `widgets_json`, layout parsed from `layout_json`. The engine
- * never inspects these fields so the UI's writes round-trip
- * unchanged.
- *
- * Returns 404 when the scene doesn't exist or the db-proxy is
- * unconfigured (the same error class — neither case is recoverable
- * client-side).
- */
 async function handleSceneFetch(
   pathname: string,
   db: DbClient | null,
-  logger: ReturnType<typeof createServiceLogger>,
+  logger: ReturnType<typeof createServiceLogger>
 ): Promise<Response> {
   const sceneId = decodeURIComponent(pathname.slice("/api/scene/".length));
   if (!sceneId) {
@@ -278,7 +293,7 @@ async function handleSceneFetch(
     })();
     return Response.json(
       { id: s.id, applicationId: s.applicationId, name: s.name, widgets, layout },
-      { headers: SCENE_CORS_HEADERS },
+      { headers: SCENE_CORS_HEADERS }
     );
   } catch (err) {
     logger.warn("scene fetch failed", { sceneId, err });
@@ -287,7 +302,6 @@ async function handleSceneFetch(
 }
 
 async function tryServeUnder(rootDir: string, pathname: string): Promise<Response | null> {
-  // Resolve against root and refuse anything that escapes via `..`.
   const root = normalize(rootDir);
   const safe = normalize(join(root, pathname));
   if (safe !== root && !safe.startsWith(root + "/")) {
@@ -300,7 +314,11 @@ async function tryServeUnder(rootDir: string, pathname: string): Promise<Respons
   return new Response(file);
 }
 
-main().catch((err) => {
-  console.error("Failed to start streamware:", err);
-  process.exit(1);
+process.on("SIGTERM", () => {
+  console.log("Received SIGTERM, shutting down...");
+  process.exit(0);
+});
+process.on("SIGINT", () => {
+  console.log("Received SIGINT, shutting down...");
+  process.exit(0);
 });

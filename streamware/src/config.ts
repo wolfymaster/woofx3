@@ -1,16 +1,34 @@
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
 
-export interface StreamwareConfig {
+export const StreamwareEnvSchema = z.object({
+  woofx3StreamwarePort: z.union([z.number(), z.string()]).default("9101"),
+  streamwarePort: z.union([z.number(), z.string()]).optional(),
+  woofx3RootPath: z.string().optional(),
+  rootPath: z.string().optional(),
+  woofx3MessagebusUrl: z.string().default("ws://localhost:4225"),
+  messagebusUrl: z.string().optional(),
+  woofx3MessagebusJwt: z.string().optional(),
+  messagebusJwt: z.string().optional(),
+  woofx3MessagebusNkey: z.string().optional(),
+  messagebusNkey: z.string().optional(),
+  woofx3ObsHost: z.string().default("127.0.0.1"),
+  obsHost: z.string().optional(),
+  woofx3ObsPort: z.union([z.number(), z.string()]).default("4455"),
+  obsPort: z.union([z.number(), z.string()]).optional(),
+  woofx3ObsRpcToken: z.string().optional(),
+  obsRpcToken: z.string().optional(),
+  woofx3DatabaseProxyUrl: z.string().default(""),
+  databaseProxyUrl: z.string().optional(),
+});
+
+export type StreamwareConfig = z.infer<typeof StreamwareEnvSchema>;
+
+export interface StreamwareRuntimeConfig {
   port: number;
   rootDir: string;
   uiDistDir: string;
   publicDir: string;
-  /** db proxy gRPC base URL. Streamware now talks to the db proxy
-   *  directly to persist alert lifecycle and widget status — see
-   *  `streamware/src/db.ts`. Empty string disables the orchestration
-   *  path (alerts will still WS-broadcast for live overlays but no
-   *  durable record is written). */
   databaseProxyUrl: string;
   obs: {
     url: string;
@@ -24,61 +42,22 @@ export interface StreamwareConfig {
   };
 }
 
-const envSchema = z
-  .object({
-    woofx3StreamwarePort: z.union([z.number(), z.string()]).optional(),
-    streamwarePort: z.union([z.number(), z.string()]).optional(),
-    woofx3RootPath: z.string().optional(),
-    rootPath: z.string().optional(),
-    woofx3MessagebusUrl: z.string().optional(),
-    messagebusUrl: z.string().optional(),
-    woofx3MessagebusJwt: z.string().optional(),
-    messagebusJwt: z.string().optional(),
-    woofx3MessagebusNkey: z.string().optional(),
-    messagebusNkey: z.string().optional(),
-    woofx3ObsHost: z.string().optional(),
-    obsHost: z.string().optional(),
-    woofx3ObsPort: z.union([z.number(), z.string()]).optional(),
-    obsPort: z.union([z.number(), z.string()]).optional(),
-    woofx3ObsRpcToken: z.string().optional(),
-    obsRpcToken: z.string().optional(),
-    woofx3DatabaseProxyUrl: z.string().optional(),
-    databaseProxyUrl: z.string().optional(),
-  })
-  .passthrough();
-
-export function loadConfig(): StreamwareConfig {
-  const result = loadRuntimeEnv({ injectIntoProcess: true, schema: envSchema });
+export function loadConfig(): StreamwareRuntimeConfig {
+  const result = loadRuntimeEnv({ injectIntoProcess: true, schema: StreamwareEnvSchema });
   const c = result.config;
 
   const port = Number(c.woofx3StreamwarePort ?? c.streamwarePort ?? 9101);
   const rootDir = String(c.woofx3RootPath ?? c.rootPath ?? process.cwd());
 
-  const messagebusUrl = String(
-    c.woofx3MessagebusUrl ?? c.messagebusUrl ?? "ws://localhost:4225",
-  );
-  const jwt = c.woofx3MessagebusJwt != null
-    ? String(c.woofx3MessagebusJwt)
-    : c.messagebusJwt != null
-      ? String(c.messagebusJwt)
-      : undefined;
-  const nkeySeed = c.woofx3MessagebusNkey != null
-    ? String(c.woofx3MessagebusNkey)
-    : c.messagebusNkey != null
-      ? String(c.messagebusNkey)
-      : undefined;
+  const messagebusUrl = String(c.woofx3MessagebusUrl ?? c.messagebusUrl ?? "ws://localhost:4225");
+  const jwt = c.woofx3MessagebusJwt ? String(c.woofx3MessagebusJwt) : c.messagebusJwt ? String(c.messagebusJwt) : undefined;
+  const nkeySeed = c.woofx3MessagebusNkey ? String(c.woofx3MessagebusNkey) : c.messagebusNkey ? String(c.messagebusNkey) : undefined;
 
   const obsHost = String(c.woofx3ObsHost ?? c.obsHost ?? "127.0.0.1");
   const obsPort = String(c.woofx3ObsPort ?? c.obsPort ?? "4455");
-  const obsToken = c.woofx3ObsRpcToken != null
-    ? String(c.woofx3ObsRpcToken)
-    : c.obsRpcToken != null
-      ? String(c.obsRpcToken)
-      : undefined;
+  const obsToken = c.woofx3ObsRpcToken ? String(c.woofx3ObsRpcToken) : c.obsRpcToken ? String(c.obsRpcToken) : undefined;
 
-  const databaseProxyUrl = String(
-    c.woofx3DatabaseProxyUrl ?? c.databaseProxyUrl ?? "",
-  );
+  const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? c.databaseProxyUrl ?? "");
 
   return {
     port,
