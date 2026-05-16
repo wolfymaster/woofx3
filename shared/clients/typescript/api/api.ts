@@ -707,6 +707,26 @@ export interface Woofx3EngineApi {
   // SceneSnapshot for reactive UI mirrors to consume.
   getScenes(query?: ScenesQuery): Promise<PaginatedScenes>;
   getScene(id: string): Promise<Scene | null>;
+
+  /**
+   * Get all available widgets registered in the engine.
+   * Used by the scene manager to populate the widget palette.
+   */
+  getAvailableWidgets(): Promise<{
+    widgets: Array<{
+      id: string;
+      manifestId: string;
+      name: string;
+      description: string;
+      directory: string;
+      alertTypes: string[];
+      settingsSchema: string;
+      surface: string;
+      createdByType: string;
+      createdByRef: string;
+    }>;
+  }>;
+
   createScene(data: {
     name: string;
     accountId: string;

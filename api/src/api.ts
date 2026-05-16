@@ -54,20 +54,9 @@ import {
 } from "./module-event-handlers";
 import type { WebhookClient } from "./webhook-client";
 import { validateWorkflowDefinition } from "./workflow/validate-definition";
-import {
-  parseWorkflowCreated,
-  parseWorkflowDeleted,
-  parseWorkflowUpdated,
-} from "./workflow-event-handlers";
-import {
-  parseSceneCreated,
-  parseSceneDeleted,
-  parseSceneUpdated,
-} from "./scene-event-handlers";
-import {
-  parseAlertCreated,
-  parseAlertUpdated,
-} from "./alert-log-handlers";
+import { parseWorkflowCreated, parseWorkflowDeleted, parseWorkflowUpdated } from "./workflow-event-handlers";
+import { parseSceneCreated, parseSceneDeleted, parseSceneUpdated } from "./scene-event-handlers";
+import { parseAlertCreated, parseAlertUpdated } from "./alert-log-handlers";
 
 /**
  * Helper to create a protoscript.Timestamp from a Date
@@ -422,16 +411,15 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
         result.destination = dest;
       }
     } else {
-      const [bucket, prefix, region, endpoint, accessKey, secretKey, forcePathStyle] =
-        await Promise.all([
-          this.db.getSetting("storage.s3.bucket", applicationId),
-          this.db.getSetting("storage.s3.prefix", applicationId),
-          this.db.getSetting("storage.s3.region", applicationId),
-          this.db.getSetting("storage.s3.endpoint", applicationId),
-          this.db.getSetting("storage.s3.access_key", applicationId),
-          this.db.getSetting("storage.s3.secret_key", applicationId),
-          this.db.getSetting("storage.s3.force_path_style", applicationId),
-        ]);
+      const [bucket, prefix, region, endpoint, accessKey, secretKey, forcePathStyle] = await Promise.all([
+        this.db.getSetting("storage.s3.bucket", applicationId),
+        this.db.getSetting("storage.s3.prefix", applicationId),
+        this.db.getSetting("storage.s3.region", applicationId),
+        this.db.getSetting("storage.s3.endpoint", applicationId),
+        this.db.getSetting("storage.s3.access_key", applicationId),
+        this.db.getSetting("storage.s3.secret_key", applicationId),
+        this.db.getSetting("storage.s3.force_path_style", applicationId),
+      ]);
       if (bucket) result.bucket = bucket;
       if (prefix) result.prefix = prefix;
       if (region) result.region = region;
@@ -1298,21 +1286,24 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
       try {
         const ce = msg.json() as Record<string, unknown>;
         const data = (ce.data as Record<string, unknown> | undefined) ?? (ce as Record<string, unknown>);
-        const moduleId = typeof data.module_id === "string"
-          ? (data.module_id as string)
-          : typeof data.ModuleID === "string"
-            ? (data.ModuleID as string)
-            : "";
-        const instanceId = typeof data.instance_id === "string"
-          ? (data.instance_id as string)
-          : typeof data.InstanceID === "string"
-            ? (data.InstanceID as string)
-            : "";
-        const key = typeof data.key === "string"
-          ? (data.key as string)
-          : typeof data.Key === "string"
-            ? (data.Key as string)
-            : "";
+        const moduleId =
+          typeof data.module_id === "string"
+            ? (data.module_id as string)
+            : typeof data.ModuleID === "string"
+              ? (data.ModuleID as string)
+              : "";
+        const instanceId =
+          typeof data.instance_id === "string"
+            ? (data.instance_id as string)
+            : typeof data.InstanceID === "string"
+              ? (data.InstanceID as string)
+              : "";
+        const key =
+          typeof data.key === "string"
+            ? (data.key as string)
+            : typeof data.Key === "string"
+              ? (data.Key as string)
+              : "";
         if (!moduleId || !instanceId || !key) {
           this.logger.warn("db.widget_status.updated: missing required fields; dropping", {
             moduleId,
@@ -1321,21 +1312,24 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
           });
           return;
         }
-        const widgetCanonicalId = typeof data.widget_canonical_id === "string"
-          ? (data.widget_canonical_id as string)
-          : typeof data.WidgetCanonicalID === "string"
-            ? (data.WidgetCanonicalID as string)
-            : "";
-        const occurredAt = typeof data.occurred_at === "string"
-          ? (data.occurred_at as string)
-          : typeof data.OccurredAt === "string"
-            ? (data.OccurredAt as string)
-            : new Date().toISOString();
-        const applicationId = typeof ce.application_id === "string"
-          ? (ce.application_id as string)
-          : typeof data.application_id === "string"
-            ? (data.application_id as string)
-            : "";
+        const widgetCanonicalId =
+          typeof data.widget_canonical_id === "string"
+            ? (data.widget_canonical_id as string)
+            : typeof data.WidgetCanonicalID === "string"
+              ? (data.WidgetCanonicalID as string)
+              : "";
+        const occurredAt =
+          typeof data.occurred_at === "string"
+            ? (data.occurred_at as string)
+            : typeof data.OccurredAt === "string"
+              ? (data.OccurredAt as string)
+              : new Date().toISOString();
+        const applicationId =
+          typeof ce.application_id === "string"
+            ? (ce.application_id as string)
+            : typeof data.application_id === "string"
+              ? (data.application_id as string)
+              : "";
         if (!applicationId) {
           this.logger.warn("db.widget_status.updated: missing applicationId; dropping", {
             moduleId,
@@ -2033,12 +2027,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
       engineUserId = engineUser.id;
     }
 
-    const response = await this.db.setSetting(
-      "twitch_token",
-      JSON.stringify(token),
-      "",
-      engineUserId
-    );
+    const response = await this.db.setSetting("twitch_token", JSON.stringify(token), "", engineUserId);
     if (response.status?.code !== "OK") {
       throw new Error(response.status?.message || "Failed to set twitch_token");
     }
@@ -2225,10 +2214,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
           const parsed = JSON.parse(text);
           // Workers may reply with a CloudEvent envelope ({type, data, ...})
           // or raw data. Prefer envelope.data when present.
-          data =
-            parsed && typeof parsed === "object" && "data" in parsed
-              ? (parsed as { data: unknown }).data
-              : parsed;
+          data = parsed && typeof parsed === "object" && "data" in parsed ? (parsed as { data: unknown }).data : parsed;
         } catch {
           data = text;
         }
@@ -2959,10 +2945,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
    * eventual `module.deleted` / `module.delete_failed` webhook can be
    * correlated with the originating uninstall request.
    */
-  async uninstallModule(
-    moduleKey: string,
-    context?: { clientId?: string }
-  ): Promise<UninstallModuleResponse> {
+  async uninstallModule(moduleKey: string, context?: { clientId?: string }): Promise<UninstallModuleResponse> {
     if (!moduleKey) {
       throw new Error("uninstallModule: moduleKey is required");
     }
@@ -3010,7 +2993,10 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
   }> {
     const page = query?.page ?? 1;
     const pageSize = query?.pageSize ?? 20;
-    const applicationId = query?.accountId ?? (await this.ensureApplicationId());
+    const applicationId =
+      query?.accountId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(query.accountId)
+        ? query.accountId
+        : await this.ensureApplicationId();
     const response = await this.db.listWorkflows({
       applicationId,
       includeDisabled: query?.enabled === undefined ? true : !query.enabled,
@@ -3598,6 +3584,37 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     return dbSceneToWire(response.scene);
   }
 
+  async getAvailableWidgets(): Promise<{
+    widgets: Array<{
+      id: string;
+      manifestId: string;
+      name: string;
+      description: string;
+      directory: string;
+      alertTypes: string[];
+      settingsSchema: string;
+      surface: string;
+      createdByType: string;
+      createdByRef: string;
+    }>;
+  }> {
+    const response = await this.db.listWidgets({ createdByType: "", createdByRef: "" });
+    return {
+      widgets: (response.widgets ?? []).map((w) => ({
+        id: w.id,
+        manifestId: w.manifestId,
+        name: w.name,
+        description: w.description,
+        directory: w.directory,
+        alertTypes: w.alertTypes ?? [],
+        settingsSchema: w.settingsSchema ?? "[]",
+        surface: w.surface ?? "scene",
+        createdByType: w.createdByType ?? "",
+        createdByRef: w.createdByRef ?? "",
+      })),
+    };
+  }
+
   async createScene(data: {
     name: string;
     accountId: string;
@@ -3676,10 +3693,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     // Fetch first so we know the applicationId for the webhook —
     // the delete RPC just returns ResponseStatus.
     const existing = await this.db.getScene({ id });
-    const applicationId =
-      existing.status?.code === "OK" && existing.scene
-        ? existing.scene.applicationId ?? ""
-        : "";
+    const applicationId = existing.status?.code === "OK" && existing.scene ? (existing.scene.applicationId ?? "") : "";
 
     const response = await this.db.deleteScene({ id });
     const success = response.code === "OK";
@@ -3694,9 +3708,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     return { success };
   }
 
-  private async emitSceneWebhook(
-    event: SceneCreatedEvent | SceneUpdatedEvent | SceneDeletedEvent
-  ): Promise<void> {
+  private async emitSceneWebhook(event: SceneCreatedEvent | SceneUpdatedEvent | SceneDeletedEvent): Promise<void> {
     if (!this.webhookClient) {
       this.logger.warn("No webhook client set, skipping scene webhook", { type: event.type });
       return;
@@ -4210,10 +4222,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
       throw new Error("alert id is required");
     }
     this.logger.info("Replaying alert (forwarding to streamware)", { id });
-    const reply = await this.nats.request(
-      "widget.queue.replay",
-      new TextEncoder().encode(JSON.stringify({ id }))
-    );
+    const reply = await this.nats.request("widget.queue.replay", new TextEncoder().encode(JSON.stringify({ id })));
     const result = JSON.parse(new TextDecoder().decode(reply.data)) as {
       ok: boolean;
       message: string;

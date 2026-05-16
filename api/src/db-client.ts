@@ -179,10 +179,14 @@ export class DbClient {
     return widget_status.GetWidgetStatus(req, this.config);
   }
 
-  async listWidgetStatus(
+async listWidgetStatus(
     req: widget_status.ListWidgetStatusRequest
   ): Promise<widget_status.ListWidgetStatusResponse> {
     return widget_status.ListWidgetStatus(req, this.config);
+  }
+
+  async listWidgets(req: module.ListWidgetsRequest): Promise<module.ListWidgetsResponse> {
+    return module.ListWidgets(req, this.config);
   }
 
   async deleteWidgetStatus(
