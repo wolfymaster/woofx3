@@ -13,6 +13,9 @@
     "build:ui": "cd ui && bun run build"
   },
   "dependencies": {
+    "@woofx3/common": "file:../shared/common/typescript",
+    "@woofx3/db": "file:../shared/clients/typescript/db",
+    "@woofx3/nats": "file:../shared/clients/typescript/nats",
     "obs-websocket-js": "^5.0.6",
     "zod": "^3.24.0"
   },
