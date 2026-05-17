@@ -619,6 +619,32 @@ export interface Woofx3EngineApi {
     context?: { moduleKey?: string }
   ): Promise<ModuleInstallZipResponse>;
 
+  /**
+   * Install a module by URL. The engine fetches the archive server-side from
+   * `downloadUrl` (a short-lived presigned URL produced by an upstream
+   * marketplace), then hands the bytes to barkloader. Install is asynchronous;
+   * `module.installed` or `module.install_failed` is dispatched via webhook
+   * once barkloader finishes, correlated by `moduleKey`.
+   *
+   * `clientId` is injected automatically by the authenticated ApiSession;
+   * callers only provide `moduleKey` and the metadata `ctx`.
+   *
+   * `ctx` is used for logging and for echoing fields back through the
+   * webhook payload (so the UI can show "Installing OBS Scenes v1.4.2 from
+   * marketplace..." without an extra round-trip). Barkloader's parsed manifest
+   * remains the source of truth for the module's actual name/version.
+   */
+  installModuleFromUrl(
+    downloadUrl: string,
+    moduleKey: string,
+    ctx: {
+      name: string;
+      version: string;
+      source: "marketplace";
+      marketplaceModuleId: string;
+    }
+  ): Promise<ModuleInstallZipResponse>;
+
   /** Lightweight summary of every module currently installed on the engine. */
   listEngineModules(): Promise<EngineModuleSummary[]>;
 

@@ -301,6 +301,9 @@ interface ApiOptions {
 }
 
 export class Api extends RpcTarget implements Woofx3EngineApi {
+  private static readonly MARKETPLACE_FETCH_TIMEOUT_MS = 30_000;
+  private static readonly MARKETPLACE_MAX_BYTES = 50 * 1024 * 1024;
+
   private triggerSubscribers = new Set<{
     onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
   }>();
@@ -2824,6 +2827,121 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     });
     const json = (await response.json()) as { message?: string };
     this.logger.info("Module zip installed", { clientId, moduleKey, fileName, message: json.message });
+    return { success: true, message: json.message ?? "Module uploaded" };
+  }
+
+  async installModuleFromUrl(
+    downloadUrl: string,
+    moduleKey: string,
+    context: {
+      clientId: string;
+      moduleKey: string;
+      name: string;
+      version: string;
+      source: "marketplace";
+      marketplaceModuleId: string;
+    }
+  ): Promise<{ success: boolean; message?: string; alreadyInstalled?: boolean }> {
+    const { clientId, name, version, source, marketplaceModuleId } = context;
+    if (!clientId) {
+      throw new Error("clientId is required to install a module");
+    }
+    if (!moduleKey) {
+      throw new Error("moduleKey is required to install a module from URL");
+    }
+
+    this.logger.info("Installing module from URL", {
+      clientId,
+      moduleKey,
+      source,
+      marketplaceModuleId,
+      name,
+      version,
+    });
+
+    const existing = await this.db.getModuleByModuleKey(moduleKey);
+    if (existing) {
+      this.logger.info("Module already installed, skipping fetch", {
+        clientId,
+        moduleKey,
+        moduleName: existing.name,
+      });
+      if (this.webhookClient) {
+        await this.webhookClient.send(
+          {
+            type: "module.installed",
+            moduleName: existing.name,
+            version: existing.version,
+            moduleKey,
+            alreadyInstalled: true,
+          },
+          clientId || undefined,
+        );
+      }
+      return { success: true, message: "Module already installed", alreadyInstalled: true };
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Api.MARKETPLACE_FETCH_TIMEOUT_MS);
+    let archiveBytes: Uint8Array;
+    try {
+      const res = await fetch(downloadUrl, { signal: controller.signal });
+      if (!res.ok) {
+        throw new Error(`Marketplace fetch failed: ${res.status} ${res.statusText}`);
+      }
+      const contentLength = Number(res.headers.get("content-length") ?? "0");
+      if (contentLength > Api.MARKETPLACE_MAX_BYTES) {
+        throw new Error(
+          `Marketplace archive exceeds size cap (${contentLength} > ${Api.MARKETPLACE_MAX_BYTES})`,
+        );
+      }
+      const buf = new Uint8Array((await res.arrayBuffer()) as ArrayBuffer);
+      if (buf.byteLength > Api.MARKETPLACE_MAX_BYTES) {
+        throw new Error(
+          `Marketplace archive exceeds size cap (${buf.byteLength} > ${Api.MARKETPLACE_MAX_BYTES})`,
+        );
+      }
+      archiveBytes = buf;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error("Marketplace fetch failed", { clientId, moduleKey, message });
+      if (this.webhookClient) {
+        await this.webhookClient.send(
+          {
+            type: "module.install_failed",
+            moduleName: name,
+            version,
+            moduleKey,
+            error: `Failed to fetch marketplace archive: ${message}`,
+          },
+          clientId || undefined,
+        );
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const fileName = `${name}-${version}.zip`;
+    const formData = new FormData();
+    formData.append(
+      "file",
+      new File([archiveBytes as Uint8Array<ArrayBuffer>], fileName, { type: "application/zip" }),
+    );
+    formData.append("client_id", clientId);
+    formData.append("module_key", moduleKey);
+
+    const response = await this.barkloaderRequest("/functions", {
+      method: "POST",
+      body: formData,
+    });
+    const json = (await response.json()) as { message?: string };
+    this.logger.info("Module from URL handed to barkloader", {
+      clientId,
+      moduleKey,
+      fileName,
+      message: json.message,
+    });
     return { success: true, message: json.message ?? "Module uploaded" };
   }
 

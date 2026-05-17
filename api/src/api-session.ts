@@ -31,6 +31,23 @@ export class ApiSession extends RpcTarget {
     });
   }
 
+  async installModuleFromUrl(
+    downloadUrl: string,
+    moduleKey: string,
+    ctx: {
+      name: string;
+      version: string;
+      source: "marketplace";
+      marketplaceModuleId: string;
+    },
+  ) {
+    return this.api.installModuleFromUrl(downloadUrl, moduleKey, {
+      clientId: this.clientId,
+      moduleKey,
+      ...ctx,
+    });
+  }
+
   async uninstallModule(moduleKey: string) {
     return this.api.uninstallModule(moduleKey, {
       clientId: this.clientId,
