@@ -330,6 +330,7 @@ impl ModuleManifest {
     /// The ID component used in the composite module_id.
     /// Uses the manifest `id` field if non-empty, otherwise falls back to
     /// lowercase snake_case of the module name.
+    #[allow(dead_code)]
     pub fn id_component(&self) -> String {
         let trimmed = self.id.trim();
         if !trimmed.is_empty() {
@@ -340,6 +341,7 @@ impl ModuleManifest {
 
     /// Compute the composite module_key: `{id}:{version}:{hash}` where hash is
     /// the first 7 characters of the SHA-256 hex digest of the zip bytes.
+    #[allow(dead_code)]
     pub fn compute_module_key(&self, zip_bytes: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(zip_bytes);
@@ -349,6 +351,7 @@ impl ModuleManifest {
     }
 }
 
+#[allow(dead_code)]
 fn dedup_preserve_order(items: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(items.len());
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -360,6 +363,7 @@ fn dedup_preserve_order(items: &[String]) -> Vec<String> {
     out
 }
 
+#[allow(dead_code)]
 fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
     for (i, c) in s.chars().enumerate() {
@@ -554,6 +558,7 @@ fn widget_asset_prefix(assets: &str) -> String {
 ///
 /// This table mirrors `api/src/alert-emitter.ts` mappers — keep in sync
 /// when the AlertContext type union grows.
+#[allow(dead_code)]
 pub fn alert_type_for_canonical(canonical: &str) -> Option<&'static str> {
     let event = canonical.rsplit(':').next().unwrap_or(canonical);
     match event {
@@ -575,6 +580,7 @@ impl ModuleWidget {
     /// the AlertContext.type lookup table. Canonical ids that don't map to
     /// an AlertContext type are skipped. Order is preserved, duplicates
     /// removed.
+    #[allow(dead_code)]
     pub fn resolved_alert_types(&self) -> Vec<String> {
         if !self.alert_types.is_empty() {
             return dedup_preserve_order(&self.alert_types);
@@ -599,21 +605,6 @@ impl ModuleWidget {
     /// what Convex needs to address widget files via the asset HTTP route.
     /// `settings_schema` is the manifest's `settingsSchema` value serialized;
     /// engine treats it opaquely.
-    pub fn to_input(&self) -> super::db_proxy::WidgetInputJson {
-        super::db_proxy::WidgetInputJson {
-            manifest_id: self.id.clone(),
-            name: self.name.clone(),
-            description: self.description.clone().unwrap_or_default(),
-            directory: self.assets.clone().unwrap_or_default(),
-            alert_types: self.resolved_alert_types(),
-            settings_schema: self
-                .settings_schema
-                .as_ref()
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "{}".to_string()),
-        }
-    }
-
     async fn upload_one_file<R: Repository>(
         &self,
         module_key: &str,

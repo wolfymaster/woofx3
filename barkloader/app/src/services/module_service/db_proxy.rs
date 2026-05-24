@@ -91,41 +91,6 @@ pub struct DeleteByModuleIdJson {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct WidgetInputJson {
-    /// Stable manifest-local id (e.g. "raid_counter"). Forms the canonical
-    /// id `{moduleId}:widget:{manifest_id}`. Required for the dedupe/upsert
-    /// key on the widgets table.
-    pub manifest_id: String,
-    pub name: String,
-    pub description: String,
-    /// Path inside the module zip that contains the widget's bundled
-    /// frontend assets. Engine uploads everything under this prefix to the
-    /// file repository at install time (see `ModuleWidget::upload_assets`).
-    pub directory: String,
-    /// Wire-format AlertContext.type strings the widget renders. Derived
-    /// from manifest `accepted_events` via the canonical → alert-type
-    /// lookup, or supplied explicitly by manifest `alert_types`.
-    pub alert_types: Vec<String>,
-    /// Serialized JSON of the manifest's `settingsSchema` field. Engine
-    /// stores opaquely; UI parses to render configuration controls.
-    pub settings_schema: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RegisterWidgetsJson {
-    pub module_key: String,
-    pub module_name: String,
-    pub version: String,
-    pub widgets: Vec<WidgetInputJson>,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub created_by_type: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub created_by_ref: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct AssetInputJson {
     /// Stable manifest-local id (e.g. "victory_sound"). Forms the
     /// canonical id `{moduleId}:asset:{manifest_id}`.
@@ -283,74 +248,6 @@ pub async fn delete_triggers_by_module_id(
     Ok(())
 }
 
-/// Twirp JSON for `module.ModuleService/RegisterWidgets`. Mirrors
-/// `register_triggers` / `register_actions` — the db-proxy persists rows,
-/// emits `db.module.widget.registered.{appId}` on the NATS outbox, and the
-/// api/ TypeScript service forwards the resulting `module.widget.registered`
-/// CallbackEvent to the registered Convex webhook.
-///
-/// Wired pending the Go server-side handler — see
-/// `~/.claude/plans/widget-producer-wiring.md` for the full execution plan.
-/// Calling this against an engine that hasn't shipped the Go handler will
-/// 404; install_flow integration is gated on that.
-pub async fn register_widgets(
-    db_proxy_url: &str,
-    module_key: &str,
-    module_name: &str,
-    version: &str,
-    widgets: Vec<WidgetInputJson>,
-) -> Result<()> {
-    let url = format!("{}/twirp/module.ModuleService/RegisterWidgets", db_proxy_url);
-    let body = RegisterWidgetsJson {
-        module_key: module_key.to_string(),
-        module_name: module_name.to_string(),
-        version: version.to_string(),
-        widgets,
-        created_by_type: String::new(),
-        created_by_ref: String::new(),
-    };
-    let client = reqwest::Client::new();
-    let response = client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| anyhow!("RegisterWidgets request failed: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(anyhow!("RegisterWidgets failed {}: {}", status, text));
-    }
-    Ok(())
-}
-
-/// Twirp JSON for `module.ModuleService/DeleteWidgetsByModuleId`.
-/// Server-side prefix match on `created_by_ref LIKE '{module_id}:%'`.
-pub async fn delete_widgets_by_module_id(
-    db_proxy_url: &str,
-    module_id: &str,
-) -> Result<()> {
-    let url = format!("{}/twirp/module.ModuleService/DeleteWidgetsByModuleId", db_proxy_url);
-    let body = DeleteByModuleIdJson { module_id: module_id.to_string() };
-    let client = reqwest::Client::new();
-    let response = client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| anyhow!("DeleteWidgetsByModuleId request failed: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(anyhow!("DeleteWidgetsByModuleId failed {}: {}", status, text));
-    }
-    Ok(())
-}
-
 /// Twirp JSON for `module.ModuleService/DeleteActionsByModuleId`.
 pub async fn delete_actions_by_module_id(
     db_proxy_url: &str,
@@ -373,18 +270,6 @@ pub async fn delete_actions_by_module_id(
         return Err(anyhow!("DeleteActionsByModuleId failed {}: {}", status, text));
     }
     Ok(())
-}
-
-#[derive(Debug, Serialize)]
-pub struct DeleteCommandsByModuleJson {
-    pub module_name: String,
-    pub application_id: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct DeleteWorkflowsByModuleJson {
-    pub module_name: String,
-    pub application_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -1036,9 +921,6 @@ pub async fn get_module_by_name(
     }
 
     let text = response.text().await.unwrap_or_default();
-    let value: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| anyhow!("parse GetModuleByName response: {}", e))?;
-
     Ok(Some(text))
 }
 
@@ -1092,6 +974,7 @@ pub async fn register_assets(
 /// the proto `ModuleResourceInstance` message but only deserializes the
 /// fields the sandbox actually needs (canonical_id and the parts that
 /// reconstruct it). Extra fields on the wire are ignored.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceInstanceJson {
