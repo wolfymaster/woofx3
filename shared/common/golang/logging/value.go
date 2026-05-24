@@ -30,13 +30,21 @@ func valueToAny(value slog.Value) any {
 		}
 		return group
 	case slog.KindAny:
-		return value.Any()
+		return anyValueToLogField(value)
 	default:
 		return value.String()
 	}
 }
 
 const timeRFC3339Nano = "2006-01-02T15:04:05.999999999Z07:00"
+
+func anyValueToLogField(value slog.Value) any {
+	anyVal := value.Any()
+	if err, ok := anyVal.(error); ok && err != nil {
+		return err.Error()
+	}
+	return anyVal
+}
 
 func redactAny(value any, redactKeys map[string]struct{}) any {
 	switch typed := value.(type) {
