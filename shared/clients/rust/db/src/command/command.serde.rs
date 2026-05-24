@@ -31,9 +31,6 @@ impl serde::Serialize for Command {
         if self.enabled {
             len += 1;
         }
-        if !self.created_by.is_empty() {
-            len += 1;
-        }
         if self.created_at.is_some() {
             len += 1;
         }
@@ -68,9 +65,6 @@ impl serde::Serialize for Command {
         if self.enabled {
             struct_ser.serialize_field("enabled", &self.enabled)?;
         }
-        if !self.created_by.is_empty() {
-            struct_ser.serialize_field("createdBy", &self.created_by)?;
-        }
         if let Some(v) = self.created_at.as_ref() {
             struct_ser.serialize_field("createdAt", v)?;
         }
@@ -100,8 +94,6 @@ impl<'de> serde::Deserialize<'de> for Command {
             "cooldown",
             "priority",
             "enabled",
-            "created_by",
-            "createdBy",
             "created_at",
             "createdAt",
             "created_by_type",
@@ -120,7 +112,6 @@ impl<'de> serde::Deserialize<'de> for Command {
             Cooldown,
             Priority,
             Enabled,
-            CreatedBy,
             CreatedAt,
             CreatedByType,
             CreatedByRef,
@@ -153,7 +144,6 @@ impl<'de> serde::Deserialize<'de> for Command {
                             "cooldown" => Ok(GeneratedField::Cooldown),
                             "priority" => Ok(GeneratedField::Priority),
                             "enabled" => Ok(GeneratedField::Enabled),
-                            "createdBy" | "created_by" => Ok(GeneratedField::CreatedBy),
                             "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
                             "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
                             "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
@@ -184,7 +174,6 @@ impl<'de> serde::Deserialize<'de> for Command {
                 let mut cooldown__ = None;
                 let mut priority__ = None;
                 let mut enabled__ = None;
-                let mut created_by__ = None;
                 let mut created_at__ = None;
                 let mut created_by_type__ = None;
                 let mut created_by_ref__ = None;
@@ -242,12 +231,6 @@ impl<'de> serde::Deserialize<'de> for Command {
                             }
                             enabled__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::CreatedBy => {
-                            if created_by__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("createdBy"));
-                            }
-                            created_by__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::CreatedAt => {
                             if created_at__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("createdAt"));
@@ -277,7 +260,6 @@ impl<'de> serde::Deserialize<'de> for Command {
                     cooldown: cooldown__.unwrap_or_default(),
                     priority: priority__.unwrap_or_default(),
                     enabled: enabled__.unwrap_or_default(),
-                    created_by: created_by__.unwrap_or_default(),
                     created_at: created_at__,
                     created_by_type: created_by_type__.unwrap_or_default(),
                     created_by_ref: created_by_ref__.unwrap_or_default(),
@@ -424,9 +406,6 @@ impl serde::Serialize for CreateCommandRequest {
         if self.priority != 0 {
             len += 1;
         }
-        if !self.created_by.is_empty() {
-            len += 1;
-        }
         if !self.created_by_type.is_empty() {
             len += 1;
         }
@@ -455,9 +434,6 @@ impl serde::Serialize for CreateCommandRequest {
         if self.priority != 0 {
             struct_ser.serialize_field("priority", &self.priority)?;
         }
-        if !self.created_by.is_empty() {
-            struct_ser.serialize_field("createdBy", &self.created_by)?;
-        }
         if !self.created_by_type.is_empty() {
             struct_ser.serialize_field("createdByType", &self.created_by_type)?;
         }
@@ -483,8 +459,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
             "type_value",
             "typeValue",
             "priority",
-            "created_by",
-            "createdBy",
             "created_by_type",
             "createdByType",
             "created_by_ref",
@@ -500,7 +474,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
             Type,
             TypeValue,
             Priority,
-            CreatedBy,
             CreatedByType,
             CreatedByRef,
         }
@@ -531,7 +504,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                             "type" => Ok(GeneratedField::Type),
                             "typeValue" | "type_value" => Ok(GeneratedField::TypeValue),
                             "priority" => Ok(GeneratedField::Priority),
-                            "createdBy" | "created_by" => Ok(GeneratedField::CreatedBy),
                             "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
                             "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
@@ -560,7 +532,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                 let mut r#type__ = None;
                 let mut type_value__ = None;
                 let mut priority__ = None;
-                let mut created_by__ = None;
                 let mut created_by_type__ = None;
                 let mut created_by_ref__ = None;
                 while let Some(k) = map_.next_key()? {
@@ -611,12 +582,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                                 Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
                             ;
                         }
-                        GeneratedField::CreatedBy => {
-                            if created_by__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("createdBy"));
-                            }
-                            created_by__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::CreatedByType => {
                             if created_by_type__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("createdByType"));
@@ -639,7 +604,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                     r#type: r#type__.unwrap_or_default(),
                     type_value: type_value__.unwrap_or_default(),
                     priority: priority__.unwrap_or_default(),
-                    created_by: created_by__.unwrap_or_default(),
                     created_by_type: created_by_type__.unwrap_or_default(),
                     created_by_ref: created_by_ref__.unwrap_or_default(),
                 })

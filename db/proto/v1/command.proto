@@ -32,9 +32,10 @@ message Command {
     string type_value = 5;          // Value of the command type
     int32 cooldown = 6;             // Cooldown between command uses in seconds
     int32 priority = 7;             // Priority of the command
-    
+
     bool enabled = 13;               // Whether the command is enabled
-    string created_by = 14;         // User ID who created this command
+    reserved 14;                     // was: string created_by (user UUID), replaced by created_by_type/created_by_ref
+    reserved "created_by";
     google.protobuf.Timestamp created_at = 15;
     string created_by_type = 16;
     string created_by_ref = 17;
@@ -74,7 +75,8 @@ message CreateCommandRequest {
     string type = 5;
     string type_value = 6;
     int32 priority = 7;
-    string created_by = 8;
+    reserved 8;                      // was: string created_by, replaced by created_by_type/created_by_ref
+    reserved "created_by";
     string created_by_type = 9;
     string created_by_ref = 10;
 }

@@ -15,8 +15,6 @@ pub struct Workflow {
     pub description: ::prost::alloc::string::String,
     #[prost(string, tag="4")]
     pub application_id: ::prost::alloc::string::String,
-    #[prost(string, tag="5")]
-    pub created_by: ::prost::alloc::string::String,
     #[prost(bool, tag="6")]
     pub enabled: bool,
     /// Default variables for the workflow
@@ -131,8 +129,6 @@ pub struct CreateWorkflowRequest {
     pub description: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub application_id: ::prost::alloc::string::String,
-    #[prost(string, tag="4")]
-    pub created_by: ::prost::alloc::string::String,
     #[prost(bool, tag="5")]
     pub enabled: bool,
     #[prost(map="string, string", tag="7")]

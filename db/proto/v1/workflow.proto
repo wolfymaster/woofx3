@@ -45,7 +45,8 @@ message Workflow {
     string name = 2;
     string description = 3;
     string application_id = 4;
-    string created_by = 5;
+    reserved 5;                        // was: string created_by, replaced by created_by_type/created_by_ref
+    reserved "created_by";
     bool enabled = 6;
     reserved 7;                        // was: repeated WorkflowStep steps
     reserved "steps";
@@ -105,7 +106,8 @@ message CreateWorkflowRequest {
     string name = 1;
     string description = 2;
     string application_id = 3;
-    string created_by = 4;
+    reserved 4;                        // was: string created_by, replaced by created_by_type/created_by_ref
+    reserved "created_by";
     bool enabled = 5;
     reserved 6;                        // was: repeated WorkflowStep steps
     reserved "steps";

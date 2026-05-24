@@ -124,9 +124,6 @@ impl serde::Serialize for CreateWorkflowRequest {
         if !self.application_id.is_empty() {
             len += 1;
         }
-        if !self.created_by.is_empty() {
-            len += 1;
-        }
         if self.enabled {
             len += 1;
         }
@@ -169,9 +166,6 @@ impl serde::Serialize for CreateWorkflowRequest {
         }
         if !self.application_id.is_empty() {
             struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
-        if !self.created_by.is_empty() {
-            struct_ser.serialize_field("createdBy", &self.created_by)?;
         }
         if self.enabled {
             struct_ser.serialize_field("enabled", &self.enabled)?;
@@ -220,8 +214,6 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
             "description",
             "application_id",
             "applicationId",
-            "created_by",
-            "createdBy",
             "enabled",
             "variables",
             "on_success",
@@ -249,7 +241,6 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
             Name,
             Description,
             ApplicationId,
-            CreatedBy,
             Enabled,
             Variables,
             OnSuccess,
@@ -285,7 +276,6 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
                             "name" => Ok(GeneratedField::Name),
                             "description" => Ok(GeneratedField::Description),
                             "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
-                            "createdBy" | "created_by" => Ok(GeneratedField::CreatedBy),
                             "enabled" => Ok(GeneratedField::Enabled),
                             "variables" => Ok(GeneratedField::Variables),
                             "onSuccess" | "on_success" => Ok(GeneratedField::OnSuccess),
@@ -319,7 +309,6 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
                 let mut name__ = None;
                 let mut description__ = None;
                 let mut application_id__ = None;
-                let mut created_by__ = None;
                 let mut enabled__ = None;
                 let mut variables__ = None;
                 let mut on_success__ = None;
@@ -350,12 +339,6 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
                                 return Err(serde::de::Error::duplicate_field("applicationId"));
                             }
                             application_id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::CreatedBy => {
-                            if created_by__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("createdBy"));
-                            }
-                            created_by__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Enabled => {
                             if enabled__.is_some() {
@@ -435,7 +418,6 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
                     name: name__.unwrap_or_default(),
                     description: description__.unwrap_or_default(),
                     application_id: application_id__.unwrap_or_default(),
-                    created_by: created_by__.unwrap_or_default(),
                     enabled: enabled__.unwrap_or_default(),
                     variables: variables__.unwrap_or_default(),
                     on_success: on_success__.unwrap_or_default(),
@@ -2395,9 +2377,6 @@ impl serde::Serialize for Workflow {
         if !self.application_id.is_empty() {
             len += 1;
         }
-        if !self.created_by.is_empty() {
-            len += 1;
-        }
         if self.enabled {
             len += 1;
         }
@@ -2449,9 +2428,6 @@ impl serde::Serialize for Workflow {
         }
         if !self.application_id.is_empty() {
             struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
-        if !self.created_by.is_empty() {
-            struct_ser.serialize_field("createdBy", &self.created_by)?;
         }
         if self.enabled {
             struct_ser.serialize_field("enabled", &self.enabled)?;
@@ -2507,8 +2483,6 @@ impl<'de> serde::Deserialize<'de> for Workflow {
             "description",
             "application_id",
             "applicationId",
-            "created_by",
-            "createdBy",
             "enabled",
             "variables",
             "on_success",
@@ -2541,7 +2515,6 @@ impl<'de> serde::Deserialize<'de> for Workflow {
             Name,
             Description,
             ApplicationId,
-            CreatedBy,
             Enabled,
             Variables,
             OnSuccess,
@@ -2580,7 +2553,6 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                             "name" => Ok(GeneratedField::Name),
                             "description" => Ok(GeneratedField::Description),
                             "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
-                            "createdBy" | "created_by" => Ok(GeneratedField::CreatedBy),
                             "enabled" => Ok(GeneratedField::Enabled),
                             "variables" => Ok(GeneratedField::Variables),
                             "onSuccess" | "on_success" => Ok(GeneratedField::OnSuccess),
@@ -2617,7 +2589,6 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                 let mut name__ = None;
                 let mut description__ = None;
                 let mut application_id__ = None;
-                let mut created_by__ = None;
                 let mut enabled__ = None;
                 let mut variables__ = None;
                 let mut on_success__ = None;
@@ -2656,12 +2627,6 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                                 return Err(serde::de::Error::duplicate_field("applicationId"));
                             }
                             application_id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::CreatedBy => {
-                            if created_by__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("createdBy"));
-                            }
-                            created_by__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Enabled => {
                             if enabled__.is_some() {
@@ -2754,7 +2719,6 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                     name: name__.unwrap_or_default(),
                     description: description__.unwrap_or_default(),
                     application_id: application_id__.unwrap_or_default(),
-                    created_by: created_by__.unwrap_or_default(),
                     enabled: enabled__.unwrap_or_default(),
                     variables: variables__.unwrap_or_default(),
                     on_success: on_success__.unwrap_or_default(),

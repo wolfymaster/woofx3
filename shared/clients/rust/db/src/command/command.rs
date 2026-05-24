@@ -27,9 +27,6 @@ pub struct Command {
     /// Whether the command is enabled
     #[prost(bool, tag="13")]
     pub enabled: bool,
-    /// User ID who created this command
-    #[prost(string, tag="14")]
-    pub created_by: ::prost::alloc::string::String,
     #[prost(message, optional, tag="15")]
     pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
     #[prost(string, tag="16")]
@@ -88,8 +85,6 @@ pub struct CreateCommandRequest {
     pub type_value: ::prost::alloc::string::String,
     #[prost(int32, tag="7")]
     pub priority: i32,
-    #[prost(string, tag="8")]
-    pub created_by: ::prost::alloc::string::String,
     #[prost(string, tag="9")]
     pub created_by_type: ::prost::alloc::string::String,
     #[prost(string, tag="10")]

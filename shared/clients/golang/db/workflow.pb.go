@@ -33,7 +33,6 @@ type Workflow struct {
 	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	Description    string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	ApplicationId  string                 `protobuf:"bytes,4,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
-	CreatedBy      string                 `protobuf:"bytes,5,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	Enabled        bool                   `protobuf:"varint,6,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	Variables      map[string]string      `protobuf:"bytes,8,rep,name=variables,proto3" json:"variables,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Default variables for the workflow
 	OnSuccess      string                 `protobuf:"bytes,9,opt,name=on_success,json=onSuccess,proto3" json:"on_success,omitempty"`
@@ -111,13 +110,6 @@ func (x *Workflow) GetDescription() string {
 func (x *Workflow) GetApplicationId() string {
 	if x != nil {
 		return x.ApplicationId
-	}
-	return ""
-}
-
-func (x *Workflow) GetCreatedBy() string {
-	if x != nil {
-		return x.CreatedBy
 	}
 	return ""
 }
@@ -477,7 +469,6 @@ type CreateWorkflowRequest struct {
 	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Description    string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
 	ApplicationId  string                 `protobuf:"bytes,3,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
-	CreatedBy      string                 `protobuf:"bytes,4,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	Enabled        bool                   `protobuf:"varint,5,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	Variables      map[string]string      `protobuf:"bytes,7,rep,name=variables,proto3" json:"variables,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	OnSuccess      string                 `protobuf:"bytes,8,opt,name=on_success,json=onSuccess,proto3" json:"on_success,omitempty"`
@@ -545,13 +536,6 @@ func (x *CreateWorkflowRequest) GetDescription() string {
 func (x *CreateWorkflowRequest) GetApplicationId() string {
 	if x != nil {
 		return x.ApplicationId
-	}
-	return ""
-}
-
-func (x *CreateWorkflowRequest) GetCreatedBy() string {
-	if x != nil {
-		return x.CreatedBy
 	}
 	return ""
 }
@@ -1582,14 +1566,12 @@ var File_workflow_proto protoreflect.FileDescriptor
 
 const file_workflow_proto_rawDesc = "" +
 	"\n" +
-	"\x0eworkflow.proto\x12\bworkflow\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xeb\x05\n" +
+	"\x0eworkflow.proto\x12\bworkflow\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xde\x05\n" +
 	"\bWorkflow\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12%\n" +
-	"\x0eapplication_id\x18\x04 \x01(\tR\rapplicationId\x12\x1d\n" +
-	"\n" +
-	"created_by\x18\x05 \x01(\tR\tcreatedBy\x12\x18\n" +
+	"\x0eapplication_id\x18\x04 \x01(\tR\rapplicationId\x12\x18\n" +
 	"\aenabled\x18\x06 \x01(\bR\aenabled\x12?\n" +
 	"\tvariables\x18\b \x03(\v2!.workflow.Workflow.VariablesEntryR\tvariables\x12\x1d\n" +
 	"\n" +
@@ -1613,7 +1595,8 @@ const file_workflow_proto_rawDesc = "" +
 	"manifestId\x1a<\n" +
 	"\x0eVariablesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\a\x10\bR\x05steps\"\xd3\x05\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x05\x10\x06J\x04\b\a\x10\bR\n" +
+	"created_byR\x05steps\"\xd3\x05\n" +
 	"\x11WorkflowExecution\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
@@ -1659,13 +1642,11 @@ const file_workflow_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a:\n" +
 	"\fOutputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xff\x04\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xf2\x04\n" +
 	"\x15CreateWorkflowRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12%\n" +
-	"\x0eapplication_id\x18\x03 \x01(\tR\rapplicationId\x12\x1d\n" +
-	"\n" +
-	"created_by\x18\x04 \x01(\tR\tcreatedBy\x12\x18\n" +
+	"\x0eapplication_id\x18\x03 \x01(\tR\rapplicationId\x12\x18\n" +
 	"\aenabled\x18\x05 \x01(\bR\aenabled\x12L\n" +
 	"\tvariables\x18\a \x03(\v2..workflow.CreateWorkflowRequest.VariablesEntryR\tvariables\x12\x1d\n" +
 	"\n" +
@@ -1685,7 +1666,8 @@ const file_workflow_proto_rawDesc = "" +
 	"manifestId\x1a<\n" +
 	"\x0eVariablesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x06\x10\aR\x05steps\"$\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x04\x10\x05J\x04\b\x06\x10\aR\n" +
+	"created_byR\x05steps\"$\n" +
 	"\x12GetWorkflowRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"r\n" +
 	"\x10WorkflowResponse\x12.\n" +

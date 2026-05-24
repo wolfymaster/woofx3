@@ -33,7 +33,6 @@ type Command struct {
 	Cooldown      int32                  `protobuf:"varint,6,opt,name=cooldown,proto3" json:"cooldown,omitempty"`                               // Cooldown between command uses in seconds
 	Priority      int32                  `protobuf:"varint,7,opt,name=priority,proto3" json:"priority,omitempty"`                               // Priority of the command
 	Enabled       bool                   `protobuf:"varint,13,opt,name=enabled,proto3" json:"enabled,omitempty"`                                // Whether the command is enabled
-	CreatedBy     string                 `protobuf:"bytes,14,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`            // User ID who created this command
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	CreatedByType string                 `protobuf:"bytes,16,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
 	CreatedByRef  string                 `protobuf:"bytes,17,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
@@ -125,13 +124,6 @@ func (x *Command) GetEnabled() bool {
 		return x.Enabled
 	}
 	return false
-}
-
-func (x *Command) GetCreatedBy() string {
-	if x != nil {
-		return x.CreatedBy
-	}
-	return ""
 }
 
 func (x *Command) GetCreatedAt() *timestamppb.Timestamp {
@@ -385,7 +377,6 @@ type CreateCommandRequest struct {
 	Type          string                 `protobuf:"bytes,5,opt,name=type,proto3" json:"type,omitempty"`
 	TypeValue     string                 `protobuf:"bytes,6,opt,name=type_value,json=typeValue,proto3" json:"type_value,omitempty"`
 	Priority      int32                  `protobuf:"varint,7,opt,name=priority,proto3" json:"priority,omitempty"`
-	CreatedBy     string                 `protobuf:"bytes,8,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	CreatedByType string                 `protobuf:"bytes,9,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
 	CreatedByRef  string                 `protobuf:"bytes,10,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -469,13 +460,6 @@ func (x *CreateCommandRequest) GetPriority() int32 {
 		return x.Priority
 	}
 	return 0
-}
-
-func (x *CreateCommandRequest) GetCreatedBy() string {
-	if x != nil {
-		return x.CreatedBy
-	}
-	return ""
 }
 
 func (x *CreateCommandRequest) GetCreatedByType() string {
@@ -634,7 +618,7 @@ var File_command_proto protoreflect.FileDescriptor
 
 const file_command_proto_rawDesc = "" +
 	"\n" +
-	"\rcommand.proto\x12\acommand\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x87\x03\n" +
+	"\rcommand.proto\x12\acommand\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfa\x02\n" +
 	"\aCommand\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x18\n" +
@@ -644,13 +628,12 @@ const file_command_proto_rawDesc = "" +
 	"type_value\x18\x05 \x01(\tR\ttypeValue\x12\x1a\n" +
 	"\bcooldown\x18\x06 \x01(\x05R\bcooldown\x12\x1a\n" +
 	"\bpriority\x18\a \x01(\x05R\bpriority\x12\x18\n" +
-	"\aenabled\x18\r \x01(\bR\aenabled\x12\x1d\n" +
-	"\n" +
-	"created_by\x18\x0e \x01(\tR\tcreatedBy\x129\n" +
+	"\aenabled\x18\r \x01(\bR\aenabled\x129\n" +
 	"\n" +
 	"created_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12&\n" +
 	"\x0fcreated_by_type\x18\x10 \x01(\tR\rcreatedByType\x12$\n" +
-	"\x0ecreated_by_ref\x18\x11 \x01(\tR\fcreatedByRef\"\x82\x01\n" +
+	"\x0ecreated_by_ref\x18\x11 \x01(\tR\fcreatedByRefJ\x04\b\x0e\x10\x0fR\n" +
+	"created_by\"\x82\x01\n" +
 	"\x11GetCommandRequest\x12\x18\n" +
 	"\acommand\x18\x01 \x01(\tR\acommand\x12%\n" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x1f\n" +
@@ -664,7 +647,7 @@ const file_command_proto_rawDesc = "" +
 	"\x10include_disabled\x18\x02 \x01(\bR\x0fincludeDisabled\"t\n" +
 	"\x14ListCommandsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12,\n" +
-	"\bcommands\x18\x02 \x03(\v2\x10.command.CommandR\bcommands\"\xc9\x02\n" +
+	"\bcommands\x18\x02 \x03(\v2\x10.command.CommandR\bcommands\"\xbc\x02\n" +
 	"\x14CreateCommandRequest\x12%\n" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12\x18\n" +
@@ -673,12 +656,11 @@ const file_command_proto_rawDesc = "" +
 	"\x04type\x18\x05 \x01(\tR\x04type\x12\x1d\n" +
 	"\n" +
 	"type_value\x18\x06 \x01(\tR\ttypeValue\x12\x1a\n" +
-	"\bpriority\x18\a \x01(\x05R\bpriority\x12\x1d\n" +
-	"\n" +
-	"created_by\x18\b \x01(\tR\tcreatedBy\x12&\n" +
+	"\bpriority\x18\a \x01(\x05R\bpriority\x12&\n" +
 	"\x0fcreated_by_type\x18\t \x01(\tR\rcreatedByType\x12$\n" +
 	"\x0ecreated_by_ref\x18\n" +
-	" \x01(\tR\fcreatedByRef\"\xc5\x01\n" +
+	" \x01(\tR\fcreatedByRefJ\x04\b\b\x10\tR\n" +
+	"created_by\"\xc5\x01\n" +
 	"\x14UpdateCommandRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12\x18\n" +
