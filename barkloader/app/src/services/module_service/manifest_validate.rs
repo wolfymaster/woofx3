@@ -46,33 +46,28 @@ pub enum ResolvedActionImpl {
 #[derive(Debug, Clone)]
 pub struct ResolvedTrigger {
     pub canonical_id: CanonicalId,
-    pub manifest_index: usize,
 }
 
 #[derive(Debug, Clone)]
 pub struct ResolvedAction {
     pub canonical_id: CanonicalId,
-    pub manifest_index: usize,
     pub implementation: ResolvedActionImpl,
 }
 
 #[derive(Debug, Clone)]
 pub struct ResolvedFunction {
     pub canonical_id: CanonicalId,
-    pub manifest_index: usize,
 }
 
 #[derive(Debug, Clone)]
 pub struct ResolvedCommand {
     pub canonical_id: CanonicalId,
-    pub manifest_index: usize,
     pub workflow: Option<CanonicalId>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ResolvedWorkflow {
     pub canonical_id: CanonicalId,
-    pub manifest_index: usize,
     pub trigger: CanonicalId,
     pub step_actions: Vec<CanonicalId>,
 }
@@ -80,32 +75,17 @@ pub struct ResolvedWorkflow {
 #[derive(Debug, Clone)]
 pub struct ResolvedWidget {
     pub canonical_id: CanonicalId,
-    pub manifest_index: usize,
     pub accepted_events: Vec<CanonicalId>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ResolvedOverlay {
     pub canonical_id: CanonicalId,
-    pub manifest_index: usize,
 }
 
 #[derive(Debug, Clone)]
 pub struct ResolvedAsset {
     pub canonical_id: CanonicalId,
-    pub manifest_index: usize,
-}
-
-/// A validated resource-kind declaration. Resource kinds are open-ended
-/// strings (no fixed enum) declared by modules to describe the runtime
-/// instances they're the controller for — see [`ManifestResourceKind`]
-/// and `docs/barkloader/modules.md`. Unlike surface kinds, they don't
-/// carry their own canonical id; instead, instances of the kind get
-/// `{moduleId}:{kind}:{instanceId}` canonical ids at runtime.
-#[derive(Debug, Clone)]
-pub struct ResolvedResourceKind {
-    pub kind: String,
-    pub manifest_index: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -119,7 +99,6 @@ pub struct ResolvedManifest {
     pub widgets: Vec<ResolvedWidget>,
     pub overlays: Vec<ResolvedOverlay>,
     pub assets: Vec<ResolvedAsset>,
-    pub resource_kinds: Vec<ResolvedResourceKind>,
 }
 
 /// Validate the manifest and resolve all intra-manifest references.
@@ -176,24 +155,20 @@ pub fn validate(manifest: &ModuleManifest) -> Result<ResolvedManifest> {
         |a: &ManifestAsset| &a.id,
     )?;
     validate_asset_paths(&manifest.assets)?;
-    let resource_kinds = validate_resource_kinds(&manifest.resources)?;
+    validate_resource_kinds(&manifest.resources)?;
 
     // Pass 2: resolve references for kinds that have them.
     let triggers = entries_to_resolved(&triggers_table, |e| ResolvedTrigger {
         canonical_id: e.canonical_id.clone(),
-        manifest_index: e.manifest_index,
     });
     let functions = entries_to_resolved(&functions_table, |e| ResolvedFunction {
         canonical_id: e.canonical_id.clone(),
-        manifest_index: e.manifest_index,
     });
     let overlays = entries_to_resolved(&overlays_table, |e| ResolvedOverlay {
         canonical_id: e.canonical_id.clone(),
-        manifest_index: e.manifest_index,
     });
     let assets = entries_to_resolved(&assets_table, |e| ResolvedAsset {
         canonical_id: e.canonical_id.clone(),
-        manifest_index: e.manifest_index,
     });
     let actions = resolve_actions(&manifest.actions, &actions_table, &functions_table)?;
     let commands = resolve_commands(&manifest.commands, &commands_table, &workflows_table)?;
@@ -211,7 +186,6 @@ pub fn validate(manifest: &ModuleManifest) -> Result<ResolvedManifest> {
         widgets,
         overlays,
         assets,
-        resource_kinds,
     })
 }
 
@@ -220,9 +194,8 @@ pub fn validate(manifest: &ModuleManifest) -> Result<ResolvedManifest> {
 /// Resource kinds are not canonical-id'd themselves (instances are), so
 /// this is intentionally a flat check rather than a [`build_kind_table`]
 /// call.
-fn validate_resource_kinds(items: &[ManifestResourceKind]) -> Result<Vec<ResolvedResourceKind>> {
+fn validate_resource_kinds(items: &[ManifestResourceKind]) -> Result<()> {
     let mut seen: HashMap<String, usize> = HashMap::with_capacity(items.len());
-    let mut out = Vec::with_capacity(items.len());
     for (i, r) in items.iter().enumerate() {
         let kind = r.kind.trim();
         if kind.is_empty() {
@@ -236,12 +209,8 @@ fn validate_resource_kinds(items: &[ManifestResourceKind]) -> Result<Vec<Resolve
                 "resource #{i}: duplicate kind {kind:?} (already declared at resource #{prior})"
             ));
         }
-        out.push(ResolvedResourceKind {
-            kind: kind.to_string(),
-            manifest_index: i,
-        });
     }
-    Ok(out)
+    Ok(())
 }
 
 /// Cheap manifest-time validation for `assets[]`: each entry must have
@@ -361,11 +330,9 @@ fn resolve_actions(
         )?;
         out.push(ResolvedAction {
             canonical_id: entry.canonical_id.clone(),
-            manifest_index: entry.manifest_index,
             implementation,
         });
     }
-    out.sort_by_key(|r| r.manifest_index);
     Ok(out)
 }
 
@@ -417,11 +384,9 @@ fn resolve_commands(
         };
         out.push(ResolvedCommand {
             canonical_id: entry.canonical_id.clone(),
-            manifest_index: entry.manifest_index,
             workflow,
         });
     }
-    out.sort_by_key(|r| r.manifest_index);
     Ok(out)
 }
 
@@ -455,12 +420,10 @@ fn resolve_workflows(
         }
         out.push(ResolvedWorkflow {
             canonical_id: entry.canonical_id.clone(),
-            manifest_index: entry.manifest_index,
             trigger,
             step_actions,
         });
     }
-    out.sort_by_key(|r| r.manifest_index);
     Ok(out)
 }
 
@@ -487,11 +450,9 @@ fn resolve_widgets(
         }
         out.push(ResolvedWidget {
             canonical_id: entry.canonical_id.clone(),
-            manifest_index: entry.manifest_index,
             accepted_events,
         });
     }
-    out.sort_by_key(|r| r.manifest_index);
     Ok(out)
 }
 

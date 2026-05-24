@@ -98,10 +98,6 @@ impl CanonicalId {
         &self.module_id
     }
 
-    pub fn kind(&self) -> ResourceKind {
-        self.kind
-    }
-
     pub fn resource_id(&self) -> &str {
         &self.resource_id
     }
@@ -277,6 +273,7 @@ pub fn looks_like_canonical_id(s: &str) -> bool {
 /// Used for `resource_ref` ConfigField values, where the engine accepts
 /// any well-formed canonical id and defers semantic validation to the
 /// owning module.
+#[cfg(test)]
 pub fn looks_like_instance_canonical_id(s: &str) -> bool {
     let parts: Vec<&str> = s.split(CANONICAL_ID_SEPARATOR).collect();
     if parts.len() != 3 {

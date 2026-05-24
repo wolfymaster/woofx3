@@ -119,14 +119,11 @@ impl DeleteStep {
 }
 
 pub struct ModuleDeletePlan {
-    pub module_id: String,
-    pub module_name: String,
-    pub module_key: String,
     pub steps: Vec<DeleteStep>,
 }
 
 impl ModuleDeletePlan {
-    pub fn new(module_id: String, module_name: String, module_key: String) -> Self {
+    pub fn new() -> Self {
         let mut steps = vec![
             DeleteStep::Commands,
             DeleteStep::Workflows,
@@ -141,12 +138,7 @@ impl ModuleDeletePlan {
             DeleteStep::ModuleRecord,
         ];
         steps.sort_by(|a, b| b.priority().cmp(&a.priority()));
-        Self {
-            module_id,
-            module_name,
-            module_key,
-            steps,
-        }
+        Self { steps }
     }
 
     pub async fn execute<R: Repository>(
@@ -342,11 +334,7 @@ pub async fn run_delete_resolved<R: Repository>(
     }
 
     // 2) execute plan
-    let plan = ModuleDeletePlan::new(
-        resolved.module_id.clone(),
-        module_name.to_string(),
-        resolved.module_key.clone(),
-    );
+    let plan = ModuleDeletePlan::new();
     let ctx = DeleteContext {
         db_proxy_url,
         application_id,
