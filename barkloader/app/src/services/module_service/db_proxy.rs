@@ -288,7 +288,6 @@ pub struct CreateCommandJson {
     pub command_type: String,
     pub type_value: String,
     pub priority: i32,
-    pub created_by: String,
     pub created_by_type: String,
     pub created_by_ref: String,
 }
@@ -362,7 +361,7 @@ pub async fn create_command(
     command: &str,
     command_type: &str,
     type_value: &str,
-    created_by: &str,
+    module_name: &str,
 ) -> Result<()> {
     let url = format!("{}/twirp/command.CommandService/CreateCommand", db_proxy_url);
     let body = CreateCommandJson {
@@ -373,9 +372,8 @@ pub async fn create_command(
         command_type: command_type.to_string(),
         type_value: type_value.to_string(),
         priority: 0,
-        created_by: created_by.to_string(),
         created_by_type: "MODULE".to_string(),
-        created_by_ref: created_by.trim_start_matches("module:").to_string(),
+        created_by_ref: module_name.to_string(),
     };
 
     let client = reqwest::Client::new();
@@ -428,12 +426,12 @@ pub async fn delete_commands_by_module(
     };
 
     let commands = value.get("commands").and_then(|c| c.as_array());
-    let prefix = format!("module:{}", module_name);
 
     if let Some(cmds) = commands {
         for cmd in cmds {
-            let created_by = cmd.get("created_by").and_then(|v| v.as_str()).unwrap_or("");
-            if !created_by.starts_with(&prefix) {
+            let created_by_type = cmd.get("created_by_type").and_then(|v| v.as_str()).unwrap_or("");
+            let created_by_ref = cmd.get("created_by_ref").and_then(|v| v.as_str()).unwrap_or("");
+            if created_by_type != "MODULE" || created_by_ref != module_name {
                 continue;
             }
             let id = match cmd.get("id").and_then(|v| v.as_str()) {
@@ -443,12 +441,19 @@ pub async fn delete_commands_by_module(
 
             let delete_url = format!("{}/twirp/command.CommandService/DeleteCommand", db_proxy_url);
             let delete_body = serde_json::json!({ "id": id });
-            let _ = client
+            let delete_response = client
                 .post(&delete_url)
                 .header("Content-Type", "application/json")
                 .json(&delete_body)
                 .send()
-                .await;
+                .await
+                .map_err(|e| anyhow!("DeleteCommand request failed for {}: {}", id, e))?;
+
+            if !delete_response.status().is_success() {
+                let status = delete_response.status();
+                let text = delete_response.text().await.unwrap_or_default();
+                return Err(anyhow!("DeleteCommand failed for {} {}: {}", id, status, text));
+            }
         }
     }
 
@@ -486,12 +491,13 @@ pub async fn delete_workflows_by_module(
     };
 
     let workflows = value.get("workflows").and_then(|w| w.as_array());
-    let prefix = format!("module:{}", module_name);
+    let ref_prefix = format!("{}:", module_name);
 
     if let Some(wflows) = workflows {
         for wf in wflows {
-            let created_by = wf.get("created_by").and_then(|v| v.as_str()).unwrap_or("");
-            if !created_by.starts_with(&prefix) {
+            let created_by_type = wf.get("created_by_type").and_then(|v| v.as_str()).unwrap_or("");
+            let created_by_ref = wf.get("created_by_ref").and_then(|v| v.as_str()).unwrap_or("");
+            if created_by_type != "MODULE" || !created_by_ref.starts_with(&ref_prefix) {
                 continue;
             }
             let id = match wf.get("id").and_then(|v| v.as_str()) {
@@ -501,12 +507,19 @@ pub async fn delete_workflows_by_module(
 
             let delete_url = format!("{}/twirp/workflow.WorkflowService/DeleteWorkflow", db_proxy_url);
             let delete_body = serde_json::json!({ "id": id });
-            let _ = client
+            let delete_response = client
                 .post(&delete_url)
                 .header("Content-Type", "application/json")
                 .json(&delete_body)
                 .send()
-                .await;
+                .await
+                .map_err(|e| anyhow!("DeleteWorkflow request failed for {}: {}", id, e))?;
+
+            if !delete_response.status().is_success() {
+                let status = delete_response.status();
+                let text = delete_response.text().await.unwrap_or_default();
+                return Err(anyhow!("DeleteWorkflow failed for {} {}: {}", id, status, text));
+            }
         }
     }
 

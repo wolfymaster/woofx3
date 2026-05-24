@@ -764,7 +764,7 @@ impl ManifestCommand {
             command_name,
             command_type,
             &type_value,
-            &format!("module:{}", module_name),
+            module_name,
         )
         .await?;
 
@@ -944,7 +944,6 @@ impl ManifestWorkflow {
                 self.steps.len()
             ),
             application_id: application_id.to_string(),
-            created_by: format!("module:{}", module_name),
             enabled: true,
             variables: std::collections::HashMap::new(),
             on_success: String::new(),
