@@ -326,6 +326,7 @@ pub async fn run_install<R: Repository>(
                 &manifest.name,
                 &manifest.version,
                 trigger_inputs,
+                application_id,
             )
             .await?;
 
@@ -367,6 +368,7 @@ pub async fn run_install<R: Repository>(
                 &manifest.name,
                 &manifest.version,
                 action_inputs,
+                application_id,
             )
             .await?;
 

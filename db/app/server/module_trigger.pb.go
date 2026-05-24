@@ -246,6 +246,9 @@ type RegisterTriggersRequest struct {
 	// namespace. The upsert key is (created_by_type, created_by_ref, name).
 	CreatedByType string `protobuf:"bytes,5,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
 	CreatedByRef  string `protobuf:"bytes,6,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
+	// Scopes the registration to a specific application so cross-module
+	// dependency checks are tenant-isolated.
+	ApplicationId string `protobuf:"bytes,7,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -318,6 +321,13 @@ func (x *RegisterTriggersRequest) GetCreatedByType() string {
 func (x *RegisterTriggersRequest) GetCreatedByRef() string {
 	if x != nil {
 		return x.CreatedByRef
+	}
+	return ""
+}
+
+func (x *RegisterTriggersRequest) GetApplicationId() string {
+	if x != nil {
+		return x.ApplicationId
 	}
 	return ""
 }

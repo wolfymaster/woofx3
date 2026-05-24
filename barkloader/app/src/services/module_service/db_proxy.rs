@@ -61,6 +61,8 @@ pub struct RegisterTriggersJson {
     pub module_name: String,
     pub version: String,
     pub triggers: Vec<TriggerInputJson>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub application_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -77,6 +79,8 @@ pub struct RegisterActionsJson {
     pub created_by_type: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub created_by_ref: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub application_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -164,6 +168,7 @@ pub async fn register_triggers(
     module_name: &str,
     version: &str,
     triggers: Vec<TriggerInputJson>,
+    application_id: &str,
 ) -> Result<()> {
     let url = format!("{}/twirp/module.ModuleService/RegisterTriggers", db_proxy_url);
     let body = RegisterTriggersJson {
@@ -171,6 +176,7 @@ pub async fn register_triggers(
         module_name: module_name.to_string(),
         version: version.to_string(),
         triggers,
+        application_id: application_id.to_string(),
     };
     let client = reqwest::Client::new();
     let response = client
@@ -196,6 +202,7 @@ pub async fn register_actions(
     module_name: &str,
     version: &str,
     actions: Vec<ActionInputJson>,
+    application_id: &str,
 ) -> Result<()> {
     register_actions_with(
         db_proxy_url,
@@ -205,6 +212,7 @@ pub async fn register_actions(
         actions,
         "",
         "",
+        application_id,
     )
     .await
 }
@@ -221,6 +229,7 @@ pub async fn register_actions_with(
     actions: Vec<ActionInputJson>,
     created_by_type: &str,
     created_by_ref: &str,
+    application_id: &str,
 ) -> Result<()> {
     let url = format!("{}/twirp/module.ModuleService/RegisterActions", db_proxy_url);
     let body = RegisterActionsJson {
@@ -230,6 +239,7 @@ pub async fn register_actions_with(
         actions,
         created_by_type: created_by_type.to_string(),
         created_by_ref: created_by_ref.to_string(),
+        application_id: application_id.to_string(),
     };
     let client = reqwest::Client::new();
     let response = client

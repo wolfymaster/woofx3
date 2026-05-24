@@ -45,6 +45,9 @@ message RegisterTriggersRequest {
   // namespace. The upsert key is (created_by_type, created_by_ref, name).
   string created_by_type = 5;
   string created_by_ref = 6;
+  // Scopes the registration to a specific application so cross-module
+  // dependency checks are tenant-isolated.
+  string application_id = 7;
 }
 
 message ListTriggersRequest {

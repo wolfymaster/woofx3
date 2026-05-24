@@ -393,6 +393,7 @@ func (s *moduleService) RegisterTriggers(ctx context.Context, req *client.Regist
 			CreatedByType: createdByType,
 			CreatedByRef:  createdByRef,
 			ManifestID:    in.ManifestId,
+			ApplicationID: req.GetApplicationId(),
 		}
 		if err := s.repo.UpsertTrigger(t); err != nil {
 			return nil, fmt.Errorf("upsert trigger %q: %w", in.Name, err)
@@ -536,6 +537,7 @@ func (s *moduleService) RegisterActions(ctx context.Context, req *client.Registe
 			CreatedByRef:  createdByRef,
 			ManifestID:    in.ManifestId,
 			Type:          in.Type,
+			ApplicationID: req.GetApplicationId(),
 		}
 		if err := s.repo.UpsertAction(a); err != nil {
 			return nil, fmt.Errorf("upsert action %q: %w", in.Name, err)

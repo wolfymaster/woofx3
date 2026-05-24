@@ -54,6 +54,7 @@ pub async fn register_builtin_actions(db_proxy_url: &str) -> anyhow::Result<()> 
         actions,
         CREATED_BY_TYPE,
         CREATED_BY_REF,
+        "",
     )
     .await
     .context("register builtin actions")?;
