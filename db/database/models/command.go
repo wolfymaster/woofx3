@@ -14,7 +14,6 @@ type Command struct {
 	Type          string    `gorm:"column:type;type:varchar(50);not null"`
 	TypeValue     string    `gorm:"column:type_value;type:varchar(500)"`
 	Cooldown      int       `gorm:"column:cooldown;default:0"`
-	CreatedBy     uuid.UUID `gorm:"column:created_by;type:uuid"`
 	Priority      int       `gorm:"column:priority;default:0"`
 	Enabled       bool      `gorm:"column:enabled;default:true"`
 	CreatedByType string    `gorm:"column:created_by_type;type:text;not null;default:'USER'"`
