@@ -515,6 +515,17 @@ func (r *Runtime) retryFailedServices(failedServices []any) {
 	} else {
 		remainingFailed := r.getFailedServices()
 		r.logger.Error("Some services still failed after retry", "remaining_failed", len(remainingFailed))
+		for _, svc := range remainingFailed {
+			state := r.getServiceState(svc)
+			if typedSvc, ok := svc.(interface {
+				Name() string
+				Type() string
+			}); ok {
+				r.logger.Error("Failed service after retry", "name", typedSvc.Name(), "type", typedSvc.Type(), "error", state.Error)
+			} else {
+				r.logger.Error("Failed service after retry", "error", state.Error)
+			}
+		}
 		r.transitionTo(StateServicesConnectWaiting)
 		r.handleServicesConnectWaiting()
 	}
