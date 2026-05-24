@@ -17,6 +17,7 @@ pub struct FileMetadata {
     pub callback_url: Option<String>,
     pub client_id: Option<String>,
     pub module_key: Option<String>,
+    pub application_id: Option<String>,
 }
 
 pub struct FileService {
@@ -44,6 +45,7 @@ impl FileService {
         let mut callback_url: Option<String> = None;
         let mut client_id: Option<String> = None;
         let mut module_key: Option<String> = None;
+        let mut application_id: Option<String> = None;
 
         while let Ok(Some(mut field)) = payload.try_next().await {
             let Some(content_disposition) = field.content_disposition() else {
@@ -62,7 +64,7 @@ impl FileService {
                         .ok_or_else(|| actix_web::error::ErrorBadRequest("File missing file name"))?;
                     metadata = Some(self.handle_file_field(&mut field, name, callback_url.clone()).await?)
                 }
-                "callback_url" | "client_id" | "module_key" => {
+                "callback_url" | "client_id" | "module_key" | "application_id" => {
                     let mut value = String::new();
                     while let Some(chunk) = field.next().await {
                         let data = chunk.map_err(|e| {
@@ -75,6 +77,7 @@ impl FileService {
                         "callback_url" => callback_url = Some(value),
                         "client_id" => client_id = Some(value),
                         "module_key" => module_key = Some(value),
+                        "application_id" => application_id = Some(value),
                         _ => {}
                     }
                 }
@@ -90,6 +93,7 @@ impl FileService {
             .ok_or_else(|| actix_web::error::ErrorBadRequest("No file field found"))?;
         meta.client_id = client_id;
         meta.module_key = module_key;
+        meta.application_id = application_id;
         Ok(meta)
     }
 
@@ -166,6 +170,7 @@ impl FileService {
                         callback_url: metadata.callback_url.clone(),
                         client_id: metadata.client_id.clone(),
                         module_key: metadata.module_key.clone(),
+                        application_id: metadata.application_id.clone(),
                     });
                 }
             }
@@ -254,6 +259,7 @@ impl FileService {
             callback_url,
             client_id: None,
             module_key: None,
+            application_id: None,
         })
     }
 }

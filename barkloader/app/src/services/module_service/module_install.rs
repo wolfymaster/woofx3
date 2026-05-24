@@ -87,6 +87,95 @@ async fn rollback_db_install(
     }
 }
 
+async fn validate_cross_module_dependencies(
+    db_proxy_url: &str,
+    resolved: &manifest_validate::ResolvedManifest,
+    application_id: &str,
+) -> Result<()> {
+    use std::collections::HashSet;
+
+    let mut missing: Vec<String> = Vec::new();
+    let mut checked: HashSet<String> = HashSet::new();
+
+    for wf in &resolved.workflows {
+        let canonical = &wf.trigger;
+        if canonical.module_id() == resolved.module_id
+            || canonical.module_id() == "builtin"
+            || !checked.insert(canonical.to_string())
+        {
+            continue;
+        }
+        if let Err(e) =
+            super::db_proxy::get_trigger_event_by_canonical_id(db_proxy_url, &canonical.to_string(), application_id)
+                .await
+        {
+            missing.push(format!(
+                "workflow '{}' → trigger '{}' ({})",
+                wf.canonical_id.resource_id(),
+                canonical,
+                e
+            ));
+        }
+    }
+
+    for widget in &resolved.widgets {
+        for event in &widget.accepted_events {
+            if event.module_id() == resolved.module_id
+                || event.module_id() == "builtin"
+                || !checked.insert(event.to_string())
+            {
+                continue;
+            }
+            if let Err(e) =
+                super::db_proxy::get_trigger_event_by_canonical_id(db_proxy_url, &event.to_string(), application_id)
+                    .await
+            {
+                missing.push(format!(
+                    "widget '{}' → trigger '{}' ({})",
+                    widget.canonical_id.resource_id(),
+                    event,
+                    e
+                ));
+            }
+        }
+    }
+
+    for wf in &resolved.workflows {
+        for (si, action_canonical) in wf.step_actions.iter().enumerate() {
+            if action_canonical.module_id() == resolved.module_id
+                || action_canonical.module_id() == "builtin"
+                || !checked.insert(action_canonical.to_string())
+            {
+                continue;
+            }
+            if let Err(e) = super::db_proxy::get_action_ref_by_canonical_id(
+                db_proxy_url,
+                &action_canonical.to_string(),
+                application_id,
+            )
+            .await
+            {
+                missing.push(format!(
+                    "workflow '{}' step #{} → action '{}' ({})",
+                    wf.canonical_id.resource_id(),
+                    si,
+                    action_canonical,
+                    e
+                ));
+            }
+        }
+    }
+
+    if !missing.is_empty() {
+        return Err(anyhow!(
+            "Module depends on resources from other modules that are not installed:\n  - {}",
+            missing.join("\n  - ")
+        ));
+    }
+
+    Ok(())
+}
+
 pub async fn run_install<R: Repository>(
     manifest: &ModuleManifest,
     files: &[ModuleFile],
@@ -113,6 +202,10 @@ pub async fn run_install<R: Repository>(
     // touched.
     let resolved = manifest_validate::validate(manifest)
         .map_err(|e| anyhow!("manifest validation failed: {}", e))?;
+
+    if let Some(url) = db_proxy_url {
+        validate_cross_module_dependencies(url, &resolved, application_id).await?;
+    }
 
     let mut fn_rows: Vec<CreateModuleFunctionJson> =
         Vec::with_capacity(manifest.functions.len());
@@ -355,6 +448,7 @@ pub async fn run_install<R: Repository>(
                     let event_subject = super::db_proxy::get_trigger_event_by_canonical_id(
                         url,
                         &canonical,
+                        application_id,
                     )
                     .await
                     .map_err(|e| anyhow!(
@@ -404,7 +498,7 @@ pub async fn run_install<R: Repository>(
                             }
                         } else {
                             let canonical = action_canonical.to_string();
-                            let resolved_ref = super::db_proxy::get_action_ref_by_canonical_id(url, &canonical)
+                            let resolved_ref = super::db_proxy::get_action_ref_by_canonical_id(url, &canonical, application_id)
                                 .await
                                 .map_err(|e| anyhow!(
                                     "bundled workflow {} step #{} references action {} but the action could not be resolved (is the owning module installed?): {}",

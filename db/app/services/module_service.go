@@ -456,7 +456,7 @@ func (s *moduleService) GetTriggerByCanonicalId(ctx context.Context, req *client
 	if kind != "trigger" {
 		return nil, twirp.InvalidArgumentError("canonical_id", fmt.Sprintf("expected kind 'trigger', got %q", kind))
 	}
-	t, err := s.repo.GetTriggerByModuleAndManifestID(moduleID, manifestID)
+	t, err := s.repo.GetTriggerByModuleAndManifestID(moduleID, manifestID, req.GetApplicationId())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError(fmt.Sprintf("no trigger %q", req.CanonicalId))
@@ -598,7 +598,7 @@ func (s *moduleService) GetActionByCanonicalId(ctx context.Context, req *client.
 	if kind != "action" {
 		return nil, twirp.InvalidArgumentError("canonical_id", fmt.Sprintf("expected kind 'action', got %q", kind))
 	}
-	a, err := s.repo.GetActionByModuleAndManifestID(moduleID, manifestID)
+	a, err := s.repo.GetActionByModuleAndManifestID(moduleID, manifestID, req.GetApplicationId())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError(fmt.Sprintf("no action %q", req.CanonicalId))
@@ -879,11 +879,11 @@ func (s *moduleService) resolveResourceDisplayName(
 ) string {
 	switch r.ResourceType {
 	case "trigger":
-		if t, err := s.repo.GetTriggerByModuleAndManifestID(moduleIDSegment, r.ManifestID); err == nil && t != nil && t.Name != "" {
+		if t, err := s.repo.GetTriggerByModuleAndManifestID(moduleIDSegment, r.ManifestID, ""); err == nil && t != nil && t.Name != "" {
 			return t.Name
 		}
 	case "action":
-		if a, err := s.repo.GetActionByModuleAndManifestID(moduleIDSegment, r.ManifestID); err == nil && a != nil && a.Name != "" {
+		if a, err := s.repo.GetActionByModuleAndManifestID(moduleIDSegment, r.ManifestID, ""); err == nil && a != nil && a.Name != "" {
 			return a.Name
 		}
 	case "function":

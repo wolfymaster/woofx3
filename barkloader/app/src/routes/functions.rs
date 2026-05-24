@@ -69,13 +69,14 @@ async fn upload_handler(
 
     let mut request_context = {
         let client_id = metadata.client_id.clone().unwrap_or_default();
+        let application_id = metadata.application_id.clone().unwrap_or_default();
         info!(
-            "Upload form fields: client_id={:?} module_key={:?}",
-            metadata.client_id, metadata.module_key
+            "Upload form fields: client_id={:?} module_key={:?} application_id={:?}",
+            metadata.client_id, metadata.module_key, metadata.application_id
         );
         Some(db_proxy::RequestContext {
             client_id,
-            application_id: String::new(),
+            application_id,
             module_key: String::new(),
         })
     };
@@ -274,12 +275,16 @@ async fn upload_handler(
             .as_ref()
             .map(|rc| rc.client_id.clone())
             .unwrap_or_default();
+        let upload_application_id = request_context
+            .as_ref()
+            .map(|rc| rc.application_id.clone())
+            .unwrap_or_default();
         if let Err(e) = module
             .execute_plan(
                 &module_plan,
                 &archive_key,
                 ctx.db_proxy_url.as_deref(),
-                "",
+                &upload_application_id,
                 force,
                 &computed_module_key,
                 &upload_client_id,

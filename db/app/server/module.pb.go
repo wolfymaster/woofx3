@@ -1371,6 +1371,7 @@ func (x *DeleteByModuleIdRequest) GetModuleId() string {
 type GetByCanonicalIdRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CanonicalId   string                 `protobuf:"bytes,1,opt,name=canonical_id,json=canonicalId,proto3" json:"canonical_id,omitempty"`
+	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1408,6 +1409,13 @@ func (*GetByCanonicalIdRequest) Descriptor() ([]byte, []int) {
 func (x *GetByCanonicalIdRequest) GetCanonicalId() string {
 	if x != nil {
 		return x.CanonicalId
+	}
+	return ""
+}
+
+func (x *GetByCanonicalIdRequest) GetApplicationId() string {
+	if x != nil {
+		return x.ApplicationId
 	}
 	return ""
 }

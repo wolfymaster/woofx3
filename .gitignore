@@ -71,3 +71,6 @@ logs/*
 # git worktrees
 .worktrees
 
+# oh-my-openagent
+.sisyphus
+

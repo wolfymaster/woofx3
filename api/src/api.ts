@@ -2820,6 +2820,9 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     if (moduleKey) {
       formData.append("module_key", moduleKey);
     }
+    if (this.applicationId) {
+      formData.append("application_id", this.applicationId);
+    }
 
     const response = await this.barkloaderRequest("/functions", {
       method: "POST",
@@ -2930,6 +2933,9 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     );
     formData.append("client_id", clientId);
     formData.append("module_key", moduleKey);
+    if (this.applicationId) {
+      formData.append("application_id", this.applicationId);
+    }
 
     const response = await this.barkloaderRequest("/functions", {
       method: "POST",

@@ -208,6 +208,7 @@ message DeleteByModuleIdRequest {
 // baking the workflow JSON.
 message GetByCanonicalIdRequest {
   string canonical_id = 1;
+  string application_id = 2;
 }
 
 message TriggerResponse {

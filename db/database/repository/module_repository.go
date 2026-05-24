@@ -79,8 +79,8 @@ func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
 	// `manifest_id` is the stable identifier; `name` is display-only and
 	// can drift between versions without changing the resource identity.
 	err := r.db.Raw(`
-		INSERT INTO public.triggers (id, category, name, description, event, config_schema, allow_variants, created_by_type, created_by_ref, manifest_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO public.triggers (id, category, name, description, event, config_schema, allow_variants, created_by_type, created_by_ref, manifest_id, application_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) DO UPDATE SET
 			category = EXCLUDED.category,
 			name = EXCLUDED.name,
@@ -88,9 +88,10 @@ func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
 			event = EXCLUDED.event,
 			config_schema = EXCLUDED.config_schema,
 			allow_variants = EXCLUDED.allow_variants,
+			application_id = EXCLUDED.application_id,
 			updated_at = NOW()
 		RETURNING id
-	`, t.ID, t.Category, t.Name, t.Description, t.Event, t.ConfigSchema, t.AllowVariants, t.CreatedByType, t.CreatedByRef, t.ManifestID).Scan(&result).Error
+	`, t.ID, t.Category, t.Name, t.Description, t.Event, t.ConfigSchema, t.AllowVariants, t.CreatedByType, t.CreatedByRef, t.ManifestID, t.ApplicationID).Scan(&result).Error
 	if err != nil {
 		return err
 	}
@@ -142,12 +143,16 @@ func (r *ModuleRepository) ListTriggersByModulePrefix(moduleID string) ([]*model
 //     `created_by_ref` as the bare moduleId segment.
 //
 // Returns gorm.ErrRecordNotFound if no match.
-func (r *ModuleRepository) GetTriggerByModuleAndManifestID(moduleID, manifestID string) (*models.Trigger, error) {
+func (r *ModuleRepository) GetTriggerByModuleAndManifestID(moduleID, manifestID, applicationID string) (*models.Trigger, error) {
 	var trigger models.Trigger
-	err := r.db.Where(
+	q := r.db.Where(
 		"manifest_id = ? AND ((created_by_type = ? AND created_by_ref LIKE ?) OR (created_by_type <> ? AND created_by_ref = ?))",
 		manifestID, "MODULE", moduleID+":%", "MODULE", moduleID,
-	).First(&trigger).Error
+	)
+	if applicationID != "" {
+		q = q.Where("application_id = ?", applicationID)
+	}
+	err := q.First(&trigger).Error
 	if err != nil {
 		return nil, err
 	}
@@ -169,17 +174,18 @@ func (r *ModuleRepository) UpsertAction(a *models.Action) error {
 		a.Type = "function"
 	}
 	err := r.db.Raw(`
-		INSERT INTO public.actions (id, name, description, call, params_schema, created_by_type, created_by_ref, manifest_id, type, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO public.actions (id, name, description, call, params_schema, created_by_type, created_by_ref, manifest_id, type, application_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) DO UPDATE SET
 			name = EXCLUDED.name,
 			description = EXCLUDED.description,
 			call = EXCLUDED.call,
 			params_schema = EXCLUDED.params_schema,
 			type = EXCLUDED.type,
+			application_id = EXCLUDED.application_id,
 			updated_at = NOW()
 		RETURNING id
-	`, a.ID, a.Name, a.Description, a.Call, a.ParamsSchema, a.CreatedByType, a.CreatedByRef, a.ManifestID, a.Type).Scan(&result).Error
+	`, a.ID, a.Name, a.Description, a.Call, a.ParamsSchema, a.CreatedByType, a.CreatedByRef, a.ManifestID, a.Type, a.ApplicationID).Scan(&result).Error
 	if err != nil {
 		return err
 	}
@@ -223,12 +229,16 @@ func (r *ModuleRepository) ListActionsByModulePrefix(moduleID string) ([]*models
 // actions table. See GetTriggerByModuleAndManifestID for the two
 // registration shapes (MODULE composite ref vs non-MODULE bare ref) that
 // share the canonical-id space.
-func (r *ModuleRepository) GetActionByModuleAndManifestID(moduleID, manifestID string) (*models.Action, error) {
+func (r *ModuleRepository) GetActionByModuleAndManifestID(moduleID, manifestID, applicationID string) (*models.Action, error) {
 	var action models.Action
-	err := r.db.Where(
+	q := r.db.Where(
 		"manifest_id = ? AND ((created_by_type = ? AND created_by_ref LIKE ?) OR (created_by_type <> ? AND created_by_ref = ?))",
 		manifestID, "MODULE", moduleID+":%", "MODULE", moduleID,
-	).First(&action).Error
+	)
+	if applicationID != "" {
+		q = q.Where("application_id = ?", applicationID)
+	}
+	err := q.First(&action).Error
 	if err != nil {
 		return nil, err
 	}
