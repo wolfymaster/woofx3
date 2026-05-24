@@ -2729,7 +2729,11 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     }
 
     if (!response.ok) {
-      this.logger.warn("getStreamStatus: helix non-2xx", { status: response.status });
+      const body = await response.text().catch(() => "unreadable");
+      this.logger.warn("getStreamStatus: helix non-2xx", {
+        status: response.status,
+        error: body,
+      });
       return offline;
     }
 
