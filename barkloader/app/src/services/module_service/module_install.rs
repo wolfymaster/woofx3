@@ -8,36 +8,6 @@ use super::manifest_validate::{self, ResolvedActionImpl};
 use super::module_file::ModuleFile;
 use super::module_manifest::{ModuleManifest, ResolvedWorkflowStep, ResolvedWorkflowTrigger};
 
-pub struct VersionConflict {
-    pub module_name: String,
-    pub existing_version: String,
-    pub new_version: String,
-}
-
-pub enum VersionConflictAction {
-    Reject,
-    ForceOverwrite,
-    AutoIncrementPatch,
-}
-
-pub async fn check_version_conflict<R: Repository>(
-    module_name: &str,
-    module_key: &str,
-    new_version: &str,
-    repository: &R,
-) -> Result<Option<VersionConflict>> {
-    let archive_key = format!("archives/{}.zip", module_key);
-    match repository.exists(&archive_key).await {
-        Ok(true) => Ok(Some(VersionConflict {
-            module_name: module_name.to_string(),
-            existing_version: new_version.to_string(),
-            new_version: new_version.to_string(),
-        })),
-        Ok(false) => Ok(None),
-        Err(_) => Ok(None),
-    }
-}
-
 pub async fn cleanup_old_version(
     module_name: &str,
     db_proxy_url: Option<&str>,
