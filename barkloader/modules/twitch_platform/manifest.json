@@ -100,18 +100,18 @@
       "category": "platform.twitch",
       "schema": [
         {
-          "id": "minBits",
+          "id": "amount",
           "label": "Minimum bits",
           "type": "number",
           "required": true,
           "min": 1,
           "defaultValue": 100,
           "placeholder": "e.g. 100",
-          "eventPath": "bits",
+          "eventPath": "amount",
           "operator": "gte",
           "description": "Only fire when the cheer meets or exceeds this amount.",
-          "hint": "Compares against the 'bits' field on the Twitch channel.cheer event payload.",
-          "dataSchema": "{\n  \"bits\": 1000,\n  \"isAnonymous\": false,\n  \"userName\": \"viewer42\",\n  \"userId\": \"123456\",\n  \"message\": \"Cheer1000 woof\"\n}"
+          "hint": "Compares against the cheer amount on the Twitch channel.cheer event payload (see wolfy_profile workflows).",
+          "dataSchema": "{\n  \"amount\": 1000,\n  \"isAnonymous\": false,\n  \"userName\": \"viewer42\",\n  \"userId\": \"123456\",\n  \"message\": \"Cheer1000 woof\"\n}"
         }
       ],
       "allowVariants": true
