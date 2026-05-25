@@ -132,6 +132,33 @@ pub struct RegisterAssetsJson {
     pub created_by_ref: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetInputJson {
+    pub manifest_id: String,
+    pub name: String,
+    pub description: String,
+    pub directory: String,
+    pub alert_types: Vec<String>,
+    pub settings_schema: String,
+    pub surface: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterWidgetsJson {
+    pub module_key: String,
+    pub module_name: String,
+    pub version: String,
+    pub widgets: Vec<WidgetInputJson>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub created_by_type: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub created_by_ref: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub application_id: String,
+}
+
 /// Twirp JSON for `module.ModuleService/RegisterTriggers`.
 pub async fn register_triggers(
     db_proxy_url: &str,
@@ -1027,6 +1054,67 @@ pub async fn list_modules(
     let body: ListModulesResponseBody = serde_json::from_str(&text)
         .map_err(|e| anyhow!("parse ListModules response: {}", e))?;
     Ok(body.modules)
+}
+
+/// Twirp JSON for `module.ModuleService/RegisterWidgets`. Mirrors
+/// `register_triggers` / `register_actions` — idempotent upsert keyed on
+/// (created_by_type, created_by_ref, manifest_id) in the `widgets` table.
+pub async fn register_widgets(
+    db_proxy_url: &str,
+    module_key: &str,
+    module_name: &str,
+    version: &str,
+    widgets: Vec<WidgetInputJson>,
+    application_id: &str,
+) -> Result<()> {
+    let url = format!("{}/twirp/module.ModuleService/RegisterWidgets", db_proxy_url);
+    let body = RegisterWidgetsJson {
+        module_key: module_key.to_string(),
+        module_name: module_name.to_string(),
+        version: version.to_string(),
+        widgets,
+        created_by_type: String::new(),
+        created_by_ref: String::new(),
+        application_id: application_id.to_string(),
+    };
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("RegisterWidgets request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("RegisterWidgets failed {}: {}", status, text));
+    }
+    Ok(())
+}
+
+/// Twirp JSON for `module.ModuleService/DeleteWidgetsByModuleId`.
+pub async fn delete_widgets_by_module_id(db_proxy_url: &str, module_id: &str) -> Result<()> {
+    let url = format!("{}/twirp/module.ModuleService/DeleteWidgetsByModuleId", db_proxy_url);
+    let body = DeleteByModuleIdJson {
+        module_id: module_id.to_string(),
+    };
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("DeleteWidgetsByModuleId request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("DeleteWidgetsByModuleId failed {}: {}", status, text));
+    }
+    Ok(())
 }
 
 /// Twirp JSON for `module.ModuleService/RegisterAssets`. Mirrors

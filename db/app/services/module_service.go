@@ -1134,6 +1134,9 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 			CreatedByType:  createdByType,
 			CreatedByRef:   createdByRef,
 			ManifestID:     in.ManifestId,
+			// Module catalog rows are instance-global; applicationId is
+			// stamped on scene placements / widget status, not declarations.
+			ApplicationID: "",
 		}
 		if err := s.repo.UpsertWidget(w); err != nil {
 			return nil, fmt.Errorf("upsert widget %q: %w", in.Name, err)

@@ -17,7 +17,8 @@ use std::sync::Arc;
 
 use super::db_proxy::{
     self, complete_module_delete, delete_actions_by_module_id, delete_commands_by_module,
-    delete_module, delete_module_resources, delete_triggers_by_module_id, delete_workflows_by_module,
+    delete_module, delete_module_resources, delete_triggers_by_module_id, delete_widgets_by_module_id,
+    delete_workflows_by_module,
     check_module_resource_usage, get_module_by_name, list_resource_instances_by_module,
     ResourceInstanceJson, ResourceUsage, UsageRef,
 };
@@ -75,6 +76,7 @@ pub enum DeleteStep {
     Workflows,
     Actions,
     Triggers,
+    Widgets,
     WidgetFiles,
     OverlayFiles,
     FunctionFiles,
@@ -91,6 +93,7 @@ impl DeleteStep {
             DeleteStep::Workflows => 90,
             DeleteStep::Actions => 80,
             DeleteStep::Triggers => 70,
+            DeleteStep::Widgets => 65,
             DeleteStep::WidgetFiles => 55,
             DeleteStep::OverlayFiles => 50,
             DeleteStep::FunctionFiles => 40,
@@ -107,6 +110,7 @@ impl DeleteStep {
             DeleteStep::Workflows => "workflows",
             DeleteStep::Actions => "actions",
             DeleteStep::Triggers => "triggers",
+            DeleteStep::Widgets => "widgets",
             DeleteStep::WidgetFiles => "widget_files",
             DeleteStep::OverlayFiles => "overlay_files",
             DeleteStep::FunctionFiles => "function_files",
@@ -129,6 +133,7 @@ impl ModuleDeletePlan {
             DeleteStep::Workflows,
             DeleteStep::Actions,
             DeleteStep::Triggers,
+            DeleteStep::Widgets,
             DeleteStep::WidgetFiles,
             DeleteStep::OverlayFiles,
             DeleteStep::FunctionFiles,
@@ -173,6 +178,9 @@ impl ModuleDeletePlan {
             }
             DeleteStep::Triggers => {
                 delete_triggers_by_module_id(ctx.db_proxy_url, ctx.manifest_id).await
+            }
+            DeleteStep::Widgets => {
+                delete_widgets_by_module_id(ctx.db_proxy_url, ctx.manifest_id).await
             }
             DeleteStep::WidgetFiles => {
                 let prefix = format!("modules/{}/widgets/", ctx.module_key);

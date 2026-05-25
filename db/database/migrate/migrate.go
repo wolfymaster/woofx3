@@ -24,6 +24,7 @@ func Migrate(db *gorm.DB) error {
 		migrations.AddApplicationIDColumns(),
 		migrations.DropLegacyCreatedByColumns(),
 		migrations.AddModulesModuleIDColumn(),
+		migrations.RenameModuleWidgetsToWidgets(),
 	})
 
 	return m.Migrate()
@@ -47,6 +48,7 @@ func Rollback(db *gorm.DB) error {
 		migrations.AddApplicationIDColumns(),
 		migrations.DropLegacyCreatedByColumns(),
 		migrations.AddModulesModuleIDColumn(),
+		migrations.RenameModuleWidgetsToWidgets(),
 	})
 
 	return m.RollbackLast()

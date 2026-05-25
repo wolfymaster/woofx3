@@ -63,6 +63,9 @@ message RegisterWidgetsRequest {
   // default (MODULE, module_key) pairing.
   string created_by_type = 5;
   string created_by_ref = 6;
+  // Reserved for future tenant-scoped widget registration. Module catalog
+  // rows keep the default '' (instance-global), same as triggers/actions.
+  string application_id = 7;
 }
 
 message ListWidgetsRequest {

@@ -18,7 +18,8 @@ import (
 // every table uses CREATE TABLE IF NOT EXISTS, every later column uses
 // ALTER TABLE ADD COLUMN IF NOT EXISTS, and renamed tables
 // (module_functions -> functions, module_triggers -> triggers,
-// module_actions -> actions) are handled up front so the schema converges
+// module_actions -> actions, module_widgets -> widgets) are handled up
+// front so the schema converges
 // to the final state regardless of starting point.
 func CreateInitialSchema() *gormigrate.Migration {
 	return &gormigrate.Migration{
@@ -52,6 +53,14 @@ func CreateInitialSchema() *gormigrate.Migration {
 					IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'module_actions')
 					   AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'actions') THEN
 						ALTER TABLE public.module_actions RENAME TO actions;
+					END IF;
+				END
+				$$`,
+				`DO $$
+				BEGIN
+					IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'module_widgets')
+					   AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'widgets') THEN
+						ALTER TABLE public.module_widgets RENAME TO widgets;
 					END IF;
 				END
 				$$`,
@@ -287,6 +296,24 @@ func CreateInitialSchema() *gormigrate.Migration {
 					updated_at      TIMESTAMPTZ DEFAULT NOW()              NOT NULL
 				)`,
 
+				// widgets (decoupled from modules; identity comes from
+				// created_by_type/created_by_ref + manifest_id)
+				`CREATE TABLE IF NOT EXISTS public.widgets (
+					id              UUID        DEFAULT uuid_generate_v4() NOT NULL PRIMARY KEY,
+					name            TEXT                                   NOT NULL,
+					description     TEXT        DEFAULT ''                 NOT NULL,
+					directory       TEXT                                   NOT NULL,
+					alert_types     JSONB       DEFAULT '[]'               NOT NULL,
+					settings_schema JSONB       DEFAULT '[]'               NOT NULL,
+					surface         TEXT        DEFAULT 'scene'            NOT NULL,
+					created_by_type TEXT        DEFAULT 'MODULE'           NOT NULL,
+					created_by_ref  TEXT        DEFAULT ''                 NOT NULL,
+					manifest_id     TEXT        DEFAULT ''                 NOT NULL,
+					application_id  TEXT        DEFAULT ''                 NOT NULL,
+					created_at      TIMESTAMPTZ DEFAULT NOW()              NOT NULL,
+					updated_at      TIMESTAMPTZ DEFAULT NOW()              NOT NULL
+				)`,
+
 				// module_resources
 				`CREATE TABLE IF NOT EXISTS public.module_resources (
 					id               UUID        DEFAULT uuid_generate_v4() NOT NULL PRIMARY KEY,
@@ -373,6 +400,9 @@ func CreateInitialSchema() *gormigrate.Migration {
 				`ALTER TABLE public.actions
 					DROP COLUMN IF EXISTS module_id,
 					DROP COLUMN IF EXISTS module_name`,
+				`ALTER TABLE public.widgets
+					ADD COLUMN IF NOT EXISTS manifest_id TEXT NOT NULL DEFAULT '',
+					ADD COLUMN IF NOT EXISTS application_id TEXT NOT NULL DEFAULT ''`,
 				// Old uniqueness constraint that referenced the dropped columns.
 				`ALTER TABLE public.triggers
 					DROP CONSTRAINT IF EXISTS uq_module_triggers_module_id_name`,
@@ -401,6 +431,8 @@ func CreateInitialSchema() *gormigrate.Migration {
 				`DROP INDEX IF EXISTS public.idx_module_triggers_event`,
 				`DROP INDEX IF EXISTS public.idx_module_actions_module_id`,
 				`DROP INDEX IF EXISTS public.idx_module_actions_origin`,
+				`DROP INDEX IF EXISTS public.idx_module_widgets_origin`,
+				`DROP INDEX IF EXISTS public.idx_module_widgets_origin_manifest`,
 
 				`CREATE INDEX        IF NOT EXISTS idx_applications_user_id              ON public.applications        (user_id)`,
 				`CREATE UNIQUE INDEX IF NOT EXISTS applications_single_default           ON public.applications        (is_default) WHERE is_default = TRUE`,
@@ -439,6 +471,9 @@ func CreateInitialSchema() *gormigrate.Migration {
 				`CREATE INDEX        IF NOT EXISTS idx_triggers_origin                   ON public.triggers            (created_by_type, created_by_ref)`,
 				`CREATE INDEX        IF NOT EXISTS idx_triggers_event                    ON public.triggers            (event)`,
 				`CREATE INDEX        IF NOT EXISTS idx_actions_origin                    ON public.actions             (created_by_type, created_by_ref)`,
+				`CREATE INDEX        IF NOT EXISTS idx_widgets_origin                    ON public.widgets             (created_by_type, created_by_ref)`,
+				`CREATE UNIQUE INDEX IF NOT EXISTS idx_widgets_origin_manifest           ON public.widgets             (created_by_type, created_by_ref, manifest_id)`,
+				`CREATE INDEX        IF NOT EXISTS idx_widgets_application_id            ON public.widgets             (application_id)`,
 				`CREATE INDEX        IF NOT EXISTS idx_module_resources_module_id        ON public.module_resources    (module_id)`,
 				`CREATE INDEX        IF NOT EXISTS idx_module_resources_resource_type    ON public.module_resources    (resource_type)`,
 				`CREATE INDEX        IF NOT EXISTS idx_module_resources_manifest_id      ON public.module_resources    (module_id, manifest_id)`,

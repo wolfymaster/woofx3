@@ -583,7 +583,6 @@ impl ModuleWidget {
     /// the AlertContext.type lookup table. Canonical ids that don't map to
     /// an AlertContext type are skipped. Order is preserved, duplicates
     /// removed.
-    #[allow(dead_code)]
     pub fn resolved_alert_types(&self) -> Vec<String> {
         if !self.alert_types.is_empty() {
             return dedup_preserve_order(&self.alert_types);
@@ -601,13 +600,35 @@ impl ModuleWidget {
     }
 
     /// Build the Twirp WidgetInput JSON for bulk registration. The engine
-    /// db-proxy persists this and emits the NATS outbox event that the
-    /// api/ service forwards to Convex as `module.widget.registered`.
+    /// db-proxy persists rows in `widgets` and emits the NATS outbox event
+    /// that the api/ service forwards to Convex as `module.widget.registered`.
     ///
-    /// `directory` defaults to `assets` (the manifest's bundle path) — that's
-    /// what Convex needs to address widget files via the asset HTTP route.
+    /// `directory` is the manifest's `assets` bundle path (trimmed) — that's
+    /// what streamware / Convex use to address widget files via the asset route.
     /// `settings_schema` is the manifest's `settingsSchema` value serialized;
     /// engine treats it opaquely.
+    pub fn to_input(&self) -> super::db_proxy::WidgetInputJson {
+        let description = self.description.clone().unwrap_or_default();
+        let directory = self
+            .assets
+            .as_ref()
+            .map(|a| normalize_rel_path(a).trim_end_matches('/').to_string())
+            .unwrap_or_default();
+        let settings_schema = match &self.settings_schema {
+            Some(v) => v.to_string(),
+            None => "{}".to_string(),
+        };
+        super::db_proxy::WidgetInputJson {
+            manifest_id: self.id.clone(),
+            name: self.name.clone(),
+            description,
+            directory,
+            alert_types: self.resolved_alert_types(),
+            settings_schema,
+            surface: "scene".to_string(),
+        }
+    }
+
     async fn upload_one_file<R: Repository>(
         &self,
         module_key: &str,

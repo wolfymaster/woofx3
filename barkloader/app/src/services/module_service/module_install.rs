@@ -20,7 +20,8 @@ pub async fn cleanup_old_version(
 
     super::db_proxy::delete_triggers_by_module_id(url, module_name).await?;
     super::db_proxy::delete_actions_by_module_id(url, module_name).await?;
-    info!("Deleted triggers and actions for module {}", module_name);
+    super::db_proxy::delete_widgets_by_module_id(url, module_name).await?;
+    info!("Deleted triggers, actions, and widgets for module {}", module_name);
 
     super::db_proxy::delete_workflows_by_module(url, "", module_name).await?;
     info!("Deleted workflows for module {}", module_name);
@@ -348,6 +349,25 @@ pub async fn run_install<R: Repository>(
                 ).await {
                     warn!("Failed to record action resource {}: {}", canonical, e);
                 }
+            }
+
+            if !manifest.widgets.is_empty() {
+                let widget_inputs: Vec<_> = manifest.widgets.iter().map(|w| w.to_input()).collect();
+                info!(
+                    "Registering {} widget(s) for module {} (moduleKey={})",
+                    widget_inputs.len(),
+                    module_key,
+                    composite_module_key
+                );
+                super::db_proxy::register_widgets(
+                    url,
+                    composite_module_key,
+                    &manifest.name,
+                    &manifest.version,
+                    widget_inputs,
+                    application_id,
+                )
+                .await?;
             }
 
             // Register module assets — same idempotent pattern as

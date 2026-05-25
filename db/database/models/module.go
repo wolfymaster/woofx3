@@ -166,6 +166,9 @@ func (Asset) TableName() string { return "assets" }
 // opaque; the UI parses it.
 //
 // `Surface` indicates where the widget can be placed: "scene" or "dashboard".
+//
+// Module catalog rows are instance-global; applicationId is carried on
+// scene placements and runtime events, not on widget declarations.
 type Widget struct {
 	ID             uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
 	Name           string    `gorm:"column:name;type:text;not null"`
@@ -177,11 +180,12 @@ type Widget struct {
 	CreatedByType  string    `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
 	CreatedByRef   string    `gorm:"column:created_by_ref;type:text;not null;default:''"`
 	ManifestID     string    `gorm:"column:manifest_id;type:text;not null;default:''"`
+	ApplicationID  string    `gorm:"column:application_id;type:text;not null;default:''"`
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
 
-func (Widget) TableName() string { return "module_widgets" }
+func (Widget) TableName() string { return "widgets" }
 
 type ModuleResource struct {
 	ID              uuid.UUID  `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
