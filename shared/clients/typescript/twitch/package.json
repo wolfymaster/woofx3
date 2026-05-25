@@ -13,10 +13,10 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@twurple/api": "^7.4.0",
-    "@twurple/auth": "^7.4.0",
-    "@twurple/chat": "^7.4.0",
-    "@twurple/eventsub-ws": "^7.4.0",
+    "@twurple/api": "^8.0.0",
+    "@twurple/auth": "^8.0.0",
+    "@twurple/chat": "^8.0.0",
+    "@twurple/eventsub-ws": "^8.0.0",
     "express": "^5.1.0",
     "open": "^11.0.0"
   }
