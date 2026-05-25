@@ -395,14 +395,10 @@ pub async fn create_command(
 }
 
 /// Twirp JSON for finding commands by module and deleting them via pattern match.
-pub async fn delete_commands_by_module(
-    db_proxy_url: &str,
-    application_id: &str,
-    module_name: &str,
-) -> Result<()> {
+/// Module commands are instance-global; matches on `(created_by_type, created_by_ref)`.
+pub async fn delete_commands_by_module(db_proxy_url: &str, module_name: &str) -> Result<()> {
     let list_url = format!("{}/twirp/command.CommandService/ListCommands", db_proxy_url);
     let body = serde_json::json!({
-        "application_id": application_id,
         "include_disabled": true
     });
 
@@ -784,16 +780,12 @@ pub async fn complete_module_install(
 pub async fn get_trigger_event_by_canonical_id(
     db_proxy_url: &str,
     canonical_id: &str,
-    application_id: &str,
 ) -> Result<String> {
     let url = format!(
         "{}/twirp/module.ModuleService/GetTriggerByCanonicalId",
         db_proxy_url
     );
-    let mut body = serde_json::json!({ "canonical_id": canonical_id });
-    if !application_id.is_empty() {
-        body["application_id"] = serde_json::json!(application_id);
-    }
+    let body = serde_json::json!({ "canonical_id": canonical_id });
     let client = reqwest::Client::new();
     let response = client
         .post(&url)
@@ -843,16 +835,12 @@ pub struct ResolvedActionRef {
 pub async fn get_action_ref_by_canonical_id(
     db_proxy_url: &str,
     canonical_id: &str,
-    application_id: &str,
 ) -> Result<ResolvedActionRef> {
     let url = format!(
         "{}/twirp/module.ModuleService/GetActionByCanonicalId",
         db_proxy_url
     );
-    let mut body = serde_json::json!({ "canonical_id": canonical_id });
-    if !application_id.is_empty() {
-        body["application_id"] = serde_json::json!(application_id);
-    }
+    let body = serde_json::json!({ "canonical_id": canonical_id });
     let client = reqwest::Client::new();
     let response = client
         .post(&url)

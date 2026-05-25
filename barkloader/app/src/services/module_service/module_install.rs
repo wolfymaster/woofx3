@@ -22,10 +22,10 @@ pub async fn cleanup_old_version(
     super::db_proxy::delete_actions_by_module_id(url, module_name).await?;
     info!("Deleted triggers and actions for module {}", module_name);
 
-    super::db_proxy::delete_workflows_by_module(url, application_id, module_name).await?;
+    super::db_proxy::delete_workflows_by_module(url, "", module_name).await?;
     info!("Deleted workflows for module {}", module_name);
 
-    super::db_proxy::delete_commands_by_module(url, application_id, module_name).await?;
+    super::db_proxy::delete_commands_by_module(url, module_name).await?;
     info!("Deleted commands for module {}", module_name);
 
     Ok(())
@@ -60,7 +60,6 @@ async fn rollback_db_install(
 async fn validate_cross_module_dependencies(
     db_proxy_url: &str,
     resolved: &manifest_validate::ResolvedManifest,
-    application_id: &str,
 ) -> Result<()> {
     use std::collections::HashSet;
 
@@ -76,7 +75,7 @@ async fn validate_cross_module_dependencies(
             continue;
         }
         if let Err(e) =
-            super::db_proxy::get_trigger_event_by_canonical_id(db_proxy_url, &canonical.to_string(), application_id)
+            super::db_proxy::get_trigger_event_by_canonical_id(db_proxy_url, &canonical.to_string())
                 .await
         {
             missing.push(format!(
@@ -97,7 +96,7 @@ async fn validate_cross_module_dependencies(
                 continue;
             }
             if let Err(e) =
-                super::db_proxy::get_trigger_event_by_canonical_id(db_proxy_url, &event.to_string(), application_id)
+                super::db_proxy::get_trigger_event_by_canonical_id(db_proxy_url, &event.to_string())
                     .await
             {
                 missing.push(format!(
@@ -121,7 +120,6 @@ async fn validate_cross_module_dependencies(
             if let Err(e) = super::db_proxy::get_action_ref_by_canonical_id(
                 db_proxy_url,
                 &action_canonical.to_string(),
-                application_id,
             )
             .await
             {
@@ -174,7 +172,7 @@ pub async fn run_install<R: Repository>(
         .map_err(|e| anyhow!("manifest validation failed: {}", e))?;
 
     if let Some(url) = db_proxy_url {
-        validate_cross_module_dependencies(url, &resolved, application_id).await?;
+        validate_cross_module_dependencies(url, &resolved).await?;
     }
 
     let mut fn_rows: Vec<CreateModuleFunctionJson> =
@@ -296,7 +294,7 @@ pub async fn run_install<R: Repository>(
                 &manifest.name,
                 &manifest.version,
                 trigger_inputs,
-                application_id,
+                "",
             )
             .await?;
 
@@ -338,7 +336,7 @@ pub async fn run_install<R: Repository>(
                 &manifest.name,
                 &manifest.version,
                 action_inputs,
-                application_id,
+                "",
             )
             .await?;
 
@@ -420,7 +418,6 @@ pub async fn run_install<R: Repository>(
                     let event_subject = super::db_proxy::get_trigger_event_by_canonical_id(
                         url,
                         &canonical,
-                        application_id,
                     )
                     .await
                     .map_err(|e| anyhow!(
@@ -470,7 +467,7 @@ pub async fn run_install<R: Repository>(
                             }
                         } else {
                             let canonical = action_canonical.to_string();
-                            let resolved_ref = super::db_proxy::get_action_ref_by_canonical_id(url, &canonical, application_id)
+                            let resolved_ref = super::db_proxy::get_action_ref_by_canonical_id(url, &canonical)
                                 .await
                                 .map_err(|e| anyhow!(
                                     "bundled workflow {} step #{} references action {} but the action could not be resolved (is the owning module installed?): {}",
@@ -492,7 +489,6 @@ pub async fn run_install<R: Repository>(
                     module_key,
                     composite_module_key,
                     url,
-                    application_id,
                     &resolved_trigger_ctx,
                     &resolved_steps_ctx,
                 )
@@ -520,7 +516,6 @@ pub async fn run_install<R: Repository>(
                 cmd.register(
                     module_key,
                     url,
-                    application_id,
                     resolved_workflow.as_deref(),
                 )
                 .await?;

@@ -143,16 +143,15 @@ func (r *ModuleRepository) ListTriggersByModulePrefix(moduleID string) ([]*model
 //     `created_by_ref` as the bare moduleId segment.
 //
 // Returns gorm.ErrRecordNotFound if no match.
-func (r *ModuleRepository) GetTriggerByModuleAndManifestID(moduleID, manifestID, applicationID string) (*models.Trigger, error) {
+//
+// Module triggers/actions are instance-global (not scoped by application_id).
+// applicationId is carried on workflow/event payloads at runtime only.
+func (r *ModuleRepository) GetTriggerByModuleAndManifestID(moduleID, manifestID string) (*models.Trigger, error) {
 	var trigger models.Trigger
-	q := r.db.Where(
+	err := r.db.Where(
 		"manifest_id = ? AND ((created_by_type = ? AND created_by_ref LIKE ?) OR (created_by_type <> ? AND created_by_ref = ?))",
 		manifestID, "MODULE", moduleID+":%", "MODULE", moduleID,
-	)
-	if applicationID != "" {
-		q = q.Where("application_id = ?", applicationID)
-	}
-	err := q.First(&trigger).Error
+	).First(&trigger).Error
 	if err != nil {
 		return nil, err
 	}
@@ -229,16 +228,14 @@ func (r *ModuleRepository) ListActionsByModulePrefix(moduleID string) ([]*models
 // actions table. See GetTriggerByModuleAndManifestID for the two
 // registration shapes (MODULE composite ref vs non-MODULE bare ref) that
 // share the canonical-id space.
-func (r *ModuleRepository) GetActionByModuleAndManifestID(moduleID, manifestID, applicationID string) (*models.Action, error) {
+//
+// Module triggers/actions are instance-global (not scoped by application_id).
+func (r *ModuleRepository) GetActionByModuleAndManifestID(moduleID, manifestID string) (*models.Action, error) {
 	var action models.Action
-	q := r.db.Where(
+	err := r.db.Where(
 		"manifest_id = ? AND ((created_by_type = ? AND created_by_ref LIKE ?) OR (created_by_type <> ? AND created_by_ref = ?))",
 		manifestID, "MODULE", moduleID+":%", "MODULE", moduleID,
-	)
-	if applicationID != "" {
-		q = q.Where("application_id = ?", applicationID)
-	}
-	err := q.First(&action).Error
+	).First(&action).Error
 	if err != nil {
 		return nil, err
 	}

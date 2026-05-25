@@ -738,7 +738,6 @@ impl ManifestCommand {
         &self,
         module_name: &str,
         db_proxy_url: &str,
-        application_id: &str,
         resolved_workflow: Option<&str>,
     ) -> Result<()> {
         let command_name = self
@@ -760,7 +759,7 @@ impl ManifestCommand {
 
         super::db_proxy::create_command(
             db_proxy_url,
-            application_id,
+            "",
             command_name,
             command_type,
             &type_value,
@@ -880,7 +879,6 @@ impl ManifestWorkflow {
         module_name: &str,
         composite_module_key: &str,
         db_proxy_url: &str,
-        application_id: &str,
         resolved_trigger: &ResolvedWorkflowTrigger,
         resolved_steps: &[ResolvedWorkflowStep],
     ) -> Result<()> {
@@ -943,7 +941,9 @@ impl ManifestWorkflow {
                 self.trigger,
                 self.steps.len()
             ),
-            application_id: application_id.to_string(),
+            // Module workflows are instance-global; applicationId is set on
+            // the triggering event payload when the workflow runs.
+            application_id: String::new(),
             enabled: true,
             variables: std::collections::HashMap::new(),
             on_success: String::new(),

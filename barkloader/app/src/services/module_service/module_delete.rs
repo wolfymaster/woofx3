@@ -163,10 +163,10 @@ impl ModuleDeletePlan {
     ) -> Result<()> {
         match step {
             DeleteStep::Commands => {
-                delete_commands_by_module(ctx.db_proxy_url, ctx.application_id, ctx.manifest_id).await
+                delete_commands_by_module(ctx.db_proxy_url, ctx.manifest_id).await
             }
             DeleteStep::Workflows => {
-                delete_workflows_by_module(ctx.db_proxy_url, ctx.application_id, ctx.manifest_id).await
+                delete_workflows_by_module(ctx.db_proxy_url, "", ctx.manifest_id).await
             }
             DeleteStep::Actions => {
                 delete_actions_by_module_id(ctx.db_proxy_url, ctx.manifest_id).await

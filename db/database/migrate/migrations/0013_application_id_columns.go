@@ -8,14 +8,9 @@ import (
 )
 
 // AddApplicationIDColumns introduces an `application_id` column on
-// `triggers` and `actions`. This enables per-application scoping for
-// cross-module dependency checks in barkloader: when a module references
-// a trigger or action from another module, the lookup is scoped to the
-// same `application_id` so one tenant's installed modules do not
-// satisfy another tenant's dependencies.
-//
-// Existing rows default to `''` (empty string), which the lookup code
-// treats as "match all" for backward compatibility.
+// `triggers` and `actions`. Module catalog rows keep the default `''`
+// (instance-global). applicationId is carried on workflow/event payloads
+// at runtime, not on module resource declarations.
 func AddApplicationIDColumns() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "0013_application_id_columns",

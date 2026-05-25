@@ -393,7 +393,9 @@ func (s *moduleService) RegisterTriggers(ctx context.Context, req *client.Regist
 			CreatedByType: createdByType,
 			CreatedByRef:  createdByRef,
 			ManifestID:    in.ManifestId,
-			ApplicationID: req.GetApplicationId(),
+			// Module catalog rows are instance-global; applicationId is
+			// stamped on events / workflow runs, not on trigger declarations.
+			ApplicationID: "",
 		}
 		if err := s.repo.UpsertTrigger(t); err != nil {
 			return nil, fmt.Errorf("upsert trigger %q: %w", in.Name, err)
@@ -457,7 +459,7 @@ func (s *moduleService) GetTriggerByCanonicalId(ctx context.Context, req *client
 	if kind != "trigger" {
 		return nil, twirp.InvalidArgumentError("canonical_id", fmt.Sprintf("expected kind 'trigger', got %q", kind))
 	}
-	t, err := s.repo.GetTriggerByModuleAndManifestID(moduleID, manifestID, req.GetApplicationId())
+	t, err := s.repo.GetTriggerByModuleAndManifestID(moduleID, manifestID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError(fmt.Sprintf("no trigger %q", req.CanonicalId))
@@ -537,7 +539,9 @@ func (s *moduleService) RegisterActions(ctx context.Context, req *client.Registe
 			CreatedByRef:  createdByRef,
 			ManifestID:    in.ManifestId,
 			Type:          in.Type,
-			ApplicationID: req.GetApplicationId(),
+			// Module catalog rows are instance-global; applicationId is
+			// stamped on events / workflow runs, not on action declarations.
+			ApplicationID: "",
 		}
 		if err := s.repo.UpsertAction(a); err != nil {
 			return nil, fmt.Errorf("upsert action %q: %w", in.Name, err)
@@ -600,7 +604,7 @@ func (s *moduleService) GetActionByCanonicalId(ctx context.Context, req *client.
 	if kind != "action" {
 		return nil, twirp.InvalidArgumentError("canonical_id", fmt.Sprintf("expected kind 'action', got %q", kind))
 	}
-	a, err := s.repo.GetActionByModuleAndManifestID(moduleID, manifestID, req.GetApplicationId())
+	a, err := s.repo.GetActionByModuleAndManifestID(moduleID, manifestID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError(fmt.Sprintf("no action %q", req.CanonicalId))
@@ -881,11 +885,11 @@ func (s *moduleService) resolveResourceDisplayName(
 ) string {
 	switch r.ResourceType {
 	case "trigger":
-		if t, err := s.repo.GetTriggerByModuleAndManifestID(moduleIDSegment, r.ManifestID, ""); err == nil && t != nil && t.Name != "" {
+		if t, err := s.repo.GetTriggerByModuleAndManifestID(moduleIDSegment, r.ManifestID); err == nil && t != nil && t.Name != "" {
 			return t.Name
 		}
 	case "action":
-		if a, err := s.repo.GetActionByModuleAndManifestID(moduleIDSegment, r.ManifestID, ""); err == nil && a != nil && a.Name != "" {
+		if a, err := s.repo.GetActionByModuleAndManifestID(moduleIDSegment, r.ManifestID); err == nil && a != nil && a.Name != "" {
 			return a.Name
 		}
 	case "function":
