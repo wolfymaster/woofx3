@@ -34,7 +34,7 @@ Content-Type: multipart/form-data
 2. Detect file extension, decompress if ZIP or gzip
 3. Classify each extracted file: `.js`/`.lua` programs, `.json`/`.yaml` manifests, or **asset** (any other extension, stored as bytes)
 4. Select and parse the manifest (`module.json` / `module.yaml` preferred; see [Module format](./modules.md))
-5. Run **install**: upload functions to `modules/{id}/functions/…`, widget/overlay assets, then (if `DB_PROXY_ADDR` is set) Twirp `CreateModule` and `RegisterTrigger` per manifest `triggers`
+5. Run **install**: upload functions to `modules/{id}/functions/…`, widget/overlay assets, then (when `databaseProxyUrl` is set in `.woofx3.json`) Twirp `CreateModule` and `RegisterTrigger` per manifest `triggers`
 6. Log-only stubs for manifest `actions`, `commands`, and `workflows` until those services are wired
 7. Archive the original ZIP to `archives/{id}/{version}.zip`
 8. Clean up the temp directory via `SafeTempDir` (RAII drop)

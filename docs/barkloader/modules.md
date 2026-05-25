@@ -203,7 +203,7 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this trigger to a workflow; see [Schema field reference](#schema-field-reference). |
 | `allowVariants` | boolean | no | When true, the UI lets a user create multiple bound instances of this trigger (each with its own `schema` values). Used for trigger classes like cheer / subscribe that fan out per tier or threshold. |
 
-On install, when `DB_PROXY_ADDR` is set, each trigger is registered via Twirp `module.ModuleService/RegisterTrigger`. The trigger row's `event` column carries the NATS subject from the manifest's `event` field; `manifest_id` carries the manifest's `id`; `category` falls back to the `type` field when not set; `config_schema` is the JSON-encoded `schema`.
+On install, when `databaseProxyUrl` is set in `.woofx3.json`, each trigger is registered via Twirp `module.ModuleService/RegisterTrigger`. The trigger row's `event` column carries the NATS subject from the manifest's `event` field; `manifest_id` carries the manifest's `id`; `category` falls back to the `type` field when not set; `config_schema` is the JSON-encoded `schema`.
 
 ### Schema field reference
 
@@ -550,7 +550,7 @@ Multipart upload → temp dir
               → upload each function path to modules/{id}/functions/…
               → upload widget entry + assets
               → upload overlay entries
-              → if DB_PROXY_ADDR: Twirp CreateModule + RegisterTrigger per trigger
+              → if databaseProxyUrl (.woofx3.json): Twirp CreateModule + RegisterTrigger per trigger
               → action/command/workflow stubs (log only)
     → archive original ZIP to archives/{id}/{version}.zip
     → temp dir cleanup (SafeTempDir)
