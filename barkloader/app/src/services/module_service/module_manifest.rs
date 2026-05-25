@@ -421,8 +421,11 @@ impl ManifestFunction {
                 self.path
             )
         })?;
+        // Manifest paths are relative to the module root (e.g.
+        // `functions/sendChatMessage.js`). Do not prepend another
+        // `functions/` segment — that produced `functions/functions/...`.
         let rel_in_module = normalize_rel_path(&self.path);
-        let repo_key = format!("modules/{module_key}/functions/{rel_in_module}");
+        let repo_key = format!("modules/{module_key}/{rel_in_module}");
         let ext = extension_for_path(&self.path);
         let req = CreateFileRequest {
             content: Some(file.contents.clone()),
