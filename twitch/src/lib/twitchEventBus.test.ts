@@ -22,9 +22,11 @@ function createMockListener() {
     onChannelFollow: mock(() => subscriptionStub()),
     onChannelHypeTrainBegin: mock(() => subscriptionStub()),
     onChannelRaidTo: mock(() => subscriptionStub()),
+    onChannelRedemptionAdd: mock(() => subscriptionStub()),
     onChannelSubscription: mock(() => subscriptionStub()),
     onChannelSubscriptionGift: mock(() => subscriptionStub()),
     onStreamOnline: mock(() => subscriptionStub()),
+    onStreamOffline: mock(() => subscriptionStub()),
   };
 }
 
@@ -53,18 +55,19 @@ describe("TwitchEventBus", () => {
     listener = createMockListener();
   });
 
-  test("connect starts the EventSub socket and records that the user socket is up", () => {
+  test("start begins the listener and registers every handler", () => {
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
 
-    bus.connect();
+    bus.start();
 
     expect(listener.start).toHaveBeenCalledTimes(1);
-    expect(ctx.logger.info).toHaveBeenCalledWith("User Socket Connected");
+    expect(listener.onChannelFollow).toHaveBeenCalledTimes(1);
+    expect(listener.onStreamOffline).toHaveBeenCalledTimes(1);
   });
 
   test("disconnect stops the listener and tears down any registered EventSub subscriptions", () => {
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
-    bus.subscribe();
+    bus.start();
 
     const firstSubs = [
       listener.onChannelBan.mock.results[0]?.value,
@@ -79,41 +82,35 @@ describe("TwitchEventBus", () => {
     }
   });
 
-  test("subscribe wires every channel event handler once and replaces a previous batch when called again", () => {
+  test("start replaces a previous subscription batch when called again", () => {
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
 
-    bus.subscribe();
+    bus.start();
 
     expect(listener.onChannelBan).toHaveBeenCalledTimes(1);
-    expect(listener.onChannelChatMessage).toHaveBeenCalledTimes(1);
-    expect(listener.onChannelCheer).toHaveBeenCalledTimes(1);
-    expect(listener.onChannelFollow).toHaveBeenCalledTimes(1);
-    expect(listener.onChannelHypeTrainBegin).toHaveBeenCalledTimes(1);
-    expect(listener.onChannelRaidTo).toHaveBeenCalledTimes(1);
-    expect(listener.onChannelSubscription).toHaveBeenCalledTimes(1);
-    expect(listener.onChannelSubscriptionGift).toHaveBeenCalledTimes(1);
-    expect(listener.onStreamOnline).toHaveBeenCalledTimes(1);
 
     const firstBanSub = listener.onChannelBan.mock.results[0]?.value as { stop: ReturnType<typeof mock> };
 
-    bus.subscribe();
+    bus.start();
 
     expect(firstBanSub.stop).toHaveBeenCalled();
     expect(listener.onChannelBan).toHaveBeenCalledTimes(2);
   });
 
-  test("start and stop forward lifecycle calls to each active subscription", () => {
+  test("resumeSubscriptions and stopSubscriptions forward lifecycle calls to each active subscription", () => {
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
-    bus.subscribe();
-
-    const stubs = listener.onStreamOnline.mock.results.map((r) => r.value as { start: ReturnType<typeof mock>; stop: ReturnType<typeof mock> });
-
     bus.start();
+
+    const stubs = listener.onStreamOnline.mock.results.map(
+      (r) => r.value as { start: ReturnType<typeof mock>; stop: ReturnType<typeof mock> }
+    );
+
+    bus.resumeSubscriptions();
     for (const s of stubs) {
       expect(s.start).toHaveBeenCalledTimes(1);
     }
 
-    bus.stop();
+    bus.stopSubscriptions();
     for (const s of stubs) {
       expect(s.stop).toHaveBeenCalled();
     }

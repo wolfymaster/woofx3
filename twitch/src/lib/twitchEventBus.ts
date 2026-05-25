@@ -15,8 +15,6 @@ import onStreamOnline from "./subscriptions/onStreamOnline";
 
 export default class TwitchEventBus {
   private subscriptions: EventSubSubscription[];
-  private autoReconnect: boolean;
-  private disconnectHandlerRegistered: boolean;
 
   constructor(
     private ctx: Context,
@@ -24,33 +22,24 @@ export default class TwitchEventBus {
   ) {
     this.subscriptions = [];
     this.listener = listener;
-    this.autoReconnect = true;
-    this.disconnectHandlerRegistered = false;
   }
 
-  connect(): void {
-    this.autoReconnect = true;
-
-    // if (!this.disconnectHandlerRegistered) {
-    //   this.listener.onUserSocketDisconnect(() => {
-    //     if (this.autoReconnect) {
-    //       this.listener.start();
-    //     }
-    //   });
-    //   this.disconnectHandlerRegistered = true;
-    // }
-
+  /**
+   * Start the EventSub WebSocket listener and register channel handlers.
+   * Subscriptions activate when Twitch sends session_welcome (Twurple calls
+   * subscription.start internally). Do not call subscription.start() during boot.
+   */
+  start(): void {
     this.listener.start();
-    this.ctx.logger.info("User Socket Connected");
+    this.registerSubscriptions();
   }
 
   disconnect(): void {
-    this.autoReconnect = false;
     this.clearSubscriptions();
     this.listener.stop();
   }
 
-  subscribe() {
+  private registerSubscriptions(): void {
     this.clearSubscriptions();
 
     const funcs = [
@@ -68,7 +57,6 @@ export default class TwitchEventBus {
     ];
 
     for (const f of funcs) {
-      this.ctx.logger.info("Adding subscription", { subscription: f.name });
       this.subscriptions.push(f(this.ctx, this.listener));
     }
   }
@@ -80,13 +68,14 @@ export default class TwitchEventBus {
     this.subscriptions = [];
   }
 
-  start() {
+  /** Re-activate subscriptions after a manual stop(). Not used during initial boot. */
+  resumeSubscriptions(): void {
     for (const sub of this.subscriptions) {
       sub.start();
     }
   }
 
-  stop() {
+  stopSubscriptions(): void {
     for (const sub of this.subscriptions) {
       sub.stop();
     }

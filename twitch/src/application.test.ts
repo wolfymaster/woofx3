@@ -20,9 +20,11 @@ function createMockListener() {
     onChannelFollow: mock(() => subscriptionStub()),
     onChannelHypeTrainBegin: mock(() => subscriptionStub()),
     onChannelRaidTo: mock(() => subscriptionStub()),
+    onChannelRedemptionAdd: mock(() => subscriptionStub()),
     onChannelSubscription: mock(() => subscriptionStub()),
     onChannelSubscriptionGift: mock(() => subscriptionStub()),
     onStreamOnline: mock(() => subscriptionStub()),
+    onStreamOffline: mock(() => subscriptionStub()),
   };
 }
 

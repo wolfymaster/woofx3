@@ -20,7 +20,7 @@ export default class TwitchEventBusService implements Service<TwitchEventBus> {
     if (this.connected) {
       return;
     }
-    this.client.connect();
+    this.client.start();
     this.connected = true;
   }
 

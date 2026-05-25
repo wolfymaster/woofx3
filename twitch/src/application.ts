@@ -2,7 +2,7 @@ import type { HelixUser } from "@twurple/api";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { Application, IApplication } from "@woofx3/common/runtime";
-import { GetSetting } from "@woofx3/db/setting.pb";
+import { GetSetting, SetSetting } from "@woofx3/db/setting.pb";
 import type { Msg } from "@woofx3/nats/src/types";
 import TwitchClient from "@woofx3/twitch";
 import chalk from "chalk";
@@ -56,7 +56,14 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
         const response = await GetSetting({ applicationId: "", key }, { baseURL: dbBaseURL });
         return response.setting.value.stringValue ?? undefined;
       },
+      setSetting: async (key, value) => {
+        await SetSetting(
+          { applicationId: "", key, value: { stringValue: value }, userId: "" },
+          { baseURL: dbBaseURL }
+        );
+      },
     });
+
     await twitchClient.init({
       clientId: ctx.config.getConfig("woofx3TwitchClientId") as string,
       clientSecret: ctx.config.getConfig("woofx3TwitchClientSecret") as string,
@@ -74,19 +81,12 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       events: new EventFactory({ source: "twitch" }),
     };
     const twitchEventBus = new TwitchEventBus(eventBusCtx, listener);
-    twitchEventBus.connect();
-    twitchEventBus.subscribe();
+    twitchEventBus.start();
 
     ctx.broadcaster = broadcaster;
     ctx.twitchApi = new TwitchApiClientImpl(apiClient, broadcaster);
     ctx.twitchEventBus = twitchEventBus;
 
-    // Listen on the message bus for API requests. Compatible with NATS
-    // request/reply: when the message has `reply` set (engine dispatched
-    // via nats.request()), the handler responds via msg.respond() so the
-    // engine's muxed inbox catches the reply and forwards it to Convex.
-    // No more publish-back to a topic — callers that need to fan out the
-    // result to other subjects do that themselves.
     await ctx.services.messageBus.client.subscribe("twitchapi", (msg: Msg) => {
       void this.handleTwitchApiRequest(ctx, msg);
     });
@@ -101,13 +101,6 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     ctx.twitchEventBus?.disconnect();
   }
 
-  /**
-   * Handle one request on the `twitchapi` subject. Parses the CloudEvent
-   * envelope, dispatches by command name, and replies via msg.respond
-   * (when the message was a request) with a CloudEvent envelope wrapping
-   * the result. Errors are also returned via msg.respond so the engine
-   * can forward them back to Convex with status="error".
-   */
   private async handleTwitchApiRequest(ctx: TwitchApiContext, msg: Msg) {
     const isRequest = !!msg.reply;
     let request: TwitchApiRequest | null = null;
