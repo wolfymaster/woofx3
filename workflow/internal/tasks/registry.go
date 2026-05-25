@@ -95,7 +95,9 @@ type ActionContext[TServices any] struct {
 	// (e.g. NewAlertAction) can attribute their side effects to the
 	// owning application. Empty when unresolved.
 	ApplicationID string
+	TaskID        string
 	TriggerEvent  *types.Event
+	Logger        Logger
 }
 
 type ActionFunc[TServices any] func(ctx ActionContext[TServices], params map[string]any) (map[string]any, error)

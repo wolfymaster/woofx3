@@ -604,11 +604,13 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 
 		taskExec.Status = types.TaskStatusSuccess
 
-		if result != nil && result.Exports != nil {
-			taskExports[taskDef.ID] = result.Exports
-		}
+		publishTaskResultExports(taskExports, taskDef.ID, result)
 
-		e.logger.Info("Task completed", "workflow", execution.WorkflowID, "execution", execution.ID, "task", taskDef.ID)
+		if result != nil && result.Data != nil {
+			e.logger.Info("Task completed", "workflow", execution.WorkflowID, "execution", execution.ID, "task", taskDef.ID, "result", result.Data)
+		} else {
+			e.logger.Info("Task completed", "workflow", execution.WorkflowID, "execution", execution.ID, "task", taskDef.ID)
+		}
 	}
 
 	execution.Status = types.ExecutionStatusCompleted
@@ -1083,6 +1085,22 @@ func taskExportKeys(taskExports map[string]map[string]any) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// publishTaskResultExports exposes a completed task's outputs for ${taskId.*}
+// references. Explicit export mappings win; otherwise the full result Data map
+// is published (e.g. function action return values like `{ sent: true }`).
+func publishTaskResultExports(taskExports map[string]map[string]any, taskID string, result *types.TaskResult) {
+	if result == nil {
+		return
+	}
+	exports := result.Exports
+	if exports == nil && result.Data != nil {
+		exports = result.Data
+	}
+	if exports != nil {
+		taskExports[taskID] = exports
+	}
 }
 
 func (e *Engine[TServices]) GetExecution(id string) (*types.WorkflowExecution, error) {

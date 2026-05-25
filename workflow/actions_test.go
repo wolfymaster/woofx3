@@ -121,3 +121,24 @@ func TestBuildAlertEnvelope_NilTriggerEvent(t *testing.T) {
 		t.Errorf("parameters.widget = %v, want MediaWidget", gotParams["widget"])
 	}
 }
+
+func TestBuildModuleInvokeEvent_ParametersAndTrigger(t *testing.T) {
+	trigger := &types.Event{
+		ID:   "evt-1",
+		Type: "channel.follow",
+		Data: map[string]any{"user_name": "alice"},
+	}
+	params := map[string]any{"message": "hello"}
+
+	got := buildModuleInvokeEvent(trigger, params)
+
+	if got["parameters"].(map[string]any)["message"] != "hello" {
+		t.Errorf("parameters.message = %v, want hello", got["parameters"])
+	}
+	if got["type"] != "channel.follow" {
+		t.Errorf("type = %v, want channel.follow", got["type"])
+	}
+	if got["data"].(map[string]any)["user_name"] != "alice" {
+		t.Errorf("data.user_name = %v, want alice", got["data"])
+	}
+}

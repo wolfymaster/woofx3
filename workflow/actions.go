@@ -59,9 +59,45 @@ func NewBarkloaderAction() tasks.ActionFunc[AppServices] {
 		// Ensure we're using the barkloader.Client type
 		_ = (*barkloader.Client)(nil)
 
-		result, err := client.Invoke(canonicalID, []any{argsObj})
+		eventPayload := buildModuleInvokeEvent(ctx.TriggerEvent, argsObj)
+		if ctx.Logger != nil {
+			ctx.Logger.Info(
+				"Invoking module function",
+				"task", ctx.TaskID,
+				"function", canonicalID,
+				"parameters", argsObj,
+			)
+		}
+		result, err := client.Invoke(canonicalID, eventPayload)
 		if err != nil {
+			if ctx.Logger != nil {
+				ctx.Logger.Error(
+					"Module function invoke failed",
+					"task", ctx.TaskID,
+					"function", canonicalID,
+					"error", err,
+				)
+			}
 			return nil, fmt.Errorf("failed to invoke barkloader function %s: %w", canonicalID, err)
+		}
+		if len(result) == 0 {
+			if ctx.Logger != nil {
+				ctx.Logger.Warn(
+					"Module function returned empty result map",
+					"task", ctx.TaskID,
+					"function", canonicalID,
+					"event", eventPayload,
+				)
+			}
+			return nil, fmt.Errorf("module function %s returned empty result", canonicalID)
+		}
+		if ctx.Logger != nil {
+			ctx.Logger.Info(
+				"Module function returned",
+				"task", ctx.TaskID,
+				"function", canonicalID,
+				"result", result,
+			)
 		}
 		return result, nil
 	}
@@ -142,4 +178,24 @@ func buildAlertEnvelope(applicationID string, params map[string]any, event *type
 		return nil, fmt.Errorf("marshal alert envelope: %w", err)
 	}
 	return payload, nil
+}
+
+// buildModuleInvokeEvent shapes the sandbox `ctx.event` object module functions
+// read. Action schema fields live under `parameters` (see counter module);
+// trigger CloudEvent fields are merged at the top level when present.
+func buildModuleInvokeEvent(trigger *types.Event, params map[string]any) map[string]interface{} {
+	event := map[string]interface{}{
+		"parameters": params,
+	}
+	if trigger == nil {
+		return event
+	}
+	event["id"] = trigger.ID
+	event["type"] = trigger.Type
+	event["source"] = trigger.Source
+	event["time"] = trigger.Time
+	if trigger.Data != nil {
+		event["data"] = trigger.Data
+	}
+	return event
 }
