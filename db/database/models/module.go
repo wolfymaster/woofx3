@@ -10,6 +10,9 @@ import (
 type Module struct {
 	ID            uuid.UUID        `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
 	ModuleKey     string           `gorm:"column:module_key;type:text;not null;uniqueIndex"`
+	// Manifest-local module id (e.g. twitch_platform). Canonical ids and
+	// sandbox registry keys use this, not Name.
+	ModuleID      string           `gorm:"column:module_id;type:text;not null;default:''"`
 	Name          string           `gorm:"column:name;type:text;not null;uniqueIndex"`
 	Version       string           `gorm:"column:version;type:text;not null"`
 	Manifest      string           `gorm:"column:manifest;type:text"`
@@ -49,7 +52,7 @@ func GetModuleByID(db *gorm.DB, id uuid.UUID) (*Module, error) {
 
 func GetModuleByName(db *gorm.DB, name string) (*Module, error) {
 	var mod Module
-	err := db.Preload("Functions").Where("name = ?", name).First(&mod).Error
+	err := db.Preload("Functions").Where("module_id = ? OR name = ?", name, name).First(&mod).Error
 	return &mod, err
 }
 

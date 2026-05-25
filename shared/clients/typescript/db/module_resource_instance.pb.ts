@@ -62,6 +62,16 @@ export interface CreateResourceInstanceRequest {
    * When both are set, `module_id` wins.
    */
   moduleName: string;
+  /**
+   * Connection kind for connection resources (e.g., "websocket", "grpc").
+   * When kind indicates a connection resource, this specifies the protocol.
+   */
+  connectionKind: string;
+  /**
+   * JSON-encoded connection configuration (URL, headers, auth, etc.).
+   * Required when connection_kind is set.
+   */
+  connectionConfig: string;
 }
 
 export interface ResourceInstanceResponse {
@@ -89,6 +99,43 @@ export interface ListResourceInstancesByModuleRequest {
 export interface ListResourceInstancesResponse {
   status: common.ResponseStatus;
   instances: ModuleResourceInstance[];
+}
+
+/**
+ * ConnectionState represents the current state of a connection resource.
+ */
+export interface ConnectionState {
+  status: ConnectionState.Status;
+  error: string;
+  lastConnected: protoscript.Timestamp;
+  reconnectCount: number;
+}
+
+export declare namespace ConnectionState {
+  export type Status =
+    | "STATUS_UNSPECIFIED"
+    | "STATUS_CONNECTING"
+    | "STATUS_CONNECTED"
+    | "STATUS_DISCONNECTED"
+    | "STATUS_ERROR";
+}
+
+export interface GetConnectionStateRequest {
+  canonicalId: string;
+}
+
+export interface ConnectionStateResponse {
+  status: common.ResponseStatus;
+  state: ConnectionState;
+}
+
+export interface SendConnectionMessageRequest {
+  canonicalId: string;
+  message: Uint8Array;
+}
+
+export interface ConnectionMessageResponse {
+  status: common.ResponseStatus;
 }
 
 //========================================//
@@ -273,6 +320,8 @@ export const CreateResourceInstanceRequest = {
       displayName: "",
       requestContext: common.RequestContext.initialize(),
       moduleName: "",
+      connectionKind: "",
+      connectionConfig: "",
       ...msg,
     };
   },
@@ -305,6 +354,12 @@ export const CreateResourceInstanceRequest = {
     }
     if (msg.moduleName) {
       writer.writeString(6, msg.moduleName);
+    }
+    if (msg.connectionKind) {
+      writer.writeString(7, msg.connectionKind);
+    }
+    if (msg.connectionConfig) {
+      writer.writeString(8, msg.connectionConfig);
     }
     return writer;
   },
@@ -344,6 +399,14 @@ export const CreateResourceInstanceRequest = {
         }
         case 6: {
           msg.moduleName = reader.readString();
+          break;
+        }
+        case 7: {
+          msg.connectionKind = reader.readString();
+          break;
+        }
+        case 8: {
+          msg.connectionConfig = reader.readString();
           break;
         }
         default: {
@@ -825,6 +888,463 @@ export const ListResourceInstancesResponse = {
   },
 };
 
+export const ConnectionState = {
+  /**
+   * Serializes ConnectionState to protobuf.
+   */
+  encode: function (msg: PartialDeep<ConnectionState>): Uint8Array {
+    return ConnectionState._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ConnectionState from protobuf.
+   */
+  decode: function (bytes: ByteSource): ConnectionState {
+    return ConnectionState._readMessage(
+      ConnectionState.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ConnectionState with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<ConnectionState>): ConnectionState {
+    return {
+      status: ConnectionState.Status._fromInt(0),
+      error: "",
+      lastConnected: protoscript.Timestamp.initialize(),
+      reconnectCount: 0,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ConnectionState>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status && ConnectionState.Status._toInt(msg.status)) {
+      writer.writeEnum(1, ConnectionState.Status._toInt(msg.status));
+    }
+    if (msg.error) {
+      writer.writeString(2, msg.error);
+    }
+    if (msg.lastConnected) {
+      writer.writeMessage(
+        3,
+        msg.lastConnected,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    if (msg.reconnectCount) {
+      writer.writeInt32(4, msg.reconnectCount);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ConnectionState,
+    reader: protoscript.BinaryReader,
+  ): ConnectionState {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.status = ConnectionState.Status._fromInt(reader.readEnum());
+          break;
+        }
+        case 2: {
+          msg.error = reader.readString();
+          break;
+        }
+        case 3: {
+          reader.readMessage(
+            msg.lastConnected,
+            protoscript.Timestamp._readMessage,
+          );
+          break;
+        }
+        case 4: {
+          msg.reconnectCount = reader.readInt32();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+
+  Status: {
+    STATUS_UNSPECIFIED: "STATUS_UNSPECIFIED",
+    STATUS_CONNECTING: "STATUS_CONNECTING",
+    STATUS_CONNECTED: "STATUS_CONNECTED",
+    STATUS_DISCONNECTED: "STATUS_DISCONNECTED",
+    STATUS_ERROR: "STATUS_ERROR",
+    /**
+     * @private
+     */
+    _fromInt: function (i: number): ConnectionState.Status {
+      switch (i) {
+        case 0: {
+          return "STATUS_UNSPECIFIED";
+        }
+        case 1: {
+          return "STATUS_CONNECTING";
+        }
+        case 2: {
+          return "STATUS_CONNECTED";
+        }
+        case 3: {
+          return "STATUS_DISCONNECTED";
+        }
+        case 4: {
+          return "STATUS_ERROR";
+        }
+        // unknown values are preserved as numbers. this occurs when new enum values are introduced and the generated code is out of date.
+        default: {
+          return i as unknown as ConnectionState.Status;
+        }
+      }
+    },
+    /**
+     * @private
+     */
+    _toInt: function (i: ConnectionState.Status): number {
+      switch (i) {
+        case "STATUS_UNSPECIFIED": {
+          return 0;
+        }
+        case "STATUS_CONNECTING": {
+          return 1;
+        }
+        case "STATUS_CONNECTED": {
+          return 2;
+        }
+        case "STATUS_DISCONNECTED": {
+          return 3;
+        }
+        case "STATUS_ERROR": {
+          return 4;
+        }
+        // unknown values are preserved as numbers. this occurs when new enum values are introduced and the generated code is out of date.
+        default: {
+          return i as unknown as number;
+        }
+      }
+    },
+  } as const,
+};
+
+export const GetConnectionStateRequest = {
+  /**
+   * Serializes GetConnectionStateRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<GetConnectionStateRequest>): Uint8Array {
+    return GetConnectionStateRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes GetConnectionStateRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): GetConnectionStateRequest {
+    return GetConnectionStateRequest._readMessage(
+      GetConnectionStateRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes GetConnectionStateRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetConnectionStateRequest>,
+  ): GetConnectionStateRequest {
+    return {
+      canonicalId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetConnectionStateRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.canonicalId) {
+      writer.writeString(1, msg.canonicalId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetConnectionStateRequest,
+    reader: protoscript.BinaryReader,
+  ): GetConnectionStateRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.canonicalId = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ConnectionStateResponse = {
+  /**
+   * Serializes ConnectionStateResponse to protobuf.
+   */
+  encode: function (msg: PartialDeep<ConnectionStateResponse>): Uint8Array {
+    return ConnectionStateResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ConnectionStateResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): ConnectionStateResponse {
+    return ConnectionStateResponse._readMessage(
+      ConnectionStateResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ConnectionStateResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ConnectionStateResponse>,
+  ): ConnectionStateResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      state: ConnectionState.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ConnectionStateResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.state) {
+      writer.writeMessage(2, msg.state, ConnectionState._writeMessage);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ConnectionStateResponse,
+    reader: protoscript.BinaryReader,
+  ): ConnectionStateResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          reader.readMessage(msg.state, ConnectionState._readMessage);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const SendConnectionMessageRequest = {
+  /**
+   * Serializes SendConnectionMessageRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<SendConnectionMessageRequest>,
+  ): Uint8Array {
+    return SendConnectionMessageRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes SendConnectionMessageRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): SendConnectionMessageRequest {
+    return SendConnectionMessageRequest._readMessage(
+      SendConnectionMessageRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes SendConnectionMessageRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<SendConnectionMessageRequest>,
+  ): SendConnectionMessageRequest {
+    return {
+      canonicalId: "",
+      message: new Uint8Array(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<SendConnectionMessageRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.canonicalId) {
+      writer.writeString(1, msg.canonicalId);
+    }
+    if (msg.message?.length) {
+      writer.writeBytes(2, msg.message);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: SendConnectionMessageRequest,
+    reader: protoscript.BinaryReader,
+  ): SendConnectionMessageRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.canonicalId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.message = reader.readBytes();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ConnectionMessageResponse = {
+  /**
+   * Serializes ConnectionMessageResponse to protobuf.
+   */
+  encode: function (msg: PartialDeep<ConnectionMessageResponse>): Uint8Array {
+    return ConnectionMessageResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ConnectionMessageResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): ConnectionMessageResponse {
+    return ConnectionMessageResponse._readMessage(
+      ConnectionMessageResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ConnectionMessageResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ConnectionMessageResponse>,
+  ): ConnectionMessageResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ConnectionMessageResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ConnectionMessageResponse,
+    reader: protoscript.BinaryReader,
+  ): ConnectionMessageResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -982,6 +1502,8 @@ export const CreateResourceInstanceRequestJSON = {
       displayName: "",
       requestContext: common.RequestContextJSON.initialize(),
       moduleName: "",
+      connectionKind: "",
+      connectionConfig: "",
       ...msg,
     };
   },
@@ -1015,6 +1537,12 @@ export const CreateResourceInstanceRequestJSON = {
     }
     if (msg.moduleName) {
       json["moduleName"] = msg.moduleName;
+    }
+    if (msg.connectionKind) {
+      json["connectionKind"] = msg.connectionKind;
+    }
+    if (msg.connectionConfig) {
+      json["connectionConfig"] = msg.connectionConfig;
     }
     return json;
   },
@@ -1052,6 +1580,15 @@ export const CreateResourceInstanceRequestJSON = {
     const _moduleName_ = json["moduleName"] ?? json["module_name"];
     if (_moduleName_) {
       msg.moduleName = _moduleName_;
+    }
+    const _connectionKind_ = json["connectionKind"] ?? json["connection_kind"];
+    if (_connectionKind_) {
+      msg.connectionKind = _connectionKind_;
+    }
+    const _connectionConfig_ =
+      json["connectionConfig"] ?? json["connection_config"];
+    if (_connectionConfig_) {
+      msg.connectionConfig = _connectionConfig_;
     }
     return msg;
   },
@@ -1455,6 +1992,403 @@ export const ListResourceInstancesResponseJSON = {
         ModuleResourceInstanceJSON._readMessage(m, item);
         msg.instances.push(m);
       }
+    }
+    return msg;
+  },
+};
+
+export const ConnectionStateJSON = {
+  /**
+   * Serializes ConnectionState to JSON.
+   */
+  encode: function (msg: PartialDeep<ConnectionState>): string {
+    return JSON.stringify(ConnectionStateJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ConnectionState from JSON.
+   */
+  decode: function (json: string): ConnectionState {
+    return ConnectionStateJSON._readMessage(
+      ConnectionStateJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ConnectionState with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<ConnectionState>): ConnectionState {
+    return {
+      status: ConnectionState.Status._fromInt(0),
+      error: "",
+      lastConnected: protoscript.TimestampJSON.initialize(),
+      reconnectCount: 0,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ConnectionState>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status && ConnectionStateJSON.Status._toInt(msg.status)) {
+      json["status"] = msg.status;
+    }
+    if (msg.error) {
+      json["error"] = msg.error;
+    }
+    if (
+      msg.lastConnected &&
+      (msg.lastConnected.seconds || msg.lastConnected.nanos)
+    ) {
+      json["lastConnected"] = protoscript.serializeTimestamp(msg.lastConnected);
+    }
+    if (msg.reconnectCount) {
+      json["reconnectCount"] = msg.reconnectCount;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (msg: ConnectionState, json: any): ConnectionState {
+    const _status_ = json["status"];
+    if (_status_) {
+      msg.status = ConnectionState.Status._fromInt(_status_);
+    }
+    const _error_ = json["error"];
+    if (_error_) {
+      msg.error = _error_;
+    }
+    const _lastConnected_ = json["lastConnected"] ?? json["last_connected"];
+    if (_lastConnected_) {
+      msg.lastConnected = protoscript.parseTimestamp(_lastConnected_);
+    }
+    const _reconnectCount_ = json["reconnectCount"] ?? json["reconnect_count"];
+    if (_reconnectCount_) {
+      msg.reconnectCount = protoscript.parseNumber(_reconnectCount_);
+    }
+    return msg;
+  },
+
+  Status: {
+    STATUS_UNSPECIFIED: "STATUS_UNSPECIFIED",
+    STATUS_CONNECTING: "STATUS_CONNECTING",
+    STATUS_CONNECTED: "STATUS_CONNECTED",
+    STATUS_DISCONNECTED: "STATUS_DISCONNECTED",
+    STATUS_ERROR: "STATUS_ERROR",
+    /**
+     * @private
+     */
+    _fromInt: function (i: number): ConnectionState.Status {
+      switch (i) {
+        case 0: {
+          return "STATUS_UNSPECIFIED";
+        }
+        case 1: {
+          return "STATUS_CONNECTING";
+        }
+        case 2: {
+          return "STATUS_CONNECTED";
+        }
+        case 3: {
+          return "STATUS_DISCONNECTED";
+        }
+        case 4: {
+          return "STATUS_ERROR";
+        }
+        // unknown values are preserved as numbers. this occurs when new enum values are introduced and the generated code is out of date.
+        default: {
+          return i as unknown as ConnectionState.Status;
+        }
+      }
+    },
+    /**
+     * @private
+     */
+    _toInt: function (i: ConnectionState.Status): number {
+      switch (i) {
+        case "STATUS_UNSPECIFIED": {
+          return 0;
+        }
+        case "STATUS_CONNECTING": {
+          return 1;
+        }
+        case "STATUS_CONNECTED": {
+          return 2;
+        }
+        case "STATUS_DISCONNECTED": {
+          return 3;
+        }
+        case "STATUS_ERROR": {
+          return 4;
+        }
+        // unknown values are preserved as numbers. this occurs when new enum values are introduced and the generated code is out of date.
+        default: {
+          return i as unknown as number;
+        }
+      }
+    },
+  } as const,
+};
+
+export const GetConnectionStateRequestJSON = {
+  /**
+   * Serializes GetConnectionStateRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<GetConnectionStateRequest>): string {
+    return JSON.stringify(GetConnectionStateRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes GetConnectionStateRequest from JSON.
+   */
+  decode: function (json: string): GetConnectionStateRequest {
+    return GetConnectionStateRequestJSON._readMessage(
+      GetConnectionStateRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes GetConnectionStateRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetConnectionStateRequest>,
+  ): GetConnectionStateRequest {
+    return {
+      canonicalId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetConnectionStateRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.canonicalId) {
+      json["canonicalId"] = msg.canonicalId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetConnectionStateRequest,
+    json: any,
+  ): GetConnectionStateRequest {
+    const _canonicalId_ = json["canonicalId"] ?? json["canonical_id"];
+    if (_canonicalId_) {
+      msg.canonicalId = _canonicalId_;
+    }
+    return msg;
+  },
+};
+
+export const ConnectionStateResponseJSON = {
+  /**
+   * Serializes ConnectionStateResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<ConnectionStateResponse>): string {
+    return JSON.stringify(ConnectionStateResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ConnectionStateResponse from JSON.
+   */
+  decode: function (json: string): ConnectionStateResponse {
+    return ConnectionStateResponseJSON._readMessage(
+      ConnectionStateResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ConnectionStateResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ConnectionStateResponse>,
+  ): ConnectionStateResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      state: ConnectionStateJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ConnectionStateResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.state) {
+      const _state_ = ConnectionStateJSON._writeMessage(msg.state);
+      if (Object.keys(_state_).length > 0) {
+        json["state"] = _state_;
+      }
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ConnectionStateResponse,
+    json: any,
+  ): ConnectionStateResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _state_ = json["state"];
+    if (_state_) {
+      ConnectionStateJSON._readMessage(msg.state, _state_);
+    }
+    return msg;
+  },
+};
+
+export const SendConnectionMessageRequestJSON = {
+  /**
+   * Serializes SendConnectionMessageRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<SendConnectionMessageRequest>): string {
+    return JSON.stringify(SendConnectionMessageRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes SendConnectionMessageRequest from JSON.
+   */
+  decode: function (json: string): SendConnectionMessageRequest {
+    return SendConnectionMessageRequestJSON._readMessage(
+      SendConnectionMessageRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes SendConnectionMessageRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<SendConnectionMessageRequest>,
+  ): SendConnectionMessageRequest {
+    return {
+      canonicalId: "",
+      message: new Uint8Array(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<SendConnectionMessageRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.canonicalId) {
+      json["canonicalId"] = msg.canonicalId;
+    }
+    if (msg.message?.length) {
+      json["message"] = protoscript.serializeBytes(msg.message);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: SendConnectionMessageRequest,
+    json: any,
+  ): SendConnectionMessageRequest {
+    const _canonicalId_ = json["canonicalId"] ?? json["canonical_id"];
+    if (_canonicalId_) {
+      msg.canonicalId = _canonicalId_;
+    }
+    const _message_ = json["message"];
+    if (_message_) {
+      msg.message = protoscript.parseBytes(_message_);
+    }
+    return msg;
+  },
+};
+
+export const ConnectionMessageResponseJSON = {
+  /**
+   * Serializes ConnectionMessageResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<ConnectionMessageResponse>): string {
+    return JSON.stringify(ConnectionMessageResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ConnectionMessageResponse from JSON.
+   */
+  decode: function (json: string): ConnectionMessageResponse {
+    return ConnectionMessageResponseJSON._readMessage(
+      ConnectionMessageResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ConnectionMessageResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ConnectionMessageResponse>,
+  ): ConnectionMessageResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ConnectionMessageResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ConnectionMessageResponse,
+    json: any,
+  ): ConnectionMessageResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
     }
     return msg;
   },

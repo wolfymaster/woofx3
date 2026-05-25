@@ -25,6 +25,12 @@ import * as module_resource_instance from "./module_resource_instance.pb";
 export interface Module {
   id: string;
   name: string;
+  /**
+   * Manifest-local module id (e.g. twitch_platform). First segment of
+   * module_key and of every canonical id for this module. Distinct from
+   * the UUID `id` and the human display `name`.
+   */
+  moduleId: string;
   version: string;
   manifest: string;
   state: string;
@@ -67,6 +73,10 @@ export interface CreateModuleRequest {
   createdByType: string;
   createdByRef: string;
   moduleKey: string;
+  /**
+   * Manifest-local module id (manifest.json `id`). Required on install.
+   */
+  moduleId: string;
 }
 
 export interface CreateModuleFunctionRequest {
@@ -188,6 +198,7 @@ export interface DeleteByModuleIdRequest {
  */
 export interface GetByCanonicalIdRequest {
   canonicalId: string;
+  applicationId: string;
 }
 
 export interface TriggerResponse {
@@ -1705,6 +1716,7 @@ export const Module = {
     return {
       id: "",
       name: "",
+      moduleId: "",
       version: "",
       manifest: "",
       state: "",
@@ -1731,6 +1743,9 @@ export const Module = {
     }
     if (msg.name) {
       writer.writeString(2, msg.name);
+    }
+    if (msg.moduleId) {
+      writer.writeString(13, msg.moduleId);
     }
     if (msg.version) {
       writer.writeString(3, msg.version);
@@ -1793,6 +1808,10 @@ export const Module = {
         }
         case 2: {
           msg.name = reader.readString();
+          break;
+        }
+        case 13: {
+          msg.moduleId = reader.readString();
           break;
         }
         case 3: {
@@ -2010,6 +2029,7 @@ export const CreateModuleRequest = {
       createdByType: "",
       createdByRef: "",
       moduleKey: "",
+      moduleId: "",
       ...msg,
     };
   },
@@ -2048,6 +2068,9 @@ export const CreateModuleRequest = {
     }
     if (msg.moduleKey) {
       writer.writeString(8, msg.moduleKey);
+    }
+    if (msg.moduleId) {
+      writer.writeString(9, msg.moduleId);
     }
     return writer;
   },
@@ -2094,6 +2117,10 @@ export const CreateModuleRequest = {
         }
         case 8: {
           msg.moduleKey = reader.readString();
+          break;
+        }
+        case 9: {
+          msg.moduleId = reader.readString();
           break;
         }
         default: {
@@ -3605,6 +3632,7 @@ export const GetByCanonicalIdRequest = {
   ): GetByCanonicalIdRequest {
     return {
       canonicalId: "",
+      applicationId: "",
       ...msg,
     };
   },
@@ -3618,6 +3646,9 @@ export const GetByCanonicalIdRequest = {
   ): protoscript.BinaryWriter {
     if (msg.canonicalId) {
       writer.writeString(1, msg.canonicalId);
+    }
+    if (msg.applicationId) {
+      writer.writeString(2, msg.applicationId);
     }
     return writer;
   },
@@ -3634,6 +3665,10 @@ export const GetByCanonicalIdRequest = {
       switch (field) {
         case 1: {
           msg.canonicalId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.applicationId = reader.readString();
           break;
         }
         default: {
@@ -3824,6 +3859,7 @@ export const ModuleJSON = {
     return {
       id: "",
       name: "",
+      moduleId: "",
       version: "",
       manifest: "",
       state: "",
@@ -3848,6 +3884,9 @@ export const ModuleJSON = {
     }
     if (msg.name) {
       json["name"] = msg.name;
+    }
+    if (msg.moduleId) {
+      json["moduleId"] = msg.moduleId;
     }
     if (msg.version) {
       json["version"] = msg.version;
@@ -3893,6 +3932,10 @@ export const ModuleJSON = {
     const _name_ = json["name"];
     if (_name_) {
       msg.name = _name_;
+    }
+    const _moduleId_ = json["moduleId"] ?? json["module_id"];
+    if (_moduleId_) {
+      msg.moduleId = _moduleId_;
     }
     const _version_ = json["version"];
     if (_version_) {
@@ -4084,6 +4127,7 @@ export const CreateModuleRequestJSON = {
       createdByType: "",
       createdByRef: "",
       moduleKey: "",
+      moduleId: "",
       ...msg,
     };
   },
@@ -4120,6 +4164,9 @@ export const CreateModuleRequestJSON = {
     }
     if (msg.moduleKey) {
       json["moduleKey"] = msg.moduleKey;
+    }
+    if (msg.moduleId) {
+      json["moduleId"] = msg.moduleId;
     }
     return json;
   },
@@ -4166,6 +4213,10 @@ export const CreateModuleRequestJSON = {
     const _moduleKey_ = json["moduleKey"] ?? json["module_key"];
     if (_moduleKey_) {
       msg.moduleKey = _moduleKey_;
+    }
+    const _moduleId_ = json["moduleId"] ?? json["module_id"];
+    if (_moduleId_) {
+      msg.moduleId = _moduleId_;
     }
     return msg;
   },
@@ -5468,6 +5519,7 @@ export const GetByCanonicalIdRequestJSON = {
   ): GetByCanonicalIdRequest {
     return {
       canonicalId: "",
+      applicationId: "",
       ...msg,
     };
   },
@@ -5482,6 +5534,9 @@ export const GetByCanonicalIdRequestJSON = {
     if (msg.canonicalId) {
       json["canonicalId"] = msg.canonicalId;
     }
+    if (msg.applicationId) {
+      json["applicationId"] = msg.applicationId;
+    }
     return json;
   },
 
@@ -5495,6 +5550,10 @@ export const GetByCanonicalIdRequestJSON = {
     const _canonicalId_ = json["canonicalId"] ?? json["canonical_id"];
     if (_canonicalId_) {
       msg.canonicalId = _canonicalId_;
+    }
+    const _applicationId_ = json["applicationId"] ?? json["application_id"];
+    if (_applicationId_) {
+      msg.applicationId = _applicationId_;
     }
     return msg;
   },

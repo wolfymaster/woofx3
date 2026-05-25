@@ -54,6 +54,11 @@ export interface RegisterTriggersRequest {
    */
   createdByType: string;
   createdByRef: string;
+  /**
+   * Scopes the registration to a specific application so cross-module
+   * dependency checks are tenant-isolated.
+   */
+  applicationId: string;
 }
 
 export interface ListTriggersRequest {
@@ -360,6 +365,7 @@ export const RegisterTriggersRequest = {
       triggers: [],
       createdByType: "",
       createdByRef: "",
+      applicationId: "",
       ...msg,
     };
   },
@@ -392,6 +398,9 @@ export const RegisterTriggersRequest = {
     }
     if (msg.createdByRef) {
       writer.writeString(6, msg.createdByRef);
+    }
+    if (msg.applicationId) {
+      writer.writeString(7, msg.applicationId);
     }
     return writer;
   },
@@ -430,6 +439,10 @@ export const RegisterTriggersRequest = {
         }
         case 6: {
           msg.createdByRef = reader.readString();
+          break;
+        }
+        case 7: {
+          msg.applicationId = reader.readString();
           break;
         }
         default: {
@@ -860,6 +873,7 @@ export const RegisterTriggersRequestJSON = {
       triggers: [],
       createdByType: "",
       createdByRef: "",
+      applicationId: "",
       ...msg,
     };
   },
@@ -888,6 +902,9 @@ export const RegisterTriggersRequestJSON = {
     }
     if (msg.createdByRef) {
       json["createdByRef"] = msg.createdByRef;
+    }
+    if (msg.applicationId) {
+      json["applicationId"] = msg.applicationId;
     }
     return json;
   },
@@ -926,6 +943,10 @@ export const RegisterTriggersRequestJSON = {
     const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
     if (_createdByRef_) {
       msg.createdByRef = _createdByRef_;
+    }
+    const _applicationId_ = json["applicationId"] ?? json["application_id"];
+    if (_applicationId_) {
+      msg.applicationId = _applicationId_;
     }
     return msg;
   },

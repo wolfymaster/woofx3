@@ -645,6 +645,11 @@ pub struct Module {
     pub id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub name: ::prost::alloc::string::String,
+    /// Manifest-local module id (e.g. twitch_platform). First segment of
+    /// module_key and of every canonical id for this module. Distinct from
+    /// the UUID `id` and the human display `name`.
+    #[prost(string, tag="13")]
+    pub module_id: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub version: ::prost::alloc::string::String,
     #[prost(string, tag="4")]
@@ -709,6 +714,9 @@ pub struct CreateModuleRequest {
     pub created_by_ref: ::prost::alloc::string::String,
     #[prost(string, tag="8")]
     pub module_key: ::prost::alloc::string::String,
+    /// Manifest-local module id (manifest.json `id`). Required on install.
+    #[prost(string, tag="9")]
+    pub module_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateModuleFunctionRequest {

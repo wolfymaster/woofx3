@@ -28,7 +28,6 @@ export interface Workflow {
   name: string;
   description: string;
   applicationId: string;
-  createdBy: string;
   enabled: boolean;
   variables: Record<string, Workflow.Variables["value"] | undefined>;
   onSuccess: string;
@@ -129,7 +128,6 @@ export interface CreateWorkflowRequest {
   name: string;
   description: string;
   applicationId: string;
-  createdBy: string;
   enabled: boolean;
   variables: Record<
     string,
@@ -819,7 +817,6 @@ export const Workflow = {
       name: "",
       description: "",
       applicationId: "",
-      createdBy: "",
       enabled: false,
       variables: {},
       onSuccess: "",
@@ -855,9 +852,6 @@ export const Workflow = {
     }
     if (msg.applicationId) {
       writer.writeString(4, msg.applicationId);
-    }
-    if (msg.createdBy) {
-      writer.writeString(5, msg.createdBy);
     }
     if (msg.enabled) {
       writer.writeBool(6, msg.enabled);
@@ -940,10 +934,6 @@ export const Workflow = {
         }
         case 4: {
           msg.applicationId = reader.readString();
-          break;
-        }
-        case 5: {
-          msg.createdBy = reader.readString();
           break;
         }
         case 6: {
@@ -1642,7 +1632,6 @@ export const CreateWorkflowRequest = {
       name: "",
       description: "",
       applicationId: "",
-      createdBy: "",
       enabled: false,
       variables: {},
       onSuccess: "",
@@ -1673,9 +1662,6 @@ export const CreateWorkflowRequest = {
     }
     if (msg.applicationId) {
       writer.writeString(3, msg.applicationId);
-    }
-    if (msg.createdBy) {
-      writer.writeString(4, msg.createdBy);
     }
     if (msg.enabled) {
       writer.writeBool(5, msg.enabled);
@@ -1740,10 +1726,6 @@ export const CreateWorkflowRequest = {
         }
         case 3: {
           msg.applicationId = reader.readString();
-          break;
-        }
-        case 4: {
-          msg.createdBy = reader.readString();
           break;
         }
         case 5: {
@@ -3316,7 +3298,6 @@ export const WorkflowJSON = {
       name: "",
       description: "",
       applicationId: "",
-      createdBy: "",
       enabled: false,
       variables: {},
       onSuccess: "",
@@ -3352,9 +3333,6 @@ export const WorkflowJSON = {
     }
     if (msg.applicationId) {
       json["applicationId"] = msg.applicationId;
-    }
-    if (msg.createdBy) {
-      json["createdBy"] = msg.createdBy;
     }
     if (msg.enabled) {
       json["enabled"] = msg.enabled;
@@ -3425,10 +3403,6 @@ export const WorkflowJSON = {
     const _applicationId_ = json["applicationId"] ?? json["application_id"];
     if (_applicationId_) {
       msg.applicationId = _applicationId_;
-    }
-    const _createdBy_ = json["createdBy"] ?? json["created_by"];
-    if (_createdBy_) {
-      msg.createdBy = _createdBy_;
     }
     const _enabled_ = json["enabled"];
     if (_enabled_) {
@@ -4032,7 +4006,6 @@ export const CreateWorkflowRequestJSON = {
       name: "",
       description: "",
       applicationId: "",
-      createdBy: "",
       enabled: false,
       variables: {},
       onSuccess: "",
@@ -4063,9 +4036,6 @@ export const CreateWorkflowRequestJSON = {
     }
     if (msg.applicationId) {
       json["applicationId"] = msg.applicationId;
-    }
-    if (msg.createdBy) {
-      json["createdBy"] = msg.createdBy;
     }
     if (msg.enabled) {
       json["enabled"] = msg.enabled;
@@ -4129,10 +4099,6 @@ export const CreateWorkflowRequestJSON = {
     const _applicationId_ = json["applicationId"] ?? json["application_id"];
     if (_applicationId_) {
       msg.applicationId = _applicationId_;
-    }
-    const _createdBy_ = json["createdBy"] ?? json["created_by"];
-    if (_createdBy_) {
-      msg.createdBy = _createdBy_;
     }
     const _enabled_ = json["enabled"];
     if (_enabled_) {

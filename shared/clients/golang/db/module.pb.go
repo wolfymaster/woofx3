@@ -23,9 +23,13 @@ const (
 )
 
 type Module struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name  string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// Manifest-local module id (e.g. twitch_platform). First segment of
+	// module_key and of every canonical id for this module. Distinct from
+	// the UUID `id` and the human display `name`.
+	ModuleId      string                 `protobuf:"bytes,13,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
 	Version       string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
 	Manifest      string                 `protobuf:"bytes,4,opt,name=manifest,proto3" json:"manifest,omitempty"`
 	State         string                 `protobuf:"bytes,5,opt,name=state,proto3" json:"state,omitempty"`
@@ -80,6 +84,13 @@ func (x *Module) GetId() string {
 func (x *Module) GetName() string {
 	if x != nil {
 		return x.Name
+	}
+	return ""
+}
+
+func (x *Module) GetModuleId() string {
+	if x != nil {
+		return x.ModuleId
 	}
 	return ""
 }
@@ -270,6 +281,8 @@ type CreateModuleRequest struct {
 	CreatedByType string                         `protobuf:"bytes,6,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
 	CreatedByRef  string                         `protobuf:"bytes,7,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
 	ModuleKey     string                         `protobuf:"bytes,8,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`
+	// Manifest-local module id (manifest.json `id`). Required on install.
+	ModuleId      string `protobuf:"bytes,9,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -356,6 +369,13 @@ func (x *CreateModuleRequest) GetCreatedByRef() string {
 func (x *CreateModuleRequest) GetModuleKey() string {
 	if x != nil {
 		return x.ModuleKey
+	}
+	return ""
+}
+
+func (x *CreateModuleRequest) GetModuleId() string {
+	if x != nil {
+		return x.ModuleId
 	}
 	return ""
 }
@@ -1528,10 +1548,11 @@ var File_module_proto protoreflect.FileDescriptor
 
 const file_module_proto_rawDesc = "" +
 	"\n" +
-	"\fmodule.proto\x12\x06module\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14module_trigger.proto\x1a\x13module_action.proto\x1a\x15module_resource.proto\x1a\x1emodule_resource_instance.proto\x1a\x13module_widget.proto\x1a\x12module_asset.proto\"\xb6\x03\n" +
+	"\fmodule.proto\x12\x06module\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14module_trigger.proto\x1a\x13module_action.proto\x1a\x15module_resource.proto\x1a\x1emodule_resource_instance.proto\x1a\x13module_widget.proto\x1a\x12module_asset.proto\"\xd3\x03\n" +
 	"\x06Module\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
+	"\tmodule_id\x18\r \x01(\tR\bmoduleId\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12\x1a\n" +
 	"\bmanifest\x18\x04 \x01(\tR\bmanifest\x12\x14\n" +
 	"\x05state\x18\x05 \x01(\tR\x05state\x12\x1f\n" +
@@ -1556,7 +1577,7 @@ const file_module_proto_rawDesc = "" +
 	"\ventry_point\x18\x06 \x01(\tR\n" +
 	"entryPoint\x12\x18\n" +
 	"\aruntime\x18\a \x01(\tR\aruntime\x12\x12\n" +
-	"\x04name\x18\b \x01(\tR\x04name\"\xb0\x02\n" +
+	"\x04name\x18\b \x01(\tR\x04name\"\xcd\x02\n" +
 	"\x13CreateModuleRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x1a\n" +
@@ -1567,7 +1588,8 @@ const file_module_proto_rawDesc = "" +
 	"\x0fcreated_by_type\x18\x06 \x01(\tR\rcreatedByType\x12$\n" +
 	"\x0ecreated_by_ref\x18\a \x01(\tR\fcreatedByRef\x12\x1d\n" +
 	"\n" +
-	"module_key\x18\b \x01(\tR\tmoduleKey\"\xc5\x01\n" +
+	"module_key\x18\b \x01(\tR\tmoduleKey\x12\x1b\n" +
+	"\tmodule_id\x18\t \x01(\tR\bmoduleId\"\xc5\x01\n" +
 	"\x1bCreateModuleFunctionRequest\x12\x1f\n" +
 	"\vmanifest_id\x18\x01 \x01(\tR\n" +
 	"manifestId\x12\x1b\n" +

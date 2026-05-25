@@ -55,6 +55,10 @@ service ModuleService {
 message Module {
   string id = 1;
   string name = 2;
+  // Manifest-local module id (e.g. twitch_platform). First segment of
+  // module_key and of every canonical id for this module. Distinct from
+  // the UUID `id` and the human display `name`.
+  string module_id = 13;
   string version = 3;
   string manifest = 4;
   string state = 5;
@@ -93,6 +97,8 @@ message CreateModuleRequest {
   string created_by_type = 6;
   string created_by_ref = 7;
   string module_key = 8;
+  // Manifest-local module id (manifest.json `id`). Required on install.
+  string module_id = 9;
 }
 
 message CreateModuleFunctionRequest {

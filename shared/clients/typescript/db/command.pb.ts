@@ -28,7 +28,6 @@ export interface Command {
   cooldown: number;
   priority: number;
   enabled: boolean;
-  createdBy: string;
   createdAt: protoscript.Timestamp;
   createdByType: string;
   createdByRef: string;
@@ -78,7 +77,6 @@ export interface CreateCommandRequest {
   type: string;
   typeValue: string;
   priority: number;
-  createdBy: string;
   createdByType: string;
   createdByRef: string;
 }
@@ -396,7 +394,6 @@ export const Command = {
       cooldown: 0,
       priority: 0,
       enabled: false,
-      createdBy: "",
       createdAt: protoscript.Timestamp.initialize(),
       createdByType: "",
       createdByRef: "",
@@ -434,9 +431,6 @@ export const Command = {
     }
     if (msg.enabled) {
       writer.writeBool(13, msg.enabled);
-    }
-    if (msg.createdBy) {
-      writer.writeString(14, msg.createdBy);
     }
     if (msg.createdAt) {
       writer.writeMessage(
@@ -494,10 +488,6 @@ export const Command = {
         }
         case 13: {
           msg.enabled = reader.readBool();
-          break;
-        }
-        case 14: {
-          msg.createdBy = reader.readString();
           break;
         }
         case 15: {
@@ -879,7 +869,6 @@ export const CreateCommandRequest = {
       type: "",
       typeValue: "",
       priority: 0,
-      createdBy: "",
       createdByType: "",
       createdByRef: "",
       ...msg,
@@ -913,9 +902,6 @@ export const CreateCommandRequest = {
     }
     if (msg.priority) {
       writer.writeInt32(7, msg.priority);
-    }
-    if (msg.createdBy) {
-      writer.writeString(8, msg.createdBy);
     }
     if (msg.createdByType) {
       writer.writeString(9, msg.createdByType);
@@ -962,10 +948,6 @@ export const CreateCommandRequest = {
         }
         case 7: {
           msg.priority = reader.readInt32();
-          break;
-        }
-        case 8: {
-          msg.createdBy = reader.readString();
           break;
         }
         case 9: {
@@ -1206,7 +1188,6 @@ export const CommandJSON = {
       cooldown: 0,
       priority: 0,
       enabled: false,
-      createdBy: "",
       createdAt: protoscript.TimestampJSON.initialize(),
       createdByType: "",
       createdByRef: "",
@@ -1242,9 +1223,6 @@ export const CommandJSON = {
     }
     if (msg.enabled) {
       json["enabled"] = msg.enabled;
-    }
-    if (msg.createdBy) {
-      json["createdBy"] = msg.createdBy;
     }
     if (msg.createdAt && (msg.createdAt.seconds || msg.createdAt.nanos)) {
       json["createdAt"] = protoscript.serializeTimestamp(msg.createdAt);
@@ -1293,10 +1271,6 @@ export const CommandJSON = {
     const _enabled_ = json["enabled"];
     if (_enabled_) {
       msg.enabled = _enabled_;
-    }
-    const _createdBy_ = json["createdBy"] ?? json["created_by"];
-    if (_createdBy_) {
-      msg.createdBy = _createdBy_;
     }
     const _createdAt_ = json["createdAt"] ?? json["created_at"];
     if (_createdAt_) {
@@ -1625,7 +1599,6 @@ export const CreateCommandRequestJSON = {
       type: "",
       typeValue: "",
       priority: 0,
-      createdBy: "",
       createdByType: "",
       createdByRef: "",
       ...msg,
@@ -1659,9 +1632,6 @@ export const CreateCommandRequestJSON = {
     }
     if (msg.priority) {
       json["priority"] = msg.priority;
-    }
-    if (msg.createdBy) {
-      json["createdBy"] = msg.createdBy;
     }
     if (msg.createdByType) {
       json["createdByType"] = msg.createdByType;
@@ -1706,10 +1676,6 @@ export const CreateCommandRequestJSON = {
     const _priority_ = json["priority"];
     if (_priority_) {
       msg.priority = protoscript.parseNumber(_priority_);
-    }
-    const _createdBy_ = json["createdBy"] ?? json["created_by"];
-    if (_createdBy_) {
-      msg.createdBy = _createdBy_;
     }
     const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
     if (_createdByType_) {

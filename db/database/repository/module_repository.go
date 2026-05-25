@@ -34,7 +34,13 @@ func (r *ModuleRepository) GetByID(id uuid.UUID) (*models.Module, error) {
 
 func (r *ModuleRepository) GetByName(name string) (*models.Module, error) {
 	var mod models.Module
-	err := r.db.Preload("Functions").Where("name = ?", name).First(&mod).Error
+	err := r.db.Preload("Functions").Where("module_id = ? OR name = ?", name, name).First(&mod).Error
+	return &mod, err
+}
+
+func (r *ModuleRepository) GetByModuleID(moduleID string) (*models.Module, error) {
+	var mod models.Module
+	err := r.db.Preload("Functions").Where("module_id = ?", moduleID).First(&mod).Error
 	return &mod, err
 }
 

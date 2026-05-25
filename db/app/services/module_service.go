@@ -39,6 +39,11 @@ func NewModuleService(
 }
 
 func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModuleRequest) (*client.ModuleResponse, error) {
+	manifestModuleID := resolveManifestModuleID(req)
+	if manifestModuleID == "" {
+		return nil, fmt.Errorf("module_id is required (manifest.json id or module_key prefix)")
+	}
+
 	// Idempotency layer 1: same composite module_key already installed → return as-is.
 	if req.ModuleKey != "" {
 		existing, err := s.repo.GetByModuleKey(req.ModuleKey)
@@ -63,6 +68,7 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 		existing, err := s.repo.GetByName(req.Name)
 		if err == nil && existing != nil {
 			existing.ModuleKey = req.ModuleKey
+			existing.ModuleID = manifestModuleID
 			existing.Version = req.Version
 			existing.Manifest = req.Manifest
 			existing.ArchiveKey = req.ArchiveKey
@@ -122,6 +128,7 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 
 	m := models.Module{
 		ModuleKey:     req.ModuleKey,
+		ModuleID:      manifestModuleID,
 		Name:          req.Name,
 		Version:       req.Version,
 		Manifest:      req.Manifest,
@@ -673,6 +680,21 @@ func actionToProto(a *models.Action) *client.Action {
 	}
 }
 
+// resolveManifestModuleID returns the manifest-local module id (e.g.
+// twitch_platform) from the install request, falling back to the first
+// segment of module_key when omitted (legacy callers).
+func resolveManifestModuleID(req *client.CreateModuleRequest) string {
+	if req.ModuleId != "" {
+		return req.ModuleId
+	}
+	if req.ModuleKey != "" {
+		if seg := strings.SplitN(req.ModuleKey, ":", 2)[0]; seg != "" {
+			return seg
+		}
+	}
+	return ""
+}
+
 func moduleToProto(m *models.Module) *client.Module {
 	protoFunctions := make([]*client.ModuleFunction, len(m.Functions))
 	for i, f := range m.Functions {
@@ -691,6 +713,7 @@ func moduleToProto(m *models.Module) *client.Module {
 	return &client.Module{
 		Id:            m.ID.String(),
 		ModuleKey:     m.ModuleKey,
+		ModuleId:      m.ModuleID,
 		Name:          m.Name,
 		Version:       m.Version,
 		Manifest:      m.Manifest,

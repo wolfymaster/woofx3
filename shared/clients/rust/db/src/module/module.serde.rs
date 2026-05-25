@@ -2306,6 +2306,9 @@ impl serde::Serialize for CreateModuleRequest {
         if !self.module_key.is_empty() {
             len += 1;
         }
+        if !self.module_id.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.CreateModuleRequest", len)?;
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
@@ -2331,6 +2334,9 @@ impl serde::Serialize for CreateModuleRequest {
         if !self.module_key.is_empty() {
             struct_ser.serialize_field("moduleKey", &self.module_key)?;
         }
+        if !self.module_id.is_empty() {
+            struct_ser.serialize_field("moduleId", &self.module_id)?;
+        }
         struct_ser.end()
     }
 }
@@ -2353,6 +2359,8 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
             "createdByRef",
             "module_key",
             "moduleKey",
+            "module_id",
+            "moduleId",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -2365,6 +2373,7 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
             CreatedByType,
             CreatedByRef,
             ModuleKey,
+            ModuleId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -2394,6 +2403,7 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
                             "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
                             "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
                             "moduleKey" | "module_key" => Ok(GeneratedField::ModuleKey),
+                            "moduleId" | "module_id" => Ok(GeneratedField::ModuleId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -2421,6 +2431,7 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
                 let mut created_by_type__ = None;
                 let mut created_by_ref__ = None;
                 let mut module_key__ = None;
+                let mut module_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Name => {
@@ -2471,6 +2482,12 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
                             }
                             module_key__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::ModuleId => {
+                            if module_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("moduleId"));
+                            }
+                            module_id__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(CreateModuleRequest {
@@ -2482,6 +2499,7 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
                     created_by_type: created_by_type__.unwrap_or_default(),
                     created_by_ref: created_by_ref__.unwrap_or_default(),
                     module_key: module_key__.unwrap_or_default(),
+                    module_id: module_id__.unwrap_or_default(),
                 })
             }
         }
@@ -5433,6 +5451,9 @@ impl serde::Serialize for Module {
         if !self.name.is_empty() {
             len += 1;
         }
+        if !self.module_id.is_empty() {
+            len += 1;
+        }
         if !self.version.is_empty() {
             len += 1;
         }
@@ -5469,6 +5490,9 @@ impl serde::Serialize for Module {
         }
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
+        }
+        if !self.module_id.is_empty() {
+            struct_ser.serialize_field("moduleId", &self.module_id)?;
         }
         if !self.version.is_empty() {
             struct_ser.serialize_field("version", &self.version)?;
@@ -5512,6 +5536,8 @@ impl<'de> serde::Deserialize<'de> for Module {
         const FIELDS: &[&str] = &[
             "id",
             "name",
+            "module_id",
+            "moduleId",
             "version",
             "manifest",
             "state",
@@ -5534,6 +5560,7 @@ impl<'de> serde::Deserialize<'de> for Module {
         enum GeneratedField {
             Id,
             Name,
+            ModuleId,
             Version,
             Manifest,
             State,
@@ -5567,6 +5594,7 @@ impl<'de> serde::Deserialize<'de> for Module {
                         match value {
                             "id" => Ok(GeneratedField::Id),
                             "name" => Ok(GeneratedField::Name),
+                            "moduleId" | "module_id" => Ok(GeneratedField::ModuleId),
                             "version" => Ok(GeneratedField::Version),
                             "manifest" => Ok(GeneratedField::Manifest),
                             "state" => Ok(GeneratedField::State),
@@ -5598,6 +5626,7 @@ impl<'de> serde::Deserialize<'de> for Module {
             {
                 let mut id__ = None;
                 let mut name__ = None;
+                let mut module_id__ = None;
                 let mut version__ = None;
                 let mut manifest__ = None;
                 let mut state__ = None;
@@ -5621,6 +5650,12 @@ impl<'de> serde::Deserialize<'de> for Module {
                                 return Err(serde::de::Error::duplicate_field("name"));
                             }
                             name__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ModuleId => {
+                            if module_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("moduleId"));
+                            }
+                            module_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Version => {
                             if version__.is_some() {
@@ -5687,6 +5722,7 @@ impl<'de> serde::Deserialize<'de> for Module {
                 Ok(Module {
                     id: id__.unwrap_or_default(),
                     name: name__.unwrap_or_default(),
+                    module_id: module_id__.unwrap_or_default(),
                     version: version__.unwrap_or_default(),
                     manifest: manifest__.unwrap_or_default(),
                     state: state__.unwrap_or_default(),
