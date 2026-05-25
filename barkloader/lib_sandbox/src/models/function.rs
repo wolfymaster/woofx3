@@ -11,12 +11,22 @@ pub struct Function {
 
 impl Function {
     pub fn new(name: String, file_name: String, code: String, is_trusted: bool) -> Self {
+        Self::new_with_entry_point(name, file_name, code, is_trusted, None)
+    }
+
+    pub fn new_with_entry_point(
+        name: String,
+        file_name: String,
+        code: String,
+        is_trusted: bool,
+        entry_point: Option<String>,
+    ) -> Self {
         Self {
             name,
             file_name,
             code,
             is_trusted,
-            entry_point: None,
+            entry_point: entry_point.filter(|s| !s.is_empty()),
         }
     }
 
@@ -28,6 +38,16 @@ impl Function {
     }
 
     pub fn resolved_entry_point(&self) -> &str {
-        self.entry_point.as_deref().unwrap_or("main")
+        if let Some(ep) = self.entry_point.as_deref() {
+            if !ep.is_empty() {
+                return ep;
+            }
+        }
+        // Sandbox module files conventionally export a function named
+        // after the manifest id / file stem (`increment`, `sendChatMessage`).
+        if !self.name.is_empty() {
+            return &self.name;
+        }
+        "main"
     }
 }

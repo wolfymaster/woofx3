@@ -1,9 +1,8 @@
 use actix_ws::{AggregatedMessage, AggregatedMessageStream};
 use futures_util::StreamExt as _;
 use lib_sandbox::Sandbox;
+use log::{error, info};
 use serde::{Deserialize, Serialize};
-use log::info;
-
 #[derive(Debug, Serialize, Deserialize)]
 struct WsMessage {
     #[serde(rename = "type")]
@@ -29,22 +28,59 @@ impl WebSocketSession {
             match msg_stream.next().await {
                 Some(Ok(AggregatedMessage::Text(text))) => {
                     if let Ok(message) = serde_json::from_str::<WsMessage>(&text) {
-                        info!("Received message: {:?}", message);
                         match message.message_type.as_str() {
                             "invoke" => {
+                                let mut event = message
+                                    .data
+                                    .get("event")
+                                    .cloned()
+                                    .unwrap_or(serde_json::Value::Null);
+                                let params = message
+                                    .data
+                                    .get("params")
+                                    .cloned()
+                                    .unwrap_or(serde_json::Value::Null);
+
+                                // Legacy workflow client sent `func` + `args: [paramObject]`
+                                // with no `event`. Wrap the first arg as `parameters`.
+                                if event.is_null() {
+                                    if let Some(args) =
+                                        message.data.get("args").and_then(|a| a.as_array())
+                                    {
+                                        if let Some(first) = args.first() {
+                                            if first.is_object() {
+                                                event = serde_json::json!({
+                                                    "parameters": first
+                                                });
+                                            } else {
+                                                event = first.clone();
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Top-level `params` (InvokeRequest.params) → event.parameters
+                                if params.is_object() {
+                                    if let Some(event_obj) = event.as_object_mut() {
+                                        event_obj
+                                            .entry("parameters")
+                                            .or_insert_with(|| params.clone());
+                                    } else if event.is_null() {
+                                        event = serde_json::json!({ "parameters": params });
+                                    }
+                                }
+
+                                let function = message.data["function"]
+                                    .as_str()
+                                    .or_else(|| message.data["func"].as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                info!("WebSocket invoke function={}", function);
                                 let request = lib_sandbox::models::request::InvokeRequest {
-                                    function: message.data["function"]
-                                        .as_str()
-                                        .or_else(|| message.data["func"].as_str())
-                                        .unwrap_or("")
-                                        .to_string(),
-                                    event: message.data["event"].clone(),
+                                    function: function.clone(),
+                                    event: event.clone(),
                                     user: message.data.get("user").cloned(),
-                                    params: message
-                                        .data
-                                        .get("params")
-                                        .cloned()
-                                        .unwrap_or(serde_json::Value::Null),
+                                    params,
                                 };
                                 let result = self.sandbox.invoke(request);
                                 match result {
@@ -60,6 +96,7 @@ impl WebSocketSession {
                                         session.text(json).await.unwrap();
                                     }
                                     Err(e) => {
+                                        error!("WebSocket invoke failed function={}: {}", function, e);
                                         let response = WsMessage {
                                             message_type: "error".to_string(),
                                             data: serde_json::json!(e.to_string()),

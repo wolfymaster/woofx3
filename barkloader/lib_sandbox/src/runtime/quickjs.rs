@@ -73,6 +73,12 @@ impl RuntimeAdapter for QuickJSAdapter {
                 .call((ctx_obj,))
                 .map_err(|e| to_sandbox_error(&counter, max_instructions, e))?;
 
+            if result.is_null() || result.is_undefined() {
+                return Err(Error::RuntimeError(format!(
+                    "entry point '{entry_point}' returned no value (expected an object)"
+                )));
+            }
+
             js_to_json(&result)
         })
     }

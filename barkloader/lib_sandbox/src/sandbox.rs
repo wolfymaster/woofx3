@@ -4,6 +4,7 @@ use crate::function_executor::FunctionExecutor;
 use crate::host::{HostContext, InvocationContext};
 use crate::models::request::InvokeRequest;
 use crate::module_registry::ModuleRegistry;
+use log::{error, info, warn};
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -66,31 +67,61 @@ impl Sandbox {
     }
 
     pub fn invoke(&self, request: InvokeRequest) -> Result<Value, Error> {
-        if let Some(name) = request.function.strip_prefix("builtin:") {
-            return self.invoke_builtin(name, request.params);
-        }
+        info!("Invoking function function={}", request.function);
 
-        let function = self.registry.get_function(&request.function)?;
+        let result = if let Some(name) = request.function.strip_prefix("builtin:") {
+            self.invoke_builtin(name, request.params)
+        } else {
+            let function = self.registry.get_function(&request.function)?;
+            info!(
+                "Executing sandbox function={} entry_point={}",
+                request.function,
+                function.resolved_entry_point()
+            );
 
-        // Canonical function path is `<module_id>:function:<func_id>`
-        // (validated by `ModuleRegistry::get_function`). The leading
-        // segment is the manifest-local module id, which the storage
-        // namespace uses to scope auto-emitted change events.
-        let module_id = request
-            .function
-            .split(':')
-            .next()
-            .unwrap_or("")
-            .to_string();
+            // Canonical function path is `<module_id>:function:<func_id>`
+            // (validated by `ModuleRegistry::get_function`). The leading
+            // segment is the manifest-local module id, which the storage
+            // namespace uses to scope auto-emitted change events.
+            let module_id = request
+                .function
+                .split(':')
+                .next()
+                .unwrap_or("")
+                .to_string();
 
-        let invocation = InvocationContext {
-            event: request.event,
-            user: request.user.unwrap_or(Value::Null),
-            host: self.host_ctx.clone(),
-            module_id,
+            let invocation = InvocationContext {
+                event: request.event,
+                user: request.user.unwrap_or(Value::Null),
+                host: self.host_ctx.clone(),
+                module_id,
+            };
+
+            self.function_executor.execute(&function, &invocation)
         };
 
-        self.function_executor.execute(&function, &invocation)
+        match &result {
+            Ok(value) => {
+                if value.as_object().is_some_and(|o| o.is_empty()) {
+                    warn!(
+                        "Function invoke returned empty object function={} — check module source and ctx.event.parameters",
+                        request.function
+                    );
+                }
+                info!(
+                    "Function invoke succeeded function={} result={}",
+                    request.function, value
+                );
+            }
+            Err(err) => {
+                error!(
+                    "Function invoke failed function={} error={}",
+                    request.function, err
+                );
+            }
+        }
+
+        result
     }
 
     fn invoke_builtin(&self, name: &str, params: Value) -> Result<Value, Error> {

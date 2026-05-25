@@ -31,8 +31,11 @@ type InvokeRequest struct {
 }
 
 type InvokeData struct {
-	Func string        `json:"func"`
-	Args []interface{} `json:"args"`
+	Function string                 `json:"function"`
+	Event    map[string]interface{} `json:"event"`
+	// Legacy fields — still accepted by barkloader websocket for older callers.
+	Func string        `json:"func,omitempty"`
+	Args []interface{} `json:"args,omitempty"`
 }
 
 type Client struct {
@@ -153,8 +156,10 @@ func (c *Client) RegisterHandler(event string, handler MessageHandler) {
 	}
 }
 
-// Invoke calls a function on the barkloader server and waits for the response
-func (c *Client) Invoke(functionName string, args []interface{}) (map[string]interface{}, error) {
+// Invoke calls a module function on the barkloader server and waits for the
+// response. `event` is the sandbox invocation context (trigger fields plus a
+// `parameters` object for workflow action inputs — see counter/twitch modules).
+func (c *Client) Invoke(functionName string, event map[string]interface{}) (map[string]interface{}, error) {
 	c.mu.RLock()
 	if !c.IsConnected() {
 		c.mu.RUnlock()
@@ -184,8 +189,8 @@ func (c *Client) Invoke(functionName string, args []interface{}) (map[string]int
 	request := InvokeRequest{
 		Type: "invoke",
 		Data: InvokeData{
-			Func: functionName,
-			Args: args,
+			Function: functionName,
+			Event:    event,
 		},
 	}
 
@@ -214,16 +219,26 @@ func (c *Client) Invoke(functionName string, args []interface{}) (map[string]int
 		}
 
 		if response.Type == "result" {
-			// Extract result from data
-			if resultData, ok := response.Data["result"]; ok {
-				if resultMap, ok := resultData.(map[string]interface{}); ok {
-					return resultMap, nil
-				}
-				// If result is not a map, wrap it
-				return map[string]interface{}{"result": resultData}, nil
+			resultData, hasResult := response.Data["result"]
+			if !hasResult || resultData == nil {
+				return nil, fmt.Errorf(
+					"barkloader returned no result for %s (data=%v)",
+					functionName,
+					response.Data,
+				)
 			}
-			// If no "result" key, return the data itself
-			return response.Data, nil
+			if resultMap, ok := resultData.(map[string]interface{}); ok {
+				if len(resultMap) == 0 {
+					return nil, fmt.Errorf(
+						"barkloader returned empty result object for %s (data=%v)",
+						functionName,
+						response.Data,
+					)
+				}
+				return resultMap, nil
+			}
+			// Scalar / array return — wrap for workflow consumers
+			return map[string]interface{}{"value": resultData}, nil
 		}
 
 		return nil, fmt.Errorf("unexpected response type: %s", response.Type)
@@ -250,10 +265,10 @@ func (c *Client) messageHandler() {
 			return
 		}
 
-		// Try to parse as InvokeResponse first (new format)
+		// Prefer explicit invoke envelopes (`type` + `data`) over legacy MessageResponse.
 		var response InvokeResponse
-		if err := json.Unmarshal(message, &response); err == nil && (response.Type == "result" || response.Type == "error") {
-			// Handle invoke response - send to pending waiter
+		if err := json.Unmarshal(message, &response); err == nil &&
+			(response.Type == "result" || response.Type == "error") {
 			c.pendingResponseMu.Lock()
 			if c.pendingResponse != nil {
 				select {
@@ -262,32 +277,32 @@ func (c *Client) messageHandler() {
 				}
 			}
 			c.pendingResponseMu.Unlock()
-		} else {
-			// Try to parse as MessageResponse (old format)
-			var msgResp MessageResponse
-			if err2 := json.Unmarshal(message, &msgResp); err2 == nil {
-				// Convert MessageResponse to InvokeResponse for pending waiters
-				if c.pendingResponse != nil {
-					invokeResp := InvokeResponse{
-						Type: "result",
-						Data: make(map[string]interface{}),
-					}
-					if msgResp.Error != "" {
-						invokeResp.Type = "error"
-						invokeResp.Data["error"] = msgResp.Error
-					} else {
-						invokeResp.Data["result"] = msgResp.Args
-					}
-					c.pendingResponseMu.Lock()
-					select {
-					case c.pendingResponse <- invokeResp:
-					default:
-					}
-					c.pendingResponseMu.Unlock()
+			continue
+		}
+
+		var msgResp MessageResponse
+		if err := json.Unmarshal(message, &msgResp); err == nil &&
+			(msgResp.Command != "" || msgResp.Error != "" || msgResp.Message != "" || msgResp.Args != nil) {
+			if c.pendingResponse != nil {
+				invokeResp := InvokeResponse{
+					Type: "result",
+					Data: make(map[string]interface{}),
 				}
-				if c.onMessage != nil {
-					c.onMessage(msgResp)
+				if msgResp.Error != "" {
+					invokeResp.Type = "error"
+					invokeResp.Data["error"] = msgResp.Error
+				} else {
+					invokeResp.Data["result"] = msgResp.Args
 				}
+				c.pendingResponseMu.Lock()
+				select {
+				case c.pendingResponse <- invokeResp:
+				default:
+				}
+				c.pendingResponseMu.Unlock()
+			}
+			if c.onMessage != nil {
+				c.onMessage(msgResp)
 			}
 		}
 	}
