@@ -1,4 +1,7 @@
-use crate::util::{get_env_or_default, get_env_or_default_with_key, validate_required_config};
+use crate::util::{
+    get_env_or_default, get_env_or_default_with_key, get_woofx3_json_value,
+    validate_required_config, validate_required_woofx3_json_keys,
+};
 use actix_web::{App, HttpServer, middleware::Logger, web::Data};
 use anyhow::Result;
 use env_logger::Env;
@@ -11,11 +14,8 @@ use lib_sandbox::host::grpc::GrpcStorageClient;
 use lib_sandbox::host::noop::{noop_host_context, NoopChatSender};
 use lib_sandbox::host::{ChatSender, ExtensionRegistry};
 use crate::services::sandbox_resources::HttpResourceClient;
-use lib_sandbox::{ModuleRegistry, ModuleMetadata, ModuleState, RegisteredModule, SandboxFactory};
-use lib_sandbox::models::function::Function;
+use lib_sandbox::{ModuleRegistry, SandboxFactory};
 use log::{info, warn};
-use std::collections::HashMap;
-use std::path::Path;
 use std::sync::Arc;
 use types::AppContext;
 
@@ -81,13 +81,8 @@ async fn setup() -> Result<AppContext> {
                 .with(Arc::new(ChatExtension::new(chat_sender))),
         );
 
-        // Resource-instance lifecycle (`ctx.resources.*`) — backed by the
-        // db-proxy via Twirp. When DB_PROXY_ADDR is unset the noop impl
-        // stays in place, returning errors for create/delete and an
-        // empty list for list_by_kind so module code at least surfaces
-        // a clear failure mode in dev.
-        let resource_proxy_url =
-            get_env_or_default_with_key("DB_PROXY_ADDR", Some("databaseProxyUrl"), "");
+        // Resource-instance lifecycle (`ctx.resources.*`) — backed by db-proxy via Twirp.
+        let resource_proxy_url = get_woofx3_json_value("databaseProxyUrl", "");
         if !resource_proxy_url.is_empty() {
             info!(
                 "Wiring HttpResourceClient against db-proxy {}",
@@ -95,7 +90,7 @@ async fn setup() -> Result<AppContext> {
             );
             ctx.resources = Arc::new(HttpResourceClient::new(resource_proxy_url));
         } else {
-            info!("DB_PROXY_ADDR not set; using noop resource client");
+            info!("databaseProxyUrl not set in .woofx3.json; using noop resource client");
         }
 
         ctx
@@ -115,22 +110,14 @@ async fn setup() -> Result<AppContext> {
     let sandbox = SandboxFactory::new(registry.clone(), host_ctx)
         .with_builtin_dispatcher(builtin_dispatcher);
 
-    // Resolve db-proxy URL BEFORE building the repository so the
-    // storage settings can be fetched from it. Falls through to None
-    // when unset, in which case the storage_settings module falls
-    // back to environment variables (legacy dev path).
-    let db_proxy_url = {
-        let val = get_env_or_default_with_key("DB_PROXY_ADDR", Some("databaseProxyUrl"), "");
-        if val.is_empty() {
-            warn!("DB_PROXY_ADDR not set; storage settings + trigger registration will fall back to env vars only");
-            None
-        } else {
-            Some(val)
-        }
-    };
+    // db-proxy is required: sandbox registry metadata comes from module_functions rows.
+    let db_proxy_url = get_woofx3_json_value("databaseProxyUrl", "");
+    if db_proxy_url.is_empty() {
+        anyhow::bail!("databaseProxyUrl in .woofx3.json is required for barkloader");
+    }
 
     let repository_config = crate::services::storage_settings::resolve_repository_config(
-        db_proxy_url.as_deref(),
+        Some(db_proxy_url.as_str()),
         DEFAULT_MODULE_DIR,
     )
     .await?;
@@ -138,96 +125,37 @@ async fn setup() -> Result<AppContext> {
     let repository = RepositoryFactory::new(&repository_config).await?;
     repository.setup()?;
 
-    boot_modules(&registry, &repository).await?;
+    boot_modules(&registry, &repository, &db_proxy_url).await?;
 
     // Register compile-time built-in actions (see builtin_actions::REGISTRY).
-    // Idempotent upsert keyed on (created_by_type, created_by_ref, name);
-    // a transient db-proxy outage is non-fatal because the next startup
-    // retries.
-    if let Some(url) = db_proxy_url.as_deref() {
-        if let Err(e) = services::builtin_actions::autoload::register_builtin_actions(url).await {
-            warn!("Failed to register builtin actions: {:?}", e);
-        }
+    if let Err(e) =
+        services::builtin_actions::autoload::register_builtin_actions(&db_proxy_url).await
+    {
+        warn!("Failed to register builtin actions: {:?}", e);
     }
 
     let ctx = AppContext {
         repository,
         sandbox,
         registry,
-        db_proxy_url,
+        db_proxy_url: Some(db_proxy_url),
     };
 
     Ok(ctx)
 }
 
-async fn boot_modules(registry: &Arc<ModuleRegistry>, repository: &RepositoryImpl) -> Result<()> {
-    let module_files = repository.list_prefix("modules/").await?;
-    if module_files.is_empty() {
-        info!("No modules found in repository");
-        return Ok(());
-    }
-
-    let mut modules_map: HashMap<String, Vec<String>> = HashMap::new();
-    for key in &module_files {
-        let parts: Vec<&str> = key.splitn(3, '/').collect();
-        if parts.len() == 3 {
-            modules_map.entry(parts[1].to_string()).or_default().push(key.clone());
-        }
-    }
-
-    for (module_name, file_keys) in &modules_map {
-        let mut functions = HashMap::new();
-        for key in file_keys {
-            let ext = Path::new(key)
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("");
-            if ext != "lua" && ext != "js" {
-                continue;
-            }
-            let file_name = Path::new(key).file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
-            let func_name = Path::new(file_name).file_stem()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
-
-            match repository.read_file(key).await {
-                Ok(bytes) => {
-                    let code = String::from_utf8_lossy(&bytes).to_string();
-                    functions.insert(func_name.to_string(), Function::new(
-                        func_name.to_string(),
-                        file_name.to_string(),
-                        code,
-                        false,
-                    ));
-                }
-                Err(err) => {
-                    log::error!("Failed to read module file {}: {}", key, err);
-                }
-            }
-        }
-
-        if !functions.is_empty() {
-            let module = RegisteredModule {
-                metadata: ModuleMetadata {
-                    name: module_name.clone(),
-                    version: "unknown".to_string(),
-                    installed_at: 0,
-                    updated_at: 0,
-                },
-                functions,
-                state: ModuleState::Active,
-            };
-            if let Err(err) = registry.register_module(module_name.clone(), module) {
-                log::error!("Failed to register module {}: {}", module_name, err);
-            }
-            info!("Loaded module: {}", module_name);
-        }
-    }
-
-    info!("Boot complete: loaded {} modules", modules_map.len());
-    Ok(())
+async fn boot_modules(
+    registry: &Arc<ModuleRegistry>,
+    repository: &RepositoryImpl,
+    db_proxy_url: &str,
+) -> Result<()> {
+    crate::services::module_service::registry_loader::hydrate_registry_from_db(
+        registry,
+        db_proxy_url,
+        repository,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("sandbox registry hydrate: {}", e))
 }
 
 #[actix_web::main]
@@ -237,6 +165,10 @@ async fn main() -> std::io::Result<()> {
 
     // Validate required config
     if let Err(e) = validate_required_config(&["WOOFX3_BARKLOADER_KEY"]) {
+        log::error!("{}", e);
+        std::process::exit(1);
+    }
+    if let Err(e) = validate_required_woofx3_json_keys(&["databaseProxyUrl"]) {
         log::error!("{}", e);
         std::process::exit(1);
     }

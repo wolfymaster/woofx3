@@ -1,6 +1,12 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 
+fn parse_module_response(text: &str) -> Result<Option<ModuleRecord>> {
+    let body: ModuleResponseBody = serde_json::from_str(text)
+        .map_err(|e| anyhow!("parse module response: {}", e))?;
+    Ok(body.module)
+}
+
 /// Standard metadata that travels through service boundaries so downstream
 /// services know who initiated the operation (mirrors common.RequestContext proto).
 #[derive(Debug, Clone, Serialize)]
@@ -277,6 +283,53 @@ pub struct GetModuleByNameJson {
     pub name: String,
 }
 
+/// Runtime view of a module row returned by db-proxy (install-time metadata).
+/// Twirp protojson uses proto field names (`manifest_id`, `file_key`, …) by default.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ModuleFunctionRecord {
+    #[serde(alias = "manifestId", default)]
+    pub manifest_id: String,
+    #[serde(alias = "fileName", default)]
+    pub file_name: String,
+    #[serde(alias = "fileKey", default)]
+    pub file_key: String,
+    #[serde(alias = "entryPoint", default)]
+    pub entry_point: String,
+    #[serde(default)]
+    pub runtime: String,
+    #[serde(default)]
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ModuleRecord {
+    pub id: String,
+    /// Manifest-local module id (e.g. twitch_platform). Sandbox registry key.
+    #[serde(alias = "moduleId", default)]
+    pub module_id: String,
+    #[serde(alias = "moduleKey", default)]
+    pub module_key: String,
+    pub name: String,
+    pub version: String,
+    pub state: String,
+    #[serde(default)]
+    pub functions: Vec<ModuleFunctionRecord>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModuleResponseBody {
+    #[serde(default)]
+    module: Option<ModuleRecord>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ListModulesResponseBody {
+    #[serde(default)]
+    modules: Vec<ModuleRecord>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateCommandJson {
@@ -305,7 +358,8 @@ pub struct CreateCommandJson {
 /// is owned by the client that installed it, not by another module.
 pub async fn create_module(
     db_proxy_url: &str,
-    name: &str,
+    display_name: &str,
+    module_id: &str,
     version: &str,
     manifest_json: &str,
     archive_key: &str,
@@ -315,7 +369,8 @@ pub async fn create_module(
 ) -> Result<String> {
     let url = format!("{}/twirp/module.ModuleService/CreateModule", db_proxy_url);
     let body = serde_json::json!({
-        "name": name,
+        "name": display_name,
+        "module_id": module_id,
         "version": version,
         "manifest": manifest_json,
         "archive_key": archive_key,
@@ -893,7 +948,26 @@ pub async fn get_action_ref_by_canonical_id(
     })
 }
 
+pub async fn fetch_module_by_name(
+    db_proxy_url: &str,
+    name: &str,
+) -> Result<Option<ModuleRecord>> {
+    let text = fetch_module_by_name_raw(db_proxy_url, name).await?;
+    let Some(text) = text else {
+        return Ok(None);
+    };
+    parse_module_response(&text)
+}
+
+/// Raw Twirp JSON body for callers that only need a few fields.
 pub async fn get_module_by_name(
+    db_proxy_url: &str,
+    name: &str,
+) -> Result<Option<String>> {
+    fetch_module_by_name_raw(db_proxy_url, name).await
+}
+
+async fn fetch_module_by_name_raw(
     db_proxy_url: &str,
     name: &str,
 ) -> Result<Option<String>> {
@@ -923,6 +997,36 @@ pub async fn get_module_by_name(
 
     let text = response.text().await.unwrap_or_default();
     Ok(Some(text))
+}
+
+pub async fn list_modules(
+    db_proxy_url: &str,
+    state: Option<&str>,
+) -> Result<Vec<ModuleRecord>> {
+    let url = format!("{}/twirp/module.ModuleService/ListModules", db_proxy_url);
+    let body = serde_json::json!({
+        "state": state.unwrap_or(""),
+    });
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("ListModules request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("ListModules failed {}: {}", status, text));
+    }
+
+    let text = response.text().await.unwrap_or_default();
+    let body: ListModulesResponseBody = serde_json::from_str(&text)
+        .map_err(|e| anyhow!("parse ListModules response: {}", e))?;
+    Ok(body.modules)
 }
 
 /// Twirp JSON for `module.ModuleService/RegisterAssets`. Mirrors

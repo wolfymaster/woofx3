@@ -228,6 +228,7 @@ pub async fn run_install<R: Repository>(
             let db_record_id = create_module(
                 url,
                 &manifest.name,
+                module_key,
                 &manifest.version,
                 &manifest_json,
                 archive_key,
@@ -542,7 +543,9 @@ pub async fn run_install<R: Repository>(
             return Err(e);
         }
     } else {
-        warn!("DB_PROXY_ADDR not set; skipping CreateModule, trigger, workflow, action, and command registration");
+        warn!(
+            "databaseProxyUrl not set in .woofx3.json; skipping CreateModule, trigger, workflow, action, and command registration"
+        );
         for wf in &manifest.workflows {
             wf.process().await?;
         }
@@ -607,7 +610,7 @@ mod tests {
         .expect("install");
 
         let stored = repo
-            .read_file("modules/test-mod/functions/functions/f1.lua")
+            .read_file("modules/test-mod/functions/f1.lua")
             .await
             .expect("read");
         assert_eq!(stored, b"return 1");

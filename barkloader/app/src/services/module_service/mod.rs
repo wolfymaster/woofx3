@@ -6,6 +6,7 @@ mod module_file;
 mod module_install;
 mod module_manifest;
 mod module_plan;
+pub mod registry_loader;
 mod module_service;
 
 pub use module_file::ModuleFileKind;

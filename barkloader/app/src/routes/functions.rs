@@ -2,11 +2,9 @@ use actix_multipart::Multipart;
 use actix_web::web::Data;
 use actix_web::{Error, HttpResponse, patch, post, web::ServiceConfig};
 use lib_repository::{CreateFileRequest, Repository};
-use lib_sandbox::models::function::Function;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
 use std::fs;
 use std::io::Read as _;
 use std::path::PathBuf;
@@ -17,6 +15,7 @@ use crate::services::file_service::FileService;
 use crate::services::module_service::module_delete::{
     notify_delete, resolve_module, run_delete_resolved, DeleteError,
 };
+use crate::services::module_service::registry_loader;
 use crate::services::module_service::{db_proxy, ModuleFileKind, ModuleService, ModuleServiceConfig};
 use crate::types::{AppContext, SafeTempDir};
 
@@ -297,6 +296,22 @@ async fn upload_handler(
             return;
         }
 
+        if let Some(db_proxy_url) = ctx.db_proxy_url.as_deref() {
+            if let Err(err) = registry_loader::refresh_module_in_registry(
+                &ctx.registry,
+                db_proxy_url,
+                module_name,
+                &ctx.repository,
+            )
+            .await
+            {
+                error!(
+                    "Module installed to repository but sandbox registry refresh failed for {}: {}",
+                    module_name, err
+                );
+            }
+        }
+
         // archive the original zip keyed by module_key
         if let (Some(name), Some(version)) = (module.module_name(), module.module_version()) {
             if let Ok(zip_bytes) = fs::read(&original_zip_path) {
@@ -336,62 +351,18 @@ async fn register_handler(
 ) -> Result<HttpResponse, Error> {
     let module_name = path.into_inner();
 
-    let prefix = format!("modules/{}/", module_name);
-    let file_keys = ctx.repository.list_prefix(&prefix).await
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
+    let db_proxy_url = ctx.db_proxy_url.as_deref().ok_or_else(|| {
+        actix_web::error::ErrorInternalServerError("databaseProxyUrl is not configured in .woofx3.json")
+    })?;
 
-    if file_keys.is_empty() {
-        return Ok(HttpResponse::NotFound().json(serde_json::json!({
-            "error": format!("No files found for module '{}'", module_name)
-        })));
-    }
-
-    let mut functions = HashMap::new();
-    for key in &file_keys {
-        let ext = std::path::Path::new(key)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
-        if ext != "lua" && ext != "js" {
-            continue;
-        }
-        let file_name = std::path::Path::new(key).file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
-        let func_name = std::path::Path::new(file_name).file_stem()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
-
-        let bytes = ctx.repository.read_file(key).await
-            .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-        let code = String::from_utf8_lossy(&bytes).to_string();
-
-        functions.insert(func_name.to_string(), Function::new(
-            func_name.to_string(),
-            file_name.to_string(),
-            code,
-            false,
-        ));
-    }
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-
-    let module = lib_sandbox::RegisteredModule {
-        metadata: lib_sandbox::ModuleMetadata {
-            name: module_name.clone(),
-            version: "1.0.0".to_string(),
-            installed_at: now,
-            updated_at: now,
-        },
-        functions,
-        state: lib_sandbox::ModuleState::Active,
-    };
-
-    ctx.registry.register_module(module_name.clone(), module)
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
+    registry_loader::refresh_module_in_registry(
+        &ctx.registry,
+        db_proxy_url,
+        &module_name,
+        &ctx.repository,
+    )
+    .await
+    .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "success": true,
@@ -424,7 +395,10 @@ async fn delete_handler(
     });
 
     let Some(db_proxy_url) = ctx.db_proxy_url.clone() else {
-        warn!("DB_PROXY_ADDR not set; cannot process module delete request for {}", module_name);
+        warn!(
+            "databaseProxyUrl not set in .woofx3.json; cannot process module delete request for {}",
+            module_name
+        );
         return Ok(HttpResponse::ServiceUnavailable().json(serde_json::json!({
             "error": "db_proxy_url not configured"
         })));
@@ -660,7 +634,6 @@ async fn rollback_handler(
     let module_prefix = format!("modules/{}", module_name);
     let _ = ctx.repository.delete_prefix(&module_prefix).await;
 
-    let mut functions = HashMap::new();
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)
             .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
@@ -679,7 +652,7 @@ async fn rollback_handler(
         file.read_to_end(&mut contents)
             .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
 
-        if extension == "js" || extension == "lua" {
+        if extension == "js" || extension == "lua" || extension == "json" {
             let base_name = std::path::Path::new(&file_name)
                 .file_name()
                 .and_then(|n| n.to_str())
@@ -694,39 +667,21 @@ async fn rollback_handler(
             let mut failed = Vec::new();
             ctx.repository.create([req], &mut failed).await
                 .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-
-            let func_name = std::path::Path::new(base_name).file_stem()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
-
-            let code = String::from_utf8_lossy(&contents).to_string();
-            functions.insert(func_name.to_string(), Function::new(
-                func_name.to_string(),
-                base_name.to_string(),
-                code,
-                false,
-            ));
         }
     }
 
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let db_proxy_url = ctx.db_proxy_url.as_deref().ok_or_else(|| {
+        actix_web::error::ErrorInternalServerError("databaseProxyUrl is not configured in .woofx3.json")
+    })?;
 
-    let module = lib_sandbox::RegisteredModule {
-        metadata: lib_sandbox::ModuleMetadata {
-            name: module_name.clone(),
-            version: version.clone(),
-            installed_at: now,
-            updated_at: now,
-        },
-        functions,
-        state: lib_sandbox::ModuleState::Active,
-    };
-
-    ctx.registry.register_module(module_name.clone(), module)
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
+    registry_loader::refresh_module_in_registry(
+        &ctx.registry,
+        db_proxy_url,
+        &module_name,
+        &ctx.repository,
+    )
+    .await
+    .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "success": true,

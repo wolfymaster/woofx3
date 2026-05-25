@@ -59,6 +59,53 @@ fn screaming_snake_to_camel(s: &str) -> String {
     result
 }
 
+/// Read a value from `.woofx3.json` only (no environment variable fallback).
+pub fn get_woofx3_json_value(key: &str, default: &str) -> String {
+    let Ok(config) = Config::load() else {
+        return default.to_string();
+    };
+    config
+        .values
+        .get(key)
+        .and_then(json_value_to_string)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| default.to_string())
+}
+
+fn json_value_to_string(v: &serde_json::Value) -> Option<String> {
+    match v {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
+/// Validate keys present and non-empty in `.woofx3.json` (file only).
+pub fn validate_required_woofx3_json_keys(keys: &[&str]) -> Result<()> {
+    let config = Config::load().map_err(|e| anyhow!("failed to load .woofx3.json: {}", e))?;
+    let mut missing = Vec::new();
+    for key in keys {
+        let empty = config
+            .values
+            .get(*key)
+            .and_then(json_value_to_string)
+            .map(|s| s.is_empty())
+            .unwrap_or(true);
+        if empty {
+            missing.push((*key).to_string());
+        }
+    }
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "missing required keys in .woofx3.json: {}",
+            missing.join(", ")
+        ))
+    }
+}
+
 // Validate required config at startup - returns Err with list of missing keys if any are missing
 pub fn validate_required_config(required: &[&str]) -> Result<Vec<String>> {
     let mut missing = Vec::new();
