@@ -448,7 +448,7 @@ const file_module_action_proto_rawDesc = "" +
 	"\rparams_schema\x18\x04 \x01(\tR\fparamsSchema\x12\x1f\n" +
 	"\vmanifest_id\x18\x05 \x01(\tR\n" +
 	"manifestId\x12\x12\n" +
-	"\x04type\x18\x06 \x01(\tR\x04type\"\xef\x01\n" +
+	"\x04type\x18\x06 \x01(\tR\x04type\"\x96\x02\n" +
 	"\x16RegisterActionsRequest\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +
@@ -457,7 +457,8 @@ const file_module_action_proto_rawDesc = "" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12-\n" +
 	"\aactions\x18\x04 \x03(\v2\x13.module.ActionInputR\aactions\x12&\n" +
 	"\x0fcreated_by_type\x18\x05 \x01(\tR\rcreatedByType\x12$\n" +
-	"\x0ecreated_by_ref\x18\x06 \x01(\tR\fcreatedByRef\"b\n" +
+	"\x0ecreated_by_ref\x18\x06 \x01(\tR\fcreatedByRef\x12%\n" +
+	"\x0eapplication_id\x18\a \x01(\tR\rapplicationId\"b\n" +
 	"\x12ListActionsRequest\x12&\n" +
 	"\x0fcreated_by_type\x18\x01 \x01(\tR\rcreatedByType\x12$\n" +
 	"\x0ecreated_by_ref\x18\x02 \x01(\tR\fcreatedByRef\"o\n" +

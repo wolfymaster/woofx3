@@ -67,6 +67,10 @@ pub struct RegisterTriggersRequest {
     pub created_by_type: ::prost::alloc::string::String,
     #[prost(string, tag="6")]
     pub created_by_ref: ::prost::alloc::string::String,
+    /// Scopes the registration to a specific application so cross-module
+    /// dependency checks are tenant-isolated.
+    #[prost(string, tag="7")]
+    pub application_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListTriggersRequest {
@@ -149,6 +153,10 @@ pub struct RegisterActionsRequest {
     pub created_by_type: ::prost::alloc::string::String,
     #[prost(string, tag="6")]
     pub created_by_ref: ::prost::alloc::string::String,
+    /// Scopes the registration to a specific application so cross-module
+    /// dependency checks are tenant-isolated.
+    #[prost(string, tag="7")]
+    pub application_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListActionsRequest {
@@ -296,6 +304,14 @@ pub struct CreateResourceInstanceRequest {
     /// When both are set, `module_id` wins.
     #[prost(string, tag="6")]
     pub module_name: ::prost::alloc::string::String,
+    /// Connection kind for connection resources (e.g., "websocket", "grpc").
+    /// When kind indicates a connection resource, this specifies the protocol.
+    #[prost(string, tag="7")]
+    pub connection_kind: ::prost::alloc::string::String,
+    /// JSON-encoded connection configuration (URL, headers, auth, etc.).
+    /// Required when connection_kind is set.
+    #[prost(string, tag="8")]
+    pub connection_config: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ResourceInstanceResponse {
@@ -332,6 +348,80 @@ pub struct ListResourceInstancesResponse {
     pub status: ::core::option::Option<super::common::ResponseStatus>,
     #[prost(message, repeated, tag="2")]
     pub instances: ::prost::alloc::vec::Vec<ModuleResourceInstance>,
+}
+/// ConnectionState represents the current state of a connection resource.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ConnectionState {
+    #[prost(enumeration="connection_state::Status", tag="1")]
+    pub status: i32,
+    #[prost(string, tag="2")]
+    pub error: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="3")]
+    pub last_connected: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(int32, tag="4")]
+    pub reconnect_count: i32,
+}
+/// Nested message and enum types in `ConnectionState`.
+pub mod connection_state {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+    #[repr(i32)]
+    pub enum Status {
+        Unspecified = 0,
+        Connecting = 1,
+        Connected = 2,
+        Disconnected = 3,
+        Error = 4,
+    }
+    impl Status {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Self::Unspecified => "STATUS_UNSPECIFIED",
+                Self::Connecting => "STATUS_CONNECTING",
+                Self::Connected => "STATUS_CONNECTED",
+                Self::Disconnected => "STATUS_DISCONNECTED",
+                Self::Error => "STATUS_ERROR",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "STATUS_UNSPECIFIED" => Some(Self::Unspecified),
+                "STATUS_CONNECTING" => Some(Self::Connecting),
+                "STATUS_CONNECTED" => Some(Self::Connected),
+                "STATUS_DISCONNECTED" => Some(Self::Disconnected),
+                "STATUS_ERROR" => Some(Self::Error),
+                _ => None,
+            }
+        }
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetConnectionStateRequest {
+    #[prost(string, tag="1")]
+    pub canonical_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ConnectionStateResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, optional, tag="2")]
+    pub state: ::core::option::Option<ConnectionState>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SendConnectionMessageRequest {
+    #[prost(string, tag="1")]
+    pub canonical_id: ::prost::alloc::string::String,
+    #[prost(bytes="vec", tag="2")]
+    pub message: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ConnectionMessageResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
 }
 /// A registered widget exposed by an installed barkloader module. Widgets are
 /// the fourth module-extension surface alongside triggers, actions, and
@@ -788,6 +878,8 @@ pub struct DeleteByModuleIdRequest {
 pub struct GetByCanonicalIdRequest {
     #[prost(string, tag="1")]
     pub canonical_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub application_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct TriggerResponse {

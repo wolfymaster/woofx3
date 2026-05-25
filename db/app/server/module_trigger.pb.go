@@ -462,7 +462,7 @@ const file_module_trigger_proto_rawDesc = "" +
 	"\rconfig_schema\x18\x05 \x01(\tR\fconfigSchema\x12%\n" +
 	"\x0eallow_variants\x18\x06 \x01(\bR\rallowVariants\x12\x1f\n" +
 	"\vmanifest_id\x18\a \x01(\tR\n" +
-	"manifestId\"\xf3\x01\n" +
+	"manifestId\"\x9a\x02\n" +
 	"\x17RegisterTriggersRequest\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +
@@ -471,7 +471,8 @@ const file_module_trigger_proto_rawDesc = "" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x120\n" +
 	"\btriggers\x18\x04 \x03(\v2\x14.module.TriggerInputR\btriggers\x12&\n" +
 	"\x0fcreated_by_type\x18\x05 \x01(\tR\rcreatedByType\x12$\n" +
-	"\x0ecreated_by_ref\x18\x06 \x01(\tR\fcreatedByRef\"c\n" +
+	"\x0ecreated_by_ref\x18\x06 \x01(\tR\fcreatedByRef\x12%\n" +
+	"\x0eapplication_id\x18\a \x01(\tR\rapplicationId\"c\n" +
 	"\x13ListTriggersRequest\x12&\n" +
 	"\x0fcreated_by_type\x18\x01 \x01(\tR\rcreatedByType\x12$\n" +
 	"\x0ecreated_by_ref\x18\x02 \x01(\tR\fcreatedByRef\"s\n" +

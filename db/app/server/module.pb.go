@@ -1641,9 +1641,10 @@ const file_module_proto_rawDesc = "" +
 	"\x10in_use_resources\x18\x05 \x03(\v2\x15.module.ResourceUsageR\x0einUseResources\x12?\n" +
 	"\x0frequest_context\x18\x06 \x01(\v2\x16.common.RequestContextR\x0erequestContext\"6\n" +
 	"\x17DeleteByModuleIdRequest\x12\x1b\n" +
-	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\"<\n" +
+	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\"c\n" +
 	"\x17GetByCanonicalIdRequest\x12!\n" +
-	"\fcanonical_id\x18\x01 \x01(\tR\vcanonicalId\"l\n" +
+	"\fcanonical_id\x18\x01 \x01(\tR\vcanonicalId\x12%\n" +
+	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"l\n" +
 	"\x0fTriggerResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12)\n" +
 	"\atrigger\x18\x02 \x01(\v2\x0f.module.TriggerR\atrigger\"h\n" +
