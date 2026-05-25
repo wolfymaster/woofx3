@@ -10,7 +10,7 @@ processes:
     working_dir: api
 
   barkloader:
-    command: cargo build -p barkloader && ./target/debug/barkloader
+    command: cargo build -p barkloader && RUST_LOG=info ./target/debug/barkloader
     description: Plugin Module System
     working_dir: barkloader
     shutdown:
