@@ -1,0 +1,57 @@
+{
+  "id": "spotify_sr",
+  "name": "Spotify Song Request",
+  "author": "WolfyMaster LLC",
+  "version": "1.0.0",
+  "category": "music",
+  "description": "Adds the !sr chat command to queue songs on Spotify. Accepts a song name or a Spotify track URL.",
+  "functions": [
+    {
+      "id": "song_request",
+      "name": "Song Request",
+      "runtime": "js",
+      "path": "functions/song_request.js",
+      "entryPoint": "song_request"
+    }
+  ],
+  "actions": [
+    {
+      "id": "song_request",
+      "name": "Queue song request",
+      "description": "Searches Spotify for the given query and adds the top result to the playback queue.",
+      "type": "function",
+      "function": "song_request"
+    }
+  ],
+  "triggers": [
+    {
+      "id": "sr_command",
+      "name": "Song request command",
+      "description": "Fires when a viewer uses !sr in chat.",
+      "type": "eventbus",
+      "event": "chat.command.sr",
+      "category": "chat"
+    }
+  ],
+  "commands": [
+    {
+      "id": "sr",
+      "name": "Song Request",
+      "pattern": "!sr",
+      "type": "prefix",
+      "workflow": "song_request_workflow"
+    }
+  ],
+  "workflows": [
+    {
+      "id": "song_request_workflow",
+      "name": "Song Request Workflow",
+      "trigger": "sr_command",
+      "steps": [
+        {
+          "action": "song_request"
+        }
+      ]
+    }
+  ]
+}
