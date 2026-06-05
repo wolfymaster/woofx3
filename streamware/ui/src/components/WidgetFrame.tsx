@@ -56,6 +56,13 @@ export default function WidgetFrame({ instance, stream, events, onWidgetEvent }:
           events,
           sendStatus: onWidgetEvent,
         });
+        console.log("[widget:host] injected", {
+          instanceId: instance.id,
+          moduleId: instance.moduleId,
+          widgetCanonicalId: instance.widgetCanonicalId,
+          bundleUrl: instance.bundleUrl,
+          hasEvents: !!events,
+        });
       } catch (err) {
         // Cross-origin frames throw on contentWindow access; this is
         // the trigger for migrating to postMessage when a CDN-served

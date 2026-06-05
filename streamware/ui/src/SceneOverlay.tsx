@@ -136,6 +136,17 @@ export default function SceneOverlay({ scene }: SceneOverlayProps) {
     overflow: "hidden",
   };
 
+  console.log("[scene:overlay] rendering scene", {
+    sceneId: (resolvedScene as { id?: string }).id,
+    widgetCount: resolvedScene.widgets.length,
+    widgets: resolvedScene.widgets.map((w) => ({
+      id: w.id,
+      moduleId: w.moduleId,
+      widgetCanonicalId: w.widgetCanonicalId,
+      acceptedEvents: w.acceptedEvents,
+    })),
+  });
+
   return (
     <div data-overlay="scene" style={containerStyle}>
       {resolvedScene.widgets.map((instance) => (
@@ -178,13 +189,30 @@ function makeFilteredEventSource(
       suffixes.add(id.slice(idx + ":trigger:".length));
     }
   }
+  console.log("[scene:filter] built per-widget filter", {
+    widgetInstanceId: instance.id,
+    moduleId: instance.moduleId,
+    acceptedEvents: accepted,
+    matchSuffixes: Array.from(suffixes),
+  });
+
   return {
     subscribe(handler) {
       if (suffixes.size === 0) {
+        console.warn("[scene:filter] widget has no acceptedEvents — it will receive nothing", {
+          widgetInstanceId: instance.id,
+        });
         return () => {};
       }
       return source.subscribe((event) => {
-        if (suffixes.has(event.type)) {
+        const matched = suffixes.has(event.type);
+        console.log("[scene:filter] event check", {
+          widgetInstanceId: instance.id,
+          incomingType: event.type,
+          matched,
+          suffixes: Array.from(suffixes),
+        });
+        if (matched) {
           handler(event);
         }
       });
