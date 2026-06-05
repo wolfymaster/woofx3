@@ -6,7 +6,7 @@ import { createMessageBus } from "@woofx3/nats";
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { AlertBroadcaster } from "./alert-broadcaster";
 import { AlertQueueManager } from "./alert-queue-manager";
-import { buildBuiltinWidgetDefinitions, initBuiltinWidgets } from "./builtin-widgets";
+import { buildBuiltinWidgetDefinitions, getBuiltinWidgetSpecs, initBuiltinWidgets } from "./builtin-widgets";
 import { StreamwareEnvSchema, type StreamwareRuntimeConfig } from "./config";
 import { DbClient } from "./db";
 import { initSubscriptions } from "./nats-subscriptions";
@@ -160,16 +160,18 @@ function startHttpServer(
     fetch: async (req, server) => {
       const url = new URL(req.url);
 
-      if (url.pathname === "/health") {
-        return Response.json({ status: "ok", overlayClients: broadcaster.clientCount() });
+      // CORS preflight — short-circuit before any route logic.
+      if (req.method === "OPTIONS") {
+        return new Response(null, { status: 204, headers: CORS_HEADERS });
       }
 
+      // WebSocket upgrades complete with `undefined` and bypass CORS wrapping.
       if (url.pathname === "/ws/alerts") {
         const upgraded = server.upgrade(req, { data: broadcaster.nextConnectionData() });
         if (upgraded) {
           return undefined;
         }
-        return new Response("upgrade failed", { status: 400 });
+        return withCors(new Response("upgrade failed", { status: 400 }));
       }
 
       if (url.pathname === "/ws/module-state") {
@@ -179,54 +181,59 @@ function startHttpServer(
         if (upgraded) {
           return undefined;
         }
-        return new Response("upgrade failed", { status: 400 });
+        return withCors(new Response("upgrade failed", { status: 400 }));
       }
 
-      if (url.pathname === "/api/builtin-widgets") {
-        return Response.json(buildBuiltinWidgetDefinitions(), {
-          headers: SCENE_CORS_HEADERS,
-        });
-      }
-
-      if (url.pathname === "/api/widgets") {
-        if (!db) {
-          return Response.json({ status: "error", message: "db not available" }, { status: 503 });
+      const response: Response = await (async (): Promise<Response> => {
+        if (url.pathname === "/health") {
+          return Response.json({ status: "ok", overlayClients: broadcaster.clientCount() });
         }
-        try {
-          const response = await db.listWidgets({ createdByType: "", createdByRef: "" });
-          return Response.json(
-            { widgets: response.widgets },
-            { headers: SCENE_CORS_HEADERS }
-          );
-        } catch (err) {
-          logger.warn("listWidgets failed", { err });
-          return Response.json({ status: "error", message: String(err) }, { status: 500 });
+
+        if (url.pathname === "/api/builtin-widgets") {
+          return Response.json(buildBuiltinWidgetDefinitions(), {
+            headers: SCENE_CORS_HEADERS,
+          });
         }
-      }
 
-      if (url.pathname.startsWith("/api/scene/")) {
-        return handleSceneFetch(url.pathname, db, logger);
-      }
+        if (url.pathname === "/api/widgets") {
+          if (!db) {
+            return Response.json({ status: "error", message: "db not available" }, { status: 503 });
+          }
+          try {
+            const result = await db.listWidgets({ createdByType: "", createdByRef: "" });
+            return Response.json({ widgets: result.widgets }, { headers: SCENE_CORS_HEADERS });
+          } catch (err) {
+            logger.warn("listWidgets failed", { err });
+            return Response.json({ status: "error", message: String(err) }, { status: 500 });
+          }
+        }
 
-      if (
-        url.pathname === "/" ||
-        url.pathname === "/overlay/alerts" ||
-        url.pathname === "/overlay/scene" ||
-        url.pathname.startsWith("/overlay/scene/")
-      ) {
-        return serveFile(indexHtml);
-      }
+        if (url.pathname.startsWith("/api/scene/")) {
+          return handleSceneFetch(url.pathname, db, logger);
+        }
 
-      const fromUi = await tryServeUnder(uiDist, url.pathname);
-      if (fromUi) {
-        return fromUi;
-      }
-      const fromPublic = await tryServeUnder(publicDir, url.pathname);
-      if (fromPublic) {
-        return fromPublic;
-      }
+        if (
+          url.pathname === "/" ||
+          url.pathname === "/overlay/alerts" ||
+          url.pathname === "/overlay/scene" ||
+          url.pathname.startsWith("/overlay/scene/")
+        ) {
+          return serveFile(indexHtml);
+        }
 
-      return new Response("Not Found", { status: 404 });
+        const fromUi = await tryServeUnder(uiDist, url.pathname);
+        if (fromUi) {
+          return fromUi;
+        }
+        const fromPublic = await tryServeUnder(publicDir, url.pathname);
+        if (fromPublic) {
+          return fromPublic;
+        }
+
+        return new Response("Not Found", { status: 404 });
+      })();
+
+      return withCors(response);
     },
     websocket: websocket as WebSocketHandler<unknown>,
   });
@@ -248,11 +255,29 @@ async function serveFile(absPath: string): Promise<Response> {
   return new Response(file);
 }
 
-const SCENE_CORS_HEADERS = {
+// CORS for any-origin embedding. Streamware overlays are loaded inside
+// sandboxed iframes (no `allow-same-origin`), which makes asset and fetch
+// requests CORS-checked even when targeting the same hostname; the public
+// proxy (cloudflared) also rewrites the origin. Both reasons require these
+// headers on every HTTP response. Applied centrally in the fetch handler.
+const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Max-Age": "86400",
+  "Cross-Origin-Resource-Policy": "cross-origin",
 };
+
+// Retained name for the JSON API call sites that pass headers explicitly.
+const SCENE_CORS_HEADERS = CORS_HEADERS;
+
+function withCors(res: Response): Response {
+  const headers = new Headers(res.headers);
+  for (const [name, value] of Object.entries(CORS_HEADERS)) {
+    headers.set(name, value);
+  }
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
 
 async function handleSceneFetch(
   pathname: string,
@@ -275,7 +300,7 @@ async function handleSceneFetch(
       return new Response("Scene not found", { status: 404, headers: SCENE_CORS_HEADERS });
     }
     const s = response.scene;
-    const widgets = (() => {
+    const rawWidgets = (() => {
       try {
         const parsed = JSON.parse(s.widgetsJson || "[]");
         return Array.isArray(parsed) ? parsed : [];
@@ -283,6 +308,7 @@ async function handleSceneFetch(
         return [];
       }
     })();
+    const widgets = rawWidgets.map((w) => normalizeWidgetInstance(w, logger)).filter((w): w is Record<string, unknown> => w !== null);
     const layout = (() => {
       try {
         const parsed = JSON.parse(s.layoutJson || "{}");
@@ -299,6 +325,82 @@ async function handleSceneFetch(
     logger.warn("scene fetch failed", { sceneId, err });
     return new Response("Internal error", { status: 500, headers: SCENE_CORS_HEADERS });
   }
+}
+
+/**
+ * Bridge raw widget instance JSON (Convex shape) into the canonical
+ * SceneOverlay shape:
+ *  - Derive `moduleId` from `widgetCanonicalId` (`{moduleId}:widget:...`).
+ *  - For built-in widgets, populate `bundleUrl`, `acceptedEvents` from
+ *    the in-repo spec.
+ *  - Collapse a sibling `size.{width,height}` into `position.{width,height}`
+ *    when the saved shape stores them separately.
+ *
+ * Returns `null` for entries we can't even identify (no canonical id).
+ * The SceneOverlay's own validator will drop anything still incomplete.
+ */
+function normalizeWidgetInstance(
+  raw: unknown,
+  logger: ReturnType<typeof createServiceLogger>
+): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const w = { ...(raw as Record<string, unknown>) };
+
+  const canonicalId = typeof w.widgetCanonicalId === "string" ? w.widgetCanonicalId : "";
+  if (!canonicalId) {
+    logger.warn("scene widget missing widgetCanonicalId; dropping", { widget: w });
+    return null;
+  }
+
+  // moduleId is the first segment of the canonical id.
+  if (typeof w.moduleId !== "string" || !w.moduleId) {
+    const colon = canonicalId.indexOf(":");
+    if (colon > 0) {
+      w.moduleId = canonicalId.slice(0, colon);
+    }
+  }
+
+  // Built-in lookup fills bundleUrl + acceptedEvents.
+  const builtinPrefix = "builtin:widget:";
+  if (canonicalId.startsWith(builtinPrefix)) {
+    const manifestId = canonicalId.slice(builtinPrefix.length);
+    const spec = getBuiltinWidgetSpecs().find((s) => s.manifestId === manifestId);
+    if (!spec) {
+      logger.warn("built-in widget canonicalId has no matching spec; dropping", {
+        widgetCanonicalId: canonicalId,
+      });
+      return null;
+    }
+    if (typeof w.bundleUrl !== "string" || !w.bundleUrl) {
+      w.bundleUrl = `/widgets/builtin/${spec.manifestId}/index.html`;
+    }
+    if (!Array.isArray(w.acceptedEvents) || w.acceptedEvents.length === 0) {
+      w.acceptedEvents = spec.acceptedEvents;
+    }
+  }
+
+  // Collapse `size` into `position` if the saved shape kept them separate.
+  const position = (w.position ?? {}) as Record<string, unknown>;
+  const size = (w.size ?? {}) as Record<string, unknown>;
+  const px = typeof position.x === "number" ? position.x : 0;
+  const py = typeof position.y === "number" ? position.y : 0;
+  const pw =
+    typeof position.width === "number"
+      ? position.width
+      : typeof size.width === "number"
+      ? size.width
+      : 0;
+  const ph =
+    typeof position.height === "number"
+      ? position.height
+      : typeof size.height === "number"
+      ? size.height
+      : 0;
+  w.position = { x: px, y: py, width: pw, height: ph };
+
+  return w;
 }
 
 async function tryServeUnder(rootDir: string, pathname: string): Promise<Response | null> {

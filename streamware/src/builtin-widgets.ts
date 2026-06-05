@@ -20,6 +20,14 @@ export interface BuiltinWidgetSpec {
   description?: string;
   directory: string;
   alertTypes: string[];
+  /**
+   * Canonical trigger ids the widget wants to receive in scene context.
+   * SceneOverlay's per-widget filter matches the suffix after `:trigger:`
+   * against the incoming event's `type` — anything in this list whose
+   * suffix matches a published subject reaches the widget's iframe via
+   * `widgetHost.onEvent`. Format: `{owner}:trigger:{canonical_subject}`.
+   */
+  acceptedEvents: string[];
   settings: WidgetSettingDefinition[];
   surface?: "scene" | "dashboard";
 }
@@ -34,6 +42,16 @@ const BUILTIN_WIDGET_SPECS: BuiltinWidgetSpec[] = [
       "subscription, redeem, etc.).",
     directory: "builtin/media_alert",
     alertTypes: ["stream_online", "stream_offline", "raid", "follow", "subscription", "subscription_gift", "redeem"],
+    acceptedEvents: [
+      "builtin:trigger:follow.user.twitch",
+      "builtin:trigger:cheer.user.twitch",
+      "builtin:trigger:subscribe.user.twitch",
+      "builtin:trigger:subscription.gift.twitch",
+      "builtin:trigger:raid.user.twitch",
+      "builtin:trigger:redeem.channelpoints.twitch",
+      "builtin:trigger:online.user.twitch",
+      "builtin:trigger:offline.user.twitch",
+    ],
     settings: [
       { key: "textTemplate", fieldType: "text", label: "Alert text template", defaultValue: "" },
       { key: "mediaUrlTemplate", fieldType: "text", label: "Media URL template", defaultValue: "" },
