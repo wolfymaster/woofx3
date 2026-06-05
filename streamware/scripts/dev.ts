@@ -1,8 +1,15 @@
 /**
- * Dev orchestrator: spawns the Bun backend (--watch) and Vite in
- * parallel, prefixes each output line, and forwards SIGINT/SIGTERM to
- * each child's whole process group so vite + its esbuild helper exit
- * cleanly on Ctrl-C.
+ * Dev orchestrator: spawns the Bun backend (--watch) and Vite's
+ * production-build watcher in parallel, prefixes each output line, and
+ * forwards SIGINT/SIGTERM to each child's whole process group so vite +
+ * its esbuild helper exit cleanly on Ctrl-C.
+ *
+ * Note: streamware's HTTP server (port 9101) serves the prebuilt
+ * `ui/dist` directory — not the vite dev server. Running `vite build
+ * --watch` rebuilds `ui/dist` on every edit under `ui/src` so changes
+ * land in the same path OBS / browser sources load from. Use a separate
+ * `bun run dev:ui` (vite dev server on 5173) if you want HMR previews
+ * outside the overlay flow.
  */
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 
@@ -61,10 +68,12 @@ const viteBin = `${repoRoot}/ui/node_modules/vite/bin/vite.js`;
 const children: Child[] = [
   // Bun runs the server directly with --watch (no `run` wrapper).
   start("server", "\x1b[36m", ["bun", "--watch", "src/server.ts"], repoRoot),
-  // Vite is invoked via node directly (no `bunx` wrapper) so the
-  // process tree stays flat and the whole vite+esbuild group is killed
-  // together when we signal the child's pgid on shutdown.
-  start("ui    ", "\x1b[35m", ["node", viteBin], `${repoRoot}/ui`),
+  // `vite build --watch` rebuilds ui/dist on file changes so the
+  // streamware HTTP server (which serves dist/) always picks up edits.
+  // Invoked via node directly (no `bunx` wrapper) so the process tree
+  // stays flat and the whole vite+esbuild group is killed together when
+  // we signal the child's pgid on shutdown.
+  start("ui    ", "\x1b[35m", ["node", viteBin, "build", "--watch"], `${repoRoot}/ui`),
 ];
 
 let shuttingDown = false;
