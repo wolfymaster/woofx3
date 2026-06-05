@@ -784,6 +784,14 @@ export interface Woofx3EngineApi {
   getStreamEvents(query: StreamEventsQuery): Promise<StreamEvent[]>;
   getStreamStatus(accountId: string): Promise<StreamStatus>;
 
+  /**
+   * Publish a CloudEvent on the engine's NATS bus. The `eventType` becomes
+   * the CloudEvent type and the NATS subject; workflows and modules
+   * subscribed to that subject will fire. Used by the UI's Debug Tools
+   * page to hand-fire events without a live Twitch session.
+   */
+  triggerEvent(eventType: string, eventData: Record<string, unknown>): Promise<{ success: boolean; message: string }>;
+
   // Workflow execution (user-facing)
   triggerWorkflowByName(
     workflowName: string,
