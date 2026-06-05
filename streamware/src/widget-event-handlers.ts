@@ -99,14 +99,31 @@ export async function initWidgetEventHandlers(args: InitArgs): Promise<void> {
       if (event && typeof event === "object") {
         const eventType = typeof event.type === "string" ? (event.type as string) : "";
         if (eventType) {
+          logger.info("[handlers:notify] forwarding event to /ws/module-state", {
+            envelopeId,
+            type: eventType,
+            source: typeof event.source === "string" ? (event.source as string) : "",
+            hasParameters: Object.keys(params).length > 0,
+          });
           storageBroadcaster.broadcastEvent({
             kind: "event",
             type: eventType,
             source: typeof event.source === "string" ? (event.source as string) : "",
             time: typeof event.time === "string" ? (event.time as string) : new Date().toISOString(),
             data: event.data ?? null,
+            parameters: params,
+          });
+        } else {
+          logger.warn("[handlers:notify] alert has event object but no type — scene overlay will not see it", {
+            envelopeId,
+            eventKeys: Object.keys(event),
           });
         }
+      } else {
+        logger.warn("[handlers:notify] alert has no embedded event — scene overlay will not see it", {
+          envelopeId,
+          payloadKeys: Object.keys(rawPayload),
+        });
       }
     } catch (err) {
       logger.error("Failed to handle ui.notify.alert", {

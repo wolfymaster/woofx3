@@ -54,6 +54,12 @@ export interface WidgetEvent {
   /** Event payload — opaque at this boundary. Widgets parse based on
    *  the documented schema for `type`. */
   data: unknown;
+  /** Workflow action `parameters` envelope when the event was raised
+   *  via an `alert`-style action (e.g. `text`, `mediaUrl`, `audioUrl`,
+   *  `duration`). Absent for events not produced by an action with a
+   *  parameters bag. Widgets that consume alert-style configuration
+   *  read it from here in preference to their per-instance settings. */
+  parameters?: Record<string, unknown>;
 }
 
 export type WidgetEventHandler = (event: WidgetEvent) => void;

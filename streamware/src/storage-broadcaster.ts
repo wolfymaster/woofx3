@@ -48,6 +48,11 @@ export interface WidgetEventPushPayload {
   time: string;
   /** Event payload — opaque to the broadcaster. */
   data: unknown;
+  /** Workflow action `parameters` envelope when the event was raised
+   *  via an alert action. Forwarded verbatim so scene widgets see the
+   *  same `text`/`mediaUrl`/`audioUrl`/`duration` config the alert
+   *  queue dispatched. */
+  parameters?: Record<string, unknown>;
 }
 
 export type ModuleStateOutboundPayload = StorageChangedPayload | WidgetEventPushPayload;

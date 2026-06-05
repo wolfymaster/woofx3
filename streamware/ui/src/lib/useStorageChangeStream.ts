@@ -107,16 +107,30 @@ export function useStorageChangeStream(url: string): UseStorageChangeStreamResul
         // Discriminate on `kind`. Legacy storage payloads omit it
         // and are treated as `"storage"` for backwards compatibility.
         const kind = typeof payload.kind === "string" ? payload.kind : "storage";
+        console.log("[stream:event] WS frame received", {
+          kind,
+          type: payload.type,
+          moduleId: payload.moduleId,
+          key: payload.key,
+        });
         if (kind === "event") {
           const widgetEvent: WidgetEvent = {
             type: typeof payload.type === "string" ? payload.type : "",
             source: typeof payload.source === "string" ? payload.source : "",
             time: typeof payload.time === "string" ? payload.time : new Date().toISOString(),
             data: payload.data,
+            ...(payload.parameters && typeof payload.parameters === "object"
+              ? { parameters: payload.parameters as Record<string, unknown> }
+              : {}),
           };
           if (!widgetEvent.type) {
+            console.warn("[stream:event] dropping event with no type", { payload });
             return;
           }
+          console.log("[stream:event] fanning out event", {
+            type: widgetEvent.type,
+            subscriberCount: eventSubscribersRef.current.size,
+          });
           for (const handler of eventSubscribersRef.current) {
             try {
               handler(widgetEvent);
