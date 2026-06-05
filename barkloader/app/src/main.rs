@@ -13,6 +13,8 @@ use lib_sandbox::extensions::{
 use lib_sandbox::host::grpc::GrpcStorageClient;
 use lib_sandbox::host::noop::{noop_host_context, NoopChatSender};
 use lib_sandbox::host::{ChatSender, ExtensionRegistry};
+use crate::services::env_reader::OsEnvReader;
+use crate::services::http_client::ReqwestHttpClient;
 use crate::services::sandbox_resources::HttpResourceClient;
 use lib_sandbox::{ModuleRegistry, SandboxFactory};
 use log::{info, warn};
@@ -92,6 +94,9 @@ async fn setup() -> Result<AppContext> {
         } else {
             info!("databaseProxyUrl not set in .woofx3.json; using noop resource client");
         }
+
+        ctx.env = Arc::new(OsEnvReader);
+        ctx.http = Arc::new(ReqwestHttpClient::new());
 
         ctx
     };

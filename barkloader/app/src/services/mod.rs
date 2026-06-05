@@ -1,4 +1,6 @@
 pub mod builtin_actions;
+pub mod http_client;
+pub mod env_reader;
 pub mod chat;
 pub mod file_service;
 pub mod module_service;
