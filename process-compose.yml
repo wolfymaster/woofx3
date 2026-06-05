@@ -45,6 +45,9 @@ processes:
     description: Overlays & Stream software
     working_dir: streamware
 
+  streamwareProxy:
+    command: cloudflared tunnel --url http://localhost:9101
+
   twitch:
     command: bun run src/api.ts
     description: Twitch API + Eventbus
