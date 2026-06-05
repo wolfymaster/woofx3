@@ -49,6 +49,8 @@
       "trigger": "sr_command",
       "steps": [
         {
+          "id": "queue_song",
+          "type": "action",
           "action": "song_request"
         }
       ]
