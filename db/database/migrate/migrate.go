@@ -25,6 +25,7 @@ func Migrate(db *gorm.DB) error {
 		migrations.DropLegacyCreatedByColumns(),
 		migrations.AddModulesModuleIDColumn(),
 		migrations.RenameModuleWidgetsToWidgets(),
+		migrations.CreateOverlayTokensTable(),
 	})
 
 	return m.Migrate()
@@ -49,6 +50,7 @@ func Rollback(db *gorm.DB) error {
 		migrations.DropLegacyCreatedByColumns(),
 		migrations.AddModulesModuleIDColumn(),
 		migrations.RenameModuleWidgetsToWidgets(),
+		migrations.CreateOverlayTokensTable(),
 	})
 
 	return m.RollbackLast()
