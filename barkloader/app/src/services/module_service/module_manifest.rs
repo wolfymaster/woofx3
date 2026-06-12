@@ -273,6 +273,23 @@ pub struct ModuleWidget {
     pub alert_types: Vec<String>,
 }
 
+/// Background task declared in the module manifest. Barkloader's internal
+/// scheduler picks these up at module install / reload and fires the named
+/// function on the given cron schedule for the lifetime of the module.
+/// Tasks are purely runtime-managed — they are not persisted as workflow,
+/// action, or trigger rows in the system database.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestBackgroundTask {
+    pub id: String,
+    /// Manifest-local function id to invoke (e.g. `"poll_current_track"`).
+    pub function: String,
+    /// Cron expression controlling the fire rate (e.g. `"*/30 * * * * *"`).
+    pub schedule: String,
+    #[serde(default)]
+    pub description: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModuleManifest {
@@ -320,6 +337,11 @@ pub struct ModuleManifest {
     /// (typically as `commands` and `actions`).
     #[serde(default)]
     pub resources: Vec<ManifestResourceKind>,
+    /// Background tasks declared by the module. The scheduler registers
+    /// these at module install/reload and fires the referenced function on
+    /// the given cron schedule until the module is unloaded or uninstalled.
+    #[serde(default)]
+    pub background_tasks: Vec<ManifestBackgroundTask>,
 }
 
 impl ModuleManifest {
