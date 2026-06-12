@@ -652,7 +652,7 @@ mod tests {
                 "id": "w1",
                 "name": "W",
                 "entry": "w/index.html",
-                "assets": "w/static/"
+                "assets": "w/"
             }]
         }"#;
 
@@ -680,16 +680,56 @@ mod tests {
             .await
             .expect("install");
 
+        // Entry and assets-dir files share one key shape: assets-relative
+        // under `modules/{module_key}/widgets/{widget_id}/` — so the
+        // registered `entry` ("index.html") resolves directly.
         let html = repo
-            .read_file("modules/wm/widgets/w1/w/index.html")
+            .read_file("modules/wm/widgets/w1/index.html")
             .await
             .expect("html");
         assert_eq!(html, b"<!doctype html>");
         let css = repo
-            .read_file("modules/wm/widgets/w1/theme.css")
+            .read_file("modules/wm/widgets/w1/static/theme.css")
             .await
             .expect("css");
         assert_eq!(css, b"body{}");
+    }
+
+    #[tokio::test]
+    async fn install_rejects_widget_entry_outside_assets() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+
+        let manifest_json = br#"{
+            "id": "wm2",
+            "name": "Widget Mod 2",
+            "version": "1.0.0",
+            "widgets": [{
+                "id": "w1",
+                "name": "W",
+                "entry": "elsewhere/index.html",
+                "assets": "w/"
+            }]
+        }"#;
+
+        let files = vec![ModuleFile::new(
+            "module.json".into(),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+            manifest_json.to_vec(),
+        )];
+
+        let manifest: ModuleManifest = serde_json::from_slice(manifest_json).expect("manifest");
+        let mid = manifest.compute_module_key(manifest_json);
+        let err = run_install(&manifest, &files, &repo, "archives/wm2/1.0.0.zip", None, "", false, &mid, "")
+            .await
+            .expect_err("entry outside assets must fail validation");
+        assert!(
+            err.to_string().contains("must live inside the `assets` directory"),
+            "unexpected error: {err}"
+        );
     }
 
     #[tokio::test]

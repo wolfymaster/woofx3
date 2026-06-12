@@ -621,12 +621,55 @@ impl ModuleWidget {
         out
     }
 
+    /// Normalize the manifest `entry` path relative to the widget asset
+    /// root (the `assets` directory). The registered widget row and the
+    /// repository both use this assets-relative form, so
+    /// `modules/{module_key}/widgets/{id}/{entry}` is always a valid
+    /// repository key for the entry file (design 5.2.5).
+    ///
+    /// Returns `Ok(None)` when no entry is declared. Errors when an
+    /// entry is declared without an `assets` directory or points
+    /// outside it — authoring constraint: `entry` must live inside
+    /// `assets`.
+    pub fn entry_relative_to_assets(&self) -> Result<Option<String>> {
+        let Some(entry) = &self.entry else {
+            return Ok(None);
+        };
+        let normalized = normalize_rel_path(entry);
+        if normalized.is_empty() {
+            return Err(anyhow!(
+                "widget {}: `entry` must be a non-empty relative path",
+                self.id
+            ));
+        }
+        let Some(assets) = &self.assets else {
+            return Err(anyhow!(
+                "widget {}: `entry` {:?} requires an `assets` directory that contains it",
+                self.id,
+                entry
+            ));
+        };
+        let prefix = widget_asset_prefix(assets);
+        let rel = normalized.strip_prefix(&prefix).unwrap_or_default();
+        if rel.is_empty() {
+            return Err(anyhow!(
+                "widget {}: `entry` {:?} must live inside the `assets` directory {:?}",
+                self.id,
+                entry,
+                assets
+            ));
+        }
+        Ok(Some(rel.to_string()))
+    }
+
     /// Build the Twirp WidgetInput JSON for bulk registration. The engine
     /// db-proxy persists rows in `widgets` and emits the NATS outbox event
     /// that the api/ service forwards to Convex as `module.widget.registered`.
     ///
     /// `directory` is the manifest's `assets` bundle path (trimmed) — that's
     /// what streamware / Convex use to address widget files via the asset route.
+    /// `entry` is assets-relative (see `entry_relative_to_assets`); empty
+    /// means the consumer falls back to `index.html`.
     /// `settings_schema` is the manifest's `settingsSchema` value serialized;
     /// engine treats it opaquely.
     pub fn to_input(&self) -> super::db_proxy::WidgetInputJson {
@@ -640,6 +683,18 @@ impl ModuleWidget {
             Some(v) => v.to_string(),
             None => "{}".to_string(),
         };
+        // Manifest validation rejects unnormalizable entries before any
+        // registration runs, so the error arm is unreachable on the
+        // install path; registering an empty entry there keeps this
+        // projection infallible.
+        let entry = match self.entry_relative_to_assets() {
+            Ok(Some(rel)) => rel,
+            Ok(None) => String::new(),
+            Err(_) => {
+                debug_assert!(false, "widget entry failed normalization after validation");
+                String::new()
+            }
+        };
         super::db_proxy::WidgetInputJson {
             manifest_id: self.id.clone(),
             name: self.name.clone(),
@@ -648,6 +703,7 @@ impl ModuleWidget {
             alert_types: self.resolved_alert_types(),
             settings_schema,
             surface: "scene".to_string(),
+            entry,
         }
     }
 
@@ -687,13 +743,18 @@ impl ModuleWidget {
     ) -> Result<Vec<String>> {
         let mut keys = Vec::new();
 
-        if let Some(entry) = &self.entry {
+        // The entry is stored at its assets-relative key — the same key
+        // shape the assets-dir walk below produces — so the registered
+        // `entry` always resolves as
+        // `modules/{module_key}/widgets/{id}/{entry}` (design 5.2.5).
+        // Manifest validation already guarantees the entry normalizes;
+        // failing here means upload ran without validation.
+        let entry_rel = self.entry_relative_to_assets()?;
+        let mut entry_uploaded = false;
+        if let (Some(entry), Some(rel)) = (&self.entry, &entry_rel) {
             if let Some(f) = resolve_zip_file(files, entry) {
-                let rel = normalize_rel_path(entry);
-                keys.push(
-                    self.upload_one_file(module_key, f, &rel, repository)
-                        .await?,
-                );
+                keys.push(self.upload_one_file(module_key, f, rel, repository).await?);
+                entry_uploaded = true;
             } else {
                 warn!("Widget {} entry '{}' not found in archive", self.id, entry);
             }
@@ -708,6 +769,10 @@ impl ModuleWidget {
                 }
                 let rel_under = n.strip_prefix(&prefix).unwrap_or(&n).to_string();
                 if rel_under.is_empty() {
+                    continue;
+                }
+                if entry_uploaded && Some(&rel_under) == entry_rel.as_ref() {
+                    // Already stored by the entry pass above.
                     continue;
                 }
                 keys.push(
@@ -1305,6 +1370,8 @@ mod tests {
         assert_eq!(input.name, "Raid Counter");
         assert_eq!(input.description, "Counts incoming raids.");
         assert_eq!(input.directory, "widgets/raid_counter");
+        // Registered entry is assets-relative (design 5.2.5).
+        assert_eq!(input.entry, "index.html");
         assert_eq!(input.alert_types, vec!["raid"]);
         // settings_schema is serialized JSON of the original Value.
         assert!(input.settings_schema.contains("minViewers"));
@@ -1320,9 +1387,82 @@ mod tests {
         let input = w.to_input();
         assert_eq!(input.description, "");
         assert_eq!(input.directory, "");
+        // No entry -> empty string; consumers fall back to index.html.
+        assert_eq!(input.entry, "");
         // No settings_schema -> default "{}" (parses cleanly server-side).
         assert_eq!(input.settings_schema, "{}");
         assert!(input.alert_types.is_empty());
+    }
+
+    #[test]
+    fn entry_normalizes_relative_to_assets_dir() {
+        // spotify_sr-style manifest: entry inside the assets directory.
+        let w: ModuleWidget = serde_json::from_value(serde_json::json!({
+            "id": "now_playing",
+            "name": "Now Playing",
+            "entry": "widgets/now_playing/index.html",
+            "assets": "widgets/now_playing"
+        }))
+        .expect("parse");
+        assert_eq!(
+            w.entry_relative_to_assets().expect("normalize").as_deref(),
+            Some("index.html")
+        );
+        assert_eq!(w.to_input().entry, "index.html");
+
+        // Nested entry keeps its assets-relative subpath.
+        let w: ModuleWidget = serde_json::from_value(serde_json::json!({
+            "id": "w1",
+            "name": "W",
+            "entry": "./widgets/w1/pages/main.html",
+            "assets": "widgets/w1/"
+        }))
+        .expect("parse");
+        assert_eq!(
+            w.entry_relative_to_assets().expect("normalize").as_deref(),
+            Some("pages/main.html")
+        );
+    }
+
+    #[test]
+    fn entry_outside_assets_dir_is_an_error() {
+        let w: ModuleWidget = serde_json::from_value(serde_json::json!({
+            "id": "w1",
+            "name": "W",
+            "entry": "elsewhere/index.html",
+            "assets": "widgets/w1"
+        }))
+        .expect("parse");
+        let err = w.entry_relative_to_assets().expect_err("outside assets");
+        assert!(
+            err.to_string().contains("must live inside the `assets` directory"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn entry_without_assets_dir_is_an_error() {
+        let w: ModuleWidget = serde_json::from_value(serde_json::json!({
+            "id": "w1",
+            "name": "W",
+            "entry": "widgets/w1/index.html"
+        }))
+        .expect("parse");
+        let err = w.entry_relative_to_assets().expect_err("missing assets");
+        assert!(
+            err.to_string().contains("requires an `assets` directory"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn no_entry_normalizes_to_none() {
+        let w: ModuleWidget = serde_json::from_value(serde_json::json!({
+            "id": "w1",
+            "name": "W"
+        }))
+        .expect("parse");
+        assert_eq!(w.entry_relative_to_assets().expect("ok"), None);
     }
 
     #[test]
