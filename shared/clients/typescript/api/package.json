@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./index.ts",
+    "./overlay-events": "./overlay-events.ts",
     "./rpc": "./rpc.ts",
     "./webhooks": "./webhooks.ts",
     "./client": "./client.ts",
