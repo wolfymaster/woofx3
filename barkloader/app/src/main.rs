@@ -210,7 +210,11 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(Data::new(ctx.clone()))
+            // The assets route depends only on the repository, not the
+            // full AppContext, so it gets its own Data registration.
+            .app_data(Data::new(ctx.repository.clone()))
             .wrap(Logger::default()) // Use default format
+            .configure(routes::assets::configure)
             .configure(routes::echo::configure)
             .configure(routes::websocket::configure)
             .configure(routes::functions::configure)
