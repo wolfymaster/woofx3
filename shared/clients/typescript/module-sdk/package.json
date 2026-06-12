@@ -27,6 +27,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:shim": "bun build src/widget-host-shim.entry.ts --format=iife --target=browser --outfile=dist/widget-host-shim.js",
     "test": "bun test",
     "publish:dry": "npm publish --dry-run --access public"
   },

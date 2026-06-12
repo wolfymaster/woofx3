@@ -53,6 +53,8 @@ export const EngineEventType = {
   WIDGET_STATUS_CHANGED: "module.widget.status.changed",
   STREAM_ONLINE: "stream.online",
   STREAM_OFFLINE: "stream.offline",
+  OVERLAY_TOKEN_MINTED: "overlay.token.minted",
+  OVERLAY_TOKEN_REVOKED: "overlay.token.revoked",
 } as const;
 
 export type EngineEventType = (typeof EngineEventType)[keyof typeof EngineEventType];
@@ -769,6 +771,47 @@ export interface WidgetStatusChangedEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Overlay token events
+// ---------------------------------------------------------------------------
+
+/**
+ * Fired when an overlay token is minted (`mintOverlayToken` /
+ * `rotateOverlayToken` RPCs). Deliberately does NOT carry the
+ * plaintext token — the mint RPC response is the only channel that
+ * ever returns it. `tokenPrefix` (e.g. `ovl_abcd`) is for operator
+ * display and log correlation only.
+ */
+export interface OverlayTokenMintedEvent {
+  type: typeof EngineEventType.OVERLAY_TOKEN_MINTED;
+  tokenId: string;
+  sceneId: string;
+  applicationId: string;
+  /** Operator bookkeeping label; empty string when unset. */
+  label: string;
+  /** Short non-secret prefix of the token for display (`ovl_abcd`).
+   *  NEVER the full plaintext token. */
+  tokenPrefix: string;
+}
+
+/**
+ * Fired when an overlay token is revoked (`revokeOverlayToken`, or
+ * the revoke half of `rotateOverlayToken`). Revocation is a tombstone
+ * (`status='revoked'`), never a row deletion. Same field set and same
+ * no-plaintext rule as the minted event.
+ */
+export interface OverlayTokenRevokedEvent {
+  type: typeof EngineEventType.OVERLAY_TOKEN_REVOKED;
+  tokenId: string;
+  sceneId: string;
+  applicationId: string;
+  /** Operator bookkeeping label; empty string when unset. */
+  label: string;
+  /** Short non-secret prefix of the token for display (`ovl_abcd`).
+   *  NEVER the full plaintext token. */
+  tokenPrefix: string;
+}
+
+// ---------------------------------------------------------------------------
 // Stream lifecycle events (Twitch EventSub bridge)
 // ---------------------------------------------------------------------------
 
@@ -847,7 +890,9 @@ export type CallbackEvent =
   | AlertSkippedEvent
   | WidgetStatusChangedEvent
   | StreamOnlineEvent
-  | StreamOfflineEvent;
+  | StreamOfflineEvent
+  | OverlayTokenMintedEvent
+  | OverlayTokenRevokedEvent;
 
 /**
  * Lookup from event-type string → payload type. Useful for emitter code
@@ -887,6 +932,8 @@ export type CallbackEventByType = {
   [EngineEventType.WIDGET_STATUS_CHANGED]: WidgetStatusChangedEvent;
   [EngineEventType.STREAM_ONLINE]: StreamOnlineEvent;
   [EngineEventType.STREAM_OFFLINE]: StreamOfflineEvent;
+  [EngineEventType.OVERLAY_TOKEN_MINTED]: OverlayTokenMintedEvent;
+  [EngineEventType.OVERLAY_TOKEN_REVOKED]: OverlayTokenRevokedEvent;
 };
 
 // ---------------------------------------------------------------------------
