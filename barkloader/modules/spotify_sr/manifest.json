@@ -12,6 +12,20 @@
       "runtime": "js",
       "path": "functions/song_request.js",
       "entryPoint": "song_request"
+    },
+    {
+      "id": "poll_current_track",
+      "name": "Poll Current Track",
+      "runtime": "js",
+      "path": "functions/poll_current_track.js",
+      "entryPoint": "poll_current_track"
+    },
+    {
+      "id": "get_devices",
+      "name": "Get Devices",
+      "runtime": "js",
+      "path": "functions/get_devices.js",
+      "entryPoint": "get_devices"
     }
   ],
   "actions": [
@@ -20,7 +34,28 @@
       "name": "Queue song request",
       "description": "Searches Spotify for the given query and adds the top result to the playback queue.",
       "type": "function",
-      "function": "song_request"
+      "function": "song_request",
+      "schema": [
+        {
+          "id": "deviceId",
+          "label": "Playback Device",
+          "type": "select",
+          "required": false,
+          "defaultValue": "",
+          "description": "Spotify device to queue songs on. Leave blank to use the currently active device.",
+          "source": {
+            "kind": "internal",
+            "request": {
+              "event": "barkloader.module.field_options",
+              "payload": {
+                "moduleId": "spotify_sr",
+                "functionId": "get_devices"
+              }
+            },
+            "timeoutMs": 10000
+          }
+        }
+      ]
     }
   ],
   "triggers": [
@@ -54,6 +89,24 @@
           "action": "song_request"
         }
       ]
+    }
+  ],
+  "background_tasks": [
+    {
+      "id": "poll_now_playing",
+      "function": "poll_current_track",
+      "schedule": "*/30 * * * * *",
+      "description": "Polls Spotify every 30 seconds to update the currently playing track."
+    }
+  ],
+  "widgets": [
+    {
+      "id": "now_playing",
+      "name": "Now Playing",
+      "description": "Displays the currently playing Spotify track.",
+      "entry": "widgets/now_playing/index.html",
+      "assets": "widgets/now_playing",
+      "alertTypes": ["module.storage.changed"]
     }
   ]
 }
