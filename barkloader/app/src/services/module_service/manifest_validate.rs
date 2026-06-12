@@ -155,6 +155,7 @@ pub fn validate(manifest: &ModuleManifest) -> Result<ResolvedManifest> {
         |a: &ManifestAsset| &a.id,
     )?;
     validate_asset_paths(&manifest.assets)?;
+    validate_widget_entries(&manifest.widgets)?;
     validate_resource_kinds(&manifest.resources)?;
 
     // Pass 2: resolve references for kinds that have them.
@@ -209,6 +210,19 @@ fn validate_resource_kinds(items: &[ManifestResourceKind]) -> Result<()> {
                 "resource #{i}: duplicate kind {kind:?} (already declared at resource #{prior})"
             ));
         }
+    }
+    Ok(())
+}
+
+/// Authoring constraint (design 5.2.5): a widget `entry` must live
+/// inside the widget's `assets` directory, because the registered
+/// entry is normalized assets-relative and resolved against the
+/// prefix-stripped repository keys
+/// (`modules/{module_key}/widgets/{id}/{entry}`).
+fn validate_widget_entries(widgets: &[ModuleWidget]) -> Result<()> {
+    for (i, w) in widgets.iter().enumerate() {
+        w.entry_relative_to_assets()
+            .map_err(|e| anyhow!("widget #{i}: {e}"))?;
     }
     Ok(())
 }

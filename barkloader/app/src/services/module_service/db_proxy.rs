@@ -142,6 +142,10 @@ pub struct WidgetInputJson {
     pub alert_types: Vec<String>,
     pub settings_schema: String,
     pub surface: String,
+    /// Entry path relative to the widget asset root (assets-relative,
+    /// matching the prefix-stripped repository keys). Empty means the
+    /// consumer falls back to `index.html`.
+    pub entry: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
