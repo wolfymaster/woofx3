@@ -7259,6 +7259,9 @@ impl serde::Serialize for RegisterWidgetsRequest {
         if !self.created_by_ref.is_empty() {
             len += 1;
         }
+        if !self.application_id.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.RegisterWidgetsRequest", len)?;
         if !self.module_key.is_empty() {
             struct_ser.serialize_field("moduleKey", &self.module_key)?;
@@ -7277,6 +7280,9 @@ impl serde::Serialize for RegisterWidgetsRequest {
         }
         if !self.created_by_ref.is_empty() {
             struct_ser.serialize_field("createdByRef", &self.created_by_ref)?;
+        }
+        if !self.application_id.is_empty() {
+            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         struct_ser.end()
     }
@@ -7298,6 +7304,8 @@ impl<'de> serde::Deserialize<'de> for RegisterWidgetsRequest {
             "createdByType",
             "created_by_ref",
             "createdByRef",
+            "application_id",
+            "applicationId",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -7308,6 +7316,7 @@ impl<'de> serde::Deserialize<'de> for RegisterWidgetsRequest {
             Widgets,
             CreatedByType,
             CreatedByRef,
+            ApplicationId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -7335,6 +7344,7 @@ impl<'de> serde::Deserialize<'de> for RegisterWidgetsRequest {
                             "widgets" => Ok(GeneratedField::Widgets),
                             "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
                             "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
+                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -7360,6 +7370,7 @@ impl<'de> serde::Deserialize<'de> for RegisterWidgetsRequest {
                 let mut widgets__ = None;
                 let mut created_by_type__ = None;
                 let mut created_by_ref__ = None;
+                let mut application_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::ModuleKey => {
@@ -7398,6 +7409,12 @@ impl<'de> serde::Deserialize<'de> for RegisterWidgetsRequest {
                             }
                             created_by_ref__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::ApplicationId => {
+                            if application_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("applicationId"));
+                            }
+                            application_id__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(RegisterWidgetsRequest {
@@ -7407,6 +7424,7 @@ impl<'de> serde::Deserialize<'de> for RegisterWidgetsRequest {
                     widgets: widgets__.unwrap_or_default(),
                     created_by_type: created_by_type__.unwrap_or_default(),
                     created_by_ref: created_by_ref__.unwrap_or_default(),
+                    application_id: application_id__.unwrap_or_default(),
                 })
             }
         }
@@ -8913,6 +8931,9 @@ impl serde::Serialize for Widget {
         if !self.surface.is_empty() {
             len += 1;
         }
+        if !self.entry.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.Widget", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -8947,6 +8968,9 @@ impl serde::Serialize for Widget {
         if !self.surface.is_empty() {
             struct_ser.serialize_field("surface", &self.surface)?;
         }
+        if !self.entry.is_empty() {
+            struct_ser.serialize_field("entry", &self.entry)?;
+        }
         struct_ser.end()
     }
 }
@@ -8974,6 +8998,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
             "created_by_ref",
             "createdByRef",
             "surface",
+            "entry",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -8989,6 +9014,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
             CreatedByType,
             CreatedByRef,
             Surface,
+            Entry,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -9021,6 +9047,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
                             "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
                             "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
                             "surface" => Ok(GeneratedField::Surface),
+                            "entry" => Ok(GeneratedField::Entry),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -9051,6 +9078,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
                 let mut created_by_type__ = None;
                 let mut created_by_ref__ = None;
                 let mut surface__ = None;
+                let mut entry__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -9119,6 +9147,12 @@ impl<'de> serde::Deserialize<'de> for Widget {
                             }
                             surface__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Entry => {
+                            if entry__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("entry"));
+                            }
+                            entry__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Widget {
@@ -9133,6 +9167,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
                     created_by_type: created_by_type__.unwrap_or_default(),
                     created_by_ref: created_by_ref__.unwrap_or_default(),
                     surface: surface__.unwrap_or_default(),
+                    entry: entry__.unwrap_or_default(),
                 })
             }
         }
@@ -9168,6 +9203,9 @@ impl serde::Serialize for WidgetInput {
         if !self.surface.is_empty() {
             len += 1;
         }
+        if !self.entry.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.WidgetInput", len)?;
         if !self.manifest_id.is_empty() {
             struct_ser.serialize_field("manifestId", &self.manifest_id)?;
@@ -9190,6 +9228,9 @@ impl serde::Serialize for WidgetInput {
         if !self.surface.is_empty() {
             struct_ser.serialize_field("surface", &self.surface)?;
         }
+        if !self.entry.is_empty() {
+            struct_ser.serialize_field("entry", &self.entry)?;
+        }
         struct_ser.end()
     }
 }
@@ -9210,6 +9251,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
             "settings_schema",
             "settingsSchema",
             "surface",
+            "entry",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -9221,6 +9263,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
             AlertTypes,
             SettingsSchema,
             Surface,
+            Entry,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -9249,6 +9292,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                             "alertTypes" | "alert_types" => Ok(GeneratedField::AlertTypes),
                             "settingsSchema" | "settings_schema" => Ok(GeneratedField::SettingsSchema),
                             "surface" => Ok(GeneratedField::Surface),
+                            "entry" => Ok(GeneratedField::Entry),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -9275,6 +9319,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                 let mut alert_types__ = None;
                 let mut settings_schema__ = None;
                 let mut surface__ = None;
+                let mut entry__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::ManifestId => {
@@ -9319,6 +9364,12 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                             }
                             surface__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Entry => {
+                            if entry__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("entry"));
+                            }
+                            entry__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(WidgetInput {
@@ -9329,6 +9380,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                     alert_types: alert_types__.unwrap_or_default(),
                     settings_schema: settings_schema__.unwrap_or_default(),
                     surface: surface__.unwrap_or_default(),
+                    entry: entry__.unwrap_or_default(),
                 })
             }
         }

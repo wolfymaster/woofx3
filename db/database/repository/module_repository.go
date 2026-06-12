@@ -338,19 +338,20 @@ func (r *ModuleRepository) UpsertWidget(w *models.Widget) error {
 		ID uuid.UUID `gorm:"column:id"`
 	}
 	err := r.db.Raw(`
-		INSERT INTO public.widgets (id, name, description, directory, alert_types, settings_schema, surface, created_by_type, created_by_ref, manifest_id, application_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO public.widgets (id, name, description, directory, entry, alert_types, settings_schema, surface, created_by_type, created_by_ref, manifest_id, application_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) DO UPDATE SET
 			name = EXCLUDED.name,
 			description = EXCLUDED.description,
 			directory = EXCLUDED.directory,
+			entry = EXCLUDED.entry,
 			alert_types = EXCLUDED.alert_types,
 			settings_schema = EXCLUDED.settings_schema,
 			surface = EXCLUDED.surface,
 			application_id = EXCLUDED.application_id,
 			updated_at = NOW()
 		RETURNING id
-	`, w.ID, w.Name, w.Description, w.Directory, w.AlertTypes, w.SettingsSchema, w.Surface, w.CreatedByType, w.CreatedByRef, w.ManifestID, w.ApplicationID).Scan(&result).Error
+	`, w.ID, w.Name, w.Description, w.Directory, w.Entry, w.AlertTypes, w.SettingsSchema, w.Surface, w.CreatedByType, w.CreatedByRef, w.ManifestID, w.ApplicationID).Scan(&result).Error
 	if err != nil {
 		return err
 	}
