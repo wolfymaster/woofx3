@@ -1,0 +1,101 @@
+syntax = "proto3";
+
+package overlay_token;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// Capability tokens that bind a public overlay URL to a scene.
+//
+// Storage model — plaintext at rest, tombstone on revoke:
+//   - The token column stores the plaintext credential. This is a
+//     local-first, single-operator database; the UI must be able to
+//     reproduce working overlay URLs from a List call, which a
+//     hash-at-rest scheme cannot do. If the threat model changes
+//     (hosted multi-tenant db), the seam is here: store a hash in
+//     `token`, return plaintext only from Mint/Rotate, and drop the
+//     token field from OverlayToken in List responses.
+//   - Revocation never deletes the row. It tombstones it
+//     (status="revoked", revoked_at set) so operator bookkeeping and
+//     audit history survive rotation.
+//
+// ResolveOverlayToken is for engine-internal callers only (streamware
+// resolves tokens through the db-proxy; the public api gateway never
+// resolves plaintext tokens). Revoked and unknown tokens both return a
+// uniform NOT_FOUND status with no distinguishing detail — callers
+// must not be able to tell a tombstoned token from one that never
+// existed (no enumeration oracle).
+service OverlayTokenService {
+    rpc MintOverlayToken(MintOverlayTokenRequest) returns (OverlayTokenResponse);
+    rpc RevokeOverlayToken(RevokeOverlayTokenRequest) returns (OverlayTokenResponse);
+    // Atomically mints a replacement token and tombstones the old one
+    // (same scene / application / label). The response carries the NEW
+    // token row.
+    rpc RotateOverlayToken(RotateOverlayTokenRequest) returns (OverlayTokenResponse);
+    rpc ListOverlayTokens(ListOverlayTokensRequest) returns (ListOverlayTokensResponse);
+    rpc ResolveOverlayToken(ResolveOverlayTokenRequest) returns (ResolveOverlayTokenResponse);
+}
+
+message OverlayToken {
+    string id = 1;
+    // Plaintext credential, format "ovl_" + base58(32 random bytes).
+    // Generated db-proxy-side; never accepted from callers.
+    string token = 2;
+    string scene_id = 3;
+    string application_id = 4;
+    // Operator bookkeeping (e.g. "OBS main PC"). Free-form.
+    string label = 5;
+    // "active" | "revoked".
+    string status = 6;
+    google.protobuf.Timestamp created_at = 7;
+    google.protobuf.Timestamp revoked_at = 8;
+    google.protobuf.Timestamp last_used_at = 9;
+}
+
+message MintOverlayTokenRequest {
+    string scene_id = 1;
+    // Empty resolves to the default application (same convention as
+    // CreateSceneRequest). The scene must belong to this application.
+    string application_id = 2;
+    string label = 3;
+}
+
+message RevokeOverlayTokenRequest {
+    string id = 1;
+}
+
+message RotateOverlayTokenRequest {
+    string id = 1;
+}
+
+message OverlayTokenResponse {
+    common.ResponseStatus status = 1;
+    OverlayToken overlay_token = 2;
+}
+
+message ListOverlayTokensRequest {
+    string scene_id = 1;
+    string application_id = 2;
+    // Revoked tombstones are excluded unless explicitly requested.
+    bool include_revoked = 3;
+}
+
+message ListOverlayTokensResponse {
+    common.ResponseStatus status = 1;
+    repeated OverlayToken overlay_tokens = 2;
+    int32 total_count = 3;
+}
+
+message ResolveOverlayTokenRequest {
+    string token = 1;
+}
+
+// Engine-internal resolution result. Active tokens return OK with the
+// bound scene/application; revoked and unknown tokens return byte-for-
+// byte identical NOT_FOUND responses.
+message ResolveOverlayTokenResponse {
+    common.ResponseStatus status = 1;
+    string scene_id = 2;
+    string application_id = 3;
+}

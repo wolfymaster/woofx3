@@ -41,6 +41,11 @@ message Widget {
   string created_by_type = 9;
   string created_by_ref = 10;
   string surface = 11;
+  // Entry document path relative to the widget asset root (the
+  // prefix-stripped repository keys under `directory`). Empty means
+  // the frame assembler falls back to "index.html". Must resolve to a
+  // file inside the widget's assets.
+  string entry = 12;
 }
 
 message WidgetInput {
@@ -51,6 +56,9 @@ message WidgetInput {
   repeated string alert_types = 5;
   string settings_schema = 6;
   string surface = 7;
+  // Entry path relative to the widget asset root; empty means
+  // index.html fallback.
+  string entry = 8;
 }
 
 message RegisterWidgetsRequest {

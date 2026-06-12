@@ -48,6 +48,13 @@ export interface Widget {
   createdByType: string;
   createdByRef: string;
   surface: string;
+  /**
+   * Entry document path relative to the widget asset root (the
+   * prefix-stripped repository keys under `directory`). Empty means
+   * the frame assembler falls back to "index.html". Must resolve to a
+   * file inside the widget's assets.
+   */
+  entry: string;
 }
 
 export interface WidgetInput {
@@ -58,6 +65,11 @@ export interface WidgetInput {
   alertTypes: string[];
   settingsSchema: string;
   surface: string;
+  /**
+   * Entry path relative to the widget asset root; empty means
+   * index.html fallback.
+   */
+  entry: string;
 }
 
 export interface RegisterWidgetsRequest {
@@ -72,6 +84,11 @@ export interface RegisterWidgetsRequest {
    */
   createdByType: string;
   createdByRef: string;
+  /**
+   * Reserved for future tenant-scoped widget registration. Module catalog
+   * rows keep the default '' (instance-global), same as triggers/actions.
+   */
+  applicationId: string;
 }
 
 export interface ListWidgetsRequest {
@@ -130,6 +147,7 @@ export const Widget = {
       createdByType: "",
       createdByRef: "",
       surface: "",
+      entry: "",
       ...msg,
     };
   },
@@ -173,6 +191,9 @@ export const Widget = {
     }
     if (msg.surface) {
       writer.writeString(11, msg.surface);
+    }
+    if (msg.entry) {
+      writer.writeString(12, msg.entry);
     }
     return writer;
   },
@@ -231,6 +252,10 @@ export const Widget = {
           msg.surface = reader.readString();
           break;
         }
+        case 12: {
+          msg.entry = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -274,6 +299,7 @@ export const WidgetInput = {
       alertTypes: [],
       settingsSchema: "",
       surface: "",
+      entry: "",
       ...msg,
     };
   },
@@ -305,6 +331,9 @@ export const WidgetInput = {
     }
     if (msg.surface) {
       writer.writeString(7, msg.surface);
+    }
+    if (msg.entry) {
+      writer.writeString(8, msg.entry);
     }
     return writer;
   },
@@ -345,6 +374,10 @@ export const WidgetInput = {
         }
         case 7: {
           msg.surface = reader.readString();
+          break;
+        }
+        case 8: {
+          msg.entry = reader.readString();
           break;
         }
         default: {
@@ -391,6 +424,7 @@ export const RegisterWidgetsRequest = {
       widgets: [],
       createdByType: "",
       createdByRef: "",
+      applicationId: "",
       ...msg,
     };
   },
@@ -423,6 +457,9 @@ export const RegisterWidgetsRequest = {
     }
     if (msg.createdByRef) {
       writer.writeString(6, msg.createdByRef);
+    }
+    if (msg.applicationId) {
+      writer.writeString(7, msg.applicationId);
     }
     return writer;
   },
@@ -461,6 +498,10 @@ export const RegisterWidgetsRequest = {
         }
         case 6: {
           msg.createdByRef = reader.readString();
+          break;
+        }
+        case 7: {
+          msg.applicationId = reader.readString();
           break;
         }
         default: {
@@ -740,6 +781,7 @@ export const WidgetJSON = {
       createdByType: "",
       createdByRef: "",
       surface: "",
+      entry: "",
       ...msg,
     };
   },
@@ -781,6 +823,9 @@ export const WidgetJSON = {
     }
     if (msg.surface) {
       json["surface"] = msg.surface;
+    }
+    if (msg.entry) {
+      json["entry"] = msg.entry;
     }
     return json;
   },
@@ -833,6 +878,10 @@ export const WidgetJSON = {
     if (_surface_) {
       msg.surface = _surface_;
     }
+    const _entry_ = json["entry"];
+    if (_entry_) {
+      msg.entry = _entry_;
+    }
     return msg;
   },
 };
@@ -867,6 +916,7 @@ export const WidgetInputJSON = {
       alertTypes: [],
       settingsSchema: "",
       surface: "",
+      entry: "",
       ...msg,
     };
   },
@@ -898,6 +948,9 @@ export const WidgetInputJSON = {
     }
     if (msg.surface) {
       json["surface"] = msg.surface;
+    }
+    if (msg.entry) {
+      json["entry"] = msg.entry;
     }
     return json;
   },
@@ -934,6 +987,10 @@ export const WidgetInputJSON = {
     if (_surface_) {
       msg.surface = _surface_;
     }
+    const _entry_ = json["entry"];
+    if (_entry_) {
+      msg.entry = _entry_;
+    }
     return msg;
   },
 };
@@ -969,6 +1026,7 @@ export const RegisterWidgetsRequestJSON = {
       widgets: [],
       createdByType: "",
       createdByRef: "",
+      applicationId: "",
       ...msg,
     };
   },
@@ -997,6 +1055,9 @@ export const RegisterWidgetsRequestJSON = {
     }
     if (msg.createdByRef) {
       json["createdByRef"] = msg.createdByRef;
+    }
+    if (msg.applicationId) {
+      json["applicationId"] = msg.applicationId;
     }
     return json;
   },
@@ -1035,6 +1096,10 @@ export const RegisterWidgetsRequestJSON = {
     const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
     if (_createdByRef_) {
       msg.createdByRef = _createdByRef_;
+    }
+    const _applicationId_ = json["applicationId"] ?? json["application_id"];
+    if (_applicationId_) {
+      msg.applicationId = _applicationId_;
     }
     return msg;
   },

@@ -470,6 +470,12 @@ pub struct Widget {
     pub created_by_ref: ::prost::alloc::string::String,
     #[prost(string, tag="11")]
     pub surface: ::prost::alloc::string::String,
+    /// Entry document path relative to the widget asset root (the
+    /// prefix-stripped repository keys under `directory`). Empty means
+    /// the frame assembler falls back to "index.html". Must resolve to a
+    /// file inside the widget's assets.
+    #[prost(string, tag="12")]
+    pub entry: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WidgetInput {
@@ -487,6 +493,10 @@ pub struct WidgetInput {
     pub settings_schema: ::prost::alloc::string::String,
     #[prost(string, tag="7")]
     pub surface: ::prost::alloc::string::String,
+    /// Entry path relative to the widget asset root; empty means
+    /// index.html fallback.
+    #[prost(string, tag="8")]
+    pub entry: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterWidgetsRequest {
@@ -508,6 +518,10 @@ pub struct RegisterWidgetsRequest {
     pub created_by_type: ::prost::alloc::string::String,
     #[prost(string, tag="6")]
     pub created_by_ref: ::prost::alloc::string::String,
+    /// Reserved for future tenant-scoped widget registration. Module catalog
+    /// rows keep the default '' (instance-global), same as triggers/actions.
+    #[prost(string, tag="7")]
+    pub application_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListWidgetsRequest {

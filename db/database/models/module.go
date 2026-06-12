@@ -8,8 +8,8 @@ import (
 )
 
 type Module struct {
-	ID            uuid.UUID        `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	ModuleKey     string           `gorm:"column:module_key;type:text;not null;uniqueIndex"`
+	ID        uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	ModuleKey string    `gorm:"column:module_key;type:text;not null;uniqueIndex"`
 	// Manifest-local module id (e.g. twitch_platform). Canonical ids and
 	// sandbox registry keys use this, not Name.
 	ModuleID      string           `gorm:"column:module_id;type:text;not null;default:''"`
@@ -170,17 +170,20 @@ func (Asset) TableName() string { return "assets" }
 // Module catalog rows are instance-global; applicationId is carried on
 // scene placements and runtime events, not on widget declarations.
 type Widget struct {
-	ID             uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	Name           string    `gorm:"column:name;type:text;not null"`
-	Description    string    `gorm:"column:description;type:text;not null;default:''"`
-	Directory      string    `gorm:"column:directory;type:text;not null"`
-	AlertTypes     string    `gorm:"column:alert_types;type:jsonb;not null;default:'[]'"`
-	SettingsSchema string    `gorm:"column:settings_schema;type:jsonb;not null;default:'[]'"`
-	Surface        string    `gorm:"column:surface;type:text;not null;default:'scene'"`
-	CreatedByType  string    `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
-	CreatedByRef   string    `gorm:"column:created_by_ref;type:text;not null;default:''"`
-	ManifestID     string    `gorm:"column:manifest_id;type:text;not null;default:''"`
-	ApplicationID  string    `gorm:"column:application_id;type:text;not null;default:''"`
+	ID          uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	Name        string    `gorm:"column:name;type:text;not null"`
+	Description string    `gorm:"column:description;type:text;not null;default:''"`
+	Directory   string    `gorm:"column:directory;type:text;not null"`
+	// Entry document path relative to the widget asset root; empty
+	// means the frame assembler falls back to "index.html".
+	Entry          string `gorm:"column:entry;type:text;not null;default:''"`
+	AlertTypes     string `gorm:"column:alert_types;type:jsonb;not null;default:'[]'"`
+	SettingsSchema string `gorm:"column:settings_schema;type:jsonb;not null;default:'[]'"`
+	Surface        string `gorm:"column:surface;type:text;not null;default:'scene'"`
+	CreatedByType  string `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
+	CreatedByRef   string `gorm:"column:created_by_ref;type:text;not null;default:''"`
+	ManifestID     string `gorm:"column:manifest_id;type:text;not null;default:''"`
+	ApplicationID  string `gorm:"column:application_id;type:text;not null;default:''"`
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
