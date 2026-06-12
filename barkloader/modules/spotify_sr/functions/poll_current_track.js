@@ -82,7 +82,9 @@ function poll_current_track(ctx) {
         title: item.name || null,
         artist: artist,
         albumArt: albumArt,
-        progressMs: playerResp.body.progress_ms || 0,
+        progressMs: (playerResp.body.progress_ms !== null && playerResp.body.progress_ms !== undefined)
+            ? playerResp.body.progress_ms
+            : null,
         durationMs: item.duration_ms || 0,
         isPlaying: playerResp.body.is_playing || false
     };

@@ -67,6 +67,7 @@ function get_devices(ctx) {
     var options = [{ value: "", label: "Current Device" }];
     for (var i = 0; i < devices.length; i++) {
         var d = devices[i];
+        if (!d.id) { continue; }
         options.push({ value: d.id, label: d.name });
     }
 
