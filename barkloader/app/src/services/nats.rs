@@ -21,6 +21,12 @@ impl NatsService {
     }
 }
 
+impl NatsService {
+    pub fn raw_client(&self) -> &Client {
+        &self.client
+    }
+}
+
 impl NatsPublisher for NatsService {
     fn publish(&self, subject: &str, data: Value) -> Result<(), String> {
         let bytes = serde_json::to_vec(&data).map_err(|e| e.to_string())?;

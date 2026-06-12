@@ -4,7 +4,7 @@ pub mod manifest_validate;
 pub mod module_delete;
 mod module_file;
 mod module_install;
-mod module_manifest;
+pub mod module_manifest;
 mod module_plan;
 pub mod registry_loader;
 mod module_service;

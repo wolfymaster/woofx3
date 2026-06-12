@@ -33,6 +33,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 sha2 = "0.10"
 async-nats = { version = "0.42", features = ["websockets"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+cron = "0.12"
 
 [dependencies.lib_repository]
 path = "../lib_repository"

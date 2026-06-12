@@ -878,6 +878,7 @@ dependencies = [
  "anyhow",
  "async-nats",
  "chrono",
+ "cron",
  "dotenv",
  "env_logger",
  "futures",
@@ -1245,6 +1246,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4955638f00a809894c947f85a024020a20815b65a5eea633798ea7924edab2b3"
 dependencies = [
  "crc",
+]
+
+[[package]]
+name = "cron"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f8c3e73077b4b4a6ab1ea5047c37c57aee77657bc8ecd6f29b0af082d0b0c07"
+dependencies = [
+ "chrono",
+ "nom",
+ "once_cell",
 ]
 
 [[package]]

@@ -16,7 +16,7 @@ processes:
     shutdown:
       signal: 15
       timeout_seconds: 10
-    log_location: logs/barkloader.log
+    # log_location: logs/barkloader.log
 
   cloudflare:
     command: cloudflared tunnel --url http://localhost:9001

@@ -1,5 +1,5 @@
 {
-  "id": "spotify_sr",
+  "id": "spotify",
   "name": "Spotify Song Request",
   "author": "WolfyMaster LLC",
   "version": "1.0.0",
@@ -106,7 +106,9 @@
       "description": "Displays the currently playing Spotify track.",
       "entry": "widgets/now_playing/index.html",
       "assets": "widgets/now_playing",
-      "alertTypes": ["module.storage.changed"]
+      "alertTypes": [
+        "module.storage.changed"
+      ]
     }
   ]
 }

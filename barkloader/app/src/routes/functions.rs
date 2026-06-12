@@ -302,6 +302,7 @@ async fn upload_handler(
                 db_proxy_url,
                 module_name,
                 &ctx.repository,
+                &ctx.scheduler,
             )
             .await
             {
@@ -360,6 +361,7 @@ async fn register_handler(
         db_proxy_url,
         &module_name,
         &ctx.repository,
+        &ctx.scheduler,
     )
     .await
     .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
@@ -472,6 +474,10 @@ async fn delete_handler(
                 info!(
                     "Module {} deleted successfully (id={}, key={})",
                     module_name_task, resolved.module_id, resolved.module_key
+                );
+                registry_loader::unregister_background_tasks(
+                    &ctx_clone.scheduler,
+                    &resolved.module_id,
                 );
                 notify_delete(
                     &db_proxy_url,
@@ -679,6 +685,7 @@ async fn rollback_handler(
         db_proxy_url,
         &module_name,
         &ctx.repository,
+        &ctx.scheduler,
     )
     .await
     .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;

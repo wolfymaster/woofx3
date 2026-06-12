@@ -343,6 +343,11 @@ pub struct ModuleRecord {
     pub state: String,
     #[serde(default)]
     pub functions: Vec<ModuleFunctionRecord>,
+    /// Full manifest JSON from the `modules.manifest` column. Populated at
+    /// install time and returned by GetModuleByName / ListModules. Used by
+    /// the registry loader to extract background task definitions.
+    #[serde(alias = "manifest", default)]
+    pub manifest_json: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

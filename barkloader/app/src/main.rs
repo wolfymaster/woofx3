@@ -32,6 +32,10 @@ const DEFAULT_MODULE_DIR: &str = "modules";
 async fn setup() -> Result<AppContext> {
     let registry = Arc::new(ModuleRegistry::new());
 
+    // Capture the raw async_nats::Client alongside the host context so we can
+    // subscribe to NATS subjects directly (not just publish via NatsPublisher).
+    let mut nats_raw_client: Option<async_nats::Client> = None;
+
     let host_ctx = {
         let mut ctx = noop_host_context();
 
@@ -57,6 +61,7 @@ async fn setup() -> Result<AppContext> {
             match crate::services::nats::NatsService::connect(&messagebus_url).await {
                 Ok(nats) => {
                     info!("Connected to messagebus at {}", messagebus_url);
+                    nats_raw_client = Some(nats.raw_client().clone());
                     chat_sender = Arc::new(crate::services::chat::BusChatSender::new(
                         nats.clone(),
                         "twitch",
@@ -115,6 +120,10 @@ async fn setup() -> Result<AppContext> {
     let sandbox = SandboxFactory::new(registry.clone(), host_ctx)
         .with_builtin_dispatcher(builtin_dispatcher);
 
+    let scheduler = Arc::new(services::background_scheduler::BackgroundTaskScheduler::new(
+        sandbox.clone(),
+    ));
+
     // db-proxy is required: sandbox registry metadata comes from module_functions rows.
     let db_proxy_url = get_woofx3_json_value("databaseProxyUrl", "");
     if db_proxy_url.is_empty() {
@@ -130,7 +139,7 @@ async fn setup() -> Result<AppContext> {
     let repository = RepositoryFactory::new(&repository_config).await?;
     repository.setup()?;
 
-    boot_modules(&registry, &repository, &db_proxy_url).await?;
+    boot_modules(&registry, &repository, &db_proxy_url, &scheduler).await?;
 
     // Register compile-time built-in actions (see builtin_actions::REGISTRY).
     if let Err(e) =
@@ -139,11 +148,20 @@ async fn setup() -> Result<AppContext> {
         warn!("Failed to register builtin actions: {:?}", e);
     }
 
+    // Spawn the generic field-options NATS responder when NATS is available.
+    if let Some(raw_client) = nats_raw_client {
+        tokio::spawn(services::field_options::run_field_options_responder(
+            raw_client,
+            sandbox.clone(),
+        ));
+    }
+
     let ctx = AppContext {
         repository,
         sandbox,
         registry,
         db_proxy_url: Some(db_proxy_url),
+        scheduler,
     };
 
     Ok(ctx)
@@ -153,11 +171,13 @@ async fn boot_modules(
     registry: &Arc<ModuleRegistry>,
     repository: &RepositoryImpl,
     db_proxy_url: &str,
+    scheduler: &Arc<services::background_scheduler::BackgroundTaskScheduler>,
 ) -> Result<()> {
     crate::services::module_service::registry_loader::hydrate_registry_from_db(
         registry,
         db_proxy_url,
         repository,
+        scheduler,
     )
     .await
     .map_err(|e| anyhow::anyhow!("sandbox registry hydrate: {}", e))
