@@ -1,61 +1,30 @@
 import { existsSync } from "node:fs";
 import { join, normalize, resolve } from "node:path";
-import type { WebSocketHandler } from "bun";
+import type { ServerWebSocket, WebSocketHandler } from "bun";
 import { createServiceLogger } from "@woofx3/common/logging";
 import { createMessageBus } from "@woofx3/nats";
-import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { AlertBroadcaster } from "./alert-broadcaster";
 import { AlertQueueManager } from "./alert-queue-manager";
 import { buildBuiltinWidgetDefinitions, getBuiltinWidgetSpecs, initBuiltinWidgets } from "./builtin-widgets";
-import { StreamwareEnvSchema, type StreamwareRuntimeConfig } from "./config";
+import { loadConfig, validateOverlayConfig, type StreamwareRuntimeConfig } from "./config";
 import { DbClient } from "./db";
+import { FrameAssembler } from "./frame-assembler";
 import { initSubscriptions } from "./nats-subscriptions";
 import { connectObs } from "./obs/manager";
-import { StorageBroadcaster } from "./storage-broadcaster";
+import { OverlayHost } from "./overlay-host";
+import { maskToken, OverlayTokenResolver } from "./overlay-token";
+import {
+  StorageBroadcaster,
+  type OverlayConnectionMeta,
+  type OverlayConnectionStore,
+} from "./storage-broadcaster";
 import { initWidgetEventHandlers } from "./widget-event-handlers";
-
-const loadedConfig = loadRuntimeEnv({
-  schema: StreamwareEnvSchema,
-  injectIntoProcess: true,
-});
-
-function getConfig(): StreamwareRuntimeConfig {
-  const c = loadedConfig.config as Record<string, unknown>;
-
-  const port = Number(c.woofx3StreamwarePort ?? c.streamwarePort ?? 9101);
-  const rootDir = String((c.woofx3RootPath ?? c.rootPath ?? process.cwd()) as string);
-
-  const messagebusUrl = String(c.woofx3MessagebusUrl ?? c.messagebusUrl ?? "ws://localhost:4225");
-  const jwt = c.woofx3MessagebusJwt ? String(c.woofx3MessagebusJwt) : c.messagebusJwt ? String(c.messagebusJwt) : undefined;
-  const nkeySeed = c.woofx3MessagebusNkey ? String(c.woofx3MessagebusNkey) : c.messagebusNkey ? String(c.messagebusNkey) : undefined;
-
-  const obsHost = String(c.woofx3ObsHost ?? c.obsHost ?? "127.0.0.1");
-  const obsPort = String(c.woofx3ObsPort ?? c.obsPort ?? "4455");
-  const obsToken = c.woofx3ObsRpcToken ? String(c.woofx3ObsRpcToken) : c.obsRpcToken ? String(c.obsRpcToken) : undefined;
-
-  const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? c.databaseProxyUrl ?? "");
-
-  return {
-    port,
-    rootDir,
-    uiDistDir: `${import.meta.dir}/../ui/dist`,
-    publicDir: `${import.meta.dir}/../public`,
-    databaseProxyUrl,
-    obs: {
-      url: `ws://${obsHost}:${obsPort}`,
-      token: obsToken,
-    },
-    nats: {
-      url: messagebusUrl,
-      name: "woofx3-streamware",
-      jwt,
-      nkeySeed,
-    },
-  };
-}
+import { WidgetAssetProxy, sanitizeAssetPath } from "./widget-asset-proxy";
 
 async function main() {
-  const config = getConfig();
+  const config = loadConfig();
+  validateOverlayConfig(config);
+
   const logger = createServiceLogger({
     serviceName: "streamware",
     logDir: `${config.rootDir}/logs`,
@@ -80,9 +49,29 @@ async function main() {
   const broadcaster = new AlertBroadcaster(logger, nats);
   const storageBroadcaster = new StorageBroadcaster(logger, nats);
 
-  await initSubscriptions({ nats, obs, broadcaster, storageBroadcaster, logger });
-
   const db = config.databaseProxyUrl ? new DbClient(config.databaseProxyUrl) : null;
+
+  // Overlay connection store: keyed by applicationId.
+  const overlayConnections: OverlayConnectionStore = new Map();
+
+  const resolver = new OverlayTokenResolver(db, logger);
+  const overlayHost = new OverlayHost(resolver, db, logger);
+  const frameAssembler = new FrameAssembler(overlayHost, logger, {
+    barkloaderUrl: config.barkloaderUrl,
+    publicDir: config.publicDir,
+    widgetAssetBaseUrl: config.widgetAssetBaseUrl,
+  });
+  const widgetAssetProxy = new WidgetAssetProxy(config.barkloaderUrl, logger);
+
+  await initSubscriptions({
+    nats,
+    obs,
+    broadcaster,
+    storageBroadcaster,
+    logger,
+    resolver,
+    overlayConnections,
+  });
 
   let alertQueue: AlertQueueManager | null = null;
   if (nats && db) {
@@ -104,7 +93,18 @@ async function main() {
 
   await initBuiltinWidgets(logger, db, nats);
 
-  startHttpServer(config, broadcaster, storageBroadcaster, db, logger);
+  startHttpServer(
+    config,
+    broadcaster,
+    storageBroadcaster,
+    db,
+    overlayHost,
+    frameAssembler,
+    widgetAssetProxy,
+    resolver,
+    overlayConnections,
+    logger
+  );
 }
 
 main().catch((err) => {
@@ -112,35 +112,97 @@ main().catch((err) => {
   process.exit(1);
 });
 
+type ConnectionTag =
+  | { kind: "alerts"; id: string }
+  | { kind: "module-state"; id: string }
+  | OverlayConnectionMeta & { kind: "overlay" };
+
 function startHttpServer(
   config: StreamwareRuntimeConfig,
   broadcaster: AlertBroadcaster,
   storageBroadcaster: StorageBroadcaster,
   db: DbClient | null,
+  overlayHost: OverlayHost,
+  frameAssembler: FrameAssembler,
+  widgetAssetProxy: WidgetAssetProxy,
+  resolver: OverlayTokenResolver,
+  overlayConnections: OverlayConnectionStore,
   logger: ReturnType<typeof createServiceLogger>
 ): void {
   const alertHandlers = broadcaster.handlers();
   const stateHandlers = storageBroadcaster.handlers();
-  const websocket: WebSocketHandler<{ kind: string; id: string }> = {
+
+  const websocket: WebSocketHandler<ConnectionTag> = {
     open: (ws) => {
-      if (ws.data?.kind === "module-state") {
-        stateHandlers.open?.(ws as any);
+      const tag = ws.data as ConnectionTag;
+      if (tag.kind === "module-state") {
+        stateHandlers.open?.(ws as ServerWebSocket<{ kind: "module-state"; id: string }>);
+      } else if (tag.kind === "overlay") {
+        const meta = tag as OverlayConnectionMeta & { kind: "overlay" };
+        let sockets = overlayConnections.get(meta.applicationId);
+        if (!sockets) {
+          sockets = new Set();
+          overlayConnections.set(meta.applicationId, sockets);
+        }
+        sockets.add(ws as ServerWebSocket<OverlayConnectionMeta>);
+        logger.info("overlay WS connected", {
+          token: maskToken(meta.token),
+          applicationId: meta.applicationId,
+          sceneId: meta.sceneId,
+        });
       } else {
-        alertHandlers.open?.(ws as any);
+        alertHandlers.open?.(ws as ServerWebSocket<{ kind: "alerts"; id: string }>);
       }
     },
     close: (ws, code, reason) => {
-      if (ws.data?.kind === "module-state") {
-        stateHandlers.close?.(ws as any, code, reason);
+      const tag = ws.data as ConnectionTag;
+      if (tag.kind === "module-state") {
+        stateHandlers.close?.(
+          ws as ServerWebSocket<{ kind: "module-state"; id: string }>,
+          code,
+          reason
+        );
+      } else if (tag.kind === "overlay") {
+        const meta = tag as OverlayConnectionMeta & { kind: "overlay" };
+        const sockets = overlayConnections.get(meta.applicationId);
+        if (sockets) {
+          sockets.delete(ws as ServerWebSocket<OverlayConnectionMeta>);
+          if (sockets.size === 0) {
+            overlayConnections.delete(meta.applicationId);
+          }
+        }
+        logger.info("overlay WS disconnected", {
+          token: maskToken(meta.token),
+          applicationId: meta.applicationId,
+          code,
+        });
       } else {
-        alertHandlers.close?.(ws as any, code, reason);
+        alertHandlers.close?.(
+          ws as ServerWebSocket<{ kind: "alerts"; id: string }>,
+          code,
+          reason
+        );
       }
     },
     message: (ws, message) => {
-      if (ws.data?.kind === "module-state") {
-        stateHandlers.message?.(ws as any, message);
+      const tag = ws.data as ConnectionTag;
+      if (tag.kind === "module-state") {
+        stateHandlers.message?.(
+          ws as ServerWebSocket<{ kind: "module-state"; id: string }>,
+          message
+        );
+      } else if (tag.kind === "overlay") {
+        // Upstream OverlayWidgetEvent from the overlay client -> publish to NATS widget.event.
+        // Reuse the same wire format and publish path as the legacy module-state channel.
+        stateHandlers.message?.(
+          ws as unknown as ServerWebSocket<{ kind: "module-state"; id: string }>,
+          message
+        );
       } else {
-        alertHandlers.message?.(ws as any, message);
+        alertHandlers.message?.(
+          ws as ServerWebSocket<{ kind: "alerts"; id: string }>,
+          message
+        );
       }
     },
   };
@@ -157,6 +219,7 @@ function startHttpServer(
 
   Bun.serve({
     port: config.port,
+    hostname: config.bindHost,
     fetch: async (req, server) => {
       const url = new URL(req.url);
 
@@ -185,6 +248,22 @@ function startHttpServer(
       }
 
       const response: Response = await (async (): Promise<Response> => {
+        // Token-scoped overlay routes (design §5.2).
+        if (url.pathname.startsWith("/o/")) {
+          return handleOverlayRoutes(
+            req,
+            url,
+            server,
+            uiDist,
+            overlayHost,
+            frameAssembler,
+            widgetAssetProxy,
+            resolver,
+            overlayConnections,
+            logger
+          );
+        }
+
         if (url.pathname === "/health") {
           return Response.json({ status: "ok", overlayClients: broadcaster.clientCount() });
         }
@@ -221,6 +300,26 @@ function startHttpServer(
           return serveFile(indexHtml);
         }
 
+        // Legacy /assets/ handler (design §5.1): when legacyRoutes is enabled,
+        // match any pathname containing /assets/ that didn't go through /o/.
+        if (config.legacyRoutes && url.pathname.includes("/assets/")) {
+          const assetsIdx = url.pathname.lastIndexOf("/assets/");
+          const rawTail = url.pathname.slice(assetsIdx + "/assets/".length);
+          const tail = sanitizeAssetPath(rawTail);
+          if (tail !== null) {
+            const assetsRoot = normalize(join(uiDist, "assets"));
+            const candidate = normalize(join(assetsRoot, tail));
+            // Invariant: resolved path must stay within the assets directory.
+            if (candidate === assetsRoot || candidate.startsWith(assetsRoot + "/")) {
+              const file = Bun.file(candidate);
+              if (await file.exists()) {
+                return new Response(file);
+              }
+              // Fall through to other handlers.
+            }
+          }
+        }
+
         const fromUi = await tryServeUnder(uiDist, url.pathname);
         if (fromUi) {
           return fromUi;
@@ -240,11 +339,135 @@ function startHttpServer(
 
   logger.info("streamware listening", {
     port: config.port,
+    bindHost: config.bindHost,
     overlayUrl: `http://localhost:${config.port}/overlay/alerts`,
     sceneOverlayUrl: `http://localhost:${config.port}/overlay/scene`,
     wsUrl: `ws://localhost:${config.port}/ws/alerts`,
     moduleStateWsUrl: `ws://localhost:${config.port}/ws/module-state`,
   });
+}
+
+/**
+ * Handle all routes under `/o/{token}/`. The token is extracted from
+ * the second path segment; the remaining path is dispatched to the
+ * appropriate sub-handler.
+ */
+async function handleOverlayRoutes(
+  req: Request,
+  url: URL,
+  server: { upgrade(req: Request, opts: { data: unknown }): boolean },
+  uiDist: string,
+  overlayHost: OverlayHost,
+  frameAssembler: FrameAssembler,
+  widgetAssetProxy: WidgetAssetProxy,
+  resolver: OverlayTokenResolver,
+  overlayConnections: OverlayConnectionStore,
+  logger: ReturnType<typeof createServiceLogger>
+): Promise<Response> {
+  // Extract token from /o/{token}/...
+  const afterO = url.pathname.slice("/o/".length);
+  const slashIdx = afterO.indexOf("/");
+  const token = slashIdx === -1 ? afterO : afterO.slice(0, slashIdx);
+  const remaining = slashIdx === -1 ? "" : afterO.slice(slashIdx + 1);
+
+  // 1. GET /o/{token}/config
+  if (remaining === "config" && req.method === "GET") {
+    const config = await overlayHost.buildConfig(token);
+    return new Response(JSON.stringify(config), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+        ...CORS_HEADERS,
+      },
+    });
+  }
+
+  // 2. GET /o/{token}/frame/{instanceId}
+  if (remaining.startsWith("frame/") && req.method === "GET") {
+    const instanceId = decodeURIComponent(remaining.slice("frame/".length));
+    return frameAssembler.assemble(token, instanceId, url.searchParams.get("nonce"));
+  }
+
+  // 3. GET /o/{token}/widget-assets/{moduleKey}/{manifestId}/{tail...}
+  if (remaining.startsWith("widget-assets/") && req.method === "GET") {
+    const rest = remaining.slice("widget-assets/".length);
+    const parts = rest.split("/");
+    if (parts.length < 2) {
+      return new Response(null, { status: 404 });
+    }
+    const moduleKey = parts[0]!;
+    const manifestId = parts[1]!;
+    const tail = parts.slice(2).join("/");
+    return widgetAssetProxy.proxy(moduleKey, manifestId, tail);
+  }
+
+  // 4. GET /o/{token}/assets/{tail...}
+  if (remaining.startsWith("assets/") && req.method === "GET") {
+    const rawTail = remaining.slice("assets/".length);
+    const tail = sanitizeAssetPath(rawTail);
+    if (tail !== null) {
+      const assetsRoot = normalize(join(uiDist, "assets"));
+      const candidate = normalize(join(assetsRoot, tail));
+      // Invariant: resolved path must stay within the assets directory.
+      if (candidate === assetsRoot || candidate.startsWith(assetsRoot + "/")) {
+        const file = Bun.file(candidate);
+        if (await file.exists()) {
+          return new Response(file);
+        }
+      }
+    }
+    // Fall through if not found.
+  }
+
+  // 5. GET /o/{token}/events — WebSocket upgrade for P2 overlay events.
+  if (remaining === "events" && req.method === "GET") {
+    const resolved = await resolver.resolve(token);
+    const connectionData: OverlayConnectionMeta & { kind: "overlay" } = {
+      kind: "overlay",
+      token,
+      applicationId: resolved?.applicationId ?? "",
+      sceneId: resolved?.sceneId ?? "",
+    };
+    // Accept the upgrade regardless of resolution (design: accept but
+    // don't attach for invalid tokens — the client can't distinguish
+    // invalid from valid before the first push frame).
+    const upgraded = server.upgrade(req, { data: connectionData });
+    if (upgraded) {
+      return undefined as unknown as Response;
+    }
+    return new Response("upgrade failed", { status: 400 });
+  }
+
+  // 6. GET /o/{token}/ — SPA shell. Redirect /o/{token} (no slash) to /o/{token}/.
+  if (remaining === "" || remaining === "/") {
+    if (!url.pathname.endsWith("/")) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: url.pathname + "/" },
+      });
+    }
+    const indexHtml = join(uiDist, "index.html");
+    const file = Bun.file(indexHtml);
+    if (!(await file.exists())) {
+      return new Response("Not Found", { status: 404 });
+    }
+    const html = await file.text();
+    return new Response(html, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer",
+      },
+    });
+  }
+
+  logger.warn("overlay route not matched", {
+    token: maskToken(token),
+    remaining,
+  });
+  return new Response("Not Found", { status: 404 });
 }
 
 async function serveFile(absPath: string): Promise<Response> {
