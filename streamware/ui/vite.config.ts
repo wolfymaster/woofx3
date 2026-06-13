@@ -1,13 +1,45 @@
 import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
 import react from "@vitejs/plugin-react";
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
+
+/** Copy the pre-built widget-host shim IIFE into the build output so
+ *  the frame assembler can reference it at a stable relative URL. The
+ *  shim is NOT imported by the SPA bundle — it is loaded directly by
+ *  the assembled widget frame document via a classic script tag. */
+function copyWidgetHostShim(): Plugin {
+  const shimSrc = resolve(
+    __dirname,
+    "../../shared/clients/typescript/module-sdk/dist/widget-host-shim.js",
+  );
+
+  return {
+    name: "copy-widget-host-shim",
+    generateBundle() {
+      let shimCode: string;
+      try {
+        shimCode = readFileSync(shimSrc, "utf-8");
+      } catch (err) {
+        // Warn but don't break the build — the shim may not be pre-built
+        // in CI environments that build the SPA independently.
+        console.warn("[copy-widget-host-shim] shim not found at", shimSrc, err);
+        return;
+      }
+      this.emitFile({
+        type: "asset",
+        fileName: "assets/widget-host-shim.js",
+        source: shimCode,
+      });
+    },
+  };
+}
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const backendUrl = env.STREAMWARE_BACKEND_URL || "http://localhost:9101";
 
   return {
-    plugins: [react()],
+    plugins: [react(), copyWidgetHostShim()],
     resolve: {
       alias: {
         // Resolve the @woofx3/module-sdk workspace import to its source
@@ -26,18 +58,20 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: "dist",
       sourcemap: true,
+      // Relative asset URLs so the SPA renders correctly through the
+      // api proxy without a fixed path prefix (design §5.1).
+      base: "./",
     },
+    base: "./",
     server: {
       port: 5173,
       proxy: {
-        // Only the WS push streams and health-check go to the backend
-        // in dev; public assets are served directly by Vite from
-        // publicDir above. Both alert + module-state sockets need
-        // forwarding so the SPA can connect to either overlay path
-        // (`/overlay/alerts` and `/overlay/scene`) under `bun run dev`.
+        // WS push streams and health-check forwarded to the backend.
         "/ws/alerts": { target: backendUrl, ws: true, changeOrigin: true },
         "/ws/module-state": { target: backendUrl, ws: true, changeOrigin: true },
         "/health": { target: backendUrl, changeOrigin: true },
+        // Token-mode overlay — both HTTP (config fetch) and WS (events).
+        "/o/": { target: backendUrl, ws: true, changeOrigin: true },
       },
       allowedHosts: ["streamlabs.local.woofx3.tv"],
     },

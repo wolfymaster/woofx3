@@ -1,111 +1,154 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+// Top-level overlay component. Resolves the scene config using the
+// priority order from design §5.2.1:
+//
+//   1. Token mode  — URL path matches /o/{token}/
+//   2. Legacy mode — URL path matches /overlay/scene/{id}
+//   3. Dev/test    — ?config= inline JSON
+//
+// Token mode creates a SceneManager backed by the P2 WebSocket (or
+// parent-frame) event source; legacy mode preserves the old storage WS
+// path unchanged.
+
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import WidgetFrame from "./components/WidgetFrame";
-import { useStorageChangeStream } from "./lib/useStorageChangeStream";
-import { parseSceneConfigFromUrl, type SceneConfig, type WidgetInstance } from "./lib/sceneConfig";
-import type { WidgetEventSource } from "./lib/widgetHost";
+import DisconnectedBanner from "./components/DisconnectedBanner";
+import { parseSceneConfigFromUrl, parseSceneConfigPayload, type SceneConfig } from "./lib/sceneConfig";
+import { WebSocketEventSource, ParentFrameEventSource } from "./lib/eventSource";
+import { SceneManager } from "./lib/sceneManager";
+import type { WidgetStatusReport } from "@woofx3/module-sdk";
 
-interface SceneOverlayProps {
-  /** Optional explicit scene — when omitted, the overlay first tries
-   *  to extract a sceneId from `location.pathname` (`/overlay/scene/{id}`
-   *  → fetch from `/api/scene/{id}`) and falls back to parsing
-   *  `?config=<urlencoded JSON>` if no path id is present. The query
-   *  path is the dev/test mode; production OBS URLs use the path id. */
-  scene?: SceneConfig;
+// ---------------------------------------------------------------------------
+// URL resolution helpers
+// ---------------------------------------------------------------------------
+
+function extractToken(pathname: string): string | null {
+  return pathname.match(/^\/o\/([^/]+)\//)?.[1] ?? null;
 }
 
-function resolveModuleStateWsUrl(): string {
-  const fromEnv = import.meta.env.VITE_STREAMWARE_MODULE_STATE_WS_URL as string | undefined;
-  if (fromEnv) {
-    return fromEnv;
-  }
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}/ws/module-state`;
+function extractSceneId(pathname: string): string | null {
+  const m = pathname.match(/^\/overlay\/scene\/([^/]+)\/?$/);
+  return m ? decodeURIComponent(m[1]) : null;
 }
 
-/**
- * Extract the sceneId segment from `/overlay/scene/{id}`. Returns
- * `null` when the pathname is the bare `/overlay/scene` (no id) or
- * an unrelated path — caller falls back to the `?config=` parse.
- */
-function extractSceneIdFromPath(pathname: string): string | null {
-  const match = pathname.match(/^\/overlay\/scene\/([^/]+)\/?$/);
-  if (!match) {
-    return null;
-  }
-  return decodeURIComponent(match[1]);
-}
+// ---------------------------------------------------------------------------
+// Load state
+// ---------------------------------------------------------------------------
 
 type LoadState =
   | { status: "loading" }
   | { status: "ready"; scene: SceneConfig }
+  | { status: "revoked" }
   | { status: "error"; message: string };
 
-/**
- * Top-level overlay for the `/overlay/scene` route. Composes a
- * SceneConfig into a stack of `WidgetFrame`s sharing one
- * `/ws/module-state` subscription. Layout is absolute-positioned
- * inside a container sized by `scene.layout` (when provided).
- *
- * Scene resolution order:
- *  1. Explicit `scene` prop (programmatic mount) — used as-is.
- *  2. URL pathname `/overlay/scene/{id}` — fetch `/api/scene/{id}`.
- *  3. URL search `?config=<urlencoded>` — dev/test inline config.
- */
-export default function SceneOverlay({ scene }: SceneOverlayProps) {
-  const wsUrl = useMemo(resolveModuleStateWsUrl, []);
-  const { stream, events, sendWidgetEvent } = useStorageChangeStream(wsUrl);
+// ---------------------------------------------------------------------------
+// Token-mode overlay
+// ---------------------------------------------------------------------------
 
-  const [loadState, setLoadState] = useState<LoadState>(() => {
-    if (scene) {
-      return { status: "ready", scene };
-    }
-    const sceneId = extractSceneIdFromPath(location.pathname);
-    if (sceneId) {
-      return { status: "loading" };
-    }
-    // No path id — fall back to inline `?config=` (dev/test path).
-    return { status: "ready", scene: parseSceneConfigFromUrl(location.search) };
-  });
+interface TokenModeProps {
+  token: string;
+  useParentFrame: boolean;
+}
 
-  useEffect(() => {
-    if (scene) {
-      setLoadState({ status: "ready", scene });
-      return;
-    }
-    const sceneId = extractSceneIdFromPath(location.pathname);
-    if (!sceneId) {
-      return;
-    }
-    let cancelled = false;
-    setLoadState({ status: "loading" });
-    fetch(`/api/scene/${encodeURIComponent(sceneId)}`)
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+function TokenModeOverlay({ token, useParentFrame }: TokenModeProps) {
+  const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
+  const [connected, setConnected] = useState(false);
+
+  // Manager is stable for the lifetime of the component (token doesn't
+  // change without a full remount via key prop from the router).
+  const managerRef = useRef<SceneManager | null>(null);
+
+  const fetchConfig = useCallback((): Promise<void> => {
+    return fetch("./config")
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
         }
-        return (await response.json()) as SceneConfig;
-      })
-      .then((next) => {
-        if (!cancelled) {
-          setLoadState({ status: "ready", scene: next });
-        }
+        const body = (await res.json()) as { scene?: unknown };
+        const scene = parseSceneConfigPayload(body.scene ?? body);
+        setLoadState({ status: "ready", scene });
       })
       .catch((err: unknown) => {
-        if (!cancelled) {
-          const message = err instanceof Error ? err.message : String(err);
-          setLoadState({ status: "error", message });
-        }
+        const message = err instanceof Error ? err.message : String(err);
+        setLoadState({ status: "error", message });
       });
-    return () => {
-      cancelled = true;
+  }, []);
+
+  useEffect(() => {
+    const eventSource = useParentFrame
+      ? new ParentFrameEventSource({ token })
+      : new WebSocketEventSource();
+
+    const onSendStatus = (report: WidgetStatusReport): void => {
+      eventSource.send(report);
     };
-  }, [scene]);
+
+    const manager = new SceneManager({
+      eventSource,
+      onSendStatus,
+      onControlFrame(action: string): void {
+        if (action === "token.revoked") {
+          setLoadState({ status: "revoked" });
+        }
+      },
+      onSceneUpdated(): void {
+        void fetchConfig();
+      },
+    });
+
+    manager.refetchConfig = (): void => {
+      void fetchConfig();
+    };
+
+    managerRef.current = manager;
+
+    // Register window message relay before starting the source so no
+    // messages are dropped between start and the listener attach.
+    function onWindowMessage(event: MessageEvent): void {
+      manager.handleWindowMessage(event);
+    }
+    window.addEventListener("message", onWindowMessage);
+
+    // Override connection-change callback after construction so we can
+    // wire it to the component's connected state.
+    const originalStart = eventSource.start.bind(eventSource);
+    eventSource.start = (sink) => {
+      originalStart({
+        ...sink,
+        onConnectionChange(c: boolean): void {
+          setConnected(c);
+          sink.onConnectionChange?.(c);
+        },
+      });
+    };
+
+    manager.start();
+    void fetchConfig();
+
+    return () => {
+      window.removeEventListener("message", onWindowMessage);
+      manager.stop();
+      managerRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, useParentFrame]);
+
+  const manager = managerRef.current;
 
   if (loadState.status === "loading") {
-    return (
-      <div data-overlay="scene" data-state="loading" style={{ width: "100vw", height: "100vh" }} />
-    );
+    return <div data-overlay="scene" data-state="loading" style={{ width: "100vw", height: "100vh" }} />;
   }
+
+  if (loadState.status === "revoked") {
+    return <div data-overlay="scene" data-state="revoked" style={{ width: "100vw", height: "100vh" }} />;
+  }
+
   if (loadState.status === "error") {
     return (
       <div
@@ -136,86 +179,276 @@ export default function SceneOverlay({ scene }: SceneOverlayProps) {
     overflow: "hidden",
   };
 
-  console.log("[scene:overlay] rendering scene", {
-    sceneId: (resolvedScene as { id?: string }).id,
-    widgetCount: resolvedScene.widgets.length,
-    widgets: resolvedScene.widgets.map((w) => ({
-      id: w.id,
-      moduleId: w.moduleId,
-      widgetCanonicalId: w.widgetCanonicalId,
-      acceptedEvents: w.acceptedEvents,
-    })),
-  });
+  return (
+    <div data-overlay="scene" style={containerStyle}>
+      <DisconnectedBanner connected={connected} />
+      {manager &&
+        resolvedScene.widgets.map((instance) => (
+          <WidgetFrame key={instance.id} instance={instance} manager={manager} />
+        ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Legacy mode — /overlay/scene/{id}
+// ---------------------------------------------------------------------------
+
+// Legacy mode keeps the existing storage-WS wiring. The WidgetFrame
+// component now requires a SceneManager, so we create a minimal one
+// that is not backed by an event source (legacy widgets use bundleUrl
+// and the old contentWindow injection shim, which is gone — but we keep
+// the path working for known-same-origin bundle URLs via the P1 bridge).
+
+function resolveModuleStateWsUrl(): string {
+  const fromEnv = import.meta.env.VITE_STREAMWARE_MODULE_STATE_WS_URL as string | undefined;
+  if (fromEnv) {
+    return fromEnv;
+  }
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}/ws/module-state`;
+}
+
+interface LegacyModeProps {
+  sceneId: string;
+}
+
+function LegacyModeOverlay({ sceneId }: LegacyModeProps) {
+  const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
+
+  // Create a stub event source (no-op) for the scene manager — legacy
+  // mode relied on the old useStorageChangeStream hook which we keep
+  // here as a direct WS subscriber wired to the manager.
+  const managerRef = useRef<SceneManager | null>(null);
+
+  useEffect(() => {
+    const wsUrl = resolveModuleStateWsUrl();
+    // Minimal no-op event source so the scene manager has something to
+    // start/stop without errors.
+    const noopSource = {
+      start() {},
+      stop() {},
+      send() {},
+    };
+
+    const manager = new SceneManager({ eventSource: noopSource });
+    managerRef.current = manager;
+
+    function onWindowMessage(event: MessageEvent): void {
+      manager.handleWindowMessage(event);
+    }
+    window.addEventListener("message", onWindowMessage);
+    manager.start();
+
+    // Open the legacy storage WS and fan storage changes to the manager.
+    let ws: WebSocket | null = null;
+    let stopped = false;
+
+    function connectWs(): void {
+      if (stopped) {
+        return;
+      }
+      ws = new WebSocket(wsUrl);
+      ws.onmessage = (msg) => {
+        try {
+          const payload = JSON.parse(msg.data as string) as Record<string, unknown>;
+          if (
+            typeof payload.moduleId === "string" &&
+            payload.moduleId &&
+            typeof payload.key === "string" &&
+            payload.key
+          ) {
+            manager.deliverStorage(payload.moduleId, payload.key, payload.value);
+          }
+        } catch {
+          // Malformed payload — ignore.
+        }
+      };
+    }
+
+    // Fetch the scene config.
+    let cancelled = false;
+    fetch(`/api/scene/${encodeURIComponent(sceneId)}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        return (await res.json()) as SceneConfig;
+      })
+      .then((scene) => {
+        if (!cancelled) {
+          setLoadState({ status: "ready", scene });
+          connectWs();
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          const message = err instanceof Error ? err.message : String(err);
+          setLoadState({ status: "error", message });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      stopped = true;
+      window.removeEventListener("message", onWindowMessage);
+      manager.stop();
+      managerRef.current = null;
+      if (ws) {
+        ws.onmessage = null;
+        ws.close();
+        ws = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sceneId]);
+
+  const manager = managerRef.current;
+
+  if (loadState.status === "loading") {
+    return <div data-overlay="scene" data-state="loading" style={{ width: "100vw", height: "100vh" }} />;
+  }
+
+  if (loadState.status === "error") {
+    return (
+      <div
+        data-overlay="scene"
+        data-state="error"
+        style={{
+          width: "100vw",
+          height: "100vh",
+          color: "white",
+          background: "rgba(0,0,0,0.6)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontFamily: "system-ui, sans-serif",
+          fontSize: 16,
+        }}
+      >
+        Couldn&apos;t load scene: {loadState.message}
+      </div>
+    );
+  }
+
+  const resolvedScene = (loadState as { status: "ready"; scene: SceneConfig }).scene;
+  const containerStyle: CSSProperties = {
+    position: "relative",
+    width: resolvedScene.layout?.width ? `${resolvedScene.layout.width}px` : "100vw",
+    height: resolvedScene.layout?.height ? `${resolvedScene.layout.height}px` : "100vh",
+    overflow: "hidden",
+  };
 
   return (
     <div data-overlay="scene" style={containerStyle}>
-      {resolvedScene.widgets.map((instance) => (
-        <WidgetFrame
-          key={instance.id}
-          instance={instance}
-          stream={stream}
-          events={makeFilteredEventSource(events, instance)}
-          onWidgetEvent={sendWidgetEvent}
-        />
+      {manager &&
+        resolvedScene.widgets.map((instance) => (
+          <WidgetFrame key={instance.id} instance={instance} manager={manager} />
+        ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dev/test inline mode — ?config= param
+// ---------------------------------------------------------------------------
+
+interface DevModeProps {
+  search: string;
+}
+
+function DevModeOverlay({ search }: DevModeProps) {
+  const scene = useMemo(() => parseSceneConfigFromUrl(search), [search]);
+
+  const managerRef = useRef<SceneManager | null>(null);
+  const manager = useMemo(() => {
+    const noopSource = { start() {}, stop() {}, send() {} };
+    const m = new SceneManager({ eventSource: noopSource });
+    managerRef.current = m;
+    m.start();
+    return m;
+  }, []);
+
+  useEffect(() => {
+    function onWindowMessage(event: MessageEvent): void {
+      manager.handleWindowMessage(event);
+    }
+    window.addEventListener("message", onWindowMessage);
+    return () => {
+      window.removeEventListener("message", onWindowMessage);
+      manager.stop();
+    };
+  }, [manager]);
+
+  const containerStyle: CSSProperties = {
+    position: "relative",
+    width: scene.layout?.width ? `${scene.layout.width}px` : "100vw",
+    height: scene.layout?.height ? `${scene.layout.height}px` : "100vh",
+    overflow: "hidden",
+  };
+
+  return (
+    <div data-overlay="scene" style={containerStyle}>
+      {scene.widgets.map((instance) => (
+        <WidgetFrame key={instance.id} instance={instance} manager={manager} />
       ))}
     </div>
   );
 }
 
-/**
- * Wrap the shared scene-wide event source so that subscribers tied to
- * a specific widget only see events the widget declared interest in.
- *
- * `acceptedEvents` carries canonical trigger ids
- * (`{moduleId}:trigger:{event_subject}`); the engine pushes events
- * keyed by the bare NATS subject (`event_subject`). We compare the
- * suffix-after-`:trigger:` of every accepted entry with the incoming
- * event's `type`. A widget that didn't declare any acceptedEvents
- * receives nothing — that's the right default for static
- * display-only widgets (no surprises, no firehose).
- */
-function makeFilteredEventSource(
-  source: WidgetEventSource,
-  instance: WidgetInstance,
-): WidgetEventSource {
-  const accepted = instance.acceptedEvents ?? [];
-  // Pre-compute the bare-subject suffix set for O(1) match. Drop
-  // anything that doesn't carry the `:trigger:` separator since
-  // matching it would be ambiguous.
-  const suffixes = new Set<string>();
-  for (const id of accepted) {
-    const idx = id.indexOf(":trigger:");
-    if (idx >= 0) {
-      suffixes.add(id.slice(idx + ":trigger:".length));
-    }
-  }
-  console.log("[scene:filter] built per-widget filter", {
-    widgetInstanceId: instance.id,
-    moduleId: instance.moduleId,
-    acceptedEvents: accepted,
-    matchSuffixes: Array.from(suffixes),
-  });
+// ---------------------------------------------------------------------------
+// Root SceneOverlay — resolution order (design §5.2.1)
+// ---------------------------------------------------------------------------
 
-  return {
-    subscribe(handler) {
-      if (suffixes.size === 0) {
-        console.warn("[scene:filter] widget has no acceptedEvents — it will receive nothing", {
-          widgetInstanceId: instance.id,
-        });
-        return () => {};
-      }
-      return source.subscribe((event) => {
-        const matched = suffixes.has(event.type);
-        console.log("[scene:filter] event check", {
-          widgetInstanceId: instance.id,
-          incomingType: event.type,
-          matched,
-          suffixes: Array.from(suffixes),
-        });
-        if (matched) {
-          handler(event);
-        }
-      });
-    },
-  };
+interface SceneOverlayProps {
+  /** Explicit scene prop kept for compatibility with programmatic
+   *  mounts (e.g. Storybook / test harnesses). When provided it
+   *  bypasses all URL-based resolution. */
+  scene?: SceneConfig;
+}
+
+export default function SceneOverlay({ scene }: SceneOverlayProps) {
+  const pathname = location.pathname;
+  const search = location.search;
+  const params = new URLSearchParams(search);
+
+  // 1. Token mode.
+  const token = extractToken(pathname);
+  if (token) {
+    const useParentFrame = params.get("eventSource") === "parent";
+    // Use first 8 chars of token for logging — never log the full token.
+    console.log("[scene:overlay] token mode", { tokenPrefix: `${token.slice(0, 8)}…` });
+    return <TokenModeOverlay token={token} useParentFrame={useParentFrame} />;
+  }
+
+  // 2. Legacy scene-id path.
+  const sceneId = extractSceneId(pathname);
+  if (sceneId) {
+    console.log("[scene:overlay] legacy mode", { sceneId });
+    return <LegacyModeOverlay sceneId={sceneId} />;
+  }
+
+  // 3. Explicit scene prop (programmatic mount).
+  if (scene) {
+    const noopSource = { start() {}, stop() {}, send() {} };
+    const manager = new SceneManager({ eventSource: noopSource });
+    manager.start();
+    const containerStyle: CSSProperties = {
+      position: "relative",
+      width: scene.layout?.width ? `${scene.layout.width}px` : "100vw",
+      height: scene.layout?.height ? `${scene.layout.height}px` : "100vh",
+      overflow: "hidden",
+    };
+    return (
+      <div data-overlay="scene" style={containerStyle}>
+        {scene.widgets.map((instance) => (
+          <WidgetFrame key={instance.id} instance={instance} manager={manager} />
+        ))}
+      </div>
+    );
+  }
+
+  // 4. Dev/test inline mode — ?config= param.
+  console.log("[scene:overlay] dev/test inline mode");
+  return <DevModeOverlay search={search} />;
 }

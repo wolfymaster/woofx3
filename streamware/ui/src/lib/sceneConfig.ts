@@ -24,10 +24,15 @@ export interface WidgetInstance {
    *  the widgetHost can scope its storage subscriptions without
    *  re-parsing the canonical id. */
   moduleId: string;
-  /** Public URL of the widget's `index.html`. Resolved by the deployer's
-   *  asset pipeline (CDN, signed URL, local fixture, etc.) — the shell
-   *  treats it as opaque. */
-  bundleUrl: string;
+  /** Legacy: public URL of the widget's `index.html`, loaded directly
+   *  into a same-origin iframe with `widgetHost` injection. Token-mode
+   *  scene configs replace this with `frameUrl`; at least one of the
+   *  two must be present for the instance to be valid. */
+  bundleUrl?: string;
+  /** Token-mode frame document URL, relative to the overlay shell
+   *  (`./frame/{instanceId}`). The scene manager appends the per-frame
+   *  P1 nonce as a query parameter before mounting (design §2.3). */
+  frameUrl?: string;
   /** Pixel-space placement on the overlay canvas. */
   position: WidgetPosition;
   /** Per-instance settings the editor populated from the widget's
@@ -74,25 +79,34 @@ export function parseSceneConfigFromUrl(search: string): SceneConfig {
     return EMPTY_SCENE;
   }
   try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.widgets)) {
-      return EMPTY_SCENE;
-    }
-    const widgets: WidgetInstance[] = [];
-    for (const w of parsed.widgets) {
-      const valid = validateWidgetInstance(w);
-      if (valid) {
-        widgets.push(valid);
-      }
-    }
-    const layout = isLayout(parsed.layout) ? parsed.layout : undefined;
-    return { widgets, layout };
+    return parseSceneConfigPayload(JSON.parse(raw));
   } catch {
     return EMPTY_SCENE;
   }
 }
 
-function validateWidgetInstance(raw: unknown): WidgetInstance | null {
+/**
+ * Validate an already-parsed scene config payload (token-mode
+ * `./config` responses go through here too). Invalid widgets are
+ * dropped individually; a malformed top level yields the empty scene.
+ */
+export function parseSceneConfigPayload(parsed: unknown): SceneConfig {
+  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as SceneConfig).widgets)) {
+    return EMPTY_SCENE;
+  }
+  const candidate = parsed as { widgets: unknown[]; layout?: unknown };
+  const widgets: WidgetInstance[] = [];
+  for (const w of candidate.widgets) {
+    const valid = validateWidgetInstance(w);
+    if (valid) {
+      widgets.push(valid);
+    }
+  }
+  const layout = isLayout(candidate.layout) ? candidate.layout : undefined;
+  return { widgets, layout };
+}
+
+export function validateWidgetInstance(raw: unknown): WidgetInstance | null {
   if (!raw || typeof raw !== "object") {
     return null;
   }
@@ -100,7 +114,10 @@ function validateWidgetInstance(raw: unknown): WidgetInstance | null {
   if (typeof r.id !== "string" || !r.id) return null;
   if (typeof r.widgetCanonicalId !== "string" || !r.widgetCanonicalId) return null;
   if (typeof r.moduleId !== "string" || !r.moduleId) return null;
-  if (typeof r.bundleUrl !== "string" || !r.bundleUrl) return null;
+  // Either a token-mode frameUrl or a legacy bundleUrl must be present.
+  const bundleUrl = typeof r.bundleUrl === "string" && r.bundleUrl ? r.bundleUrl : undefined;
+  const frameUrl = typeof r.frameUrl === "string" && r.frameUrl ? r.frameUrl : undefined;
+  if (!bundleUrl && !frameUrl) return null;
   if (!isPosition(r.position)) return null;
   const settings = r.settings && typeof r.settings === "object" ? (r.settings as Record<string, unknown>) : {};
   // acceptedEvents is optional — widgets without declared interest
@@ -113,7 +130,8 @@ function validateWidgetInstance(raw: unknown): WidgetInstance | null {
     id: r.id,
     widgetCanonicalId: r.widgetCanonicalId,
     moduleId: r.moduleId,
-    bundleUrl: r.bundleUrl,
+    ...(bundleUrl !== undefined ? { bundleUrl } : {}),
+    ...(frameUrl !== undefined ? { frameUrl } : {}),
     position: r.position,
     settings,
     ...(acceptedEvents && acceptedEvents.length > 0 ? { acceptedEvents } : {}),

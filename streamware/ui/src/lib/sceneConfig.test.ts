@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseSceneConfigFromUrl } from "./sceneConfig";
+import { parseSceneConfigFromUrl, validateWidgetInstance } from "./sceneConfig";
 
 function searchFor(config: unknown): string {
   return "?config=" + encodeURIComponent(JSON.stringify(config));
@@ -144,5 +144,49 @@ describe("parseSceneConfigFromUrl", () => {
     expect(parseSceneConfigFromUrl("?config=42")).toEqual({ widgets: [] });
     expect(parseSceneConfigFromUrl("?config=null")).toEqual({ widgets: [] });
     expect(parseSceneConfigFromUrl("?config=" + encodeURIComponent("[]"))).toEqual({ widgets: [] });
+  });
+});
+
+describe("validateWidgetInstance — token-mode frameUrl", () => {
+  const position = { x: 0, y: 0, width: 100, height: 100 };
+
+  it("accepts an instance with frameUrl only (no bundleUrl)", () => {
+    const result = validateWidgetInstance({
+      id: "w1",
+      widgetCanonicalId: "m:widget:w",
+      moduleId: "m",
+      frameUrl: "./frame/w1",
+      position,
+      settings: {},
+    });
+    expect(result).not.toBeNull();
+    expect(result?.frameUrl).toBe("./frame/w1");
+    expect(result?.bundleUrl).toBeUndefined();
+  });
+
+  it("accepts an instance with both frameUrl and bundleUrl", () => {
+    const result = validateWidgetInstance({
+      id: "w2",
+      widgetCanonicalId: "m:widget:w",
+      moduleId: "m",
+      frameUrl: "./frame/w2",
+      bundleUrl: "https://cdn.example.com/w2/index.html",
+      position,
+      settings: {},
+    });
+    expect(result).not.toBeNull();
+    expect(result?.frameUrl).toBe("./frame/w2");
+    expect(result?.bundleUrl).toBe("https://cdn.example.com/w2/index.html");
+  });
+
+  it("rejects an instance with neither frameUrl nor bundleUrl", () => {
+    const result = validateWidgetInstance({
+      id: "w3",
+      widgetCanonicalId: "m:widget:w",
+      moduleId: "m",
+      position,
+      settings: {},
+    });
+    expect(result).toBeNull();
   });
 });
