@@ -837,6 +837,78 @@ export interface Woofx3EngineApi {
    * for a full clear. Returns the number of pending alerts dropped.
    */
   clearAlertQueue(applicationId?: string): Promise<{ cleared: number }>;
+
+  // Overlay Tokens
+  //
+  // Overlay tokens (`ovl_` + base58) are the public identity of a
+  // browser-source URL. One token maps to one scene; revoking it
+  // invalidates the URL without deleting the scene.
+
+  /** Mint a new overlay token for the given scene. Returns the token and
+   *  the browser-source URL (`{overlayPublicUrl}/overlay/{token}/`). The
+   *  plaintext token is returned exactly once — store it or mint again. */
+  mintOverlayToken(input: {
+    sceneId: string;
+    label?: string;
+  }): Promise<{
+    tokenId: string;
+    token: string;
+    sceneId: string;
+    applicationId: string;
+    label: string;
+    status: string;
+    createdAt: string;
+    url: string;
+  }>;
+
+  /** Tombstone an active token. Revocation sends a P2 `control:
+   *  token.revoked` frame to all open overlay sockets and blanks the
+   *  browser source without touching the scene. Idempotent. */
+  revokeOverlayToken(input: {
+    tokenId: string;
+  }): Promise<{ tokenId: string; status: string }>;
+
+  /** Atomically revoke the old token and mint a replacement. Returns the
+   *  new token + URL. The old token is permanently revoked. */
+  rotateOverlayToken(input: {
+    tokenId: string;
+    label?: string;
+  }): Promise<{
+    tokenId: string;
+    token: string;
+    sceneId: string;
+    applicationId: string;
+    label: string;
+    status: string;
+    createdAt: string;
+    url: string;
+  }>;
+
+  /** List all overlay tokens for the authenticated application, optionally
+   *  filtered by sceneId. Includes the browser-source URL for each. */
+  listOverlayTokens(input?: {
+    sceneId?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<
+    Array<{
+      tokenId: string;
+      token: string;
+      sceneId: string;
+      label: string;
+      status: string;
+      createdAt: string;
+      url: string;
+    }>
+  >;
+
+  /** Forward a widget status report from a scene manager operating in
+   *  parent-frame mode (`?eventSource=parent`). Takes `tokenId` — not the
+   *  plaintext token — scoped to the caller's applicationId. */
+  reportWidgetEvent(input: {
+    tokenId: string;
+    event: { type: string; [key: string]: unknown };
+  }): Promise<{ ok: true }>;
 }
 
 // ==================== Widgets ====================

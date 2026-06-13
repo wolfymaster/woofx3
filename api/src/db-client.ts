@@ -6,6 +6,7 @@ import type * as common from "@woofx3/db/common.pb";
 import * as module from "@woofx3/db/module.pb";
 import type * as module_action from "@woofx3/db/module_action.pb";
 import type * as module_trigger from "@woofx3/db/module_trigger.pb";
+import type * as module_widget from "@woofx3/db/module_widget.pb";
 import * as overlay_token from "@woofx3/db/overlay_token.pb";
 import * as scene from "@woofx3/db/scene.pb";
 import * as setting from "@woofx3/db/setting.pb";
@@ -186,7 +187,7 @@ async listWidgetStatus(
     return widget_status.ListWidgetStatus(req, this.config);
   }
 
-  async listWidgets(req: module.ListWidgetsRequest): Promise<module.ListWidgetsResponse> {
+  async listWidgets(req: module_widget.ListWidgetsRequest): Promise<module_widget.ListWidgetsResponse> {
     return module.ListWidgets(req, this.config);
   }
 
