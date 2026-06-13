@@ -13,6 +13,15 @@ export interface ApiConfig {
    * streamware default port) — override via `STREAMWARE_URL` env.
    */
   streamwareUrl: string;
+  /**
+   * Public base URL the api's overlay gateway is reachable at. Used to
+   * compose the `url` returned by mintOverlayToken / rotateOverlayToken /
+   * listOverlayTokens (`${overlayPublicUrl}/overlay/{token}/`). Defaults
+   * to the api's own loopback address — override via
+   * `WOOFX3_OVERLAY_PUBLIC_URL` when the api sits behind a tunnel or
+   * reverse proxy.
+   */
+  overlayPublicUrl: string;
   nats: {
     url: string;
     name: string;
@@ -31,6 +40,8 @@ const apiEnvSchema = z
     barkloaderUrl: z.string().optional(),
     woofx3StreamwareUrl: z.string().optional(),
     streamwareUrl: z.string().optional(),
+    woofx3OverlayPublicUrl: z.string().optional(),
+    overlayPublicUrl: z.string().optional(),
     woofx3MessagebusUrl: z.string().optional(),
     messagebusUrl: z.string().optional(),
     woofx3MessagebusJwt: z.string().optional(),
@@ -40,6 +51,24 @@ const apiEnvSchema = z
     woofx3RootPath: z.string().optional(),
   })
   .passthrough();
+
+/**
+ * Tiger Style invariant: assert that a config value is a valid http(s) URL.
+ * Throws at startup rather than silently producing a broken proxy or
+ * a malformed overlay URL at request time.
+ */
+function assertValidHttpUrl(label: string, value: string): void {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error(`expected http or https protocol, got ${parsed.protocol}`);
+    }
+  } catch (err) {
+    throw new Error(
+      `Config error: ${label} is not a valid http(s) URL: ${value} — ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+}
 
 export function loadConfig(): ApiConfig {
   const result = loadRuntimeEnv({ injectIntoProcess: true, schema: apiEnvSchema });
@@ -53,9 +82,18 @@ export function loadConfig(): ApiConfig {
     config.woofx3StreamwareUrl ?? config.streamwareUrl ?? "http://127.0.0.1:9101",
   );
 
+  const overlayPublicUrl = String(
+    config.woofx3OverlayPublicUrl ?? config.overlayPublicUrl ?? `http://127.0.0.1:${port}`,
+  );
+
   if (!databaseProxyUrl) {
     throw new Error("databaseProxyUrl (or DATABASE_PROXY_URL) is required");
   }
+
+  // Tiger Style: fail fast at startup on malformed URLs rather than
+  // composing broken overlay URLs or proxying into the void at runtime.
+  assertValidHttpUrl("streamwareUrl (WOOFX3_STREAMWARE_URL)", streamwareUrl);
+  assertValidHttpUrl("overlayPublicUrl (WOOFX3_OVERLAY_PUBLIC_URL)", overlayPublicUrl);
 
   const messageBusUrl = String(config.woofx3MessagebusUrl ?? config.messagebusUrl ?? "nats://localhost:4222");
   const messageBusJwt =
@@ -76,6 +114,7 @@ export function loadConfig(): ApiConfig {
     databaseProxyUrl,
     barkloaderUrl,
     streamwareUrl,
+    overlayPublicUrl,
     rootDir,
     nats: {
       url: messageBusUrl,
