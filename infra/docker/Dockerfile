@@ -104,6 +104,7 @@ RUN apt-get update && apt-get install -y \
     git \
     sqlite3 \
     inotify-tools \
+    tini \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Go installation
@@ -139,6 +140,9 @@ RUN groupadd -g 1000 woofx3 && \
 
 USER woofx3
 WORKDIR /home/woofx3/code
+
+# Use tini as init
+ENTRYPOINT ["tini", "--"]
 
 # Default command
 CMD ["/bin/bash"]
