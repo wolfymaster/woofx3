@@ -1,4 +1,5 @@
 import * as alert from "@woofx3/db/alert.pb";
+import * as overlay_token from "@woofx3/db/overlay_token.pb";
 import * as scene from "@woofx3/db/scene.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
 import { RegisterWidgets } from "@woofx3/db/module.pb";
@@ -106,6 +107,15 @@ export class DbClient {
     const { ListWidgets } = await import("@woofx3/db/module.pb");
     return ListWidgets(req, this.config);
   }
+
+  // Overlay-token resolution — engine-internal only. Streamware is the
+  // single resolver of plaintext tokens (design 2.1); the api gateway
+  // proxies bytes without ever resolving them.
+  async resolveOverlayToken(
+    req: overlay_token.ResolveOverlayTokenRequest
+  ): Promise<overlay_token.ResolveOverlayTokenResponse> {
+    return overlay_token.ResolveOverlayToken(req, this.config);
+  }
 }
 
 // Re-export the request types streamware composes against, so callers
@@ -123,6 +133,10 @@ export type {
   WidgetStatusResponse,
 } from "@woofx3/db/widget_status.pb";
 export type { ResponseStatus } from "@woofx3/db/common.pb";
+export type {
+  ResolveOverlayTokenRequest,
+  ResolveOverlayTokenResponse,
+} from "@woofx3/db/overlay_token.pb";
 export type {
   RegisterWidgetsRequest,
   ListWidgetsResponse,
