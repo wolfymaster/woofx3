@@ -4,6 +4,29 @@ import type NATSClient from "@woofx3/nats/src/client";
 import { publishWidgetEvent } from "./widget-event-wire";
 
 /**
+ * Connection metadata attached to each overlay WS at `/o/{token}/events`.
+ */
+export interface OverlayConnectionMeta {
+  token: string;
+  applicationId: string;
+  sceneId: string;
+}
+
+/**
+ * Keyed by applicationId. Each value is the set of overlay WebSockets
+ * for that application. Used for targeted fan-out of storage and widget
+ * events to the P2 overlay WS channel.
+ */
+export type OverlayConnectionStore = Map<string, Set<ServerWebSocket<OverlayConnectionMeta>>>;
+
+/** P2 envelope wrapper for overlay WS push frames. */
+interface P2Frame {
+  proto: "woofx3.overlay-events";
+  v: 1;
+  frame: Record<string, unknown>;
+}
+
+/**
  * Push payload sent to overlay clients connected to `/ws/module-state`.
  *
  * Mirrors the engine's `module.storage.changed` CloudEvent data, plus
@@ -192,6 +215,43 @@ export class StorageBroadcaster {
 
   nextConnectionData(): ConnectionData {
     return { kind: "module-state", id: `module-state-${this.nextId++}` };
+  }
+
+  /**
+   * Wrap and send a storage-changed or widget-event payload to all
+   * overlay WS connections in the P2 envelope format. Called by the
+   * storage broadcaster after a successful fan-out to legacy
+   * `/ws/module-state` clients so overlay WS clients receive the same
+   * data under the P2 protocol envelope.
+   */
+  broadcastToOverlayConnections(
+    payload: ModuleStateOutboundPayload,
+    connections: OverlayConnectionStore
+  ): void {
+    if (connections.size === 0) {
+      return;
+    }
+    const frame: P2Frame = {
+      proto: "woofx3.overlay-events",
+      v: 1,
+      frame:
+        payload.kind === "event"
+          ? { kind: "event", ...(payload as WidgetEventPushPayload) }
+          : { kind: "storage", ...(payload as StorageChangedPayload) },
+    };
+    const json = JSON.stringify(frame);
+    for (const sockets of connections.values()) {
+      for (const ws of sockets) {
+        try {
+          ws.send(json);
+        } catch (err) {
+          this.logger.error("Failed to send overlay P2 frame", {
+            applicationId: ws.data.applicationId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
   }
 }
 

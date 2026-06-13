@@ -3,7 +3,13 @@ import type NATSClient from "@woofx3/nats/src/client";
 import type { AlertBroadcaster, AlertPayload } from "./alert-broadcaster";
 import { handleLegacySlobsCommand } from "./obs-commands";
 import type Manager from "./obs/manager";
-import { mapStorageChangedEnvelope, type StorageBroadcaster } from "./storage-broadcaster";
+import {
+  mapStorageChangedEnvelope,
+  type OverlayConnectionStore,
+  type StorageBroadcaster,
+} from "./storage-broadcaster";
+import type { OverlayTokenResolver } from "./overlay-token";
+import { maskToken } from "./overlay-token";
 
 interface InitArgs {
   nats: NATSClient | null;
@@ -11,6 +17,8 @@ interface InitArgs {
   broadcaster: AlertBroadcaster;
   storageBroadcaster: StorageBroadcaster;
   logger: SharedLogger;
+  resolver?: OverlayTokenResolver;
+  overlayConnections?: OverlayConnectionStore;
 }
 
 export async function initSubscriptions({
@@ -19,6 +27,8 @@ export async function initSubscriptions({
   broadcaster,
   storageBroadcaster,
   logger,
+  resolver,
+  overlayConnections,
 }: InitArgs): Promise<void> {
   if (!nats) {
     logger.warn("NATS unavailable — alert subscription skipped (overlay will receive nothing)");
@@ -94,4 +104,84 @@ export async function initSubscriptions({
     });
   });
   logger.info("Subscribed to slobs (legacy OBS bridge)");
+
+  // Token invalidation: poison the resolver cache so the next request
+  // re-queries db-proxy. Then audit each live overlay WS connection;
+  // revoked connections receive a control frame and are closed.
+  await nats.subscribe("db.overlay_token.updated.*", (_msg) => {
+    if (resolver) {
+      resolver.invalidateAll();
+    }
+    if (!overlayConnections || overlayConnections.size === 0) {
+      return;
+    }
+    // Re-resolve each connection's token; close connections where the
+    // token no longer resolves (revoked or expired after invalidation).
+    for (const sockets of overlayConnections.values()) {
+      for (const ws of sockets) {
+        const token = ws.data.token;
+        if (!resolver) {
+          continue;
+        }
+        resolver.resolve(token).then((result) => {
+          if (result === null) {
+            try {
+              ws.send(
+                JSON.stringify({
+                  proto: "woofx3.overlay-events",
+                  v: 1,
+                  frame: { kind: "control", action: "token.revoked" },
+                })
+              );
+              ws.close(1008, "token revoked");
+            } catch {
+              // Socket may already be closed; ignore.
+            }
+          }
+        }).catch((err) => {
+          logger.warn("overlay token re-resolve failed during invalidation", {
+            token: maskToken(token),
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+    }
+  });
+  logger.info("Subscribed to db.overlay_token.updated.*");
+
+  // Scene update notification: push a scene.updated frame to every
+  // overlay WS connection whose sceneId matches the updated scene.
+  await nats.subscribe("db.scene.updated.*", (msg) => {
+    if (!overlayConnections || overlayConnections.size === 0) {
+      return;
+    }
+    let body: { sceneId?: unknown } = {};
+    try {
+      body = msg.json<{ sceneId?: unknown }>();
+    } catch {
+      // Malformed; cannot route — drop silently.
+      return;
+    }
+    const sceneId = typeof body.sceneId === "string" ? body.sceneId : "";
+    if (!sceneId) {
+      return;
+    }
+    const frame = JSON.stringify({
+      proto: "woofx3.overlay-events",
+      v: 1,
+      frame: { kind: "scene.updated", sceneId, revision: Date.now() },
+    });
+    for (const sockets of overlayConnections.values()) {
+      for (const ws of sockets) {
+        if (ws.data.sceneId === sceneId) {
+          try {
+            ws.send(frame);
+          } catch {
+            // Socket may already be closed; ignore.
+          }
+        }
+      }
+    }
+  });
+  logger.info("Subscribed to db.scene.updated.*");
 }
