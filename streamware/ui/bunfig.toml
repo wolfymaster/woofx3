@@ -1,0 +1,8 @@
+# Bun test-runner module aliases — mirrors the Vite resolve.alias and
+# tsconfig paths so `bun test` resolves workspace packages without
+# requiring `bun install` to wire up the node_modules symlinks.
+[test]
+  [test.alias]
+  "@woofx3/module-sdk" = "../../shared/clients/typescript/module-sdk/src/index.ts"
+  "@woofx3/api" = "../../shared/clients/typescript/api/index.ts"
+  "@woofx3/api/overlay-events" = "../../shared/clients/typescript/api/overlay-events.ts"

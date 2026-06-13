@@ -25,7 +25,7 @@ import {
   type OverlayEventFrame,
   type OverlayEventsFrame,
   type OverlayStorageFrame,
-} from "@woofx3/api/overlay-events";
+} from "../../../../shared/clients/typescript/api/overlay-events";
 
 /** Frames + lifecycle signals the scene manager consumes. */
 export interface SceneEventSink {

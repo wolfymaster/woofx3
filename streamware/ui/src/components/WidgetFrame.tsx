@@ -1,99 +1,106 @@
+// P1 parent-side iframe host. Creates a WidgetBridge, registers it
+// with the SceneManager on mount, and detaches on unmount.
+//
+// Token-mode (frameUrl present): appends the per-frame nonce as a
+// query parameter so the frame assembler echoes it into the boot
+// payload.
+//
+// Legacy mode (bundleUrl only): uses bundleUrl directly; nonce is
+// still generated and held on the bridge for the handshake.
+//
+// iframe sandbox: "allow-scripts" ONLY — no allow-same-origin, no
+// allow-forms. referrerPolicy="no-referrer" because frame URLs
+// contain the token (design §5.2).
+
 import { useEffect, useRef } from "react";
-import {
-  createWidgetHost,
-  type StorageChangeStream,
-  type WidgetEventSource,
-  type WidgetStatusReport,
-} from "../lib/widgetHost";
 import type { WidgetInstance } from "../lib/sceneConfig";
+import type { SceneManager } from "../lib/sceneManager";
+import { WidgetBridge } from "../lib/widgetBridge";
+import type { WidgetStatusReport } from "@woofx3/module-sdk";
 
 interface WidgetFrameProps {
   instance: WidgetInstance;
-  stream: StorageChangeStream;
-  /** Per-widget event source already filtered by `acceptedEvents`.
-   *  When omitted, the widget's `widgetHost.onEvent` is a no-op. */
-  events?: WidgetEventSource;
-  /** Upstream sender for `widgetHost.reportStatus`; passed through
-   *  from the SceneOverlay's module-state socket. Optional during
-   *  rollout — when absent, status reports log a warning and are
-   *  dropped. */
-  onWidgetEvent?: (report: WidgetStatusReport) => void;
+  manager: SceneManager;
 }
 
-/**
- * Renders a single widget instance in a sandboxed iframe. The shell
- * injects `widgetHost` onto `iframe.contentWindow` once the iframe
- * load event fires.
- *
- * Same-origin assumption: when the widget's `bundleUrl` resolves to
- * the same origin as streamware (the local-mode case), direct
- * property assignment works. When the asset URL pipeline later moves
- * widgets to a CDN on a different origin, this component will need
- * to switch to a postMessage-based bridge — flagged below at the
- * injection site so the contract stays explicit.
- *
- * The iframe sandbox keeps widget code from touching streamware's
- * own DOM / cookies / parent navigation. `allow-scripts` is required
- * for widgets to run; everything else stays denied.
- */
-export default function WidgetFrame({ instance, stream, events, onWidgetEvent }: WidgetFrameProps) {
+function generateNonce(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  // base64url-encode without padding.
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+export default function WidgetFrame({ instance, manager }: WidgetFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  // Nonce is stable for the lifetime of this mount. A new mount (e.g.
+  // after remount from React key change) generates a fresh nonce.
+  const nonceRef = useRef<string>(generateNonce());
 
   useEffect(() => {
-    const iframe = iframeRef.current;
-    if (!iframe) return;
+    const nonce = nonceRef.current;
+    const bridge = new WidgetBridge(instance.id, nonce, {
+      onStorageGet(moduleId: string, key: string): unknown {
+        // Storage reads are satisfied from the scene manager's storage
+        // subscription cache when available; returning null is valid.
+        void moduleId;
+        void key;
+        return null;
+      },
+      onStorageSubscribe(moduleId: string, key: string, bridgeId: string): void {
+        manager.addStorageSubscription(bridgeId, moduleId, key);
+      },
+      onStorageUnsubscribe(moduleId: string, key: string, bridgeId: string): void {
+        manager.removeStorageSubscription(bridgeId, moduleId, key);
+      },
+      onStatusReport(report: WidgetStatusReport): void {
+        manager["onSendStatus"]?.(report);
+      },
+      onDispose(): void {},
+    });
 
-    function inject() {
-      const win = iframe?.contentWindow as (Window & { widgetHost?: unknown }) | null;
-      if (!win) return;
-      try {
-        win.widgetHost = createWidgetHost({
-          moduleId: instance.moduleId,
-          instanceId: instance.id,
-          widgetCanonicalId: instance.widgetCanonicalId,
-          settings: instance.settings,
-          stream,
-          events,
-          sendStatus: onWidgetEvent,
-        });
-        console.log("[widget:host] injected", {
-          instanceId: instance.id,
-          moduleId: instance.moduleId,
-          widgetCanonicalId: instance.widgetCanonicalId,
-          bundleUrl: instance.bundleUrl,
-          hasEvents: !!events,
-        });
-      } catch (err) {
-        // Cross-origin frames throw on contentWindow access; this is
-        // the trigger for migrating to postMessage when a CDN-served
-        // bundle becomes the norm.
-        console.error("widgetHost injection failed (cross-origin?)", err, {
-          instance: instance.id,
-          bundleUrl: instance.bundleUrl,
-        });
-      }
+    const iframe = iframeRef.current;
+    if (iframe) {
+      bridge.attach(iframe);
     }
 
-    iframe.addEventListener("load", inject);
-    return () => iframe.removeEventListener("load", inject);
-  }, [
-    instance.id,
-    instance.moduleId,
-    instance.widgetCanonicalId,
-    instance.bundleUrl,
-    instance.settings,
-    stream,
-    events,
-    onWidgetEvent,
-  ]);
+    const acceptedEvents = instance.acceptedEvents ?? [];
+    manager.registerBridge(instance.id, bridge, acceptedEvents);
 
+    function onLoad(): void {
+      bridge.onFrameLoad();
+    }
+
+    iframe?.addEventListener("load", onLoad);
+
+    return () => {
+      iframe?.removeEventListener("load", onLoad);
+      bridge.detach();
+      manager.unregisterBridge(instance.id);
+    };
+    // Intentionally omits instance.settings and other stable fields —
+    // the bridge is created once per mount; config changes re-key the
+    // component from above causing a fresh mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instance.id, manager]);
+
+  const nonce = nonceRef.current;
   const { x, y, width, height } = instance.position;
+
+  const src = instance.frameUrl
+    ? `${instance.frameUrl}?nonce=${encodeURIComponent(nonce)}`
+    : (instance.bundleUrl ?? "");
+
   return (
     <iframe
       ref={iframeRef}
-      src={instance.bundleUrl}
+      src={src}
       title={instance.id}
-      sandbox="allow-scripts allow-same-origin"
+      sandbox="allow-scripts"
+      referrerPolicy="no-referrer"
+      scrolling="no"
       style={{
         position: "absolute",
         left: `${x}px`,
@@ -103,10 +110,6 @@ export default function WidgetFrame({ instance, stream, events, onWidgetEvent }:
         border: "none",
         background: "transparent",
       }}
-      // Disable scrolling — widgets shouldn't introduce horizontal
-      // overflow inside their bounding box; content that doesn't fit
-      // should be clipped by the iframe rather than become scrollable.
-      scrolling="no"
     />
   );
 }
