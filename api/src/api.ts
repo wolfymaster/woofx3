@@ -16,6 +16,8 @@ import type {
 } from "@woofx3/api";
 import type {
   ActionDefinition,
+  OverlayTokenMintedEvent,
+  OverlayTokenRevokedEvent,
   SceneCreatedEvent,
   SceneDeletedEvent,
   SceneSnapshot,
@@ -26,6 +28,7 @@ import type {
   WorkflowUpdatedEvent,
 } from "@woofx3/api/webhooks";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import { maskToken } from "./overlay-proxy";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type * as command from "@woofx3/db/command.pb";
 import type { Action } from "@woofx3/db/module_action.pb";
@@ -297,6 +300,12 @@ interface ApiOptions {
    * deployments).
    */
   streamwareUrl?: string;
+  /**
+   * Public base URL the api's overlay gateway is reachable at. Used to
+   * compose the `url` field returned by overlay token RPCs. Optional in
+   * tests; defaults to empty string.
+   */
+  overlayPublicUrl?: string;
   logger: SharedLogger;
 }
 
@@ -315,6 +324,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
   private applicationId: string | null = null;
   private barkloaderUrl: string;
   private streamwareUrl: string;
+  private overlayPublicUrl: string;
   private logger: SharedLogger;
 
   constructor(opts: ApiOptions) {
@@ -329,6 +339,7 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     this.nats = opts.nats;
     this.barkloaderUrl = opts.barkloaderUrl;
     this.streamwareUrl = opts.streamwareUrl ?? "";
+    this.overlayPublicUrl = opts.overlayPublicUrl ?? "";
     this.logger = opts.logger;
   }
 
@@ -4402,5 +4413,248 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     const result = JSON.parse(new TextDecoder().decode(reply.data)) as { cleared: number };
     this.logger.info("clearAlertQueue", { applicationId: appId, cleared: result.cleared });
     return result;
+  }
+
+  // ==================== Overlay Tokens ====================
+
+  /**
+   * Build the public overlay URL for a plaintext token. Strips trailing
+   * slashes from overlayPublicUrl to avoid double-slash joins.
+   */
+  private buildOverlayUrl(token: string): string {
+    const base = this.overlayPublicUrl.replace(/\/+$/, "");
+    return `${base}/overlay/${token}/`;
+  }
+
+  /**
+   * Mint a new overlay token bound to a specific scene.
+   *
+   * Log redaction: only tokenId and sceneId are logged — never the plaintext token.
+   */
+  async mintOverlayToken(input: {
+    sceneId: string;
+    label?: string;
+  }): Promise<{
+    tokenId: string;
+    token: string;
+    sceneId: string;
+    applicationId: string;
+    label: string;
+    status: string;
+    createdAt: string;
+    url: string;
+  }> {
+    const applicationId = await this.ensureApplicationId();
+
+    // Verify the scene belongs to the caller's applicationId before minting.
+    const sceneResp = await this.db.getScene({ id: input.sceneId });
+    if (sceneResp.status?.code !== "OK" || !sceneResp.scene) {
+      throw new Error(`Scene ${input.sceneId} not found`);
+    }
+    if (sceneResp.scene.applicationId !== applicationId) {
+      throw new Error(`Scene ${input.sceneId} does not belong to this application`);
+    }
+
+    const resp = await this.db.mintOverlayToken({
+      sceneId: input.sceneId,
+      applicationId,
+      label: input.label ?? "",
+    });
+
+    if (resp.status?.code !== "OK" || !resp.overlayToken) {
+      throw new Error(resp.status?.message || "Failed to mint overlay token");
+    }
+
+    const t = resp.overlayToken;
+
+    // Redacted: only log non-secret identifiers.
+    this.logger.info("Minted overlay token", {
+      tokenId: t.id,
+      sceneId: t.sceneId,
+      masked: maskToken(t.token),
+    });
+
+    return {
+      tokenId: t.id,
+      token: t.token,
+      sceneId: t.sceneId,
+      applicationId: t.applicationId,
+      label: t.label,
+      status: t.status,
+      createdAt: timestampToIso(t.createdAt),
+      url: this.buildOverlayUrl(t.token),
+    };
+  }
+
+  /**
+   * Revoke an overlay token by id, scoped to the caller's applicationId.
+   * Ownership is verified before issuing the revoke RPC.
+   */
+  async revokeOverlayToken(input: { tokenId: string }): Promise<{ tokenId: string; status: string }> {
+    const applicationId = await this.ensureApplicationId();
+
+    // Scope check: verify the token belongs to this application before revoking.
+    const listResp = await this.db.listOverlayTokens({ applicationId, sceneId: "", includeRevoked: false });
+    const tokenRow = (listResp.overlayTokens ?? []).find((t) => t.id === input.tokenId);
+    if (!tokenRow) {
+      throw new Error(`Overlay token ${input.tokenId} not found for this application`);
+    }
+
+    const resp = await this.db.revokeOverlayToken({ id: input.tokenId });
+
+    if (resp.status?.code !== "OK" || !resp.overlayToken) {
+      throw new Error(resp.status?.message || "Failed to revoke overlay token");
+    }
+
+    const t = resp.overlayToken;
+    this.logger.info("Revoked overlay token", { tokenId: t.id, applicationId });
+
+    return { tokenId: t.id, status: t.status };
+  }
+
+  /**
+   * Atomically rotate an overlay token: mints a new credential and tombstones
+   * the old one. Returns the new token row + URL.
+   *
+   * Log redaction: only tokenId is logged — never the plaintext token.
+   */
+  async rotateOverlayToken(input: { tokenId: string; label?: string }): Promise<{
+    tokenId: string;
+    token: string;
+    sceneId: string;
+    applicationId: string;
+    label: string;
+    status: string;
+    createdAt: string;
+    url: string;
+  }> {
+    const applicationId = await this.ensureApplicationId();
+
+    // Scope check: verify the token belongs to this application before rotating.
+    const listResp = await this.db.listOverlayTokens({ applicationId, sceneId: "", includeRevoked: false });
+    const tokenRow = (listResp.overlayTokens ?? []).find((t) => t.id === input.tokenId);
+    if (!tokenRow) {
+      throw new Error(`Overlay token ${input.tokenId} not found for this application`);
+    }
+
+    const resp = await this.db.rotateOverlayToken({ id: input.tokenId });
+
+    if (resp.status?.code !== "OK" || !resp.overlayToken) {
+      throw new Error(resp.status?.message || "Failed to rotate overlay token");
+    }
+
+    const t = resp.overlayToken;
+
+    // Redacted: only log non-secret identifiers.
+    this.logger.info("Rotated overlay token", {
+      tokenId: t.id,
+      sceneId: t.sceneId,
+      masked: maskToken(t.token),
+    });
+
+    return {
+      tokenId: t.id,
+      token: t.token,
+      sceneId: t.sceneId,
+      applicationId: t.applicationId,
+      label: t.label,
+      status: t.status,
+      createdAt: timestampToIso(t.createdAt),
+      url: this.buildOverlayUrl(t.token),
+    };
+  }
+
+  /**
+   * List overlay tokens for the caller's applicationId, optionally filtered
+   * by sceneId. Each token in the result carries a prebuilt overlay URL.
+   */
+  async listOverlayTokens(input: { sceneId?: string }): Promise<
+    Array<{
+      tokenId: string;
+      token: string;
+      sceneId: string;
+      applicationId: string;
+      label: string;
+      status: string;
+      createdAt: string;
+      url: string;
+    }>
+  > {
+    const applicationId = await this.ensureApplicationId();
+
+    const resp = await this.db.listOverlayTokens({
+      applicationId,
+      sceneId: input.sceneId ?? "",
+      includeRevoked: false,
+    });
+
+    if (resp.status?.code !== "OK") {
+      throw new Error(resp.status?.message || "Failed to list overlay tokens");
+    }
+
+    return (resp.overlayTokens ?? []).map((t) => ({
+      tokenId: t.id,
+      token: t.token,
+      sceneId: t.sceneId,
+      applicationId: t.applicationId,
+      label: t.label,
+      status: t.status,
+      createdAt: timestampToIso(t.createdAt),
+      url: this.buildOverlayUrl(t.token),
+    }));
+  }
+
+  /**
+   * Report a widget lifecycle event from an overlay client. Takes tokenId
+   * (not plaintext) and looks up the token scoped to the caller's applicationId
+   * before publishing to NATS on the `widget.event` subject.
+   *
+   * The event shape is intentionally minimal — validation is limited to
+   * requiring a non-empty `type` string.
+   */
+  async reportWidgetEvent(input: {
+    tokenId: string;
+    event: { type: string; [key: string]: unknown };
+  }): Promise<{ ok: true }> {
+    if (!this.nats) {
+      throw new Error("NATS client not available");
+    }
+
+    if (!input.event.type || typeof input.event.type !== "string") {
+      throw new Error("reportWidgetEvent: event.type must be a non-empty string");
+    }
+
+    const applicationId = await this.ensureApplicationId();
+
+    // Scope the lookup to the caller's applicationId to prevent cross-tenant access.
+    const listResp = await this.db.listOverlayTokens({ applicationId, sceneId: "", includeRevoked: false });
+    if (listResp.status?.code !== "OK") {
+      throw new Error("Failed to resolve overlay token");
+    }
+    const tokenRow = (listResp.overlayTokens ?? []).find((t) => t.id === input.tokenId);
+    if (!tokenRow) {
+      throw new Error(`Overlay token ${input.tokenId} not found for this application`);
+    }
+
+    const payload = {
+      tokenId: input.tokenId,
+      sceneId: tokenRow.sceneId,
+      applicationId,
+      event: input.event,
+      occurredAt: new Date().toISOString(),
+    };
+
+    await this.nats.publish(
+      "widget.event",
+      new TextEncoder().encode(JSON.stringify(payload))
+    );
+
+    this.logger.info("reportWidgetEvent published", {
+      tokenId: input.tokenId,
+      sceneId: tokenRow.sceneId,
+      eventType: input.event.type,
+    });
+
+    return { ok: true };
   }
 }

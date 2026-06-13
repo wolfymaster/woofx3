@@ -6,6 +6,7 @@ import type * as common from "@woofx3/db/common.pb";
 import * as module from "@woofx3/db/module.pb";
 import type * as module_action from "@woofx3/db/module_action.pb";
 import type * as module_trigger from "@woofx3/db/module_trigger.pb";
+import * as overlay_token from "@woofx3/db/overlay_token.pb";
 import * as scene from "@woofx3/db/scene.pb";
 import * as setting from "@woofx3/db/setting.pb";
 import * as treat from "@woofx3/db/treat.pb";
@@ -333,5 +334,35 @@ async listWidgetStatus(
 
   async deleteClient(id: string): Promise<common.ResponseStatus> {
     return clientPb.DeleteClient({ id }, this.config);
+  }
+
+  async mintOverlayToken(
+    req: overlay_token.MintOverlayTokenRequest
+  ): Promise<overlay_token.OverlayTokenResponse> {
+    return overlay_token.MintOverlayToken(req, this.config);
+  }
+
+  async revokeOverlayToken(
+    req: overlay_token.RevokeOverlayTokenRequest
+  ): Promise<overlay_token.OverlayTokenResponse> {
+    return overlay_token.RevokeOverlayToken(req, this.config);
+  }
+
+  async rotateOverlayToken(
+    req: overlay_token.RotateOverlayTokenRequest
+  ): Promise<overlay_token.OverlayTokenResponse> {
+    return overlay_token.RotateOverlayToken(req, this.config);
+  }
+
+  async listOverlayTokens(
+    req: overlay_token.ListOverlayTokensRequest
+  ): Promise<overlay_token.ListOverlayTokensResponse> {
+    return overlay_token.ListOverlayTokens(req, this.config);
+  }
+
+  async resolveOverlayToken(
+    req: overlay_token.ResolveOverlayTokenRequest
+  ): Promise<overlay_token.ResolveOverlayTokenResponse> {
+    return overlay_token.ResolveOverlayToken(req, this.config);
   }
 }
