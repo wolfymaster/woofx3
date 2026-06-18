@@ -75,12 +75,19 @@ impl BackgroundTaskScheduler {
 
                     let now = Utc::now();
                     let delay = (next - now).to_std().unwrap_or_default();
+                    info!(
+                        "Background task {}/{} scheduled next fire at {}",
+                        module_key_owned, task_id, next.to_rfc3339()
+                    );
                     tokio::time::sleep(delay).await;
 
                     let fn_id = function_id.clone();
                     let sb = sandbox.clone();
                     let m = module_key_owned.clone();
                     let t = task_id.clone();
+
+                    info!("Background task {}/{} firing", m, t);
+                    let fire_start = std::time::Instant::now();
 
                     // spawn_blocking because Sandbox::invoke drives the QuickJS runtime
                     // synchronously and ReqwestHttpClient::request calls block_on internally.
@@ -97,15 +104,25 @@ impl BackgroundTaskScheduler {
                     })
                     .await;
 
+                    let elapsed_ms = fire_start.elapsed().as_millis();
                     match result {
                         Ok(Ok(_)) => {
-                            info!("Background task {}/{} completed", m, t);
+                            info!(
+                                "Background task {}/{} completed in {}ms",
+                                m, t, elapsed_ms
+                            );
                         }
                         Ok(Err(e)) => {
-                            error!("Background task {}/{} invoke error: {}", m, t, e);
+                            error!(
+                                "Background task {}/{} invoke error after {}ms: {}",
+                                m, t, elapsed_ms, e
+                            );
                         }
                         Err(e) => {
-                            error!("Background task {}/{} spawn error: {}", m, t, e);
+                            error!(
+                                "Background task {}/{} spawn error after {}ms: {}",
+                                m, t, elapsed_ms, e
+                            );
                         }
                     }
                 }
