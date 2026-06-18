@@ -477,7 +477,7 @@ async fn delete_handler(
                 );
                 registry_loader::unregister_background_tasks(
                     &ctx_clone.scheduler,
-                    &resolved.module_id,
+                    &resolved.manifest_id,
                 );
                 notify_delete(
                     &db_proxy_url,
