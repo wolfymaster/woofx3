@@ -558,6 +558,85 @@ pub mod module_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn register_background_tasks(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RegisterBackgroundTasksRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListBackgroundTasksResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/RegisterBackgroundTasks",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("module.ModuleService", "RegisterBackgroundTasks"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn list_background_tasks(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListBackgroundTasksRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListBackgroundTasksResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/ListBackgroundTasks",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("module.ModuleService", "ListBackgroundTasks"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn delete_background_tasks_by_module_id(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteByModuleIdRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/DeleteBackgroundTasksByModuleId",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "module.ModuleService",
+                        "DeleteBackgroundTasksByModuleId",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn register_assets(
             &mut self,
             request: impl tonic::IntoRequest<super::RegisterAssetsRequest>,
@@ -1067,6 +1146,27 @@ pub mod module_service_server {
             request: tonic::Request<super::GetByCanonicalIdRequest>,
         ) -> std::result::Result<tonic::Response<super::WidgetResponse>, tonic::Status>;
         async fn delete_widgets_by_module_id(
+            &self,
+            request: tonic::Request<super::DeleteByModuleIdRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        >;
+        async fn register_background_tasks(
+            &self,
+            request: tonic::Request<super::RegisterBackgroundTasksRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListBackgroundTasksResponse>,
+            tonic::Status,
+        >;
+        async fn list_background_tasks(
+            &self,
+            request: tonic::Request<super::ListBackgroundTasksRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListBackgroundTasksResponse>,
+            tonic::Status,
+        >;
+        async fn delete_background_tasks_by_module_id(
             &self,
             request: tonic::Request<super::DeleteByModuleIdRequest>,
         ) -> std::result::Result<
@@ -2173,6 +2273,154 @@ pub mod module_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = DeleteWidgetsByModuleIdSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/module.ModuleService/RegisterBackgroundTasks" => {
+                    #[allow(non_camel_case_types)]
+                    struct RegisterBackgroundTasksSvc<T: ModuleService>(pub Arc<T>);
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<super::RegisterBackgroundTasksRequest>
+                    for RegisterBackgroundTasksSvc<T> {
+                        type Response = super::ListBackgroundTasksResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::RegisterBackgroundTasksRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::register_background_tasks(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RegisterBackgroundTasksSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/module.ModuleService/ListBackgroundTasks" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListBackgroundTasksSvc<T: ModuleService>(pub Arc<T>);
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<super::ListBackgroundTasksRequest>
+                    for ListBackgroundTasksSvc<T> {
+                        type Response = super::ListBackgroundTasksResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListBackgroundTasksRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::list_background_tasks(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListBackgroundTasksSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/module.ModuleService/DeleteBackgroundTasksByModuleId" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteBackgroundTasksByModuleIdSvc<T: ModuleService>(
+                        pub Arc<T>,
+                    );
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<super::DeleteByModuleIdRequest>
+                    for DeleteBackgroundTasksByModuleIdSvc<T> {
+                        type Response = super::super::common::ResponseStatus;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteByModuleIdRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::delete_background_tasks_by_module_id(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = DeleteBackgroundTasksByModuleIdSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

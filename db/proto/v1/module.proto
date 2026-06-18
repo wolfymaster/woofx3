@@ -11,6 +11,7 @@ import "module_resource.proto";
 import "module_resource_instance.proto";
 import "module_widget.proto";
 import "module_asset.proto";
+import "background_task.proto";
 
 service ModuleService {
   rpc CreateModule(CreateModuleRequest) returns (ModuleResponse);
@@ -33,6 +34,9 @@ service ModuleService {
   rpc ListWidgets(ListWidgetsRequest) returns (ListWidgetsResponse);
   rpc GetWidgetByCanonicalId(GetByCanonicalIdRequest) returns (WidgetResponse);
   rpc DeleteWidgetsByModuleId(DeleteByModuleIdRequest) returns (common.ResponseStatus);
+  rpc RegisterBackgroundTasks(RegisterBackgroundTasksRequest) returns (ListBackgroundTasksResponse);
+  rpc ListBackgroundTasks(ListBackgroundTasksRequest) returns (ListBackgroundTasksResponse);
+  rpc DeleteBackgroundTasksByModuleId(DeleteByModuleIdRequest) returns (common.ResponseStatus);
   rpc RegisterAssets(RegisterAssetsRequest) returns (ListAssetsResponse);
   rpc ListAssets(ListAssetsRequest) returns (ListAssetsResponse);
   rpc DeleteAssetsByModuleId(DeleteByModuleIdRequest) returns (common.ResponseStatus);

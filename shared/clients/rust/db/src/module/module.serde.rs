@@ -1089,6 +1089,397 @@ impl<'de> serde::Deserialize<'de> for AssetResponse {
         deserializer.deserialize_struct("module.AssetResponse", FIELDS, GeneratedVisitor)
     }
 }
+impl serde::Serialize for BackgroundTask {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.id.is_empty() {
+            len += 1;
+        }
+        if !self.module_id.is_empty() {
+            len += 1;
+        }
+        if !self.manifest_id.is_empty() {
+            len += 1;
+        }
+        if !self.name.is_empty() {
+            len += 1;
+        }
+        if !self.description.is_empty() {
+            len += 1;
+        }
+        if !self.function.is_empty() {
+            len += 1;
+        }
+        if !self.schedule.is_empty() {
+            len += 1;
+        }
+        if !self.created_by_type.is_empty() {
+            len += 1;
+        }
+        if !self.created_by_ref.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.BackgroundTask", len)?;
+        if !self.id.is_empty() {
+            struct_ser.serialize_field("id", &self.id)?;
+        }
+        if !self.module_id.is_empty() {
+            struct_ser.serialize_field("moduleId", &self.module_id)?;
+        }
+        if !self.manifest_id.is_empty() {
+            struct_ser.serialize_field("manifestId", &self.manifest_id)?;
+        }
+        if !self.name.is_empty() {
+            struct_ser.serialize_field("name", &self.name)?;
+        }
+        if !self.description.is_empty() {
+            struct_ser.serialize_field("description", &self.description)?;
+        }
+        if !self.function.is_empty() {
+            struct_ser.serialize_field("function", &self.function)?;
+        }
+        if !self.schedule.is_empty() {
+            struct_ser.serialize_field("schedule", &self.schedule)?;
+        }
+        if !self.created_by_type.is_empty() {
+            struct_ser.serialize_field("createdByType", &self.created_by_type)?;
+        }
+        if !self.created_by_ref.is_empty() {
+            struct_ser.serialize_field("createdByRef", &self.created_by_ref)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for BackgroundTask {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "id",
+            "module_id",
+            "moduleId",
+            "manifest_id",
+            "manifestId",
+            "name",
+            "description",
+            "function",
+            "schedule",
+            "created_by_type",
+            "createdByType",
+            "created_by_ref",
+            "createdByRef",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Id,
+            ModuleId,
+            ManifestId,
+            Name,
+            Description,
+            Function,
+            Schedule,
+            CreatedByType,
+            CreatedByRef,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "id" => Ok(GeneratedField::Id),
+                            "moduleId" | "module_id" => Ok(GeneratedField::ModuleId),
+                            "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
+                            "name" => Ok(GeneratedField::Name),
+                            "description" => Ok(GeneratedField::Description),
+                            "function" => Ok(GeneratedField::Function),
+                            "schedule" => Ok(GeneratedField::Schedule),
+                            "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
+                            "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = BackgroundTask;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.BackgroundTask")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<BackgroundTask, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut id__ = None;
+                let mut module_id__ = None;
+                let mut manifest_id__ = None;
+                let mut name__ = None;
+                let mut description__ = None;
+                let mut function__ = None;
+                let mut schedule__ = None;
+                let mut created_by_type__ = None;
+                let mut created_by_ref__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Id => {
+                            if id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ModuleId => {
+                            if module_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("moduleId"));
+                            }
+                            module_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ManifestId => {
+                            if manifest_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("manifestId"));
+                            }
+                            manifest_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Name => {
+                            if name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("name"));
+                            }
+                            name__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Description => {
+                            if description__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("description"));
+                            }
+                            description__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Function => {
+                            if function__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("function"));
+                            }
+                            function__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Schedule => {
+                            if schedule__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("schedule"));
+                            }
+                            schedule__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CreatedByType => {
+                            if created_by_type__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByType"));
+                            }
+                            created_by_type__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CreatedByRef => {
+                            if created_by_ref__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByRef"));
+                            }
+                            created_by_ref__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(BackgroundTask {
+                    id: id__.unwrap_or_default(),
+                    module_id: module_id__.unwrap_or_default(),
+                    manifest_id: manifest_id__.unwrap_or_default(),
+                    name: name__.unwrap_or_default(),
+                    description: description__.unwrap_or_default(),
+                    function: function__.unwrap_or_default(),
+                    schedule: schedule__.unwrap_or_default(),
+                    created_by_type: created_by_type__.unwrap_or_default(),
+                    created_by_ref: created_by_ref__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.BackgroundTask", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for BackgroundTaskInput {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.manifest_id.is_empty() {
+            len += 1;
+        }
+        if !self.name.is_empty() {
+            len += 1;
+        }
+        if !self.description.is_empty() {
+            len += 1;
+        }
+        if !self.function.is_empty() {
+            len += 1;
+        }
+        if !self.schedule.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.BackgroundTaskInput", len)?;
+        if !self.manifest_id.is_empty() {
+            struct_ser.serialize_field("manifestId", &self.manifest_id)?;
+        }
+        if !self.name.is_empty() {
+            struct_ser.serialize_field("name", &self.name)?;
+        }
+        if !self.description.is_empty() {
+            struct_ser.serialize_field("description", &self.description)?;
+        }
+        if !self.function.is_empty() {
+            struct_ser.serialize_field("function", &self.function)?;
+        }
+        if !self.schedule.is_empty() {
+            struct_ser.serialize_field("schedule", &self.schedule)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for BackgroundTaskInput {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "manifest_id",
+            "manifestId",
+            "name",
+            "description",
+            "function",
+            "schedule",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            ManifestId,
+            Name,
+            Description,
+            Function,
+            Schedule,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
+                            "name" => Ok(GeneratedField::Name),
+                            "description" => Ok(GeneratedField::Description),
+                            "function" => Ok(GeneratedField::Function),
+                            "schedule" => Ok(GeneratedField::Schedule),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = BackgroundTaskInput;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.BackgroundTaskInput")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<BackgroundTaskInput, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut manifest_id__ = None;
+                let mut name__ = None;
+                let mut description__ = None;
+                let mut function__ = None;
+                let mut schedule__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::ManifestId => {
+                            if manifest_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("manifestId"));
+                            }
+                            manifest_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Name => {
+                            if name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("name"));
+                            }
+                            name__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Description => {
+                            if description__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("description"));
+                            }
+                            description__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Function => {
+                            if function__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("function"));
+                            }
+                            function__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Schedule => {
+                            if schedule__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("schedule"));
+                            }
+                            schedule__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(BackgroundTaskInput {
+                    manifest_id: manifest_id__.unwrap_or_default(),
+                    name: name__.unwrap_or_default(),
+                    description: description__.unwrap_or_default(),
+                    function: function__.unwrap_or_default(),
+                    schedule: schedule__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.BackgroundTaskInput", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for CheckModuleResourceUsageRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -4293,6 +4684,224 @@ impl<'de> serde::Deserialize<'de> for ListAssetsResponse {
         deserializer.deserialize_struct("module.ListAssetsResponse", FIELDS, GeneratedVisitor)
     }
 }
+impl serde::Serialize for ListBackgroundTasksRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.created_by_type.is_empty() {
+            len += 1;
+        }
+        if !self.created_by_ref.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.ListBackgroundTasksRequest", len)?;
+        if !self.created_by_type.is_empty() {
+            struct_ser.serialize_field("createdByType", &self.created_by_type)?;
+        }
+        if !self.created_by_ref.is_empty() {
+            struct_ser.serialize_field("createdByRef", &self.created_by_ref)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for ListBackgroundTasksRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "created_by_type",
+            "createdByType",
+            "created_by_ref",
+            "createdByRef",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            CreatedByType,
+            CreatedByRef,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
+                            "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = ListBackgroundTasksRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.ListBackgroundTasksRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<ListBackgroundTasksRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut created_by_type__ = None;
+                let mut created_by_ref__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::CreatedByType => {
+                            if created_by_type__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByType"));
+                            }
+                            created_by_type__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CreatedByRef => {
+                            if created_by_ref__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByRef"));
+                            }
+                            created_by_ref__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(ListBackgroundTasksRequest {
+                    created_by_type: created_by_type__.unwrap_or_default(),
+                    created_by_ref: created_by_ref__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.ListBackgroundTasksRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for ListBackgroundTasksResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.status.is_some() {
+            len += 1;
+        }
+        if !self.tasks.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.ListBackgroundTasksResponse", len)?;
+        if let Some(v) = self.status.as_ref() {
+            struct_ser.serialize_field("status", v)?;
+        }
+        if !self.tasks.is_empty() {
+            struct_ser.serialize_field("tasks", &self.tasks)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for ListBackgroundTasksResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "status",
+            "tasks",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Status,
+            Tasks,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "status" => Ok(GeneratedField::Status),
+                            "tasks" => Ok(GeneratedField::Tasks),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = ListBackgroundTasksResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.ListBackgroundTasksResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<ListBackgroundTasksResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut status__ = None;
+                let mut tasks__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = map_.next_value()?;
+                        }
+                        GeneratedField::Tasks => {
+                            if tasks__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("tasks"));
+                            }
+                            tasks__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(ListBackgroundTasksResponse {
+                    status: status__,
+                    tasks: tasks__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.ListBackgroundTasksResponse", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for ListModuleResourcesRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -7033,6 +7642,168 @@ impl<'de> serde::Deserialize<'de> for RegisterAssetsRequest {
             }
         }
         deserializer.deserialize_struct("module.RegisterAssetsRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for RegisterBackgroundTasksRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.module_key.is_empty() {
+            len += 1;
+        }
+        if !self.module_name.is_empty() {
+            len += 1;
+        }
+        if !self.version.is_empty() {
+            len += 1;
+        }
+        if !self.tasks.is_empty() {
+            len += 1;
+        }
+        if !self.application_id.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.RegisterBackgroundTasksRequest", len)?;
+        if !self.module_key.is_empty() {
+            struct_ser.serialize_field("moduleKey", &self.module_key)?;
+        }
+        if !self.module_name.is_empty() {
+            struct_ser.serialize_field("moduleName", &self.module_name)?;
+        }
+        if !self.version.is_empty() {
+            struct_ser.serialize_field("version", &self.version)?;
+        }
+        if !self.tasks.is_empty() {
+            struct_ser.serialize_field("tasks", &self.tasks)?;
+        }
+        if !self.application_id.is_empty() {
+            struct_ser.serialize_field("applicationId", &self.application_id)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for RegisterBackgroundTasksRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "module_key",
+            "moduleKey",
+            "module_name",
+            "moduleName",
+            "version",
+            "tasks",
+            "application_id",
+            "applicationId",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            ModuleKey,
+            ModuleName,
+            Version,
+            Tasks,
+            ApplicationId,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "moduleKey" | "module_key" => Ok(GeneratedField::ModuleKey),
+                            "moduleName" | "module_name" => Ok(GeneratedField::ModuleName),
+                            "version" => Ok(GeneratedField::Version),
+                            "tasks" => Ok(GeneratedField::Tasks),
+                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = RegisterBackgroundTasksRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.RegisterBackgroundTasksRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<RegisterBackgroundTasksRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut module_key__ = None;
+                let mut module_name__ = None;
+                let mut version__ = None;
+                let mut tasks__ = None;
+                let mut application_id__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::ModuleKey => {
+                            if module_key__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("moduleKey"));
+                            }
+                            module_key__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ModuleName => {
+                            if module_name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("moduleName"));
+                            }
+                            module_name__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Version => {
+                            if version__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("version"));
+                            }
+                            version__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Tasks => {
+                            if tasks__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("tasks"));
+                            }
+                            tasks__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ApplicationId => {
+                            if application_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("applicationId"));
+                            }
+                            application_id__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(RegisterBackgroundTasksRequest {
+                    module_key: module_key__.unwrap_or_default(),
+                    module_name: module_name__.unwrap_or_default(),
+                    version: version__.unwrap_or_default(),
+                    tasks: tasks__.unwrap_or_default(),
+                    application_id: application_id__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.RegisterBackgroundTasksRequest", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for RegisterTriggersRequest {

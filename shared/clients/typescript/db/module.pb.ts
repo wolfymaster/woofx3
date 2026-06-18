@@ -14,6 +14,7 @@ import * as common from "./common.pb";
 import * as module_trigger from "./module_trigger.pb";
 import * as module_action from "./module_action.pb";
 import * as module_widget from "./module_widget.pb";
+import * as background_task from "./background_task.pb";
 import * as module_asset from "./module_asset.pb";
 import * as module_resource from "./module_resource.pb";
 import * as module_resource_instance from "./module_resource_instance.pb";
@@ -449,6 +450,46 @@ export async function DeleteWidgetsByModuleId(
 ): Promise<common.ResponseStatus> {
   const response = await PBrequest(
     "/module.ModuleService/DeleteWidgetsByModuleId",
+    DeleteByModuleIdRequest.encode(deleteByModuleIdRequest),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
+}
+
+export async function RegisterBackgroundTasks(
+  registerBackgroundTasksRequest: background_task.RegisterBackgroundTasksRequest,
+  config?: ClientConfiguration,
+): Promise<background_task.ListBackgroundTasksResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/RegisterBackgroundTasks",
+    background_task.RegisterBackgroundTasksRequest.encode(
+      registerBackgroundTasksRequest,
+    ),
+    config,
+  );
+  return background_task.ListBackgroundTasksResponse.decode(response);
+}
+
+export async function ListBackgroundTasks(
+  listBackgroundTasksRequest: background_task.ListBackgroundTasksRequest,
+  config?: ClientConfiguration,
+): Promise<background_task.ListBackgroundTasksResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/ListBackgroundTasks",
+    background_task.ListBackgroundTasksRequest.encode(
+      listBackgroundTasksRequest,
+    ),
+    config,
+  );
+  return background_task.ListBackgroundTasksResponse.decode(response);
+}
+
+export async function DeleteBackgroundTasksByModuleId(
+  deleteByModuleIdRequest: DeleteByModuleIdRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/module.ModuleService/DeleteBackgroundTasksByModuleId",
     DeleteByModuleIdRequest.encode(deleteByModuleIdRequest),
     config,
   );
@@ -905,6 +946,46 @@ export async function DeleteWidgetsByModuleIdJSON(
   return common.ResponseStatusJSON.decode(response);
 }
 
+export async function RegisterBackgroundTasksJSON(
+  registerBackgroundTasksRequest: background_task.RegisterBackgroundTasksRequest,
+  config?: ClientConfiguration,
+): Promise<background_task.ListBackgroundTasksResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/RegisterBackgroundTasks",
+    background_task.RegisterBackgroundTasksRequestJSON.encode(
+      registerBackgroundTasksRequest,
+    ),
+    config,
+  );
+  return background_task.ListBackgroundTasksResponseJSON.decode(response);
+}
+
+export async function ListBackgroundTasksJSON(
+  listBackgroundTasksRequest: background_task.ListBackgroundTasksRequest,
+  config?: ClientConfiguration,
+): Promise<background_task.ListBackgroundTasksResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/ListBackgroundTasks",
+    background_task.ListBackgroundTasksRequestJSON.encode(
+      listBackgroundTasksRequest,
+    ),
+    config,
+  );
+  return background_task.ListBackgroundTasksResponseJSON.decode(response);
+}
+
+export async function DeleteBackgroundTasksByModuleIdJSON(
+  deleteByModuleIdRequest: DeleteByModuleIdRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/module.ModuleService/DeleteBackgroundTasksByModuleId",
+    DeleteByModuleIdRequestJSON.encode(deleteByModuleIdRequest),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
 export async function RegisterAssetsJSON(
   registerAssetsRequest: module_asset.RegisterAssetsRequest,
   config?: ClientConfiguration,
@@ -1208,6 +1289,22 @@ export interface ModuleService<Context = unknown> {
     deleteByModuleIdRequest: DeleteByModuleIdRequest,
     context: Context,
   ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  RegisterBackgroundTasks: (
+    registerBackgroundTasksRequest: background_task.RegisterBackgroundTasksRequest,
+    context: Context,
+  ) =>
+    | Promise<background_task.ListBackgroundTasksResponse>
+    | background_task.ListBackgroundTasksResponse;
+  ListBackgroundTasks: (
+    listBackgroundTasksRequest: background_task.ListBackgroundTasksRequest,
+    context: Context,
+  ) =>
+    | Promise<background_task.ListBackgroundTasksResponse>
+    | background_task.ListBackgroundTasksResponse;
+  DeleteBackgroundTasksByModuleId: (
+    deleteByModuleIdRequest: DeleteByModuleIdRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
   RegisterAssets: (
     registerAssetsRequest: module_asset.RegisterAssetsRequest,
     context: Context,
@@ -1490,6 +1587,42 @@ export function createModuleService<Context>(service: ModuleService<Context>) {
       DeleteWidgetsByModuleId: {
         name: "DeleteWidgetsByModuleId",
         handler: service.DeleteWidgetsByModuleId,
+        input: {
+          protobuf: DeleteByModuleIdRequest,
+          json: DeleteByModuleIdRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
+      },
+      RegisterBackgroundTasks: {
+        name: "RegisterBackgroundTasks",
+        handler: service.RegisterBackgroundTasks,
+        input: {
+          protobuf: background_task.RegisterBackgroundTasksRequest,
+          json: background_task.RegisterBackgroundTasksRequestJSON,
+        },
+        output: {
+          protobuf: background_task.ListBackgroundTasksResponse,
+          json: background_task.ListBackgroundTasksResponseJSON,
+        },
+      },
+      ListBackgroundTasks: {
+        name: "ListBackgroundTasks",
+        handler: service.ListBackgroundTasks,
+        input: {
+          protobuf: background_task.ListBackgroundTasksRequest,
+          json: background_task.ListBackgroundTasksRequestJSON,
+        },
+        output: {
+          protobuf: background_task.ListBackgroundTasksResponse,
+          json: background_task.ListBackgroundTasksResponseJSON,
+        },
+      },
+      DeleteBackgroundTasksByModuleId: {
+        name: "DeleteBackgroundTasksByModuleId",
+        handler: service.DeleteBackgroundTasksByModuleId,
         input: {
           protobuf: DeleteByModuleIdRequest,
           json: DeleteByModuleIdRequestJSON,

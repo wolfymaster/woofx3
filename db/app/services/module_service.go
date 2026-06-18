@@ -1233,6 +1233,103 @@ func (s *moduleService) DeleteWidgetsByModuleId(ctx context.Context, req *client
 	}, nil
 }
 
+func (s *moduleService) RegisterBackgroundTasks(ctx context.Context, req *client.RegisterBackgroundTasksRequest) (*client.ListBackgroundTasksResponse, error) {
+	createdByType := "MODULE"
+	createdByRef := req.ModuleKey
+	saved := make([]*models.BackgroundTask, 0, len(req.Tasks))
+	for _, in := range req.Tasks {
+		t := &models.BackgroundTask{
+			ID:            uuid.New(),
+			Name:          in.Name,
+			Description:   in.Description,
+			Function:      in.Function,
+			Schedule:      in.Schedule,
+			CreatedByType: createdByType,
+			CreatedByRef:  createdByRef,
+			ManifestID:    in.ManifestId,
+			ApplicationID: "",
+		}
+		if err := s.repo.UpsertBackgroundTask(t); err != nil {
+			return nil, fmt.Errorf("upsert background_task %q: %w", in.ManifestId, err)
+		}
+		saved = append(saved, t)
+	}
+
+	if s.publisher != nil {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   "",
+			EntityType:      "module.background_task",
+			Operation:       "registered",
+			Data:            buildBackgroundTaskRegisteredData(req.ModuleKey, req.ModuleName, req.Version, saved),
+			AutoAcknowledge: true,
+		})
+	}
+
+	protoTasks := make([]*client.BackgroundTask, len(saved))
+	for i, t := range saved {
+		protoTasks[i] = backgroundTaskToProto(t)
+	}
+	return &client.ListBackgroundTasksResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Background tasks registered successfully",
+		},
+		Tasks: protoTasks,
+	}, nil
+}
+
+func (s *moduleService) ListBackgroundTasks(ctx context.Context, req *client.ListBackgroundTasksRequest) (*client.ListBackgroundTasksResponse, error) {
+	tasks, err := s.repo.ListBackgroundTasks(req.CreatedByType, req.CreatedByRef)
+	if err != nil {
+		return nil, fmt.Errorf("list background_tasks: %w", err)
+	}
+	protoTasks := make([]*client.BackgroundTask, len(tasks))
+	for i, t := range tasks {
+		protoTasks[i] = backgroundTaskToProto(t)
+	}
+	return &client.ListBackgroundTasksResponse{
+		Status: &client.ResponseStatus{Code: client.ResponseStatus_OK},
+		Tasks:  protoTasks,
+	}, nil
+}
+
+func (s *moduleService) DeleteBackgroundTasksByModuleId(ctx context.Context, req *client.DeleteByModuleIdRequest) (*client.ResponseStatus, error) {
+	tasks, err := s.repo.ListBackgroundTasksByModulePrefix(req.ModuleId)
+	if err != nil {
+		return nil, fmt.Errorf("list background_tasks for delete: %w", err)
+	}
+	if err := s.repo.DeleteBackgroundTasksByModulePrefix(req.ModuleId); err != nil {
+		return nil, fmt.Errorf("delete background_tasks: %w", err)
+	}
+	if s.publisher != nil {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   "",
+			EntityType:      "module.background_task",
+			Operation:       "deregistered",
+			Data:            buildBackgroundTaskDeregisteredData(req.ModuleId, tasks),
+			AutoAcknowledge: true,
+		})
+	}
+	return &client.ResponseStatus{
+		Code:    client.ResponseStatus_OK,
+		Message: "Background tasks deleted successfully",
+	}, nil
+}
+
+func backgroundTaskToProto(t *models.BackgroundTask) *client.BackgroundTask {
+	return &client.BackgroundTask{
+		Id:            t.ID.String(),
+		ModuleId:      moduleIDFromCreatedByRef(t.CreatedByRef),
+		ManifestId:    t.ManifestID,
+		Name:          t.Name,
+		Description:   t.Description,
+		Function:      t.Function,
+		Schedule:      t.Schedule,
+		CreatedByType: t.CreatedByType,
+		CreatedByRef:  t.CreatedByRef,
+	}
+}
+
 func widgetToProto(w *models.Widget) *client.Widget {
 	var alertTypes []string
 	if w.AlertTypes != "" {

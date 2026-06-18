@@ -16,9 +16,9 @@ use log::{info, warn};
 use std::sync::Arc;
 
 use super::db_proxy::{
-    self, complete_module_delete, delete_actions_by_module_id, delete_commands_by_module,
-    delete_module, delete_module_resources, delete_triggers_by_module_id, delete_widgets_by_module_id,
-    delete_workflows_by_module,
+    self, complete_module_delete, delete_actions_by_module_id, delete_background_tasks_by_module_id,
+    delete_commands_by_module, delete_module, delete_module_resources, delete_triggers_by_module_id,
+    delete_widgets_by_module_id, delete_workflows_by_module,
     check_module_resource_usage, get_module_by_name, list_resource_instances_by_module,
     ResourceInstanceJson, ResourceUsage, UsageRef,
 };
@@ -77,6 +77,7 @@ pub enum DeleteStep {
     Actions,
     Triggers,
     Widgets,
+    BackgroundTasks,
     WidgetFiles,
     OverlayFiles,
     FunctionFiles,
@@ -94,6 +95,7 @@ impl DeleteStep {
             DeleteStep::Actions => 80,
             DeleteStep::Triggers => 70,
             DeleteStep::Widgets => 65,
+            DeleteStep::BackgroundTasks => 63,
             DeleteStep::WidgetFiles => 55,
             DeleteStep::OverlayFiles => 50,
             DeleteStep::FunctionFiles => 40,
@@ -111,6 +113,7 @@ impl DeleteStep {
             DeleteStep::Actions => "actions",
             DeleteStep::Triggers => "triggers",
             DeleteStep::Widgets => "widgets",
+            DeleteStep::BackgroundTasks => "background_tasks",
             DeleteStep::WidgetFiles => "widget_files",
             DeleteStep::OverlayFiles => "overlay_files",
             DeleteStep::FunctionFiles => "function_files",
@@ -134,6 +137,7 @@ impl ModuleDeletePlan {
             DeleteStep::Actions,
             DeleteStep::Triggers,
             DeleteStep::Widgets,
+            DeleteStep::BackgroundTasks,
             DeleteStep::WidgetFiles,
             DeleteStep::OverlayFiles,
             DeleteStep::FunctionFiles,
@@ -181,6 +185,9 @@ impl ModuleDeletePlan {
             }
             DeleteStep::Widgets => {
                 delete_widgets_by_module_id(ctx.db_proxy_url, ctx.manifest_id).await
+            }
+            DeleteStep::BackgroundTasks => {
+                delete_background_tasks_by_module_id(ctx.db_proxy_url, ctx.manifest_id).await
             }
             DeleteStep::WidgetFiles => {
                 let prefix = format!("modules/{}/widgets/", ctx.module_key);

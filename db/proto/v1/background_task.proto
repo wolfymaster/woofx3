@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package module;
+
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+
+// A background task declared by a module manifest and registered in the DB.
+// Tasks run on a cron schedule managed by barkloader's BackgroundTaskScheduler.
+message BackgroundTask {
+  string id = 1;
+  // Stable module id — first segment of the composite module key.
+  string module_id = 2;
+  string manifest_id = 3;
+  string name = 4;
+  string description = 5;
+  // Manifest-local function id to invoke (e.g. "poll_current_track").
+  string function = 6;
+  // Cron expression controlling the fire rate (e.g. "*/30 * * * * *").
+  string schedule = 7;
+  string created_by_type = 8;
+  string created_by_ref = 9;
+}
+
+message BackgroundTaskInput {
+  string manifest_id = 1;
+  string name = 2;
+  string description = 3;
+  string function = 4;
+  string schedule = 5;
+}
+
+message RegisterBackgroundTasksRequest {
+  string module_key = 1;
+  string module_name = 2;
+  string version = 3;
+  repeated BackgroundTaskInput tasks = 4;
+  string application_id = 5;
+}
+
+message ListBackgroundTasksRequest {
+  string created_by_type = 1;
+  string created_by_ref = 2;
+}
+
+message ListBackgroundTasksResponse {
+  common.ResponseStatus status = 1;
+  repeated BackgroundTask tasks = 2;
+}

@@ -393,6 +393,46 @@ func buildWidgetDeregisteredData(modulePrefix string, widgets []*models.Widget) 
 	}
 }
 
+func buildBackgroundTaskRegisteredData(moduleKey, moduleName, version string, tasks []*models.BackgroundTask) map[string]any {
+	moduleID := moduleIDFromCreatedByRef(moduleKey)
+	rows := make([]map[string]any, 0, len(tasks))
+	for _, t := range tasks {
+		rows = append(rows, map[string]any{
+			"id":             t.ID.String(),
+			"canonical_id":   canonicalIDFor(moduleID, "background_task", t.ManifestID),
+			"manifest_id":    t.ManifestID,
+			"name":           t.Name,
+			"description":    t.Description,
+			"function":       t.Function,
+			"schedule":       t.Schedule,
+			"created_by_ref": t.CreatedByRef,
+		})
+	}
+	return map[string]any{
+		"module_key":  moduleKey,
+		"module_name": moduleName,
+		"version":     version,
+		"tasks":       rows,
+	}
+}
+
+func buildBackgroundTaskDeregisteredData(modulePrefix string, tasks []*models.BackgroundTask) map[string]any {
+	rows := make([]map[string]any, 0, len(tasks))
+	for _, t := range tasks {
+		rows = append(rows, map[string]any{
+			"id":          t.ID.String(),
+			"manifest_id": t.ManifestID,
+			"name":        t.Name,
+			"function":    t.Function,
+			"schedule":    t.Schedule,
+		})
+	}
+	return map[string]any{
+		"module_prefix": modulePrefix,
+		"tasks":         rows,
+	}
+}
+
 func buildFunctionDeregisteredData(moduleKey, moduleName, version string, functions []models.ModuleFunction) map[string]any {
 	moduleID := moduleIDFromCreatedByRef(moduleKey)
 	rows := make([]map[string]any, 0, len(functions))

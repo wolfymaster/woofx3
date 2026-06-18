@@ -163,6 +163,46 @@ pub struct RegisterWidgetsJson {
     pub application_id: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackgroundTaskInputJson {
+    pub manifest_id: String,
+    pub name: String,
+    pub description: String,
+    pub function: String,
+    pub schedule: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterBackgroundTasksJson {
+    pub module_key: String,
+    pub module_name: String,
+    pub version: String,
+    pub tasks: Vec<BackgroundTaskInputJson>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub application_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackgroundTaskJson {
+    pub id: String,
+    pub module_id: String,
+    pub manifest_id: String,
+    pub name: String,
+    pub description: String,
+    pub function: String,
+    pub schedule: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListBackgroundTasksResponseJson {
+    #[serde(default)]
+    pub tasks: Vec<BackgroundTaskJson>,
+}
+
 /// Twirp JSON for `module.ModuleService/RegisterTriggers`.
 pub async fn register_triggers(
     db_proxy_url: &str,
@@ -1354,4 +1394,82 @@ pub async fn list_resource_instances_by_module(
         .await
         .map_err(|e| anyhow!("parse ListResourceInstancesByModule response: {}", e))?;
     Ok(parsed.instances)
+}
+
+pub async fn register_background_tasks(
+    db_proxy_url: &str,
+    module_key: &str,
+    module_name: &str,
+    version: &str,
+    tasks: Vec<BackgroundTaskInputJson>,
+    application_id: &str,
+) -> Result<()> {
+    let url = format!("{}/twirp/module.ModuleService/RegisterBackgroundTasks", db_proxy_url);
+    let body = RegisterBackgroundTasksJson {
+        module_key: module_key.to_string(),
+        module_name: module_name.to_string(),
+        version: version.to_string(),
+        tasks,
+        application_id: application_id.to_string(),
+    };
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("RegisterBackgroundTasks request failed: {}", e))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("RegisterBackgroundTasks failed {}: {}", status, text));
+    }
+    Ok(())
+}
+
+pub async fn list_background_tasks(
+    db_proxy_url: &str,
+) -> Result<Vec<BackgroundTaskJson>> {
+    let url = format!("{}/twirp/module.ModuleService/ListBackgroundTasks", db_proxy_url);
+    let body = serde_json::json!({ "createdByType": "", "createdByRef": "" });
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("ListBackgroundTasks request failed: {}", e))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("ListBackgroundTasks failed {}: {}", status, text));
+    }
+    let parsed: ListBackgroundTasksResponseJson = response
+        .json()
+        .await
+        .map_err(|e| anyhow!("parse ListBackgroundTasks response: {}", e))?;
+    Ok(parsed.tasks)
+}
+
+pub async fn delete_background_tasks_by_module_id(db_proxy_url: &str, module_id: &str) -> Result<()> {
+    let url = format!("{}/twirp/module.ModuleService/DeleteBackgroundTasksByModuleId", db_proxy_url);
+    let body = DeleteByModuleIdJson {
+        module_id: module_id.to_string(),
+    };
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("DeleteBackgroundTasksByModuleId request failed: {}", e))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("DeleteBackgroundTasksByModuleId failed {}: {}", status, text));
+    }
+    Ok(())
 }

@@ -406,6 +406,58 @@ func (r *ModuleRepository) DeleteWidgetsByModulePrefix(moduleID string) error {
 	).Delete(&models.Widget{}).Error
 }
 
+func (r *ModuleRepository) UpsertBackgroundTask(t *models.BackgroundTask) error {
+	var result struct {
+		ID uuid.UUID `gorm:"column:id"`
+	}
+	err := r.db.Raw(`
+		INSERT INTO public.background_tasks (id, name, description, function, schedule, created_by_type, created_by_ref, manifest_id, application_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		ON CONFLICT (created_by_type, created_by_ref, manifest_id) DO UPDATE SET
+			name = EXCLUDED.name,
+			description = EXCLUDED.description,
+			function = EXCLUDED.function,
+			schedule = EXCLUDED.schedule,
+			application_id = EXCLUDED.application_id,
+			updated_at = NOW()
+		RETURNING id
+	`, t.ID, t.Name, t.Description, t.Function, t.Schedule, t.CreatedByType, t.CreatedByRef, t.ManifestID, t.ApplicationID).Scan(&result).Error
+	if err != nil {
+		return err
+	}
+	t.ID = result.ID
+	return nil
+}
+
+func (r *ModuleRepository) ListBackgroundTasks(createdByType, createdByRef string) ([]*models.BackgroundTask, error) {
+	var tasks []*models.BackgroundTask
+	q := r.db
+	if createdByType != "" {
+		q = q.Where("created_by_type = ?", createdByType)
+	}
+	if createdByRef != "" {
+		q = q.Where("created_by_ref = ?", createdByRef)
+	}
+	err := q.Find(&tasks).Error
+	return tasks, err
+}
+
+func (r *ModuleRepository) ListBackgroundTasksByModulePrefix(moduleID string) ([]*models.BackgroundTask, error) {
+	var tasks []*models.BackgroundTask
+	err := r.db.Where(
+		"created_by_type = ? AND created_by_ref LIKE ?",
+		"MODULE", moduleID+":%",
+	).Find(&tasks).Error
+	return tasks, err
+}
+
+func (r *ModuleRepository) DeleteBackgroundTasksByModulePrefix(moduleID string) error {
+	return r.db.Where(
+		"created_by_type = ? AND created_by_ref LIKE ?",
+		"MODULE", moduleID+":%",
+	).Delete(&models.BackgroundTask{}).Error
+}
+
 func (r *ModuleRepository) UpdateModuleResourceVersion(id uuid.UUID, version string) (*models.ModuleResource, error) {
 	var res models.ModuleResource
 	if err := r.db.First(&res, "id = ?", id).Error; err != nil {

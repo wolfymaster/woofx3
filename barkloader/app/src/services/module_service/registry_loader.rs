@@ -2,8 +2,10 @@
 //! function source bytes from the configured repository (file or S3).
 
 use crate::services::background_scheduler::BackgroundTaskScheduler;
-use crate::services::module_service::db_proxy::{fetch_module_by_name, list_modules, ModuleRecord};
-use crate::services::module_service::module_manifest::ModuleManifest;
+use crate::services::module_service::db_proxy::{
+    fetch_module_by_name, list_background_tasks, list_modules, BackgroundTaskJson, ModuleRecord,
+};
+use crate::services::module_service::module_manifest::ManifestBackgroundTask;
 use lib_repository::Repository;
 use lib_sandbox::models::function::Function;
 use lib_sandbox::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule};
@@ -24,6 +26,24 @@ pub async fn hydrate_registry_from_db<R: Repository>(
     if modules.is_empty() {
         info!("No active modules in db; sandbox registry is empty");
         return Ok(());
+    }
+
+    // Fetch all registered background tasks once and group by stable module id.
+    // Tasks are keyed on module_id (first segment of created_by_ref) so they
+    // match the registry_key used below.
+    let all_tasks = match list_background_tasks(db_proxy_url).await {
+        Ok(tasks) => tasks,
+        Err(e) => {
+            warn!("Failed to fetch background tasks from db; no tasks will be scheduled: {}", e);
+            Vec::new()
+        }
+    };
+    let mut tasks_by_module: HashMap<String, Vec<BackgroundTaskJson>> = HashMap::new();
+    for task in all_tasks {
+        tasks_by_module
+            .entry(task.module_id.clone())
+            .or_default()
+            .push(task);
     }
 
     let mut loaded = 0usize;
@@ -54,7 +74,11 @@ pub async fn hydrate_registry_from_db<R: Repository>(
                         "Loaded module {} display_name={} ({} function(s), state={})",
                         registry_key, module.name, function_count, state
                     );
-                    register_background_tasks(scheduler, &registry_key, &module);
+                    if let Some(tasks) = tasks_by_module.get(&registry_key) {
+                        let task_defs: Vec<ManifestBackgroundTask> =
+                            tasks.iter().map(db_task_to_manifest).collect();
+                        scheduler.register(&registry_key, &task_defs);
+                    }
                 }
             }
             Err(err) => {
@@ -107,7 +131,24 @@ pub async fn refresh_module_in_registry<R: Repository>(
         .register_module(registry_key.clone(), registered)
         .map_err(|e| e.to_string())?;
 
-    register_background_tasks(scheduler, &registry_key, &module);
+    // Fetch all background tasks and pick the ones for this module. The task
+    // count is small enough that a full fetch is cheaper than a dedicated RPC.
+    match list_background_tasks(db_proxy_url).await {
+        Ok(all_tasks) => {
+            let task_defs: Vec<ManifestBackgroundTask> = all_tasks
+                .iter()
+                .filter(|t| t.module_id == registry_key)
+                .map(db_task_to_manifest)
+                .collect();
+            scheduler.register(&registry_key, &task_defs);
+        }
+        Err(e) => {
+            warn!(
+                "Failed to fetch background tasks for module {}; no tasks scheduled: {}",
+                registry_key, e
+            );
+        }
+    }
 
     info!(
         "Refreshed in-memory sandbox registry for id={} ({} function(s))",
@@ -130,6 +171,16 @@ fn registry_key_for_module(module: &ModuleRecord) -> String {
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
         .unwrap_or_default()
+}
+
+/// Convert a DB background task row into the scheduler's input type.
+fn db_task_to_manifest(task: &BackgroundTaskJson) -> ManifestBackgroundTask {
+    ManifestBackgroundTask {
+        id: task.manifest_id.clone(),
+        function: task.function.clone(),
+        schedule: task.schedule.clone(),
+        description: task.description.clone(),
+    }
 }
 
 async fn build_registered_module<R: Repository>(
@@ -240,33 +291,6 @@ fn registry_state_from_db(state: &str) -> ModuleState {
         ModuleState::Disabled
     } else {
         ModuleState::Active
-    }
-}
-
-/// Parse the module's manifest JSON (stored at install time) and register
-/// any declared background tasks with the scheduler. Silently skips modules
-/// whose manifest_json is absent or unparseable — those modules simply have
-/// no background tasks.
-fn register_background_tasks(
-    scheduler: &Arc<BackgroundTaskScheduler>,
-    registry_key: &str,
-    module: &ModuleRecord,
-) {
-    let manifest_json = match module.manifest_json.as_deref() {
-        Some(j) if !j.is_empty() => j,
-        _ => return,
-    };
-    match serde_json::from_str::<ModuleManifest>(manifest_json) {
-        Ok(manifest) if !manifest.background_tasks.is_empty() => {
-            scheduler.register(registry_key, &manifest.background_tasks);
-        }
-        Ok(_) => {}
-        Err(e) => {
-            warn!(
-                "Could not parse manifest JSON for module {} to extract background tasks: {}",
-                registry_key, e
-            );
-        }
     }
 }
 

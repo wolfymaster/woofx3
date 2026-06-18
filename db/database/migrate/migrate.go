@@ -27,6 +27,7 @@ func Migrate(db *gorm.DB) error {
 		migrations.RenameModuleWidgetsToWidgets(),
 		migrations.CreateOverlayTokensTable(),
 		migrations.AddWidgetEntryColumn(),
+		migrations.CreateBackgroundTasksTable(),
 	})
 
 	return m.Migrate()
@@ -53,6 +54,7 @@ func Rollback(db *gorm.DB) error {
 		migrations.RenameModuleWidgetsToWidgets(),
 		migrations.CreateOverlayTokensTable(),
 		migrations.AddWidgetEntryColumn(),
+		migrations.CreateBackgroundTasksTable(),
 	})
 
 	return m.RollbackLast()

@@ -21,7 +21,8 @@ pub async fn cleanup_old_version(
     super::db_proxy::delete_triggers_by_module_id(url, module_name).await?;
     super::db_proxy::delete_actions_by_module_id(url, module_name).await?;
     super::db_proxy::delete_widgets_by_module_id(url, module_name).await?;
-    info!("Deleted triggers, actions, and widgets for module {}", module_name);
+    super::db_proxy::delete_background_tasks_by_module_id(url, module_name).await?;
+    info!("Deleted triggers, actions, widgets, and background tasks for module {}", module_name);
 
     super::db_proxy::delete_workflows_by_module(url, "", module_name).await?;
     info!("Deleted workflows for module {}", module_name);
@@ -365,6 +366,33 @@ pub async fn run_install<R: Repository>(
                     &manifest.name,
                     &manifest.version,
                     widget_inputs,
+                    application_id,
+                )
+                .await?;
+            }
+
+            if !manifest.background_tasks.is_empty() {
+                let task_inputs: Vec<_> = manifest.background_tasks.iter().map(|t| {
+                    super::db_proxy::BackgroundTaskInputJson {
+                        manifest_id: t.id.clone(),
+                        name: t.id.clone(),
+                        description: t.description.clone(),
+                        function: t.function.clone(),
+                        schedule: t.schedule.clone(),
+                    }
+                }).collect();
+                info!(
+                    "Registering {} background task(s) for module {} (moduleKey={})",
+                    task_inputs.len(),
+                    module_key,
+                    composite_module_key
+                );
+                super::db_proxy::register_background_tasks(
+                    url,
+                    composite_module_key,
+                    &manifest.name,
+                    &manifest.version,
+                    task_inputs,
                     application_id,
                 )
                 .await?;
