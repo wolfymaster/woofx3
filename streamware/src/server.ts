@@ -3,23 +3,20 @@ import { join, normalize, resolve } from "node:path";
 import type { ServerWebSocket, WebSocketHandler } from "bun";
 import { createServiceLogger } from "@woofx3/common/logging";
 import { createMessageBus } from "@woofx3/nats";
-import { AlertBroadcaster } from "./alert-broadcaster";
-import { AlertQueueManager } from "./alert-queue-manager";
-import { buildBuiltinWidgetDefinitions, getBuiltinWidgetSpecs, initBuiltinWidgets } from "./builtin-widgets";
+import { EventBroadcaster } from "./events/broadcaster";
+import { EventQueueManager } from "./events/queue-manager";
+import { initWidgetEventHandlers } from "./events/handlers";
+import { buildBuiltinWidgetDefinitions, getBuiltinWidgetSpecs, initBuiltinWidgets } from "./widgets/builtin";
 import { loadConfig, validateOverlayConfig, type StreamwareRuntimeConfig } from "./config";
 import { DbClient } from "./db";
-import { FrameAssembler } from "./frame-assembler";
+import { FrameAssembler } from "./overlay/frame-assembler";
 import { initSubscriptions } from "./nats-subscriptions";
 import { connectObs } from "./obs/manager";
-import { OverlayHost } from "./overlay-host";
-import { maskToken, OverlayTokenResolver } from "./overlay-token";
-import {
-  StorageBroadcaster,
-  type OverlayConnectionMeta,
-  type OverlayConnectionStore,
-} from "./storage-broadcaster";
-import { initWidgetEventHandlers } from "./widget-event-handlers";
-import { WidgetAssetProxy, sanitizeAssetPath } from "./widget-asset-proxy";
+import { OverlayHost } from "./overlay/scene-host";
+import { maskToken, OverlayTokenResolver } from "./overlay/token-resolver";
+import type { OverlayConnectionMeta, OverlayConnectionStore } from "./overlay/connections";
+import { StorageBroadcaster } from "./storage/broadcaster";
+import { WidgetAssetProxy, sanitizeAssetPath } from "./overlay/asset-proxy";
 
 async function main() {
   const config = loadConfig();
@@ -46,7 +43,7 @@ async function main() {
 
   const obs = await connectObs(config.obs, logger);
 
-  const broadcaster = new AlertBroadcaster(logger, nats);
+  const broadcaster = new EventBroadcaster(logger, nats);
   const storageBroadcaster = new StorageBroadcaster(logger, nats);
 
   const db = config.databaseProxyUrl ? new DbClient(config.databaseProxyUrl) : null;
@@ -73,9 +70,9 @@ async function main() {
     overlayConnections,
   });
 
-  let alertQueue: AlertQueueManager | null = null;
+  let alertQueue: EventQueueManager | null = null;
   if (nats && db) {
-    alertQueue = new AlertQueueManager(db, nats, logger);
+    alertQueue = new EventQueueManager(db, nats, logger);
     await initWidgetEventHandlers({
       nats,
       db,
@@ -119,7 +116,7 @@ type ConnectionTag =
 
 function startHttpServer(
   config: StreamwareRuntimeConfig,
-  broadcaster: AlertBroadcaster,
+  broadcaster: EventBroadcaster,
   storageBroadcaster: StorageBroadcaster,
   db: DbClient | null,
   overlayHost: OverlayHost,
@@ -250,6 +247,7 @@ function startHttpServer(
       const response: Response = await (async (): Promise<Response> => {
         // Token-scoped overlay routes (design §5.2).
         if (url.pathname.startsWith("/o/")) {
+          logger.info("overlay route", { method: req.method, path: url.pathname });
           return handleOverlayRoutes(
             req,
             url,
@@ -287,39 +285,6 @@ function startHttpServer(
           }
         }
 
-        if (url.pathname.startsWith("/api/scene/")) {
-          return handleSceneFetch(url.pathname, db, logger);
-        }
-
-        if (
-          url.pathname === "/" ||
-          url.pathname === "/overlay/alerts" ||
-          url.pathname === "/overlay/scene" ||
-          url.pathname.startsWith("/overlay/scene/")
-        ) {
-          return serveFile(indexHtml);
-        }
-
-        // Legacy /assets/ handler (design §5.1): when legacyRoutes is enabled,
-        // match any pathname containing /assets/ that didn't go through /o/.
-        if (config.legacyRoutes && url.pathname.includes("/assets/")) {
-          const assetsIdx = url.pathname.lastIndexOf("/assets/");
-          const rawTail = url.pathname.slice(assetsIdx + "/assets/".length);
-          const tail = sanitizeAssetPath(rawTail);
-          if (tail !== null) {
-            const assetsRoot = normalize(join(uiDist, "assets"));
-            const candidate = normalize(join(assetsRoot, tail));
-            // Invariant: resolved path must stay within the assets directory.
-            if (candidate === assetsRoot || candidate.startsWith(assetsRoot + "/")) {
-              const file = Bun.file(candidate);
-              if (await file.exists()) {
-                return new Response(file);
-              }
-              // Fall through to other handlers.
-            }
-          }
-        }
-
         const fromUi = await tryServeUnder(uiDist, url.pathname);
         if (fromUi) {
           return fromUi;
@@ -332,6 +297,9 @@ function startHttpServer(
         return new Response("Not Found", { status: 404 });
       })();
 
+      if (url.pathname.startsWith("/o/")) {
+        logger.info("overlay route response", { path: url.pathname, status: response.status });
+      }
       return withCors(response);
     },
     websocket: websocket as WebSocketHandler<unknown>,
@@ -340,9 +308,8 @@ function startHttpServer(
   logger.info("streamware listening", {
     port: config.port,
     bindHost: config.bindHost,
-    overlayUrl: `http://localhost:${config.port}/overlay/alerts`,
-    sceneOverlayUrl: `http://localhost:${config.port}/overlay/scene`,
-    wsUrl: `ws://localhost:${config.port}/ws/alerts`,
+    overlayBase: `http://localhost:${config.port}/o/`,
+    eventsWs: `ws://localhost:${config.port}/o/{token}/events`,
     moduleStateWsUrl: `ws://localhost:${config.port}/ws/module-state`,
   });
 }
@@ -500,130 +467,6 @@ function withCors(res: Response): Response {
     headers.set(name, value);
   }
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
-}
-
-async function handleSceneFetch(
-  pathname: string,
-  db: DbClient | null,
-  logger: ReturnType<typeof createServiceLogger>
-): Promise<Response> {
-  const sceneId = decodeURIComponent(pathname.slice("/api/scene/".length));
-  if (!sceneId) {
-    return new Response("Missing scene id", { status: 400, headers: SCENE_CORS_HEADERS });
-  }
-  if (!db) {
-    return new Response("db proxy unavailable", {
-      status: 503,
-      headers: SCENE_CORS_HEADERS,
-    });
-  }
-  try {
-    const response = await db.getScene({ id: sceneId });
-    if (response.status?.code !== "OK" || !response.scene) {
-      return new Response("Scene not found", { status: 404, headers: SCENE_CORS_HEADERS });
-    }
-    const s = response.scene;
-    const rawWidgets = (() => {
-      try {
-        const parsed = JSON.parse(s.widgetsJson || "[]");
-        return Array.isArray(parsed) ? parsed : [];
-      } catch {
-        return [];
-      }
-    })();
-    const widgets = rawWidgets.map((w) => normalizeWidgetInstance(w, logger)).filter((w): w is Record<string, unknown> => w !== null);
-    const layout = (() => {
-      try {
-        const parsed = JSON.parse(s.layoutJson || "{}");
-        return parsed && typeof parsed === "object" ? parsed : {};
-      } catch {
-        return {};
-      }
-    })();
-    return Response.json(
-      { id: s.id, applicationId: s.applicationId, name: s.name, widgets, layout },
-      { headers: SCENE_CORS_HEADERS }
-    );
-  } catch (err) {
-    logger.warn("scene fetch failed", { sceneId, err });
-    return new Response("Internal error", { status: 500, headers: SCENE_CORS_HEADERS });
-  }
-}
-
-/**
- * Bridge raw widget instance JSON (Convex shape) into the canonical
- * SceneOverlay shape:
- *  - Derive `moduleId` from `widgetCanonicalId` (`{moduleId}:widget:...`).
- *  - For built-in widgets, populate `bundleUrl`, `acceptedEvents` from
- *    the in-repo spec.
- *  - Collapse a sibling `size.{width,height}` into `position.{width,height}`
- *    when the saved shape stores them separately.
- *
- * Returns `null` for entries we can't even identify (no canonical id).
- * The SceneOverlay's own validator will drop anything still incomplete.
- */
-function normalizeWidgetInstance(
-  raw: unknown,
-  logger: ReturnType<typeof createServiceLogger>
-): Record<string, unknown> | null {
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
-  const w = { ...(raw as Record<string, unknown>) };
-
-  const canonicalId = typeof w.widgetCanonicalId === "string" ? w.widgetCanonicalId : "";
-  if (!canonicalId) {
-    logger.warn("scene widget missing widgetCanonicalId; dropping", { widget: w });
-    return null;
-  }
-
-  // moduleId is the first segment of the canonical id.
-  if (typeof w.moduleId !== "string" || !w.moduleId) {
-    const colon = canonicalId.indexOf(":");
-    if (colon > 0) {
-      w.moduleId = canonicalId.slice(0, colon);
-    }
-  }
-
-  // Built-in lookup fills bundleUrl + acceptedEvents.
-  const builtinPrefix = "builtin:widget:";
-  if (canonicalId.startsWith(builtinPrefix)) {
-    const manifestId = canonicalId.slice(builtinPrefix.length);
-    const spec = getBuiltinWidgetSpecs().find((s) => s.manifestId === manifestId);
-    if (!spec) {
-      logger.warn("built-in widget canonicalId has no matching spec; dropping", {
-        widgetCanonicalId: canonicalId,
-      });
-      return null;
-    }
-    if (typeof w.bundleUrl !== "string" || !w.bundleUrl) {
-      w.bundleUrl = `/widgets/builtin/${spec.manifestId}/index.html`;
-    }
-    if (!Array.isArray(w.acceptedEvents) || w.acceptedEvents.length === 0) {
-      w.acceptedEvents = spec.acceptedEvents;
-    }
-  }
-
-  // Collapse `size` into `position` if the saved shape kept them separate.
-  const position = (w.position ?? {}) as Record<string, unknown>;
-  const size = (w.size ?? {}) as Record<string, unknown>;
-  const px = typeof position.x === "number" ? position.x : 0;
-  const py = typeof position.y === "number" ? position.y : 0;
-  const pw =
-    typeof position.width === "number"
-      ? position.width
-      : typeof size.width === "number"
-      ? size.width
-      : 0;
-  const ph =
-    typeof position.height === "number"
-      ? position.height
-      : typeof size.height === "number"
-      ? size.height
-      : 0;
-  w.position = { x: px, y: py, width: pw, height: ph };
-
-  return w;
 }
 
 async function tryServeUnder(rootDir: string, pathname: string): Promise<Response | null> {

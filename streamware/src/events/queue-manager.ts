@@ -1,6 +1,6 @@
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
-import type { DbClient } from "./db";
+import type { DbClient } from "../db";
 
 /**
  * Per-application FIFO queue of alert envelopes with lease semantics.
@@ -24,7 +24,7 @@ import type { DbClient } from "./db";
  * and require operator replay. Hydrating on boot is a follow-up.
  */
 
-export interface AlertEnvelope {
+export interface EventEnvelope {
   /** AlertPayload envelope id (`payload.id`). Stamped by the
    *  workflow action; preserved end-to-end. */
   id: string;
@@ -46,7 +46,7 @@ export interface AlertEnvelope {
 }
 
 interface Lease {
-  envelope: AlertEnvelope;
+  envelope: EventEnvelope;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -54,7 +54,7 @@ const DEFAULT_DURATION_S = 5;
 const LEASE_BUFFER_S = 5;
 const MAX_LEASE_S = 60;
 
-export interface AlertQueueManagerOptions {
+export interface EventQueueManagerOptions {
   /** Override the lease buffer (seconds added to the alert's
    *  declared duration before timing out). Tests use a tight
    *  value; production keeps the default. */
@@ -65,8 +65,8 @@ export interface AlertQueueManagerOptions {
   maxLeaseSeconds?: number;
 }
 
-export class AlertQueueManager {
-  private readonly queues = new Map<string, AlertEnvelope[]>();
+export class EventQueueManager {
+  private readonly queues = new Map<string, EventEnvelope[]>();
   private readonly leases = new Map<string, Lease>();
   private readonly leaseBufferSeconds: number;
   private readonly maxLeaseSeconds: number;
@@ -75,7 +75,7 @@ export class AlertQueueManager {
     private readonly db: DbClient,
     private readonly nats: NATSClient | null,
     private readonly logger: SharedLogger,
-    opts: AlertQueueManagerOptions = {}
+    opts: EventQueueManagerOptions = {}
   ) {
     this.leaseBufferSeconds = opts.leaseBufferSeconds ?? LEASE_BUFFER_S;
     this.maxLeaseSeconds = opts.maxLeaseSeconds ?? MAX_LEASE_S;
@@ -86,7 +86,7 @@ export class AlertQueueManager {
     return this.queues.get(applicationId)?.length ?? 0;
   }
 
-  inFlight(applicationId: string): AlertEnvelope | null {
+  inFlight(applicationId: string): EventEnvelope | null {
     return this.leases.get(applicationId)?.envelope ?? null;
   }
 
@@ -96,15 +96,15 @@ export class AlertQueueManager {
    * its turn behind the current lease and any earlier pending
    * envelopes.
    */
-  async enqueue(envelope: AlertEnvelope): Promise<void> {
+  async enqueue(envelope: EventEnvelope): Promise<void> {
     if (!envelope.applicationId) {
-      this.logger.warn("AlertQueueManager.enqueue: missing applicationId; dropping", {
+      this.logger.warn("EventQueueManager.enqueue: missing applicationId; dropping", {
         envelopeId: envelope.id,
       });
       return;
     }
     if (!envelope.id) {
-      this.logger.warn("AlertQueueManager.enqueue: missing envelope id; dropping", {
+      this.logger.warn("EventQueueManager.enqueue: missing envelope id; dropping", {
         applicationId: envelope.applicationId,
       });
       return;
@@ -351,7 +351,7 @@ export class AlertQueueManager {
 
   private async markTimedOut(
     applicationId: string,
-    envelope: AlertEnvelope,
+    envelope: EventEnvelope,
     reason: string
   ): Promise<void> {
     try {
@@ -370,7 +370,7 @@ export class AlertQueueManager {
     }
   }
 
-  private alertDurationSeconds(envelope: AlertEnvelope): number {
+  private alertDurationSeconds(envelope: EventEnvelope): number {
     const raw = envelope.parameters?.duration;
     const n = typeof raw === "number" ? raw : Number(raw);
     if (!Number.isFinite(n) || n <= 0) {

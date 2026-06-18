@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { AlertBroadcaster } from "./alert-broadcaster";
+import { EventBroadcaster } from "../../src/events/broadcaster";
 
 function fakeLogger() {
   return {
@@ -39,11 +39,11 @@ function fakeWs(id: string): FakeWs {
   return ws;
 }
 
-describe("AlertBroadcaster overlay inbound", () => {
+describe("EventBroadcaster overlay inbound", () => {
   it("forwards a widget.event with key=alert.lifecycle to NATS widget.event", () => {
     const logger = fakeLogger();
     const nats = fakeNats();
-    const bc = new AlertBroadcaster(logger, nats);
+    const bc = new EventBroadcaster(logger, nats);
     const handlers = bc.handlers();
     const ws = fakeWs("overlay-1");
     handlers.open?.(ws as any);
@@ -70,7 +70,7 @@ describe("AlertBroadcaster overlay inbound", () => {
   it("forwards alert.lifecycle with error", () => {
     const logger = fakeLogger();
     const nats = fakeNats();
-    const bc = new AlertBroadcaster(logger, nats);
+    const bc = new EventBroadcaster(logger, nats);
     const handlers = bc.handlers();
     const ws = fakeWs("overlay-1");
     handlers.open?.(ws as any);
@@ -91,7 +91,7 @@ describe("AlertBroadcaster overlay inbound", () => {
   it("drops malformed JSON without throwing", () => {
     const logger = fakeLogger();
     const nats = fakeNats();
-    const bc = new AlertBroadcaster(logger, nats);
+    const bc = new EventBroadcaster(logger, nats);
     const handlers = bc.handlers();
     const ws = fakeWs("overlay-1");
     handlers.open?.(ws as any);
@@ -103,7 +103,7 @@ describe("AlertBroadcaster overlay inbound", () => {
   it("drops messages with unknown kind", () => {
     const logger = fakeLogger();
     const nats = fakeNats();
-    const bc = new AlertBroadcaster(logger, nats);
+    const bc = new EventBroadcaster(logger, nats);
     const handlers = bc.handlers();
     const ws = fakeWs("overlay-1");
     handlers.open?.(ws as any);
@@ -114,7 +114,7 @@ describe("AlertBroadcaster overlay inbound", () => {
   it("drops widget.event with missing moduleId / instanceId / key", () => {
     const logger = fakeLogger();
     const nats = fakeNats();
-    const bc = new AlertBroadcaster(logger, nats);
+    const bc = new EventBroadcaster(logger, nats);
     const handlers = bc.handlers();
     const ws = fakeWs("overlay-1");
     handlers.open?.(ws as any);
@@ -124,7 +124,7 @@ describe("AlertBroadcaster overlay inbound", () => {
 
   it("does not throw when NATS is unavailable; logs and drops", () => {
     const logger = fakeLogger();
-    const bc = new AlertBroadcaster(logger, null);
+    const bc = new EventBroadcaster(logger, null);
     const handlers = bc.handlers();
     const ws = fakeWs("overlay-1");
     handlers.open?.(ws as any);
@@ -143,7 +143,7 @@ describe("AlertBroadcaster overlay inbound", () => {
 
   it("broadcast() pushes the envelope to every connected client", () => {
     const logger = fakeLogger();
-    const bc = new AlertBroadcaster(logger, null);
+    const bc = new EventBroadcaster(logger, null);
     const handlers = bc.handlers();
     const a = fakeWs("a");
     const b = fakeWs("b");

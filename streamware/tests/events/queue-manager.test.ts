@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { AlertQueueManager, type AlertEnvelope } from "./alert-queue-manager";
+import { EventQueueManager, type EventEnvelope } from "../../src/events/queue-manager";
 
 const APP = "11111111-1111-1111-1111-111111111111";
 
@@ -35,7 +35,7 @@ function fakeDb() {
   return db;
 }
 
-function envelope(id: string, opts: { duration?: number; appId?: string } = {}): AlertEnvelope {
+function envelope(id: string, opts: { duration?: number; appId?: string } = {}): EventEnvelope {
   const applicationId = opts.appId ?? APP;
   const params: Record<string, unknown> = { widget: "MediaWidget" };
   if (opts.duration !== undefined) {
@@ -44,7 +44,7 @@ function envelope(id: string, opts: { duration?: number; appId?: string } = {}):
   return {
     id,
     applicationId,
-    parameters: params as AlertEnvelope["parameters"],
+    parameters: params as EventEnvelope["parameters"],
     event: null,
     rawJson: JSON.stringify({ id, parameters: params, event: null, applicationId }),
   };
@@ -52,7 +52,7 @@ function envelope(id: string, opts: { duration?: number; appId?: string } = {}):
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-describe("AlertQueueManager", () => {
+describe("EventQueueManager", () => {
   let originalSetTimeout: typeof setTimeout;
   let originalClearTimeout: typeof clearTimeout;
 
@@ -68,7 +68,7 @@ describe("AlertQueueManager", () => {
   it("dispatches the first enqueued alert immediately", async () => {
     const nats = fakeNats();
     const db = fakeDb();
-    const qm = new AlertQueueManager(db, nats, fakeLogger());
+    const qm = new EventQueueManager(db, nats, fakeLogger());
 
     await qm.enqueue(envelope("env-1", { duration: 5 }));
 
@@ -88,7 +88,7 @@ describe("AlertQueueManager", () => {
   it("queues additional alerts behind the in-flight lease", async () => {
     const nats = fakeNats();
     const db = fakeDb();
-    const qm = new AlertQueueManager(db, nats, fakeLogger());
+    const qm = new EventQueueManager(db, nats, fakeLogger());
 
     await qm.enqueue(envelope("env-1", { duration: 5 }));
     await qm.enqueue(envelope("env-2", { duration: 5 }));
@@ -104,7 +104,7 @@ describe("AlertQueueManager", () => {
   it("dispatches the next alert when the in-flight one completes", async () => {
     const nats = fakeNats();
     const db = fakeDb();
-    const qm = new AlertQueueManager(db, nats, fakeLogger());
+    const qm = new EventQueueManager(db, nats, fakeLogger());
 
     await qm.enqueue(envelope("env-1", { duration: 5 }));
     await qm.enqueue(envelope("env-2", { duration: 5 }));
@@ -125,7 +125,7 @@ describe("AlertQueueManager", () => {
   it("times out a stuck alert and dispatches the next one", async () => {
     const nats = fakeNats();
     const db = fakeDb();
-    const qm = new AlertQueueManager(db, nats, fakeLogger(), {
+    const qm = new EventQueueManager(db, nats, fakeLogger(), {
       leaseBufferSeconds: 0,
       maxLeaseSeconds: 5,
     });
@@ -149,7 +149,7 @@ describe("AlertQueueManager", () => {
   it("ignores stale acks for an envelope that's no longer in flight", async () => {
     const nats = fakeNats();
     const db = fakeDb();
-    const qm = new AlertQueueManager(db, nats, fakeLogger());
+    const qm = new EventQueueManager(db, nats, fakeLogger());
 
     await qm.enqueue(envelope("env-1", { duration: 5 }));
     await qm.handleStatus(APP, "env-1", "completed");
@@ -165,7 +165,7 @@ describe("AlertQueueManager", () => {
   it("skipCurrent advances the queue and marks the row skipped", async () => {
     const nats = fakeNats();
     const db = fakeDb();
-    const qm = new AlertQueueManager(db, nats, fakeLogger());
+    const qm = new EventQueueManager(db, nats, fakeLogger());
 
     await qm.enqueue(envelope("env-1"));
     await qm.enqueue(envelope("env-2"));
@@ -182,7 +182,7 @@ describe("AlertQueueManager", () => {
   it("clearPending marks every pending alert skipped without touching the lease", async () => {
     const nats = fakeNats();
     const db = fakeDb();
-    const qm = new AlertQueueManager(db, nats, fakeLogger());
+    const qm = new EventQueueManager(db, nats, fakeLogger());
 
     await qm.enqueue(envelope("env-1"));
     await qm.enqueue(envelope("env-2"));
@@ -198,7 +198,7 @@ describe("AlertQueueManager", () => {
   it("isolates queues by applicationId", async () => {
     const nats = fakeNats();
     const db = fakeDb();
-    const qm = new AlertQueueManager(db, nats, fakeLogger());
+    const qm = new EventQueueManager(db, nats, fakeLogger());
 
     await qm.enqueue(envelope("a1", { appId: "app-A" }));
     await qm.enqueue(envelope("b1", { appId: "app-B" }));
@@ -213,7 +213,7 @@ describe("AlertQueueManager", () => {
     const nats = fakeNats();
     const db = fakeDb();
     const log = fakeLogger();
-    const qm = new AlertQueueManager(db, nats, log);
+    const qm = new EventQueueManager(db, nats, log);
 
     await qm.enqueue({ ...envelope("env-1"), applicationId: "" });
     await qm.enqueue({ ...envelope(""), applicationId: APP });

@@ -1,5 +1,5 @@
 import type { SharedLogger } from "@woofx3/common/logging";
-import type Manager from "./obs/manager";
+import type Manager from "./manager";
 
 interface SlobsLegacyMessage {
   command: string;

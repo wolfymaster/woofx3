@@ -1,7 +1,7 @@
 import type { ServerWebSocket, WebSocketHandler } from "bun";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
-import { publishWidgetEvent } from "./widget-event-wire";
+import { publishWidgetEvent } from "./wire";
 
 /**
  * Envelope published by the engine's `builtin:action:alert` to the
@@ -26,7 +26,7 @@ export interface CloudEventLike {
   data?: Record<string, unknown>;
 }
 
-export interface AlertPayload {
+export interface EventPayload {
   id?: string;
   parameters: Record<string, unknown>;
   event: CloudEventLike | null;
@@ -72,7 +72,7 @@ export interface OverlayInboundMessage {
  * The browser overlay is a thin renderer; ordering and queueing happen
  * client-side in Phase 1 (Phase 2 moves the queue to the api).
  */
-export class AlertBroadcaster {
+export class EventBroadcaster {
   private readonly clients = new Set<ServerWebSocket<ConnectionData>>();
   private nextId = 1;
   private nats: NATSClient | null;
@@ -89,12 +89,12 @@ export class AlertBroadcaster {
     return this.clients.size;
   }
 
-  broadcast(payload: AlertPayload): void {
+  broadcast(payload: EventPayload): void {
     if (this.clients.size === 0) {
       this.logger.warn("Alert dropped — no overlay clients connected", { payload });
       return;
     }
-    const enriched: AlertPayload = {
+    const enriched: EventPayload = {
       ...payload,
       id: payload.id ?? crypto.randomUUID(),
     };

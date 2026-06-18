@@ -1,24 +1,24 @@
 import type { ApplicationContext, IApplication, ServicesRegistry } from "@woofx3/common/runtime";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { DbClient } from "./db";
-import { AlertBroadcaster } from "./alert-broadcaster";
-import { AlertQueueManager } from "./alert-queue-manager";
-import { StorageBroadcaster } from "./storage-broadcaster";
+import { EventBroadcaster } from "./events/broadcaster";
+import { EventQueueManager } from "./events/queue-manager";
+import { StorageBroadcaster } from "./storage/broadcaster";
 import type { StreamwareRuntimeConfig } from "./config";
 
 export type StreamwareServices = ServicesRegistry & {
   db: DbClient | null;
   messageBus: unknown;
   obs: unknown;
-  alertBroadcaster: AlertBroadcaster;
-  alertQueue: AlertQueueManager | null;
+  eventBroadcaster: EventBroadcaster;
+  eventQueue: EventQueueManager | null;
   storageBroadcaster: StorageBroadcaster;
 };
 
 export type StreamwareContext = {
-  alertBroadcaster: AlertBroadcaster;
+  eventBroadcaster: EventBroadcaster;
   storageBroadcaster: StorageBroadcaster;
-  alertQueue: AlertQueueManager | null;
+  eventQueue: EventQueueManager | null;
   config: StreamwareRuntimeConfig;
 };
 
@@ -29,16 +29,14 @@ export default class Streamware implements IApplication<StreamwareContext, Strea
 
   constructor() {
     this.context = {
-      alertBroadcaster: {} as AlertBroadcaster,
+      eventBroadcaster: {} as EventBroadcaster,
       storageBroadcaster: {} as StorageBroadcaster,
-      alertQueue: null,
+      eventQueue: null,
       config: {} as StreamwareRuntimeConfig,
     } as StreamwareContext;
   }
 
   async run(ctx: StreamwareAppContext): Promise<void> {
-    // The actual initialization is done in server.ts main()
-    // This method exists to satisfy IApplication interface
     ctx.logger.info("Streamware application run called");
   }
 }

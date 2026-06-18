@@ -1,9 +1,9 @@
 import { join, resolve, sep } from "node:path";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { WidgetBootPayload } from "@woofx3/module-sdk/src/widget-protocol";
-import { BUILTIN_MODULE_KEY, type OverlayHost, type OverlayWidgetInstance } from "./overlay-host";
-import { maskToken } from "./overlay-token";
-import { sanitizeAssetPath } from "./widget-asset-proxy";
+import { BUILTIN_MODULE_KEY, type OverlayHost, type OverlayWidgetInstance } from "./scene-host";
+import { maskToken } from "./token-resolver";
+import { sanitizeAssetPath } from "./asset-proxy";
 
 /**
  * Uniform blank document (design 5.2.11): served byte-for-byte

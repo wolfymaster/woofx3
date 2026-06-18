@@ -3,7 +3,7 @@ import {
   StorageBroadcaster,
   mapStorageChangedEnvelope,
   type StorageChangedPayload,
-} from "./storage-broadcaster";
+} from "../../src/storage/broadcaster";
 
 function fakeLogger() {
   return {

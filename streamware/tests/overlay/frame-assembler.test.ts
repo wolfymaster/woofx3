@@ -3,9 +3,9 @@ import {
   buildFrameScaffold,
   injectFrameScaffold,
   SHIM_SRC,
-} from "./frame-assembler";
-import { sanitizeAssetPath } from "./widget-asset-proxy";
-import type { FrameScaffold } from "./frame-assembler";
+} from "../../src/overlay/frame-assembler";
+import { sanitizeAssetPath } from "../../src/overlay/asset-proxy";
+import type { FrameScaffold } from "../../src/overlay/frame-assembler";
 
 function minimalBoot(): FrameScaffold["boot"] {
   return {

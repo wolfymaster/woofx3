@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { sanitizeAssetPath, WidgetAssetProxy } from "./widget-asset-proxy";
+import { sanitizeAssetPath, WidgetAssetProxy } from "../../src/overlay/asset-proxy";
 
 function fakeLogger() {
   return {

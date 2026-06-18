@@ -1,7 +1,7 @@
 import type { WidgetDefinition, WidgetSettingDefinition } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { createMessageBus } from "@woofx3/nats";
-import type { DbClient } from "./db";
+import type { DbClient } from "../db";
 
 /**
  * Spec shape for a built-in woofx3 widget. Each entry produces a

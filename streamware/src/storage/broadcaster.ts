@@ -1,23 +1,10 @@
 import type { ServerWebSocket, WebSocketHandler } from "bun";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
-import { publishWidgetEvent } from "./widget-event-wire";
+import { publishWidgetEvent } from "../events/wire";
+import type { OverlayConnectionMeta, OverlayConnectionStore } from "../overlay/connections";
 
-/**
- * Connection metadata attached to each overlay WS at `/o/{token}/events`.
- */
-export interface OverlayConnectionMeta {
-  token: string;
-  applicationId: string;
-  sceneId: string;
-}
-
-/**
- * Keyed by applicationId. Each value is the set of overlay WebSockets
- * for that application. Used for targeted fan-out of storage and widget
- * events to the P2 overlay WS channel.
- */
-export type OverlayConnectionStore = Map<string, Set<ServerWebSocket<OverlayConnectionMeta>>>;
+export type { OverlayConnectionMeta, OverlayConnectionStore };
 
 /** P2 envelope wrapper for overlay WS push frames. */
 interface P2Frame {
@@ -88,7 +75,7 @@ interface ConnectionData {
 // (R2: the prior `WidgetStatusInbound` interface was a strict subset
 //  of `OverlayWidgetEvent` in `widget-event-wire.ts`. Both broadcasters
 //  now share the same wire format and helper, so the type lives there.)
-export type { OverlayWidgetEvent as WidgetStatusInbound } from "./widget-event-wire";
+export type { OverlayWidgetEvent as WidgetStatusInbound } from "../events/wire";
 
 /**
  * Tracks connected widget WebSockets and pushes module-storage change
@@ -236,8 +223,8 @@ export class StorageBroadcaster {
       v: 1,
       frame:
         payload.kind === "event"
-          ? { kind: "event", ...(payload as WidgetEventPushPayload) }
-          : { kind: "storage", ...(payload as StorageChangedPayload) },
+          ? { ...(payload as WidgetEventPushPayload) }
+          : { ...(payload as StorageChangedPayload) },
     };
     const json = JSON.stringify(frame);
     for (const sockets of connections.values()) {

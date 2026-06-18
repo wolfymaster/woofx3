@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { StreamwareEnvSchema } from "./config";
+import { StreamwareEnvSchema } from "../src/config";
 
 const baseValid = {
   woofx3StreamwarePort: "9101",

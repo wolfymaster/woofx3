@@ -1,20 +1,17 @@
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
-import type { AlertBroadcaster, AlertPayload } from "./alert-broadcaster";
-import { handleLegacySlobsCommand } from "./obs-commands";
+import type { EventBroadcaster, EventPayload } from "./events/broadcaster";
+import { handleLegacySlobsCommand } from "./obs/commands";
 import type Manager from "./obs/manager";
-import {
-  mapStorageChangedEnvelope,
-  type OverlayConnectionStore,
-  type StorageBroadcaster,
-} from "./storage-broadcaster";
-import type { OverlayTokenResolver } from "./overlay-token";
-import { maskToken } from "./overlay-token";
+import { mapStorageChangedEnvelope, type StorageBroadcaster } from "./storage/broadcaster";
+import type { OverlayConnectionStore } from "./overlay/connections";
+import type { OverlayTokenResolver } from "./overlay/token-resolver";
+import { maskToken } from "./overlay/token-resolver";
 
 interface InitArgs {
   nats: NATSClient | null;
   obs: Manager | null;
-  broadcaster: AlertBroadcaster;
+  broadcaster: EventBroadcaster;
   storageBroadcaster: StorageBroadcaster;
   logger: SharedLogger;
   resolver?: OverlayTokenResolver;
@@ -42,9 +39,9 @@ export async function initSubscriptions({
   // workflow alert action still publishes to `ui.notify.alert` —
   // we just don't broadcast it directly anymore.
   await nats.subscribe("ui.alert.broadcast", (msg) => {
-    let payload: AlertPayload;
+    let payload: EventPayload;
     try {
-      payload = msg.json<AlertPayload>();
+      payload = msg.json<EventPayload>();
     } catch (err) {
       logger.error("ui.alert.broadcast: malformed JSON payload", {
         error: err instanceof Error ? err.message : String(err),

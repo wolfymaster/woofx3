@@ -3,8 +3,8 @@ import {
   maskToken,
   OverlayTokenResolver,
   OVERLAY_TOKEN_CACHE_TTL_MS,
-} from "./overlay-token";
-import type { OverlayTokenDb } from "./overlay-token";
+} from "../../src/overlay/token-resolver";
+import type { OverlayTokenDb } from "../../src/overlay/token-resolver";
 
 function fakeLogger() {
   return {
@@ -17,7 +17,7 @@ function fakeLogger() {
 
 function okResponse(sceneId: string, applicationId: string) {
   return {
-    status: { code: "OK" },
+    status: { code: "OK" as const, message: "" },
     sceneId,
     applicationId,
   };
@@ -25,7 +25,7 @@ function okResponse(sceneId: string, applicationId: string) {
 
 function notFoundResponse() {
   return {
-    status: { code: "NOT_FOUND" },
+    status: { code: "NOT_FOUND" as const, message: "" },
     sceneId: "",
     applicationId: "",
   };

@@ -1,9 +1,9 @@
 import type { SharedLogger } from "@woofx3/common/logging";
 import type * as scene from "@woofx3/db/scene.pb";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
-import { getBuiltinWidgetSpecs } from "./builtin-widgets";
-import type { OverlayTokenResolver } from "./overlay-token";
-import { maskToken } from "./overlay-token";
+import { getBuiltinWidgetSpecs } from "../widgets/builtin";
+import type { OverlayTokenResolver } from "./token-resolver";
+import { maskToken } from "./token-resolver";
 
 /** Reserved module namespace for built-in widgets (design 5.2.2). */
 export const BUILTIN_MODULE_KEY = "builtin";
@@ -162,8 +162,15 @@ export class OverlayHost {
   async buildConfig(token: string): Promise<Record<string, unknown>> {
     const state = await this.loadScene(token);
     if (!state) {
+      this.logger.info("buildConfig: token did not resolve to a scene", { token: maskToken(token) });
       return { scene: null };
     }
+    this.logger.info("buildConfig: resolved scene", {
+      token: maskToken(token),
+      sceneId: state.sceneId,
+      widgetCount: state.instances.length,
+      widgets: state.instances.map((w) => ({ id: w.id, canonicalId: w.widgetCanonicalId })),
+    });
     return {
       scene: {
         id: state.sceneId,
@@ -248,18 +255,27 @@ export class OverlayHost {
     }
     const w = raw as Record<string, unknown>;
     const id = typeof w.id === "string" ? w.id : "";
-    const canonicalId = typeof w.widgetCanonicalId === "string" ? w.widgetCanonicalId : "";
+    // Accept both the legacy `widgetCanonicalId` field and the current
+    // `widgetDefinitionRef` field written by the UI's WidgetInstance type.
+    const canonicalId =
+      typeof w.widgetCanonicalId === "string" && w.widgetCanonicalId
+        ? w.widgetCanonicalId
+        : typeof w.widgetDefinitionRef === "string"
+          ? w.widgetDefinitionRef
+          : "";
     if (!id || !canonicalId) {
-      this.logger.warn("scene widget instance missing id or widgetCanonicalId; dropping");
+      this.logger.info("normalizeInstance: dropping widget — missing id or widgetDefinitionRef", { raw: JSON.stringify(raw).slice(0, 200) });
       return null;
     }
     const parsed = parseWidgetCanonicalId(canonicalId);
     if (!parsed) {
-      this.logger.warn("scene widget has malformed canonical id; dropping", {
-        widgetCanonicalId: canonicalId,
+      this.logger.info("normalizeInstance: dropping widget — malformed canonicalId (expected moduleKey:widget:manifestId)", {
+        id,
+        canonicalId,
       });
       return null;
     }
+    this.logger.info("normalizeInstance: accepted widget", { id, canonicalId, moduleKey: parsed.moduleKey, manifestId: parsed.manifestId });
 
     // Stored bundleUrl is legacy: frame URLs are derived (design 2.5).
     if (typeof w.bundleUrl === "string" && w.bundleUrl && !this.bundleUrlWarned.has(canonicalId)) {

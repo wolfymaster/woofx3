@@ -1,5 +1,5 @@
 import type { SharedLogger } from "@woofx3/common/logging";
-import type { ResolveOverlayTokenRequest, ResolveOverlayTokenResponse } from "./db";
+import type { ResolveOverlayTokenRequest, ResolveOverlayTokenResponse } from "../db";
 
 /** Successful resolution of an overlay token (design 2.1). */
 export interface ResolvedOverlayToken {

@@ -1,13 +1,13 @@
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
-import type { AlertQueueManager } from "./alert-queue-manager";
-import type { DbClient } from "./db";
-import type { StorageBroadcaster } from "./storage-broadcaster";
+import type { EventQueueManager } from "./queue-manager";
+import type { DbClient } from "../db";
+import type { StorageBroadcaster } from "../storage/broadcaster";
 
 interface InitArgs {
   nats: NATSClient;
   db: DbClient;
-  queue: AlertQueueManager;
+  queue: EventQueueManager;
   storageBroadcaster: StorageBroadcaster;
   logger: SharedLogger;
 }
