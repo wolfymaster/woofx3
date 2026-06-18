@@ -278,6 +278,15 @@ async function handleOverlayRoutes(
     });
   }
 
+  // 1a. GET /o/{token}/scene-debug — raw scene diagnostic (dev only).
+  if (remaining === "scene-debug" && req.method === "GET") {
+    const rawScene = await overlayHost.loadRawScene(token);
+    if (!rawScene) {
+      return Response.json({ error: "token did not resolve to a scene" }, { headers: CORS_HEADERS });
+    }
+    return Response.json(rawScene, { headers: CORS_HEADERS });
+  }
+
   // 2. GET /o/{token}/frame/{instanceId}
   if (remaining.startsWith("frame/") && req.method === "GET") {
     const instanceId = decodeURIComponent(remaining.slice("frame/".length));

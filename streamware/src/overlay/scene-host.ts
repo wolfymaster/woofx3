@@ -72,18 +72,24 @@ export interface OverlayHostOptions {
 const WIDGET_CACHE_TTL_MS = 30_000;
 
 /**
- * Parse a widget canonical id `{moduleKey}:widget:{manifestId}`.
- * Returns null for anything else — malformed instances are dropped
- * from the assembled config with a warning.
+ * Parse a widget canonical id with the invariant `{moduleKey}:widget:{manifestId}`.
+ * The moduleKey itself may contain colons (e.g. `spotify:1.0.0:df18e02`), so we
+ * locate the last `:widget:` marker rather than splitting on all colons.
  */
 export function parseWidgetCanonicalId(
   canonicalId: string
 ): { moduleKey: string; manifestId: string } | null {
-  const parts = canonicalId.split(":");
-  if (parts.length !== 3 || parts[1] !== "widget" || !parts[0] || !parts[2]) {
+  const MARKER = ":widget:";
+  const markerIdx = canonicalId.lastIndexOf(MARKER);
+  if (markerIdx <= 0) {
     return null;
   }
-  return { moduleKey: parts[0], manifestId: parts[2] };
+  const moduleKey = canonicalId.slice(0, markerIdx);
+  const manifestId = canonicalId.slice(markerIdx + MARKER.length);
+  if (!moduleKey || !manifestId) {
+    return null;
+  }
+  return { moduleKey, manifestId };
 }
 
 /**
@@ -146,12 +152,49 @@ export class OverlayHost {
     }
 
     const s = response.scene;
+    this.logger.info("loadScene: raw widgetsJson from db", {
+      sceneId: s.id,
+      widgetsJsonLength: s.widgetsJson?.length ?? 0,
+      widgetsJsonPreview: (s.widgetsJson ?? "").slice(0, 500),
+    });
     return {
       sceneId: s.id,
       applicationId: s.applicationId || resolved.applicationId,
       name: s.name,
       layout: parseLayout(s.layoutJson),
       instances: this.parseInstances(s.widgetsJson),
+    };
+  }
+
+  /** Dev diagnostic: returns raw DB data + parse results side-by-side. */
+  async loadRawScene(token: string): Promise<Record<string, unknown> | null> {
+    const resolved = await this.resolver.resolve(token);
+    if (!resolved || !this.db) {
+      return null;
+    }
+    let response: scene.SceneResponse;
+    try {
+      response = await this.db.getScene({ id: resolved.sceneId });
+    } catch {
+      return null;
+    }
+    if (response.status?.code !== "OK" || !response.scene) {
+      return null;
+    }
+    const s = response.scene;
+    let rawParsed: unknown = null;
+    try {
+      rawParsed = JSON.parse(s.widgetsJson || "[]");
+    } catch {
+      rawParsed = "INVALID_JSON";
+    }
+    return {
+      sceneId: s.id,
+      applicationId: s.applicationId,
+      name: s.name,
+      widgetsJsonRaw: s.widgetsJson,
+      widgetsJsonParsed: rawParsed,
+      parsedInstances: this.parseInstances(s.widgetsJson),
     };
   }
 
