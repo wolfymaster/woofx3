@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseWidgetCanonicalId } from "../../src/overlay/scene-host";
+import { parseWidgetCanonicalId, stableModuleKeyFrom } from "../../src/overlay/scene-host";
 
 describe("parseWidgetCanonicalId", () => {
   it("parses the simple 3-segment form", () => {
@@ -37,5 +37,24 @@ describe("parseWidgetCanonicalId", () => {
 
   it("returns null for an empty string", () => {
     expect(parseWidgetCanonicalId("")).toBeNull();
+  });
+});
+
+describe("stableModuleKeyFrom", () => {
+  it("passes through a simple module key unchanged", () => {
+    expect(stableModuleKeyFrom("builtin")).toBe("builtin");
+    expect(stableModuleKeyFrom("spotify_sr")).toBe("spotify_sr");
+  });
+
+  it("strips version and hash segments from a versioned module key", () => {
+    expect(stableModuleKeyFrom("spotify:1.0.0:df18e02")).toBe("spotify");
+  });
+
+  it("handles a key with only a single colon", () => {
+    expect(stableModuleKeyFrom("mod:extra")).toBe("mod");
+  });
+
+  it("returns the first segment for any colon-delimited key", () => {
+    expect(stableModuleKeyFrom("a:b:c:d")).toBe("a");
   });
 });

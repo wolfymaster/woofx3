@@ -318,20 +318,34 @@ export class OverlayHost {
       });
       return null;
     }
-    this.logger.info("normalizeInstance: accepted widget", { id, canonicalId, moduleKey: parsed.moduleKey, manifestId: parsed.manifestId });
+
+    // Strip version segments from the module key so scene placements remain
+    // stable across module updates. A versioned key like "spotify:1.0.0:abc1234"
+    // normalises to "spotify"; a simple key like "builtin" is unchanged.
+    const stableModuleKey = stableModuleKeyFrom(parsed.moduleKey);
+    const stableCanonicalId = `${stableModuleKey}:widget:${parsed.manifestId}`;
+    if (stableModuleKey !== parsed.moduleKey) {
+      this.logger.warn("normalizeInstance: stripping version from moduleKey — update the UI to store the stable projection key", {
+        id,
+        stored: canonicalId,
+        normalized: stableCanonicalId,
+      });
+    } else {
+      this.logger.info("normalizeInstance: accepted widget", { id, canonicalId: stableCanonicalId, moduleKey: stableModuleKey, manifestId: parsed.manifestId });
+    }
 
     // Stored bundleUrl is legacy: frame URLs are derived (design 2.5).
-    if (typeof w.bundleUrl === "string" && w.bundleUrl && !this.bundleUrlWarned.has(canonicalId)) {
-      this.bundleUrlWarned.add(canonicalId);
+    if (typeof w.bundleUrl === "string" && w.bundleUrl && !this.bundleUrlWarned.has(stableCanonicalId)) {
+      this.bundleUrlWarned.add(stableCanonicalId);
       this.logger.warn("scene widget carries deprecated bundleUrl; ignored in favor of frameUrl", {
-        widgetCanonicalId: canonicalId,
+        widgetCanonicalId: stableCanonicalId,
       });
     }
 
     let acceptedEvents = Array.isArray(w.acceptedEvents)
       ? w.acceptedEvents.filter((e): e is string => typeof e === "string" && e !== "")
       : [];
-    if (acceptedEvents.length === 0 && parsed.moduleKey === BUILTIN_MODULE_KEY) {
+    if (acceptedEvents.length === 0 && stableModuleKey === BUILTIN_MODULE_KEY) {
       const spec = getBuiltinWidgetSpecs().find((s) => s.manifestId === parsed.manifestId);
       if (spec) {
         acceptedEvents = spec.acceptedEvents;
@@ -340,8 +354,8 @@ export class OverlayHost {
 
     return {
       id,
-      widgetCanonicalId: canonicalId,
-      moduleId: parsed.moduleKey,
+      widgetCanonicalId: stableCanonicalId,
+      moduleId: stableModuleKey,
       manifestId: parsed.manifestId,
       position: normalizePosition(w),
       settings:
@@ -352,6 +366,20 @@ export class OverlayHost {
       frameUrl: `./frame/${encodeURIComponent(id)}`,
     };
   }
+}
+
+/**
+ * Extract the stable base name from a module key. If the key contains colons
+ * (indicating a versioned form like "spotify:1.0.0:abc1234"), only the first
+ * segment is returned. Simple keys like "builtin" pass through unchanged.
+ *
+ * Scene placements must reference the module by stable name so they survive
+ * module updates. This normalises legacy data written by UIs that stored the
+ * full versioned canonical id.
+ */
+export function stableModuleKeyFrom(moduleKey: string): string {
+  const colonIdx = moduleKey.indexOf(":");
+  return colonIdx === -1 ? moduleKey : moduleKey.slice(0, colonIdx);
 }
 
 function normalizePosition(w: Record<string, unknown>): OverlayWidgetPosition {
