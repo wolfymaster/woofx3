@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { EventBroadcaster } from "../../src/events/broadcaster";
+import { publishWidgetEvent } from "../../src/events/wire";
 
 function fakeLogger() {
   return {
@@ -12,50 +12,34 @@ function fakeLogger() {
 
 function fakeNats() {
   const published: Array<{ subject: string; payload: unknown }> = [];
-  const client: any = {
+  return {
     published,
     publish: mock((subject: string, data: Uint8Array) => {
       published.push({ subject, payload: JSON.parse(new TextDecoder().decode(data)) });
       return Promise.resolve();
     }),
-  };
-  return client;
+  } as any;
 }
 
-interface FakeWs {
-  data: { kind: "alerts"; id: string };
-  sent: string[];
-  send: (data: string) => void;
+function fakeWs(id: string) {
+  return { data: { id } } as any;
 }
 
-function fakeWs(id: string): FakeWs {
-  const ws: FakeWs = {
-    data: { kind: "alerts", id },
-    sent: [],
-    send(data: string) {
-      this.sent.push(data);
-    },
-  };
-  return ws;
-}
-
-describe("EventBroadcaster overlay inbound", () => {
-  it("forwards a widget.event with key=alert.lifecycle to NATS widget.event", () => {
+describe("publishWidgetEvent", () => {
+  it("forwards a valid widget.event to NATS", () => {
     const logger = fakeLogger();
     const nats = fakeNats();
-    const bc = new EventBroadcaster(logger, nats);
-    const handlers = bc.handlers();
-    const ws = fakeWs("overlay-1");
-    handlers.open?.(ws as any);
-    handlers.message?.(
-      ws as any,
+    publishWidgetEvent(
+      fakeWs("overlay-1"),
       JSON.stringify({
         kind: "widget.event",
         moduleId: "core",
         instanceId: "alert-overlay",
         key: "alert.lifecycle",
         value: { envelopeId: "env-1", state: "playing" },
-      })
+      }),
+      nats,
+      logger,
     );
     expect(nats.published).toHaveLength(1);
     const env = nats.published[0]!;
@@ -67,35 +51,33 @@ describe("EventBroadcaster overlay inbound", () => {
     expect((env.payload as any).data.value).toEqual({ envelopeId: "env-1", state: "playing" });
   });
 
-  it("forwards alert.lifecycle with error", () => {
+  it("uses applicationId as clientId when id is absent", () => {
     const logger = fakeLogger();
     const nats = fakeNats();
-    const bc = new EventBroadcaster(logger, nats);
-    const handlers = bc.handlers();
-    const ws = fakeWs("overlay-1");
-    handlers.open?.(ws as any);
-    handlers.message?.(
-      ws as any,
+    const ws = { data: { applicationId: "app-123" } } as any;
+    publishWidgetEvent(
+      ws,
       JSON.stringify({
         kind: "widget.event",
-        moduleId: "core",
-        instanceId: "alert-overlay",
-        key: "alert.lifecycle",
-        value: { envelopeId: "env-2", state: "failed", error: "autoplay blocked" },
-      })
+        moduleId: "m",
+        instanceId: "i",
+        key: "k",
+        value: 1,
+      }),
+      nats,
+      logger,
     );
     expect(nats.published).toHaveLength(1);
-    expect((nats.published[0]!.payload as any).data.value.error).toBe("autoplay blocked");
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ clientId: "app-123" }),
+    );
   });
 
   it("drops malformed JSON without throwing", () => {
     const logger = fakeLogger();
     const nats = fakeNats();
-    const bc = new EventBroadcaster(logger, nats);
-    const handlers = bc.handlers();
-    const ws = fakeWs("overlay-1");
-    handlers.open?.(ws as any);
-    handlers.message?.(ws as any, "this is not json");
+    publishWidgetEvent(fakeWs("ws-1"), "this is not json", nats, logger);
     expect(nats.published).toHaveLength(0);
     expect(logger.warn).toHaveBeenCalled();
   });
@@ -103,55 +85,36 @@ describe("EventBroadcaster overlay inbound", () => {
   it("drops messages with unknown kind", () => {
     const logger = fakeLogger();
     const nats = fakeNats();
-    const bc = new EventBroadcaster(logger, nats);
-    const handlers = bc.handlers();
-    const ws = fakeWs("overlay-1");
-    handlers.open?.(ws as any);
-    handlers.message?.(ws as any, JSON.stringify({ kind: "garbage" }));
+    publishWidgetEvent(fakeWs("ws-1"), JSON.stringify({ kind: "garbage" }), nats, logger);
     expect(nats.published).toHaveLength(0);
   });
 
-  it("drops widget.event with missing moduleId / instanceId / key", () => {
+  it("drops widget.event with missing required fields", () => {
     const logger = fakeLogger();
     const nats = fakeNats();
-    const bc = new EventBroadcaster(logger, nats);
-    const handlers = bc.handlers();
-    const ws = fakeWs("overlay-1");
-    handlers.open?.(ws as any);
-    handlers.message?.(ws as any, JSON.stringify({ kind: "widget.event", moduleId: "core" }));
+    publishWidgetEvent(
+      fakeWs("ws-1"),
+      JSON.stringify({ kind: "widget.event", moduleId: "core" }),
+      nats,
+      logger,
+    );
     expect(nats.published).toHaveLength(0);
   });
 
-  it("does not throw when NATS is unavailable; logs and drops", () => {
+  it("logs and drops when NATS is unavailable", () => {
     const logger = fakeLogger();
-    const bc = new EventBroadcaster(logger, null);
-    const handlers = bc.handlers();
-    const ws = fakeWs("overlay-1");
-    handlers.open?.(ws as any);
-    handlers.message?.(
-      ws as any,
+    publishWidgetEvent(
+      fakeWs("ws-1"),
       JSON.stringify({
         kind: "widget.event",
         moduleId: "core",
         instanceId: "alert-overlay",
         key: "alert.lifecycle",
         value: { envelopeId: "env-4", state: "playing" },
-      })
+      }),
+      null,
+      logger,
     );
     expect(logger.warn).toHaveBeenCalled();
-  });
-
-  it("broadcast() pushes the envelope to every connected client", () => {
-    const logger = fakeLogger();
-    const bc = new EventBroadcaster(logger, null);
-    const handlers = bc.handlers();
-    const a = fakeWs("a");
-    const b = fakeWs("b");
-    handlers.open?.(a as any);
-    handlers.open?.(b as any);
-    bc.broadcast({ id: "env-x", parameters: { widget: "MediaWidget" }, event: null });
-    expect(a.sent).toHaveLength(1);
-    expect(b.sent).toHaveLength(1);
-    expect(JSON.parse(a.sent[0]!).id).toBe("env-x");
   });
 });

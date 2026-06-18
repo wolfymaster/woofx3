@@ -3,9 +3,9 @@ import { join, normalize, resolve } from "node:path";
 import type { ServerWebSocket, WebSocketHandler } from "bun";
 import { createServiceLogger } from "@woofx3/common/logging";
 import { createMessageBus } from "@woofx3/nats";
-import { EventBroadcaster } from "./events/broadcaster";
 import { EventQueueManager } from "./events/queue-manager";
 import { initWidgetEventHandlers } from "./events/handlers";
+import { publishWidgetEvent } from "./events/wire";
 import { buildBuiltinWidgetDefinitions, getBuiltinWidgetSpecs, initBuiltinWidgets } from "./widgets/builtin";
 import { loadConfig, validateOverlayConfig, type StreamwareRuntimeConfig } from "./config";
 import { DbClient } from "./db";
@@ -43,13 +43,13 @@ async function main() {
 
   const obs = await connectObs(config.obs, logger);
 
-  const broadcaster = new EventBroadcaster(logger, nats);
-  const storageBroadcaster = new StorageBroadcaster(logger, nats);
-
   const db = config.databaseProxyUrl ? new DbClient(config.databaseProxyUrl) : null;
 
-  // Overlay connection store: keyed by applicationId.
+  // Overlay connection store: keyed by applicationId. Owned by StorageBroadcaster
+  // so every broadcast call reaches all connected overlays without passing the
+  // store at every call site.
   const overlayConnections: OverlayConnectionStore = new Map();
+  const storageBroadcaster = new StorageBroadcaster(logger, nats, overlayConnections);
 
   const resolver = new OverlayTokenResolver(db, logger);
   const overlayHost = new OverlayHost(resolver, db, logger);
@@ -63,11 +63,9 @@ async function main() {
   await initSubscriptions({
     nats,
     obs,
-    broadcaster,
     storageBroadcaster,
     logger,
     resolver,
-    overlayConnections,
   });
 
   let alertQueue: EventQueueManager | null = null;
@@ -92,7 +90,6 @@ async function main() {
 
   startHttpServer(
     config,
-    broadcaster,
     storageBroadcaster,
     db,
     overlayHost,
@@ -109,14 +106,10 @@ main().catch((err) => {
   process.exit(1);
 });
 
-type ConnectionTag =
-  | { kind: "alerts"; id: string }
-  | { kind: "module-state"; id: string }
-  | OverlayConnectionMeta & { kind: "overlay" };
+type OverlayConnectionTag = OverlayConnectionMeta & { kind: "overlay" };
 
 function startHttpServer(
   config: StreamwareRuntimeConfig,
-  broadcaster: EventBroadcaster,
   storageBroadcaster: StorageBroadcaster,
   db: DbClient | null,
   overlayHost: OverlayHost,
@@ -126,81 +119,36 @@ function startHttpServer(
   overlayConnections: OverlayConnectionStore,
   logger: ReturnType<typeof createServiceLogger>
 ): void {
-  const alertHandlers = broadcaster.handlers();
-  const stateHandlers = storageBroadcaster.handlers();
-
-  const websocket: WebSocketHandler<ConnectionTag> = {
+  const websocket: WebSocketHandler<OverlayConnectionTag> = {
     open: (ws) => {
-      const tag = ws.data as ConnectionTag;
-      if (tag.kind === "module-state") {
-        stateHandlers.open?.(ws as ServerWebSocket<{ kind: "module-state"; id: string }>);
-      } else if (tag.kind === "overlay") {
-        const meta = tag as OverlayConnectionMeta & { kind: "overlay" };
-        let sockets = overlayConnections.get(meta.applicationId);
-        if (!sockets) {
-          sockets = new Set();
-          overlayConnections.set(meta.applicationId, sockets);
-        }
-        sockets.add(ws as ServerWebSocket<OverlayConnectionMeta>);
-        logger.info("overlay WS connected", {
-          token: maskToken(meta.token),
-          applicationId: meta.applicationId,
-          sceneId: meta.sceneId,
-        });
-      } else {
-        alertHandlers.open?.(ws as ServerWebSocket<{ kind: "alerts"; id: string }>);
+      let sockets = overlayConnections.get(ws.data.applicationId);
+      if (!sockets) {
+        sockets = new Set();
+        overlayConnections.set(ws.data.applicationId, sockets);
       }
+      sockets.add(ws as ServerWebSocket<OverlayConnectionMeta>);
+      logger.info("overlay WS connected", {
+        token: maskToken(ws.data.token),
+        applicationId: ws.data.applicationId,
+        sceneId: ws.data.sceneId,
+      });
     },
-    close: (ws, code, reason) => {
-      const tag = ws.data as ConnectionTag;
-      if (tag.kind === "module-state") {
-        stateHandlers.close?.(
-          ws as ServerWebSocket<{ kind: "module-state"; id: string }>,
-          code,
-          reason
-        );
-      } else if (tag.kind === "overlay") {
-        const meta = tag as OverlayConnectionMeta & { kind: "overlay" };
-        const sockets = overlayConnections.get(meta.applicationId);
-        if (sockets) {
-          sockets.delete(ws as ServerWebSocket<OverlayConnectionMeta>);
-          if (sockets.size === 0) {
-            overlayConnections.delete(meta.applicationId);
-          }
+    close: (ws, code) => {
+      const sockets = overlayConnections.get(ws.data.applicationId);
+      if (sockets) {
+        sockets.delete(ws as ServerWebSocket<OverlayConnectionMeta>);
+        if (sockets.size === 0) {
+          overlayConnections.delete(ws.data.applicationId);
         }
-        logger.info("overlay WS disconnected", {
-          token: maskToken(meta.token),
-          applicationId: meta.applicationId,
-          code,
-        });
-      } else {
-        alertHandlers.close?.(
-          ws as ServerWebSocket<{ kind: "alerts"; id: string }>,
-          code,
-          reason
-        );
       }
+      logger.info("overlay WS disconnected", {
+        token: maskToken(ws.data.token),
+        applicationId: ws.data.applicationId,
+        code,
+      });
     },
     message: (ws, message) => {
-      const tag = ws.data as ConnectionTag;
-      if (tag.kind === "module-state") {
-        stateHandlers.message?.(
-          ws as ServerWebSocket<{ kind: "module-state"; id: string }>,
-          message
-        );
-      } else if (tag.kind === "overlay") {
-        // Upstream OverlayWidgetEvent from the overlay client -> publish to NATS widget.event.
-        // Reuse the same wire format and publish path as the legacy module-state channel.
-        stateHandlers.message?.(
-          ws as unknown as ServerWebSocket<{ kind: "module-state"; id: string }>,
-          message
-        );
-      } else {
-        alertHandlers.message?.(
-          ws as ServerWebSocket<{ kind: "alerts"; id: string }>,
-          message
-        );
-      }
+      publishWidgetEvent(ws, message, storageBroadcaster.natsClient, logger);
     },
   };
 
@@ -225,25 +173,6 @@ function startHttpServer(
         return new Response(null, { status: 204, headers: CORS_HEADERS });
       }
 
-      // WebSocket upgrades complete with `undefined` and bypass CORS wrapping.
-      if (url.pathname === "/ws/alerts") {
-        const upgraded = server.upgrade(req, { data: broadcaster.nextConnectionData() });
-        if (upgraded) {
-          return undefined;
-        }
-        return withCors(new Response("upgrade failed", { status: 400 }));
-      }
-
-      if (url.pathname === "/ws/module-state") {
-        const upgraded = server.upgrade(req, {
-          data: storageBroadcaster.nextConnectionData(),
-        });
-        if (upgraded) {
-          return undefined;
-        }
-        return withCors(new Response("upgrade failed", { status: 400 }));
-      }
-
       const response: Response = await (async (): Promise<Response> => {
         // Token-scoped overlay routes (design §5.2).
         if (url.pathname.startsWith("/o/")) {
@@ -263,7 +192,7 @@ function startHttpServer(
         }
 
         if (url.pathname === "/health") {
-          return Response.json({ status: "ok", overlayClients: broadcaster.clientCount() });
+          return Response.json({ status: "ok", overlayClients: storageBroadcaster.overlayClientCount() });
         }
 
         if (url.pathname === "/api/builtin-widgets") {
@@ -310,7 +239,6 @@ function startHttpServer(
     bindHost: config.bindHost,
     overlayBase: `http://localhost:${config.port}/o/`,
     eventsWs: `ws://localhost:${config.port}/o/{token}/events`,
-    moduleStateWsUrl: `ws://localhost:${config.port}/ws/module-state`,
   });
 }
 

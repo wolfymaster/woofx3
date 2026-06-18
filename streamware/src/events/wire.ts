@@ -4,8 +4,7 @@ import type NATSClient from "@woofx3/nats/src/client";
 
 /**
  * Wire format for any overlay-originated widget event. Same shape
- * regardless of which WS path the event arrived on (alerts overlay
- * via `/ws/alerts`, scene overlay via `/ws/module-state`).
+ * regardless of which WS path the event arrived on.
  */
 export interface OverlayWidgetEvent {
   kind: "widget.event";
@@ -18,53 +17,50 @@ export interface OverlayWidgetEvent {
   ts?: string;
 }
 
+/** Minimal identity fields available from both overlay and legacy WS data shapes. */
+interface WsIdent {
+  id?: string;
+  applicationId?: string;
+}
+
 /**
  * Decode an overlay-originated message and republish it to NATS as a
- * CloudEvent on `widget.event`. The orchestrator
- * (`streamware/src/widget-event-handlers.ts`) handles routing by
- * `data.key`. Drops malformed shapes with a single warning so a
- * misbehaving widget can't flood logs.
- *
- * Both `AlertBroadcaster` and `StorageBroadcaster` share this
- * helper — they have different push semantics (per-widget filtering
- * for module-state, raw fan-out for alerts) but the inbound channel
- * is identical.
+ * CloudEvent on `widget.event`. Drops malformed shapes with a single
+ * warning so a misbehaving widget can't flood logs.
  */
 export function publishWidgetEvent(
-  ws: ServerWebSocket<{ id: string }>,
+  ws: ServerWebSocket<WsIdent>,
   raw: string | Buffer,
   nats: NATSClient | null,
   logger: SharedLogger,
 ): void {
+  const clientId = ws.data.id ?? ws.data.applicationId ?? "overlay";
   const text = typeof raw === "string" ? raw : raw.toString("utf8");
   let msg: Partial<OverlayWidgetEvent> & Record<string, unknown>;
   try {
     msg = JSON.parse(text);
   } catch (err) {
     logger.warn("Dropping malformed widget event", {
-      clientId: ws.data.id,
+      clientId,
       error: err instanceof Error ? err.message : String(err),
       preview: text.slice(0, 120),
     });
     return;
   }
   if (msg.kind !== "widget.event") {
-    logger.debug("Ignoring overlay message with non-widget kind", {
-      clientId: ws.data.id,
-      kind: msg.kind,
-    });
+    logger.debug("Ignoring overlay message with non-widget kind", { clientId, kind: msg.kind });
     return;
   }
   if (typeof msg.moduleId !== "string" || msg.moduleId === "") {
-    logger.warn("widget.event: missing moduleId", { clientId: ws.data.id });
+    logger.warn("widget.event: missing moduleId", { clientId });
     return;
   }
   if (typeof msg.instanceId !== "string" || msg.instanceId === "") {
-    logger.warn("widget.event: missing instanceId", { clientId: ws.data.id });
+    logger.warn("widget.event: missing instanceId", { clientId });
     return;
   }
   if (typeof msg.key !== "string" || msg.key === "") {
-    logger.warn("widget.event: missing key", { clientId: ws.data.id });
+    logger.warn("widget.event: missing key", { clientId });
     return;
   }
 
@@ -102,7 +98,7 @@ export function publishWidgetEvent(
       moduleId: msg.moduleId,
       instanceId: msg.instanceId,
       key: msg.key,
-      clientId: ws.data.id,
+      clientId,
     });
   } catch (err) {
     logger.error("widget.event: NATS publish failed", {

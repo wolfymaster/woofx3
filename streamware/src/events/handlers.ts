@@ -99,7 +99,7 @@ export async function initWidgetEventHandlers(args: InitArgs): Promise<void> {
       if (event && typeof event === "object") {
         const eventType = typeof event.type === "string" ? (event.type as string) : "";
         if (eventType) {
-          logger.info("[handlers:notify] forwarding event to /ws/module-state", {
+          logger.info("[handlers:notify] forwarding event to overlay P2 connections", {
             envelopeId,
             type: eventType,
             source: typeof event.source === "string" ? (event.source as string) : "",

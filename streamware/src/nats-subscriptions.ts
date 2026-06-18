@@ -1,43 +1,54 @@
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
-import type { EventBroadcaster, EventPayload } from "./events/broadcaster";
+import type { EventPayload } from "./events/broadcaster";
 import { handleLegacySlobsCommand } from "./obs/commands";
 import type Manager from "./obs/manager";
-import { mapStorageChangedEnvelope, type StorageBroadcaster } from "./storage/broadcaster";
-import type { OverlayConnectionStore } from "./overlay/connections";
+import { mapStorageChangedEnvelope, type StorageBroadcaster, type WidgetEventPushPayload } from "./storage/broadcaster";
 import type { OverlayTokenResolver } from "./overlay/token-resolver";
 import { maskToken } from "./overlay/token-resolver";
 
 interface InitArgs {
   nats: NATSClient | null;
   obs: Manager | null;
-  broadcaster: EventBroadcaster;
   storageBroadcaster: StorageBroadcaster;
   logger: SharedLogger;
   resolver?: OverlayTokenResolver;
-  overlayConnections?: OverlayConnectionStore;
+}
+
+/**
+ * Map a `ui.alert.broadcast` EventPayload (from the api's queue manager) to
+ * the P2 WidgetEventPushPayload shape and forward it to all active overlay
+ * connections. Falls back to sensible defaults when the originating CloudEvent
+ * fields are absent.
+ */
+function alertToWidgetEvent(payload: EventPayload): WidgetEventPushPayload {
+  const ev = payload.event;
+  return {
+    kind: "event",
+    id: payload.id,
+    type: ev?.type ?? "ui.alert",
+    source: ev?.source ?? "streamware",
+    time: ev?.time ?? new Date().toISOString(),
+    data: ev?.data ?? {},
+    parameters: payload.parameters,
+  };
 }
 
 export async function initSubscriptions({
   nats,
   obs,
-  broadcaster,
   storageBroadcaster,
   logger,
   resolver,
-  overlayConnections,
 }: InitArgs): Promise<void> {
   if (!nats) {
-    logger.warn("NATS unavailable — alert subscription skipped (overlay will receive nothing)");
+    logger.warn("NATS unavailable — event subscriptions skipped (overlay will receive nothing)");
     return;
   }
 
-  // Phase 2: broadcast subscriptions moved from `ui.notify.alert`
-  // (workflow → engine intent) to `ui.alert.broadcast` (engine →
-  // overlay dispatch). The api's AlertQueueManager owns the queue
-  // and publishes here when it's a given alert's turn to play. The
-  // workflow alert action still publishes to `ui.notify.alert` —
-  // we just don't broadcast it directly anymore.
+  // `ui.alert.broadcast` is published by the api's EventQueueManager when it
+  // is a given alert's turn to play. Map to a P2 event frame and push to all
+  // active overlay WS connections.
   await nats.subscribe("ui.alert.broadcast", (msg) => {
     let payload: EventPayload;
     try {
@@ -49,7 +60,7 @@ export async function initSubscriptions({
       });
       return;
     }
-    broadcaster.broadcast(payload);
+    storageBroadcaster.broadcastEvent(alertToWidgetEvent(payload));
   });
   logger.info("Subscribed to ui.alert.broadcast");
 
@@ -71,9 +82,7 @@ export async function initSubscriptions({
     }
     const payload = mapStorageChangedEnvelope(envelope);
     if (!payload) {
-      logger.warn("module.storage.*.changed: dropping malformed payload", {
-        subject: msg.subject,
-      });
+      logger.warn("module.storage.*.changed: dropping malformed payload", { subject: msg.subject });
       return;
     }
     storageBroadcaster.broadcast(payload);
@@ -102,83 +111,35 @@ export async function initSubscriptions({
   });
   logger.info("Subscribed to slobs (legacy OBS bridge)");
 
-  // Token invalidation: poison the resolver cache so the next request
-  // re-queries db-proxy. Then audit each live overlay WS connection;
-  // revoked connections receive a control frame and are closed.
+  // Token invalidation: poison the resolver cache then audit live overlay
+  // connections, sending a revoke frame and closing any that no longer resolve.
   await nats.subscribe("db.overlay_token.updated.*", (_msg) => {
-    if (resolver) {
-      resolver.invalidateAll();
-    }
-    if (!overlayConnections || overlayConnections.size === 0) {
-      return;
-    }
-    // Re-resolve each connection's token; close connections where the
-    // token no longer resolves (revoked or expired after invalidation).
-    for (const sockets of overlayConnections.values()) {
-      for (const ws of sockets) {
-        const token = ws.data.token;
-        if (!resolver) {
-          continue;
-        }
-        resolver.resolve(token).then((result) => {
-          if (result === null) {
-            try {
-              ws.send(
-                JSON.stringify({
-                  proto: "woofx3.overlay-events",
-                  v: 1,
-                  frame: { kind: "control", action: "token.revoked" },
-                })
-              );
-              ws.close(1008, "token revoked");
-            } catch {
-              // Socket may already be closed; ignore.
-            }
-          }
-        }).catch((err) => {
-          logger.warn("overlay token re-resolve failed during invalidation", {
-            token: maskToken(token),
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
-      }
-    }
+    resolver?.invalidateAll();
   });
   logger.info("Subscribed to db.overlay_token.updated.*");
 
-  // Scene update notification: push a scene.updated frame to every
-  // overlay WS connection whose sceneId matches the updated scene.
+  // Scene update notification: push a scene.updated frame to every overlay
+  // WS connection whose sceneId matches the updated scene. The client re-fetches
+  // /o/{token}/config and re-renders.
   await nats.subscribe("db.scene.updated.*", (msg) => {
-    if (!overlayConnections || overlayConnections.size === 0) {
-      return;
-    }
     let body: { sceneId?: unknown } = {};
     try {
       body = msg.json<{ sceneId?: unknown }>();
     } catch {
-      // Malformed; cannot route — drop silently.
       return;
     }
     const sceneId = typeof body.sceneId === "string" ? body.sceneId : "";
     if (!sceneId) {
       return;
     }
-    const frame = JSON.stringify({
+    // Push a bare scene.updated frame directly — this is control-plane traffic,
+    // not a widget event, so it goes outside the broadcastEvent path.
+    const frameJson = JSON.stringify({
       proto: "woofx3.overlay-events",
       v: 1,
       frame: { kind: "scene.updated", sceneId, revision: Date.now() },
     });
-    for (const sockets of overlayConnections.values()) {
-      for (const ws of sockets) {
-        if (ws.data.sceneId === sceneId) {
-          try {
-            ws.send(frame);
-          } catch {
-            // Socket may already be closed; ignore.
-          }
-        }
-      }
-    }
+    storageBroadcaster.pushSceneFrame(sceneId, frameJson);
   });
   logger.info("Subscribed to db.scene.updated.*");
 }
