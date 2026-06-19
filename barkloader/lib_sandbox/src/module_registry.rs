@@ -112,6 +112,11 @@ impl ModuleRegistry {
         let modules = self.modules.read().unwrap();
         modules.contains_key(name)
     }
+
+    pub fn get_module_metadata(&self, name: &str) -> Option<ModuleMetadata> {
+        let modules = self.modules.read().unwrap();
+        modules.get(name).map(|m| m.metadata.clone())
+    }
 }
 
 #[cfg(test)]

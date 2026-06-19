@@ -90,13 +90,14 @@ impl Sandbox {
                 .unwrap_or("")
                 .to_string();
 
+            let meta = self.registry.get_module_metadata(&module_id);
             let invocation = InvocationContext {
                 event: request.event,
                 user: request.user.unwrap_or(Value::Null),
                 host: self.host_ctx.clone(),
                 module_id,
-                module_name: String::new(),
-                module_version: String::new(),
+                module_name: meta.as_ref().map(|m| m.name.clone()).unwrap_or_default(),
+                module_version: meta.as_ref().map(|m| m.version.clone()).unwrap_or_default(),
             };
 
             self.function_executor.execute(&function, &invocation)
