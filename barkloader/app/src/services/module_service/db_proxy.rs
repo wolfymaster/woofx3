@@ -1518,7 +1518,7 @@ pub async fn register_module_settings(
         module_id: module_id.to_string(),
         settings,
     };
-    let endpoint = format!("{}/twirp/woofx3.db.v1.ModuleSettingService/RegisterModuleSettings", url);
+    let endpoint = format!("{}/twirp/module_setting.ModuleSettingService/RegisterModuleSettings", url);
     let client = reqwest::Client::new();
     let response = client
         .post(&endpoint)
@@ -1538,7 +1538,7 @@ pub async fn get_module_settings(
     module_id: &str,
 ) -> Result<Vec<ModuleSettingJson>> {
     let body = serde_json::json!({ "module_id": module_id });
-    let endpoint = format!("{}/twirp/woofx3.db.v1.ModuleSettingService/ListModuleSettings", url);
+    let endpoint = format!("{}/twirp/module_setting.ModuleSettingService/ListModuleSettings", url);
     let client = reqwest::Client::new();
     let response = client
         .post(&endpoint)
