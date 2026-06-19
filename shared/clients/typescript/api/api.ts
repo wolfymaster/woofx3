@@ -71,6 +71,18 @@ export interface Module {
   iconUrl: string;
 }
 
+export interface ModuleSetting {
+  id: string;
+  moduleId: string;
+  key: string;
+  value: string;
+  valueType: string;
+}
+
+export interface ModuleSettingsResponse {
+  settings: ModuleSetting[];
+}
+
 export interface ModulesQuery {
   category?: string;
   search?: string;

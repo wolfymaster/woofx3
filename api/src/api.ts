@@ -5,6 +5,8 @@ import type {
   CreateCommandInput,
   CreateWorkflowInput,
   FieldOptionsDescriptor,
+  ModuleSetting,
+  ModuleSettingsResponse,
   PingResponse,
   Scene,
   StorageConfig,
@@ -3068,6 +3070,34 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
       author,
       isInstalled: true,
       iconUrl: "",
+    };
+  }
+
+  async getModuleSettings(moduleId: string): Promise<ModuleSettingsResponse> {
+    const resp = await this.db.listModuleSettings({ moduleId });
+    return {
+      settings: (resp.settings ?? []).map((s) => ({
+        id: s.id ?? "",
+        moduleId: s.moduleId ?? "",
+        key: s.key ?? "",
+        value: s.value ?? "",
+        valueType: s.valueType ?? "",
+      })),
+    };
+  }
+
+  async updateModuleSetting(moduleId: string, key: string, value: string): Promise<ModuleSetting> {
+    const existing = await this.db.listModuleSettings({ moduleId });
+    const current = (existing.settings ?? []).find((s) => s.key === key);
+    const valueType = current?.valueType ?? "string";
+
+    const resp = await this.db.setModuleSetting({ moduleId, key, value, valueType });
+    return {
+      id: resp.id ?? "",
+      moduleId: resp.moduleId ?? "",
+      key: resp.key ?? "",
+      value: resp.value ?? "",
+      valueType: resp.valueType ?? "",
     };
   }
 

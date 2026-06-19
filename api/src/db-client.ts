@@ -5,6 +5,7 @@ import * as command from "@woofx3/db/command.pb";
 import type * as common from "@woofx3/db/common.pb";
 import * as module from "@woofx3/db/module.pb";
 import type * as module_action from "@woofx3/db/module_action.pb";
+import * as module_setting from "@woofx3/db/module_setting.pb";
 import type * as module_trigger from "@woofx3/db/module_trigger.pb";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
 import * as overlay_token from "@woofx3/db/overlay_token.pb";
@@ -365,5 +366,17 @@ async listWidgetStatus(
     req: overlay_token.ResolveOverlayTokenRequest
   ): Promise<overlay_token.ResolveOverlayTokenResponse> {
     return overlay_token.ResolveOverlayToken(req, this.config);
+  }
+
+  async listModuleSettings(
+    req: module_setting.ListModuleSettingsRequest
+  ): Promise<module_setting.ListModuleSettingsResponse> {
+    return module_setting.ListModuleSettings(req, this.config);
+  }
+
+  async setModuleSetting(
+    req: module_setting.SetModuleSettingRequest
+  ): Promise<module_setting.ModuleSettingRecord> {
+    return module_setting.SetModuleSetting(req, this.config);
   }
 }
