@@ -207,6 +207,7 @@ fn build_ctx_object<'js>(
     build_http_namespace(ctx, &ctx_obj, invocation)?;
     build_env_namespace(ctx, &ctx_obj, invocation)?;
     build_resources_namespace(ctx, &ctx_obj, invocation)?;
+    build_module_namespace(ctx, &ctx_obj, invocation)?;
     bind_extensions(ctx, &ctx_obj, invocation)?;
 
     Ok(ctx_obj)
@@ -424,4 +425,62 @@ fn build_resources_namespace<'js>(
 
     ctx_obj.set("resources", resources).map_err(map)?;
     Ok(())
+}
+
+fn build_module_namespace<'js>(
+    ctx: &Ctx<'js>,
+    ctx_obj: &Object<'js>,
+    invocation: &InvocationContext,
+) -> Result<(), Error> {
+    let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
+    let module = Object::new(ctx.clone()).map_err(map)?;
+
+    let id_str = rquickjs::String::from_str(ctx.clone(), &invocation.module_id).map_err(map)?;
+    module.set("id", id_str).map_err(map)?;
+
+    let name_str = rquickjs::String::from_str(ctx.clone(), &invocation.module_name).map_err(map)?;
+    module.set("name", name_str).map_err(map)?;
+
+    let version_str = rquickjs::String::from_str(ctx.clone(), &invocation.module_version).map_err(map)?;
+    module.set("version", version_str).map_err(map)?;
+
+    let settings_map = invocation
+        .host
+        .settings
+        .list_by_module(&invocation.module_id)
+        .unwrap_or_default();
+    let settings_obj = Object::new(ctx.clone()).map_err(map)?;
+    for (k, v) in &settings_map {
+        let js_val = json_to_js(ctx, v)?;
+        settings_obj.set(k.as_str(), js_val).map_err(map)?;
+    }
+    module.set("settings", settings_obj).map_err(map)?;
+
+    ctx_obj.set("module", module).map_err(map)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::host::{InvocationContext, noop::noop_host_context};
+    use crate::runtime::RuntimeAdapter;
+
+    #[test]
+    fn quickjs_ctx_module_exposed() {
+        let adapter = QuickJSAdapter::new().unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+        };
+        let code = "function run(ctx) { return { id: ctx.module.id, name: ctx.module.name, version: ctx.module.version }; }";
+        let result = adapter.execute(code, "run", &invocation).unwrap();
+        assert_eq!(result["id"], "mymod");
+        assert_eq!(result["name"], "My Module");
+        assert_eq!(result["version"], "2.0.0");
+    }
 }

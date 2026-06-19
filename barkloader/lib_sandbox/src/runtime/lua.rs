@@ -186,6 +186,27 @@ fn build_lua_ctx(
     }
     ctx.set("resources", resources)?;
 
+    // module namespace
+    {
+        let module_tbl = lua.create_table()?;
+        module_tbl.set("id", invocation.module_id.clone())?;
+        module_tbl.set("name", invocation.module_name.clone())?;
+        module_tbl.set("version", invocation.module_version.clone())?;
+
+        let settings_map = invocation
+            .host
+            .settings
+            .list_by_module(&invocation.module_id)
+            .unwrap_or_default();
+        let settings_tbl = lua.create_table()?;
+        for (k, v) in &settings_map {
+            let lua_val = lua.to_value(v)?;
+            settings_tbl.set(k.as_str(), lua_val)?;
+        }
+        module_tbl.set("settings", settings_tbl)?;
+        ctx.set("module", module_tbl)?;
+    }
+
     bind_extensions(lua, &ctx, invocation)?;
 
     Ok(ctx)
