@@ -99,6 +99,29 @@
       "description": "Polls Spotify every 30 seconds to update the currently playing track."
     }
   ],
+  "settings": [
+    {
+      "id": "clientId",
+      "name": "Spotify Client ID",
+      "description": "Your Spotify application client ID from the Spotify Developer Dashboard.",
+      "type": "string",
+      "required": true
+    },
+    {
+      "id": "clientSecret",
+      "name": "Spotify Client Secret",
+      "description": "Your Spotify application client secret.",
+      "type": "string",
+      "required": true
+    },
+    {
+      "id": "refreshToken",
+      "name": "Spotify Refresh Token",
+      "description": "OAuth refresh token for the streamer's Spotify account.",
+      "type": "string",
+      "required": true
+    }
+  ],
   "widgets": [
     {
       "id": "now_playing",
