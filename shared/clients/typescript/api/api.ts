@@ -760,7 +760,19 @@ export interface Woofx3EngineApi {
     widgetsJson?: string;
     layoutJson?: string;
     correlationKey?: string;
-  }): Promise<{ id: string }>;
+  }): Promise<{
+    id: string;
+    overlayToken: {
+      tokenId: string;
+      token: string;
+      sceneId: string;
+      applicationId: string;
+      label: string;
+      status: string;
+      createdAt: string;
+      url: string;
+    };
+  }>;
   /**
    * Patch semantics — omit a field to leave it unchanged. Empty
    * string for `name` / `description` is allowed (clears it); pass

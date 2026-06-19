@@ -253,7 +253,10 @@ async function main() {
           }
           // Unrecognised overlay WS path — fall through to proxyRequest which returns 405.
         }
-        return proxyRequest(req, config.streamwareUrl, logger);
+        logger.info("Overlay proxy", { method: req.method, path: url.pathname, upstream: config.streamwareUrl });
+        const proxyResp = await proxyRequest(req, config.streamwareUrl, logger);
+        logger.info("Overlay proxy response", { path: url.pathname, status: proxyResp.status });
+        return proxyResp;
       }
 
       // Handle WebSocket upgrade

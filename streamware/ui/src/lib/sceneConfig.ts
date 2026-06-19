@@ -108,17 +108,33 @@ export function parseSceneConfigPayload(parsed: unknown): SceneConfig {
 
 export function validateWidgetInstance(raw: unknown): WidgetInstance | null {
   if (!raw || typeof raw !== "object") {
+    console.warn("[overlay:config] dropping widget — not an object", raw);
     return null;
   }
   const r = raw as Record<string, unknown>;
-  if (typeof r.id !== "string" || !r.id) return null;
-  if (typeof r.widgetCanonicalId !== "string" || !r.widgetCanonicalId) return null;
-  if (typeof r.moduleId !== "string" || !r.moduleId) return null;
+  if (typeof r.id !== "string" || !r.id) {
+    console.warn("[overlay:config] dropping widget — missing id", r);
+    return null;
+  }
+  if (typeof r.widgetCanonicalId !== "string" || !r.widgetCanonicalId) {
+    console.warn("[overlay:config] dropping widget id=" + String(r.id) + " — missing widgetCanonicalId, got:", r.widgetCanonicalId);
+    return null;
+  }
+  if (typeof r.moduleId !== "string" || !r.moduleId) {
+    console.warn("[overlay:config] dropping widget id=" + String(r.id) + " — missing moduleId, got:", r.moduleId);
+    return null;
+  }
   // Either a token-mode frameUrl or a legacy bundleUrl must be present.
   const bundleUrl = typeof r.bundleUrl === "string" && r.bundleUrl ? r.bundleUrl : undefined;
   const frameUrl = typeof r.frameUrl === "string" && r.frameUrl ? r.frameUrl : undefined;
-  if (!bundleUrl && !frameUrl) return null;
-  if (!isPosition(r.position)) return null;
+  if (!bundleUrl && !frameUrl) {
+    console.warn("[overlay:config] dropping widget id=" + String(r.id) + " — no frameUrl or bundleUrl");
+    return null;
+  }
+  if (!isPosition(r.position)) {
+    console.warn("[overlay:config] dropping widget id=" + String(r.id) + " — invalid position", r.position);
+    return null;
+  }
   const settings = r.settings && typeof r.settings === "object" ? (r.settings as Record<string, unknown>) : {};
   // acceptedEvents is optional — widgets without declared interest
   // receive no events, which is the right default for static

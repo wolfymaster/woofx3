@@ -24,7 +24,6 @@ import {
   isOverlayEventsEnvelope,
   type OverlayEventFrame,
   type OverlayEventsFrame,
-  type OverlayStorageFrame,
 } from "../../../../shared/clients/typescript/api/overlay-events";
 
 /** Frames + lifecycle signals the scene manager consumes. */
@@ -45,53 +44,9 @@ export interface SceneEventSource {
   stop(): void;
 }
 
-// ---------------------------------------------------------------------------
-// Legacy (v0) payload tolerance
-// ---------------------------------------------------------------------------
-
-/**
- * Map a pre-P2 push payload to an overlay-events frame. Mirrors the
- * `useStorageChangeStream` heuristics: `kind === "event"` selects the
- * event shape (a missing `type` drops it); anything else with
- * `moduleId` + `key` is a storage change; the rest is noise.
- */
-export function mapLegacyPayloadToFrame(payload: Record<string, unknown>): OverlayEventsFrame | null {
-  const kind = typeof payload.kind === "string" ? payload.kind : "storage";
-  if (kind === "event") {
-    const type = typeof payload.type === "string" ? payload.type : "";
-    if (!type) {
-      console.warn("[overlay:events] dropping legacy event with no type", { payload });
-      return null;
-    }
-    const frame: OverlayEventFrame = {
-      kind: "event",
-      type,
-      source: typeof payload.source === "string" ? payload.source : "",
-      time: typeof payload.time === "string" ? payload.time : new Date().toISOString(),
-      data: payload.data,
-      ...(payload.parameters && typeof payload.parameters === "object"
-        ? { parameters: payload.parameters as Record<string, unknown> }
-        : {}),
-    };
-    return frame;
-  }
-  if (typeof payload.moduleId === "string" && payload.moduleId && typeof payload.key === "string" && payload.key) {
-    const frame: OverlayStorageFrame = {
-      kind: "storage",
-      ...(typeof payload.id === "string" ? { id: payload.id } : {}),
-      moduleId: payload.moduleId,
-      key: payload.key,
-      value: payload.value,
-      ...(payload.previousValue !== undefined ? { previousValue: payload.previousValue } : {}),
-      occurredAt: typeof payload.occurredAt === "string" ? payload.occurredAt : new Date().toISOString(),
-    };
-    return frame;
-  }
-  return null;
-}
-
-/** Parse one inbound wire message (WS text or postMessage data already
- *  JSON-parsed) into a frame, tolerating legacy unenveloped payloads. */
+/** Parse one inbound P2 envelope from the wire (WS text or postMessage
+ *  data already JSON-parsed). Only properly-enveloped P2 frames are
+ *  accepted; anything else is dropped with a debug log. */
 export function parseInboundFrame(payload: unknown): OverlayEventsFrame | null {
   if (typeof payload !== "object" || payload === null) {
     return null;
@@ -101,14 +56,11 @@ export function parseInboundFrame(payload: unknown): OverlayEventsFrame | null {
   }
   const record = payload as Record<string, unknown>;
   if (record.proto === OVERLAY_EVENTS_PROTOCOL) {
-    // Enveloped but unknown version / frame kind — forward
-    // compatibility says drop, not misparse as legacy.
-    console.warn("[overlay:events] dropping unrecognized overlay-events envelope", {
-      v: record.v,
-    });
+    console.warn("[overlay:events] dropping unrecognized overlay-events envelope", { v: record.v });
     return null;
   }
-  return mapLegacyPayloadToFrame(record);
+  console.debug("[overlay:events] dropping non-envelope message", { kind: record.kind });
+  return null;
 }
 
 // ---------------------------------------------------------------------------

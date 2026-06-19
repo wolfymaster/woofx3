@@ -89,7 +89,8 @@ export interface ParsedSceneChange<T> {
 export function parseSceneCreated(
   ce: Record<string, unknown>
 ): ParsedSceneChange<SceneCreatedEvent> {
-  const applicationId = asString(ce.application_id);
+  const row = readRow(ce);
+  const applicationId = pickFirst(row.ApplicationID, row.application_id);
   const clientId = asString(ce.client_id);
   const snapshot = buildSnapshot(ce);
   return {
@@ -108,7 +109,8 @@ export function parseSceneCreated(
 export function parseSceneUpdated(
   ce: Record<string, unknown>
 ): ParsedSceneChange<SceneUpdatedEvent> {
-  const applicationId = asString(ce.application_id);
+  const row = readRow(ce);
+  const applicationId = pickFirst(row.ApplicationID, row.application_id);
   const clientId = asString(ce.client_id);
   const snapshot = buildSnapshot(ce);
   return {
@@ -127,13 +129,13 @@ export function parseSceneUpdated(
 export function parseSceneDeleted(
   ce: Record<string, unknown>
 ): ParsedSceneChange<SceneDeletedEvent> {
-  const applicationId = asString(ce.application_id);
+  const row = readRow(ce);
+  const applicationId = pickFirst(row.ApplicationID, row.application_id);
   const clientId = asString(ce.client_id);
   // scene_service.DeleteScene publishes the full row (its
   // `buildSceneChangeData`), so the id field is always present.
   // Fall back to the CloudEvent `entity_id` extension defensively
   // — same convention `parseWorkflowDeleted` follows.
-  const row = readRow(ce);
   const sceneId = pickFirst(row.ID, row.id, ce.entity_id);
   if (!sceneId) {
     return { applicationId, clientId, event: null };

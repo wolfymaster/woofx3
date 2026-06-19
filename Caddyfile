@@ -2,8 +2,8 @@
 	default_bind 127.0.0.1
 }
 
-access.local.woofx3.tv {
-	reverse_proxy http://localhost:9005
+api.local.woofx3.tv {
+	reverse_proxy http://localhost:9001
 	tls internal
 }
 
@@ -12,32 +12,7 @@ auth.local.woofx3.tv {
 	tls internal
 }
 
-barkloader.local.woofx3.tv {
-	reverse_proxy http://localhost:9653
-	tls internal
-}
-
-wolfy.local.woofx3.tv {
-	reverse_proxy localhost:3000
-	tls internal
-}
-
-extension.local.woofx3.tv {
-	reverse_proxy localhost:5174
-	tls internal
-}
-
-ui.local.woofx3.tv {
-	reverse_proxy localhost:5173
-	tls internal
-}
-
-streamlabs.local.woofx3.tv {
-	reverse_proxy localhost:9101
-	tls internal
-}
-
-timer.local.woofx3.tv {
-	reverse_proxy localhost:12000
+streamware.local.woofx3.tv {
+	reverse_proxy http://localhost:9101
 	tls internal
 }

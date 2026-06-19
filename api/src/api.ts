@@ -3761,7 +3761,19 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     widgetsJson?: string;
     layoutJson?: string;
     correlationKey?: string;
-  }): Promise<{ id: string }> {
+  }): Promise<{
+    id: string;
+    overlayToken: {
+      tokenId: string;
+      token: string;
+      sceneId: string;
+      applicationId: string;
+      label: string;
+      status: string;
+      createdAt: string;
+      url: string;
+    };
+  }> {
     const applicationId = data.accountId || (await this.ensureApplicationId());
     this.logger.info("Creating scene", { name: data.name, applicationId });
     const response = await this.db.createScene({
@@ -3779,13 +3791,46 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     const created = response.scene;
     this.logger.info("Created scene", { id: created.id, name: created.name });
 
-    void this.emitSceneWebhook({
+    // Auto-mint the one overlay token for this scene.
+    const tokenResp = await this.db.mintOverlayToken({
+      sceneId: created.id ?? "",
+      applicationId,
+      label: "",
+    });
+    if (tokenResp.status?.code !== "OK" || !tokenResp.overlayToken) {
+      throw new Error(tokenResp.status?.message || "Failed to mint overlay token for scene");
+    }
+    const t = tokenResp.overlayToken;
+    this.logger.info("Auto-minted overlay token for scene", {
+      tokenId: t.id,
+      sceneId: t.sceneId,
+      masked: maskToken(t.token),
+    });
+
+    // Delay the webhook so Convex has time to commit its correlationKey
+    // listener before the event arrives. The NATS outbox fires at ~500ms
+    // (correct scene data, no correlationKey); this fires at ~1000ms
+    // with correlationKey so Convex can resolve the pending wait state.
+    const sceneCreatedEvent: SceneCreatedEvent = {
       type: EngineEventType.SCENE_CREATED,
       applicationId,
       correlationKey: data.correlationKey,
       scene: dbSceneToSnapshot(created),
-    });
-    return { id: created.id ?? "" };
+    };
+    setTimeout(() => { void this.emitSceneWebhook(sceneCreatedEvent); }, 1000);
+    return {
+      id: created.id ?? "",
+      overlayToken: {
+        tokenId: t.id,
+        token: t.token,
+        sceneId: t.sceneId,
+        applicationId: t.applicationId,
+        label: t.label,
+        status: t.status,
+        createdAt: timestampToIso(t.createdAt),
+        url: this.buildOverlayUrl(t.token),
+      },
+    };
   }
 
   async updateScene(
@@ -3818,12 +3863,13 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     const updated = response.scene;
     this.logger.info("Updated scene", { id, name: updated.name });
 
-    void this.emitSceneWebhook({
+    const sceneUpdatedEvent: SceneUpdatedEvent = {
       type: EngineEventType.SCENE_UPDATED,
       applicationId: updated.applicationId ?? "",
       correlationKey: data.correlationKey,
       scene: dbSceneToSnapshot(updated),
-    });
+    };
+    setTimeout(() => { void this.emitSceneWebhook(sceneUpdatedEvent); }, 1000);
     return { success: true };
   }
 
@@ -3837,12 +3883,13 @@ export class Api extends RpcTarget implements Woofx3EngineApi {
     const response = await this.db.deleteScene({ id });
     const success = response.code === "OK";
     if (success) {
-      void this.emitSceneWebhook({
+      const sceneDeletedEvent: SceneDeletedEvent = {
         type: EngineEventType.SCENE_DELETED,
         applicationId,
         correlationKey,
         sceneId: id,
-      });
+      };
+      setTimeout(() => { void this.emitSceneWebhook(sceneDeletedEvent); }, 1000);
     }
     return { success };
   }

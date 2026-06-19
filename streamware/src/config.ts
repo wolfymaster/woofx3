@@ -48,8 +48,6 @@ export interface StreamwareRuntimeConfig {
   databaseProxyUrl: string;
   /** Barkloader asset origin for module widget bundles. */
   barkloaderUrl: string;
-  /** Serve legacy direct routes while true (design 2.2 / 5.1). */
-  legacyRoutes: boolean;
   /** Absolute CDN base for widget assets; empty -> relative <base> (design 2.5). */
   widgetAssetBaseUrl: string;
   obs: {
@@ -129,7 +127,6 @@ export function loadConfig(): StreamwareRuntimeConfig {
   const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? c.databaseProxyUrl ?? "");
   const barkloaderUrl = String(c.woofx3BarkloaderUrl ?? c.barkloaderUrl ?? "http://127.0.0.1:3005");
   const bindHost = String(c.woofx3StreamwareHost ?? c.streamwareHost ?? "127.0.0.1");
-  const legacyRoutes = coerceFlag(c.woofx3StreamwareLegacyRoutes ?? c.streamwareLegacyRoutes, true);
   const widgetAssetBaseUrl = String(c.woofx3WidgetAssetBaseUrl ?? c.widgetAssetBaseUrl ?? "");
 
   return {
@@ -140,7 +137,6 @@ export function loadConfig(): StreamwareRuntimeConfig {
     publicDir: `${import.meta.dir}/../public`,
     databaseProxyUrl,
     barkloaderUrl,
-    legacyRoutes,
     widgetAssetBaseUrl,
     obs: {
       url: `ws://${obsHost}:${obsPort}`,
