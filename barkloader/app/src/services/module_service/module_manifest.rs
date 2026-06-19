@@ -290,6 +290,38 @@ pub struct ManifestBackgroundTask {
     pub description: String,
 }
 
+/// A setting declared in the module manifest. Values are stored in the
+/// `module_settings` table keyed by `module_id` + `id`. Type must be one of
+/// `"string"` | `"number"` | `"boolean"`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestSetting {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(rename = "type")]
+    pub setting_type: String,
+    #[serde(default)]
+    pub required: bool,
+    #[serde(rename = "default", default)]
+    pub default_value: Option<String>,
+}
+
+impl ManifestSetting {
+    /// Returns the value to insert when no user value exists yet.
+    pub fn resolved_default(&self) -> String {
+        if let Some(v) = &self.default_value {
+            return v.clone();
+        }
+        match self.setting_type.as_str() {
+            "number" => "0".to_string(),
+            "boolean" => "false".to_string(),
+            _ => String::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModuleManifest {
@@ -340,8 +372,14 @@ pub struct ModuleManifest {
     /// Background tasks declared by the module. The scheduler registers
     /// these at module install/reload and fires the referenced function on
     /// the given cron schedule until the module is unloaded or uninstalled.
-    #[serde(default)]
+    /// Accept both camelCase ("backgroundTasks") and snake_case ("background_tasks")
+    /// since module authors commonly use either form.
+    #[serde(default, alias = "background_tasks")]
     pub background_tasks: Vec<ManifestBackgroundTask>,
+    /// Module-level settings declared in the manifest. Registered into the
+    /// `module_settings` table at install time. Values survive upgrades.
+    #[serde(default)]
+    pub settings: Vec<ManifestSetting>,
 }
 
 impl ModuleManifest {
@@ -1483,5 +1521,35 @@ mod tests {
             Some(1)
         );
         assert!(reparsed.get("accepted_events").is_none());
+    }
+
+    #[test]
+    fn parses_manifest_settings() {
+        let j = r#"
+    {
+        "id": "mymod",
+        "name": "My Module",
+        "settings": [
+            {"id": "clientId", "name": "Client ID", "description": "OAuth client ID", "type": "string", "required": true},
+            {"id": "maxRetries", "name": "Max Retries", "description": "Retry count", "type": "number", "required": false, "default": "5"},
+            {"id": "enabled", "name": "Enabled", "description": "Toggle feature", "type": "boolean", "required": false, "default": "true"}
+        ]
+    }"#;
+        let m: ModuleManifest = serde_json::from_str(j).expect("parse");
+        assert_eq!(m.settings.len(), 3);
+        let s0 = &m.settings[0];
+        assert_eq!(s0.id, "clientId");
+        assert_eq!(s0.setting_type, "string");
+        assert_eq!(s0.required, true);
+        assert!(s0.default_value.is_none());
+
+        let s1 = &m.settings[1];
+        assert_eq!(s1.id, "maxRetries");
+        assert_eq!(s1.setting_type, "number");
+        assert_eq!(s1.default_value.as_deref(), Some("5"));
+
+        let s2 = &m.settings[2];
+        assert_eq!(s2.setting_type, "boolean");
+        assert_eq!(s2.default_value.as_deref(), Some("true"));
     }
 }
