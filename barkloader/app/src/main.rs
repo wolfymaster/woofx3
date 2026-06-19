@@ -95,9 +95,12 @@ async fn setup() -> Result<AppContext> {
                 "Wiring HttpResourceClient against db-proxy {}",
                 resource_proxy_url
             );
-            ctx.resources = Arc::new(HttpResourceClient::new(resource_proxy_url));
+            ctx.resources = Arc::new(HttpResourceClient::new(resource_proxy_url.clone()));
+            ctx.settings = Arc::new(
+                crate::services::module_settings_client::HttpSettingsClient::new(resource_proxy_url)
+            );
         } else {
-            info!("databaseProxyUrl not set in .woofx3.json; using noop resource client");
+            info!("databaseProxyUrl not set in .woofx3.json; using noop resource and settings clients");
         }
 
         ctx.env = Arc::new(OsEnvReader);
