@@ -1,5 +1,6 @@
 use super::*;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct NoopNatsPublisher;
@@ -46,6 +47,14 @@ impl ChatSender for NoopChatSender {
     }
 }
 
+pub struct NoopSettingsClient;
+
+impl super::SettingsClient for NoopSettingsClient {
+    fn list_by_module(&self, _module_id: &str) -> Result<HashMap<String, serde_json::Value>, String> {
+        Ok(HashMap::new())
+    }
+}
+
 pub struct NoopResourceClient;
 
 impl ResourceClient for NoopResourceClient {
@@ -75,6 +84,7 @@ pub fn noop_host_context() -> HostContext {
         env: Arc::new(NoopEnvReader),
         http: Arc::new(NoopHttpClient),
         resources: Arc::new(NoopResourceClient),
+        settings: Arc::new(NoopSettingsClient),
         extensions: Arc::new(ExtensionRegistry::new()),
     }
 }

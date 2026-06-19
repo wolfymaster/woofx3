@@ -75,6 +75,8 @@ mod tests {
             user: Value::Null,
             host: noop_host_context(),
             module_id: String::new(),
+            module_name: String::new(),
+            module_version: String::new(),
         }
     }
 

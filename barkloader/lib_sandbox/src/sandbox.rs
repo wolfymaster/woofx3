@@ -95,6 +95,8 @@ impl Sandbox {
                 user: request.user.unwrap_or(Value::Null),
                 host: self.host_ctx.clone(),
                 module_id,
+                module_name: String::new(),
+                module_version: String::new(),
             };
 
             self.function_executor.execute(&function, &invocation)

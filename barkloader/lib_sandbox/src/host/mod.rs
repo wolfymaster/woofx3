@@ -6,6 +6,7 @@ pub use extension::{ExtensionRegistry, HandlerFn, HostExtension, HostFunction};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub trait NatsPublisher: Send + Sync {
@@ -50,6 +51,14 @@ pub struct ResourceInstance {
 /// `owning_module_name` is the manifest-local module id (e.g.
 /// `"counter"`) — the trait impl resolves it to the engine's UUID
 /// internally. Callers should pass `invocation.module_id`.
+/// Pre-loads module-level settings as a typed key/value map. Concrete
+/// implementations live in barkloader app (HTTP call to db-proxy). The noop
+/// impl returns an empty map so tests and builtin invocations compile without
+/// a real db-proxy.
+pub trait SettingsClient: Send + Sync {
+    fn list_by_module(&self, module_id: &str) -> Result<HashMap<String, Value>, String>;
+}
+
 pub trait ResourceClient: Send + Sync {
     fn create(
         &self,
@@ -69,6 +78,7 @@ pub struct HostContext {
     pub env: Arc<dyn EnvReader>,
     pub http: Arc<dyn HttpClient>,
     pub resources: Arc<dyn ResourceClient>,
+    pub settings: Arc<dyn SettingsClient>,
     pub extensions: Arc<ExtensionRegistry>,
 }
 
@@ -81,4 +91,33 @@ pub struct InvocationContext {
     /// Used by the storage namespace to scope the auto-emitted
     /// `module.storage.<module_id>.changed` event.
     pub module_id: String,
+    /// Human-readable module display name (e.g. "Spotify Song Request").
+    pub module_name: String,
+    /// Semver version string from the manifest (e.g. "1.0.0").
+    pub module_version: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    struct StaticSettingsClient {
+        data: HashMap<String, serde_json::Value>,
+    }
+
+    impl SettingsClient for StaticSettingsClient {
+        fn list_by_module(&self, _module_id: &str) -> Result<HashMap<String, serde_json::Value>, String> {
+            Ok(self.data.clone())
+        }
+    }
+
+    #[test]
+    fn settings_client_returns_map() {
+        let mut data = HashMap::new();
+        data.insert("clientId".to_string(), serde_json::Value::String("abc".to_string()));
+        let client = StaticSettingsClient { data };
+        let result = client.list_by_module("spotify").unwrap();
+        assert_eq!(result["clientId"], serde_json::Value::String("abc".to_string()));
+    }
 }
