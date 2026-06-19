@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package module_setting;
+
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+message ModuleSettingRecord {
+  string id         = 1;
+  string module_id  = 2;
+  string key        = 3;
+  string value      = 4;
+  string value_type = 5;
+}
+
+message ListModuleSettingsRequest {
+  string module_id = 1;
+}
+
+message ListModuleSettingsResponse {
+  repeated ModuleSettingRecord settings = 1;
+}
+
+message SetModuleSettingRequest {
+  string module_id  = 1;
+  string key        = 2;
+  string value      = 3;
+  string value_type = 4;
+}
+
+message ManifestSettingInput {
+  string key        = 1;
+  string value      = 2;
+  string value_type = 3;
+}
+
+message RegisterModuleSettingsRequest {
+  string module_id                       = 1;
+  repeated ManifestSettingInput settings = 2;
+}
+
+message RegisterModuleSettingsResponse {
+  int32 registered = 1;
+}
+
+service ModuleSettingService {
+  rpc ListModuleSettings(ListModuleSettingsRequest)       returns (ListModuleSettingsResponse);
+  rpc SetModuleSetting(SetModuleSettingRequest)           returns (ModuleSettingRecord);
+  rpc RegisterModuleSettings(RegisterModuleSettingsRequest) returns (RegisterModuleSettingsResponse);
+}
