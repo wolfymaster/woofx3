@@ -26,7 +26,13 @@ export async function handleModuleSettingRoute(req: Request, url: URL, api: Api)
   if (setMatch && req.method === "PUT") {
     const moduleId = decodeURIComponent(setMatch[1]);
     const key = decodeURIComponent(setMatch[2]);
-    const body = (await req.json()) as { value: string };
+    const body = (await req.json()) as { value?: unknown };
+    if (typeof body.value !== "string") {
+      return new Response(JSON.stringify({ error: "body.value must be a string" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     const result = await api.updateModuleSetting(moduleId, key, body.value);
     return Response.json(result);
   }

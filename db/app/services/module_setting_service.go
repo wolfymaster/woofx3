@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/database/models"
@@ -47,7 +48,7 @@ func (s *ModuleSettingService) SetModuleSetting(ctx context.Context, req *client
 			return toProtoSetting(r), nil
 		}
 	}
-	return toProtoSetting(row), nil
+	return nil, fmt.Errorf("setting key %q not found after upsert", req.Key)
 }
 
 func (s *ModuleSettingService) RegisterModuleSettings(ctx context.Context, req *client.RegisterModuleSettingsRequest) (*client.RegisterModuleSettingsResponse, error) {
