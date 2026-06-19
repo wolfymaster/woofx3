@@ -398,6 +398,24 @@ pub async fn run_install<R: Repository>(
                 .await?;
             }
 
+            if !manifest.settings.is_empty() {
+                let setting_inputs: Vec<_> = manifest.settings.iter().map(|s| {
+                    super::db_proxy::SettingInputJson {
+                        key: s.id.clone(),
+                        value: s.resolved_default(),
+                        value_type: s.setting_type.clone(),
+                    }
+                }).collect();
+                info!(
+                    "Registering {} setting(s) for module {}",
+                    setting_inputs.len(),
+                    module_key
+                );
+                super::db_proxy::register_module_settings(url, module_key, setting_inputs)
+                    .await
+                    .map_err(|e| anyhow!("register settings: {}", e))?;
+            }
+
             // Register module assets — same idempotent pattern as
             // actions. `asset_keys[i]` was captured during the upload
             // pass earlier in this function, so the order matches
