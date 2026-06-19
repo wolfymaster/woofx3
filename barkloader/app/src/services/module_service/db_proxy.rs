@@ -185,7 +185,7 @@ pub struct RegisterBackgroundTasksJson {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct BackgroundTaskJson {
     pub id: String,
     pub module_id: String,
@@ -1472,4 +1472,87 @@ pub async fn delete_background_tasks_by_module_id(db_proxy_url: &str, module_id:
         return Err(anyhow!("DeleteBackgroundTasksByModuleId failed {}: {}", status, text));
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ModuleSettingJson {
+    pub id: String,
+    pub module_id: String,
+    pub key: String,
+    pub value: String,
+    pub value_type: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SettingInputJson {
+    pub key: String,
+    pub value: String,
+    pub value_type: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct RegisterModuleSettingsBody {
+    module_id: String,
+    settings: Vec<SettingInputJson>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct RegisterModuleSettingsResponse {
+    registered: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct ListModuleSettingsResponse {
+    settings: Vec<ModuleSettingJson>,
+}
+
+pub async fn register_module_settings(
+    url: &str,
+    module_id: &str,
+    settings: Vec<SettingInputJson>,
+) -> Result<()> {
+    let body = RegisterModuleSettingsBody {
+        module_id: module_id.to_string(),
+        settings,
+    };
+    let endpoint = format!("{}/twirp/woofx3.db.v1.ModuleSettingService/RegisterModuleSettings", url);
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&endpoint)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("register_module_settings request: {}", e))?;
+    if !response.status().is_success() {
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("register_module_settings failed: {}", text));
+    }
+    Ok(())
+}
+
+pub async fn get_module_settings(
+    url: &str,
+    module_id: &str,
+) -> Result<Vec<ModuleSettingJson>> {
+    let body = serde_json::json!({ "module_id": module_id });
+    let endpoint = format!("{}/twirp/woofx3.db.v1.ModuleSettingService/ListModuleSettings", url);
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&endpoint)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("get_module_settings request: {}", e))?;
+    if !response.status().is_success() {
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("get_module_settings failed: {}", text));
+    }
+    let resp: ListModuleSettingsResponse = response
+        .json()
+        .await
+        .map_err(|e| anyhow!("parse ListModuleSettings response: {}", e))?;
+    Ok(resp.settings)
 }
