@@ -96,12 +96,14 @@ export class SceneManager {
   deliverStorage(moduleId: string, key: string, value: unknown): void {
     const storageKey = `${moduleId}:${key}`;
     const instances = this.storageSubs.get(storageKey);
+    console.log(`[SceneManager] deliverStorage ${storageKey} → ${instances?.size ?? 0} subscriber(s)`);
     if (!instances || instances.size === 0) {
       return;
     }
     for (const instanceId of instances) {
       const entry = this.registry.get(instanceId);
       if (entry) {
+        console.log(`[SceneManager] dispatching storage ${storageKey} to instance ${instanceId}`);
         entry.bridge.sendStorageChanged(moduleId, key, value);
       }
     }
@@ -109,12 +111,14 @@ export class SceneManager {
 
   deliverEvent(event: WidgetEvent): void {
     const instances = this.eventIndex.get(event.type);
+    console.log(`[SceneManager] deliverEvent type=${event.type} → ${instances?.size ?? 0} subscriber(s)`);
     if (!instances || instances.size === 0) {
       return;
     }
     for (const instanceId of instances) {
       const entry = this.registry.get(instanceId);
       if (entry) {
+        console.log(`[SceneManager] dispatching event type=${event.type} to instance ${instanceId}`);
         entry.bridge.sendEvent(event);
       }
     }
@@ -184,6 +188,7 @@ export class SceneManager {
   }
 
   private onFrame(frame: OverlayEventsFrame): void {
+    console.log(`[SceneManager] onFrame kind=${frame.kind}`, frame);
     switch (frame.kind) {
       case "storage": {
         this.deliverStorage(frame.moduleId, frame.key, frame.value);

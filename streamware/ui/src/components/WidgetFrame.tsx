@@ -69,8 +69,15 @@ export default function WidgetFrame({ instance, manager }: WidgetFrameProps) {
     const acceptedEvents = instance.acceptedEvents ?? [];
     manager.registerBridge(instance.id, bridge, acceptedEvents);
 
+    // The first `load` fires after the initial document finishes loading —
+    // by that point the hello/init handshake has already completed. Only
+    // subsequent fires indicate an in-frame navigation that requires a
+    // fresh handshake.
+    let loadCount = 0;
     function onLoad(): void {
-      bridge.onFrameLoad();
+      if (++loadCount > 1) {
+        bridge.onFrameLoad();
+      }
     }
 
     iframe?.addEventListener("load", onLoad);

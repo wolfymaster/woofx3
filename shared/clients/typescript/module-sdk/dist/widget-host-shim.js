@@ -72,6 +72,7 @@
     const helloMessage = envelope({
       type: "hello",
       instanceId: boot.instanceId,
+      moduleId: boot.moduleId,
       sdkVersion: SDK_VERSION,
       wants: SHIM_WANTS.slice()
     });
