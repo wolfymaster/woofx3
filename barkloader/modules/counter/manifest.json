@@ -1,0 +1,224 @@
+{
+  "id": "counter",
+  "name": "Counter",
+  "author": "WolfyMaster LLC",
+  "version": "0.3.0",
+  "category": "automation",
+  "description": "Named counters with increment, decrement, set, and reset actions. Displays live counter values in scene overlays using configurable label templates.",
+  "resources": [
+    {
+      "kind": "counter",
+      "name": "Counter",
+      "description": "A persistent numeric counter. Owned by the counter module; identified by canonical id `counter:counter:{instanceId}`.",
+      "valueSchema": { "type": "number", "default": 0 }
+    }
+  ],
+  "functions": [
+    { "id": "increment",     "name": "Increment counter",     "runtime": "js", "path": "functions/increment.js",     "entryPoint": "increment" },
+    { "id": "decrement",     "name": "Decrement counter",     "runtime": "js", "path": "functions/decrement.js",     "entryPoint": "decrement" },
+    { "id": "set",           "name": "Set counter",           "runtime": "js", "path": "functions/set.js",           "entryPoint": "set" },
+    { "id": "reset",         "name": "Reset counter",         "runtime": "js", "path": "functions/reset.js",         "entryPoint": "reset" },
+    { "id": "createCounter", "name": "Create counter",        "runtime": "js", "path": "functions/createCounter.js", "entryPoint": "createCounter" },
+    { "id": "deleteCounter", "name": "Delete counter",        "runtime": "js", "path": "functions/deleteCounter.js", "entryPoint": "deleteCounter" }
+  ],
+  "actions": [
+    {
+      "id": "increment",
+      "name": "Increment counter",
+      "description": "Increase the chosen counter by the configured step.",
+      "type": "function",
+      "function": "increment",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Counter",
+          "type": "resource_ref",
+          "kind": "counter",
+          "required": true,
+          "description": "Which counter to increment."
+        },
+        {
+          "id": "step",
+          "label": "Increment by",
+          "type": "number",
+          "required": true,
+          "min": 1,
+          "defaultValue": 1,
+          "description": "How much to add to the counter on each invocation."
+        }
+      ]
+    },
+    {
+      "id": "decrement",
+      "name": "Decrement counter",
+      "description": "Decrease the chosen counter by the configured step.",
+      "type": "function",
+      "function": "decrement",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Counter",
+          "type": "resource_ref",
+          "kind": "counter",
+          "required": true,
+          "description": "Which counter to decrement."
+        },
+        {
+          "id": "step",
+          "label": "Decrement by",
+          "type": "number",
+          "required": true,
+          "min": 1,
+          "defaultValue": 1,
+          "description": "How much to subtract from the counter on each invocation."
+        }
+      ]
+    },
+    {
+      "id": "set",
+      "name": "Set counter",
+      "description": "Overwrite the chosen counter's value with an explicit number.",
+      "type": "function",
+      "function": "set",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Counter",
+          "type": "resource_ref",
+          "kind": "counter",
+          "required": true,
+          "description": "Which counter to set."
+        },
+        {
+          "id": "value",
+          "label": "Value",
+          "type": "number",
+          "required": true,
+          "description": "The value to set the counter to."
+        }
+      ]
+    },
+    {
+      "id": "reset",
+      "name": "Reset counter",
+      "description": "Reset the chosen counter to its initial value (default 0).",
+      "type": "function",
+      "function": "reset",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Counter",
+          "type": "resource_ref",
+          "kind": "counter",
+          "required": true,
+          "description": "Which counter to reset."
+        },
+        {
+          "id": "initialValue",
+          "label": "Reset to",
+          "type": "number",
+          "required": false,
+          "defaultValue": 0,
+          "description": "Value to reset to. Defaults to 0."
+        }
+      ]
+    },
+    {
+      "id": "createCounter",
+      "name": "Create counter",
+      "description": "Register a new counter instance.",
+      "type": "function",
+      "function": "createCounter",
+      "schema": [
+        {
+          "id": "instanceId",
+          "label": "ID",
+          "type": "text",
+          "required": true,
+          "description": "Stable identifier (e.g. `death_count`). Forms canonical id `counter:counter:{instanceId}`."
+        },
+        {
+          "id": "displayName",
+          "label": "Display name",
+          "type": "text",
+          "required": true,
+          "description": "Human-readable label shown in pickers."
+        },
+        {
+          "id": "initialValue",
+          "label": "Initial value",
+          "type": "number",
+          "required": false,
+          "defaultValue": 0,
+          "description": "Starting value (defaults to 0)."
+        }
+      ]
+    },
+    {
+      "id": "deleteCounter",
+      "name": "Delete counter",
+      "description": "Remove a counter instance and its stored value.",
+      "type": "function",
+      "function": "deleteCounter",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Counter",
+          "type": "resource_ref",
+          "kind": "counter",
+          "required": true,
+          "description": "Which counter to delete."
+        }
+      ]
+    }
+  ],
+  "widgets": [
+    {
+      "id": "counter",
+      "name": "Counter",
+      "description": "Displays the current value of a chosen counter, live-updating whenever the counter changes. Supports label templates like '{value} deaths so far' or '{value}/{max} subs'.",
+      "entry": "widgets/counter/index.html",
+      "assets": "widgets/counter",
+      "acceptedEvents": [],
+      "alertTypes": ["module.storage.changed"],
+      "settingsSchema": {
+        "fields": [
+          {
+            "key": "target",
+            "fieldType": "resource_ref",
+            "kind": "counter",
+            "label": "Counter",
+            "required": true,
+            "description": "Which counter to display."
+          },
+          {
+            "key": "labelTemplate",
+            "fieldType": "text",
+            "label": "Label template",
+            "defaultValue": "{value}",
+            "description": "Text to display. {value} is replaced by the counter's current number. {max} is replaced by the Max value setting. Examples: '{value} deaths so far', '{value}/{max} subs', 'Streamer has died {value} times'."
+          },
+          {
+            "key": "maxValue",
+            "fieldType": "number",
+            "label": "Max value (optional)",
+            "defaultValue": null,
+            "description": "Substituted for {max} in the label template. Leave blank if not needed."
+          },
+          {
+            "key": "fontSize",
+            "fieldType": "number",
+            "label": "Font size (px)",
+            "defaultValue": 64
+          },
+          {
+            "key": "accentColor",
+            "fieldType": "color",
+            "label": "Text color",
+            "defaultValue": "#7ad7ff"
+          }
+        ]
+      }
+    }
+  ]
+}
