@@ -15,12 +15,12 @@ function song_request(ctx) {
         return { sent: false, error: "empty query" };
     }
 
-    var clientId = ctx.env.get("SPOTIFY_CLIENT_ID");
-    var clientSecret = ctx.env.get("SPOTIFY_CLIENT_SECRET");
-    var refreshToken = ctx.env.get("SPOTIFY_REFRESH_TOKEN");
+    var clientId = ctx.module.settings.clientId;
+    var clientSecret = ctx.module.settings.clientSecret;
+    var refreshToken = ctx.module.settings.refreshToken;
 
     if (!clientId || !clientSecret || !refreshToken) {
-        if (ctx.chat) { ctx.chat.sendMessage("Spotify is not configured. Set SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, SPOTIFY_REFRESH_TOKEN."); }
+        if (ctx.chat) { ctx.chat.sendMessage("Spotify is not configured. Set clientId, clientSecret, and refreshToken in the module settings."); }
         return { sent: false, error: "missing config" };
     }
 

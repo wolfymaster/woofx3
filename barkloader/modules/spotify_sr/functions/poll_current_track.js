@@ -2,9 +2,9 @@
 
 /** @param {import("@woofx3/module-sdk/function-ctx").Ctx} ctx */
 function poll_current_track(ctx) {
-    var clientId = ctx.env.get("SPOTIFY_CLIENT_ID");
-    var clientSecret = ctx.env.get("SPOTIFY_CLIENT_SECRET");
-    var refreshToken = ctx.env.get("SPOTIFY_REFRESH_TOKEN");
+    var clientId = ctx.module.settings.clientId;
+    var clientSecret = ctx.module.settings.clientSecret;
+    var refreshToken = ctx.module.settings.refreshToken;
 
     if (!clientId || !clientSecret || !refreshToken) {
         return { error: "missing config" };

@@ -4,9 +4,9 @@
 function get_devices(ctx) {
     var fallback = [{ value: "", label: "Current Device" }];
 
-    var clientId = ctx.env.get("SPOTIFY_CLIENT_ID");
-    var clientSecret = ctx.env.get("SPOTIFY_CLIENT_SECRET");
-    var refreshToken = ctx.env.get("SPOTIFY_REFRESH_TOKEN");
+    var clientId = ctx.module.settings.clientId;
+    var clientSecret = ctx.module.settings.clientSecret;
+    var refreshToken = ctx.module.settings.refreshToken;
 
     if (!clientId || !clientSecret || !refreshToken) {
         return fallback;
