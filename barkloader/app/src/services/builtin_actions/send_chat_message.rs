@@ -17,15 +17,12 @@ Platform-agnostic; downstream clients bridge to Twitch / Discord / etc.",
     handler: handle,
 };
 
-fn handle(ctx: &BuiltinActionContext, params: Value) -> anyhow::Result<Value> {
+fn handle(ctx: &BuiltinActionContext, params: Value, _event: Value) -> anyhow::Result<Value> {
     let message = params.get("message").and_then(|v| v.as_str()).ok_or_else(|| {
         anyhow::anyhow!("send_chat_message: required param `message` missing or not a string")
     })?;
     let reply_to = params.get("reply_to").and_then(|v| v.as_str());
 
-    // Subject matches SubjectChatSend = "message.send" in the Go cloudevents
-    // constants; downstream clients (e.g. streamlabs chat bridge) subscribe
-    // to it.
     ctx.message_bus.publish(
         "message.send",
         json!({ "message": message, "reply_to": reply_to }),
@@ -61,7 +58,7 @@ mod tests {
             message_bus: bus.clone(),
             logger: Arc::new(NoopLogger),
         };
-        let result = handle(&ctx, json!({ "message": "hi", "reply_to": "m-42" })).unwrap();
+        let result = handle(&ctx, json!({ "message": "hi", "reply_to": "m-42" }), json!({})).unwrap();
         assert_eq!(result, json!({ "published": true }));
         let calls = bus.0.lock().unwrap();
         assert_eq!(calls.len(), 1);
@@ -76,7 +73,7 @@ mod tests {
             message_bus: bus,
             logger: Arc::new(NoopLogger),
         };
-        let err = handle(&ctx, json!({ "reply_to": "m-42" })).unwrap_err();
+        let err = handle(&ctx, json!({ "reply_to": "m-42" }), json!({})).unwrap_err();
         assert!(err.to_string().contains("message"));
     }
 }

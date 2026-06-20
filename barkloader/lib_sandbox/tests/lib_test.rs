@@ -544,6 +544,7 @@ impl BuiltinDispatcher for RecordingBuiltinDispatcher {
         &self,
         name: &str,
         params: serde_json::Value,
+        _event: serde_json::Value,
     ) -> anyhow::Result<Option<serde_json::Value>> {
         self.calls
             .lock()

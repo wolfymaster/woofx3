@@ -20,7 +20,7 @@ pub const ACTION: BuiltinAction = BuiltinAction {
     handler: handle,
 };
 
-fn handle(ctx: &BuiltinActionContext, params: Value) -> anyhow::Result<Value> {
+fn handle(ctx: &BuiltinActionContext, params: Value, _event: Value) -> anyhow::Result<Value> {
     let level = params.get("level").and_then(|v| v.as_str()).unwrap_or("info");
     let message = params.get("message").and_then(|v| v.as_str()).ok_or_else(|| {
         anyhow::anyhow!("log: required param `message` missing or not a string")
@@ -66,7 +66,7 @@ mod tests {
     #[test]
     fn routes_level_correctly() {
         let logger = Arc::new(SpyLogger::default());
-        handle(&ctx(logger.clone()), json!({ "level": "warn", "message": "oops" })).unwrap();
+        handle(&ctx(logger.clone()), json!({ "level": "warn", "message": "oops" }), json!({})).unwrap();
         assert_eq!(logger.warn.lock().unwrap().as_slice(), &["oops"]);
         assert!(logger.info.lock().unwrap().is_empty());
         assert!(logger.error.lock().unwrap().is_empty());
@@ -75,14 +75,14 @@ mod tests {
     #[test]
     fn defaults_to_info_when_level_missing() {
         let logger = Arc::new(SpyLogger::default());
-        handle(&ctx(logger.clone()), json!({ "message": "plain" })).unwrap();
+        handle(&ctx(logger.clone()), json!({ "message": "plain" }), json!({})).unwrap();
         assert_eq!(logger.info.lock().unwrap().as_slice(), &["plain"]);
     }
 
     #[test]
     fn rejects_missing_message() {
         let logger = Arc::new(SpyLogger::default());
-        let err = handle(&ctx(logger), json!({ "level": "info" })).unwrap_err();
+        let err = handle(&ctx(logger), json!({ "level": "info" }), json!({})).unwrap_err();
         assert!(err.to_string().contains("message"));
     }
 }

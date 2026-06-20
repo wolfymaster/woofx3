@@ -30,8 +30,10 @@ pub trait Logger: Send + Sync {
     fn error(&self, msg: &str);
 }
 
+/// `event` is the trigger event from the InvokeRequest. Most builtins ignore
+/// it; `media_alert` reads `applicationId`, `type`, `source`, `time`, `data`.
 pub type BuiltinActionFn =
-    fn(ctx: &BuiltinActionContext, params: Value) -> anyhow::Result<Value>;
+    fn(ctx: &BuiltinActionContext, params: Value, event: Value) -> anyhow::Result<Value>;
 
 pub struct BuiltinAction {
     pub name: &'static str,
@@ -52,9 +54,10 @@ pub fn dispatch(
     name: &str,
     ctx: &BuiltinActionContext,
     params: Value,
+    event: Value,
 ) -> Option<anyhow::Result<Value>> {
     REGISTRY
         .iter()
         .find(|a| a.name == name)
-        .map(|a| (a.handler)(ctx, params))
+        .map(|a| (a.handler)(ctx, params, event))
 }

@@ -70,7 +70,7 @@ impl Sandbox {
         info!("Invoking function function={}", request.function);
 
         let result = if let Some(name) = request.function.strip_prefix("builtin:") {
-            self.invoke_builtin(name, request.params)
+            self.invoke_builtin(name, request.params, request.event)
         } else {
             let function = self.registry.get_function(&request.function)?;
             info!(
@@ -127,7 +127,7 @@ impl Sandbox {
         result
     }
 
-    fn invoke_builtin(&self, name: &str, params: Value) -> Result<Value, Error> {
+    fn invoke_builtin(&self, name: &str, params: Value, event: Value) -> Result<Value, Error> {
         let dispatcher = self
             .builtin_dispatcher
             .as_ref()
@@ -135,7 +135,7 @@ impl Sandbox {
                 "builtin dispatcher not configured for sandbox".to_string(),
             ))?;
 
-        match dispatcher.invoke(name, params) {
+        match dispatcher.invoke(name, params, event) {
             Ok(Some(value)) => Ok(value),
             Ok(None) => Err(Error::FunctionNotFound(format!("builtin:{}", name))),
             Err(err) => Err(Error::RuntimeError(err.to_string())),

@@ -7,5 +7,7 @@ use serde_json::Value;
 pub trait BuiltinDispatcher: Send + Sync {
     /// Invoke the named builtin. Returns Ok(Some(result)) on success,
     /// Ok(None) if the name is unknown, Err(e) on handler failure.
-    fn invoke(&self, name: &str, params: Value) -> anyhow::Result<Option<Value>>;
+    /// `event` is the trigger event from the InvokeRequest (carries
+    /// applicationId, type, source, time, data).
+    fn invoke(&self, name: &str, params: Value, event: Value) -> anyhow::Result<Option<Value>>;
 }

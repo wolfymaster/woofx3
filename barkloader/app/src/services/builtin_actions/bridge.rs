@@ -24,8 +24,8 @@ impl BuiltinActionBridge {
 }
 
 impl BuiltinDispatcher for BuiltinActionBridge {
-    fn invoke(&self, name: &str, params: Value) -> anyhow::Result<Option<Value>> {
-        match dispatch(name, &self.ctx, params) {
+    fn invoke(&self, name: &str, params: Value, event: Value) -> anyhow::Result<Option<Value>> {
+        match dispatch(name, &self.ctx, params, event) {
             Some(Ok(value)) => Ok(Some(value)),
             Some(Err(err)) => Err(err),
             None => Ok(None),
