@@ -7,6 +7,7 @@ pub mod adapters;
 pub mod autoload;
 pub mod bridge;
 mod log;
+mod media_alert;
 mod send_chat_message;
 
 use serde_json::Value;
@@ -45,6 +46,7 @@ pub struct BuiltinAction {
 pub const REGISTRY: &[BuiltinAction] = &[
     send_chat_message::ACTION,
     log::ACTION,
+    media_alert::ACTION,
 ];
 
 /// Look up a built-in by name and invoke it. Returns None if the name isn't
