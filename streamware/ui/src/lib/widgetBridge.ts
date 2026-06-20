@@ -46,6 +46,9 @@ export class WidgetBridge {
   private readonly shimStorageSubs = new Map<string, Set<string>>();
   // Reverse map: shimSubId -> "moduleId:key" for efficient unsubscribe.
   private readonly shimSubToKey = new Map<string, string>();
+  // Set of shim-assigned event subIds (from events.subscribe), used to
+  // echo the correct subId in event.deliver messages.
+  private readonly shimEventSubs = new Set<string>();
 
   constructor(
     private readonly instanceId: string,
@@ -64,6 +67,7 @@ export class WidgetBridge {
     this.moduleId = null;
     this.shimStorageSubs.clear();
     this.shimSubToKey.clear();
+    this.shimEventSubs.clear();
   }
 
   handleMessage(event: MessageEvent): void {
@@ -160,6 +164,24 @@ export class WidgetBridge {
         this.callbacks.onStorageUnsubscribe(this.moduleId, key, this.instanceId);
         return;
       }
+      case "events.subscribe": {
+        if (!this.initialized) {
+          return;
+        }
+        const subId = typeof msg.subId === "string" ? msg.subId : "";
+        if (subId) {
+          this.shimEventSubs.add(subId);
+        }
+        return;
+      }
+      case "events.unsubscribe": {
+        if (!this.initialized) {
+          return;
+        }
+        const subId = typeof msg.subId === "string" ? msg.subId : "";
+        this.shimEventSubs.delete(subId);
+        return;
+      }
       case "status.report": {
         if (!this.initialized || !this.moduleId) {
           return;
@@ -222,12 +244,14 @@ export class WidgetBridge {
       console.warn(`[WidgetBridge:${this.instanceId}] sendEvent type=${event.type} — bridge not initialized, dropping`);
       return;
     }
-    console.log(`[WidgetBridge:${this.instanceId}] sendEvent type=${event.type}`, event);
-    this.post({
-      type: "event.deliver",
-      subId: event.type,
-      event,
-    });
+    if (this.shimEventSubs.size === 0) {
+      console.warn(`[WidgetBridge:${this.instanceId}] sendEvent type=${event.type} — no event subscribers in shim, dropping`);
+      return;
+    }
+    console.log(`[WidgetBridge:${this.instanceId}] sendEvent type=${event.type} → ${this.shimEventSubs.size} subscriber(s)`, event);
+    for (const subId of this.shimEventSubs) {
+      this.post({ type: "event.deliver", subId, event });
+    }
   }
 
   dispose(): void {
@@ -241,6 +265,7 @@ export class WidgetBridge {
     this.moduleId = null;
     this.shimStorageSubs.clear();
     this.shimSubToKey.clear();
+    this.shimEventSubs.clear();
   }
 
   private post(payload: Record<string, unknown>): void {

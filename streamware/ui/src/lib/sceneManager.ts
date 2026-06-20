@@ -57,12 +57,12 @@ export class SceneManager {
 
   registerBridge(instanceId: string, bridge: WidgetBridge, acceptedEvents: string[]): void {
     this.registry.set(instanceId, { bridge, acceptedEvents });
-    // Index each accepted event type for this instance.
     for (const eventType of acceptedEvents) {
-      let bucket = this.eventIndex.get(eventType);
+      const key = eventIndexKey(eventType);
+      let bucket = this.eventIndex.get(key);
       if (!bucket) {
         bucket = new Set();
-        this.eventIndex.set(eventType, bucket);
+        this.eventIndex.set(key, bucket);
       }
       bucket.add(instanceId);
     }
@@ -73,13 +73,13 @@ export class SceneManager {
     if (!entry) {
       return;
     }
-    // Remove from event index.
     for (const eventType of entry.acceptedEvents) {
-      const bucket = this.eventIndex.get(eventType);
+      const key = eventIndexKey(eventType);
+      const bucket = this.eventIndex.get(key);
       if (bucket) {
         bucket.delete(instanceId);
         if (bucket.size === 0) {
-          this.eventIndex.delete(eventType);
+          this.eventIndex.delete(key);
         }
       }
     }
@@ -110,7 +110,8 @@ export class SceneManager {
   }
 
   deliverEvent(event: WidgetEvent): void {
-    const instances = this.eventIndex.get(event.type);
+    const key = eventIndexKey(event.type);
+    const instances = this.eventIndex.get(key);
     console.log(`[SceneManager] deliverEvent type=${event.type} → ${instances?.size ?? 0} subscriber(s)`);
     if (!instances || instances.size === 0) {
       return;
@@ -147,22 +148,24 @@ export class SceneManager {
   }
 
   addEventSubscription(instanceId: string, eventType: string): void {
-    let bucket = this.eventIndex.get(eventType);
+    const key = eventIndexKey(eventType);
+    let bucket = this.eventIndex.get(key);
     if (!bucket) {
       bucket = new Set();
-      this.eventIndex.set(eventType, bucket);
+      this.eventIndex.set(key, bucket);
     }
     bucket.add(instanceId);
   }
 
   removeEventSubscription(instanceId: string, eventType: string): void {
-    const bucket = this.eventIndex.get(eventType);
+    const key = eventIndexKey(eventType);
+    const bucket = this.eventIndex.get(key);
     if (!bucket) {
       return;
     }
     bucket.delete(instanceId);
     if (bucket.size === 0) {
-      this.eventIndex.delete(eventType);
+      this.eventIndex.delete(key);
     }
   }
 
@@ -213,4 +216,13 @@ export class SceneManager {
         return;
     }
   }
+}
+
+// acceptedEvents entries use the canonical form "{owner}:trigger:{subject}".
+// P2 event frames carry only the subject portion — strip the prefix so
+// eventIndex lookups match regardless of which format is used.
+function eventIndexKey(eventType: string): string {
+  const MARKER = ":trigger:";
+  const idx = eventType.indexOf(MARKER);
+  return idx >= 0 ? eventType.slice(idx + MARKER.length) : eventType;
 }
