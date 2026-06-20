@@ -49,7 +49,10 @@ pids
 barkloader/modules
 
 # streamware
-streamware/public
+# Ignore local user media assets but track builtin widget source files.
+# Must use glob form (public/*) so negation can re-include widgets/.
+streamware/public/*
+!streamware/public/widgets
 streamware/ui/dist
 
 # workflow
