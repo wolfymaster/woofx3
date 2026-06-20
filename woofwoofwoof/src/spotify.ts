@@ -1,112 +1,119 @@
-import { SpotifyApi, type Track } from '@spotify/web-api-ts-sdk';
+import { SpotifyApi, type Track } from "@spotify/web-api-ts-sdk";
 
 export type Song = {
-    id: string;
-    name: string;
-    artist: string;
-    uri: string;
-}
+  id: string;
+  name: string;
+  artist: string;
+  uri: string;
+};
 
 export default class Spotify {
-    private client: SpotifyApi;
+  private client: SpotifyApi;
 
-    constructor(private clientId: string, private clientSecret: string, accessToken: string, private refreshToken: string) {
-        // this.client = SpotifyApi.withAccessToken(clientId, {
-        //     access_token: accessToken,
-        //     expires_in: 3600,
-        //     refresh_token: refreshToken,
-        //     token_type: 'Bearer'
-        // });
+  constructor(
+    private clientId: string,
+    private clientSecret: string,
+    accessToken: string,
+    private refreshToken: string
+  ) {
+    // this.client = SpotifyApi.withAccessToken(clientId, {
+    //     access_token: accessToken,
+    //     expires_in: 3600,
+    //     refresh_token: refreshToken,
+    //     token_type: 'Bearer'
+    // });
+  }
+
+  async search(query: string): Promise<Song[]> {
+    console.log("refreshed in search");
+
+    const result = await this.client.search(query, ["track"]);
+
+    const items: Song[] = result.tracks.items.map((i) => {
+      return {
+        id: i.id,
+        name: i.name,
+        artist: i.artists[0].name,
+        uri: i.uri,
+      };
+    });
+
+    return items;
+  }
+
+  async play(song: Song, deviceId?: string): Promise<void> {
+    await this.refresh();
+    console.log("refreshed in play");
+
+    if (!song.uri) {
+      return;
     }
 
-    async search(query: string): Promise<Song[]> {
-        console.log('refreshed in search');
-
-        const result = await this.client.search(query, ["track"]);
-
-        const items: Song[] = result.tracks.items.map(i => {
-            return {
-                id: i.id,
-                name: i.name,
-                artist: i.artists[0].name,
-                uri: i.uri
-            }
-        });
-
-        return items;
+    try {
+      await this.client.player.addItemToPlaybackQueue(song.uri, deviceId);
+    } catch (err) {
+      console.log("erring when adding song to queue");
+      console.log(err);
     }
+  }
 
-    async play(song: Song, deviceId?: string): Promise<void> {
-        await this.refresh();
-        console.log('refreshed in play');
+  async devices() {
+    const response = await this.client.player.getAvailableDevices();
 
-        if(!song.uri) {
-            return;
-        }
+    return response.devices;
+  }
 
-        try {
-            await this.client.player.addItemToPlaybackQueue(song.uri, deviceId);
-        } catch (err) {
-            console.log('erring when adding song to queue');
-            console.log(err);
-        }
-    }
+  async addToPlaylist(song: Song) {
+    const playlistId = "5s1q5vndWdyWqh9KA39s1E";
 
-    async devices() {
-        const response = await this.client.player.getAvailableDevices();
+    await this.client.playlists.addItemsToPlaylist(playlistId, [song.uri]);
+  }
 
-        return response.devices;
-    }
+  async refresh() {
+    const formData = {
+      grant_type: "refresh_token",
+      refresh_token: this.refreshToken,
+    };
 
-    async addToPlaylist(song: Song) {
-        const playlistId = '5s1q5vndWdyWqh9KA39s1E';
+    const urlEncodedData = new URLSearchParams(formData).toString();
 
-        await this.client.playlists.addItemsToPlaylist(playlistId, [song.uri]);
-    }
+    console.log(Buffer.from(this.clientId + ":" + this.clientSecret).toString("base64"));
 
-    async refresh() {
-        const formData = {
-            grant_type: 'refresh_token',
-            refresh_token: this.refreshToken
-        };
+    const response = await fetch("https://accounts.spotify.com/api/token", {
+      method: "post",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        Authorization: "Basic " + Buffer.from(this.clientId + ":" + this.clientSecret).toString("base64"),
+      },
+      body: urlEncodedData,
+    });
 
-        const urlEncodedData = new URLSearchParams(formData).toString();
+    const json = await response.json();
 
-        const response = await fetch('https://accounts.spotify.com/api/token', {
-            method: 'post',
-            headers: {
-                'content-type': 'application/x-www-form-urlencoded',
-                'Authorization': 'Basic ' + (Buffer.from(this.clientId + ':' + this.clientSecret).toString('base64'))
-            },
-            body: urlEncodedData,  
-        });
+    this.client = SpotifyApi.withAccessToken(this.clientId, json);
+  }
 
-        const json = await response.json();
+  async getTrack(trackId): Promise<Song> {
+    const track = await this.client.tracks.get(trackId);
 
-        this.client = SpotifyApi.withAccessToken(this.clientId, json);
-    }
+    return {
+      id: track.id,
+      name: track.name,
+      artist: track.artists[0].name,
+      uri: track.uri,
+    };
+  }
 
-    async getTrack(trackId): Promise<Song> {
-        const track = await this.client.tracks.get(trackId);
+  async currentTrack(): Promise<Song> {
+    const state = await this.client.player.getCurrentlyPlayingTrack();
 
-        return {
-            id: track.id,
-            name: track.name,
-            artist: track.artists[0].name,
-            uri: track.uri,
-        }
-    }
+    const item: Track = state.item as Track;
 
-    async currentTrack(): Promise<Song> {
-        const state = await this.client.player.getCurrentlyPlayingTrack();
-
-        const item: Track = state.item as Track;
-
-        return {
-            id: item.id,
-            artist: item.artists[0].name,
-            name: item.name,
-            uri: item.uri,
-        }
-    }
+    return {
+      id: item.id,
+      artist: item.artists[0].name,
+      name: item.name,
+      uri: item.uri,
+    };
+  }
 }
