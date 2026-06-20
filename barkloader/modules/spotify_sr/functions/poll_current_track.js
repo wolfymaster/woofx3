@@ -16,14 +16,15 @@ function poll_current_track(ctx) {
         var result = "";
         var i = 0;
         while (i < str.length) {
+            var remaining = str.length - i;
             var a = str.charCodeAt(i++);
-            var b = (i < str.length) ? str.charCodeAt(i++) : 0;
-            var c = (i < str.length) ? str.charCodeAt(i++) : 0;
+            var b = remaining > 1 ? str.charCodeAt(i++) : 0;
+            var c = remaining > 2 ? str.charCodeAt(i++) : 0;
             var t = (a << 16) | (b << 8) | c;
             result += B64_CHARS[(t >> 18) & 63];
             result += B64_CHARS[(t >> 12) & 63];
-            result += (i - 2 < str.length) ? B64_CHARS[(t >> 6) & 63] : "=";
-            result += (i - 1 < str.length) ? B64_CHARS[t & 63] : "=";
+            result += remaining > 1 ? B64_CHARS[(t >> 6) & 63] : "=";
+            result += remaining > 2 ? B64_CHARS[t & 63] : "=";
         }
         return result;
     }
