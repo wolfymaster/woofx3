@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "zod": "^3.24.0",
-    "@woofx3/common": "workspace:*",
+    "@woofx3/common": "file:../shared/common/typescript",
     "capnweb": "^0.4.0",
     "protoscript": "^0.0.23"
   },
