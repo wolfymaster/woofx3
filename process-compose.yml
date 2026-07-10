@@ -19,7 +19,7 @@ processes:
     # log_location: logs/barkloader.log
 
   cloudflare:
-    command: cloudflared tunnel --url http://localhost:9001
+    command: cloudflared tunnel --url https://api.local.woofx3.tv --http-host-header api.local.woofx3.tv
     disabled: true
 
   db:
@@ -41,7 +41,7 @@ processes:
   #       condition: process_started
 
   streamware:
-    command: bun dev
+    command: bun run scripts/dev.ts
     description: Overlays & Stream software
     working_dir: streamware
 
