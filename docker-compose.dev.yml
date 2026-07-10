@@ -1,0 +1,210 @@
+# Development docker-compose — replaces process-compose for local dev.
+# All services share the woofx3-dev base image; source dirs are bind-mounted
+# so code changes apply without rebuilding the image.
+#
+# Prerequisites:
+#   docker build -f Dockerfile.dev -t woofx3-dev .
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up            # all services
+#   docker compose -f docker-compose.dev.yml up messagebus db api
+#   docker compose -f docker-compose.dev.yml logs -f api
+#   docker compose -f docker-compose.dev.yml down -v       # also removes caches
+
+name: woofx3-dev
+
+services:
+  messagebus:
+    image: woofx3-dev
+    restart: unless-stopped
+    working_dir: /app/services/nats
+    command: go run .
+    environment:
+      FORCE_COLOR: "1"
+      GO_ENV: development
+    volumes:
+      - ./.woofx3.json:/app/.woofx3.json:ro
+      - ./services/nats:/app/services/nats
+      - ./shared:/app/shared
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    env_file:
+      - path: ./.env
+        required: false
+    ports:
+      - "4222:4222"
+    networks:
+      - woofx3
+
+  db:
+    image: woofx3-dev
+    restart: unless-stopped
+    working_dir: /app/db
+    command: go run .
+    environment:
+      FORCE_COLOR: "1"
+      WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
+    volumes:
+      - ./.woofx3.json:/app/.woofx3.json:ro
+      - ./db:/app/db
+      - ./shared:/app/shared
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    env_file:
+      - path: ./.env
+        required: false
+    ports:
+      - "8080:8080"
+    depends_on:
+      - messagebus
+    networks:
+      - woofx3
+
+  workflow:
+    image: woofx3-dev
+    restart: unless-stopped
+    working_dir: /app/workflow
+    command: go run .
+    environment:
+      FORCE_COLOR: "1"
+      WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
+    volumes:
+      - ./.woofx3.json:/app/.woofx3.json:ro
+      - ./workflow:/app/workflow
+      - ./shared:/app/shared
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    env_file:
+      - path: ./.env
+        required: false
+    depends_on:
+      - messagebus
+      - db
+    networks:
+      - woofx3
+
+  barkloader:
+    image: woofx3-dev
+    restart: unless-stopped
+    working_dir: /app/barkloader
+    command: sh -c "cargo build -p barkloader && RUST_LOG=info ./target/debug/barkloader"
+    environment:
+      FORCE_COLOR: "1"
+      RUST_LOG: info
+      # Rust runtime reads MESSAGEBUS_URL; WOOFX3_MESSAGEBUS_URL covers any Go/TS paths
+      MESSAGEBUS_URL: nats://messagebus:4222
+      WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
+    volumes:
+      - ./.woofx3.json:/app/.woofx3.json:ro
+      - ./barkloader:/app/barkloader
+      - barkloader-target:/app/barkloader/target
+      - ./shared:/app/shared
+      - cargo-registry:/root/.cargo/registry
+      - cargo-git:/root/.cargo/git
+    env_file:
+      - path: ./.env
+        required: false
+    depends_on:
+      - messagebus
+    networks:
+      - woofx3
+
+  api:
+    image: woofx3-dev
+    restart: unless-stopped
+    working_dir: /app/api
+    command: sh -c "bun install && bun run dev"
+    environment:
+      FORCE_COLOR: "1"
+      WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
+    volumes:
+      - ./.woofx3.json:/app/.woofx3.json:ro
+      - ./api:/app/api
+      - api-node-modules:/app/api/node_modules
+      - ./shared:/app/shared
+    env_file:
+      - path: ./.env
+        required: false
+    depends_on:
+      - messagebus
+      - db
+    networks:
+      - woofx3
+
+  streamware:
+    image: woofx3-dev
+    restart: unless-stopped
+    working_dir: /app/streamware
+    command: sh -c "bun install && bun dev"
+    environment:
+      FORCE_COLOR: "1"
+      WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
+    volumes:
+      - ./.woofx3.json:/app/.woofx3.json:ro
+      - ./streamware:/app/streamware
+      - streamware-node-modules:/app/streamware/node_modules
+      - ./shared:/app/shared
+    env_file:
+      - path: ./.env
+        required: false
+    depends_on:
+      - messagebus
+    networks:
+      - woofx3
+
+  twitch:
+    image: woofx3-dev
+    restart: unless-stopped
+    working_dir: /app/twitch
+    command: sh -c "bun install && bun run src/api.ts"
+    environment:
+      FORCE_COLOR: "1"
+      WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
+    volumes:
+      - ./.woofx3.json:/app/.woofx3.json:ro
+      - ./twitch:/app/twitch
+      - twitch-node-modules:/app/twitch/node_modules
+      - ./shared:/app/shared
+    env_file:
+      - path: ./.env
+        required: false
+    depends_on:
+      - messagebus
+    networks:
+      - woofx3
+
+  woofwoofwoof:
+    image: woofx3-dev
+    restart: unless-stopped
+    working_dir: /app/woofwoofwoof
+    command: sh -c "bun install && bun run src/woofwoofwoof.ts"
+    environment:
+      FORCE_COLOR: "1"
+      WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
+    volumes:
+      - ./.woofx3.json:/app/.woofx3.json:ro
+      - ./woofwoofwoof:/app/woofwoofwoof
+      - woofwoofwoof-node-modules:/app/woofwoofwoof/node_modules
+      - ./shared:/app/shared
+    env_file:
+      - path: ./.env
+        required: false
+    depends_on:
+      - messagebus
+    networks:
+      - woofx3
+
+volumes:
+  go-mod-cache:
+  go-build-cache:
+  cargo-registry:
+  cargo-git:
+  barkloader-target:
+  api-node-modules:
+  streamware-node-modules:
+  twitch-node-modules:
+  woofwoofwoof-node-modules:
+
+networks:
+  woofx3:
+    driver: bridge

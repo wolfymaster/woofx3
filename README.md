@@ -28,6 +28,7 @@ each other.
   - [How Modules Connect to the Rest of WoofX3](#how-modules-connect-to-the-rest-of-woofx3)
   - [Where to Go Next](#where-to-go-next)
 - [Repository Layout](#repository-layout)
+- [Development](#development)
 - [Tech Stack](#tech-stack)
 - [Documentation](#documentation)
 - [Project Conventions](#project-conventions)
@@ -384,10 +385,88 @@ woofx3/
 ├── irl/             IRL streaming utilities (SRT live server)
 ├── infra/           Docker, Coder, GPU and other infra configs
 ├── docs/            VitePress documentation site
-├── devbox.json      Pinned toolchains (Bun, Go, Rust, CLIs)
-├── process-compose.yml   Local multi-service orchestration
-└── .woofx3.json     Shared runtime configuration (when present)
+├── devbox.json           Pinned toolchains (Bun, Go, Rust, CLIs)
+├── Dockerfile.dev        Dev base image (Go + Bun + Rust toolchains)
+├── docker-compose.dev.yml  Docker dev orchestration (replaces process-compose for dev)
+├── process-compose.yml   Alternative local orchestration (devbox shell)
+└── .woofx3.json          Shared runtime configuration (gitignored, create locally)
 ```
+
+## Development
+
+Two development workflows are supported. The Docker approach is recommended — it gives a reproducible environment without installing Go, Bun, or Rust on your host machine.
+
+### Prerequisites
+
+All services read from a shared `.woofx3.json` at the repo root (gitignored). Create one before starting:
+
+```json
+{
+  "messagebusUrl": "nats://messagebus:4222",
+  "databaseUrl": "postgres://...",
+  "badgerPath": "/tmp/woofx3-badger",
+  "barkloaderKey": "...",
+  "databaseProxyPort": "8080"
+}
+```
+
+Adjust the values to match your environment. When running locally with process-compose, use `nats://localhost:4222` for `messagebusUrl` instead.
+
+---
+
+### Docker (recommended)
+
+Requires Docker with the Compose plugin (`docker compose`).
+
+**Step 1 — build the base image once:**
+
+```bash
+docker build -f Dockerfile.dev -t woofx3-dev .
+```
+
+Only rebuild this image when toolchain versions change (`Dockerfile.dev`). Code changes do not require a rebuild.
+
+**Step 2 — start all services:**
+
+```bash
+docker compose -f docker-compose.dev.yml up
+```
+
+Source directories are bind-mounted from the host. Changes to TypeScript files are picked up immediately by the Bun hot-reload. Go services restart with the next `go run .` invocation. Barkloader requires a manual `cargo build` re-run inside its container (or `docker compose -f docker-compose.dev.yml restart barkloader`).
+
+**Common commands:**
+
+```bash
+# Start a subset of services
+docker compose -f docker-compose.dev.yml up messagebus db barkloader
+
+# Follow logs for one service
+docker compose -f docker-compose.dev.yml logs -f api
+
+# Restart a single service
+docker compose -f docker-compose.dev.yml restart twitch
+
+# Stop everything (keeps caches)
+docker compose -f docker-compose.dev.yml down
+
+# Stop and remove all caches (Go modules, Cargo registry)
+docker compose -f docker-compose.dev.yml down -v
+```
+
+First startup downloads Go modules and compiles barkloader from scratch — subsequent starts are fast because all caches persist in named Docker volumes and, for Rust, inside `barkloader/target/` on the host.
+
+---
+
+### Devbox + process-compose (alternative)
+
+Requires [Devbox](https://www.jetify.com/devbox) which uses Nix to pin all toolchains.
+
+```bash
+devbox shell          # enter the pinned environment
+process-compose up    # start all services defined in process-compose.yml
+```
+
+Set `messagebusUrl` to `nats://localhost:4222` in `.woofx3.json` when running this way.
 
 ## Tech Stack
 
@@ -400,9 +479,10 @@ woofx3/
 - **Storage.** Postgres or SQLite (system data) and BadgerDB (module
   key/value) — both behind the `db` proxy.
 - **Tooling.** [Devbox](https://www.jetify.com/devbox) pins toolchains via
-  Nix. Local multi-service runs use
-  [process-compose](https://github.com/F1bonacc1/process-compose) (see
-  `process-compose.yml`).
+  Nix. Local development runs via Docker (`Dockerfile.dev` +
+  `docker-compose.dev.yml`) or
+  [process-compose](https://github.com/F1bonacc1/process-compose) inside a
+  devbox shell. See [Development](#development).
 
 ## Documentation
 
