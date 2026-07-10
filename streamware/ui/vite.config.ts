@@ -65,6 +65,7 @@ export default defineConfig(({ mode }) => {
     base: "./",
     server: {
       port: 5173,
+      host: true,
       proxy: {
         // Module-state WS and health-check forwarded to the streamware backend.
         "/ws/module-state": { target: backendUrl, ws: true, changeOrigin: true },
@@ -72,7 +73,7 @@ export default defineConfig(({ mode }) => {
         // Token-mode overlay — HTTP (config fetch), WS (events), and frame assets.
         "/o/": { target: backendUrl, ws: true, changeOrigin: true },
       },
-      allowedHosts: ["streamlabs.local.woofx3.tv"],
+      allowedHosts: ["streamlabs.local.woofx3.tv", "streamware.local.woofx3.tv"],
     },
   };
 });
