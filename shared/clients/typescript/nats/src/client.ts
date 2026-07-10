@@ -22,6 +22,13 @@ export default class NATSClient {
       const options: any = {
         name: this.config.name,
         servers: this.config.url,
+        // Retry the first connect attempt instead of failing immediately —
+        // in local dev, messagebus and its dependents start in parallel via
+        // process-compose with no ordering guarantee, so the NATS server may
+        // not be listening yet when a consumer's first connect fires.
+        waitOnFirstConnect: true,
+        maxReconnectAttempts: 30,
+        reconnectTimeWait: 1000,
       };
 
       // Add JWT authentication if provided

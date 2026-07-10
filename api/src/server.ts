@@ -165,6 +165,7 @@ async function main() {
   } catch (err) {
     logger.warn("Failed to connect to NATS", { error: err });
     logger.warn("Running in offline mode - some features may be unavailable");
+    natsClient = null;
   }
 
   const api = new Api({
@@ -492,6 +493,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.log("Faileld to start server");
+  console.log("Failed to start server", err);
   process.exit(1);
 });

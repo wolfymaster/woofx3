@@ -39,6 +39,7 @@ async function main() {
       url: config.nats.url,
       error: err instanceof Error ? err.message : String(err),
     });
+    nats = null;
   }
 
   const obs = await connectObs(config.obs, logger);
