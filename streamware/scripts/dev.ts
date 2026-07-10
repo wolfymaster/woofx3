@@ -11,7 +11,7 @@
  * `bun run dev:ui` (vite dev server on 5173) if you want HMR previews
  * outside the overlay flow.
  */
-import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 interface Child {
   name: string;
@@ -77,21 +77,28 @@ const children: Child[] = [
 ];
 
 let shuttingDown = false;
+let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+
 /**
- * Send `signal` to process group `pgid`. Bun's `process.kill` rejects
- * negative pids, so we shell out to `/bin/kill` which natively
- * understands the POSIX `-PGID` process-group convention.
+ * Send `signal` to process group `pgid` via the POSIX `-PGID` convention
+ * (negating the pid tells `process.kill` to target the whole group).
  */
 function killPgrp(pgid: number, signal: NodeJS.Signals): boolean {
-  const result = spawnSync("kill", [`-${signal}`, `-${pgid}`], { stdio: "ignore" });
-  return result.status === 0;
+  try {
+    process.kill(-pgid, signal);
+    return true;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") {
+      // Group is already gone.
+      return true;
+    }
+    process.stdout.write(`[dev] failed to send ${signal} to process group ${pgid}: ${(err as Error).message}\n`);
+    return false;
+  }
 }
 
-function shutdown(signal: NodeJS.Signals): void {
-  if (shuttingDown) {
-    return;
-  }
-  shuttingDown = true;
+function killAll(signal: NodeJS.Signals): void {
   for (const c of children) {
     if (!killPgrp(c.pgid, signal)) {
       try {
@@ -101,11 +108,22 @@ function shutdown(signal: NodeJS.Signals): void {
       }
     }
   }
+}
+
+function shutdown(signal: NodeJS.Signals): void {
+  if (shuttingDown) {
+    // The graceful attempt didn't finish the job — a repeat signal means
+    // don't wait around, force it.
+    process.stdout.write(`[dev] received ${signal} while already shutting down, forcing SIGKILL\n`);
+    clearTimeout(forceKillTimer);
+    killAll("SIGKILL");
+    return;
+  }
+  shuttingDown = true;
+  killAll(signal);
   // Backstop: force-kill anything still alive after a grace period.
-  setTimeout(() => {
-    for (const c of children) {
-      killPgrp(c.pgid, "SIGKILL");
-    }
+  forceKillTimer = setTimeout(() => {
+    killAll("SIGKILL");
   }, 3_000).unref();
 }
 
