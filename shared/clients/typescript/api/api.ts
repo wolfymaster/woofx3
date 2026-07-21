@@ -600,6 +600,19 @@ export interface Woofx3EngineGateway {
  * configured." The UI editor falls back to a "widget unavailable"
  * placeholder in that state.
  *
+ * `assetsBaseUrl` is the URL prefix the *workflow engine* substitutes
+ * for `${woofx3_asset_url}` when it resolves a step's parameters at
+ * execution time (see docs/workflow/expressions.md). Distinct from
+ * `widgetAssetBaseUrl`: that one is consumed client-side to compose
+ * overlay widget iframe sources; this one is baked into workflow
+ * step parameters (e.g. an alert action's `mediaUrl`) server-side
+ * before the step dispatches. The operator sets this via the same
+ * settings form; it lives in the engine's `settings` table under
+ * `assets.baseUrl`. Unlike `widgetAssetBaseUrl`, this is never empty
+ * — `getEngineInfo()` returns barkloader's own `/assets` route as the
+ * default when no override has been configured, so workflow authors
+ * always get a working value.
+ *
  * `engineSceneOverlayBaseUrl` is the URL prefix that serves the
  * streamware overlay HTML. The full per-scene URL is
  * `${engineSceneOverlayBaseUrl}/${engineSceneId}`. The UI's browser-
@@ -607,6 +620,7 @@ export interface Woofx3EngineGateway {
  */
 export interface EngineInfo {
   widgetAssetBaseUrl: string;
+  assetsBaseUrl: string;
   engineSceneOverlayBaseUrl: string;
 }
 
@@ -665,6 +679,17 @@ export interface Woofx3EngineApi {
    * Wired to the UI settings form.
    */
   setWidgetAssetBaseUrl(value: string): Promise<{ success: boolean }>;
+
+  /**
+   * Set the workflow asset base URL (`assetsBaseUrl` on
+   * `getEngineInfo()`) that the engine substitutes for
+   * `${woofx3_asset_url}` in workflow step parameters. Empty string
+   * clears the override — the engine then falls back to barkloader's
+   * own `/assets` route rather than leaving the expression
+   * unresolved. Wired to the UI settings form, alongside
+   * `setWidgetAssetBaseUrl`.
+   */
+  setAssetsBaseUrl(value: string): Promise<{ success: boolean }>;
 
   /**
    * Read the current storage backend configuration from engine

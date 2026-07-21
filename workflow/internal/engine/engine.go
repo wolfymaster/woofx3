@@ -17,6 +17,15 @@ type EventPublisher interface {
 	Publish(event *types.Event) error
 }
 
+// AssetURLResolver resolves the engine's configured asset base URL for a
+// given application. Backed by the db-proxy `settings` table in production
+// (see workflow/asset_settings.go) so a UI settings page can override the
+// default without redeploying the engine; kept as an interface here so the
+// engine package doesn't need to depend on the db client.
+type AssetURLResolver interface {
+	Resolve(applicationID string) string
+}
+
 type Engine[TServices any] struct {
 	workflowRegistry     *WorkflowRegistry
 	taskRegistry         *tasks.TaskRegistry
@@ -28,6 +37,7 @@ type Engine[TServices any] struct {
 	subWorkflowWaiters   map[string][]*SubWorkflowWaiter // subWorkflowExecutionID -> parent executions waiting for it
 	subWorkflowWaitersMu sync.RWMutex
 	publisher            EventPublisher
+	assetURLResolver     AssetURLResolver
 	logger               tasks.Logger
 	ctx                  context.Context
 	cancel               context.CancelFunc
@@ -108,6 +118,12 @@ func (e *Engine[TServices]) RegisterAction(name string, action tasks.ActionFunc[
 func (e *Engine[TServices]) SetPublisher(publisher EventPublisher) {
 	e.publisher = publisher
 	e.registerPublishAction()
+}
+
+// SetAssetURLResolver wires the resolver backing the `${woofx3_asset_url}`
+// expression source. Optional — when unset, that source resolves to "".
+func (e *Engine[TServices]) SetAssetURLResolver(resolver AssetURLResolver) {
+	e.assetURLResolver = resolver
 }
 
 func (e *Engine[TServices]) registerPublishAction() {
@@ -390,7 +406,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 		// For non-condition tasks, evaluate conditions as guards (skip if false)
 		// Condition tasks use conditions for branching (OnTrue/OnFalse), not skipping
 		if taskDef.Type != "condition" && (taskDef.Condition != nil || len(taskDef.Conditions) > 0) {
-			resolver := e.buildResolver(triggerEvent, taskExports)
+			resolver := e.buildResolver(execution.WorkflowID, triggerEvent, taskExports)
 			condTask := &tasks.ConditionTask{}
 
 			shouldRun, err := condTask.Evaluate(taskDef, resolver)
@@ -424,7 +440,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 		}
 
 		if taskDef.Type == "condition" && (taskDef.Condition != nil || len(taskDef.Conditions) > 0) {
-			resolver := e.buildResolver(triggerEvent, taskExports)
+			resolver := e.buildResolver(execution.WorkflowID, triggerEvent, taskExports)
 			condTask := &tasks.ConditionTask{}
 
 			result, err := condTask.Evaluate(taskDef, resolver)
@@ -506,7 +522,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 			workflowConfig := taskDef.Workflow
 			if workflowConfig == nil {
 				// Try to build workflow config from parameters
-				resolver := e.buildResolver(triggerEvent, taskExports)
+				resolver := e.buildResolver(execution.WorkflowID, triggerEvent, taskExports)
 				resolvedParams, err := resolver.Resolve(taskDef.Parameters)
 				if err == nil {
 					if params, ok := resolvedParams.(map[string]any); ok {
@@ -623,7 +639,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 	e.checkSubWorkflowCompletion(execution.ID)
 }
 
-func (e *Engine[TServices]) buildResolver(triggerEvent *types.Event, taskExports map[string]map[string]any) *expression.Resolver {
+func (e *Engine[TServices]) buildResolver(workflowID string, triggerEvent *types.Event, taskExports map[string]map[string]any) *expression.Resolver {
 	resolver := expression.NewResolver()
 
 	triggerData := map[string]any{
@@ -639,7 +655,30 @@ func (e *Engine[TServices]) buildResolver(triggerEvent *types.Event, taskExports
 		resolver.AddSource(taskID, exports)
 	}
 
+	// Bare source (no dot-path) so workflow authors write `${woofx3_asset_url}`
+	// instead of baking a deployment-specific host into module/workflow
+	// content. See AssetURLResolver doc comment for where the value comes from.
+	resolver.AddSource("woofx3_asset_url", e.assetURL(e.resolveApplicationID(workflowID)))
+
 	return resolver
+}
+
+// resolveApplicationID looks up the owning workflow's applicationId from the
+// registry. Mirrors the fallback used for action-handler attribution
+// (executeTask below) — a missing definition just yields "", which
+// AssetURLResolver implementations treat as "default application".
+func (e *Engine[TServices]) resolveApplicationID(workflowID string) string {
+	if def, err := e.workflowRegistry.Get(workflowID); err == nil && def != nil {
+		return def.ApplicationID
+	}
+	return ""
+}
+
+func (e *Engine[TServices]) assetURL(applicationID string) string {
+	if e.assetURLResolver == nil {
+		return ""
+	}
+	return e.assetURLResolver.Resolve(applicationID)
 }
 
 func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, taskDef *types.TaskDefinition, taskExec *types.TaskExecution, executionOrder []*types.TaskDefinition, currentIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event) string {
@@ -682,7 +721,7 @@ func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, t
 func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecution, taskDef *types.TaskDefinition, taskExec *types.TaskExecution, executionOrder []*types.TaskDefinition, currentIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event) string {
 	if taskExec.WorkflowState == nil {
 		// Resolve workflow config parameters
-		resolver := e.buildResolver(triggerEvent, taskExports)
+		resolver := e.buildResolver(execution.WorkflowID, triggerEvent, taskExports)
 
 		// Resolve workflowID if it contains expressions
 		workflowIDRaw := taskDef.Workflow.WorkflowID
@@ -981,20 +1020,7 @@ func (e *Engine[TServices]) resumeExecution(w *WaitingExecution) {
 }
 
 func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution *types.WorkflowExecution, event *types.Event, taskExports map[string]map[string]any) (*types.TaskResult, error) {
-	resolver := expression.NewResolver()
-
-	triggerData := map[string]any{
-		"id":     event.ID,
-		"type":   event.Type,
-		"source": event.Source,
-		"time":   event.Time,
-		"data":   event.Data,
-	}
-	resolver.AddSource("trigger", triggerData)
-
-	for taskID, exports := range taskExports {
-		resolver.AddSource(taskID, exports)
-	}
+	resolver := e.buildResolver(execution.WorkflowID, event, taskExports)
 
 	// Diagnostic: log what the resolver will see and what it produced.
 	// Workflow authors hit "${trigger.data.X} not substituted" most often
@@ -1039,10 +1065,7 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 	// the published envelope). A missing definition is non-fatal — we
 	// just leave ApplicationID empty and let downstream consumers fall
 	// back to their own resolution.
-	applicationID := ""
-	if def, err := e.workflowRegistry.Get(execution.WorkflowID); err == nil && def != nil {
-		applicationID = def.ApplicationID
-	}
+	applicationID := e.resolveApplicationID(execution.WorkflowID)
 
 	taskCtx := &tasks.TaskContext{
 		WorkflowID:    execution.WorkflowID,

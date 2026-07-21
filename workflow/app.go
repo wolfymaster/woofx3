@@ -82,15 +82,21 @@ func NewWorkflowApp(logger tasks.Logger) *WorkflowApp {
 // constructed. The services' clients may not be connected yet at the time of
 // this call — Run() reads .Client() / .Connection() once the runtime has
 // completed its connect phase.
+//
+// defaultAssetBaseURL seeds the `${woofx3_asset_url}` expression source
+// (see AssetSettingsResolver) until a `assets.baseUrl` engine setting is
+// configured via the UI.
 func (a *WorkflowApp) SetServices(
 	natsSvc *service.NATSService,
 	barkloaderSvc *service.BarkloaderService,
 	dbClient *dbv1.DbProxyClient,
+	defaultAssetBaseURL string,
 ) {
 	a.natsSvc = natsSvc
 	a.barkloaderSvc = barkloaderSvc
 	a.moduleDbClient = dbClient.Module
 	a.manager.SetDbClient(dbClient.Workflow)
+	a.engine.SetAssetURLResolver(NewAssetSettingsResolver(dbClient.Setting, defaultAssetBaseURL, a.logger))
 }
 
 func (a *WorkflowApp) Init(ctx context.Context) error {

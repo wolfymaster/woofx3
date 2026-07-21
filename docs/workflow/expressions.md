@@ -38,7 +38,7 @@ execution, before the task is dispatched.
 **Syntax**: `${path.expression}`. Strings without `${` pass through
 untouched (`workflow/internal/expression/resolver.go:41`).
 
-**Sources** (`workflow/internal/engine/engine.go:984-995`):
+**Sources** (`workflow/internal/engine/engine.go:642-663`, `buildResolver`):
 
 | Source | What it carries |
 |---|---|
@@ -49,6 +49,7 @@ untouched (`workflow/internal/expression/resolver.go:41`).
 | `trigger.data.X` | Anything on the event's `data` map |
 | `<taskId>.X` | Exports from a previously-executed task in the same workflow |
 | `env.NAME` | Process environment variable (read at substitute time) |
+| `woofx3_asset_url` | The engine's configured asset base URL (bare source, no dot-path — see below) |
 
 **Semantics**: path lookup only. No operators, no comparisons, no
 ternary, no string concatenation, no function calls. The grammar is
@@ -77,6 +78,38 @@ When a `${…}` segment fails to resolve, the resolver leaves the
 literal token in place and returns the surrounding string unchanged
 (`workflow/internal/expression/resolver.go:50-58`). That makes
 authoring errors visible at render time rather than swallowed.
+
+### `${woofx3_asset_url}` — referencing module/uploaded assets
+
+Modules and workflows must never bake a deployment-specific host into
+an asset reference (a repository URL is meaningless on a different
+install, and hardcoding one defeats the whole point of a portable
+manifest — see `db/proto/v1/module_asset.proto`'s "resolving this to
+a public URL is the deployer's concern" note). Instead, reference the
+asset relative to `${woofx3_asset_url}`, and the engine substitutes
+the configured base URL at task-execution time:
+
+```jsonc
+"mediaUrl": "${woofx3_asset_url}/modules/twitch_platform/assets/bell.mp3"
+```
+
+**Where the value comes from** (`workflow/asset_settings.go`,
+`AssetSettingsResolver`):
+
+1. The db-proxy `settings` table, key `assets.baseUrl`, scoped to the
+   workflow's `applicationId`. This is what a future UI settings page
+   writes to point the engine at a custom CDN/host.
+2. If that setting is unset, falls back to `WOOFX3_BARKLOADER_URL` +
+   `/assets` (barkloader serves uploaded module assets itself at
+   `/assets/{repositoryKey}` — see `barkloader/app/src/routes/assets.rs`
+   and [Modules → Assets](../barkloader/modules.md)). Locally this
+   resolves from the `barkloaderUrl` key in `.woofx3.json` — no extra
+   configuration needed for dev.
+
+Resolution is cached per `applicationId` for 30s (`assetURLCacheTTL` in
+`workflow/asset_settings.go`) so high-frequency task execution doesn't
+round-trip to db-proxy on every parameter resolution; a lookup failure
+falls back to the default rather than failing the workflow.
 
 ## Layer 2 — streamware MediaWidget (TypeScript)
 

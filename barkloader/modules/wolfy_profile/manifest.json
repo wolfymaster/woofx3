@@ -16,7 +16,7 @@
           "action": "builtin:action:alert",
           "parameters": {
             "widget": "MediaWidget",
-            "audioUrl": "https://streamlabs.local.woofx3.tv/pleasure.mp3",
+            "audioUrl": "${woofx3_asset_url}/pleasure.mp3",
             "mediaUrl": "https://media.tenor.com/LdHGHWDh0Y8AAAPo/look-at-you-i-see-you.mp4",
             "text": "<3  {primary}${trigger.data.userName}{primary} followed <3",
             "duration": 6
@@ -35,7 +35,7 @@
           "action": "builtin:action:alert",
           "parameters": {
             "widget": "MediaWidget",
-            "audioUrl": "https://streamlabs.local.woofx3.tv/wolf-hype.mp3",
+            "audioUrl": "${woofx3_asset_url}/wolf-hype.mp3",
             "mediaUrl": "https://media.tenor.com/bj2uMQRTdSEAAAPo/dog-husky.mp4",
             "text": "<3  {primary}${trigger.data.userName}{primary} subscribed <3"
           }
@@ -54,10 +54,10 @@
           "parameters": {
             "widget": "MediaWidget",
             "mediaUrl": [
-              "https://streamlabs.local.woofx3.tv/bit_overlay.json",
-              "https://streamlabs.local.woofx3.tv/confetti2.gif"
+              "${woofx3_asset_url}/bit_overlay.json",
+              "${woofx3_asset_url}/confetti2.gif"
             ],
-            "audioUrl": "https://streamlabs.local.woofx3.tv/goinsane-pinkpony.mp3",
+            "audioUrl": "${woofx3_asset_url}/goinsane-pinkpony.mp3",
             "duration": 10,
             "options": [
               {
@@ -103,7 +103,7 @@
           "action": "builtin:action:alert",
           "parameters": {
             "widget": "MediaWidget",
-            "audioUrl": "https://streamlabs.local.woofx3.tv/allinthistogether.mp3",
+            "audioUrl": "${woofx3_asset_url}/allinthistogether.mp3",
             "mediaUrl": "https://media.tenor.com/MojW2yr1vFoAAAPo/money-money-money.mp4",
             "text": "$$ {primary}${trigger.data.gifterName}{primary} gifted {primary}${trigger.data.amount}{primary} {event.data.amount > 1 ? 'subs' : 'sub'} $$"
           }

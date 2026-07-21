@@ -235,10 +235,26 @@ These three `type` values render dedicated pickers in the UI rather than freefor
 | `type` | Extra fields | Stored value | Picker source |
 |--------|-------------|---------------|----------------|
 | `color` | — | CSS color string (`"#7ad7ff"`). | Native browser color picker. |
-| `asset` | `kinds?: string[]` | Asset canonical id (`"twitch_platform:asset:bell.mp3"`). The editor resolves to a public URL at config time and bakes that URL into the saved workflow. | Scoped to **this module's** `assets[]`, optionally filtered by `kinds`. |
+| `asset` | `kinds?: string[]` | Asset canonical id (`"twitch_platform:asset:bell.mp3"`). | Scoped to **this module's** `assets[]`, optionally filtered by `kinds`. |
 | `resource_ref` | `kind: string` (required) | Instance canonical id (`"counter:counter:death_count"`). Stored verbatim; the function receives it via `ctx.event.parameters.<id>`. | Cross-module: every installed module's instances of the given `kind`. Backed by `ListResourceInstancesByKind` and refreshed live via the `module.resource.instance.{created,deleted}` webhook events. |
 
 `resource_ref` is the discriminator that lets actions and widgets reference runtime instances (counters, future timers/polls/leaderboards, etc.) without the engine learning what each kind means. See [Runtime resource instances](#runtime-resource-instances).
+
+> **Asset URLs must not be baked into saved workflows.** A repository
+> key (`asset.repositoryKey` on the `Asset` row, see
+> `db/proto/v1/module_asset.proto`) only resolves to a servable URL on
+> the deployment that installed the module — hardcoding a resolved
+> `http://…` string breaks the moment the workflow runs on a different
+> install, or the deployer moves assets to a different host/CDN.
+> Instead, save the field's value as a path relative to the engine's
+> asset base URL and let the engine substitute it at execution time via
+> `${woofx3_asset_url}` (e.g. `${woofx3_asset_url}/modules/<moduleKey>/assets/<path>`).
+> See [Expression resolution → `${woofx3_asset_url}`](../workflow/expressions.md#woofx3_asset_url-referencing-module-uploaded-assets)
+> for how that source is resolved and how to override it (a future UI
+> settings page will write the `assets.baseUrl` engine setting; today it
+> falls back to barkloader's own `/assets` route).
+
+
 
 #### Dynamic-source select fields (`source.kind`)
 

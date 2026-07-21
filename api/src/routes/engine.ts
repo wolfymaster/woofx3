@@ -80,10 +80,23 @@ export const engineRoutes = {
    * repository; serving the files is the repository's concern, not
    * a barkloader HTTP route.
    *
+   * `assetsBaseUrl` is sourced from the engine's settings
+   * (`assets.baseUrl`) and is what the *workflow engine* substitutes
+   * for `${woofx3_asset_url}` when resolving a step's parameters at
+   * execution time (see `workflow/asset_settings.go` and
+   * docs/workflow/expressions.md). Distinct from `widgetAssetBaseUrl`
+   * — that one composes overlay widget iframe sources in the
+   * browser; this one is baked into workflow step parameters
+   * (e.g. an alert's `mediaUrl`) server-side before dispatch. They
+   * often point at the same host but don't have to. Unset returns
+   * barkloader's own `/assets` route (its default per
+   * `workflow/asset_settings.go`'s `AssetSettingsResolver` fallback),
+   * not empty string — there's always a working default.
+   *
    * `engineSceneOverlayBaseUrl` is the streamware URL (always
    * served by streamware itself — overlay HTML is engine-owned).
    *
-   * Both URLs strip trailing slashes so callers can join with `/`
+   * All URLs strip trailing slashes so callers can join with `/`
    * without worrying about double-slashes. An empty
    * `widgetAssetBaseUrl` is a valid response — it signals to the UI
    * that storage isn't configured yet, and the editor renders the
@@ -91,13 +104,18 @@ export const engineRoutes = {
    */
   async getEngineInfo(): Promise<{
     widgetAssetBaseUrl: string;
+    assetsBaseUrl: string;
     engineSceneOverlayBaseUrl: string;
   }> {
     const applicationId = await this.ensureApplicationId();
-    const configured = (await this.db.getSetting("widget_asset_base_url", applicationId)) ?? "";
+    const [widgetAssetBaseUrl, assetsBaseUrl] = await Promise.all([
+      this.db.getSetting("widget_asset_base_url", applicationId),
+      this.db.getSetting("assets.baseUrl", applicationId),
+    ]);
     const streamware = this.streamwareUrl.replace(/\/+$/, "");
     return {
-      widgetAssetBaseUrl: configured.replace(/\/+$/, ""),
+      widgetAssetBaseUrl: (widgetAssetBaseUrl ?? "").replace(/\/+$/, ""),
+      assetsBaseUrl: (assetsBaseUrl || `${this.getBarkloaderBaseUrl()}/assets`).replace(/\/+$/, ""),
       engineSceneOverlayBaseUrl: `${streamware}/overlay/scene`,
     };
   },
@@ -116,6 +134,24 @@ export const engineRoutes = {
     const applicationId = await this.ensureApplicationId();
     const normalized = value.trim().replace(/\/+$/, "");
     const response = await this.db.setSetting("widget_asset_base_url", normalized, applicationId);
+    return { success: response.status?.code === "OK" };
+  },
+
+  /**
+   * Update the engine-stored workflow asset base URL
+   * (`assets.baseUrl`). Used by the UI settings form; the operator
+   * points it at wherever they want `${woofx3_asset_url}` to resolve
+   * to at workflow-execution time (see `getEngineInfo` doc comment
+   * above for how this differs from `widgetAssetBaseUrl`).
+   *
+   * Empty string is allowed and clears the setting — the engine then
+   * falls back to barkloader's own `/assets` route, it does not go
+   * unresolved.
+   */
+  async setAssetsBaseUrl(value: string): Promise<{ success: boolean }> {
+    const applicationId = await this.ensureApplicationId();
+    const normalized = value.trim().replace(/\/+$/, "");
+    const response = await this.db.setSetting("assets.baseUrl", normalized, applicationId);
     return { success: response.status?.code === "OK" };
   },
 
