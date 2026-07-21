@@ -31,6 +31,25 @@ export interface Command {
   createdAt: protoscript.Timestamp;
   createdByType: string;
   createdByRef: string;
+  /**
+   * "public" always allows any user; "restricted" requires the invoking
+   * user to belong to one of group_ids or be listed in usernames.
+   */
+  visibility: string;
+  groupIds: string[];
+  usernames: string[];
+  /**
+   * Optional "{variable}" placeholders declaring named arguments the
+   * command accepts, e.g. "{songTitle}" or "{userA} {userB}". `command`
+   * itself never contains braces - it's always the bare trigger word
+   * ("sr", "hug"). With exactly one variable, it captures the entire
+   * remainder of the message (not split on whitespace); with more than
+   * one, every variable but the last consumes one whitespace-delimited
+   * token and the last captures whatever remains. Empty string means the
+   * command takes no named arguments (today's default behavior). Applies
+   * to both "text" and "function" command types.
+   */
+  argumentPattern: string;
 }
 
 /**
@@ -79,6 +98,10 @@ export interface CreateCommandRequest {
   priority: number;
   createdByType: string;
   createdByRef: string;
+  visibility: string;
+  groupIds: string[];
+  usernames: string[];
+  argumentPattern: string;
 }
 
 /**
@@ -92,6 +115,10 @@ export interface UpdateCommandRequest {
   type: string;
   typeValue: string;
   priority: number;
+  visibility: string;
+  groupIds: string[];
+  usernames: string[];
+  argumentPattern: string;
 }
 
 /**
@@ -397,6 +424,10 @@ export const Command = {
       createdAt: protoscript.Timestamp.initialize(),
       createdByType: "",
       createdByRef: "",
+      visibility: "",
+      groupIds: [],
+      usernames: [],
+      argumentPattern: "",
       ...msg,
     };
   },
@@ -444,6 +475,18 @@ export const Command = {
     }
     if (msg.createdByRef) {
       writer.writeString(17, msg.createdByRef);
+    }
+    if (msg.visibility) {
+      writer.writeString(18, msg.visibility);
+    }
+    if (msg.groupIds?.length) {
+      writer.writeRepeatedString(19, msg.groupIds);
+    }
+    if (msg.usernames?.length) {
+      writer.writeRepeatedString(20, msg.usernames);
+    }
+    if (msg.argumentPattern) {
+      writer.writeString(21, msg.argumentPattern);
     }
     return writer;
   },
@@ -500,6 +543,22 @@ export const Command = {
         }
         case 17: {
           msg.createdByRef = reader.readString();
+          break;
+        }
+        case 18: {
+          msg.visibility = reader.readString();
+          break;
+        }
+        case 19: {
+          msg.groupIds.push(reader.readString());
+          break;
+        }
+        case 20: {
+          msg.usernames.push(reader.readString());
+          break;
+        }
+        case 21: {
+          msg.argumentPattern = reader.readString();
           break;
         }
         default: {
@@ -871,6 +930,10 @@ export const CreateCommandRequest = {
       priority: 0,
       createdByType: "",
       createdByRef: "",
+      visibility: "",
+      groupIds: [],
+      usernames: [],
+      argumentPattern: "",
       ...msg,
     };
   },
@@ -908,6 +971,18 @@ export const CreateCommandRequest = {
     }
     if (msg.createdByRef) {
       writer.writeString(10, msg.createdByRef);
+    }
+    if (msg.visibility) {
+      writer.writeString(11, msg.visibility);
+    }
+    if (msg.groupIds?.length) {
+      writer.writeRepeatedString(12, msg.groupIds);
+    }
+    if (msg.usernames?.length) {
+      writer.writeRepeatedString(13, msg.usernames);
+    }
+    if (msg.argumentPattern) {
+      writer.writeString(14, msg.argumentPattern);
     }
     return writer;
   },
@@ -958,6 +1033,22 @@ export const CreateCommandRequest = {
           msg.createdByRef = reader.readString();
           break;
         }
+        case 11: {
+          msg.visibility = reader.readString();
+          break;
+        }
+        case 12: {
+          msg.groupIds.push(reader.readString());
+          break;
+        }
+        case 13: {
+          msg.usernames.push(reader.readString());
+          break;
+        }
+        case 14: {
+          msg.argumentPattern = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -1003,6 +1094,10 @@ export const UpdateCommandRequest = {
       type: "",
       typeValue: "",
       priority: 0,
+      visibility: "",
+      groupIds: [],
+      usernames: [],
+      argumentPattern: "",
       ...msg,
     };
   },
@@ -1034,6 +1129,18 @@ export const UpdateCommandRequest = {
     }
     if (msg.priority) {
       writer.writeInt32(7, msg.priority);
+    }
+    if (msg.visibility) {
+      writer.writeString(8, msg.visibility);
+    }
+    if (msg.groupIds?.length) {
+      writer.writeRepeatedString(9, msg.groupIds);
+    }
+    if (msg.usernames?.length) {
+      writer.writeRepeatedString(10, msg.usernames);
+    }
+    if (msg.argumentPattern) {
+      writer.writeString(11, msg.argumentPattern);
     }
     return writer;
   },
@@ -1074,6 +1181,22 @@ export const UpdateCommandRequest = {
         }
         case 7: {
           msg.priority = reader.readInt32();
+          break;
+        }
+        case 8: {
+          msg.visibility = reader.readString();
+          break;
+        }
+        case 9: {
+          msg.groupIds.push(reader.readString());
+          break;
+        }
+        case 10: {
+          msg.usernames.push(reader.readString());
+          break;
+        }
+        case 11: {
+          msg.argumentPattern = reader.readString();
           break;
         }
         default: {
@@ -1191,6 +1314,10 @@ export const CommandJSON = {
       createdAt: protoscript.TimestampJSON.initialize(),
       createdByType: "",
       createdByRef: "",
+      visibility: "",
+      groupIds: [],
+      usernames: [],
+      argumentPattern: "",
       ...msg,
     };
   },
@@ -1232,6 +1359,18 @@ export const CommandJSON = {
     }
     if (msg.createdByRef) {
       json["createdByRef"] = msg.createdByRef;
+    }
+    if (msg.visibility) {
+      json["visibility"] = msg.visibility;
+    }
+    if (msg.groupIds?.length) {
+      json["groupIds"] = msg.groupIds;
+    }
+    if (msg.usernames?.length) {
+      json["usernames"] = msg.usernames;
+    }
+    if (msg.argumentPattern) {
+      json["argumentPattern"] = msg.argumentPattern;
     }
     return json;
   },
@@ -1283,6 +1422,23 @@ export const CommandJSON = {
     const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
     if (_createdByRef_) {
       msg.createdByRef = _createdByRef_;
+    }
+    const _visibility_ = json["visibility"];
+    if (_visibility_) {
+      msg.visibility = _visibility_;
+    }
+    const _groupIds_ = json["groupIds"] ?? json["group_ids"];
+    if (_groupIds_) {
+      msg.groupIds = _groupIds_;
+    }
+    const _usernames_ = json["usernames"];
+    if (_usernames_) {
+      msg.usernames = _usernames_;
+    }
+    const _argumentPattern_ =
+      json["argumentPattern"] ?? json["argument_pattern"];
+    if (_argumentPattern_) {
+      msg.argumentPattern = _argumentPattern_;
     }
     return msg;
   },
@@ -1601,6 +1757,10 @@ export const CreateCommandRequestJSON = {
       priority: 0,
       createdByType: "",
       createdByRef: "",
+      visibility: "",
+      groupIds: [],
+      usernames: [],
+      argumentPattern: "",
       ...msg,
     };
   },
@@ -1638,6 +1798,18 @@ export const CreateCommandRequestJSON = {
     }
     if (msg.createdByRef) {
       json["createdByRef"] = msg.createdByRef;
+    }
+    if (msg.visibility) {
+      json["visibility"] = msg.visibility;
+    }
+    if (msg.groupIds?.length) {
+      json["groupIds"] = msg.groupIds;
+    }
+    if (msg.usernames?.length) {
+      json["usernames"] = msg.usernames;
+    }
+    if (msg.argumentPattern) {
+      json["argumentPattern"] = msg.argumentPattern;
     }
     return json;
   },
@@ -1685,6 +1857,23 @@ export const CreateCommandRequestJSON = {
     if (_createdByRef_) {
       msg.createdByRef = _createdByRef_;
     }
+    const _visibility_ = json["visibility"];
+    if (_visibility_) {
+      msg.visibility = _visibility_;
+    }
+    const _groupIds_ = json["groupIds"] ?? json["group_ids"];
+    if (_groupIds_) {
+      msg.groupIds = _groupIds_;
+    }
+    const _usernames_ = json["usernames"];
+    if (_usernames_) {
+      msg.usernames = _usernames_;
+    }
+    const _argumentPattern_ =
+      json["argumentPattern"] ?? json["argument_pattern"];
+    if (_argumentPattern_) {
+      msg.argumentPattern = _argumentPattern_;
+    }
     return msg;
   },
 };
@@ -1721,6 +1910,10 @@ export const UpdateCommandRequestJSON = {
       type: "",
       typeValue: "",
       priority: 0,
+      visibility: "",
+      groupIds: [],
+      usernames: [],
+      argumentPattern: "",
       ...msg,
     };
   },
@@ -1752,6 +1945,18 @@ export const UpdateCommandRequestJSON = {
     }
     if (msg.priority) {
       json["priority"] = msg.priority;
+    }
+    if (msg.visibility) {
+      json["visibility"] = msg.visibility;
+    }
+    if (msg.groupIds?.length) {
+      json["groupIds"] = msg.groupIds;
+    }
+    if (msg.usernames?.length) {
+      json["usernames"] = msg.usernames;
+    }
+    if (msg.argumentPattern) {
+      json["argumentPattern"] = msg.argumentPattern;
     }
     return json;
   },
@@ -1790,6 +1995,23 @@ export const UpdateCommandRequestJSON = {
     const _priority_ = json["priority"];
     if (_priority_) {
       msg.priority = protoscript.parseNumber(_priority_);
+    }
+    const _visibility_ = json["visibility"];
+    if (_visibility_) {
+      msg.visibility = _visibility_;
+    }
+    const _groupIds_ = json["groupIds"] ?? json["group_ids"];
+    if (_groupIds_) {
+      msg.groupIds = _groupIds_;
+    }
+    const _usernames_ = json["usernames"];
+    if (_usernames_) {
+      msg.usernames = _usernames_;
+    }
+    const _argumentPattern_ =
+      json["argumentPattern"] ?? json["argument_pattern"];
+    if (_argumentPattern_) {
+      msg.argumentPattern = _argumentPattern_;
     }
     return msg;
   },

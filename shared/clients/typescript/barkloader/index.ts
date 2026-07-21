@@ -18,18 +18,34 @@ export interface BarkloaderMessageResponse {
     message: string;
 }
 
+// Wire shape barkloard's Rust WS server actually sends for `invoke`
+// request/response pairs - distinct from BarkloaderMessageResponse's
+// "module pushed a chat line" push-message shape above.
+interface BarkloaderInvokeReply {
+    type: "result" | "error";
+    id?: string;
+    data: unknown;
+}
+
+const INVOKE_TIMEOUT_MS = 5000;
+
 export default class BarkloaderClient {
     private socket: WebSocket | null = null;
     private onMessage: MessageHandler;
     private reconnectTimeout: number;
     private maxRetries: number | typeof Infinity;
     private onReconnectAttempt?: ReconnectAttemptHandler;
-    
+
     private currentRetryCount: number = 0;
     private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     private isConnecting: boolean = false;
     private shouldReconnect: boolean = true;
     private isManualClose: boolean = false;
+
+    // Pending `invoke()` calls awaiting a correlated "result"/"error" reply.
+    // A WS disconnect mid-flight would otherwise leak these forever, hence
+    // the per-call timeout that also clears the entry.
+    private pendingInvokes = new Map<string, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
 
     constructor(private config: BarkloaderClientConfig) {
         this.onMessage = () => {};
@@ -89,6 +105,39 @@ export default class BarkloaderClient {
         } else {
             throw new Error('WebSocket is not connected');
         }
+    }
+
+    // Sends an `invoke` request and awaits its correlated `result`/`error`
+    // reply, rather than firing-and-forgetting like `send()`. Rejects after
+    // INVOKE_TIMEOUT_MS if no reply arrives (e.g. the connection dropped
+    // mid-flight), cleaning up the pending entry either way.
+    public invoke(func: string, args: unknown[]): Promise<unknown> {
+        const id = crypto.randomUUID();
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                this.pendingInvokes.delete(id);
+                reject(new Error(`Barkloader invoke timed out after ${INVOKE_TIMEOUT_MS}ms: ${func}`));
+            }, INVOKE_TIMEOUT_MS);
+
+            this.pendingInvokes.set(id, {
+                resolve: (v) => {
+                    clearTimeout(timer);
+                    resolve(v);
+                },
+                reject: (e) => {
+                    clearTimeout(timer);
+                    reject(e);
+                },
+            });
+
+            try {
+                this.send(JSON.stringify({ type: "invoke", id, data: { func, args } }));
+            } catch (err) {
+                this.pendingInvokes.delete(id);
+                clearTimeout(timer);
+                reject(err);
+            }
+        });
     }
 
     public registerHandler(event: string, cb: (...args: any[]) => void) {
@@ -160,7 +209,21 @@ export default class BarkloaderClient {
 
     private messageHandler = (event: MessageEvent): void => {
         try {
-            const message = JSON.parse(event.data) as BarkloaderMessageResponse;
+            const message = JSON.parse(event.data) as Partial<BarkloaderInvokeReply> & BarkloaderMessageResponse;
+            if (message.id && this.pendingInvokes.has(message.id)) {
+                const pending = this.pendingInvokes.get(message.id)!;
+                this.pendingInvokes.delete(message.id);
+                if (message.type === "error") {
+                    pending.reject(new Error(typeof message.data === "string" ? message.data : JSON.stringify(message.data)));
+                } else {
+                    const result =
+                        message.data && typeof message.data === "object" && "result" in (message.data as object)
+                            ? (message.data as { result: unknown }).result
+                            : message.data;
+                    pending.resolve(result);
+                }
+                return;
+            }
             this.onMessage(message);
         } catch (err) {
             this.onMessage(event.data);

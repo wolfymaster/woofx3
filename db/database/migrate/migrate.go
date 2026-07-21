@@ -29,6 +29,9 @@ func Migrate(db *gorm.DB) error {
 		migrations.AddWidgetEntryColumn(),
 		migrations.CreateBackgroundTasksTable(),
 		migrations.CreateModuleSettingsTables(),
+		migrations.CreateCommandGroupsTables(),
+		migrations.NormalizeCommandTypes(),
+		migrations.AddCommandArgumentPatternColumn(),
 	})
 
 	return m.Migrate()
@@ -57,6 +60,9 @@ func Rollback(db *gorm.DB) error {
 		migrations.AddWidgetEntryColumn(),
 		migrations.CreateBackgroundTasksTable(),
 		migrations.CreateModuleSettingsTables(),
+		migrations.CreateCommandGroupsTables(),
+		migrations.NormalizeCommandTypes(),
+		migrations.AddCommandArgumentPatternColumn(),
 	})
 
 	return m.RollbackLast()

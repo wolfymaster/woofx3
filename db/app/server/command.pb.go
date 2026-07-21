@@ -28,16 +28,31 @@ type Command struct {
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                            // Unique identifier for the command
 	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // ID of the application this command belongs to
 	Command       string                 `protobuf:"bytes,3,opt,name=command,proto3" json:"command,omitempty"`                                  // Name of the command (without the prefix)
-	Type          string                 `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`                                        // Type of command (e.g., "text", "function", "eval")
+	Type          string                 `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`                                        // Type of command ("text" or "function")
 	TypeValue     string                 `protobuf:"bytes,5,opt,name=type_value,json=typeValue,proto3" json:"type_value,omitempty"`             // Value of the command type
-	Cooldown      int32                  `protobuf:"varint,6,opt,name=cooldown,proto3" json:"cooldown,omitempty"`                               // Cooldown between command uses in seconds
+	Cooldown      int32                  `protobuf:"varint,6,opt,name=cooldown,proto3" json:"cooldown,omitempty"`                               // Cooldown between command uses in seconds. 0 = never throttle.
 	Priority      int32                  `protobuf:"varint,7,opt,name=priority,proto3" json:"priority,omitempty"`                               // Priority of the command
 	Enabled       bool                   `protobuf:"varint,13,opt,name=enabled,proto3" json:"enabled,omitempty"`                                // Whether the command is enabled
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	CreatedByType string                 `protobuf:"bytes,16,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
 	CreatedByRef  string                 `protobuf:"bytes,17,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// "public" always allows any user; "restricted" requires the invoking
+	// user to belong to one of group_ids or be listed in usernames.
+	Visibility string   `protobuf:"bytes,18,opt,name=visibility,proto3" json:"visibility,omitempty"`
+	GroupIds   []string `protobuf:"bytes,19,rep,name=group_ids,json=groupIds,proto3" json:"group_ids,omitempty"`
+	Usernames  []string `protobuf:"bytes,20,rep,name=usernames,proto3" json:"usernames,omitempty"`
+	// Optional "{variable}" placeholders declaring named arguments the
+	// command accepts, e.g. "{songTitle}" or "{userA} {userB}". `command`
+	// itself never contains braces - it's always the bare trigger word
+	// ("sr", "hug"). With exactly one variable, it captures the entire
+	// remainder of the message (not split on whitespace); with more than
+	// one, every variable but the last consumes one whitespace-delimited
+	// token and the last captures whatever remains. Empty string means the
+	// command takes no named arguments (today's default behavior). Applies
+	// to both "text" and "function" command types.
+	ArgumentPattern string `protobuf:"bytes,21,opt,name=argument_pattern,json=argumentPattern,proto3" json:"argument_pattern,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Command) Reset() {
@@ -143,6 +158,34 @@ func (x *Command) GetCreatedByType() string {
 func (x *Command) GetCreatedByRef() string {
 	if x != nil {
 		return x.CreatedByRef
+	}
+	return ""
+}
+
+func (x *Command) GetVisibility() string {
+	if x != nil {
+		return x.Visibility
+	}
+	return ""
+}
+
+func (x *Command) GetGroupIds() []string {
+	if x != nil {
+		return x.GroupIds
+	}
+	return nil
+}
+
+func (x *Command) GetUsernames() []string {
+	if x != nil {
+		return x.Usernames
+	}
+	return nil
+}
+
+func (x *Command) GetArgumentPattern() string {
+	if x != nil {
+		return x.ArgumentPattern
 	}
 	return ""
 }
@@ -369,18 +412,22 @@ func (x *ListCommandsResponse) GetCommands() []*Command {
 
 // Request to create a new command
 type CreateCommandRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
-	Command       string                 `protobuf:"bytes,2,opt,name=command,proto3" json:"command,omitempty"`
-	Enabled       bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	Cooldown      int32                  `protobuf:"varint,4,opt,name=cooldown,proto3" json:"cooldown,omitempty"`
-	Type          string                 `protobuf:"bytes,5,opt,name=type,proto3" json:"type,omitempty"`
-	TypeValue     string                 `protobuf:"bytes,6,opt,name=type_value,json=typeValue,proto3" json:"type_value,omitempty"`
-	Priority      int32                  `protobuf:"varint,7,opt,name=priority,proto3" json:"priority,omitempty"`
-	CreatedByType string                 `protobuf:"bytes,9,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
-	CreatedByRef  string                 `protobuf:"bytes,10,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ApplicationId   string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	Command         string                 `protobuf:"bytes,2,opt,name=command,proto3" json:"command,omitempty"`
+	Enabled         bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	Cooldown        int32                  `protobuf:"varint,4,opt,name=cooldown,proto3" json:"cooldown,omitempty"`
+	Type            string                 `protobuf:"bytes,5,opt,name=type,proto3" json:"type,omitempty"`
+	TypeValue       string                 `protobuf:"bytes,6,opt,name=type_value,json=typeValue,proto3" json:"type_value,omitempty"`
+	Priority        int32                  `protobuf:"varint,7,opt,name=priority,proto3" json:"priority,omitempty"`
+	CreatedByType   string                 `protobuf:"bytes,9,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
+	CreatedByRef    string                 `protobuf:"bytes,10,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
+	Visibility      string                 `protobuf:"bytes,11,opt,name=visibility,proto3" json:"visibility,omitempty"`
+	GroupIds        []string               `protobuf:"bytes,12,rep,name=group_ids,json=groupIds,proto3" json:"group_ids,omitempty"`
+	Usernames       []string               `protobuf:"bytes,13,rep,name=usernames,proto3" json:"usernames,omitempty"`
+	ArgumentPattern string                 `protobuf:"bytes,14,opt,name=argument_pattern,json=argumentPattern,proto3" json:"argument_pattern,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CreateCommandRequest) Reset() {
@@ -476,18 +523,50 @@ func (x *CreateCommandRequest) GetCreatedByRef() string {
 	return ""
 }
 
+func (x *CreateCommandRequest) GetVisibility() string {
+	if x != nil {
+		return x.Visibility
+	}
+	return ""
+}
+
+func (x *CreateCommandRequest) GetGroupIds() []string {
+	if x != nil {
+		return x.GroupIds
+	}
+	return nil
+}
+
+func (x *CreateCommandRequest) GetUsernames() []string {
+	if x != nil {
+		return x.Usernames
+	}
+	return nil
+}
+
+func (x *CreateCommandRequest) GetArgumentPattern() string {
+	if x != nil {
+		return x.ArgumentPattern
+	}
+	return ""
+}
+
 // Request to update an existing command
 type UpdateCommandRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Command       string                 `protobuf:"bytes,2,opt,name=command,proto3" json:"command,omitempty"`
-	Enabled       bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	Cooldown      int32                  `protobuf:"varint,4,opt,name=cooldown,proto3" json:"cooldown,omitempty"`
-	Type          string                 `protobuf:"bytes,5,opt,name=type,proto3" json:"type,omitempty"`
-	TypeValue     string                 `protobuf:"bytes,6,opt,name=type_value,json=typeValue,proto3" json:"type_value,omitempty"`
-	Priority      int32                  `protobuf:"varint,7,opt,name=priority,proto3" json:"priority,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Command         string                 `protobuf:"bytes,2,opt,name=command,proto3" json:"command,omitempty"`
+	Enabled         bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	Cooldown        int32                  `protobuf:"varint,4,opt,name=cooldown,proto3" json:"cooldown,omitempty"`
+	Type            string                 `protobuf:"bytes,5,opt,name=type,proto3" json:"type,omitempty"`
+	TypeValue       string                 `protobuf:"bytes,6,opt,name=type_value,json=typeValue,proto3" json:"type_value,omitempty"`
+	Priority        int32                  `protobuf:"varint,7,opt,name=priority,proto3" json:"priority,omitempty"`
+	Visibility      string                 `protobuf:"bytes,8,opt,name=visibility,proto3" json:"visibility,omitempty"`
+	GroupIds        []string               `protobuf:"bytes,9,rep,name=group_ids,json=groupIds,proto3" json:"group_ids,omitempty"`
+	Usernames       []string               `protobuf:"bytes,10,rep,name=usernames,proto3" json:"usernames,omitempty"`
+	ArgumentPattern string                 `protobuf:"bytes,11,opt,name=argument_pattern,json=argumentPattern,proto3" json:"argument_pattern,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *UpdateCommandRequest) Reset() {
@@ -569,6 +648,34 @@ func (x *UpdateCommandRequest) GetPriority() int32 {
 	return 0
 }
 
+func (x *UpdateCommandRequest) GetVisibility() string {
+	if x != nil {
+		return x.Visibility
+	}
+	return ""
+}
+
+func (x *UpdateCommandRequest) GetGroupIds() []string {
+	if x != nil {
+		return x.GroupIds
+	}
+	return nil
+}
+
+func (x *UpdateCommandRequest) GetUsernames() []string {
+	if x != nil {
+		return x.Usernames
+	}
+	return nil
+}
+
+func (x *UpdateCommandRequest) GetArgumentPattern() string {
+	if x != nil {
+		return x.ArgumentPattern
+	}
+	return ""
+}
+
 // Request to delete a command
 type DeleteCommandRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -618,7 +725,7 @@ var File_command_proto protoreflect.FileDescriptor
 
 const file_command_proto_rawDesc = "" +
 	"\n" +
-	"\rcommand.proto\x12\acommand\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfa\x02\n" +
+	"\rcommand.proto\x12\acommand\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x80\x04\n" +
 	"\aCommand\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x18\n" +
@@ -632,7 +739,13 @@ const file_command_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12&\n" +
 	"\x0fcreated_by_type\x18\x10 \x01(\tR\rcreatedByType\x12$\n" +
-	"\x0ecreated_by_ref\x18\x11 \x01(\tR\fcreatedByRefJ\x04\b\x0e\x10\x0fR\n" +
+	"\x0ecreated_by_ref\x18\x11 \x01(\tR\fcreatedByRef\x12\x1e\n" +
+	"\n" +
+	"visibility\x18\x12 \x01(\tR\n" +
+	"visibility\x12\x1b\n" +
+	"\tgroup_ids\x18\x13 \x03(\tR\bgroupIds\x12\x1c\n" +
+	"\tusernames\x18\x14 \x03(\tR\tusernames\x12)\n" +
+	"\x10argument_pattern\x18\x15 \x01(\tR\x0fargumentPatternJ\x04\b\x0e\x10\x0fR\n" +
 	"created_by\"\x82\x01\n" +
 	"\x11GetCommandRequest\x12\x18\n" +
 	"\acommand\x18\x01 \x01(\tR\acommand\x12%\n" +
@@ -647,7 +760,7 @@ const file_command_proto_rawDesc = "" +
 	"\x10include_disabled\x18\x02 \x01(\bR\x0fincludeDisabled\"t\n" +
 	"\x14ListCommandsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12,\n" +
-	"\bcommands\x18\x02 \x03(\v2\x10.command.CommandR\bcommands\"\xbc\x02\n" +
+	"\bcommands\x18\x02 \x03(\v2\x10.command.CommandR\bcommands\"\xc2\x03\n" +
 	"\x14CreateCommandRequest\x12%\n" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12\x18\n" +
@@ -659,8 +772,14 @@ const file_command_proto_rawDesc = "" +
 	"\bpriority\x18\a \x01(\x05R\bpriority\x12&\n" +
 	"\x0fcreated_by_type\x18\t \x01(\tR\rcreatedByType\x12$\n" +
 	"\x0ecreated_by_ref\x18\n" +
-	" \x01(\tR\fcreatedByRefJ\x04\b\b\x10\tR\n" +
-	"created_by\"\xc5\x01\n" +
+	" \x01(\tR\fcreatedByRef\x12\x1e\n" +
+	"\n" +
+	"visibility\x18\v \x01(\tR\n" +
+	"visibility\x12\x1b\n" +
+	"\tgroup_ids\x18\f \x03(\tR\bgroupIds\x12\x1c\n" +
+	"\tusernames\x18\r \x03(\tR\tusernames\x12)\n" +
+	"\x10argument_pattern\x18\x0e \x01(\tR\x0fargumentPatternJ\x04\b\b\x10\tR\n" +
+	"created_by\"\xcb\x02\n" +
 	"\x14UpdateCommandRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12\x18\n" +
@@ -669,7 +788,14 @@ const file_command_proto_rawDesc = "" +
 	"\x04type\x18\x05 \x01(\tR\x04type\x12\x1d\n" +
 	"\n" +
 	"type_value\x18\x06 \x01(\tR\ttypeValue\x12\x1a\n" +
-	"\bpriority\x18\a \x01(\x05R\bpriority\"&\n" +
+	"\bpriority\x18\a \x01(\x05R\bpriority\x12\x1e\n" +
+	"\n" +
+	"visibility\x18\b \x01(\tR\n" +
+	"visibility\x12\x1b\n" +
+	"\tgroup_ids\x18\t \x03(\tR\bgroupIds\x12\x1c\n" +
+	"\tusernames\x18\n" +
+	" \x03(\tR\tusernames\x12)\n" +
+	"\x10argument_pattern\x18\v \x01(\tR\x0fargumentPattern\"&\n" +
 	"\x14DeleteCommandRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id2\xfd\x02\n" +
 	"\x0eCommandService\x12B\n" +

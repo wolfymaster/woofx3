@@ -3,6 +3,7 @@ import * as application from "@woofx3/db/application.pb";
 import * as clientPb from "@woofx3/db/client.pb";
 import * as command from "@woofx3/db/command.pb";
 import type * as common from "@woofx3/db/common.pb";
+import * as group from "@woofx3/db/group.pb";
 import * as module from "@woofx3/db/module.pb";
 import type * as module_action from "@woofx3/db/module_action.pb";
 import * as module_setting from "@woofx3/db/module_setting.pb";
@@ -79,6 +80,38 @@ export class DbClient {
 
   async deleteCommand(req: command.DeleteCommandRequest): Promise<common.ResponseStatus> {
     return command.DeleteCommand(req, this.config);
+  }
+
+  async createGroup(req: group.CreateGroupRequest): Promise<group.GroupResponse> {
+    return group.CreateGroup(req, this.config);
+  }
+
+  async getGroup(req: group.GetGroupRequest): Promise<group.GroupResponse> {
+    return group.GetGroup(req, this.config);
+  }
+
+  async listGroups(req: group.ListGroupsRequest): Promise<group.ListGroupsResponse> {
+    return group.ListGroups(req, this.config);
+  }
+
+  async updateGroup(req: group.UpdateGroupRequest): Promise<group.GroupResponse> {
+    return group.UpdateGroup(req, this.config);
+  }
+
+  async deleteGroup(req: group.DeleteGroupRequest): Promise<common.ResponseStatus> {
+    return group.DeleteGroup(req, this.config);
+  }
+
+  async addUserToGroup(req: group.GroupMembershipRequest): Promise<common.ResponseStatus> {
+    return group.AddUserToGroup(req, this.config);
+  }
+
+  async removeUserFromGroup(req: group.GroupMembershipRequest): Promise<common.ResponseStatus> {
+    return group.RemoveUserFromGroup(req, this.config);
+  }
+
+  async listGroupMembers(req: group.ListGroupMembersRequest): Promise<group.ListGroupMembersResponse> {
+    return group.ListGroupMembers(req, this.config);
   }
 
   async getWorkflow(req: workflow.GetWorkflowRequest): Promise<workflow.WorkflowResponse> {

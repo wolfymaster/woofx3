@@ -12,13 +12,13 @@ pub struct Command {
     /// Name of the command (without the prefix)
     #[prost(string, tag="3")]
     pub command: ::prost::alloc::string::String,
-    /// Type of command (e.g., "text", "function", "eval")
+    /// Type of command ("text" or "function")
     #[prost(string, tag="4")]
     pub r#type: ::prost::alloc::string::String,
     /// Value of the command type
     #[prost(string, tag="5")]
     pub type_value: ::prost::alloc::string::String,
-    /// Cooldown between command uses in seconds
+    /// Cooldown between command uses in seconds. 0 = never throttle.
     #[prost(int32, tag="6")]
     pub cooldown: i32,
     /// Priority of the command
@@ -33,6 +33,25 @@ pub struct Command {
     pub created_by_type: ::prost::alloc::string::String,
     #[prost(string, tag="17")]
     pub created_by_ref: ::prost::alloc::string::String,
+    /// "public" always allows any user; "restricted" requires the invoking
+    /// user to belong to one of group_ids or be listed in usernames.
+    #[prost(string, tag="18")]
+    pub visibility: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag="19")]
+    pub group_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag="20")]
+    pub usernames: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Optional "{variable}" placeholders declaring named arguments the
+    /// command accepts, e.g. "{songTitle}" or "{userA} {userB}". `command`
+    /// itself never contains braces - it's always the bare trigger word
+    /// ("sr", "hug"). With exactly one variable, it captures the entire
+    /// remainder of the message (not split on whitespace); with more than
+    /// one, every variable but the last consumes one whitespace-delimited
+    /// token and the last captures whatever remains. Empty string means the
+    /// command takes no named arguments (today's default behavior). Applies
+    /// to both "text" and "function" command types.
+    #[prost(string, tag="21")]
+    pub argument_pattern: ::prost::alloc::string::String,
 }
 /// Request to get a single command by ID
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -89,6 +108,14 @@ pub struct CreateCommandRequest {
     pub created_by_type: ::prost::alloc::string::String,
     #[prost(string, tag="10")]
     pub created_by_ref: ::prost::alloc::string::String,
+    #[prost(string, tag="11")]
+    pub visibility: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag="12")]
+    pub group_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag="13")]
+    pub usernames: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, tag="14")]
+    pub argument_pattern: ::prost::alloc::string::String,
 }
 /// Request to update an existing command
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -107,6 +134,14 @@ pub struct UpdateCommandRequest {
     pub type_value: ::prost::alloc::string::String,
     #[prost(int32, tag="7")]
     pub priority: i32,
+    #[prost(string, tag="8")]
+    pub visibility: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag="9")]
+    pub group_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag="10")]
+    pub usernames: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, tag="11")]
+    pub argument_pattern: ::prost::alloc::string::String,
 }
 /// Request to delete a command
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

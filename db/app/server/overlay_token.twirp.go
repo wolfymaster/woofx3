@@ -1641,7 +1641,7 @@ func (s *overlayTokenServiceServer) serveResolveOverlayTokenProtobuf(ctx context
 }
 
 func (s *overlayTokenServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor7, 0
+	return twirpFileDescriptor8, 0
 }
 
 func (s *overlayTokenServiceServer) ProtocGenTwirpVersion() string {
@@ -1655,7 +1655,7 @@ func (s *overlayTokenServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "overlay_token", "OverlayTokenService")
 }
 
-var twirpFileDescriptor7 = []byte{
+var twirpFileDescriptor8 = []byte{
 	// 607 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x54, 0xcd, 0x6e, 0xd3, 0x40,
 	0x10, 0x96, 0x9d, 0x26, 0x4d, 0x26, 0x3f, 0xc0, 0xa6, 0x2a, 0x8e, 0x7b, 0x68, 0x64, 0x04, 0x49,

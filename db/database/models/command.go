@@ -19,6 +19,15 @@ type Command struct {
 	CreatedByType string    `gorm:"column:created_by_type;type:text;not null;default:'USER'"`
 	CreatedByRef  string    `gorm:"column:created_by_ref;type:text;not null;default:''"`
 	CreatedAt     time.Time `gorm:"column:created_at;default:CURRENT_TIMESTAMP;not null"`
+	// Visibility is "public" (always allowed, Casbin is never consulted) or
+	// "restricted" (the invoking user must belong to one of this command's
+	// groups or be listed as one of its users).
+	Visibility string `gorm:"column:visibility;type:varchar(20);not null;default:'restricted'"`
+	// ArgumentPattern declares "{variable}" placeholders (e.g. "{songTitle}"
+	// or "{userA} {userB}") the command accepts as named arguments. Never
+	// contains the bare command word itself - see command.proto's field
+	// comment for the extraction rule.
+	ArgumentPattern string `gorm:"column:argument_pattern;type:varchar(255);not null;default:''"`
 
 	// Relationships
 	Application Application `gorm:"foreignKey:ApplicationID;references:ID"`

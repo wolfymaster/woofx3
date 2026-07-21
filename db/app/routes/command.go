@@ -14,7 +14,9 @@ import (
 func CommandRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middleware.CasbinMiddleware) {
 	commandRepository := repo.NewCommandRepository(app.Db)
 	refRepository := repo.NewResourceReferenceRepository(app.Db)
-	commandService := svc.NewCommandService(commandRepository, refRepository)
+	commandPermissionRepository := repo.NewCommandPermissionRepository(app.Db)
+	permissionRepository := repo.NewPermissionRepository(app.Db)
+	commandService := svc.NewCommandService(commandRepository, refRepository, commandPermissionRepository, permissionRepository, app.Casbin)
 	commandHandler := client.NewCommandServiceServer(
 		commandService,
 		twirp.WithServerHooks(twirp.ChainHooks(

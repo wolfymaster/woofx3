@@ -40,6 +40,18 @@ impl serde::Serialize for Command {
         if !self.created_by_ref.is_empty() {
             len += 1;
         }
+        if !self.visibility.is_empty() {
+            len += 1;
+        }
+        if !self.group_ids.is_empty() {
+            len += 1;
+        }
+        if !self.usernames.is_empty() {
+            len += 1;
+        }
+        if !self.argument_pattern.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("command.Command", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -74,6 +86,18 @@ impl serde::Serialize for Command {
         if !self.created_by_ref.is_empty() {
             struct_ser.serialize_field("createdByRef", &self.created_by_ref)?;
         }
+        if !self.visibility.is_empty() {
+            struct_ser.serialize_field("visibility", &self.visibility)?;
+        }
+        if !self.group_ids.is_empty() {
+            struct_ser.serialize_field("groupIds", &self.group_ids)?;
+        }
+        if !self.usernames.is_empty() {
+            struct_ser.serialize_field("usernames", &self.usernames)?;
+        }
+        if !self.argument_pattern.is_empty() {
+            struct_ser.serialize_field("argumentPattern", &self.argument_pattern)?;
+        }
         struct_ser.end()
     }
 }
@@ -100,6 +124,12 @@ impl<'de> serde::Deserialize<'de> for Command {
             "createdByType",
             "created_by_ref",
             "createdByRef",
+            "visibility",
+            "group_ids",
+            "groupIds",
+            "usernames",
+            "argument_pattern",
+            "argumentPattern",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -115,6 +145,10 @@ impl<'de> serde::Deserialize<'de> for Command {
             CreatedAt,
             CreatedByType,
             CreatedByRef,
+            Visibility,
+            GroupIds,
+            Usernames,
+            ArgumentPattern,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -147,6 +181,10 @@ impl<'de> serde::Deserialize<'de> for Command {
                             "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
                             "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
                             "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
+                            "visibility" => Ok(GeneratedField::Visibility),
+                            "groupIds" | "group_ids" => Ok(GeneratedField::GroupIds),
+                            "usernames" => Ok(GeneratedField::Usernames),
+                            "argumentPattern" | "argument_pattern" => Ok(GeneratedField::ArgumentPattern),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -177,6 +215,10 @@ impl<'de> serde::Deserialize<'de> for Command {
                 let mut created_at__ = None;
                 let mut created_by_type__ = None;
                 let mut created_by_ref__ = None;
+                let mut visibility__ = None;
+                let mut group_ids__ = None;
+                let mut usernames__ = None;
+                let mut argument_pattern__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -249,6 +291,30 @@ impl<'de> serde::Deserialize<'de> for Command {
                             }
                             created_by_ref__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Visibility => {
+                            if visibility__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("visibility"));
+                            }
+                            visibility__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::GroupIds => {
+                            if group_ids__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("groupIds"));
+                            }
+                            group_ids__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Usernames => {
+                            if usernames__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("usernames"));
+                            }
+                            usernames__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ArgumentPattern => {
+                            if argument_pattern__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("argumentPattern"));
+                            }
+                            argument_pattern__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Command {
@@ -263,6 +329,10 @@ impl<'de> serde::Deserialize<'de> for Command {
                     created_at: created_at__,
                     created_by_type: created_by_type__.unwrap_or_default(),
                     created_by_ref: created_by_ref__.unwrap_or_default(),
+                    visibility: visibility__.unwrap_or_default(),
+                    group_ids: group_ids__.unwrap_or_default(),
+                    usernames: usernames__.unwrap_or_default(),
+                    argument_pattern: argument_pattern__.unwrap_or_default(),
                 })
             }
         }
@@ -412,6 +482,18 @@ impl serde::Serialize for CreateCommandRequest {
         if !self.created_by_ref.is_empty() {
             len += 1;
         }
+        if !self.visibility.is_empty() {
+            len += 1;
+        }
+        if !self.group_ids.is_empty() {
+            len += 1;
+        }
+        if !self.usernames.is_empty() {
+            len += 1;
+        }
+        if !self.argument_pattern.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("command.CreateCommandRequest", len)?;
         if !self.application_id.is_empty() {
             struct_ser.serialize_field("applicationId", &self.application_id)?;
@@ -440,6 +522,18 @@ impl serde::Serialize for CreateCommandRequest {
         if !self.created_by_ref.is_empty() {
             struct_ser.serialize_field("createdByRef", &self.created_by_ref)?;
         }
+        if !self.visibility.is_empty() {
+            struct_ser.serialize_field("visibility", &self.visibility)?;
+        }
+        if !self.group_ids.is_empty() {
+            struct_ser.serialize_field("groupIds", &self.group_ids)?;
+        }
+        if !self.usernames.is_empty() {
+            struct_ser.serialize_field("usernames", &self.usernames)?;
+        }
+        if !self.argument_pattern.is_empty() {
+            struct_ser.serialize_field("argumentPattern", &self.argument_pattern)?;
+        }
         struct_ser.end()
     }
 }
@@ -463,6 +557,12 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
             "createdByType",
             "created_by_ref",
             "createdByRef",
+            "visibility",
+            "group_ids",
+            "groupIds",
+            "usernames",
+            "argument_pattern",
+            "argumentPattern",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -476,6 +576,10 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
             Priority,
             CreatedByType,
             CreatedByRef,
+            Visibility,
+            GroupIds,
+            Usernames,
+            ArgumentPattern,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -506,6 +610,10 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                             "priority" => Ok(GeneratedField::Priority),
                             "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
                             "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
+                            "visibility" => Ok(GeneratedField::Visibility),
+                            "groupIds" | "group_ids" => Ok(GeneratedField::GroupIds),
+                            "usernames" => Ok(GeneratedField::Usernames),
+                            "argumentPattern" | "argument_pattern" => Ok(GeneratedField::ArgumentPattern),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -534,6 +642,10 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                 let mut priority__ = None;
                 let mut created_by_type__ = None;
                 let mut created_by_ref__ = None;
+                let mut visibility__ = None;
+                let mut group_ids__ = None;
+                let mut usernames__ = None;
+                let mut argument_pattern__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::ApplicationId => {
@@ -594,6 +706,30 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                             }
                             created_by_ref__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Visibility => {
+                            if visibility__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("visibility"));
+                            }
+                            visibility__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::GroupIds => {
+                            if group_ids__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("groupIds"));
+                            }
+                            group_ids__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Usernames => {
+                            if usernames__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("usernames"));
+                            }
+                            usernames__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ArgumentPattern => {
+                            if argument_pattern__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("argumentPattern"));
+                            }
+                            argument_pattern__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(CreateCommandRequest {
@@ -606,6 +742,10 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                     priority: priority__.unwrap_or_default(),
                     created_by_type: created_by_type__.unwrap_or_default(),
                     created_by_ref: created_by_ref__.unwrap_or_default(),
+                    visibility: visibility__.unwrap_or_default(),
+                    group_ids: group_ids__.unwrap_or_default(),
+                    usernames: usernames__.unwrap_or_default(),
+                    argument_pattern: argument_pattern__.unwrap_or_default(),
                 })
             }
         }
@@ -1076,6 +1216,18 @@ impl serde::Serialize for UpdateCommandRequest {
         if self.priority != 0 {
             len += 1;
         }
+        if !self.visibility.is_empty() {
+            len += 1;
+        }
+        if !self.group_ids.is_empty() {
+            len += 1;
+        }
+        if !self.usernames.is_empty() {
+            len += 1;
+        }
+        if !self.argument_pattern.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("command.UpdateCommandRequest", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -1098,6 +1250,18 @@ impl serde::Serialize for UpdateCommandRequest {
         if self.priority != 0 {
             struct_ser.serialize_field("priority", &self.priority)?;
         }
+        if !self.visibility.is_empty() {
+            struct_ser.serialize_field("visibility", &self.visibility)?;
+        }
+        if !self.group_ids.is_empty() {
+            struct_ser.serialize_field("groupIds", &self.group_ids)?;
+        }
+        if !self.usernames.is_empty() {
+            struct_ser.serialize_field("usernames", &self.usernames)?;
+        }
+        if !self.argument_pattern.is_empty() {
+            struct_ser.serialize_field("argumentPattern", &self.argument_pattern)?;
+        }
         struct_ser.end()
     }
 }
@@ -1116,6 +1280,12 @@ impl<'de> serde::Deserialize<'de> for UpdateCommandRequest {
             "type_value",
             "typeValue",
             "priority",
+            "visibility",
+            "group_ids",
+            "groupIds",
+            "usernames",
+            "argument_pattern",
+            "argumentPattern",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -1127,6 +1297,10 @@ impl<'de> serde::Deserialize<'de> for UpdateCommandRequest {
             Type,
             TypeValue,
             Priority,
+            Visibility,
+            GroupIds,
+            Usernames,
+            ArgumentPattern,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -1155,6 +1329,10 @@ impl<'de> serde::Deserialize<'de> for UpdateCommandRequest {
                             "type" => Ok(GeneratedField::Type),
                             "typeValue" | "type_value" => Ok(GeneratedField::TypeValue),
                             "priority" => Ok(GeneratedField::Priority),
+                            "visibility" => Ok(GeneratedField::Visibility),
+                            "groupIds" | "group_ids" => Ok(GeneratedField::GroupIds),
+                            "usernames" => Ok(GeneratedField::Usernames),
+                            "argumentPattern" | "argument_pattern" => Ok(GeneratedField::ArgumentPattern),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -1181,6 +1359,10 @@ impl<'de> serde::Deserialize<'de> for UpdateCommandRequest {
                 let mut r#type__ = None;
                 let mut type_value__ = None;
                 let mut priority__ = None;
+                let mut visibility__ = None;
+                let mut group_ids__ = None;
+                let mut usernames__ = None;
+                let mut argument_pattern__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -1229,6 +1411,30 @@ impl<'de> serde::Deserialize<'de> for UpdateCommandRequest {
                                 Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
                             ;
                         }
+                        GeneratedField::Visibility => {
+                            if visibility__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("visibility"));
+                            }
+                            visibility__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::GroupIds => {
+                            if group_ids__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("groupIds"));
+                            }
+                            group_ids__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Usernames => {
+                            if usernames__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("usernames"));
+                            }
+                            usernames__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ArgumentPattern => {
+                            if argument_pattern__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("argumentPattern"));
+                            }
+                            argument_pattern__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(UpdateCommandRequest {
@@ -1239,6 +1445,10 @@ impl<'de> serde::Deserialize<'de> for UpdateCommandRequest {
                     r#type: r#type__.unwrap_or_default(),
                     type_value: type_value__.unwrap_or_default(),
                     priority: priority__.unwrap_or_default(),
+                    visibility: visibility__.unwrap_or_default(),
+                    group_ids: group_ids__.unwrap_or_default(),
+                    usernames: usernames__.unwrap_or_default(),
+                    argument_pattern: argument_pattern__.unwrap_or_default(),
                 })
             }
         }

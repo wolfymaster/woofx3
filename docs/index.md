@@ -13,6 +13,7 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 
 - **[CloudEvents](/services/cloudevents)** - Inter-service messaging format and the canonical NATS subject list
 - **[Widget event channel](/services/widget-events)** - The unified `widget.event` channel and `widgetHost` API contract
+- **[Chat commands & groups: the UI contract](/services/commands-ui)** - Endpoints and webhook callbacks for managing chat commands and the user groups that gate them
 
 ## Getting Started
 

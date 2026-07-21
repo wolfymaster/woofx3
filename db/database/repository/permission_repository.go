@@ -83,6 +83,34 @@ func (r *PermissionRepository) AddGType(appID uuid.UUID, user string, resource s
 }
 
 /*
+AddGrouping writes a standard 2-arg Casbin "g" role-assignment row:
+g(subject, group). subject is a chat username; group is either "group:<id>"
+for a group grant or a literal username for a direct per-user grant. This is
+the write path used by GroupService for user_groups membership - it
+replaces the old 3-arg AddGType/hasRole scheme.
+*/
+func (r *PermissionRepository) AddGrouping(appID uuid.UUID, subject, group string) error {
+	var permission models.Permission
+
+	return r.db.Where(&models.Permission{
+		ApplicationID: appID,
+		Ptype:         "g",
+		V0:            subject,
+		V1:            group,
+	}).FirstOrCreate(&permission, models.Permission{
+		ApplicationID: appID,
+		Ptype:         "g",
+		V0:            subject,
+		V1:            group,
+	}).Error
+}
+
+func (r *PermissionRepository) RemoveGrouping(appID uuid.UUID, subject, group string) error {
+	return r.db.Where("application_id = ? AND ptype = 'g' AND v0 = ? AND v1 = ?",
+		appID, subject, group).Delete(&models.Permission{}).Error
+}
+
+/*
 Add a grouping rule
 resource: resource
 group: group
@@ -106,6 +134,14 @@ func (r *PermissionRepository) AddG2Type(appID uuid.UUID, resource string, group
 func (r *PermissionRepository) RemovePType(appID uuid.UUID, subject, object, action string, permission string) error {
 	return r.db.Where("application_id = ? AND ptype = 'p' AND v0 = ? AND v1 = ? AND v2 = ? AND v3 = ?",
 		appID, subject, object, action, permission).Delete(&models.Permission{}).Error
+}
+
+// RemoveAllPTypeForObject deletes every "p" rule for a given object,
+// regardless of subject - used when re-deriving a resource's grants from
+// scratch (e.g. a command's group/user assignments changed, or the command
+// was renamed so its "command/<name>" object string changed).
+func (r *PermissionRepository) RemoveAllPTypeForObject(appID uuid.UUID, object string) error {
+	return r.db.Where("application_id = ? AND ptype = 'p' AND v1 = ?", appID, object).Delete(&models.Permission{}).Error
 }
 
 func (r *PermissionRepository) RemoveGType(appID uuid.UUID, user string, resource string, role string) error {

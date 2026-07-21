@@ -1,4 +1,12 @@
 import type {
+  CommandCreatedEvent,
+  CommandDeletedEvent,
+  CommandUpdatedEvent,
+  GroupCreatedEvent,
+  GroupDeletedEvent,
+  GroupMemberAddedEvent,
+  GroupMemberRemovedEvent,
+  GroupUpdatedEvent,
   SceneCreatedEvent,
   SceneDeletedEvent,
   SceneUpdatedEvent,
@@ -144,6 +152,34 @@ export class ApiRouteHost extends RpcTarget {
       await this.webhookClient.send(event);
     } catch (err) {
       this.logger.error("Failed to send workflow webhook", { type: event.type, err });
+    }
+  }
+
+  protected async emitCommandWebhook(
+    event: CommandCreatedEvent | CommandUpdatedEvent | CommandDeletedEvent
+  ): Promise<void> {
+    if (!this.webhookClient) {
+      this.logger.warn("No webhook client set, skipping command webhook", { type: event.type });
+      return;
+    }
+    try {
+      await this.webhookClient.send(event);
+    } catch (err) {
+      this.logger.error("Failed to send command webhook", { type: event.type, err });
+    }
+  }
+
+  protected async emitGroupWebhook(
+    event: GroupCreatedEvent | GroupUpdatedEvent | GroupDeletedEvent | GroupMemberAddedEvent | GroupMemberRemovedEvent
+  ): Promise<void> {
+    if (!this.webhookClient) {
+      this.logger.warn("No webhook client set, skipping group webhook", { type: event.type });
+      return;
+    }
+    try {
+      await this.webhookClient.send(event);
+    } catch (err) {
+      this.logger.error("Failed to send group webhook", { type: event.type, err });
     }
   }
 
@@ -450,31 +486,13 @@ export class ApiRouteHost extends RpcTarget {
       tierLabel?: string;
     };
   }> = [
-    {
-      id: "trigger-chat-command",
-      moduleId: "mod-1",
-      name: "Chat Command",
-      description: "When someone uses a chat command",
-      icon: "MessageCircle",
-      category: "chat",
-      color: "text-blue-500",
-      config: {
-        fields: [
-          { id: "command", name: "command", type: "string", label: "Command", required: true, placeholder: "!hello" },
-          {
-            id: "cooldown",
-            name: "cooldown",
-            type: "number",
-            label: "Cooldown",
-            unit: "seconds",
-            min: 0,
-            max: 3600,
-            defaultValue: 5,
-          },
-          { id: "modOnly", name: "modOnly", type: "boolean", label: "Mods Only", defaultValue: false },
-        ],
-      },
-    },
+    // "trigger-chat-command" used to live here as mock scaffolding, only
+    // reachable via the singular getTrigger(id) below (never the plural
+    // getTriggers(), which is what the real trigger-picker uses). It's been
+    // retired now that a real "Chat Command" trigger is registered for real
+    // via woofwoofwoof's SYSTEM registerTriggers call on startup
+    // (createdByType "SYSTEM", createdByRef "chat_commands", manifestId
+    // "chat_command") and round-trips through db.listTriggers().
     {
       id: "trigger-follow",
       moduleId: "mod-2",

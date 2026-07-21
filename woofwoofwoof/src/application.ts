@@ -1,4 +1,5 @@
 import type { BarkloaderMessageResponse } from "@woofx3/barkloader";
+import { parseCommandVariables } from "@woofx3/common/templates/command-variables";
 import { EventType as ChatEventType, type SendMessageMessage } from "@woofx3/common/cloudevents/Chat";
 import {
   type CommandCreatedMessage,
@@ -173,6 +174,40 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
     });
 
     ctx.commander = commander;
+
+    // Register a first-class "Chat Command" workflow trigger so any chat
+    // command is selectable in the workflow builder's trigger picker
+    // (event: "chat.command.*", filtered per-instance via a Conditions
+    // entry on trigger.data.command - the same wildcard-subject +
+    // Conditions pattern already used by other Twitch triggers). Idempotent:
+    // the upsert key is (createdByType, createdByRef, manifestId), so this
+    // is safe to call on every startup. Best-effort - a failure here
+    // shouldn't block the bot from starting.
+    try {
+      await db.registerTriggers({
+        moduleKey: "",
+        moduleName: "chat-commands-builtin",
+        version: "builtin",
+        createdByType: "SYSTEM",
+        createdByRef: "chat_commands",
+        applicationId: "",
+        triggers: [
+          {
+            category: "chat",
+            name: "Chat Command",
+            description: "When someone uses a chat command",
+            event: "chat.command.*",
+            configSchema: JSON.stringify([
+              { id: "command", label: "Command", type: "string", required: true, placeholder: "hello" },
+            ]),
+            allowVariants: false,
+            manifestId: "chat_command",
+          },
+        ],
+      });
+    } catch (err) {
+      ctx.logger.error("Failed to register chat command trigger", err);
+    }
   }
 
   async run(ctx: Context) {
@@ -426,36 +461,44 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       throw new Error("Commander is undefined. This should never happen");
     }
 
-    // TODO: add "eval" type for inline evaluation like:
-    //      - !setcommand hello eval {caller} says hello to {targetUser[0]}!
-    // need to be able to eval the caller or any number of tagged users: !hello @userA @userB
     ctx.logger.info("applying command", command.command);
+    const variables = parseCommandVariables(command.argumentPattern);
+    const commanderOpts = {
+      visibility: command.visibility === "public" ? ("public" as const) : ("restricted" as const),
+      cooldownSeconds: command.cooldown,
+      variables,
+    };
     if (command.type === "function") {
       // typeValue is the function name to invoke in barkloader. Fall back
       // to the command name for legacy rows where typeValue is empty.
       const funcName = command.typeValue || command.command;
-      ctx.commander.add(command.command, async (text: string, user?: string) => {
-        try {
-          ctx.services.barkloader.client.send(
-            JSON.stringify({
-              type: "invoke",
-              data: {
-                func: funcName,
-                args: [text, user],
-              },
-            })
-          );
-        } catch (err: unknown) {
-          if (err instanceof Error) {
-            console.error("Failed to send message to Barkloader", err.message);
-          } else {
-            console.error("Failed to send message to Barkloader", err);
+      ctx.commander.add(
+        command.command,
+        async (text: string, user?: string, vars?: Record<string, unknown>) => {
+          try {
+            // Commands with no {variable} placeholders keep the original
+            // two-positional-argument shape for full backward
+            // compatibility with already-deployed module functions. Only
+            // commands that opt into {variable} syntax get the richer
+            // single-object payload (barkloader's WS server already
+            // treats a lone object arg as `event.parameters`, see
+            // barkloader/app/src/websocket.rs).
+            const args = vars && Object.keys(vars).length > 0 ? [{ text, user, ...vars }] : [text, user];
+            const result = await ctx.services.barkloader.client.invoke(funcName, args);
+            return typeof result === "string" ? result : String(result ?? "");
+          } catch (err: unknown) {
+            if (err instanceof Error) {
+              console.error("Failed to invoke Barkloader function", err.message);
+            } else {
+              console.error("Failed to invoke Barkloader function", err);
+            }
+            return "";
           }
-        }
-        return "";
-      });
+        },
+        commanderOpts
+      );
     } else {
-      ctx.commander.add(command.command, command.typeValue);
+      ctx.commander.add(command.command, command.typeValue, commanderOpts);
     }
 
     this.commandsByEngineId.set(command.id, command);
@@ -488,6 +531,10 @@ function snapshotToCommand(snapshot: {
   cooldown: number;
   priority: number;
   enabled: boolean;
+  visibility: string;
+  groupIds: string[];
+  usernames: string[];
+  argumentPattern: string;
 }): Command {
   return {
     id: snapshot.id,
@@ -502,5 +549,9 @@ function snapshotToCommand(snapshot: {
     createdAt: { seconds: 0n, nanos: 0 },
     createdByType: "",
     createdByRef: "",
+    visibility: snapshot.visibility,
+    groupIds: snapshot.groupIds,
+    usernames: snapshot.usernames,
+    argumentPattern: snapshot.argumentPattern,
   };
 }

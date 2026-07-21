@@ -15,19 +15,75 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+const (
+	commandVisibilityPublic     = "public"
+	commandVisibilityRestricted = "restricted"
+)
+
 type commandService struct {
-	repo    *repo.CommandRepository
-	refRepo *repo.ResourceReferenceRepository
+	repo       *repo.CommandRepository
+	refRepo    *repo.ResourceReferenceRepository
+	permRepo   *repo.CommandPermissionRepository
+	casbinRepo *repo.PermissionRepository
+	enforcer   *casbin.Enforcer
 }
 
 func NewCommandService(
 	cmdRepo *repo.CommandRepository,
 	refRepo *repo.ResourceReferenceRepository,
+	permRepo *repo.CommandPermissionRepository,
+	casbinRepo *repo.PermissionRepository,
+	enforcer *casbin.Enforcer,
 ) *commandService {
 	return &commandService{
-		repo:    cmdRepo,
-		refRepo: refRepo,
+		repo:       cmdRepo,
+		refRepo:    refRepo,
+		permRepo:   permRepo,
+		casbinRepo: casbinRepo,
+		enforcer:   enforcer,
 	}
+}
+
+// syncCommandPermissions re-derives command_groups/command_users and the
+// Casbin p-rows for a command from scratch. Called after every
+// create/update so the DB join tables and Casbin's derived cache never
+// drift. Public commands never get Casbin rows - visibility is checked in
+// application code (woofwoofwoof) before Casbin is ever consulted.
+func (s *commandService) syncCommandPermissions(appID uuid.UUID, cmd *models.Command, groupIDStrs, usernames []string) error {
+	groupIDs := make([]uuid.UUID, 0, len(groupIDStrs))
+	for _, idStr := range groupIDStrs {
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			return fmt.Errorf("invalid group id %q: %w", idStr, err)
+		}
+		groupIDs = append(groupIDs, id)
+	}
+
+	if err := s.permRepo.ReplaceGroups(cmd.ID, groupIDs); err != nil {
+		return err
+	}
+	if err := s.permRepo.ReplaceUsers(cmd.ID, usernames); err != nil {
+		return err
+	}
+
+	object := "command/" + cmd.Command
+	if err := s.casbinRepo.RemoveAllPTypeForObject(appID, object); err != nil {
+		return err
+	}
+	if cmd.Visibility == commandVisibilityRestricted {
+		for _, groupID := range groupIDs {
+			if err := s.casbinRepo.AddPType(appID, groupSubject(groupID), object, "read", "allow"); err != nil {
+				return err
+			}
+		}
+		for _, username := range usernames {
+			if err := s.casbinRepo.AddPType(appID, username, object, "read", "allow"); err != nil {
+				return err
+			}
+		}
+	}
+
+	return s.enforcer.LoadPolicy()
 }
 
 func (s *commandService) syncCommandEdges(cmd *models.Command, cmdType, typeValue, createdByType, createdByRef string) {
@@ -48,6 +104,42 @@ func (s *commandService) syncCommandEdges(cmd *models.Command, cmdType, typeValu
 	}
 }
 
+// toProtoCommand converts a persisted command plus its resolved group/user
+// grants into the wire shape. groupIDs/usernames are looked up separately
+// (permRepo) since they live in join tables, not on the commands row.
+func (s *commandService) toProtoCommand(cmd *models.Command) (*client.Command, error) {
+	groupIDs, err := s.permRepo.ListGroupIDs(cmd.ID)
+	if err != nil {
+		return nil, err
+	}
+	usernames, err := s.permRepo.ListUsernames(cmd.ID)
+	if err != nil {
+		return nil, err
+	}
+	groupIDStrs := make([]string, len(groupIDs))
+	for i, id := range groupIDs {
+		groupIDStrs[i] = id.String()
+	}
+
+	return &client.Command{
+		Id:            cmd.ID.String(),
+		ApplicationId: cmd.ApplicationID.String(),
+		Command:       cmd.Command,
+		Type:          cmd.Type,
+		TypeValue:     cmd.TypeValue,
+		Cooldown:      int32(cmd.Cooldown),
+		CreatedByType: cmd.CreatedByType,
+		CreatedByRef:  cmd.CreatedByRef,
+		Priority:      int32(cmd.Priority),
+		Enabled:       cmd.Enabled,
+		CreatedAt:     timestamppb.New(cmd.CreatedAt),
+		Visibility:      cmd.Visibility,
+		GroupIds:        groupIDStrs,
+		Usernames:       usernames,
+		ArgumentPattern: cmd.ArgumentPattern,
+	}, nil
+}
+
 func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCommandRequest) (*client.CommandResponse, error) {
 	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), cmd.ApplicationId)
 	if err != nil {
@@ -62,17 +154,23 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 	if createdByType == "" {
 		createdByType = "USER"
 	}
+	visibility := cmd.Visibility
+	if visibility == "" {
+		visibility = commandVisibilityRestricted
+	}
 
 	m := models.Command{
-		ApplicationID: applicationID,
-		Command:       cmd.Command,
-		Type:          cmd.Type,
-		TypeValue:     cmd.TypeValue,
-		Cooldown:      int(cmd.Cooldown),
-		Priority:      int(cmd.Priority),
-		Enabled:       cmd.Enabled,
-		CreatedByType: createdByType,
-		CreatedByRef:  cmd.CreatedByRef,
+		ApplicationID:   applicationID,
+		Command:         cmd.Command,
+		Type:            cmd.Type,
+		TypeValue:       cmd.TypeValue,
+		Cooldown:        int(cmd.Cooldown),
+		Priority:        int(cmd.Priority),
+		Enabled:         cmd.Enabled,
+		CreatedByType:   createdByType,
+		CreatedByRef:    cmd.CreatedByRef,
+		Visibility:      visibility,
+		ArgumentPattern: cmd.ArgumentPattern,
 	}
 
 	err = s.repo.Create(&m)
@@ -82,21 +180,22 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 
 	s.syncCommandEdges(&m, m.Type, m.TypeValue, m.CreatedByType, m.CreatedByRef)
 
-	res := &client.CommandResponse{
+	if err := s.syncCommandPermissions(applicationID, &m, cmd.GroupIds, cmd.Usernames); err != nil {
+		return nil, err
+	}
+
+	protoCmd, err := s.toProtoCommand(&m)
+	if err != nil {
+		return nil, err
+	}
+
+	return &client.CommandResponse{
 		Status: &client.ResponseStatus{
 			Code:    client.ResponseStatus_OK,
 			Message: "Command created successfully",
 		},
-		Command: &client.Command{
-			Id:            m.ID.String(),
-			ApplicationId: m.ApplicationID.String(),
-			Command:       m.Command,
-			Type:          m.Type,
-			TypeValue:     m.TypeValue,
-		},
-	}
-
-	return res, nil
+		Command: protoCmd,
+	}, nil
 }
 
 func (s *commandService) GetCommand(ctx context.Context, req *client.GetCommandRequest) (*client.CommandResponse, error) {
@@ -114,27 +213,18 @@ func (s *commandService) GetCommand(ctx context.Context, req *client.GetCommandR
 		return nil, err
 	}
 
-	res := &client.CommandResponse{
+	protoCmd, err := s.toProtoCommand(cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	return &client.CommandResponse{
 		Status: &client.ResponseStatus{
 			Code:    client.ResponseStatus_OK,
 			Message: "Command retrieved successfully",
 		},
-		Command: &client.Command{
-			Id:            cmd.ID.String(),
-			ApplicationId: cmd.ApplicationID.String(),
-			Command:       cmd.Command,
-			Type:          cmd.Type,
-			TypeValue:     cmd.TypeValue,
-			Cooldown:      int32(cmd.Cooldown),
-			CreatedByType: cmd.CreatedByType,
-			CreatedByRef:  cmd.CreatedByRef,
-			Priority:      int32(cmd.Priority),
-			Enabled:       cmd.Enabled,
-			CreatedAt:     timestamppb.New(cmd.CreatedAt),
-		},
-	}
-
-	return res, nil
+		Command: protoCmd,
+	}, nil
 }
 
 func (s *commandService) ListCommands(ctx context.Context, req *client.ListCommandsRequest) (*client.ListCommandsResponse, error) {
@@ -145,19 +235,11 @@ func (s *commandService) ListCommands(ctx context.Context, req *client.ListComma
 
 	protoCommands := make([]*client.Command, len(commands))
 	for i, cmd := range commands {
-		protoCommands[i] = &client.Command{
-			Id:            cmd.ID.String(),
-			ApplicationId: cmd.ApplicationID.String(),
-			Command:       cmd.Command,
-			Type:          cmd.Type,
-			TypeValue:     cmd.TypeValue,
-			Cooldown:      int32(cmd.Cooldown),
-			CreatedByType: cmd.CreatedByType,
-			CreatedByRef:  cmd.CreatedByRef,
-			Priority:      int32(cmd.Priority),
-			Enabled:       cmd.Enabled,
-			CreatedAt:     timestamppb.New(cmd.CreatedAt),
+		protoCmd, err := s.toProtoCommand(cmd)
+		if err != nil {
+			return nil, err
 		}
+		protoCommands[i] = protoCmd
 	}
 
 	res := &client.ListCommandsResponse{
@@ -182,6 +264,7 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 		return nil, err
 	}
 
+	oldCommandName := m.Command
 	m.Command = req.Command
 	if req.Type != "" {
 		m.Type = req.Type
@@ -190,6 +273,10 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 	m.Cooldown = int(req.Cooldown)
 	m.Priority = int(req.Priority)
 	m.Enabled = req.Enabled
+	if req.Visibility != "" {
+		m.Visibility = req.Visibility
+	}
+	m.ArgumentPattern = req.ArgumentPattern
 
 	err = s.repo.Update(m)
 	if err != nil {
@@ -198,21 +285,31 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 
 	s.syncCommandEdges(m, m.Type, m.TypeValue, m.CreatedByType, m.CreatedByRef)
 
-	res := &client.CommandResponse{
+	// A rename changes the "command/<name>" Casbin object string - clear the
+	// old object's rows too, since syncCommandPermissions only re-derives
+	// under the (possibly new) current name.
+	if oldCommandName != m.Command {
+		if err := s.casbinRepo.RemoveAllPTypeForObject(m.ApplicationID, "command/"+oldCommandName); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := s.syncCommandPermissions(m.ApplicationID, m, req.GroupIds, req.Usernames); err != nil {
+		return nil, err
+	}
+
+	protoCmd, err := s.toProtoCommand(m)
+	if err != nil {
+		return nil, err
+	}
+
+	return &client.CommandResponse{
 		Status: &client.ResponseStatus{
 			Code:    client.ResponseStatus_OK,
 			Message: "Command updated successfully",
 		},
-		Command: &client.Command{
-			Id:            m.ID.String(),
-			ApplicationId: m.ApplicationID.String(),
-			Command:       m.Command,
-			Type:          m.Type,
-			TypeValue:     m.TypeValue,
-		},
-	}
-
-	return res, nil
+		Command: protoCmd,
+	}, nil
 }
 
 func (s *commandService) DeleteCommand(ctx context.Context, req *client.DeleteCommandRequest) (*client.ResponseStatus, error) {
@@ -237,6 +334,16 @@ func (s *commandService) DeleteCommand(ctx context.Context, req *client.DeleteCo
 		}
 	}
 
+	if err := s.permRepo.DeleteBySourceCommand(m.ID); err != nil {
+		log.Printf("command_service: DeleteBySourceCommand failed for command %s: %v", m.ID, err)
+	}
+	if err := s.casbinRepo.RemoveAllPTypeForObject(m.ApplicationID, "command/"+m.Command); err != nil {
+		log.Printf("command_service: RemoveAllPTypeForObject failed for command %s: %v", m.ID, err)
+	}
+	if err := s.enforcer.LoadPolicy(); err != nil {
+		log.Printf("command_service: enforcer.LoadPolicy failed after deleting command %s: %v", m.ID, err)
+	}
+
 	res := &client.ResponseStatus{
 		Code:    client.ResponseStatus_OK,
 		Message: "Command deleted successfully",
@@ -256,6 +363,22 @@ func (s *commandService) HasPermission(ctx context.Context, enforcer *casbin.Enf
 		username := req.Username
 		if username == nil || *username == "" {
 			return false, fmt.Errorf("username is required")
+		}
+
+		appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+		if err != nil {
+			return false, err
+		}
+		appID, err := uuid.Parse(appIDStr)
+		if err != nil {
+			return false, err
+		}
+		cmd, err := s.repo.GetByCommand(req.Command, appID)
+		if err != nil {
+			return false, err
+		}
+		if cmd.Visibility == commandVisibilityPublic {
+			return true, nil
 		}
 
 		return enforcer.Enforce(*username, "command/"+req.Command, "read")

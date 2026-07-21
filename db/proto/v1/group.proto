@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package group;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// GroupService manages "user groups" (i.e. roles). A group is the
+// user-facing concept that stands in for a Casbin role: users are added to
+// groups, and commands (or other resources in the future) are granted to
+// groups. Callers of this service never deal with raw Casbin rules.
+service GroupService {
+    rpc CreateGroup(CreateGroupRequest) returns (GroupResponse);
+    rpc GetGroup(GetGroupRequest) returns (GroupResponse);
+    rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse);
+    rpc UpdateGroup(UpdateGroupRequest) returns (GroupResponse);
+    rpc DeleteGroup(DeleteGroupRequest) returns (common.ResponseStatus);
+
+    rpc AddUserToGroup(GroupMembershipRequest) returns (common.ResponseStatus);
+    rpc RemoveUserFromGroup(GroupMembershipRequest) returns (common.ResponseStatus);
+    rpc ListGroupMembers(ListGroupMembersRequest) returns (ListGroupMembersResponse);
+    rpc ListUserGroupsForUser(ListUserGroupsForUserRequest) returns (ListGroupsResponse);
+}
+
+message Group {
+    string id = 1;
+    string application_id = 2;
+    string name = 3;
+    string description = 4;
+    google.protobuf.Timestamp created_at = 5;
+}
+
+message CreateGroupRequest {
+    string application_id = 1;
+    string name = 2;
+    string description = 3;
+}
+
+message GetGroupRequest {
+    string id = 1;
+}
+
+message ListGroupsRequest {
+    string application_id = 1;
+}
+
+message ListGroupsResponse {
+    common.ResponseStatus status = 1;
+    repeated Group groups = 2;
+}
+
+message UpdateGroupRequest {
+    string id = 1;
+    string name = 2;
+    string description = 3;
+}
+
+message DeleteGroupRequest {
+    string id = 1;
+}
+
+message GroupResponse {
+    common.ResponseStatus status = 1;
+    Group group = 2;
+}
+
+// username is used (rather than a raw user id) for AddUserToGroup /
+// RemoveUserFromGroup so callers that only have a chat username on hand
+// (e.g. the Twitch chatbot) don't need a separate user lookup round trip;
+// the service resolves/creates the backing user row internally.
+message GroupMembershipRequest {
+    string application_id = 1;
+    string group_id = 2;
+    string username = 3;
+}
+
+message ListGroupMembersRequest {
+    string group_id = 1;
+}
+
+message ListGroupMembersResponse {
+    common.ResponseStatus status = 1;
+    repeated string usernames = 2;
+}
+
+message ListUserGroupsForUserRequest {
+    string application_id = 1;
+    string username = 2;
+}

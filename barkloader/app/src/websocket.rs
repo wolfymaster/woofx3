@@ -8,6 +8,13 @@ struct WsMessage {
     #[serde(rename = "type")]
     message_type: String,
     data: serde_json::Value,
+    // Correlation id set by the caller on an "invoke" request; echoed back
+    // verbatim on the matching "result"/"error" response so a client with
+    // multiple in-flight invokes on the same connection can match a reply
+    // to its originating call. Absent on requests that don't need
+    // correlation (e.g. legacy fire-and-forget callers).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
 }
 
 pub struct WebSocketSession {
@@ -28,6 +35,7 @@ impl WebSocketSession {
             match msg_stream.next().await {
                 Some(Ok(AggregatedMessage::Text(text))) => {
                     if let Ok(message) = serde_json::from_str::<WsMessage>(&text) {
+                        let request_id = message.id.clone();
                         match message.message_type.as_str() {
                             "invoke" => {
                                 let mut event = message
@@ -91,6 +99,7 @@ impl WebSocketSession {
                                                 "response": "ok",
                                                 "result": response
                                             }),
+                                            id: request_id.clone(),
                                         };
                                         let json = serde_json::to_string(&response).unwrap();
                                         session.text(json).await.unwrap();
@@ -100,6 +109,7 @@ impl WebSocketSession {
                                         let response = WsMessage {
                                             message_type: "error".to_string(),
                                             data: serde_json::json!(e.to_string()),
+                                            id: request_id.clone(),
                                         };
                                         let json = serde_json::to_string(&response).unwrap();
                                         session.text(json).await.unwrap();
@@ -110,6 +120,7 @@ impl WebSocketSession {
                                 let response = WsMessage {
                                     message_type: "error".to_string(),
                                     data: serde_json::json!("Unknown message type"),
+                                    id: request_id.clone(),
                                 };
                                 let json = serde_json::to_string(&response).unwrap();
                                 session.text(json).await.unwrap();
@@ -119,6 +130,7 @@ impl WebSocketSession {
                         let response = WsMessage {
                             message_type: "error".to_string(),
                             data: serde_json::json!("Invalid message format"),
+                            id: None,
                         };
                         let json = serde_json::to_string(&response).unwrap();
                         session.text(json).await.unwrap();

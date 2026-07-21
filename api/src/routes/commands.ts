@@ -15,6 +15,9 @@ import type {
 } from "@woofx3/api";
 import type {
   ActionDefinition,
+  CommandCreatedEvent,
+  CommandDeletedEvent,
+  CommandUpdatedEvent,
   SceneCreatedEvent,
   SceneDeletedEvent,
   SceneUpdatedEvent,
@@ -24,6 +27,7 @@ import type {
   WorkflowUpdatedEvent,
 } from "@woofx3/api/webhooks";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import { invalidCommandVariableNames } from "@woofx3/common/templates/command-variables";
 import type { Action } from "@woofx3/db/module_action.pb";
 import type { Trigger } from "@woofx3/db/module_trigger.pb";
 import type * as command from "@woofx3/db/command.pb";
@@ -151,11 +155,22 @@ export const commandsRoutes = {
   },
 
   /**
-   * Create a chat command. Persists via dbproxy and broadcasts a
-   * `command.created` cloudevent so consumers (e.g. woofwoofwoof) refresh
-   * their in-memory command list without restarting.
+   * Create a chat command. Persists via dbproxy, publishes an internal
+   * `command.created` bus event so consumers (e.g. woofwoofwoof) refresh
+   * their in-memory command list without restarting, and fires the
+   * external `command.created` webhook so a registered UI callback can
+   * observe the change without polling `listCommands()`.
    */
   async createCommand(input: CreateCommandInput): Promise<CommandSnapshot> {
+    const argumentPattern = input.argumentPattern ?? "";
+    const invalidNames = invalidCommandVariableNames(argumentPattern);
+    if (invalidNames.length > 0) {
+      throw new Error(
+        `Invalid {variable} name(s) in argumentPattern: ${invalidNames.join(", ")}. ` +
+          "Each name must be one word or dot-separated words (e.g. \"songTitle\" or \"user.name\")."
+      );
+    }
+
     const applicationId = await this.ensureApplicationId();
 
     const response = await this.db.createCommand({
@@ -169,6 +184,10 @@ export const commandsRoutes = {
       createdBy: "",
       createdByType: "USER",
       createdByRef: "",
+      visibility: input.visibility,
+      groupIds: input.groupIds ?? [],
+      usernames: input.usernames ?? [],
+      argumentPattern,
     });
     if (response.status?.code !== "OK" || !response.command) {
       throw new Error(response.status?.message || "Failed to create command");
@@ -176,15 +195,31 @@ export const commandsRoutes = {
 
     const snapshot = commandToSnapshot(response.command);
     await this.publishEvent("command.created", { command: snapshot });
+    void this.emitCommandWebhook({
+      type: EngineEventType.COMMAND_CREATED,
+      applicationId,
+      correlationKey: input.correlationKey,
+      command: snapshot,
+    });
     this.logger.info("Command created", { id: snapshot.id, command: snapshot.command });
     return snapshot;
   },
 
   /**
    * Update a chat command. Full-replace: every field on UpdateCommandInput
-   * overwrites the stored row. Emits `command.updated` on success.
+   * overwrites the stored row. Emits `command.updated` on success (both
+   * the internal bus event and the external webhook).
    */
   async updateCommand(id: string, input: UpdateCommandInput): Promise<CommandSnapshot> {
+    const argumentPattern = input.argumentPattern ?? "";
+    const invalidNames = invalidCommandVariableNames(argumentPattern);
+    if (invalidNames.length > 0) {
+      throw new Error(
+        `Invalid {variable} name(s) in argumentPattern: ${invalidNames.join(", ")}. ` +
+          "Each name must be one word or dot-separated words (e.g. \"songTitle\" or \"user.name\")."
+      );
+    }
+
     const response = await this.db.updateCommand({
       id,
       command: input.command,
@@ -193,6 +228,10 @@ export const commandsRoutes = {
       type: input.type,
       typeValue: input.typeValue,
       priority: input.priority,
+      visibility: input.visibility,
+      groupIds: input.groupIds ?? [],
+      usernames: input.usernames ?? [],
+      argumentPattern,
     });
     if (response.status?.code !== "OK" || !response.command) {
       throw new Error(response.status?.message || "Failed to update command");
@@ -200,6 +239,12 @@ export const commandsRoutes = {
 
     const snapshot = commandToSnapshot(response.command);
     await this.publishEvent("command.updated", { command: snapshot });
+    void this.emitCommandWebhook({
+      type: EngineEventType.COMMAND_UPDATED,
+      applicationId: snapshot.applicationId,
+      correlationKey: input.correlationKey,
+      command: snapshot,
+    });
     this.logger.info("Command updated", { id: snapshot.id, command: snapshot.command });
     return snapshot;
   },
@@ -326,13 +371,20 @@ export const commandsRoutes = {
    * downstream consumers maintain their own id→name index from
    * created/updated events.
    */
-  async deleteCommand(id: string): Promise<{ deleted: boolean }> {
+  async deleteCommand(id: string, correlationKey?: string): Promise<{ deleted: boolean }> {
+    const applicationId = await this.ensureApplicationId();
     const status = await this.db.deleteCommand({ id });
     if (status.code !== "OK") {
       throw new Error(status.message || "Failed to delete command");
     }
 
     await this.publishEvent("command.deleted", { id });
+    void this.emitCommandWebhook({
+      type: EngineEventType.COMMAND_DELETED,
+      applicationId,
+      correlationKey,
+      commandId: id,
+    });
     this.logger.info("Command deleted", { id });
     return { deleted: true };
   }

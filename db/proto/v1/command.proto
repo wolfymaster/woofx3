@@ -28,9 +28,9 @@ message Command {
     string id = 1;                  // Unique identifier for the command
     string application_id = 2;      // ID of the application this command belongs to
     string command = 3;             // Name of the command (without the prefix)
-    string type = 4;                // Type of command (e.g., "text", "function", "eval")
+    string type = 4;                // Type of command ("text" or "function")
     string type_value = 5;          // Value of the command type
-    int32 cooldown = 6;             // Cooldown between command uses in seconds
+    int32 cooldown = 6;             // Cooldown between command uses in seconds. 0 = never throttle.
     int32 priority = 7;             // Priority of the command
 
     bool enabled = 13;               // Whether the command is enabled
@@ -39,6 +39,23 @@ message Command {
     google.protobuf.Timestamp created_at = 15;
     string created_by_type = 16;
     string created_by_ref = 17;
+
+    // "public" always allows any user; "restricted" requires the invoking
+    // user to belong to one of group_ids or be listed in usernames.
+    string visibility = 18;
+    repeated string group_ids = 19;
+    repeated string usernames = 20;
+
+    // Optional "{variable}" placeholders declaring named arguments the
+    // command accepts, e.g. "{songTitle}" or "{userA} {userB}". `command`
+    // itself never contains braces - it's always the bare trigger word
+    // ("sr", "hug"). With exactly one variable, it captures the entire
+    // remainder of the message (not split on whitespace); with more than
+    // one, every variable but the last consumes one whitespace-delimited
+    // token and the last captures whatever remains. Empty string means the
+    // command takes no named arguments (today's default behavior). Applies
+    // to both "text" and "function" command types.
+    string argument_pattern = 21;
 }
 
 // Request to get a single command by ID
@@ -79,6 +96,10 @@ message CreateCommandRequest {
     reserved "created_by";
     string created_by_type = 9;
     string created_by_ref = 10;
+    string visibility = 11;
+    repeated string group_ids = 12;
+    repeated string usernames = 13;
+    string argument_pattern = 14;
 }
 
 // Request to update an existing command
@@ -90,6 +111,10 @@ message UpdateCommandRequest {
     string type = 5;
     string type_value = 6;
     int32 priority = 7;
+    string visibility = 8;
+    repeated string group_ids = 9;
+    repeated string usernames = 10;
+    string argument_pattern = 11;
 }
 
 // Request to delete a command

@@ -41,6 +41,7 @@ function buildTestContext(options: {
 
   const barkHandlers: Record<string, (msg: unknown) => void> = {};
   const barkSend = mock((_payload: string) => {});
+  const barkInvoke = mock(async (_func: string, _args: unknown[]) => "");
 
   const barkloader = {
     client: {
@@ -48,6 +49,7 @@ function buildTestContext(options: {
         barkHandlers[name] = fn;
       },
       send: barkSend,
+      invoke: barkInvoke,
     },
   };
 
@@ -58,12 +60,15 @@ function buildTestContext(options: {
       commands: [] as Command[],
     }));
 
+  const registerTriggers = mock(async (_req: unknown) => ({ status: { code: "OK" }, triggers: [] }));
+
   const db = {
     client: {
       hasPermission: mock(async () => ({ code: "OK" as const })),
       listCommands: mock(listCommandsFn),
       addUserToResource: mock(async () => ({ code: "OK" as const })),
       removeUserFromResource: mock(async () => ({ code: "OK" as const })),
+      registerTriggers,
     },
   };
 
@@ -106,6 +111,8 @@ function buildTestContext(options: {
     subscriptions,
     barkHandlers,
     barkSend,
+    barkInvoke,
+    registerTriggers,
     chatSay: say,
   };
 
@@ -258,12 +265,56 @@ describe("WoofWoofWoof application", () => {
       }),
     });
 
-    expect(base.barkSend).toHaveBeenCalled();
-    const raw = base.barkSend.mock.calls[0][0] as string;
-    const payload = JSON.parse(raw) as { type: string; data: { func: string; args: string[] } };
-    expect(payload.type).toBe("invoke");
-    expect(payload.data.func).toBe("remote");
-    expect(payload.data.args).toEqual(["hello world", "user1"]);
+    expect(base.barkInvoke).toHaveBeenCalled();
+    const [func, args] = base.barkInvoke.mock.calls[0];
+    expect(func).toBe("remote");
+    // no argumentPattern declared -> original two-positional-argument
+    // shape, unchanged for backward compatibility with existing modules.
+    expect(args).toEqual(["hello world", "user1"]);
+  });
+
+  test("function commands with a declared argumentPattern send a single structured payload", async () => {
+    // Named "customsong", not "sr" - "sr" is one of the hardcoded built-in
+    // commands registered in run() (Spotify search), which would silently
+    // overwrite a same-named DB-defined command loaded during init().
+    const customSongCmd = {
+      id: "c2",
+      applicationId: "app-1",
+      command: "customsong",
+      type: "function",
+      typeValue: "song_request",
+      cooldown: 0,
+      priority: 0,
+      enabled: true,
+      createdBy: "",
+      createdAt: {} as never,
+      createdByType: "",
+      createdByRef: "",
+      argumentPattern: "{songTitle}",
+    } as Command;
+
+    const app = new WoofWoofWoof();
+    const base = buildTestContext({
+      listCommands: async () => ({
+        status: { code: "OK", message: "" },
+        commands: [customSongCmd],
+      }),
+    });
+    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
+    await app.init(ctx);
+    await app.run(ctx);
+
+    const handler = getChatHandler(base);
+    await handler({
+      json: () => ({
+        data: { message: "!customsong Life is a highway", chatterName: "user1" },
+      }),
+    });
+
+    expect(base.barkInvoke).toHaveBeenCalled();
+    const [func, args] = base.barkInvoke.mock.calls[0];
+    expect(func).toBe("song_request");
+    expect(args).toEqual([{ text: "Life is a highway", user: "user1", songTitle: "Life is a highway" }]);
   });
 
   test("Barkloader forwards outbound chat lines into Twitch when a command is present", async () => {
@@ -312,5 +363,24 @@ describe("WoofWoofWoof application", () => {
     });
 
     expect(base.chatSay).not.toHaveBeenCalled();
+  });
+
+  test("registers a SYSTEM chat-command workflow trigger on init", async () => {
+    const app = new WoofWoofWoof();
+    const base = buildTestContext({});
+    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
+    await app.init(ctx);
+
+    expect(base.registerTriggers).toHaveBeenCalledTimes(1);
+    const req = base.registerTriggers.mock.calls[0][0] as {
+      createdByType: string;
+      createdByRef: string;
+      triggers: Array<{ event: string; manifestId: string }>;
+    };
+    expect(req.createdByType).toBe("SYSTEM");
+    expect(req.createdByRef).toBe("chat_commands");
+    expect(req.triggers).toHaveLength(1);
+    expect(req.triggers[0].event).toBe("chat.command.*");
+    expect(req.triggers[0].manifestId).toBe("chat_command");
   });
 });

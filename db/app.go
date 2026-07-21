@@ -6,7 +6,6 @@ import (
 
 	"github.com/casbin/casbin/v2"
 	"github.com/casbin/casbin/v2/model"
-	"github.com/casbin/casbin/v2/util"
 	gormadapter "github.com/casbin/gorm-adapter/v3"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/nats-io/nats.go"
@@ -173,65 +172,5 @@ func (a *DatabaseApp) initCasbin(db *gorm.DB) (*casbin.Enforcer, error) {
 		return nil, err
 	}
 
-	a.setupCustomEnforcerFunctions(enforcer)
-
 	return enforcer, nil
-}
-
-func (a *DatabaseApp) setupCustomEnforcerFunctions(enforcer *casbin.Enforcer) {
-	enforcer.AddFunction("hasRole", func(args ...any) (any, error) {
-		if len(args) != 3 {
-			return false, nil
-		}
-
-		reqSub := args[0].(string)
-		reqObj := args[1].(string)
-		reqRole := args[2].(string)
-
-		roles, err := enforcer.GetGroupingPolicy()
-		if err != nil {
-			return false, err
-		}
-
-		for _, role := range roles {
-			if len(role) >= 3 {
-				policyUser := role[0]
-				policyObj := role[1]
-				policyRole := role[2]
-
-				if util.KeyMatch2(reqSub, policyUser) &&
-					util.KeyMatch2(reqObj, policyObj) &&
-					reqRole == policyRole {
-					return true, nil
-				}
-			}
-		}
-		return false, nil
-	})
-
-	enforcer.AddFunction("hasObjType", func(args ...any) (any, error) {
-		if len(args) != 2 {
-			return false, nil
-		}
-
-		reqObj := args[0].(string)
-		reqObjType := args[1].(string)
-
-		objTypes, err := enforcer.GetNamedGroupingPolicy("g2")
-		if err != nil {
-			return false, err
-		}
-
-		for _, objType := range objTypes {
-			if len(objType) >= 2 {
-				policyObj := objType[0]
-				policyObjType := objType[1]
-
-				if util.KeyMatch2(reqObj, policyObj) && reqObjType == policyObjType {
-					return true, nil
-				}
-			}
-		}
-		return false, nil
-	})
 }

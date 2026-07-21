@@ -1309,14 +1309,12 @@ export interface ModuleService<Context = unknown> {
     registerAssetsRequest: module_asset.RegisterAssetsRequest,
     context: Context,
   ) =>
-    | Promise<module_asset.ListAssetsResponse>
-    | module_asset.ListAssetsResponse;
+    Promise<module_asset.ListAssetsResponse> | module_asset.ListAssetsResponse;
   ListAssets: (
     listAssetsRequest: module_asset.ListAssetsRequest,
     context: Context,
   ) =>
-    | Promise<module_asset.ListAssetsResponse>
-    | module_asset.ListAssetsResponse;
+    Promise<module_asset.ListAssetsResponse> | module_asset.ListAssetsResponse;
   DeleteAssetsByModuleId: (
     deleteByModuleIdRequest: DeleteByModuleIdRequest,
     context: Context,

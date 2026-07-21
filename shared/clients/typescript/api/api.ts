@@ -211,12 +211,24 @@ export interface TwitchAccessToken {
 
 // ==================== Commands ====================
 
-export type CommandType = "static" | "dynamic" | "function";
+/**
+ * "text" responses are always template-resolved (`{user}`-style
+ * substitution) before being sent to chat - there is no separate
+ * "static"/"dynamic"/"eval" distinction, since plain literal text is just a
+ * template with no `{...}` expressions in it. "function" invokes a
+ * barkloader module function (`typeValue` is its qualified name) and uses
+ * its return value as the response.
+ */
+export type CommandType = "text" | "function";
+
+/** "public" always allows any user; "restricted" requires the invoking user
+ * to belong to one of groupIds or be listed in usernames. */
+export type CommandVisibility = "public" | "restricted";
 
 /**
  * Snapshot of a chat command as the engine stores it. `typeValue` carries
- * the type-discriminated payload: response text for `static`, template
- * string for `dynamic`, function name for `function`.
+ * the type-discriminated payload: response text (with `{template}`
+ * variables) for `text`, function name for `function`.
  */
 export interface CommandSnapshot {
   id: string;
@@ -227,6 +239,31 @@ export interface CommandSnapshot {
   cooldown: number;
   priority: number;
   enabled: boolean;
+  visibility: CommandVisibility;
+  groupIds: string[];
+  usernames: string[];
+  /**
+   * Optional "{variable}" placeholders declaring named arguments, e.g.
+   * "{songTitle}" or "{userA} {userB}" - `command` itself never contains
+   * braces, it's always the bare trigger word ("sr", "hug"). Applies to
+   * both "text" and "function" types: "text" responses can reference
+   * `{songTitle}` the same way they reference `{user}`; "function"
+   * commands receive the extracted values in their invoke payload.
+   *
+   * Extraction rule: exactly one variable captures the entire remainder of
+   * the message (not split on whitespace) - `!sr {songTitle}` against
+   * "!sr Life is a highway" yields `songTitle: "Life is a highway"`. More
+   * than one variable: every variable but the last consumes one
+   * whitespace-delimited token, and the last captures whatever remains -
+   * `!hug {userA} {userB}` against "!hug alice bob" yields
+   * `userA: "alice", userB: "bob"`.
+   *
+   * Each `{name}` must be a single word or dot-separated words
+   * (`^\w+(\.\w+)*$`) - no other characters are valid. The engine rejects
+   * `createCommand`/`updateCommand` calls with an invalid name in this
+   * pattern.
+   */
+  argumentPattern: string;
 }
 
 export interface CreateCommandInput {
@@ -236,6 +273,16 @@ export interface CreateCommandInput {
   cooldown: number;
   priority?: number;
   enabled: boolean;
+  visibility: CommandVisibility;
+  groupIds?: string[];
+  usernames?: string[];
+  /** See `CommandSnapshot.argumentPattern` for the syntax/extraction rule
+   * and naming restriction. Omit/empty string for a command with no named
+   * arguments. */
+  argumentPattern?: string;
+  /** Echoed back on the `command.created` webhook so an optimistic local
+   * insert can be reconciled without a re-fetch. */
+  correlationKey?: string;
 }
 
 /**
@@ -293,6 +340,43 @@ export interface UpdateCommandInput {
   cooldown: number;
   priority: number;
   enabled: boolean;
+  visibility: CommandVisibility;
+  groupIds?: string[];
+  usernames?: string[];
+  /** See `CommandSnapshot.argumentPattern`. */
+  argumentPattern?: string;
+  /** Echoed back on the `command.updated` webhook. */
+  correlationKey?: string;
+}
+
+// ==================== Groups ====================
+
+/**
+ * A "user group" (role). Users are added to groups; commands (and other
+ * resources in the future) are granted to groups. This is the only
+ * permission concept the UI ever deals with directly - raw Casbin rules
+ * are never exposed.
+ */
+export interface GroupSnapshot {
+  id: string;
+  applicationId: string;
+  name: string;
+  description: string;
+  createdAt: string;
+}
+
+export interface CreateGroupInput {
+  name: string;
+  description?: string;
+  /** Echoed back on the `group.created` webhook. */
+  correlationKey?: string;
+}
+
+export interface UpdateGroupInput {
+  name: string;
+  description?: string;
+  /** Echoed back on the `group.updated` webhook. */
+  correlationKey?: string;
 }
 
 // ==================== Assets ====================
@@ -696,16 +780,29 @@ export interface Woofx3EngineApi {
   getWorkflowRuns(query?: WorkflowRunsQuery): Promise<WorkflowRun[]>;
 
   // Commands (chat command CRUD on the engine — synchronous, emits
-  // command.created / command.updated / command.deleted cloudevents on success)
+  // command.created / command.updated / command.deleted webhooks on success)
   createCommand(data: CreateCommandInput): Promise<CommandSnapshot>;
   updateCommand(id: string, data: UpdateCommandInput): Promise<CommandSnapshot>;
-  deleteCommand(id: string): Promise<{ deleted: boolean }>;
+  deleteCommand(id: string, correlationKey?: string): Promise<{ deleted: boolean }>;
   // Sync — full snapshot list for reconciliation against the Convex mirror
   listCommands(): Promise<CommandSnapshot[]>;
 
   // Discovery — aggregated module function list for UI dropdowns.
   // Backed by db.listModules(); each module row carries its functions.
   listAvailableFunctions(): Promise<AvailableFunction[]>;
+
+  // Groups ("user groups"/roles) — the only permission concept exposed to
+  // the UI. Commands are granted to groups (or specific users, or left
+  // "public") via CreateCommandInput/UpdateCommandInput's groupIds/usernames.
+  // Emits group.created / group.updated / group.deleted /
+  // group.member_added / group.member_removed webhooks on success.
+  listGroups(): Promise<GroupSnapshot[]>;
+  createGroup(data: CreateGroupInput): Promise<GroupSnapshot>;
+  updateGroup(id: string, data: UpdateGroupInput): Promise<GroupSnapshot>;
+  deleteGroup(id: string, correlationKey?: string): Promise<{ deleted: boolean }>;
+  listGroupMembers(groupId: string): Promise<string[]>;
+  addUserToGroup(groupId: string, username: string): Promise<{ ok: true }>;
+  removeUserFromGroup(groupId: string, username: string): Promise<{ ok: true }>;
 
   // Twitch token persistence — bridges the UI's OAuth callback to the
   // engine's bootstrap, which reads `twitch_token` from db settings.

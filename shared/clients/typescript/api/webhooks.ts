@@ -55,6 +55,14 @@ export const EngineEventType = {
   STREAM_OFFLINE: "stream.offline",
   OVERLAY_TOKEN_MINTED: "overlay.token.minted",
   OVERLAY_TOKEN_REVOKED: "overlay.token.revoked",
+  COMMAND_CREATED: "command.created",
+  COMMAND_UPDATED: "command.updated",
+  COMMAND_DELETED: "command.deleted",
+  GROUP_CREATED: "group.created",
+  GROUP_UPDATED: "group.updated",
+  GROUP_DELETED: "group.deleted",
+  GROUP_MEMBER_ADDED: "group.member_added",
+  GROUP_MEMBER_REMOVED: "group.member_removed",
 } as const;
 
 export type EngineEventType = (typeof EngineEventType)[keyof typeof EngineEventType];
@@ -621,6 +629,110 @@ export interface SceneDeletedEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Command events
+// ---------------------------------------------------------------------------
+
+/**
+ * Snapshot of a chat command row at the point a webhook was emitted.
+ * Mirrors `CommandSnapshot` in `./api` field-for-field (kept as a separate
+ * local type, same precedent as `WorkflowSnapshot`/`SceneSnapshot`, to avoid
+ * a circular import between this file and `./api`).
+ */
+export interface CommandWebhookSnapshot {
+  id: string;
+  applicationId: string;
+  command: string;
+  type: "text" | "function";
+  typeValue: string;
+  cooldown: number;
+  priority: number;
+  enabled: boolean;
+  visibility: "public" | "restricted";
+  groupIds: string[];
+  usernames: string[];
+  argumentPattern: string;
+}
+
+export interface CommandCreatedEvent {
+  type: typeof EngineEventType.COMMAND_CREATED;
+  applicationId: string;
+  correlationKey?: string;
+  command: CommandWebhookSnapshot;
+}
+
+export interface CommandUpdatedEvent {
+  type: typeof EngineEventType.COMMAND_UPDATED;
+  applicationId: string;
+  correlationKey?: string;
+  command: CommandWebhookSnapshot;
+}
+
+export interface CommandDeletedEvent {
+  type: typeof EngineEventType.COMMAND_DELETED;
+  applicationId: string;
+  correlationKey?: string;
+  commandId: string;
+}
+
+// ---------------------------------------------------------------------------
+// Group ("user group" / role) events
+// ---------------------------------------------------------------------------
+
+/** Snapshot of a group row at the point a webhook was emitted. Mirrors
+ * `GroupSnapshot` in `./api` field-for-field. */
+export interface GroupWebhookSnapshot {
+  id: string;
+  applicationId: string;
+  name: string;
+  description: string;
+  createdAt: string;
+}
+
+export interface GroupCreatedEvent {
+  type: typeof EngineEventType.GROUP_CREATED;
+  applicationId: string;
+  correlationKey?: string;
+  group: GroupWebhookSnapshot;
+}
+
+export interface GroupUpdatedEvent {
+  type: typeof EngineEventType.GROUP_UPDATED;
+  applicationId: string;
+  correlationKey?: string;
+  group: GroupWebhookSnapshot;
+}
+
+export interface GroupDeletedEvent {
+  type: typeof EngineEventType.GROUP_DELETED;
+  applicationId: string;
+  correlationKey?: string;
+  groupId: string;
+}
+
+/**
+ * Fired when a user is added to a group via `addUserToGroup`. Carries just
+ * the ids/username, not a full membership list — consumers that show a
+ * member roster should refetch via `listGroupMembers(groupId)` on receipt
+ * rather than trying to reconstruct the list from a stream of these events.
+ */
+export interface GroupMemberAddedEvent {
+  type: typeof EngineEventType.GROUP_MEMBER_ADDED;
+  applicationId: string;
+  correlationKey?: string;
+  groupId: string;
+  username: string;
+}
+
+/** Symmetric counterpart to `GroupMemberAddedEvent`. */
+export interface GroupMemberRemovedEvent {
+  type: typeof EngineEventType.GROUP_MEMBER_REMOVED;
+  applicationId: string;
+  correlationKey?: string;
+  groupId: string;
+  username: string;
+}
+
+// ---------------------------------------------------------------------------
 // Alert log events
 // ---------------------------------------------------------------------------
 
@@ -892,7 +1004,15 @@ export type CallbackEvent =
   | StreamOnlineEvent
   | StreamOfflineEvent
   | OverlayTokenMintedEvent
-  | OverlayTokenRevokedEvent;
+  | OverlayTokenRevokedEvent
+  | CommandCreatedEvent
+  | CommandUpdatedEvent
+  | CommandDeletedEvent
+  | GroupCreatedEvent
+  | GroupUpdatedEvent
+  | GroupDeletedEvent
+  | GroupMemberAddedEvent
+  | GroupMemberRemovedEvent;
 
 /**
  * Lookup from event-type string → payload type. Useful for emitter code
@@ -934,6 +1054,14 @@ export type CallbackEventByType = {
   [EngineEventType.STREAM_OFFLINE]: StreamOfflineEvent;
   [EngineEventType.OVERLAY_TOKEN_MINTED]: OverlayTokenMintedEvent;
   [EngineEventType.OVERLAY_TOKEN_REVOKED]: OverlayTokenRevokedEvent;
+  [EngineEventType.COMMAND_CREATED]: CommandCreatedEvent;
+  [EngineEventType.COMMAND_UPDATED]: CommandUpdatedEvent;
+  [EngineEventType.COMMAND_DELETED]: CommandDeletedEvent;
+  [EngineEventType.GROUP_CREATED]: GroupCreatedEvent;
+  [EngineEventType.GROUP_UPDATED]: GroupUpdatedEvent;
+  [EngineEventType.GROUP_DELETED]: GroupDeletedEvent;
+  [EngineEventType.GROUP_MEMBER_ADDED]: GroupMemberAddedEvent;
+  [EngineEventType.GROUP_MEMBER_REMOVED]: GroupMemberRemovedEvent;
 };
 
 // ---------------------------------------------------------------------------

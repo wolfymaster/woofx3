@@ -10827,7 +10827,7 @@ func (s *moduleServiceServer) serveListResourceInstancesByModuleProtobuf(ctx con
 }
 
 func (s *moduleServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor5, 0
+	return twirpFileDescriptor6, 0
 }
 
 func (s *moduleServiceServer) ProtocGenTwirpVersion() string {
@@ -10841,7 +10841,7 @@ func (s *moduleServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "module", "ModuleService")
 }
 
-var twirpFileDescriptor5 = []byte{
+var twirpFileDescriptor6 = []byte{
 	// 1755 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xcc, 0x59, 0x4f, 0x6f, 0xdb, 0xc6,
 	0x12, 0x87, 0x64, 0x5b, 0xb2, 0x46, 0xb2, 0x6c, 0xac, 0xff, 0x31, 0x52, 0x6c, 0xf9, 0xd1, 0xf9,

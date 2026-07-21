@@ -171,6 +171,10 @@ export function commandToSnapshot(c: command.Command): CommandSnapshot {
     cooldown: c.cooldown,
     priority: c.priority,
     enabled: c.enabled,
+    visibility: (c.visibility || "restricted") as CommandSnapshot["visibility"],
+    groupIds: c.groupIds ?? [],
+    usernames: c.usernames ?? [],
+    argumentPattern: c.argumentPattern ?? "",
   };
 }
 

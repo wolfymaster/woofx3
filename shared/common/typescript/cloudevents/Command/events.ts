@@ -17,6 +17,10 @@ export interface CommandSnapshot {
     cooldown: number;
     priority: number;
     enabled: boolean;
+    visibility: string;
+    groupIds: string[];
+    usernames: string[];
+    argumentPattern: string;
 }
 
 export interface CommandCreated {

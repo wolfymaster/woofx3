@@ -3,6 +3,7 @@ import { subscriptionsRoutes } from "./subscriptions";
 import { triggerSubscriptionRoutes } from "./trigger-subscription";
 import { workflowsExecutionRoutes } from "./workflows-execution";
 import { commandsRoutes } from "./commands";
+import { groupsRoutes } from "./groups";
 import { fieldOptionsRoutes } from "./field-options";
 import { userActionsRoutes } from "./user-actions";
 import { eventsRoutes } from "./events";
@@ -26,6 +27,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof triggerSubscriptionRoutes &
   typeof workflowsExecutionRoutes &
   typeof commandsRoutes &
+  typeof groupsRoutes &
   typeof fieldOptionsRoutes &
   typeof userActionsRoutes &
   typeof eventsRoutes &
@@ -44,5 +46,5 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof alertsRoutes;
 
 export function registerAllRoutes(host: ApiRouteHost): void {
-  Object.assign(host, engineRoutes, subscriptionsRoutes, triggerSubscriptionRoutes, workflowsExecutionRoutes, commandsRoutes, fieldOptionsRoutes, userActionsRoutes, eventsRoutes, dashboardRoutes, teamsRoutes, accountsRoutes, modulesRoutes, workflowsRoutes, assetsRoutes, scenesRoutes, dashboardStatsRoutes, chatRoutes, triggersRoutes, preferencesRoutes, dashboardLayoutRoutes, alertsRoutes);
+  Object.assign(host, engineRoutes, subscriptionsRoutes, triggerSubscriptionRoutes, workflowsExecutionRoutes, commandsRoutes, groupsRoutes, fieldOptionsRoutes, userActionsRoutes, eventsRoutes, dashboardRoutes, teamsRoutes, accountsRoutes, modulesRoutes, workflowsRoutes, assetsRoutes, scenesRoutes, dashboardStatsRoutes, chatRoutes, triggersRoutes, preferencesRoutes, dashboardLayoutRoutes, alertsRoutes);
 }
