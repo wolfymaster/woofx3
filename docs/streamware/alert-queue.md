@@ -1,6 +1,10 @@
-# Alert Queue
+# Event Queue
 
-The alert queue is a per-application FIFO that enforces "one alert at a time" with a lease + timeout policy. It lives at `streamware/src/alert-queue-manager.ts` and is wired into the inbound `widget.event` dispatcher.
+The event queue is a per-application FIFO that enforces "one alert at a time" with a
+lease + timeout policy. It lives at `streamware/src/events/queue-manager.ts`
+(`EventQueueManager`) and is driven by streamware's own `ui.notify.alert` NATS
+subscription (`streamware/src/events/handlers.ts`) on the enqueue side, and by the
+inbound `widget.event` dispatcher on the status-ack side.
 
 ## State
 
@@ -13,23 +17,42 @@ The alert queue is a per-application FIFO that enforces "one alert at a time" wi
 └─────────────────────────────────┘    └─────────────────────────┘
 ```
 
-State is held in memory. A persistent backstop in the `alerts` table records every envelope's lifecycle (`sent` → `dispatched` → `playing` → `completed` / `failed` / `timed_out` / `skipped` / `replayed`), so a process restart can be resumed manually via the `replayAlert` operator control. Hydrating in-flight + pending state on boot is a follow-up; today, restart drops both.
+State is held in memory. A persistent backstop in the `alerts` table records every
+envelope's lifecycle (`sent` → `dispatched` → `playing` → `completed` / `failed` /
+`timed_out` / `skipped` / `replayed`), so a process restart can be resumed manually via
+the `replayAlert` operator control. Hydrating in-flight + pending state on boot is a
+follow-up; today, restart drops both.
 
 ## Enqueue
 
-`AlertQueueManager.enqueue(envelope)` appends to the per-application queue. If no in-flight lease exists for that application, it dispatches immediately; otherwise the envelope waits its turn.
+The workflow alert action publishes intent to NATS `ui.notify.alert`
+(`streamware/src/events/handlers.ts`, subscription on that subject). The handler
+persists the envelope to the `alerts` table and calls
+`EventQueueManager.enqueue(envelope)`, which appends to the per-application queue. If
+no in-flight lease exists for that application, it dispatches immediately; otherwise
+the envelope waits its turn.
 
-Envelopes are dropped (with a warning) if they're missing `applicationId` or `id`. The envelope `id` is stamped by the workflow alert action — see `workflow/actions.go` `buildAlertEnvelope` — and is the canonical handle that all three layers (api, streamware, overlay) key on end-to-end.
+Envelopes are dropped (with a warning) if they're missing `applicationId` or `id`. The
+envelope `id` is stamped by the workflow alert action — see `workflow/actions.go`
+`buildAlertEnvelope` — and is the canonical handle that all three layers (api,
+streamware, overlay) key on end-to-end.
 
 ## Dispatch
 
 `dispatchNext(applicationId)` runs the next envelope through three steps:
 
-1. Update `alerts.status = "dispatched"` so a crash between publish and bookkeeping doesn't leave the row stuck at `pending`.
-2. Publish the envelope verbatim on NATS `ui.alert.broadcast`. The broadcaster (`streamware/src/alert-broadcaster.ts:92`) fans out to every connected `/ws/alerts` client.
+1. Update `alerts.status = "dispatched"` so a crash between publish and bookkeeping
+   doesn't leave the row stuck at `pending`.
+2. Publish the envelope verbatim on NATS `ui.alert.broadcast`. Streamware's own
+   subscription on that subject (`streamware/src/nats-subscriptions.ts`) maps it to a
+   P2 `event` frame and fans it out to overlay WebSocket connections — see
+   [P2 event source](../woofwoofwoof/streamware/p2-event-source.md).
 3. Set a lease timer.
 
-If NATS is unavailable or the publish fails, the envelope is marked `timed_out` with reason `"nats unavailable"` or `"publish failed"`, and the queue advances. The pattern repeats until the queue drains or NATS recovers — the operator sees the failure pattern in the alert log.
+If NATS is unavailable or the publish fails, the envelope is marked `timed_out` with
+reason `"nats unavailable"` or `"publish failed"`, and the queue advances. The pattern
+repeats until the queue drains or NATS recovers — the operator sees the failure
+pattern in the alert log.
 
 ## Lease semantics
 
@@ -41,19 +64,34 @@ MAX_LEASE    = 60 s
 DEFAULT_DURATION = 5 s when the envelope omits `parameters.duration`
 ```
 
-When the overlay reports `state: "playing"` (the mount ack), the lease shrinks to `duration + 2 s` — once the alert has actually started, the budget is just "finish playing." When the overlay reports `"completed"` or `"failed"`, the lease is cleared and the next pending alert dispatches.
+When the overlay reports `state: "playing"` (the mount ack), the lease shrinks to
+`duration + 2 s` — once the alert has actually started, the budget is just "finish
+playing." When the overlay reports `"completed"` or `"failed"`, the lease is cleared
+and the next pending alert dispatches.
 
 ## Lease-timeout policy: advance immediately
 
-If neither `playing`, `completed`, nor `failed` is reported before the lease expires, the queue marks the row `timed_out` and **dispatches the next pending alert immediately**. Common causes: no overlay connected, browser tab frozen, autoplay block with no error event surfaced.
+If neither `playing`, `completed`, nor `failed` is reported before the lease expires,
+the queue marks the row `timed_out` and **dispatches the next pending alert
+immediately**. Common causes: no overlay connected, browser tab frozen, autoplay block
+with no error event surfaced.
 
-This is a deliberate "keep the queue moving" choice. The alternative — pause the queue and wait for the operator — would leave a single stuck overlay holding up every subsequent alert across the application. Operators get an `ALERT_TIMED_OUT` webhook plus a `replayAlert(id)` button, which is the right escalation surface for a real failure.
+This is a deliberate "keep the queue moving" choice. The alternative — pause the queue
+and wait for the operator — would leave a single stuck overlay holding up every
+subsequent alert across the application. Operators get an `ALERT_TIMED_OUT` webhook
+plus a `replayAlert(id)` button, which is the right escalation surface for a real
+failure.
 
 ## Status acks
 
-Status acks arrive via the unified `widget.event` channel (see [Widget event channel](../services/widget-events.md)). The orchestrator's dispatcher routes them to `AlertQueueManager.handleStatus(applicationId, envelopeId, state, error?)`.
+Status acks arrive via the unified `widget.event` channel (see
+[Widget event channel](../services/widget-events.md)). The dispatcher in
+`streamware/src/events/handlers.ts` routes them to
+`EventQueueManager.handleStatus(applicationId, envelopeId, state, error?)`.
 
-`handleStatus` ignores reports that are stale — for an envelope that's no longer in flight, or for a different application — without warning. Stale acks are a routine side effect of reconnects and lease expirations.
+`handleStatus` ignores reports that are stale — for an envelope that's no longer in
+flight, or for a different application — without warning. Stale acks are a routine
+side effect of reconnects and lease expirations.
 
 | Reported state | Effect |
 |----------------|--------|
@@ -63,7 +101,8 @@ Status acks arrive via the unified `widget.event` channel (see [Widget event cha
 
 ## Operator controls
 
-The api gateway exposes three RPCs that forward to streamware as NATS request/reply. The api never touches the queue directly; the queue manager stays single-owner.
+The api gateway exposes three RPCs that forward to streamware as NATS request/reply.
+The api never touches the queue directly; the queue manager stays single-owner.
 
 | API method | NATS subject | Effect |
 |------------|--------------|--------|
@@ -71,11 +110,15 @@ The api gateway exposes three RPCs that forward to streamware as NATS request/re
 | `skipCurrentAlert(applicationId?)` | `widget.queue.skip` | Marks the in-flight envelope `skipped`, clears the lease, and dispatches the next pending. No-op when nothing is in flight. |
 | `clearAlertQueue(applicationId?)` | `widget.queue.clear` | Marks every pending envelope `skipped` (without touching the in-flight lease). Returns the count cleared. |
 
-Both `skipCurrentAlert` and `clearAlertQueue` resolve `applicationId` to the api's default when the caller omits it.
+Both `skipCurrentAlert` and `clearAlertQueue` resolve `applicationId` to the api's
+default when the caller omits it.
 
 ## Webhook projection
 
-Streamware never calls webhooks directly. Every `db.updateAlertLifecycle` write produces a `db.alert.updated.{applicationId}` outbox event; the api/ subscribes to `db.alert.updated.*` and projects the event to the registered callback URL with the appropriate type:
+Streamware never calls webhooks directly. Every `db.updateAlertLifecycle` write
+produces a `db.alert.updated.{applicationId}` outbox event; the api/ subscribes to
+`db.alert.updated.*` and projects the event to the registered callback URL with the
+appropriate type:
 
 | `alert.status` after update | Webhook event |
 |-----------------------------|----------------|
@@ -85,4 +128,5 @@ Streamware never calls webhooks directly. Every `db.updateAlertLifecycle` write 
 | `skipped` | `ALERT_SKIPPED` |
 | `replayed` | `ALERT_REPLAYED` |
 
-`ALERT_RECORDED` fires from the corresponding `db.alert.created.*` outbox event. See `shared/clients/typescript/api/webhooks.ts` for the full event shapes.
+`ALERT_RECORDED` fires from the corresponding `db.alert.created.*` outbox event. See
+`shared/clients/typescript/api/webhooks.ts` for the full event shapes.

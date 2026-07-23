@@ -69,7 +69,7 @@ The config key is `woofx3WidgetAssetBaseUrl` in `streamware/src/config.ts`.
 
 Every untrusted path component — whether from an HTTP request or from the widget
 catalog's `entry` field — passes through the traversal pipeline defined in
-`streamware/src/widget-asset-proxy.ts` (`sanitizeAssetPath`).
+`streamware/src/overlay/asset-proxy.ts` (`sanitizeAssetPath`).
 
 Steps in binding order:
 

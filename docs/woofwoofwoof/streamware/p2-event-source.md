@@ -97,8 +97,12 @@ are preserved.
 ```
 
 `token.revoked` causes the scene manager to transition to the `revoked` render state
-(blank screen). The WebSocket is closed by the server immediately after sending this
-frame.
+(blank screen), and the client-side handling for a server-closed socket is in place.
+**However, the server does not currently send this frame or close the socket on
+revocation** — see the "Known gap" note in
+[Overlay tokens](./overlay-tokens.md#revoke). Today, `db.overlay_token.updated.*`
+only poisons the token-resolver cache; an already-open connection keeps receiving
+frames until it disconnects for some other reason (page reload, network drop).
 
 ## WebSocketEventSource (default)
 
@@ -151,11 +155,20 @@ Streamware subscribes to these NATS subjects and converts them to P2 frames:
 | NATS subject | P2 frame produced |
 |---|---|
 | `module.storage.*.changed` | `storage` |
-| `widget.event` (re-published from WS) | `event` (routed to overlay connections by applicationId) |
-| `db.scene.updated.*` | `scene.updated` (routed by sceneId) |
-| `db.overlay_token.updated.*` | `control: token.revoked` (after re-resolve confirms revocation) |
+| `ui.alert.broadcast` (dispatched by the [event queue](../../streamware/alert-queue.md)) | `event` |
+| `ui.notify.alert`'s embedded `event` object (forwarded directly, not queued) | `event` |
+| `db.scene.updated.*` | `scene.updated` (routed by `sceneId`) |
+| `db.overlay_token.updated.*` | cache invalidation only — see the "Known gap" note under [Overlay tokens](./overlay-tokens.md#revoke); no `control` frame is actually sent today |
 
-Fan-out to overlay WebSocket connections is keyed by `applicationId`
-(`OverlayConnectionStore` in `storage-broadcaster.ts`): each connection carries
-its `applicationId` as metadata attached at upgrade time, and events are delivered
-only to connections matching the event's application context.
+`widget.event` does **not** produce an outbound `event` frame — it's consumed
+inbound only, to persist widget status (`db.upsertWidgetStatus`) and, for
+`alert.lifecycle` reports, feed the event queue's `handleStatus`.
+
+**Fan-out is not scoped by `applicationId`.** `StorageBroadcaster.pushToOverlay`
+(`streamware/src/storage/broadcaster.ts`) iterates every connected socket across
+every application and sends to all of them; only `pushSceneFrame` (used for
+`scene.updated`) filters — by `sceneId`, not `applicationId`. In a single-tenant
+deployment this is invisible; in a multi-application deployment it means every
+overlay WebSocket currently receives every other application's `storage` and
+`event` frames. If you're adding multi-tenant isolation, this is the place to
+add an `applicationId` check.

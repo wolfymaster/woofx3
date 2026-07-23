@@ -1,147 +1,137 @@
 # Streamware Substitutions
 
-Strings inside an alert's `parameters` go through a render-time
-substitution pass in the browser before they're displayed. This page
-covers the streamware (UI) layer specifically.
+Strings inside an alert's `parameters` go through a render-time substitution pass in
+the browser before they're displayed. This page covers the streamware (widget) layer
+specifically.
 
-For the upstream layer that runs inside the workflow engine before
-publish — and for the rules that govern when to use which — see
+For the upstream layer that runs inside the workflow engine before publish — and for
+the rules that govern when to use which — see
 [Workflow expressions](../workflow/expressions.md).
+
+## Where this runs
+
+Substitution happens inside the built-in `media_alert` widget, a static HTML document
+at `streamware/public/widgets/builtin/media_alert/index.html` — served like any other
+widget via the frame assembler, not part of the `streamware/ui` React bundle. There is
+no per-widget substitution contract; a widget author who wants this behavior copies
+the pattern into their own widget's script.
 
 ## Pipeline order
 
-For each text-bearing field on an alert (`text`, `mediaUrl`, `audioUrl`,
-elements of `options`):
+For each text-bearing field on an alert (`text`, `mediaUrl`/`animation.value`,
+`audioUrl`):
 
 ```
-raw → {primary}…{primary} expansion → {…} expression evaluation → output
+raw → {primary}…{primary} expansion → {path} / ${path} lookup → output
 ```
 
-Both passes happen inside `MediaWidget.render`
-(`streamware/ui/src/widgets/media-widget.ts:42-74`). The legacy color
-tag is processed first so the expanded HTML survives the expression
-parser untouched.
+Text fields go through `formatText()`; URL and Lottie animation-value fields go through
+`resolveTemplate()` (`index.html:134-152`). Both are plain string functions — there is
+no expression grammar, no operators, and no `eval`.
 
 ## Color tags — `{primary}…{primary}`
 
-A pre-processor pass that pairs occurrences of `{primary}` and emits
-`<span style="color: #EC6758">…</span>` around the wrapped text.
+A regex pre-pass in `formatText()` pairs occurrences of `{primary}` and wraps the
+enclosed text in `<span class="primary">…</span>`:
 
-Pairing is positional: the first `{primary}` opens, the second closes,
-the third opens again, and so on
-(`streamware/ui/src/widgets/media-widget.ts:110-127`). Unbalanced
-counts are tolerated — a trailing unmatched `{primary}` just emits an
-opening span at the end.
-
-Today there's only the one tag (`{primary}`), and the table is
-intentionally open-ended in source (`LEGACY_TAGS` at
-`media-widget.ts:33-38`) so future tags drop in without a parser
-change.
-
-## Expression syntax — `{expression}`
-
-Curly-brace segments get evaluated by a hand-written safe AST walker
-(`streamware/ui/src/lib/resolver.ts`). No `eval`, no `new Function`,
-no access to globals or method calls. Unknown identifiers resolve to
-`undefined` and propagate as empty strings rather than throwing
-(`resolver.ts:218-454`).
-
-### Grammar
-
-Low-to-high precedence:
-
-| Form | Example |
-|---|---|
-| Ternary | `a ? b : c` |
-| Logical OR / AND | `a \|\| b`, `a && b` |
-| Equality | `==`, `!=`, `===`, `!==` |
-| Comparison | `>`, `<`, `>=`, `<=` |
-| Additive | `+`, `-` (string concat when either side is a string) |
-| Multiplicative | `*`, `/`, `%` |
-| Unary | `-x`, `!x` |
-| Primary | number, string (`"…"` or `'…'`), `true`, `false`, `null`, `undefined`, identifier path, `(expr)` |
-| Path | `name`, `name.subname`, `name[index]`, `name[expr]` |
-
-Strings can use single or double quotes. Both are valid inside the
-grammar; `'subs'` and `"subs"` mean the same thing.
-
-### Single-segment vs multi-segment
-
-If the entire field is a single `{…}` segment, the resolver returns
-the typed result — number stays a number, boolean stays boolean
-(`resolver.ts:27-34`). Useful for fields like `duration` where the
-consumer wants a number.
-
-```jsonc
-"duration": "{event.data.amount > 100 ? 10 : 5}"   // resolves to 10 or 5 (number)
+```js
+template.replace(/\{primary\}(.*?)\{primary\}/gs, '<span class="primary">$1</span>')
 ```
 
-Multi-segment strings (anything with literal text or more than one
-`{…}` block) get stringified and concatenated, with `undefined` /
-`null` rendering as empty.
+Pairing is positional and non-greedy: the first `{primary}` opens, the second closes.
+An unmatched trailing `{primary}` is simply left unconsumed by the regex (no span is
+emitted for it). This pass always runs first, so its output survives the `{expr}`
+lookup pass untouched.
 
-### Resolver context — what's in scope
+## `{path}` lookup
 
-The context object the parser walks against is built at render time in
-`media-widget.ts:42-46`:
+After the color-tag pass, `formatText()` replaces every remaining `{expr}` segment
+with a **flat dot-path lookup** against the context object:
 
-```ts
-const ctx: ResolverContext = { ...parameters, event };
+```js
+function deepGet(obj, path) {
+  const parts = path.split(".");
+  let cur = obj;
+  for (const part of parts) {
+    if (cur == null || typeof cur !== "object") return undefined;
+    cur = cur[part];
+  }
+  return cur;
+}
 ```
 
-That gives expressions access to:
+`{expr}` is looked up as `deepGet(ctx, expr.trim())`; `null`/`undefined` render as an
+empty string, everything else is stringified with `String(val)`. There is **no
+ternary, logical, comparison, or arithmetic operator support** — `{a.b}` and
+`{a.b.c}` work, `{a > 1 ? "x" : "y"}` does not (the whole expression is treated as a
+literal, dotless-lookup-failing path and resolves to an empty string).
+
+## URL / animation fields — `resolveTemplate()`
+
+`mediaUrl` entries and a Lottie `animation.value` field go through a second resolver
+that accepts **both** `{path}` and `${path}` syntax, in that order:
+
+```js
+function resolveTemplate(template, ctx) {
+  return template
+    .replace(/\$\{([^{}]+)\}/g, (_, expr) => { const v = deepGet(ctx, expr.trim()); return v == null ? "" : String(v); })
+    .replace(/\{([^{}]+)\}/g, (_, expr) => { const v = deepGet(ctx, expr.trim()); return v == null ? "" : String(v); });
+}
+```
+
+The `${…}` form exists for backward compatibility with animation-value fields authored
+before this widget existed; new content can use either form interchangeably here (both
+resolve identically — this is *not* the Layer 1 workflow-engine `${…}` resolver, which
+runs server-side before this code ever sees the string).
+
+## Resolver context — what's in scope
+
+Built once per render (`index.html:308-312`):
+
+```js
+const cfg = Object.assign({}, settings, parameters);
+// `event`/`parameters` at the top level, spread `settings`+`parameters` flattened in,
+// and also flattened one level via the legacy trigger.data alias.
+const ctx = Object.assign({ event, parameters, trigger: { data: event.data ?? {} } }, cfg);
+```
 
 | Identifier | Source |
 |---|---|
-| `event.id` | CloudEvent id |
-| `event.type` | CloudEvent type |
-| `event.source` | CloudEvent source |
-| `event.time` | RFC3339 timestamp |
-| `event.data.X` | Event payload |
-| `event.subject` | CloudEvent subject (when set) |
-| any `parameters.K` | The alert author's parameter, by its key |
+| `event.id`, `event.type`, `event.source`, `event.time`, `event.data.X`, `event.subject` | The CloudEvent, verbatim |
+| `parameters.K` | The alert author's parameter, by its key |
+| `trigger.data.X` | **Legacy alias** for `event.data.X` — kept for content authored before the `event`-shaped context existed |
+| any top-level key from `settings` or `parameters` | Flattened in directly (e.g. a `parameters.title` is reachable as both `{parameters.title}` and `{title}`) |
 
-There is **no `trigger`**. The workflow engine's `trigger` source name
-is a Layer 1 concept — by the time strings reach this resolver,
-`${trigger.…}` substitutions have already happened, and what survives
-is the wire envelope's `event`.
+Unlike the workflow engine's own `trigger` source name (a Layer 1 concept resolved
+server-side before publish), this widget's `trigger.data` is a same-layer compatibility
+alias, not a separate resolution pass.
 
-## Why the split is what it is
+## Not currently in use: the AST-walker resolver
 
-The two layers exist for different reasons:
-
-- **Layer 1 (Go)** runs server-side, before publish. It needs to be
-  cheap and obviously safe — workflow authors are users, the engine
-  is shared infrastructure. Path-only resolution is intentional: a
-  workflow that types `${trigger.data.amount * 1000000}` should not
-  pin a CPU. If you need expressions, push them to Layer 2 where the
-  cost lives in the renderer's tab.
-
-- **Layer 2 (TS)** runs in the overlay's browser, once per alert
-  render. The overhead is local. Expressions are useful there
-  because the renderer is the one place where pluralization,
-  conditional formatting, and computed display values actually
-  matter.
-
-If you find yourself wanting an operator inside `${…}`, that's the
-signal to switch braces.
+`streamware/ui/src/lib/resolver.ts` implements a full hand-written expression grammar
+(ternary, logical/equality/comparison operators, arithmetic, typed single-segment
+results) with its own test suite (`resolver.test.ts`). It is real, working code, but
+**nothing in `streamware/src` or `streamware/ui/src` currently imports it outside its
+own test** — the shipped `media_alert` widget uses the simpler `formatText`/
+`resolveTemplate` functions described above instead. Treat `resolver.ts` as an
+available-but-unwired building block, not the resolver that runs on a live alert
+today.
 
 ## Cheat sheet
 
 | Want | Token | Resolves where |
 |---|---|---|
-| Substitute a value into a string | `${trigger.data.userName}` | Layer 1 (Go) |
-| Pluralize / pick on a value | `{event.data.amount > 1 ? 'bits' : 'bit'}` | Layer 2 (TS) |
+| Substitute a value into a string | `${trigger.data.userName}` | Layer 1 (Go, workflow engine) |
 | Concatenate text + value | `"${trigger.data.userName} just followed!"` | Layer 1 |
-| String concatenation inside an expression | `{event.data.userName + ' (mod)'}` | Layer 2 |
+| Read an event field in the widget | `{event.data.X}` or `{trigger.data.X}` | Layer 2 (this page), dot-path only |
 | Color-emphasised text | `"{primary}…{primary}"` | Layer 2 (color tag pass) |
-| Combine substitution + expression | `{primary}${trigger.data.userName}{primary} gifted {event.data.amount > 1 ? 'subs' : 'sub'}` | Layer 1 → Layer 2 |
-| Read an event field | `${trigger.data.X}` (Layer 1) or `{event.data.X}` (Layer 2) | depends on layer |
+| Combine substitution + color tag | `{primary}${trigger.data.userName}{primary} gifted a sub!` | Layer 1 → Layer 2 |
 | Read an env var | `${env.NAME}` | Layer 1 only |
 | Read another task's export | `${<taskId>.X}` | Layer 1 only |
+| Conditional / computed value (`a > 1 ? … : …`) | not supported by the shipped widget | would require wiring in `resolver.ts` |
 
 ## See also
 
 - Upstream layer + the precedence rules: [Workflow expressions](../workflow/expressions.md).
-- Where a MediaWidget alert envelope comes from: [Tasks → builtin:action:alert](../workflow/tasks.md).
+- Where a `media_alert` envelope comes from: [Tasks → builtin:action:alert](../workflow/tasks.md).
 - Wire format for alert delivery: [Widget events](../services/widget-events.md).

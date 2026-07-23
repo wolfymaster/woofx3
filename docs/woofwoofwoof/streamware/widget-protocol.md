@@ -49,6 +49,27 @@ interface WidgetBootPayload {
 source compatibility with existing widgets that access settings before any async code
 runs.
 
+## Widget canonical id parsing and version stripping
+
+A scene instance's `widgetCanonicalId` (e.g. `spotify:1.0.0:df18e02:widget:now_playing`)
+is parsed and normalized before it ever reaches the boot payload, in
+`streamware/src/overlay/scene-host.ts`:
+
+- `parseWidgetCanonicalId()` splits on the **last** `:widget:` marker rather than
+  doing a naive 3-part split — `moduleKey` itself can contain colons for versioned
+  modules, and an earlier split-on-every-colon implementation silently dropped such
+  widgets (fixed by `b7176cc`).
+- `stableModuleKeyFrom()` then strips any version/hash suffix from the module key —
+  `spotify:1.0.0:df18e02` normalizes to `spotify` — so a scene placement survives
+  module upgrades instead of pointing at a specific installed version. A `builtin`
+  key (no colons) passes through unchanged.
+
+The **normalized, version-stripped** module key is what lands in the boot payload's
+`moduleId` and in the derived `<base>` href — not necessarily the versioned string
+that may be stored in the scene's `widgetsJson`. If you're debugging why a widget's
+`moduleId` looks different from what you stored, this normalization is why; check
+the streamware logs for `normalizeInstance: stripping version from moduleKey`.
+
 ## Nonce flow
 
 1. `WidgetFrame` generates a per-mount CSPRNG nonce (`generateNonce()`) and stores it
@@ -91,10 +112,13 @@ interface WidgetHost {
   readonly instanceId: string;
   readonly settings: Readonly<Record<string, unknown>>;
   readonly storage: WidgetHostStorage;   // get / subscribe
+  onEvent(handler: (event: WidgetEvent) => void): () => void;  // wraps events.subscribe / event.deliver
   reportStatus(key: string, value: unknown): void;
   reportComplete(reason?: string): void;
 }
 ```
+
+Full contract and field-level documentation: `shared/clients/typescript/module-sdk/src/widget-host.ts`.
 
 ## iframe sandbox
 
@@ -119,7 +143,7 @@ All messages share the common envelope fields: `proto`, `v`, `type`, `nonce`.
 
 | `type` | Description |
 |---|---|
-| `hello` | First message posted by the shim. Carries `moduleId`. Retried every 250 ms until `init` arrives. |
+| `hello` | First message posted by the shim: `{ instanceId, sdkVersion, wants }`. `sdkVersion` is the `@woofx3/module-sdk` version the shim was built from; `wants` is the widget's declared capability list (`"storage"`, `"events"`, `"status"`) — informational only, the host does not gate on it today. Retried every 250 ms until `init` arrives. |
 | `storage.get` | One-shot read: `{ id, moduleId, key }`. Replied with `storage.value`. |
 | `storage.subscribe` | Open subscription: `{ subId, moduleId, key }`. Host delivers `storage.changed` on each change. |
 | `storage.unsubscribe` | Cancel subscription: `{ subId, moduleId, key }`. |
@@ -133,7 +157,7 @@ All messages share the common envelope fields: `proto`, `v`, `type`, `nonce`.
 
 | `type` | Description |
 |---|---|
-| `init` | Handshake acceptance: `{ settings, capabilities, acceptedEvents }`. |
+| `init` | Handshake acceptance: `{ settings, capabilities, acceptedEvents }`. In current code (`WidgetBridge.sendInit`, `streamware/ui/src/lib/widgetBridge.ts:206-213`) `capabilities` is always the hardcoded `["storage","events","status"]` and `acceptedEvents` is always `[]` — the instance's real `settings`/`acceptedEvents` (which `SceneManager` does resolve from scene config) are not threaded through to this message today. This is harmless in practice because event routing happens scene-manager-side via its own event index, not from the widget reading `init.acceptedEvents`, but don't rely on this field being populated. |
 | `init.reject` | Handshake refusal (e.g. unsupported version): `{ reason, supportedVersions }`. Terminal — shim goes inert. |
 | `storage.value` | Reply to `storage.get`: `{ id, key, value }`. |
 | `storage.changed` | Storage subscription delivery: `{ subId, key, value, occurredAt }`. Also fired immediately after `storage.subscribe` when the host holds a cached value. |

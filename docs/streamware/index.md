@@ -1,22 +1,32 @@
 # Streamware
 
-Streamware is the runtime that drives streaming overlays. It owns the WebSocket transport to browser-source overlays, the per-application alert queue, the unified widget event channel, and the OBS bridge for legacy chat-bot scene/source commands.
+Streamware is the runtime that drives streaming overlays. It renders the SPA shell and
+assembles widget frames that OBS browser sources load, owns the P1 (`woofx3.widget`)
+and P2 (`woofx3.overlay-events`) protocols, and runs the per-application event queue.
+It also carries a legacy NATS subject for chat-bot scene/source commands
+(`streamware/src/nats-subscriptions.ts:92`).
 
-After the widget refactor, streamware is also where alert orchestration lives. The api boundary publishes nothing on `widget.*` and runs no queue — it only projects db-proxy outbox events to outbound webhooks. Workflow alert intent and overlay reports both land in streamware; the api sees only the resulting db rows via the outbox channel.
+Every overlay is addressed by an unguessable token (never the raw scene id), served
+through the woofx3 api proxy so streamware itself is never reachable from outside the
+engine. See [Streamware — Overlay Architecture](../woofwoofwoof/streamware/index.md)
+for the full token/frame/protocol picture — this page covers the event queue and
+render-time substitutions, which sit alongside that architecture unchanged.
 
 ## What it owns
 
 | Responsibility | Where it lives |
 |----------------|----------------|
-| `/ws/alerts` WebSocket — alert overlay connection | `streamware/src/alert-broadcaster.ts` |
-| `/ws/module-state` WebSocket — scene overlay connection | `streamware/src/storage-broadcaster.ts` |
-| Alert FIFO queue with lease semantics | `streamware/src/alert-queue-manager.ts` |
-| Inbound widget event dispatcher | `streamware/src/widget-event-handlers.ts` |
-| Operator NATS request/reply (`widget.queue.skip|clear|replay`) | `streamware/src/widget-event-handlers.ts` |
+| Overlay SPA shell + scene config + frame assembly (`/o/{token}/**`) | `streamware/src/server.ts`, `streamware/src/overlay/` |
+| Per-application event queue (FIFO + lease semantics) | `streamware/src/events/queue-manager.ts` |
+| Inbound `widget.event` dispatcher (status acks, operator commands) | `streamware/src/events/handlers.ts` |
+| Outbound event fan-out (`ui.alert.broadcast`, storage, scene updates) | `streamware/src/nats-subscriptions.ts`, `streamware/src/storage/broadcaster.ts` |
 | Slim db-proxy gRPC client (alerts + widget_status only) | `streamware/src/db.ts` |
-| The shared widget-host contract injected into iframes | `streamware/ui/src/lib/widgetHost.ts` |
-| Alert overlay React component | `streamware/ui/src/AlertOverlay.tsx` |
-| Scene overlay React component (composes widget iframes) | `streamware/ui/src/SceneOverlay.tsx` |
+| P1 parent-side bridge + scene manager | `streamware/ui/src/lib/widgetBridge.ts`, `streamware/ui/src/SceneOverlay.tsx` |
+| Built-in `media_alert` widget (static HTML, own substitution logic) | `streamware/public/widgets/builtin/media_alert/index.html` |
+
+The api boundary publishes nothing on `widget.*` and runs no queue — it only projects
+db-proxy outbox events to outbound webhooks. Workflow alert intent and overlay reports
+both land in streamware; the api sees only the resulting db rows via the outbox channel.
 
 ## Architecture
 
@@ -27,11 +37,11 @@ Workflow                                             Browser overlay
    v                                                          |
 NATS ─── ui.notify.alert ─────────────────┐                   |
                                           v                   |
-                          streamware/src/widget-event-handlers.ts
+                          streamware/src/events/handlers.ts
                                           |
                               ┌───────────┴───────────┐
                               v                       v
-                  AlertQueueManager.enqueue   db.createAlert
+                  EventQueueManager.enqueue   db.createAlert
                               |
               one alert per app at a time
                               |
@@ -39,31 +49,30 @@ NATS ─── ui.notify.alert ────────────────�
                      publish ui.alert.broadcast
                               |
                               v
-              streamware/src/alert-broadcaster.ts
+              streamware/src/nats-subscriptions.ts
                               |
                               v
-              ws.send to every /ws/alerts client ─────────┐
-                                                          |
-                                                          v
-                                                AlertOverlay.tsx
-                                                          |
-                                                          | host.reportStatus(
-                                                          |   "alert.lifecycle",
-                                                          |   { envelopeId, state }
-                                                          | )
-                                                          |
-                                                          v
-                                                ws.send /ws/alerts (widget.event)
-                                                          |
-                                                          v
+              P2 `event` frame → every overlay WS connection ──┐
+                                                                |
+                                                                v
+                                                       media_alert widget
+                                                                |
+                                                                | widgetHost.reportStatus(
+                                                                |   "alert.lifecycle",
+                                                                |   { envelopeId, state }
+                                                                | )
+                                                                v
+                                              P1 status.report → P2 widget.event (upstream)
+                                                                |
+                                                                v
                                             publish widget.event (CloudEvents)
-                                                          |
-                                                          v
-                                            widget-event-handlers.ts
+                                                                |
+                                                                v
+                                            streamware/src/events/handlers.ts
                                                   (dispatches by data.key)
                                                   /                 \
                                                  v                   v
-                                  AlertQueueManager         db.upsertWidgetStatus
+                                  EventQueueManager         db.upsertWidgetStatus
                                   .handleStatus              (widget_status)
 ```
 
@@ -74,24 +83,32 @@ Loaded from `.woofx3.json` plus environment-variable overrides. See `streamware/
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WOOFX3_STREAMWARE_PORT` | `9700` | HTTP / WS server port |
-| `WOOFX3_DATABASE_PROXY_URL` | -- | Required for alert orchestration. Without it, `/ws/alerts` still works as a passthrough, but alert envelopes are not persisted and the queue is disabled. |
+| `WOOFX3_DATABASE_PROXY_URL` | -- | Required for alert orchestration and overlay token resolution. |
 | `WOOFX3_MESSAGEBUS_URL` | -- | NATS URL. Without it, streamware logs a warning and runs in offline mode (overlays receive nothing). |
+| `WOOFX3_WIDGET_ASSET_BASE_URL` | -- | Optional CDN override for widget assets — see [Asset prefix rules](../woofwoofwoof/streamware/asset-prefix.md). |
 
 ## HTTP routes
 
+The only overlay-serving surface is the token-scoped tree under `/o/{token}/**`
+(`streamware/src/server.ts:178-376`); the legacy `/ws/alerts` and `/ws/module-state`
+routes documented here previously were removed when the overlay-token architecture
+replaced them (see the architecture doc linked above).
+
 | Path | Purpose |
 |------|---------|
-| `GET /health` | Liveness probe — `{ status: "ok", overlayClients: <n> }` |
-| `GET /ws/alerts` | WebSocket upgrade for the alert overlay |
-| `GET /ws/module-state` | WebSocket upgrade for scene overlays |
-| `GET /overlay/alerts` | SPA shell for the alert overlay (browser source URL) |
-| `GET /overlay/scene` | SPA shell for the scene overlay (browser source URL) |
-| `GET /` and other paths | Static SPA assets |
+| `GET /health` | Liveness probe |
+| `GET /o/{token}/` | SPA shell (React, served from `streamware/ui` dist) |
+| `GET /o/{token}/config` | Scene config JSON (token → scene) |
+| `GET /o/{token}/frame/{instanceId}?nonce=...` | Assembled widget frame |
+| `GET /o/{token}/widget-assets/{moduleKey}/{manifestId}/**` | Proxied to barkloader `GET /assets/modules/...` |
+| `GET /o/{token}/assets/widget-host-shim.js` | The P1 shim IIFE |
+| `GET /o/{token}/events` | P2 WebSocket (`woofx3.overlay-events` v1) |
 
 ## Read more
 
-- [Alert queue](./alert-queue.md) — lease semantics, advance-on-timeout policy, operator controls.
-- [Substitutions](./substitutions.md) — the `{primary}` color tag and the `{…}` expression resolver that runs at render time.
+- [Overlay architecture](../woofwoofwoof/streamware/index.md) — tokens, P1/P2 protocols, frame assembly, target-state diagram.
+- [Event queue](./alert-queue.md) — lease semantics, advance-on-timeout policy, operator controls.
+- [Substitutions](./substitutions.md) — the `media_alert` widget's render-time substitution pass.
 - [Widget event channel](../services/widget-events.md) — wire format and dispatch rules for `widget.event`.
 - [Module format](../barkloader/modules.md#widget-entry-widgets) — how a manifest declares a widget and what `widgetHost` exposes to its code.
 - [Workflow expressions](../workflow/expressions.md) — the upstream `${…}` resolver that runs before alerts reach streamware.

@@ -10,13 +10,17 @@ streamware itself is never reachable from outside the engine.
 | Responsibility | File |
 |---|---|
 | Overlay SPA shell + scene config route (`/o/{token}/`) | `streamware/src/server.ts` |
-| Token resolution and cache | `streamware/src/overlay-token.ts` |
-| Scene config assembly (token → widget instances) | `streamware/src/overlay-host.ts` |
-| Widget frame assembly (entry fetch + scaffold inject) | `streamware/src/frame-assembler.ts` |
-| Widget asset proxy → barkloader | `streamware/src/widget-asset-proxy.ts` |
-| P2 overlay WebSocket (`/o/{token}/events`) + NATS fan-out | `streamware/src/storage-broadcaster.ts`, `nats-subscriptions.ts` |
+| Token resolution and cache | `streamware/src/overlay/token-resolver.ts` |
+| Scene config assembly (token → widget instances) | `streamware/src/overlay/scene-host.ts` |
+| Widget frame assembly (entry fetch + scaffold inject) | `streamware/src/overlay/frame-assembler.ts` |
+| Widget asset proxy → barkloader | `streamware/src/overlay/asset-proxy.ts` |
+| P2 overlay WebSocket (`/o/{token}/events`) + NATS fan-out | `streamware/src/storage/broadcaster.ts`, `streamware/src/nats-subscriptions.ts` |
 | Scene manager + P1 parent-side bridge | `streamware/ui/src/SceneOverlay.tsx`, `lib/widgetBridge.ts` |
-| Alert queue (pre-existing, unchanged) | `streamware/src/alert-queue-manager.ts` |
+| Event queue (pre-existing, unchanged — see [Event queue](../../streamware/alert-queue.md)) | `streamware/src/events/queue-manager.ts` |
+
+Paths above reflect the post-`e867c0c` domain-directory reorganization
+(`streamware/src/` is now split into `overlay/`, `events/`, `storage/`, etc. rather
+than flat top-level files).
 
 ## How overlays are served
 

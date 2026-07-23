@@ -280,16 +280,16 @@ const (
 | `widget.queue.clear` | api → streamware | `{ applicationId? }` | NATS request/reply |
 | `widget.queue.replay` | api → streamware | `{ id }` (alert row id) | NATS request/reply |
 
-Routing rules for `widget.event` are handled in `streamware/src/widget-event-handlers.ts`. Dispatch is keyed on `data.key`:
+Routing rules for `widget.event` are handled in `streamware/src/events/handlers.ts`. Dispatch is keyed on `data.key`:
 
-- `data.key === "alert.lifecycle"` and `data.instanceId === "alert-overlay"` → `AlertQueueManager.handleStatus` (state transitions on the in-flight alert lease).
+- `data.key === "alert.lifecycle"` and `data.instanceId === "alert-overlay"` → `EventQueueManager.handleStatus` (state transitions on the in-flight alert lease).
 - Anything else → `db.upsertWidgetStatus` (latest-value upsert per `(applicationId, instanceId, key)`).
 
 See [Widget event channel](./widget-events.md) for the full message shape, queue semantics, and host API contract.
 
 ## Go — DB-Outbox Subjects (engine → api)
 
-The api/ boundary projects db-proxy outbox events to outbound HTTPS webhooks. Every db.proxy CRUD operation publishes a CloudEvent on `db.{entityType}.{operation}.{appId}`. The api subscribes to the wildcards and forwards typed events to the registered callback URL — see `api/src/api.ts:325` and `shared/clients/typescript/api/webhooks.ts`.
+The api/ boundary projects db-proxy outbox events to outbound HTTPS webhooks. Every db.proxy CRUD operation publishes a CloudEvent on `db.{entityType}.{operation}.{appId}`. The api subscribes to the wildcards and forwards typed events to the registered callback URL. This used to be centralized in `api/src/api.ts`; since the `api.ts` → per-domain module split, each entity type wires its own outbox subscription — see `api/src/alert-emitter.ts` (alerts), `api/src/overlay-token-handlers.ts` (overlay tokens), `api/src/module-event-handlers.ts` (modules), `api/src/storage-change-emitter.ts` (module storage), all wired up in `api/src/server.ts`, plus `shared/clients/typescript/api/webhooks.ts` for the event shapes.
 
 Alert-related outbox subjects:
 

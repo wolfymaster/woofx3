@@ -16,7 +16,13 @@ A generic widget reporting `key="count"` and the alert overlay reporting `key="a
 
 ## Wire format
 
-The overlay sends the canonical wire shape (`OverlayWidgetEvent`) over its WebSocket. Both `/ws/alerts` and `/ws/module-state` accept it. See `streamware/ui/src/lib/widgetHost.ts:96` and `streamware/src/widget-event-wire.ts:10`.
+The overlay sends the canonical wire shape (`OverlayWidgetEvent`) as a raw JSON
+message over the single P2 overlay WebSocket (`/o/{token}/events` — see
+[P2 event source](../woofwoofwoof/streamware/p2-event-source.md)); there is no longer
+a separate alert-specific transport. See
+`shared/clients/typescript/module-sdk/src/widget-host-shim.ts` (widget → shim →
+`status.report` P1 message → `WidgetBridge` → this shape) and
+`streamware/src/events/wire.ts:9` (`publishWidgetEvent`, server-side decode + republish).
 
 ```typescript
 interface OverlayWidgetEvent {
@@ -31,7 +37,7 @@ interface OverlayWidgetEvent {
 }
 ```
 
-`streamware/src/widget-event-wire.ts:33` (`publishWidgetEvent`) validates the message, wraps it in a CloudEvents 1.0 envelope, and republishes to NATS `widget.event`. The CloudEvent `data` field carries the same fields, with `ts` renamed to `occurredAt` to match the rest of the engine's CloudEvent payloads.
+`streamware/src/events/wire.ts` (`publishWidgetEvent`) validates the message, wraps it in a CloudEvents 1.0 envelope, and republishes to NATS `widget.event`. The CloudEvent `data` field carries the same fields, with `ts` renamed to `occurredAt` to match the rest of the engine's CloudEvent payloads.
 
 ```jsonc
 {
@@ -57,11 +63,11 @@ Malformed messages (missing `kind`, `moduleId`, `instanceId`, or `key`) are drop
 
 ## Dispatch rules
 
-`streamware/src/widget-event-handlers.ts:161` subscribes to `widget.event` and dispatches by `data.key`:
+`streamware/src/events/handlers.ts` subscribes to `widget.event` and dispatches by `data.key`:
 
 | Condition | Handler | Persistence |
 |-----------|---------|-------------|
-| `key === "alert.lifecycle"` AND `instanceId === "alert-overlay"` | `AlertQueueManager.handleStatus(applicationId, envelopeId, state, error?)` | `alerts` table — lifecycle column on the existing row keyed by `envelope_id` |
+| `key === "alert.lifecycle"` AND `instanceId === "alert-overlay"` | `EventQueueManager.handleStatus(applicationId, envelopeId, state, error?)` — see [Event queue](../streamware/alert-queue.md) | `alerts` table — lifecycle column on the existing row keyed by `envelope_id` |
 | anything else | `db.upsertWidgetStatus({ applicationId, moduleId, instanceId, widgetCanonicalId?, key, value, occurredAt })` | `widget_status` table — upsert on `(application_id, instance_id, key)` |
 
 The two tables answer different questions and so are kept separate:
@@ -87,7 +93,12 @@ The orchestrator drops reports where `state` is anything other than the three va
 
 ## Host API contract
 
-Every widget gets the same surface, regardless of whether it's a sandboxed iframe widget or a host-rendered React component. The contract lives in `streamware/ui/src/lib/widgetHost.ts:26`.
+Every widget gets the same surface — there's no separate "alert overlay" component
+anymore; the built-in alert widget (`media_alert`) is just another widget bundle
+placed in a scene, using the exact same P1 `WidgetHost` contract as any module
+widget. The contract lives in `shared/clients/typescript/module-sdk/src/widget-host.ts`;
+see [Widget protocol (P1)](../woofwoofwoof/streamware/widget-protocol.md) for the
+full postMessage handshake underneath it.
 
 ```typescript
 interface WidgetHost {
@@ -96,57 +107,73 @@ interface WidgetHost {
   readonly settings: Readonly<Record<string, unknown>>;
   readonly storage: WidgetHostStorage;     // get / subscribe over module storage
 
+  onEvent(handler: (event: WidgetEvent) => void): () => void;
   reportStatus(key: string, value: unknown): void;
   reportComplete(reason?: string): void;   // sugar for reportStatus("complete", { reason })
 }
 ```
 
-`reportStatus` and `reportComplete` are best-effort. They never throw; if no transport is wired (the iframe was instantiated outside the streamware shell), reports log a single warning and are dropped.
+`reportStatus` and `reportComplete` are best-effort: they post a P1 `status.report`
+message and never throw. If the handshake with the parent scene manager hasn't
+completed yet, the shim queues nothing and the report is silently dropped.
 
 ### Iframe widgets
 
-`streamware/ui/src/components/WidgetFrame.tsx:46` constructs a `WidgetHost` and assigns it to `iframe.contentWindow.widgetHost` once the iframe load event fires. Widgets read `window.widgetHost` directly. The cross-origin assumption today is same-origin (local mode); when assets move to a CDN, this injection point switches to a postMessage bridge — flagged inline at the call site.
+Every widget — including `media_alert` — is served through the frame assembler into
+a sandboxed iframe (`sandbox="allow-scripts"`, no `allow-same-origin`) and talks to
+the scene manager exclusively through the P1 postMessage protocol; there is no
+direct property injection onto `iframe.contentWindow`. This is deliberate, not a
+same-origin shortcut waiting to be replaced: widget assets can already be served
+from barkloader or a CDN (see [Asset prefix rules](../woofwoofwoof/streamware/asset-prefix.md)),
+and postMessage is what makes that origin-agnostic.
 
-### The alert overlay
+### The alert widget's instance id convention
 
-`streamware/ui/src/AlertOverlay.tsx:44` is itself a widget host. It creates a `WidgetHost` with `moduleId: "core"`, `instanceId: "alert-overlay"`, no storage, and the `/ws/alerts` socket as its transport. The overlay calls `host.reportStatus("alert.lifecycle", { envelopeId, state })` on mount, on completion, and on render failure — exactly the same way a counter widget calls `host.reportStatus("count", 42)`.
-
-This is what the dispatch rule above is enforcing: the alert overlay gets routed to the queue manager because its `(moduleId, instanceId, key)` triple matches `("core", "alert-overlay", "alert.lifecycle")`. Everything else falls through to `widget_status`.
+Alert routing (the dispatch rule above) is keyed on the **scene instance id**, not on
+a dedicated component type: a `media_alert` widget placed in a scene must be given
+the instance id `"alert-overlay"` (the `id` field of its entry in the scene's
+`widgetsJson`) for its `alert.lifecycle` status reports to route to the
+[event queue](../streamware/alert-queue.md) instead of falling through to generic
+`widget_status` upserts. The dispatch condition checks only `key` and `instanceId` —
+not `moduleId` — so this is purely a scene-authoring convention, not something the
+engine validates. Built-in widgets like `media_alert` use the reserved module key
+`"builtin"` (`BUILTIN_MODULE_KEY` in `streamware/src/overlay/scene-host.ts`). Any
+instance id other than `"alert-overlay"` — even another `media_alert` placement — is
+treated as a generic status report.
 
 ## End-to-end flow
 
 ```
-Widget code                                  Streamware shell
-   |                                            |
-   v                                            v
-host.reportStatus(key, value)        WidgetHost.emit
-   |                                            |
-   |--------- WidgetStatusReport ─────────────->|
-                                                |
-                                                v
-                                  ws.send(/ws/{alerts|module-state})
-                                                |
-                                                v
-                                       publishWidgetEvent()
-                                                |
-                                                v
-                                     NATS publish "widget.event"
-                                                |
-                                                v
-                                     widget-event-handlers.ts
-                                       /                  \
-                                      v                    v
-                              AlertQueueManager      db.upsertWidgetStatus
-                              .handleStatus              (widget_status)
-                                      |                    |
-                                      v                    v
-                              db.updateAlertLifecycle  db-outbox event
-                                      |               db.widget_status.updated.{appId}
-                                      v                    |
-                              db-outbox event              v
-                              db.alert.updated.{appId}  api/ projects to webhook
-                                      |               WIDGET_STATUS_CHANGED
-                                      v
-                              api/ projects to webhook
-                              (ALERT_COMPLETED / FAILED / etc.)
+Widget iframe                                Scene manager (parent)         Streamware server
+   |                                            |                              |
+   v                                            v                              |
+host.reportStatus(key, value)        WidgetBridge.handleMessage               |
+   |                                            |                              |
+   |------ P1 status.report (postMessage) ---->|                              |
+                                                |                              |
+                                                |-- P2 send (raw JSON, /o/{token}/events) -->|
+                                                                                |
+                                                                                v
+                                                                     publishWidgetEvent()
+                                                                                |
+                                                                                v
+                                                                     NATS publish "widget.event"
+                                                                                |
+                                                                                v
+                                                                     streamware/src/events/handlers.ts
+                                                                       /                  \
+                                                                      v                    v
+                                                              EventQueueManager      db.upsertWidgetStatus
+                                                              .handleStatus              (widget_status)
+                                                                      |                    |
+                                                                      v                    v
+                                                              db.updateAlertLifecycle  db-outbox event
+                                                                      |               db.widget_status.updated.{appId}
+                                                                      v                    |
+                                                              db-outbox event              v
+                                                              db.alert.updated.{appId}  api/ projects to webhook
+                                                                      |               WIDGET_STATUS_CHANGED
+                                                                      v
+                                                              api/ projects to webhook
+                                                              (ALERT_COMPLETED / FAILED / etc.)
 ```
