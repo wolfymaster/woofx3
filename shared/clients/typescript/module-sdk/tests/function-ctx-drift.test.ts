@@ -57,6 +57,13 @@ const KNOWN_TOP_LEVEL = new Set([
   "http",
   "env",
   "resources",
+  // Built by build_module_namespace, quickjs.rs:429-456
+  "module",
+  // Built by build_log_namespace, quickjs.rs
+  "log",
+  // Built by build_response_fn, quickjs.rs — a bare callable, not a
+  // namespace, so it has no KNOWN_NESTED entry.
+  "response",
 ]);
 
 const KNOWN_NESTED: Record<string, string[]> = {
@@ -65,6 +72,16 @@ const KNOWN_NESTED: Record<string, string[]> = {
   http: ["request"],
   env: ["get"],
   resources: ["create", "delete", "list"],
+  log: ["info", "warn", "error"],
+};
+
+// Namespaces that expose plain data fields rather than callable methods
+// (unlike KNOWN_NESTED, which is all `fn(args)`-shaped). `ctx.module` is
+// the first of these: id/name/version/settings are just properties, so
+// the method-call regexes in KNOWN_NESTED's checks below don't apply —
+// checked separately by property-declaration shape instead.
+const KNOWN_DATA_FIELDS: Record<string, string[]> = {
+  module: ["id", "name", "version", "settings"],
 };
 
 const KNOWN_EXTENSIONS: Record<string, string[]> = {
@@ -86,6 +103,7 @@ describe("function ctx drift guard", () => {
     const documented = new Set<string>();
     for (const k of KNOWN_TOP_LEVEL) documented.add(k);
     for (const ks of Object.values(KNOWN_NESTED)) for (const k of ks) documented.add(k);
+    for (const ks of Object.values(KNOWN_DATA_FIELDS)) for (const k of ks) documented.add(k);
     for (const ks of Object.values(KNOWN_EXTENSIONS)) for (const k of ks) documented.add(k);
 
     const undocumented: string[] = [];
@@ -131,6 +149,32 @@ describe("function ctx drift guard", () => {
     }
   });
 
+  it("the .d.ts declares every documented data field as a property", () => {
+    for (const [ns, fields] of Object.entries(KNOWN_DATA_FIELDS)) {
+      for (const f of fields) {
+        // Property-declaration shape, e.g. `id: string;` — deliberately
+        // not the callable-method regex used for KNOWN_NESTED, since
+        // these namespaces expose data, not functions.
+        const re = new RegExp(`\\b${f}:\\s`);
+        if (!re.test(dts)) {
+          throw new Error(`function-ctx.d.ts is missing ${ns}.${f}`);
+        }
+      }
+    }
+  });
+
+  it("the .lua annotations declare every documented data field", () => {
+    for (const [ns, fields] of Object.entries(KNOWN_DATA_FIELDS)) {
+      for (const f of fields) {
+        // LuaCATS field-declaration shape, e.g. `---@field id string`.
+        const re = new RegExp(`@field\\s+${f}\\b`);
+        if (!re.test(lua)) {
+          throw new Error(`function-ctx.lua is missing ${ns}.${f}`);
+        }
+      }
+    }
+  });
+
   it("the .d.ts mentions every documented extension method", () => {
     for (const [ns, methods] of Object.entries(KNOWN_EXTENSIONS)) {
       for (const m of methods) {
@@ -146,7 +190,7 @@ describe("function ctx drift guard", () => {
     // (the contract is the same regardless of runtime).
     const quickjs = readRust("barkloader/lib_sandbox/src/runtime/quickjs.rs");
     const lua = readRust("barkloader/lib_sandbox/src/runtime/lua.rs");
-    for (const ns of ["events", "storage", "http", "env", "resources"]) {
+    for (const ns of ["events", "storage", "http", "env", "resources", "module"]) {
       const inQ = quickjs.includes(`build_${ns}_namespace`) || quickjs.includes(`"${ns}"`);
       const inL = lua.includes(`build_${ns}_namespace`) || lua.includes(`"${ns}"`);
       if (!inQ || !inL) {

@@ -111,7 +111,14 @@ export default class BarkloaderClient {
     // reply, rather than firing-and-forgetting like `send()`. Rejects after
     // INVOKE_TIMEOUT_MS if no reply arrives (e.g. the connection dropped
     // mid-flight), cleaning up the pending entry either way.
-    public invoke(func: string, args: unknown[]): Promise<unknown> {
+    //
+    // `event` becomes `ctx.event` verbatim in the sandboxed function — same
+    // `function`/`event` wire shape the Go client already uses
+    // (shared/clients/golang/barkloader/client.go's Client.Invoke), so both
+    // language clients speak the same modern protocol barkloader's
+    // websocket.rs treats as canonical (`func`/`args` there is the legacy
+    // fallback this replaces).
+    public invoke(func: string, event: Record<string, unknown>): Promise<unknown> {
         const id = crypto.randomUUID();
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
@@ -131,7 +138,7 @@ export default class BarkloaderClient {
             });
 
             try {
-                this.send(JSON.stringify({ type: "invoke", id, data: { func, args } }));
+                this.send(JSON.stringify({ type: "invoke", id, data: { function: func, event } }));
             } catch (err) {
                 this.pendingInvokes.delete(id);
                 clearTimeout(timer);

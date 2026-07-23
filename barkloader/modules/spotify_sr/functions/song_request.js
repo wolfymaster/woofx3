@@ -2,17 +2,22 @@
 
 /** @param {import("@woofx3/module-sdk/function-ctx").Ctx} ctx */
 function song_request(ctx) {
-    // ctx.event is shaped by buildModuleInvokeEvent in workflow/actions.go:
-    //   { parameters: {}, id, type, source, time, data: ChatCommandEventData }
-    // ChatCommandEventData: { command, args, rawMessage, chatter, platform }
+    // ChatCommandEventData (shared/common/typescript/cloudevents/Chat/commands.ts):
+    //   { command, args, rawMessage, text, variables, chatter, platform }
+    // `text` is rawMessage with the command token already stripped; `variables`
+    // holds named argument_pattern captures (this command's pattern is
+    // "{songTitle}", so variables.songTitle is the query when configured).
+    // ctx.event.parameters is reserved for workflow-step-authored config
+    // (e.g. deviceId below) and is never used for command-derived data.
+    // Every exit point below uses ctx.response(success, message) instead of
+    // ctx.chat.sendMessage — one mechanism instead of two, and it works
+    // whether or not the chat extension happens to be bound.
     var data = (ctx.event && ctx.event.data) ? ctx.event.data : {};
-    var rawMessage = data.rawMessage || "";
 
-    // Strip "!sr " prefix to get the query
-    var query = rawMessage.replace(/^!sr\s+/i, "").trim();
+    var variables = data.variables || {};
+    var query = (variables.songTitle || data.text || "").trim();
     if (!query) {
-        if (ctx.chat) { ctx.chat.sendMessage("Usage: !sr <song name or Spotify URL>"); }
-        return { sent: false, error: "empty query" };
+        return ctx.response(false, "Usage: !sr <song name or Spotify URL>");
     }
 
     var clientId = ctx.module.settings.clientId;
@@ -20,8 +25,7 @@ function song_request(ctx) {
     var refreshToken = ctx.module.settings.refreshToken;
 
     if (!clientId || !clientSecret || !refreshToken) {
-        if (ctx.chat) { ctx.chat.sendMessage("Spotify is not configured. Set clientId, clientSecret, and refreshToken in the module settings."); }
-        return { sent: false, error: "missing config" };
+        return ctx.response(false, "Spotify is not configured. Set clientId, clientSecret, and refreshToken in the module settings.");
     }
 
     // Refresh access token (Spotify OAuth2 refresh grant).
@@ -56,8 +60,7 @@ function song_request(ctx) {
     );
 
     if (!tokenResp || tokenResp.status !== 200 || !tokenResp.body || !tokenResp.body.access_token) {
-        if (ctx.chat) { ctx.chat.sendMessage("Failed to connect to Spotify."); }
-        return { sent: false, error: "token refresh failed", status: tokenResp && tokenResp.status };
+        return ctx.response(false, "Failed to connect to Spotify.");
     }
 
     var accessToken = tokenResp.body.access_token;
@@ -75,8 +78,7 @@ function song_request(ctx) {
             { headers: { "Authorization": authHeader } }
         );
         if (!trackResp || trackResp.status !== 200 || !trackResp.body) {
-            if (ctx.chat) { ctx.chat.sendMessage("Could not find that track on Spotify."); }
-            return { sent: false, error: "track lookup failed", status: trackResp && trackResp.status };
+            return ctx.response(false, "Could not find that track on Spotify.");
         }
         song = {
             name: trackResp.body.name,
@@ -94,8 +96,7 @@ function song_request(ctx) {
         );
         var tracks = searchResp && searchResp.body && searchResp.body.tracks && searchResp.body.tracks.items;
         if (!tracks || tracks.length === 0) {
-            if (ctx.chat) { ctx.chat.sendMessage("No results found for: " + query); }
-            return { sent: false, error: "no results", query: query };
+            return ctx.response(false, "No results found for: " + query);
         }
         var track = tracks[0];
         song = {
@@ -119,12 +120,8 @@ function song_request(ctx) {
 
     // 200 or 204 both indicate success.
     if (!queueResp || (queueResp.status !== 200 && queueResp.status !== 204)) {
-        if (ctx.chat) { ctx.chat.sendMessage("Failed to queue " + song.name + "."); }
-        return { sent: false, error: "queue failed", status: queueResp && queueResp.status };
+        return ctx.response(false, "Failed to queue " + song.name + ".");
     }
 
-    var msg = "Added to queue: " + song.name + " by " + song.artist;
-    if (ctx.chat) { ctx.chat.sendMessage(msg); }
-
-    return { sent: true, song: song.name, artist: song.artist };
+    return ctx.response(true, "Added to queue: " + song.name + " by " + song.artist);
 }

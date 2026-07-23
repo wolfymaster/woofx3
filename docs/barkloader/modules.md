@@ -189,6 +189,8 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `widgets` | array | no | Scene widgets (`entry`, optional `assets` directory, `settingsSchema`, `acceptedEvents`). |
 | `overlays` | array | no | Overlay browser sources (`entry`). |
 | `resources` | array | no | Runtime-instance kind declarations — the K8s CRD analog. Each entry says "this module is the controller for instances of kind `X`". See [Resource entry](#resource-entry-resources) and [Runtime resource instances](#runtime-resource-instances). |
+| `settings` | array | no | Module-level configuration values (API keys, tokens, etc.) registered into the `module_settings` table at install time and exposed to sandboxed functions as `ctx.module.settings`. Distinct from a widget's `settingsSchema` — see [Module-level settings](#module-level-settings-settings). |
+| `backgroundTasks` (alias: `background_tasks`) | array | no | Cron-scheduled functions barkloader fires for the lifetime of the module. See [Background tasks](#background-tasks-backgroundtasks). |
 
 ### Trigger entry (`triggers[]`)
 
@@ -371,6 +373,39 @@ A module's `actions[]` list is not "things modules add to the engine." It's "con
 | `workflow` | string | no | Reference to a workflow in the same manifest (use the workflow's `id`; resolved to its canonical id at install). |
 | `requiredRole` | string | no | Minimum role required to invoke (e.g. `public`, `subscriber`, `mod`). |
 
+#### `ctx.event` for a chat-command-triggered function
+
+A chat command reaches a module function through one of two paths — a workflow
+subscribed to the `chat.command.*` CloudEvent (via the built-in "Chat Command"
+trigger), or a direct `woofwoofwoof` → barkloader invoke for a command configured
+with `type: "function"` in the (DB-backed, not manifest-declared) `commands` admin
+UI. Both converge on the same shape, so a function doesn't need to know which path
+invoked it:
+
+```js
+ctx.event.data = {
+  command: "sr",
+  rawMessage: "!sr bad angel",
+  text: "bad angel",                    // rawMessage with the matched command token stripped
+  args: ["bad", "angel"],                // raw whitespace-split tokens
+  variables: { songTitle: "bad angel" }, // named argument_pattern captures — {} if none declared
+  chatter: "wolfymaster",
+  platform: "twitch",
+  channelId: undefined                   // reserved, never populated today
+}
+ctx.event.parameters = { /* deviceId, etc. */ } // workflow-step-authored config only — never
+                                                 // command-derived data, to avoid field collisions
+```
+
+`variables` comes from a command's `argument_pattern` (a UI/admin-configured field
+on the DB `commands` row — e.g. `"{songTitle}"` — not currently declarable from the
+manifest's `commands[]` entry above). Dotted variable names (`"{user.name}"`) build
+nested objects. See `barkloader/modules/spotify_sr/functions/song_request.js` for a
+worked example.
+
+To reply to the chat command, `return ctx.response(success, message)` instead of
+calling `ctx.chat.sendMessage(...)` directly — see [`ctx.response`](./sandbox.md#ctxresponse).
+
 ### Workflow entry (`workflows[]`)
 
 | Field | Type | Required | Description |
@@ -396,7 +431,7 @@ Files are stored under **`modules/{moduleId}/widgets/{widgetId}/…`**.
 
 #### Widget runtime — the `widgetHost` contract
 
-Streamware loads widget bundles into sandboxed iframes (`streamware/ui/src/components/WidgetFrame.tsx:46`) and injects a `widgetHost` object onto the iframe's `window` once the load event fires. Widgets read `window.widgetHost` directly. The contract is identical for every widget kind — sandboxed iframe widgets, the alert overlay's host-rendered widget, and any future widget surface — so a widget written against this API does not need to know whether it's rendering inside the alert overlay or a scene composition.
+Streamware loads widget bundles into sandboxed iframes (`streamware/ui/src/components/WidgetFrame.tsx`) and a shim script injected by the frame assembler installs a `widgetHost` object onto the iframe's `window` as part of the P1 (`woofx3.widget`) handshake with the parent scene manager. Widgets read `window.widgetHost` directly; the postMessage plumbing underneath is invisible to widget code. See [Widget protocol (P1)](../woofwoofwoof/streamware/widget-protocol.md) for the wire-level handshake.
 
 ```typescript
 interface WidgetHost {
@@ -418,13 +453,13 @@ interface WidgetEvent {
 }
 ```
 
-`reportStatus` and `reportComplete` flow upward through streamware's `/ws/module-state` (or `/ws/alerts` for the alert overlay) and onto NATS `widget.event`. The streamware orchestrator persists generic events to the `widget_status` table and routes alert lifecycle reports to the alert queue — see [Widget event channel](../services/widget-events.md).
+`reportStatus` and `reportComplete` send a P1 `status.report` message to the scene manager, which forwards it over the unified `widget.event` NATS channel. The streamware dispatcher persists generic events to the `widget_status` table and routes `alert.lifecycle` reports to the [event queue](../streamware/alert-queue.md) — see [Widget event channel](../services/widget-events.md).
 
-`onEvent` is the downward channel: streamware fans engine-side trigger events out to scene overlays, and `SceneOverlay` filters per widget by the `acceptedEvents` declaration. A widget that lists `twitch_platform:trigger:follow.user.twitch` in its manifest will see every follower event the engine processes. Widgets without `acceptedEvents` receive nothing — that's the right default for static display-only widgets.
+`onEvent` is the downward channel: the widget sends a P1 `events.subscribe` message, and the scene manager matches engine-side trigger events (delivered over the P2 `event` frame) against the widget's `acceptedEvents` declaration before relaying a matching one as `event.deliver`. A widget that lists `twitch_platform:trigger:follow.user.twitch` in its manifest will see every follower event the engine processes. Widgets without `acceptedEvents` receive nothing — that's the right default for static display-only widgets.
 
-`widgetHost.storage` reads the latest module-storage value for `(moduleId, key)` from the local cache populated by `module.storage.changed` events.
+`widgetHost.storage` reads the latest module-storage value for `(moduleId, key)` from the local cache populated by `module.storage.changed` events, delivered over the P2 `storage` frame.
 
-The contract definition lives at `streamware/ui/src/lib/widgetHost.ts:26`.
+The contract definition lives at `shared/clients/typescript/module-sdk/src/widget-host.ts`; the shim that implements it inside the iframe is `shared/clients/typescript/module-sdk/src/widget-host-shim.ts`.
 
 ### Overlay entry (`overlays[]`)
 
@@ -456,6 +491,173 @@ Declaring a kind is necessary but not sufficient — the module must also expose
 - One or more mutation actions (e.g. `increment`, `decrement`) whose `target` is a `resource_ref(kind=...)`.
 
 See `barkloader/modules/counter/manifest.json` for the canonical example.
+
+### Module-level settings (`settings[]`)
+
+A `settings[]` entry declares an engine-typed, module-scoped configuration value —
+the mechanism a module uses for things like API credentials that its sandboxed
+functions need at runtime (a Spotify client secret, a webhook URL, a poll interval).
+This is a **different feature from a widget's `settingsSchema`** (see
+[Widget entry](#widget-entry-widgets)): `settingsSchema` is an opaque, per-instance
+JSON blob scoped to one widget placement and surfaced to browser-side widget code as
+`widgetHost.settings`; `settings[]` is a flat, typed, per-module namespace surfaced to
+**sandboxed function code** as `ctx.module.settings`.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | yes | Manifest-local setting key, e.g. `clientId`. Combined with the module id to key the `module_settings` row (`module_id` + `key`, unique). This is the key a function reads via `ctx.module.settings.<id>`. |
+| `name` | string | yes | Display label for a settings UI. |
+| `description` | string | no | Defaults to `""`. |
+| `type` | string | yes | One of `"string"`, `"number"`, `"boolean"`. Not enum-validated by the manifest parser — any string is accepted, but only these three are coerced meaningfully at read time (see below). |
+| `required` | boolean | no | Defaults to `false`. Descriptive only today — **not enforced** anywhere in the install or read path; a module function reading an unset required setting just sees the type's zero value. |
+| `default` | string | no | Stored as a string regardless of `type`. If omitted, the effective default is `"0"` for `type: "number"`, `"false"` for `type: "boolean"`, and `""` otherwise. |
+
+Example — `barkloader/modules/spotify_sr/manifest.json`:
+
+```json
+"settings": [
+  {
+    "id": "clientId",
+    "name": "Spotify Client ID",
+    "description": "Your Spotify application client ID from the Spotify Developer Dashboard.",
+    "type": "string",
+    "required": true
+  },
+  {
+    "id": "clientSecret",
+    "name": "Spotify Client Secret",
+    "description": "Your Spotify application client secret.",
+    "type": "string",
+    "required": true
+  },
+  {
+    "id": "refreshToken",
+    "name": "Spotify Refresh Token",
+    "description": "OAuth refresh token for the streamer's Spotify account.",
+    "type": "string",
+    "required": true
+  }
+]
+```
+
+#### Install-time registration
+
+On install, barkloader registers every declared setting into the `module_settings`
+table via the db-proxy `ModuleSettingService/RegisterModuleSettings` RPC, keyed by
+the manifest-local module id (not the composite `{id}:{version}:{hash}` key used for
+actions/widgets/background tasks). Registration is an upsert-if-absent
+(`ON CONFLICT DO NOTHING` server-side): re-installing or upgrading a module **never
+overwrites** a value the user already configured — only a brand-new key gets its
+manifest `default` (or type-based zero value) written.
+
+#### Reading settings at runtime — `ctx.module`
+
+Both the QuickJS and Lua sandbox runtimes expose the invoking function's module
+identity and resolved settings as `ctx.module`:
+
+```js
+ctx.module = {
+  id: string,        // manifest-local module id
+  name: string,       // manifest display name
+  version: string,    // semver string from the manifest
+  settings: {          // one key per module_settings row for this module
+    [key: string]: string | number | boolean
+  }
+}
+```
+
+Values are stored as `TEXT` in the database and coerced to a native `string` /
+`number` / `boolean` at read time based on the setting's declared `type`
+(`HttpSettingsClient::coerce_value` in barkloader). Example, from
+`barkloader/modules/spotify_sr/functions/poll_current_track.js`:
+
+```js
+var clientId = ctx.module.settings.clientId;
+var clientSecret = ctx.module.settings.clientSecret;
+var refreshToken = ctx.module.settings.refreshToken;
+
+if (!clientId || !clientSecret || !refreshToken) {
+  return { error: "missing config" };
+}
+```
+
+This replaced an earlier pattern of reading credentials from process environment
+variables via `ctx.env`; new modules needing per-install configuration should use
+`ctx.module.settings`, not `ctx.env`.
+
+See [Sandbox runtime → `ctx.module`](./sandbox.md#ctxmodule) for the full sandbox-side
+contract, and [Module settings: the UI contract](../services/module-settings-ui.md)
+for how a streamer's UI reads and writes these values after install.
+
+> **No secrecy guarantees.** `module_settings.value` is a plain `TEXT` column with no
+> encryption, hashing, or field-level redaction — there is no `secret`/`sensitive`
+> flag anywhere in the manifest schema or the DB row. The `GET
+> /modules/{moduleId}/settings` API route returns every setting's value verbatim,
+> including things like `clientSecret`. Do not expose that route to untrusted
+> clients without an access-control layer in front of it.
+
+> **`widget_settings` exists in the schema but is not wired up.** Migration 0020 also
+> created a `widget_settings` table and a matching Go model/repository, intended as a
+> future per-widget-instance counterpart to `settings[]`. As of this writing nothing
+> in the install flow, the sandbox, or the API reads or writes it — it's inert
+> scaffolding, not a working feature. Don't build against it yet.
+
+### Background tasks (`backgroundTasks[]`)
+
+A `backgroundTasks[]` entry (manifest key `backgroundTasks`, with `background_tasks`
+accepted as an alias) declares a sandboxed function that barkloader's internal
+scheduler fires on a recurring cron schedule for the lifetime of the module — the
+mechanism modules use for polling an external API on an interval (spotify_sr's
+now-playing poll is the canonical example).
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | yes | Manifest-local task id, e.g. `poll_now_playing`. Persisted as `manifest_id` on the `background_tasks` row and used as the scheduler's in-process key together with the module id. |
+| `function` | string | yes | Manifest-local function id to invoke on each fire. Resolved to the canonical function id (`{moduleId}:function:{function}`) at fire time. |
+| `schedule` | string | yes | A 6-field, seconds-first cron expression (parsed with the `cron` crate), e.g. `"*/30 * * * * *"` for every 30 seconds. An invalid expression is logged and that task is skipped — it does not fail the install. |
+| `description` | string | no | Defaults to `""`. |
+
+Example — `barkloader/modules/spotify_sr/manifest.json`:
+
+```json
+"backgroundTasks": [
+  {
+    "id": "poll_now_playing",
+    "function": "poll_current_track",
+    "schedule": "*/30 * * * * *",
+    "description": "Polls Spotify every 30 seconds to update the currently playing track."
+  }
+]
+```
+
+#### Persistence and lifecycle
+
+Background tasks are persisted as rows in a `background_tasks` table (one row per
+task, keyed by `created_by_type`/`created_by_ref`/`manifest_id`, upserted on
+reinstall) rather than re-parsed from the stored manifest JSON at every boot. On
+process start, barkloader hydrates the in-process scheduler by listing all persisted
+tasks from db-proxy and registering each with the scheduler — no manifest parsing is
+involved at boot.
+
+Registration into the in-process scheduler happens on install, on the module's
+`/functions/{name}/register` route, and on upgrade/reload. Unregistration happens on
+module delete, keyed by the task's **manifest-local module id** (not the module's
+database-row UUID) — the scheduler's in-memory map is keyed the same way the sandbox
+registry is, so using the wrong identifier here silently no-ops the unregister and
+leaves the task firing after deletion.
+
+#### Scheduler mechanics
+
+Each registered task runs as an independent loop: compute the next fire time from the
+cron schedule, sleep until then, invoke the target function via the same
+`Sandbox::invoke` entrypoint used for every other function call in barkloader (chat
+commands, workflow steps, the field-options NATS responder), then repeat. A fired
+task always invokes with an empty event and empty parameters — background tasks
+receive no per-invocation context beyond what `ctx.module`/`ctx.resources`/etc.
+already expose; if a task needs input, it has to fetch it itself (e.g. from module
+storage or an external API). Each fire logs its scheduled time, its start, and its
+outcome (success with elapsed ms, or an error) so a stuck or failing poller is
+visible in the barkloader logs without instrumenting the module itself.
 
 ## Runtime resource instances
 

@@ -1,6 +1,6 @@
 use actix_ws::{AggregatedMessage, AggregatedMessageStream};
 use futures_util::StreamExt as _;
-use lib_sandbox::Sandbox;
+use lib_sandbox::SandboxFactory;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
@@ -18,11 +18,11 @@ struct WsMessage {
 }
 
 pub struct WebSocketSession {
-    sandbox: Sandbox,
+    sandbox: SandboxFactory,
 }
 
 impl WebSocketSession {
-    pub fn new(sandbox: Sandbox) -> Self {
+    pub fn new(sandbox: SandboxFactory) -> Self {
         Self { sandbox }
     }
 
@@ -38,7 +38,7 @@ impl WebSocketSession {
                         let request_id = message.id.clone();
                         match message.message_type.as_str() {
                             "invoke" => {
-                                let mut event = message
+                                let event = message
                                     .data
                                     .get("event")
                                     .cloned()
@@ -49,38 +49,8 @@ impl WebSocketSession {
                                     .cloned()
                                     .unwrap_or(serde_json::Value::Null);
 
-                                // Legacy workflow client sent `func` + `args: [paramObject]`
-                                // with no `event`. Wrap the first arg as `parameters`.
-                                if event.is_null() {
-                                    if let Some(args) =
-                                        message.data.get("args").and_then(|a| a.as_array())
-                                    {
-                                        if let Some(first) = args.first() {
-                                            if first.is_object() {
-                                                event = serde_json::json!({
-                                                    "parameters": first
-                                                });
-                                            } else {
-                                                event = first.clone();
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Top-level `params` (InvokeRequest.params) → event.parameters
-                                if params.is_object() {
-                                    if let Some(event_obj) = event.as_object_mut() {
-                                        event_obj
-                                            .entry("parameters")
-                                            .or_insert_with(|| params.clone());
-                                    } else if event.is_null() {
-                                        event = serde_json::json!({ "parameters": params });
-                                    }
-                                }
-
                                 let function = message.data["function"]
                                     .as_str()
-                                    .or_else(|| message.data["func"].as_str())
                                     .unwrap_or("")
                                     .to_string();
                                 info!("WebSocket invoke function={}", function);
@@ -90,7 +60,15 @@ impl WebSocketSession {
                                     user: message.data.get("user").cloned(),
                                     params,
                                 };
-                                let result = self.sandbox.invoke(request);
+                                // invoke_blocking offloads onto Tokio's blocking thread
+                                // pool because Sandbox::invoke drives the QuickJS/Lua
+                                // runtime synchronously and host calls it makes (module
+                                // settings fetch, ctx.http.request, ...) block on their
+                                // own async I/O internally — calling it directly here
+                                // would panic ("Cannot start a runtime from within a
+                                // runtime") since this task already runs on the actix
+                                // async reactor.
+                                let result = self.sandbox.invoke_blocking(request).await;
                                 match result {
                                     Ok(response) => {
                                         let response = WsMessage {

@@ -24,8 +24,8 @@
 --    end
 --
 -- SOURCE OF TRUTH: this file mirrors the QuickJS adapter at
--- `barkloader/lib_sandbox/src/runtime/quickjs.rs:185-417` and the Lua
--- adapter at `barkloader/lib_sandbox/src/runtime/lua.rs:63-192`. Both
+-- `barkloader/lib_sandbox/src/runtime/quickjs.rs:185-517` and the Lua
+-- adapter at `barkloader/lib_sandbox/src/runtime/lua.rs:63-255`. Both
 -- runtimes register an identical `ctx` shape, so this annotation is
 -- valid for either.
 
@@ -61,10 +61,45 @@
 ---@class CtxEnv
 ---@field get fun(key: string): string|nil
 
+---Forwards to the host's log, prefixed with the calling module's id.
+---There is no host-visible logging facility of Lua's own (the sandbox's
+---StdLib is NONE); this is the only way to emit a log line. Strings are
+---logged verbatim; any other value is JSON-encoded first.
+---
+---Takes exactly one argument. A second argument (e.g.
+---`ctx.log.info("data", data)`) is silently dropped by the sandbox host
+---binding, not logged and not an error — combine values yourself:
+---`ctx.log.info({ label = "data", value = data })`.
+---@class CtxLog
+---@field info fun(value: any): nil
+---@field warn fun(value: any): nil
+---@field error fun(value: any): nil
+
 ---@class CtxResources
 ---@field create fun(kind: string, instance_id: string, display_name?: string): ResourceInstance
 ---@field delete fun(canonical_id: string): nil
 ---@field list fun(kind: string): ResourceInstance[]
+
+---The standard shape a function returns when it wants the invoking chat
+---command to reply. `proto`/`v` mirror the woofx3.widget/
+---woofx3.overlay-events envelope convention, letting a caller reliably
+---recognize a deliberate ctx.response() result versus any other table a
+---function might return for its own purposes.
+---@class CtxResponse
+---@field proto "woofx3.response"
+---@field v 1
+---@field success boolean
+---@field message string
+
+---Identity and configured settings of the module the invoking function
+---belongs to. `settings` has one key per `module_settings` row
+---registered for this module, coerced to string/number/boolean based
+---on each setting's declared type.
+---@class CtxModule
+---@field id string             manifest-local module id
+---@field name string           display name from the manifest
+---@field version string        semver string from the manifest
+---@field settings table<string, string|number|boolean>
 
 ---@class CtxTwitchExtension
 ---@field clip fun(args?: any): nil
@@ -99,6 +134,9 @@
 ---@field http CtxHttp
 ---@field env CtxEnv
 ---@field resources CtxResources
+---@field module CtxModule
+---@field log CtxLog
+---@field response fun(success: boolean, message: string): CtxResponse
 ---@field twitch? CtxTwitchExtension
 ---@field chat? CtxChatExtension
 ---@field platform? CtxPlatform

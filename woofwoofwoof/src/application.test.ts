@@ -41,7 +41,7 @@ function buildTestContext(options: {
 
   const barkHandlers: Record<string, (msg: unknown) => void> = {};
   const barkSend = mock((_payload: string) => {});
-  const barkInvoke = mock(async (_func: string, _args: unknown[]) => "");
+  const barkInvoke = mock(async (_func: string, _event: Record<string, unknown>) => "");
 
   const barkloader = {
     client: {
@@ -96,10 +96,11 @@ function buildTestContext(options: {
     },
   };
 
+  const loggerWarn = mock((..._args: unknown[]) => {});
   const logger = {
     info: () => {},
     error: () => {},
-    warn: () => {},
+    warn: loggerWarn,
     debug: () => {},
   };
 
@@ -114,6 +115,7 @@ function buildTestContext(options: {
     barkInvoke,
     registerTriggers,
     chatSay: say,
+    loggerWarn,
   };
 
   return ctx as InitCtx & typeof ctx;
@@ -266,14 +268,24 @@ describe("WoofWoofWoof application", () => {
     });
 
     expect(base.barkInvoke).toHaveBeenCalled();
-    const [func, args] = base.barkInvoke.mock.calls[0];
+    const [func, event] = base.barkInvoke.mock.calls[0];
     expect(func).toBe("remote");
-    // no argumentPattern declared -> original two-positional-argument
-    // shape, unchanged for backward compatibility with existing modules.
-    expect(args).toEqual(["hello world", "user1"]);
+    // Same ChatCommandEventData-shaped payload regardless of whether the
+    // command declares an argumentPattern — variables is just empty here.
+    expect(event).toEqual({
+      data: {
+        command: "remote",
+        rawMessage: "!remote hello world",
+        text: "hello world",
+        args: ["hello", "world"],
+        variables: {},
+        chatter: "user1",
+        platform: "twitch",
+      },
+    });
   });
 
-  test("function commands with a declared argumentPattern send a single structured payload", async () => {
+  test("function commands with a declared argumentPattern populate ctx.event.data.variables", async () => {
     // Named "customsong", not "sr" - "sr" is one of the hardcoded built-in
     // commands registered in run() (Spotify search), which would silently
     // overwrite a same-named DB-defined command loaded during init().
@@ -312,9 +324,128 @@ describe("WoofWoofWoof application", () => {
     });
 
     expect(base.barkInvoke).toHaveBeenCalled();
-    const [func, args] = base.barkInvoke.mock.calls[0];
+    const [func, event] = base.barkInvoke.mock.calls[0];
     expect(func).toBe("song_request");
-    expect(args).toEqual([{ text: "Life is a highway", user: "user1", songTitle: "Life is a highway" }]);
+    expect(event).toEqual({
+      data: {
+        command: "customsong",
+        rawMessage: "!customsong Life is a highway",
+        text: "Life is a highway",
+        args: ["Life", "is", "a", "highway"],
+        variables: { songTitle: "Life is a highway" },
+        chatter: "user1",
+        platform: "twitch",
+      },
+    });
+  });
+
+  test("sends exactly the message from a ctx.response()-shaped success result", async () => {
+    const remoteCmd = {
+      id: "c3",
+      applicationId: "app-1",
+      command: "remote",
+      type: "function",
+      typeValue: "",
+      cooldown: 0,
+      priority: 0,
+      enabled: true,
+      createdBy: "",
+      createdAt: {} as never,
+      createdByType: "",
+      createdByRef: "",
+    } as Command;
+
+    const app = new WoofWoofWoof();
+    const base = buildTestContext({
+      listCommands: async () => ({ status: { code: "OK", message: "" }, commands: [remoteCmd] }),
+    });
+    base.barkInvoke.mockImplementationOnce(async () => ({
+      proto: "woofx3.response",
+      v: 1,
+      success: true,
+      message: "done!",
+    }));
+    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
+    await app.init(ctx);
+    await app.run(ctx);
+
+    const handler = getChatHandler(base);
+    await handler({ json: () => ({ data: { message: "!remote hi", chatterName: "user1" } }) });
+
+    expect(base.chatSay).toHaveBeenCalledTimes(1);
+    expect(base.chatSay.mock.calls[0]?.[1]).toBe("done!");
+    expect(base.loggerWarn).not.toHaveBeenCalled();
+  });
+
+  test("still sends the message when ctx.response() reports failure, and logs a warning", async () => {
+    const remoteCmd = {
+      id: "c4",
+      applicationId: "app-1",
+      command: "remote",
+      type: "function",
+      typeValue: "",
+      cooldown: 0,
+      priority: 0,
+      enabled: true,
+      createdBy: "",
+      createdAt: {} as never,
+      createdByType: "",
+      createdByRef: "",
+    } as Command;
+
+    const app = new WoofWoofWoof();
+    const base = buildTestContext({
+      listCommands: async () => ({ status: { code: "OK", message: "" }, commands: [remoteCmd] }),
+    });
+    base.barkInvoke.mockImplementationOnce(async () => ({
+      proto: "woofx3.response",
+      v: 1,
+      success: false,
+      message: "could not do the thing",
+    }));
+    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
+    await app.init(ctx);
+    await app.run(ctx);
+
+    const handler = getChatHandler(base);
+    await handler({ json: () => ({ data: { message: "!remote hi", chatterName: "user1" } }) });
+
+    expect(base.chatSay).toHaveBeenCalledTimes(1);
+    expect(base.chatSay.mock.calls[0]?.[1]).toBe("could not do the thing");
+    expect(base.loggerWarn).toHaveBeenCalled();
+  });
+
+  test("sends no chat message when the function returns a non-standard shape", async () => {
+    const remoteCmd = {
+      id: "c5",
+      applicationId: "app-1",
+      command: "remote",
+      type: "function",
+      typeValue: "",
+      cooldown: 0,
+      priority: 0,
+      enabled: true,
+      createdBy: "",
+      createdAt: {} as never,
+      createdByType: "",
+      createdByRef: "",
+    } as Command;
+
+    const app = new WoofWoofWoof();
+    const base = buildTestContext({
+      listCommands: async () => ({ status: { code: "OK", message: "" }, commands: [remoteCmd] }),
+    });
+    // Legacy ad hoc diagnostic shape (pre-ctx.response() convention) — must
+    // NOT be stringified into "[object Object]" and sent to chat.
+    base.barkInvoke.mockImplementationOnce(async () => ({ sent: false, error: "empty query" }));
+    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
+    await app.init(ctx);
+    await app.run(ctx);
+
+    const handler = getChatHandler(base);
+    await handler({ json: () => ({ data: { message: "!remote hi", chatterName: "user1" } }) });
+
+    expect(base.chatSay).not.toHaveBeenCalled();
   });
 
   test("Barkloader forwards outbound chat lines into Twitch when a command is present", async () => {

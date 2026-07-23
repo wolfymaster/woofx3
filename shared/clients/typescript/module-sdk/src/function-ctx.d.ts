@@ -16,8 +16,8 @@
 //   import type { Ctx } from "@woofx3/module-sdk/function-ctx";
 //
 // SOURCE OF TRUTH: this file mirrors what the QuickJS adapter at
-// `barkloader/lib_sandbox/src/runtime/quickjs.rs:185-417` and the Lua
-// adapter at `barkloader/lib_sandbox/src/runtime/lua.rs:63-192` actually
+// `barkloader/lib_sandbox/src/runtime/quickjs.rs:185-517` and the Lua
+// adapter at `barkloader/lib_sandbox/src/runtime/lua.rs:63-255` actually
 // register on the ctx object. The drift test at
 // `tests/function-ctx-drift.test.ts` scans the Rust source on every
 // run and asserts every registered key appears here.
@@ -92,6 +92,38 @@ export interface CtxEnv {
 }
 
 /**
+ * `ctx.log` — forwards to the host's log, prefixed with the calling
+ * module's id. There is no `console` global in this sandbox; this is the
+ * only way for a module function to emit a log line. Strings are logged
+ * verbatim; any other value is JSON-encoded first.
+ *
+ * Takes exactly one argument, unlike `console.log(a, b, c)`. Plain-JS
+ * callers not type-checking against this signature get no error for
+ * `ctx.log.info('label', data)` — the extra argument is silently dropped
+ * by the sandbox host binding, not logged. Combine values yourself:
+ * `ctx.log.info({ label: 'data', value: data })`.
+ */
+export interface CtxLog {
+  info(value: unknown): void;
+  warn(value: unknown): void;
+  error(value: unknown): void;
+}
+
+/**
+ * The standard shape a function returns when it wants the invoking chat
+ * command to reply. `proto`/`v` mirror the `woofx3.widget`/
+ * `woofx3.overlay-events` envelope convention, letting a caller reliably
+ * recognize "this is a deliberate ctx.response() result" versus any other
+ * object a function might return for its own purposes.
+ */
+export interface CtxResponse {
+  proto: "woofx3.response";
+  v: 1;
+  success: boolean;
+  message: string;
+}
+
+/**
  * `ctx.resources` — runtime-instance lifecycle for kinds the calling
  * module declared in its manifest's `resources[]` block.
  *
@@ -103,6 +135,26 @@ export interface CtxResources {
   create(kind: string, instanceId: string, displayName?: string): ResourceInstance;
   delete(canonicalId: string): void;
   list(kind: string): ResourceInstance[];
+}
+
+/**
+ * `ctx.module` — identity and configured settings of the module the
+ * invoking function belongs to.
+ *
+ * `settings` has one key per `module_settings` row registered for this
+ * module (declared in the manifest's `settings[]` block), coerced to a
+ * native `string` / `number` / `boolean` based on each setting's
+ * declared type. A setting with no value configured yet still appears,
+ * resolved to its manifest `default` (or the type's zero value).
+ */
+export interface CtxModule {
+  /** Manifest-local module id, e.g. `"spotify"`. */
+  id: string;
+  /** Display name from the manifest. */
+  name: string;
+  /** Semver string from the manifest. */
+  version: string;
+  settings: Record<string, string | number | boolean>;
 }
 
 // ── Extensions ──────────────────────────────────────────────────────
@@ -155,8 +207,8 @@ export interface CtxExtensions {
 
 /**
  * The `ctx` object passed to every function invocation. Combines the
- * built-in surface (event, user, events, storage, http, env, resources)
- * with any extension namespaces the host registered.
+ * built-in surface (event, user, events, storage, http, env, resources,
+ * module, log, response) with any extension namespaces the host registered.
  *
  * `event` and `user` are typed as `unknown` because their shape is
  * determined by the trigger that fired the function — the author knows
@@ -174,6 +226,17 @@ export interface Ctx extends CtxExtensions {
   http: CtxHttp;
   env: CtxEnv;
   resources: CtxResources;
+  module: CtxModule;
+  log: CtxLog;
+  /**
+   * Builds the standard response shape to `return` when a chat-command-
+   * triggered function wants to reply. `message` is required — if a
+   * function has nothing to say, it simply doesn't call this (returns
+   * `null`/`undefined`, or nothing); `success` never gates whether the
+   * message is sent, only whether the caller treats it as an error for
+   * logging.
+   */
+  response(success: boolean, message: string): CtxResponse;
 }
 
 /**

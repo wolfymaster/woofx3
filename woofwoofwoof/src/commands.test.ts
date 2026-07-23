@@ -80,6 +80,8 @@ describe("Commands", () => {
       commandName: "hello",
       args: ["world", "party"],
       rawMessage: "!hello world party",
+      text: "world party",
+      variables: {},
       chatter: "alice",
     });
   });
@@ -248,7 +250,10 @@ describe("Commands", () => {
     const [out, matched] = await commands.process("!sr Life is a highway", "player");
     expect(matched).toBe(true);
     expect(out).toBe("queued Life is a highway");
-    expect(handler).toHaveBeenCalledWith("Life is a highway", "player", { songTitle: "Life is a highway" });
+    expect(handler).toHaveBeenCalledWith("Life is a highway", "player", { songTitle: "Life is a highway" }, {
+      rawMessage: "!sr Life is a highway",
+      args: ["Life", "is", "a", "highway"],
+    });
   });
 
   test("commands with no declared variables are unaffected (vars is an empty object)", async () => {

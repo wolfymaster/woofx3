@@ -208,6 +208,8 @@ fn build_ctx_object<'js>(
     build_env_namespace(ctx, &ctx_obj, invocation)?;
     build_resources_namespace(ctx, &ctx_obj, invocation)?;
     build_module_namespace(ctx, &ctx_obj, invocation)?;
+    build_log_namespace(ctx, &ctx_obj, invocation)?;
+    build_response_fn(ctx, &ctx_obj)?;
     bind_extensions(ctx, &ctx_obj, invocation)?;
 
     Ok(ctx_obj)
@@ -460,6 +462,88 @@ fn build_module_namespace<'js>(
     Ok(())
 }
 
+/// Stringifies a value for the `ctx.log.*` functions: strings are logged
+/// verbatim, everything else is JSON-encoded so structured data is still
+/// readable in the host log line.
+fn format_log_value(value: &JsValue<'_>) -> String {
+    if value.is_string() {
+        return value
+            .clone()
+            .into_string()
+            .and_then(|s| s.to_string().ok())
+            .unwrap_or_else(|| "<unprintable string>".to_string());
+    }
+    match js_to_json(value) {
+        Ok(json) => json.to_string(),
+        Err(_) => format!("<unloggable value: {:?}>", value.type_of()),
+    }
+}
+
+/// `ctx.log` — forwards a module's log calls to the host's `log` crate,
+/// prefixed with the calling module's id so multi-module log output stays
+/// attributable. There is no `console` global in this sandbox (QuickJS
+/// doesn't provide one, and none is bound here) — `ctx.log.*` is the only
+/// way for a module function to emit a log line.
+fn build_log_namespace<'js>(
+    ctx: &Ctx<'js>,
+    ctx_obj: &Object<'js>,
+    invocation: &InvocationContext,
+) -> Result<(), Error> {
+    let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
+    let log = Object::new(ctx.clone()).map_err(map)?;
+
+    let module_id = invocation.module_id.clone();
+    let info_fn = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, value: JsValue<'_>| -> rquickjs::Result<()> {
+        log::info!("[module:{}] {}", module_id, format_log_value(&value));
+        Ok(())
+    }).map_err(map)?;
+    log.set("info", info_fn).map_err(map)?;
+
+    let module_id = invocation.module_id.clone();
+    let warn_fn = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, value: JsValue<'_>| -> rquickjs::Result<()> {
+        log::warn!("[module:{}] {}", module_id, format_log_value(&value));
+        Ok(())
+    }).map_err(map)?;
+    log.set("warn", warn_fn).map_err(map)?;
+
+    let module_id = invocation.module_id.clone();
+    let error_fn = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, value: JsValue<'_>| -> rquickjs::Result<()> {
+        log::error!("[module:{}] {}", module_id, format_log_value(&value));
+        Ok(())
+    }).map_err(map)?;
+    log.set("error", error_fn).map_err(map)?;
+
+    ctx_obj.set("log", log).map_err(map)?;
+    Ok(())
+}
+
+/// `ctx.response(success, message)` — the standard shape a module function
+/// returns when it wants the invoking chat command to reply. A pure data
+/// constructor (no host state, unlike the other `build_*` functions): it
+/// only builds and returns `{ proto: "woofx3.response", v: 1, success,
+/// message }`; the sandboxed function still has to actually `return` the
+/// result for anything to happen. If a function never calls this and just
+/// returns `null`/`undefined` (or nothing), no message is sent — same
+/// outcome as never calling it at all. Tagged with `proto`/`v` (mirroring
+/// the `woofx3.widget`/`woofx3.overlay-events` envelope convention) so a
+/// caller can reliably distinguish "this is a deliberate response" from any
+/// other object a function might return for its own purposes.
+fn build_response_fn<'js>(ctx: &Ctx<'js>, ctx_obj: &Object<'js>) -> Result<(), Error> {
+    let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
+    let response_fn = JsFunction::new(ctx.clone(), move |ctx, success: bool, message: String| {
+        let value = serde_json::json!({
+            "proto": "woofx3.response",
+            "v": 1,
+            "success": success,
+            "message": message,
+        });
+        json_to_js(&ctx, &value).map_err(|e| host_err(e.to_string()))
+    })
+    .map_err(map)?;
+    ctx_obj.set("response", response_fn).map_err(map)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -482,5 +566,70 @@ mod tests {
         assert_eq!(result["id"], "mymod");
         assert_eq!(result["name"], "My Module");
         assert_eq!(result["version"], "2.0.0");
+    }
+
+    #[test]
+    fn quickjs_ctx_log_accepts_strings_and_objects() {
+        let adapter = QuickJSAdapter::new().unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+        };
+        // Exercises all three levels and both a string and an object
+        // argument; the assertion is just that none of these throw and the
+        // function still returns normally — actual log output isn't
+        // captured here, that's the `log` crate's job.
+        let code = "function run(ctx) { \
+            ctx.log.info('testing'); \
+            ctx.log.warn({ code: 42 }); \
+            ctx.log.error('oops'); \
+            return { ok: true }; \
+        }";
+        let result = adapter.execute(code, "run", &invocation).unwrap();
+        assert_eq!(result["ok"], true);
+    }
+
+    #[test]
+    fn quickjs_ctx_log_ignores_arguments_past_the_first() {
+        // ctx.log.* binds a single-parameter Rust closure; rquickjs
+        // silently drops any JS-side arguments beyond what the closure
+        // declares rather than erroring. Guards the documented "one value
+        // per call" contract — if rquickjs's calling convention ever
+        // changes to error instead, this is the test that should catch it.
+        let adapter = QuickJSAdapter::new().unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+        };
+        let code = "function run(ctx) { ctx.log.info('data', { foo: 1 }); return { ok: true }; }";
+        let result = adapter.execute(code, "run", &invocation).unwrap();
+        assert_eq!(result["ok"], true);
+    }
+
+    #[test]
+    fn quickjs_ctx_response_builds_the_standard_shape() {
+        let adapter = QuickJSAdapter::new().unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+        };
+        let code = "function run(ctx) { return ctx.response(false, 'nope'); }";
+        let result = adapter.execute(code, "run", &invocation).unwrap();
+        assert_eq!(result["proto"], "woofx3.response");
+        assert_eq!(result["v"], 1);
+        assert_eq!(result["success"], false);
+        assert_eq!(result["message"], "nope");
     }
 }

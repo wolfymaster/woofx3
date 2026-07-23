@@ -65,6 +65,8 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
           const [subject, data] = ctx.events.ChatCommand().command(match.commandName, {
             args: match.args,
             rawMessage: match.rawMessage,
+            text: match.text,
+            variables: match.variables,
             chatter: match.chatter,
             platform: "twitch",
           });
@@ -295,56 +297,56 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       return `Currently Playing: ${track.name} by ${track.artist}`;
     });
 
-    ctx.commander.add("sr", async (text: string) => {
-      const spotify = new Spotify(
-        (ctx.config.getConfig("spotifyClientId") as string) ?? "",
-        (ctx.config.getConfig("spotifyClientSecret") as string) ?? "",
-        (ctx.config.getConfig("spotifyAccessToken") as string) ?? "",
-        (ctx.config.getConfig("spotifyRefreshToken") as string) ?? ""
-      );
+    // ctx.commander.add("sr", async (text: string) => {
+    //   const spotify = new Spotify(
+    //     (ctx.config.getConfig("spotifyClientId") as string) ?? "",
+    //     (ctx.config.getConfig("spotifyClientSecret") as string) ?? "",
+    //     (ctx.config.getConfig("spotifyAccessToken") as string) ?? "",
+    //     (ctx.config.getConfig("spotifyRefreshToken") as string) ?? ""
+    //   );
 
-      // await spotify.refresh();
+    //   // await spotify.refresh();
 
-      // list devices
-      // console.log(await spotify.devices());
+    //   // list devices
+    //   // console.log(await spotify.devices());
 
-      await spotify.refresh();
+    //   await spotify.refresh();
 
-      // const devices = await spotify.devices();
-      // console.log('devices', devices);
+    //   // const devices = await spotify.devices();
+    //   // console.log('devices', devices);
 
-      // select a song and play it via spotify
-      const deviceId = "02e7cb6b8d5bae01eeb82eb2af0e32e22e044d43"; // computer device id
+    //   // select a song and play it via spotify
+    //   const deviceId = "02e7cb6b8d5bae01eeb82eb2af0e32e22e044d43"; // computer device id
 
-      // if url, attempt to parse
-      if (text.includes("open.spotify.com/track")) {
-        const regex = /(?:https?:\/\/)?open\.spotify\.com\/track\/([a-zA-Z0-9]+)(?:\?|$)/;
+    //   // if url, attempt to parse
+    //   if (text.includes("open.spotify.com/track")) {
+    //     const regex = /(?:https?:\/\/)?open\.spotify\.com\/track\/([a-zA-Z0-9]+)(?:\?|$)/;
 
-        const matches = text.match(regex);
-        if (!matches || matches.length < 2) {
-          return "";
-        }
+    //     const matches = text.match(regex);
+    //     if (!matches || matches.length < 2) {
+    //       return "";
+    //     }
 
-        const trackId = matches[1];
+    //     const trackId = matches[1];
 
-        const song = await spotify.getTrack(trackId);
+    //     const song = await spotify.getTrack(trackId);
 
-        // await spotify.addToPlaylist(song);
-        await spotify.play(song, deviceId);
+    //     // await spotify.addToPlaylist(song);
+    //     await spotify.play(song, deviceId);
 
-        return `Added to queue: ${song.name} by ${song.artist}`;
-      }
+    //     return `Added to queue: ${song.name} by ${song.artist}`;
+    //   }
 
-      const results = await spotify.search(text);
+    //   const results = await spotify.search(text);
 
-      // search spotify "smartly"
-      const firstResult = results[0];
+    //   // search spotify "smartly"
+    //   const firstResult = results[0];
 
-      // await spotify.addToPlaylist(firstResult);
-      await spotify.play(firstResult, deviceId);
+    //   // await spotify.addToPlaylist(firstResult);
+    //   await spotify.play(firstResult, deviceId);
 
-      return `Added to queue: ${firstResult.name} by ${firstResult.artist}`;
-    });
+    //   return `Added to queue: ${firstResult.name} by ${firstResult.artist}`;
+    // });
 
     // UPDATE STREAM CATEGORY
     ctx.commander.add("category", async (text: string) => {
@@ -468,24 +470,43 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       cooldownSeconds: command.cooldown,
       variables,
     };
+    
     if (command.type === "function") {
       // typeValue is the function name to invoke in barkloader. Fall back
       // to the command name for legacy rows where typeValue is empty.
       const funcName = command.typeValue || command.command;
       ctx.commander.add(
         command.command,
-        async (text: string, user?: string, vars?: Record<string, unknown>) => {
+        async (
+          text: string,
+          user?: string,
+          vars?: Record<string, unknown>,
+          invocation?: { rawMessage: string; args: string[] }
+        ) => {
           try {
-            // Commands with no {variable} placeholders keep the original
-            // two-positional-argument shape for full backward
-            // compatibility with already-deployed module functions. Only
-            // commands that opt into {variable} syntax get the richer
-            // single-object payload (barkloader's WS server already
-            // treats a lone object arg as `event.parameters`, see
-            // barkloader/app/src/websocket.rs).
-            const args = vars && Object.keys(vars).length > 0 ? [{ text, user, ...vars }] : [text, user];
-            const result = await ctx.services.barkloader.client.invoke(funcName, args);
-            return typeof result === "string" ? result : String(result ?? "");
+            // Same ChatCommandEventData shape the CloudEvent/workflow path
+            // produces (see ChatCommandEventData in
+            // shared/common/typescript/cloudevents/Chat/commands.ts) — a
+            // module function sees an identical ctx.event.data regardless of
+            // which path invoked it.
+            const eventData = {
+              command: command.command,
+              rawMessage: invocation?.rawMessage ?? text,
+              text,
+              args: invocation?.args ?? [],
+              variables: vars ?? {},
+              chatter: user ?? "",
+              platform: "twitch" as const,
+            };
+            const result = await ctx.services.barkloader.client.invoke(funcName, { data: eventData });
+            const response = extractResponseMessage(result);
+            if (response && !response.success) {
+              ctx.logger.warn("Module function reported failure", {
+                function: funcName,
+                message: response.message,
+              });
+            }
+            return response?.message ?? "";
           } catch (err: unknown) {
             if (err instanceof Error) {
               console.error("Failed to invoke Barkloader function", err.message);
@@ -516,6 +537,26 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
     this.commandsByEngineId.delete(id);
     ctx.logger.info("removed command", existing.command);
   }
+}
+
+// Recognizes the standard ctx.response(success, message) shape a barkloader
+// module function returns (see shared/clients/typescript/module-sdk/src/
+// function-ctx.d.ts CtxResponse) and pulls out the chat message. Anything
+// else — null/undefined, or any other object shape (e.g. an unmigrated
+// function's own ad hoc diagnostics) — is treated as "no message", never
+// stringified/sent. `proto`/`v` mirror the woofx3.widget envelope
+// convention used elsewhere in this repo.
+function extractResponseMessage(result: unknown): { success: boolean; message: string } | null {
+  if (
+    result &&
+    typeof result === "object" &&
+    (result as Record<string, unknown>).proto === "woofx3.response" &&
+    typeof (result as Record<string, unknown>).message === "string"
+  ) {
+    const r = result as { success?: unknown; message: string };
+    return { success: r.success === true, message: r.message };
+  }
+  return null;
 }
 
 // Bridge the engine's CommandSnapshot (shared API shape) into the

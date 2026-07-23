@@ -13,8 +13,8 @@ Module code runs inside two host-managed environments:
 
 - **Function sandbox** — Rust-hosted QuickJS (JS) or mlua (Lua). The
   host builds a `ctx` object per invocation and registers namespaces
-  on it: `events`, `storage`, `http`, `env`, `resources`, plus any
-  extensions the engine deployment wired up (`twitch`, `chat`,
+  on it: `events`, `storage`, `http`, `env`, `resources`, `module`, `log`,
+  plus any extensions the engine deployment wired up (`twitch`, `chat`,
   `platform.alerts`, `platform.chat`).
 - **Widget iframe** — streamware loads your widget bundle into a
   sandboxed iframe and assigns `widgetHost` onto its `window` once the
@@ -60,13 +60,15 @@ v0.1.0):
 | `ctx.http` | `request(url, method, opts?)` |
 | `ctx.env` | `get(key)` |
 | `ctx.resources` | `create(kind, instanceId, displayName?)`, `delete(canonicalId)`, `list(kind)` |
+| `ctx.module` | `id`, `name`, `version` (invoking module's identity), `settings` (resolved `module_settings` values — see [Module-level settings](./modules.md#module-level-settings-settings)) |
+| `ctx.log` | `info(value)`, `warn(value)`, `error(value)` — forwards to the host's log, prefixed with the module id. No `console` global exists in this sandbox; this is the only way to emit a log line. |
 | `ctx.twitch?` | `clip(args?)`, `timeout(args)`, `updateStream(args)`, `addModerator(args)` |
 | `ctx.chat?` | `sendMessage(text)` |
 | `ctx.platform?.alerts?` | `alert(args)`, `setTimer(args)` |
 | `ctx.platform?.chat?` | `register(args)` |
 
 The engine's runtime registration is the source of truth (see
-`barkloader/lib_sandbox/src/runtime/quickjs.rs:185-417`). The SDK ships
+`barkloader/lib_sandbox/src/runtime/quickjs.rs:185-517`). The SDK ships
 a drift test that scans this source on every build — if a new property
 appears in Rust without a matching declaration in
 `function-ctx.d.ts`, the test fails.

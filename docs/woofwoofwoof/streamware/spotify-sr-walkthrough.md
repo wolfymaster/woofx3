@@ -8,9 +8,12 @@ using the `spotify_sr` module's `now_playing` widget as a concrete example.
 Barkloader receives the `spotify_sr` ZIP archive and processes its manifest. The
 manifest declares a `now_playing` widget with a polling background task:
 
+This is a simplified excerpt — see `barkloader/modules/spotify_sr/manifest.json` for
+the full manifest:
+
 ```json
 {
-  "id": "spotify_sr",
+  "id": "spotify",
   "widgets": [
     {
       "id": "now_playing",
@@ -21,11 +24,17 @@ manifest declares a `now_playing` widget with a polling background task:
       "acceptedEvents": []
     }
   ],
-  "backgroundTasks": [
+  "settings": [
+    { "id": "clientId", "name": "Spotify Client ID", "type": "string", "required": true },
+    { "id": "clientSecret", "name": "Spotify Client Secret", "type": "string", "required": true },
+    { "id": "refreshToken", "name": "Spotify Refresh Token", "type": "string", "required": true }
+  ],
+  "background_tasks": [
     {
-      "id": "spotify_poll",
-      "intervalSecs": 30,
-      "handler": "poll_spotify"
+      "id": "poll_now_playing",
+      "function": "poll_current_track",
+      "schedule": "*/30 * * * * *",
+      "description": "Polls Spotify every 30 seconds to update the currently playing track."
     }
   ]
 }
@@ -37,11 +46,24 @@ On install, barkloader:
   `modules/spotify_sr/widgets/now_playing/`.
 - Registers the widget definition via db-proxy (writes to the `module_widgets` table).
 - Publishes `module.widget.registered` on NATS.
-- Schedules the `spotify_poll` background task with a 30-second interval.
+- Registers the module-level `settings` (`clientId`, `clientSecret`, `refreshToken`)
+  into the `module_settings` table with empty defaults — see
+  [Module settings](../../barkloader/modules.md#module-level-settings-settings). The
+  streamer must fill these in via `PUT /modules/{moduleId}/settings/{key}` before
+  the module can authenticate to Spotify; until then, `poll_current_track`,
+  `get_devices`, and `song_request` all bail out early with a "Spotify is not
+  configured" response.
+- Registers and schedules the `poll_now_playing` background task on its cron
+  `schedule` (`*/30 * * * * *` — every 30 seconds) — see
+  [Background tasks](../../barkloader/modules.md#background-tasks-backgroundtasks).
 
-The widget canonical id becomes `spotify_sr:widget:now_playing`. The `entry` field
-(`index.html`) is relative to the asset root and is resolved by the frame assembler
-at request time.
+The widget canonical id becomes `spotify_sr:widget:now_playing` in the rest of this
+walkthrough (module id + `:widget:` + manifest id — see
+[canonical id parsing](./widget-protocol.md#widget-canonical-id-parsing-and-version-stripping)
+for how a versioned form of the module id gets normalized before it reaches this
+point; the examples below use the simplified `spotify_sr` form, consistent with the
+other pages in this section). The `entry` field (`index.html`) is relative to the
+asset root and is resolved by the frame assembler at request time.
 
 ## 2. Create a scene
 
@@ -60,6 +82,11 @@ The `id` field (`wp1`) is the stable instance id for this placement. The `positi
 block places the widget at (0, 0) with a 400×150 pixel bounding box.
 
 ## 3. Mint an overlay token
+
+> **Known gap:** as of the `api.ts` → per-domain route split, this RPC is not
+> currently reachable through the api — see the "Known gap" note in
+> [Overlay tokens](./overlay-tokens.md#token-lifecycle). The steps below describe
+> the intended flow.
 
 ```
 POST api → mintOverlayToken({ sceneId: "scene-abc-123", label: "OBS main" })
@@ -279,6 +306,14 @@ The shim's message listener fires the callback registered by the widget. The wid
 re-renders with the new album art and progress bar.
 
 ## 7. Revoking the token
+
+> **Known gap:** steps 1–2 below work today; steps 3–5 describe the intended
+> behavior once revocation push is implemented — see the "Known gap" notes in
+> [Overlay tokens](./overlay-tokens.md#revoke) and
+> [P2 event source](./p2-event-source.md#control-frame). Currently only
+> `resolver.invalidateAll()` runs (step 3's cache poison); no re-resolve, no
+> `control` frame, and no socket close happen, so an already-open overlay
+> connection keeps working until it disconnects for some unrelated reason.
 
 ```
 POST api → revokeOverlayToken({ tokenId: "tok_..." })

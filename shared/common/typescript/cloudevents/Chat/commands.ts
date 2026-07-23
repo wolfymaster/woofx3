@@ -6,6 +6,12 @@ export interface ChatCommandEventData {
     command: string;
     args: string[];
     rawMessage: string;
+    /** rawMessage with the matched command token stripped, e.g. "!sr bad angel" -> "bad angel". */
+    text: string;
+    /** Named argument_pattern captures (e.g. "{songTitle}" -> { songTitle: "..." }).
+     *  Empty object when the command declares no `{variable}` placeholders. Dotted
+     *  variable names (e.g. "user.name") build nested objects. */
+    variables: Record<string, unknown>;
     chatter: string;
     platform: "twitch";
     channelId?: string;

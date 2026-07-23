@@ -31,8 +31,21 @@ export type ChatWatcherFunction = (msg: string, user?: string) => Promise<void>;
  * command declared as "sr {songTitle}" invoked as "!sr Life is a highway"
  * passes `{ songTitle: "Life is a highway" }`. Empty object when the
  * command declares no `{variable}` placeholders.
+ *
+ * `invocation` (fourth param, function responses only) carries the full
+ * raw message and positional args that `msg` (the command-stripped
+ * remainder) doesn't — needed by callers that forward a complete
+ * `ChatCommandEventData`-shaped payload elsewhere (e.g. a direct barkloader
+ * invoke). Every other handler can ignore it.
  */
-export type CommandResponse = string | ((msg: string, user?: string, vars?: Record<string, unknown>) => Promise<string>);
+export type CommandResponse =
+  | string
+  | ((
+      msg: string,
+      user?: string,
+      vars?: Record<string, unknown>,
+      invocation?: { rawMessage: string; args: string[] }
+    ) => Promise<string>);
 
 export type AuthorizationResponse = {
   granted: boolean;
@@ -47,6 +60,11 @@ export interface CommandMatch {
   commandName: string;
   args: string[];
   rawMessage: string;
+  /** rawMessage with the matched command token stripped. */
+  text: string;
+  /** Named argument_pattern captures — see extractCommandVariables. Empty
+   *  object when the command declares no `{variable}` placeholders. */
+  variables: Record<string, unknown>;
   chatter: string;
 }
 export type CommandPublisher = (match: CommandMatch) => void;
@@ -149,18 +167,22 @@ export class Commands {
           return [auth.message ?? "", !!auth.message];
         }
 
+        // vars must be computed before emitMatch so the emitted CloudEvent
+        // carries the same argument_pattern captures a module function sees.
+        const args = msg.text.length > 0 ? msg.text.split(/\s+/) : [];
+        const vars = extractCommandVariables(cmdRecord.variables ?? [], msg.text);
+
         // Emit the chat.command.<slug> CloudEvent before running the handler so
         // downstream consumers (e.g. workflow engine triggers) still observe the
         // match even if the handler throws or returns an empty string.
-        const args = msg.text.length > 0 ? msg.text.split(/\s+/) : [];
         this.emitMatch({
           commandName: msg.cmd,
           args,
           rawMessage: text,
+          text: msg.text,
+          variables: vars,
           chatter: user,
         });
-
-        const vars = extractCommandVariables(cmdRecord.variables ?? [], msg.text);
 
         if (typeof response === "string") {
           const templateCtx: ResolverContext = {
@@ -175,7 +197,7 @@ export class Commands {
           return [typeof resolved === "string" ? resolved : String(resolved ?? ""), true];
         }
         if (typeof response === "function") {
-          const res = await response(msg.text, user.trim(), vars);
+          const res = await response(msg.text, user.trim(), vars, { rawMessage: text, args });
           return [res, true];
         }
       }

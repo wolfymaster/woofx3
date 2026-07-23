@@ -61,8 +61,7 @@ async fn websocket_handler(
         .aggregate_continuations()
         .max_continuation_size(2_usize.pow(20));
     rt::spawn(async move {
-        let sandbox = ctx.sandbox.create().expect("Failed to create sandbox");
-        let socket = WebSocketSession::new(sandbox);
+        let socket = WebSocketSession::new(ctx.sandbox.clone());
         socket.handle_message(session, stream).await;
     });
     Ok(res)
