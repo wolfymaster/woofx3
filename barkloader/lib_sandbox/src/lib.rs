@@ -9,5 +9,6 @@ mod runtime;
 mod sandbox;
 
 pub use builtin_dispatch::BuiltinDispatcher;
+pub use error::{Error, InvokeBlockingError};
 pub use module_registry::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule};
 pub use sandbox::{Sandbox, SandboxFactory};

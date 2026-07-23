@@ -1,5 +1,5 @@
 use crate::builtin_dispatch::BuiltinDispatcher;
-use crate::error::Error;
+use crate::error::{Error, InvokeBlockingError};
 use crate::function_executor::FunctionExecutor;
 use crate::host::{HostContext, InvocationContext};
 use crate::models::request::InvokeRequest;
@@ -38,6 +38,45 @@ impl SandboxFactory {
             self.host_ctx.clone(),
             self.builtin_dispatcher.clone(),
         )
+    }
+
+    /// Creates a fresh `Sandbox` and invokes `request` on Tokio's blocking
+    /// thread pool.
+    ///
+    /// `Sandbox::invoke` drives the QuickJS/Lua runtime synchronously, and
+    /// host-side calls it makes along the way (module settings fetch via
+    /// `ctx.module.settings`, `ctx.http.request`, ...) block on their own
+    /// async I/O internally. Calling `Sandbox::invoke` directly from an
+    /// async task panics with "Cannot start a runtime from within a
+    /// runtime." This is the single sanctioned entry point for invoking a
+    /// sandboxed function from async code — every caller (WebSocket
+    /// invoke, the background-task scheduler, the field-options
+    /// responder) should go through this rather than calling
+    /// `Sandbox::invoke` directly, so the hazard can't be reintroduced by
+    /// a future call site forgetting to offload it.
+    pub async fn invoke_blocking(
+        &self,
+        request: InvokeRequest,
+    ) -> Result<Value, InvokeBlockingError> {
+        let factory = self.clone();
+        // The closure's return value has to cross back from the blocking
+        // thread pool into this async task, so it has to be `Send`. `Error`
+        // isn't (it wraps `mlua::Error`, which can box a non-`Sync` `dyn
+        // StdError`) — flatten to a string on the blocking side rather than
+        // requiring every error source in this crate to be thread-safe just
+        // to satisfy `spawn_blocking`.
+        match tokio::task::spawn_blocking(move || {
+            factory
+                .create()
+                .and_then(|sandbox| sandbox.invoke(request))
+                .map_err(|e| e.to_string())
+        })
+        .await
+        {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(msg)) => Err(InvokeBlockingError::Invoke(msg)),
+            Err(join_err) => Err(InvokeBlockingError::TaskJoin(join_err.to_string())),
+        }
     }
 }
 

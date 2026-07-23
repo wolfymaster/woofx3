@@ -89,38 +89,37 @@ impl BackgroundTaskScheduler {
                     info!("Background task {}/{} firing", m, t);
                     let fire_start = std::time::Instant::now();
 
-                    // spawn_blocking because Sandbox::invoke drives the QuickJS runtime
-                    // synchronously and ReqwestHttpClient::request calls block_on internally.
-                    let result = tokio::task::spawn_blocking(move || {
-                        let sandbox_instance = sb.create().map_err(|e| e.to_string())?;
-                        sandbox_instance
-                            .invoke(InvokeRequest {
-                                function: fn_id,
-                                event: json!({}),
-                                user: None,
-                                params: json!({}),
-                            })
-                            .map_err(|e| e.to_string())
-                    })
-                    .await;
+                    // invoke_blocking offloads onto Tokio's blocking thread pool
+                    // because Sandbox::invoke drives the QuickJS runtime
+                    // synchronously and host calls it makes (module settings
+                    // fetch, ctx.http.request, ...) block on their own async I/O
+                    // internally.
+                    let result = sb
+                        .invoke_blocking(InvokeRequest {
+                            function: fn_id,
+                            event: json!({}),
+                            user: None,
+                            params: json!({}),
+                        })
+                        .await;
 
                     let elapsed_ms = fire_start.elapsed().as_millis();
                     match result {
-                        Ok(Ok(_)) => {
+                        Ok(_) => {
                             info!(
                                 "Background task {}/{} completed in {}ms",
                                 m, t, elapsed_ms
                             );
                         }
-                        Ok(Err(e)) => {
+                        Err(lib_sandbox::InvokeBlockingError::TaskJoin(e)) => {
                             error!(
-                                "Background task {}/{} invoke error after {}ms: {}",
+                                "Background task {}/{} spawn error after {}ms: {}",
                                 m, t, elapsed_ms, e
                             );
                         }
                         Err(e) => {
                             error!(
-                                "Background task {}/{} spawn error after {}ms: {}",
+                                "Background task {}/{} invoke error after {}ms: {}",
                                 m, t, elapsed_ms, e
                             );
                         }

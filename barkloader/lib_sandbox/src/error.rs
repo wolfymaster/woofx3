@@ -53,3 +53,21 @@ pub enum Error {
     #[error("Instruction limit exceeded")]
     InstructionLimitExceeded,
 }
+
+/// Thread-safe error returned by [`crate::SandboxFactory::invoke_blocking`].
+///
+/// `Error` itself isn't `Send` (it wraps `mlua::Error`, which can box a
+/// non-`Sync` `dyn StdError`), so it can't be held across an `.await` point
+/// inside a spawned task. This type flattens the underlying error to a
+/// string on the blocking thread before rejoining the async task, while
+/// still distinguishing "the sandboxed function itself failed" from "the
+/// blocking task panicked or was cancelled" so callers can log/handle them
+/// differently.
+#[derive(thiserror::Error, Debug, Clone)]
+pub enum InvokeBlockingError {
+    #[error("{0}")]
+    Invoke(String),
+
+    #[error("sandbox invocation task panicked or was cancelled: {0}")]
+    TaskJoin(String),
+}

@@ -75,26 +75,23 @@ pub async fn run_field_options_responder(client: Client, sandbox: SandboxFactory
 
         tokio::spawn(async move {
             let fn_id = function_id.clone();
-            let result = tokio::task::spawn_blocking(move || {
-                let sb = sandbox_clone.create().map_err(|e| e.to_string())?;
-                sb.invoke(InvokeRequest {
+            let result = sandbox_clone
+                .invoke_blocking(InvokeRequest {
                     function: fn_id,
                     event: json!({}),
                     user: None,
                     params: json!({}),
                 })
-                .map_err(|e| e.to_string())
-            })
-            .await;
+                .await;
 
             let reply_bytes = match result {
-                Ok(Ok(value)) => serde_json::to_vec(&value).unwrap_or_else(|_| b"[]".to_vec()),
-                Ok(Err(e)) => {
-                    error!("field_options: invoke {} failed: {}", function_id, e);
+                Ok(value) => serde_json::to_vec(&value).unwrap_or_else(|_| b"[]".to_vec()),
+                Err(lib_sandbox::InvokeBlockingError::TaskJoin(e)) => {
+                    error!("field_options: spawn_blocking for {} failed: {}", function_id, e);
                     b"[]".to_vec()
                 }
                 Err(e) => {
-                    error!("field_options: spawn_blocking for {} failed: {}", function_id, e);
+                    error!("field_options: invoke {} failed: {}", function_id, e);
                     b"[]".to_vec()
                 }
             };
