@@ -4,25 +4,27 @@ Every module can declare a set of module-level configuration values in its manif
 (`settings[]` — API keys, tokens, endpoints; see
 [Module format → Module-level settings](../barkloader/modules.md#module-level-settings-settings)).
 Barkloader registers these into the `module_settings` table at install time with
-empty/default values; a streamer fills them in afterward through the routes on this
-page. Sandboxed module functions read the resolved values back as `ctx.module.settings`
-(see [Sandbox → `ctx.module`](../barkloader/sandbox.md#ctxmodule)).
+empty/default values; a streamer fills them in afterward through the RPC methods on
+this page. Sandboxed module functions read the resolved values back as
+`ctx.module.settings` (see [Sandbox → `ctx.module`](../barkloader/sandbox.md#ctxmodule)).
 
 This is a **different system from widget `settingsSchema`** (per-widget-instance,
 surfaced to browser-side widget code as `widgetHost.settings`) — module settings are
 per-module, engine-typed, and surfaced to sandboxed function code.
 
-Implemented in `api/src/module-setting-handlers.ts`, wired into `api/src/server.ts` by
-forwarding any path under `/modules/` to `handleModuleSettingRoute` (which returns
-`null` on no match so normal 404 handling still applies). Types referenced without a
+Implemented as capnweb RPC methods on `modulesRoutes`
+(`api/src/routes/modules.ts`), the same convention used by essentially everything
+else the `api` service exposes (see `api/src/server.ts` — the only endpoints outside
+the single `/api` capnweb endpoint are `/health` and the dumb `/overlay/` byte proxy).
+There is no separate REST route for module settings. Types referenced without a
 qualifier live in `shared/clients/typescript/api/api.ts`.
 
-## Routes
+## Methods
 
-| Method | Path | Body | Response |
-|---|---|---|---|
-| `GET` | `/modules/:moduleId/settings` | — | `ModuleSettingsResponse` — `{ settings: ModuleSetting[] }` |
-| `PUT` | `/modules/:moduleId/settings/:key` | `{ value: string }` | `ModuleSetting` |
+| Method | Params | Returns |
+|---|---|---|
+| `getModuleSettings` | `moduleId: string` | `ModuleSettingsResponse` — `{ settings: ModuleSetting[] }` |
+| `updateModuleSetting` | `moduleId: string, key: string, value: string` | `ModuleSetting` |
 
 ```ts
 interface ModuleSetting {
@@ -42,27 +44,26 @@ to at runtime), not the composite `{id}:{version}:{hash}` key used for actions/w
 
 ## Behavior notes
 
-- **`PUT` cannot change a setting's type.** `updateModuleSetting` (`api/src/api.ts`)
-  always re-derives `valueType` server-side from the existing row before writing
-  (defaulting to `"string"` only if no row exists yet) — a client can overwrite
-  `value` but never `valueType`. The declared type comes from the manifest's
-  `settings[].type` and is fixed at install time.
-- **`PUT` body is validated as a string.** A non-string `value` in the request body
-  returns `400` with `{ error: "body.value must be a string" }` rather than being
+- **`updateModuleSetting` cannot change a setting's type.** It always re-derives
+  `valueType` server-side from the existing row before writing (defaulting to
+  `"string"` only if no row exists yet) — a caller can overwrite `value` but never
+  `valueType`. The declared type comes from the manifest's `settings[].type` and is
+  fixed at install time.
+- **`value` is validated as a string.** A non-string `value` throws rather than being
   passed through.
-- **Listing a module with no registered settings returns an empty array**, not a 404
-  — `ListModuleSettings` on the db side is a plain filter query, not an existence
-  check.
+- **Listing a module with no registered settings returns an empty array**, not an
+  error — `ListModuleSettings` on the db side is a plain filter query, not an
+  existence check.
 
 ## No secrecy guarantees
 
 There is no `secret`/`sensitive` flag anywhere in the manifest schema, the
-`module_settings` table, or these routes. `value` is stored as plaintext `TEXT` and
-returned verbatim by `GET` — a `clientSecret` or `refreshToken` setting is exposed in
-cleartext to any caller of the `GET` route exactly like a non-sensitive value such as
+`module_settings` table, or these methods. `value` is stored as plaintext `TEXT` and
+returned verbatim by `getModuleSettings` — a `clientSecret` or `refreshToken` setting
+is exposed in cleartext to any caller exactly like a non-sensitive value such as
 `clientId`. If you're building a settings UI on top of this, do not assume the API
 will mask or omit credential-shaped values — any access control has to live in front
-of these routes, not inside them.
+of these methods, not inside them.
 
 ## `widget_settings` — not implemented
 

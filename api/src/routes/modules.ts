@@ -5,6 +5,8 @@ import type {
   CreateCommandInput,
   CreateWorkflowInput,
   FieldOptionsDescriptor,
+  ModuleSetting,
+  ModuleSettingsResponse,
   PingResponse,
   Scene,
   StorageConfig,
@@ -370,5 +372,54 @@ export const modulesRoutes = {
       ...(context ?? {}),
       moduleKey,
     });
+  },
+
+  /**
+   * `moduleId` is the manifest-local module id (same id `ctx.module.id`
+   * resolves to at runtime), not the composite moduleKey used for install/
+   * uninstall. Listing a module with no registered settings returns an
+   * empty array, not an error.
+   */
+  async getModuleSettings(moduleId: string): Promise<ModuleSettingsResponse> {
+    const result = await this.db.listModuleSettings({ moduleId });
+    return { settings: result.settings };
+  },
+
+  /**
+   * `valueType` is fixed at install time from the manifest's `settings[].type`
+   * and re-derived server-side here (defaulting to "string" only if no row
+   * exists yet) — callers can change `value` but never `valueType`.
+   */
+  async updateModuleSetting(moduleId: string, key: string, value: string): Promise<ModuleSetting> {
+    if (typeof value !== "string") {
+      throw new Error("updateModuleSetting: value must be a string");
+    }
+    const existing = await this.db.listModuleSettings({ moduleId });
+    const current = existing.settings.find((s) => s.key === key);
+    const valueType = current?.valueType ?? "string";
+    return this.db.setModuleSetting({ moduleId, key, value, valueType });
+  },
+
+  /**
+   * Returns the raw manifest JSON barkloader parsed and stored at install
+   * time (`modules.manifest`) — the authoritative source for schema-level
+   * declarations (`settings[]`, `resources[]`, etc.) that aren't otherwise
+   * queryable. `moduleId` is the manifest-local module id, same as
+   * `getModuleSettings`/`updateModuleSetting`, not the composite moduleKey.
+   * Returns null if no module with that id is installed, or its stored
+   * manifest fails to parse.
+   */
+  async getModuleManifest(moduleId: string): Promise<Record<string, unknown> | null> {
+    const modules = await this.db.listModules();
+    const found = modules.find((m) => m.moduleId === moduleId);
+    if (!found?.manifest) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(found.manifest);
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
   }
 };

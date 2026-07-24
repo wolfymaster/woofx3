@@ -48,15 +48,23 @@ impl HttpClient for ReqwestHttpClient {
                 }
             }
 
-            if let Some(body) = opts.get("body") {
-                match body {
-                    Value::String(s) => {
-                        builder = builder.body(s.clone());
+            match opts.get("body") {
+                Some(Value::String(s)) => {
+                    builder = builder.body(s.clone());
+                }
+                Some(Value::Null) | None => {
+                    // Some APIs (e.g. Spotify's queue endpoint) require a
+                    // Content-Length header even on a bodyless POST/PUT/PATCH
+                    // and reply 411 Length Required without one. reqwest/hyper
+                    // omit Content-Length whenever the body is zero-length —
+                    // setting an empty body isn't enough, the header must be
+                    // added explicitly.
+                    if matches!(method_str.to_uppercase().as_str(), "POST" | "PUT" | "PATCH") {
+                        builder = builder.header(reqwest::header::CONTENT_LENGTH, "0");
                     }
-                    Value::Null => {}
-                    other => {
-                        builder = builder.json(other);
-                    }
+                }
+                Some(other) => {
+                    builder = builder.json(other);
                 }
             }
 

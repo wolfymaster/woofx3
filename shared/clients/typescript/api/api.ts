@@ -787,6 +787,31 @@ export interface Woofx3EngineApi {
   /** Lower-level equivalent of uninstallModule keyed on engine module name. */
   uninstallEngineModule(name: string, context?: { moduleKey?: string }): Promise<UninstallModuleResponse>;
 
+  /**
+   * Module-level settings declared in the manifest (`settings[]`), registered
+   * at install time and read back by sandboxed functions as `ctx.module.settings`.
+   * `moduleId` is the manifest-local module id (same id `ctx.module.id`
+   * resolves to at runtime), not the composite moduleKey used for install/
+   * uninstall. Returns an empty array if the module has no registered
+   * settings, not an error.
+   */
+  getModuleSettings(moduleId: string): Promise<ModuleSettingsResponse>;
+
+  /**
+   * `value` must be a string. `valueType` is fixed at install time from the
+   * manifest and cannot be changed through this call.
+   */
+  updateModuleSetting(moduleId: string, key: string, value: string): Promise<ModuleSetting>;
+
+  /**
+   * Raw manifest JSON barkloader parsed and stored at install time — the
+   * authoritative source for schema-level declarations (`settings[]`,
+   * `resources[]`, etc.). `moduleId` is the manifest-local module id, same
+   * as `getModuleSettings`/`updateModuleSetting`. Returns null if no module
+   * with that id is installed, or its stored manifest fails to parse.
+   */
+  getModuleManifest(moduleId: string): Promise<Record<string, unknown> | null>;
+
   // Triggers & actions catalog
   getTriggers(createdByType?: string, createdByRef?: string): Promise<TriggerDefinition[]>;
   getActions(createdByType?: string, createdByRef?: string): Promise<ActionDefinition[]>;

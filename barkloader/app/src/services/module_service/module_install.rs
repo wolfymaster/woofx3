@@ -398,14 +398,19 @@ pub async fn run_install<R: Repository>(
                 .await?;
             }
 
-            if !manifest.settings.is_empty() {
-                let setting_inputs: Vec<_> = manifest.settings.iter().map(|s| {
-                    super::db_proxy::SettingInputJson {
-                        key: s.id.clone(),
-                        value: s.resolved_default(),
-                        value_type: s.setting_type.clone(),
-                    }
-                }).collect();
+            // "button" settings are UI-only triggers, not stored values — skip
+            // them here so we don't register a meaningless empty-string row.
+            let setting_inputs: Vec<_> = manifest
+                .settings
+                .iter()
+                .filter(|s| s.setting_type != "button")
+                .map(|s| super::db_proxy::SettingInputJson {
+                    key: s.id.clone(),
+                    value: s.resolved_default(),
+                    value_type: s.setting_type.clone(),
+                })
+                .collect();
+            if !setting_inputs.is_empty() {
                 info!(
                     "Registering {} setting(s) for module {}",
                     setting_inputs.len(),

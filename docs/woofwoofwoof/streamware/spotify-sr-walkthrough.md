@@ -49,7 +49,8 @@ On install, barkloader:
 - Registers the module-level `settings` (`clientId`, `clientSecret`, `refreshToken`)
   into the `module_settings` table with empty defaults — see
   [Module settings](../../barkloader/modules.md#module-level-settings-settings). The
-  streamer must fill these in via `PUT /modules/{moduleId}/settings/{key}` before
+  streamer must fill these in via the `updateModuleSetting` RPC method (see
+  [Module settings: the UI contract](../../services/module-settings-ui.md)) before
   the module can authenticate to Spotify; until then, `poll_current_track`,
   `get_devices`, and `song_request` all bail out early with a "Spotify is not
   configured" response.

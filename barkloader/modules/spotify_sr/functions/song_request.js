@@ -20,51 +20,67 @@ function song_request(ctx) {
         return ctx.response(false, "Usage: !sr <song name or Spotify URL>");
     }
 
-    var clientId = ctx.module.settings.clientId;
-    var clientSecret = ctx.module.settings.clientSecret;
-    var refreshToken = ctx.module.settings.refreshToken;
+    // Auth: prefer the cached authToken (set by the Authorize Spotify button
+    // or a prior reauth in this same module) so most invocations make zero
+    // token-exchange calls. `clientId`/`authToken`/`refreshToken` come
+    // exclusively from that OAuth-with-PKCE flow — refreshing needs only
+    // clientId + refreshToken, never a client secret.
+    var accessToken = ctx.module.settings.authToken;
+    var reauthed = false;
 
-    if (!clientId || !clientSecret || !refreshToken) {
-        return ctx.response(false, "Spotify is not configured. Set clientId, clientSecret, and refreshToken in the module settings.");
-    }
-
-    // Refresh access token (Spotify OAuth2 refresh grant).
-    // QuickJS has no btoa — inline a minimal base64 encoder for ASCII strings.
-    var B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    function base64(str) {
-        var result = "";
-        var i = 0;
-        while (i < str.length) {
-            var a = str.charCodeAt(i++);
-            var b = (i < str.length) ? str.charCodeAt(i++) : 0;
-            var c = (i < str.length) ? str.charCodeAt(i++) : 0;
-            var t = (a << 16) | (b << 8) | c;
-            result += B64_CHARS[(t >> 18) & 63];
-            result += B64_CHARS[(t >> 12) & 63];
-            result += (i - 2 < str.length) ? B64_CHARS[(t >> 6) & 63] : "=";
-            result += (i - 1 < str.length) ? B64_CHARS[t & 63] : "=";
+    function reauth() {
+        var refreshToken = ctx.module.settings.refreshToken;
+        var clientId = ctx.module.settings.clientId;
+        if (!refreshToken || !clientId) {
+            return null;
         }
-        return result;
-    }
-
-    var tokenResp = ctx.http.request(
-        "https://accounts.spotify.com/api/token",
-        "POST",
-        {
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Authorization": "Basic " + base64(clientId + ":" + clientSecret)
-            },
-            body: "grant_type=refresh_token&refresh_token=" + encodeURIComponent(refreshToken)
+        var tokenResp = ctx.http.request(
+            "https://accounts.spotify.com/api/token",
+            "POST",
+            {
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: "grant_type=refresh_token&refresh_token=" + encodeURIComponent(refreshToken) +
+                    "&client_id=" + encodeURIComponent(clientId)
+            }
+        );
+        if (!tokenResp || tokenResp.status !== 200 || !tokenResp.body || !tokenResp.body.access_token) {
+            return null;
         }
-    );
-
-    if (!tokenResp || tokenResp.status !== 200 || !tokenResp.body || !tokenResp.body.access_token) {
-        return ctx.response(false, "Failed to connect to Spotify.");
+        ctx.module.setSetting("authToken", tokenResp.body.access_token);
+        if (tokenResp.body.refresh_token) {
+            ctx.module.setSetting("refreshToken", tokenResp.body.refresh_token);
+        }
+        return tokenResp.body.access_token;
     }
 
-    var accessToken = tokenResp.body.access_token;
-    var authHeader = "Bearer " + accessToken;
+    if (!accessToken) {
+        accessToken = reauth();
+        reauthed = true;
+        if (!accessToken) {
+            return ctx.response(false, "Failed to Authenticate to Spotify");
+        }
+    }
+
+    // Wraps ctx.http.request with a Bearer header and a single automatic
+    // reauth-and-retry if the call comes back 401. Centralized here so every
+    // Spotify API call below (track lookup, search, queue) gets the same
+    // cache-then-reauth-once behavior without duplicating it per call site.
+    function authedRequest(url, method, opts) {
+        opts = opts || {};
+        opts.headers = opts.headers || {};
+        opts.headers["Authorization"] = "Bearer " + accessToken;
+        var resp = ctx.http.request(url, method, opts);
+        if (resp && resp.status === 401 && !reauthed) {
+            reauthed = true;
+            var newToken = reauth();
+            if (newToken) {
+                accessToken = newToken;
+                opts.headers["Authorization"] = "Bearer " + accessToken;
+                resp = ctx.http.request(url, method, opts);
+            }
+        }
+        return resp;
+    }
 
     // Determine if query is a Spotify track URL or a search term.
     var urlMatch = query.match(/(?:https?:\/\/)?open\.spotify\.com\/track\/([a-zA-Z0-9]+)/);
@@ -72,11 +88,10 @@ function song_request(ctx) {
 
     if (urlMatch) {
         var trackId = urlMatch[1];
-        var trackResp = ctx.http.request(
-            "https://api.spotify.com/v1/tracks/" + trackId,
-            "GET",
-            { headers: { "Authorization": authHeader } }
-        );
+        var trackResp = authedRequest("https://api.spotify.com/v1/tracks/" + trackId, "GET", {});
+        if (trackResp && trackResp.status === 401) {
+            return ctx.response(false, "Failed to Authenticate to Spotify");
+        }
         if (!trackResp || trackResp.status !== 200 || !trackResp.body) {
             return ctx.response(false, "Could not find that track on Spotify.");
         }
@@ -86,14 +101,14 @@ function song_request(ctx) {
             uri: trackResp.body.uri
         };
     } else {
-        var searchResp = ctx.http.request(
+        var searchResp = authedRequest(
             "https://api.spotify.com/v1/search",
             "GET",
-            {
-                headers: { "Authorization": authHeader },
-                query: { q: query, type: "track", limit: "1" }
-            }
+            { query: { q: query, type: "track", limit: "1" } }
         );
+        if (searchResp && searchResp.status === 401) {
+            return ctx.response(false, "Failed to Authenticate to Spotify");
+        }
         var tracks = searchResp && searchResp.body && searchResp.body.tracks && searchResp.body.tracks.items;
         if (!tracks || tracks.length === 0) {
             return ctx.response(false, "No results found for: " + query);
@@ -114,9 +129,10 @@ function song_request(ctx) {
     var queueUrl = "https://api.spotify.com/v1/me/player/queue?uri=" + encodeURIComponent(song.uri);
     if (deviceId) { queueUrl += "&device_id=" + encodeURIComponent(deviceId); }
 
-    var queueResp = ctx.http.request(queueUrl, "POST", {
-        headers: { "Authorization": authHeader }
-    });
+    var queueResp = authedRequest(queueUrl, "POST", {});
+    if (queueResp && queueResp.status === 401) {
+        return ctx.response(false, "Failed to Authenticate to Spotify");
+    }
 
     // 200 or 204 both indicate success.
     if (!queueResp || (queueResp.status !== 200 && queueResp.status !== 204)) {

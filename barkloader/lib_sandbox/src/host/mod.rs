@@ -57,6 +57,9 @@ pub struct ResourceInstance {
 /// a real db-proxy.
 pub trait SettingsClient: Send + Sync {
     fn list_by_module(&self, module_id: &str) -> Result<HashMap<String, Value>, String>;
+    /// Sets a single setting value, e.g. from `ctx.module.setSetting(key, value)`.
+    /// Does not require the key to have been declared in the manifest.
+    fn set(&self, module_id: &str, key: &str, value: &str) -> Result<(), String>;
 }
 
 pub trait ResourceClient: Send + Sync {
@@ -109,6 +112,9 @@ mod tests {
     impl SettingsClient for StaticSettingsClient {
         fn list_by_module(&self, _module_id: &str) -> Result<HashMap<String, serde_json::Value>, String> {
             Ok(self.data.clone())
+        }
+        fn set(&self, _module_id: &str, _key: &str, _value: &str) -> Result<(), String> {
+            Ok(())
         }
     }
 

@@ -458,6 +458,23 @@ fn build_module_namespace<'js>(
     }
     module.set("settings", settings_obj).map_err(map)?;
 
+    // `ctx.module.setSetting(key, value)` — write-through to the module's own
+    // settings store. Unlike `ctx.module.settings` (a snapshot taken once per
+    // invocation), this takes effect immediately; a value set mid-invocation
+    // is not reflected back into the already-built `settings` object. Does
+    // not require `key` to be manifest-declared.
+    let client = invocation.host.settings.clone();
+    let module_id_for_set = invocation.module_id.clone();
+    let set_setting_fn = JsFunction::new(
+        ctx.clone(),
+        move |_ctx: Ctx<'_>, key: String, value: String| -> rquickjs::Result<()> {
+            client.set(&module_id_for_set, &key, &value).map_err(host_err)?;
+            Ok(())
+        },
+    )
+    .map_err(map)?;
+    module.set("setSetting", set_setting_fn).map_err(map)?;
+
     ctx_obj.set("module", module).map_err(map)?;
     Ok(())
 }

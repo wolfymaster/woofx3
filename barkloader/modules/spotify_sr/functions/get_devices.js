@@ -4,56 +4,67 @@
 function get_devices(ctx) {
     var fallback = [{ value: "", label: "Current Device" }];
 
-    var clientId = ctx.module.settings.clientId;
-    var clientSecret = ctx.module.settings.clientSecret;
-    var refreshToken = ctx.module.settings.refreshToken;
+    // Auth: prefer the cached authToken so most calls make zero token-exchange
+    // calls. clientId/authToken/refreshToken come exclusively from the
+    // Authorize Spotify button's OAuth-with-PKCE flow — refreshing needs only
+    // clientId + refreshToken, never a client secret. No error message here
+    // (this feeds a dropdown, not a chat response) — any auth failure just
+    // falls back to the single "Current Device" option.
+    var accessToken = ctx.module.settings.authToken;
+    var reauthed = false;
 
-    if (!clientId || !clientSecret || !refreshToken) {
-        return fallback;
-    }
-
-    // QuickJS has no btoa — inline a minimal base64 encoder for ASCII strings.
-    var B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    function base64(str) {
-        var result = "";
-        var i = 0;
-        while (i < str.length) {
-            var a = str.charCodeAt(i++);
-            var b = (i < str.length) ? str.charCodeAt(i++) : 0;
-            var c = (i < str.length) ? str.charCodeAt(i++) : 0;
-            var t = (a << 16) | (b << 8) | c;
-            result += B64_CHARS[(t >> 18) & 63];
-            result += B64_CHARS[(t >> 12) & 63];
-            result += (i - 2 < str.length) ? B64_CHARS[(t >> 6) & 63] : "=";
-            result += (i - 1 < str.length) ? B64_CHARS[t & 63] : "=";
+    function reauth() {
+        var refreshToken = ctx.module.settings.refreshToken;
+        var clientId = ctx.module.settings.clientId;
+        if (!refreshToken || !clientId) {
+            return null;
         }
-        return result;
-    }
-
-    var tokenResp = ctx.http.request(
-        "https://accounts.spotify.com/api/token",
-        "POST",
-        {
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Authorization": "Basic " + base64(clientId + ":" + clientSecret)
-            },
-            body: "grant_type=refresh_token&refresh_token=" + encodeURIComponent(refreshToken)
+        var tokenResp = ctx.http.request(
+            "https://accounts.spotify.com/api/token",
+            "POST",
+            {
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: "grant_type=refresh_token&refresh_token=" + encodeURIComponent(refreshToken) +
+                    "&client_id=" + encodeURIComponent(clientId)
+            }
+        );
+        if (!tokenResp || tokenResp.status !== 200 || !tokenResp.body || !tokenResp.body.access_token) {
+            return null;
         }
-    );
-
-    if (!tokenResp || tokenResp.status !== 200 || !tokenResp.body || !tokenResp.body.access_token) {
-        return fallback;
+        ctx.module.setSetting("authToken", tokenResp.body.access_token);
+        if (tokenResp.body.refresh_token) {
+            ctx.module.setSetting("refreshToken", tokenResp.body.refresh_token);
+        }
+        return tokenResp.body.access_token;
     }
 
-    var accessToken = tokenResp.body.access_token;
-    var authHeader = "Bearer " + accessToken;
+    if (!accessToken) {
+        accessToken = reauth();
+        reauthed = true;
+        if (!accessToken) {
+            return fallback;
+        }
+    }
 
     var devicesResp = ctx.http.request(
         "https://api.spotify.com/v1/me/player/devices",
         "GET",
-        { headers: { "Authorization": authHeader } }
+        { headers: { "Authorization": "Bearer " + accessToken } }
     );
+
+    if (devicesResp && devicesResp.status === 401 && !reauthed) {
+        reauthed = true;
+        var newToken = reauth();
+        if (!newToken) {
+            return fallback;
+        }
+        accessToken = newToken;
+        devicesResp = ctx.http.request(
+            "https://api.spotify.com/v1/me/player/devices",
+            "GET",
+            { headers: { "Authorization": "Bearer " + accessToken } }
+        );
+    }
 
     if (!devicesResp || devicesResp.status !== 200 || !devicesResp.body) {
         return fallback;

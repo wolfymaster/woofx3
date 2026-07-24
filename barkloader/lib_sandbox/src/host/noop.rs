@@ -53,6 +53,9 @@ impl super::SettingsClient for NoopSettingsClient {
     fn list_by_module(&self, _module_id: &str) -> Result<HashMap<String, serde_json::Value>, String> {
         Ok(HashMap::new())
     }
+    fn set(&self, _module_id: &str, _key: &str, _value: &str) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 pub struct NoopResourceClient;

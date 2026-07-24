@@ -48,7 +48,7 @@
             "request": {
               "event": "barkloader.module.field_options",
               "payload": {
-                "moduleId": "spotify_sr",
+                "moduleId": "spotify",
                 "functionId": "get_devices"
               }
             },
@@ -101,25 +101,18 @@
   ],
   "settings": [
     {
+      "id": "authorizeSpotify",
+      "name": "Authorize Spotify",
+      "description": "Connect your Spotify account to enable song requests and playback control.",
+      "type": "button",
+      "action": { "kind": "integration", "integration": "spotify" }
+    },
+    {
       "id": "clientId",
       "name": "Spotify Client ID",
-      "description": "Your Spotify application client ID from the Spotify Developer Dashboard.",
+      "description": "Optional: use your own Spotify app's Client ID instead of the default. Not required — Authorize Spotify above fills this in automatically.",
       "type": "string",
-      "required": true
-    },
-    {
-      "id": "clientSecret",
-      "name": "Spotify Client Secret",
-      "description": "Your Spotify application client secret.",
-      "type": "string",
-      "required": true
-    },
-    {
-      "id": "refreshToken",
-      "name": "Spotify Refresh Token",
-      "description": "OAuth refresh token for the streamer's Spotify account.",
-      "type": "string",
-      "required": true
+      "required": false
     }
   ],
   "widgets": [

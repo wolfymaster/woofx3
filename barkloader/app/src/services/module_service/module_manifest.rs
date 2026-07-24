@@ -292,7 +292,7 @@ pub struct ManifestBackgroundTask {
 
 /// A setting declared in the module manifest. Values are stored in the
 /// `module_settings` table keyed by `module_id` + `id`. Type must be one of
-/// `"string"` | `"number"` | `"boolean"`.
+/// `"string"` | `"number"` | `"boolean"` | `"button"`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestSetting {
@@ -306,6 +306,13 @@ pub struct ManifestSetting {
     pub required: bool,
     #[serde(rename = "default", default)]
     pub default_value: Option<String>,
+    /// Present only when `type: "button"` — `{ kind: "internal", request: {...},
+    /// timeoutMs? } | { kind: "integration", integration: "..." }`. Opaque to
+    /// the engine (never inspected here, same treatment as `ManifestAction.schema`)
+    /// and forwarded verbatim so the UI can interpret it. `RegisterModuleSettings`
+    /// skips settings with this present — buttons have no stored value.
+    #[serde(default)]
+    pub action: serde_json::Value,
 }
 
 impl ManifestSetting {
@@ -1551,5 +1558,73 @@ mod tests {
         let s2 = &m.settings[2];
         assert_eq!(s2.setting_type, "boolean");
         assert_eq!(s2.default_value.as_deref(), Some("true"));
+    }
+
+    #[test]
+    fn button_setting_action_survives_manifest_storage_round_trip() {
+        // Regression test: modules.manifest is stored as serde_json::to_string(manifest),
+        // not the raw uploaded bytes, so any field ManifestSetting doesn't declare is
+        // silently dropped before it's ever persisted. `action` must round-trip intact.
+        let j = r#"
+    {
+        "id": "spotify",
+        "name": "Spotify Song Request",
+        "settings": [
+            {
+                "id": "authorizeSpotify",
+                "name": "Authorize Spotify",
+                "type": "button",
+                "action": { "kind": "integration", "integration": "spotify" }
+            },
+            {
+                "id": "someInternalButton",
+                "name": "Do something",
+                "type": "button",
+                "action": {
+                    "kind": "internal",
+                    "request": { "event": "barkloader.module.field_options", "payload": { "moduleId": "spotify", "functionId": "get_devices" } },
+                    "timeoutMs": 10000
+                }
+            },
+            {"id": "clientId", "name": "Spotify Client ID", "type": "string", "required": false}
+        ]
+    }"#;
+        let m: ModuleManifest = serde_json::from_str(j).expect("parse");
+        assert_eq!(m.settings.len(), 3);
+        assert_eq!(m.settings[0].action["kind"], "integration");
+        assert_eq!(m.settings[0].action["integration"], "spotify");
+        assert_eq!(m.settings[1].action["kind"], "internal");
+        assert_eq!(m.settings[1].action["request"]["event"], "barkloader.module.field_options");
+        // clientId has no action at all — must not gain one from a missing-field default.
+        assert!(m.settings[2].action.is_null());
+
+        let reserialized = serde_json::to_string(&m).expect("serialize");
+        let reparsed: ModuleManifest = serde_json::from_str(&reserialized).expect("reparse");
+        assert_eq!(reparsed.settings[0].action["integration"], "spotify");
+        assert_eq!(
+            reparsed.settings[1].action["request"]["payload"]["functionId"],
+            "get_devices"
+        );
+        assert!(reparsed.settings[2].action.is_null());
+    }
+
+    #[test]
+    fn spotify_sr_manifest_parses_and_round_trips() {
+        // Regression coverage for the real shipped manifest, not just a
+        // synthetic fixture — catches drift between it and this struct.
+        let j = include_str!("../../../../modules/spotify_sr/manifest.json");
+        let m: ModuleManifest = serde_json::from_str(j).expect("parse real spotify_sr manifest");
+        assert_eq!(m.settings.len(), 2);
+        assert_eq!(m.settings[0].id, "authorizeSpotify");
+        assert_eq!(m.settings[0].setting_type, "button");
+        assert_eq!(m.settings[0].action["kind"], "integration");
+        assert_eq!(m.settings[0].action["integration"], "spotify");
+        assert_eq!(m.settings[1].id, "clientId");
+        assert_eq!(m.settings[1].setting_type, "string");
+        assert!(m.settings[1].action.is_null());
+
+        let reserialized = serde_json::to_string(&m).expect("serialize");
+        let reparsed: ModuleManifest = serde_json::from_str(&reserialized).expect("reparse");
+        assert_eq!(reparsed.settings[0].action["integration"], "spotify");
     }
 }

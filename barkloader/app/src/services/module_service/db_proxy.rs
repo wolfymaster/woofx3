@@ -1556,3 +1556,46 @@ pub async fn get_module_settings(
         .map_err(|e| anyhow!("parse ListModuleSettings response: {}", e))?;
     Ok(resp.settings)
 }
+
+#[derive(Debug, Clone, Serialize)]
+struct SetModuleSettingBody {
+    module_id: String,
+    key: String,
+    value: String,
+    value_type: String,
+}
+
+/// Sets a single module setting value, e.g. from a sandboxed function's
+/// `ctx.module.setSetting(key, value)`. `value_type` is re-derived from the
+/// setting's current stored type (defaulting to "string" if no row exists
+/// yet) — callers can change `value` but not `valueType`, the same rule the
+/// Node engine's `updateModuleSetting` RPC applies. Does not require the key
+/// to have been registered via `register_module_settings` first.
+pub async fn set_module_setting(url: &str, module_id: &str, key: &str, value: &str) -> Result<()> {
+    let existing = get_module_settings(url, module_id).await.unwrap_or_default();
+    let value_type = existing
+        .iter()
+        .find(|s| s.key == key)
+        .map(|s| s.value_type.clone())
+        .unwrap_or_else(|| "string".to_string());
+
+    let body = SetModuleSettingBody {
+        module_id: module_id.to_string(),
+        key: key.to_string(),
+        value: value.to_string(),
+        value_type,
+    };
+    let endpoint = format!("{}/twirp/module_setting.ModuleSettingService/SetModuleSetting", url);
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&endpoint)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("set_module_setting request: {}", e))?;
+    if !response.status().is_success() {
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("set_module_setting failed: {}", text));
+    }
+    Ok(())
+}

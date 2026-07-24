@@ -10,7 +10,6 @@ import { ConvexWebhookClient } from "./convex-webhook-client";
 import { DbClient } from "./db-client";
 import { ApiGateway } from "./gateway";
 import { initOverlayTokenHandlers } from "./overlay-token-handlers";
-import { handleModuleSettingRoute } from "./module-setting-handlers";
 import { parseOverlayWsPath, proxyRequest } from "./overlay-proxy";
 import { StorageChangeEmitter } from "./storage-change-emitter";
 import { WebhookClient } from "./webhook-client";
@@ -351,14 +350,6 @@ async function main() {
         return new Response(JSON.stringify({ status: "ok" }), {
           headers: { "Content-Type": "application/json" },
         });
-      }
-
-      // Module settings REST routes
-      if (url.pathname.startsWith("/modules/")) {
-        const settingResp = await handleModuleSettingRoute(req, url, api);
-        if (settingResp !== null) {
-          return settingResp;
-        }
       }
 
       logger.debug("Not found", { path: url.pathname, method: req.method });

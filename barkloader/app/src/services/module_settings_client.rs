@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use tokio::runtime::Handle;
 
-use crate::services::module_service::db_proxy::get_module_settings;
+use crate::services::module_service::db_proxy::{get_module_settings, set_module_setting};
 
 pub struct HttpSettingsClient {
     db_proxy_url: String,
@@ -32,6 +32,16 @@ impl SettingsClient for HttpSettingsClient {
             map.insert(row.key, typed_value);
         }
         Ok(map)
+    }
+
+    fn set(&self, module_id: &str, key: &str, value: &str) -> Result<(), String> {
+        let url = self.db_proxy_url.clone();
+        let module_id = module_id.to_string();
+        let key = key.to_string();
+        let value = value.to_string();
+        Handle::current()
+            .block_on(async move { set_module_setting(&url, &module_id, &key, &value).await })
+            .map_err(|e| e.to_string())
     }
 }
 
