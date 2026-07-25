@@ -140,9 +140,9 @@ export const accountsRoutes = {
   }> {
     const offline = { isLive: false as const, uptime: "00:00:00", viewerCount: 0 };
 
-    const clientId = process.env.TWITCH_WOLFY_CLIENT_ID;
+    const clientId = process.env.WOOFX3_TWITCH_CLIENT_ID;
     if (!clientId) {
-      this.logger.warn("getStreamStatus: TWITCH_WOLFY_CLIENT_ID not set");
+      this.logger.warn("getStreamStatus: WOOFX3_TWITCH_CLIENT_ID not set");
       return offline;
     }
 
