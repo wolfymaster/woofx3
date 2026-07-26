@@ -6,6 +6,7 @@ import type * as common from "@woofx3/db/common.pb";
 import * as group from "@woofx3/db/group.pb";
 import * as module from "@woofx3/db/module.pb";
 import type * as module_action from "@woofx3/db/module_action.pb";
+import * as module_resource_instance from "@woofx3/db/module_resource_instance.pb";
 import * as module_setting from "@woofx3/db/module_setting.pb";
 import type * as module_trigger from "@woofx3/db/module_trigger.pb";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
@@ -411,5 +412,17 @@ async listWidgetStatus(
     req: module_setting.SetModuleSettingRequest
   ): Promise<module_setting.ModuleSettingRecord> {
     return module_setting.SetModuleSetting(req, this.config);
+  }
+
+  async createResourceInstance(
+    req: module_resource_instance.CreateResourceInstanceRequest
+  ): Promise<module_resource_instance.ResourceInstanceResponse> {
+    return module.CreateResourceInstance(req, this.config);
+  }
+
+  async deleteResourceInstance(
+    req: module_resource_instance.DeleteResourceInstanceRequest
+  ): Promise<common.ResponseStatus> {
+    return module.DeleteResourceInstance(req, this.config);
   }
 }
