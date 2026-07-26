@@ -37,62 +37,22 @@ impl WebSocketSession {
                     if let Ok(message) = serde_json::from_str::<WsMessage>(&text) {
                         let request_id = message.id.clone();
                         match message.message_type.as_str() {
+                            // Spawned per-invoke so a slow function (blocking
+                            // thread pool + any host I/O it makes) can't
+                            // stall the read loop and delay other in-flight
+                            // invokes on this same connection. `session` is
+                            // a cheap, channel-backed clone safe to write
+                            // from concurrently spawned tasks; `sandbox` is
+                            // an `Arc`-backed factory, also safe to clone.
                             "invoke" => {
-                                let event = message
-                                    .data
-                                    .get("event")
-                                    .cloned()
-                                    .unwrap_or(serde_json::Value::Null);
-                                let params = message
-                                    .data
-                                    .get("params")
-                                    .cloned()
-                                    .unwrap_or(serde_json::Value::Null);
-
-                                let function = message.data["function"]
-                                    .as_str()
-                                    .unwrap_or("")
-                                    .to_string();
-                                info!("WebSocket invoke function={}", function);
-                                let request = lib_sandbox::models::request::InvokeRequest {
-                                    function: function.clone(),
-                                    event: event.clone(),
-                                    user: message.data.get("user").cloned(),
-                                    params,
-                                };
-                                // invoke_blocking offloads onto Tokio's blocking thread
-                                // pool because Sandbox::invoke drives the QuickJS/Lua
-                                // runtime synchronously and host calls it makes (module
-                                // settings fetch, ctx.http.request, ...) block on their
-                                // own async I/O internally — calling it directly here
-                                // would panic ("Cannot start a runtime from within a
-                                // runtime") since this task already runs on the actix
-                                // async reactor.
-                                let result = self.sandbox.invoke_blocking(request).await;
-                                match result {
-                                    Ok(response) => {
-                                        let response = WsMessage {
-                                            message_type: "result".to_string(),
-                                            data: serde_json::json!({
-                                                "response": "ok",
-                                                "result": response
-                                            }),
-                                            id: request_id.clone(),
-                                        };
-                                        let json = serde_json::to_string(&response).unwrap();
-                                        session.text(json).await.unwrap();
-                                    }
-                                    Err(e) => {
-                                        error!("WebSocket invoke failed function={}: {}", function, e);
-                                        let response = WsMessage {
-                                            message_type: "error".to_string(),
-                                            data: serde_json::json!(e.to_string()),
-                                            id: request_id.clone(),
-                                        };
-                                        let json = serde_json::to_string(&response).unwrap();
-                                        session.text(json).await.unwrap();
-                                    }
-                                }
+                                let sandbox = self.sandbox.clone();
+                                let session = session.clone();
+                                tokio::spawn(Self::handle_invoke(
+                                    sandbox,
+                                    session,
+                                    message.data,
+                                    request_id,
+                                ));
                             }
                             _ => {
                                 let response = WsMessage {
@@ -121,5 +81,57 @@ impl WebSocketSession {
         };
 
         session.close(close_reason).await.unwrap();
+    }
+
+    /// Runs one "invoke" request to completion and writes its result/error
+    /// back on `session`. Spawned as its own task per request (see
+    /// `handle_message`) so multiple invokes on the same connection execute
+    /// concurrently instead of being serialized behind the read loop.
+    async fn handle_invoke(
+        sandbox: SandboxFactory,
+        mut session: actix_ws::Session,
+        data: serde_json::Value,
+        request_id: Option<String>,
+    ) {
+        let event = data.get("event").cloned().unwrap_or(serde_json::Value::Null);
+        let params = data
+            .get("params")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let function = data["function"].as_str().unwrap_or("").to_string();
+        info!("WebSocket invoke function={}", function);
+        let request = lib_sandbox::models::request::InvokeRequest {
+            function: function.clone(),
+            event,
+            user: data.get("user").cloned(),
+            params,
+        };
+        // invoke_blocking offloads onto Tokio's blocking thread pool because
+        // Sandbox::invoke drives the QuickJS/Lua runtime synchronously and
+        // host calls it makes (module settings fetch, ctx.http.request, ...)
+        // block on their own async I/O internally — calling it directly here
+        // would panic ("Cannot start a runtime from within a runtime") since
+        // this task already runs on the actix async reactor.
+        let result = sandbox.invoke_blocking(request).await;
+        let response = match result {
+            Ok(response) => WsMessage {
+                message_type: "result".to_string(),
+                data: serde_json::json!({
+                    "response": "ok",
+                    "result": response
+                }),
+                id: request_id,
+            },
+            Err(e) => {
+                error!("WebSocket invoke failed function={}: {}", function, e);
+                WsMessage {
+                    message_type: "error".to_string(),
+                    data: serde_json::json!(e.to_string()),
+                    id: request_id,
+                }
+            }
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        let _ = session.text(json).await;
     }
 }

@@ -1,6 +1,8 @@
 package barkloader
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,38 +12,28 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type MessageHandler func(msg MessageResponse)
 type ReconnectAttemptHandler func(attempt int, maxRetries int)
-
-type MessageResponse struct {
-	Args    map[string]interface{} `json:"args"`
-	Command string                 `json:"command"`
-	Error   string                 `json:"error"`
-	Message string                 `json:"message"`
-}
 
 type InvokeResponse struct {
 	Type string                 `json:"type"`
+	Id   string                 `json:"id,omitempty"`
 	Data map[string]interface{} `json:"data"`
 }
 
 type InvokeRequest struct {
 	Type string     `json:"type"`
+	Id   string     `json:"id"`
 	Data InvokeData `json:"data"`
 }
 
 type InvokeData struct {
 	Function string                 `json:"function"`
 	Event    map[string]interface{} `json:"event"`
-	// Legacy fields — still accepted by barkloader websocket for older callers.
-	Func string        `json:"func,omitempty"`
-	Args []interface{} `json:"args,omitempty"`
 }
 
 type Client struct {
 	config             Config
 	conn               *websocket.Conn
-	onMessage          MessageHandler
 	reconnectTimeout   time.Duration
 	maxRetries         int
 	onReconnectAttempt ReconnectAttemptHandler
@@ -51,8 +43,8 @@ type Client struct {
 	shouldReconnect    bool
 	isManualClose      bool
 	mu                 sync.RWMutex
-	pendingResponse    chan InvokeResponse
-	pendingResponseMu  sync.Mutex
+	pendingInvokes     map[string]chan InvokeResponse
+	pendingInvokesMu   sync.Mutex
 }
 
 func New(config Config) *Client {
@@ -67,7 +59,20 @@ func New(config Config) *Client {
 		maxRetries:         config.MaxRetries,
 		onReconnectAttempt: config.OnReconnectAttempt,
 		shouldReconnect:    true,
+		pendingInvokes:     make(map[string]chan InvokeResponse),
 	}
+}
+
+// newInvokeID generates a correlation id for a single invoke request. It is
+// echoed back verbatim by barkloader on the matching result/error response
+// so concurrent invokes on the same websocket connection can be matched to
+// the caller awaiting them.
+func newInvokeID() (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
 }
 
 func (c *Client) Connect() error {
@@ -149,16 +154,14 @@ func (c *Client) Send(data string) error {
 	return conn.WriteMessage(websocket.TextMessage, []byte(data))
 }
 
-func (c *Client) RegisterHandler(event string, handler MessageHandler) {
-	switch event {
-	case "onMessage":
-		c.onMessage = handler
-	}
-}
-
 // Invoke calls a module function on the barkloader server and waits for the
 // response. `event` is the sandbox invocation context (trigger fields plus a
 // `parameters` object for workflow action inputs — see counter/twitch modules).
+//
+// Multiple invokes may be in flight concurrently on the same connection:
+// each request carries a unique id that barkloader echoes back on its
+// result/error response, so callers are matched by id rather than by call
+// order.
 func (c *Client) Invoke(functionName string, event map[string]interface{}) (map[string]interface{}, error) {
 	c.mu.RLock()
 	if !c.IsConnected() {
@@ -167,27 +170,28 @@ func (c *Client) Invoke(functionName string, event map[string]interface{}) (map[
 	}
 	c.mu.RUnlock()
 
-	// Set up response channel
-	responseChan := make(chan InvokeResponse, 1)
-	c.pendingResponseMu.Lock()
-	if c.pendingResponse != nil {
-		c.pendingResponseMu.Unlock()
-		return nil, fmt.Errorf("another invoke is already pending")
+	id, err := newInvokeID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate invoke id: %w", err)
 	}
-	c.pendingResponse = responseChan
-	c.pendingResponseMu.Unlock()
 
-	// Clean up channel when done
+	// Register the response channel under this invoke's id
+	responseChan := make(chan InvokeResponse, 1)
+	c.pendingInvokesMu.Lock()
+	c.pendingInvokes[id] = responseChan
+	c.pendingInvokesMu.Unlock()
+
+	// Clean up the pending entry when done
 	defer func() {
-		c.pendingResponseMu.Lock()
-		c.pendingResponse = nil
-		close(responseChan)
-		c.pendingResponseMu.Unlock()
+		c.pendingInvokesMu.Lock()
+		delete(c.pendingInvokes, id)
+		c.pendingInvokesMu.Unlock()
 	}()
 
 	// Create request
 	request := InvokeRequest{
 		Type: "invoke",
+		Id:   id,
 		Data: InvokeData{
 			Function: functionName,
 			Event:    event,
@@ -265,44 +269,19 @@ func (c *Client) messageHandler() {
 			return
 		}
 
-		// Prefer explicit invoke envelopes (`type` + `data`) over legacy MessageResponse.
 		var response InvokeResponse
-		if err := json.Unmarshal(message, &response); err == nil &&
-			(response.Type == "result" || response.Type == "error") {
-			c.pendingResponseMu.Lock()
-			if c.pendingResponse != nil {
-				select {
-				case c.pendingResponse <- response:
-				default:
-				}
-			}
-			c.pendingResponseMu.Unlock()
+		if err := json.Unmarshal(message, &response); err != nil ||
+			(response.Type != "result" && response.Type != "error") {
 			continue
 		}
 
-		var msgResp MessageResponse
-		if err := json.Unmarshal(message, &msgResp); err == nil &&
-			(msgResp.Command != "" || msgResp.Error != "" || msgResp.Message != "" || msgResp.Args != nil) {
-			if c.pendingResponse != nil {
-				invokeResp := InvokeResponse{
-					Type: "result",
-					Data: make(map[string]interface{}),
-				}
-				if msgResp.Error != "" {
-					invokeResp.Type = "error"
-					invokeResp.Data["error"] = msgResp.Error
-				} else {
-					invokeResp.Data["result"] = msgResp.Args
-				}
-				c.pendingResponseMu.Lock()
-				select {
-				case c.pendingResponse <- invokeResp:
-				default:
-				}
-				c.pendingResponseMu.Unlock()
-			}
-			if c.onMessage != nil {
-				c.onMessage(msgResp)
+		c.pendingInvokesMu.Lock()
+		responseChan, ok := c.pendingInvokes[response.Id]
+		c.pendingInvokesMu.Unlock()
+		if ok {
+			select {
+			case responseChan <- response:
+			default:
 			}
 		}
 	}
