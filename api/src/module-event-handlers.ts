@@ -25,7 +25,7 @@ interface RawTrigger {
   id?: unknown;
   canonical_id?: unknown;
   projection_key?: unknown;
-  category?: unknown;
+  taxonomy?: unknown;
   name?: unknown;
   description?: unknown;
   event?: unknown;
@@ -39,10 +39,12 @@ interface RawAction {
   id?: unknown;
   canonical_id?: unknown;
   projection_key?: unknown;
+  taxonomy?: unknown;
   name?: unknown;
   description?: unknown;
   call?: unknown;
   params_schema?: unknown;
+  output_schema?: unknown;
   created_by_type?: unknown;
   created_by_ref?: unknown;
 }
@@ -130,11 +132,13 @@ interface RawModuleResourceDeregistered {
 
 const asString = (v: unknown): string => (typeof v === "string" ? v : "");
 const asBool = (v: unknown): boolean => v === true;
+const asStringArray = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 
 function mapTrigger(raw: RawTrigger): TriggerDefinition {
   const def: TriggerDefinition = {
     id: asString(raw.id),
-    category: asString(raw.category),
+    taxonomy: asStringArray(raw.taxonomy),
     name: asString(raw.name),
     description: asString(raw.description),
     event: asString(raw.event),
@@ -157,10 +161,12 @@ function mapTrigger(raw: RawTrigger): TriggerDefinition {
 function mapAction(raw: RawAction): ActionDefinition {
   const def: ActionDefinition = {
     id: asString(raw.id),
+    taxonomy: asStringArray(raw.taxonomy),
     name: asString(raw.name),
     description: asString(raw.description),
     call: asString(raw.call),
     paramsSchema: asString(raw.params_schema),
+    outputSchema: asString(raw.output_schema),
     createdByType: asString(raw.created_by_type),
     createdByRef: asString(raw.created_by_ref),
   };

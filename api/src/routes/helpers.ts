@@ -182,39 +182,54 @@ export function commandToSnapshot(c: command.Command): CommandSnapshot {
  * Extract the catalog-facing fields the UI surfaces for an installed module
  * from the manifest JSON the engine stores on `modules.manifest`.
  *
- * Author and category come straight from the manifest authored by the
- * module developer. Both fall back to "Unknown" when missing, blank, or
- * when the stored manifest is malformed — the UI must always have a
- * concrete string to render.
+ * `author` comes straight from the manifest authored by the module
+ * developer and falls back to "Unknown" when missing, blank, or when the
+ * stored manifest is malformed — the UI must always have a concrete string
+ * to render. `taxonomy` is the manifest's `taxonomy` array when present;
+ * otherwise a non-empty legacy `category` is folded into a single-element
+ * list (clean cutover — mirrors moduleCatalogFields in
+ * db/app/services/module_event_payload.go); otherwise an empty list.
  */
 export function readModuleCatalogFields(rawManifest: string | undefined): {
   author: string;
-  category: string;
+  taxonomy: string[];
 } {
-  const fallback = { author: "Unknown", category: "Unknown" };
+  const fallback = { author: "Unknown", taxonomy: [] as string[] };
   if (!rawManifest) {
     return fallback;
   }
-  let parsed: { author?: unknown; category?: unknown } = {};
+  let parsed: { author?: unknown; category?: unknown; taxonomy?: unknown } = {};
   try {
     const v = JSON.parse(rawManifest);
     if (v && typeof v === "object") {
-      parsed = v as { author?: unknown; category?: unknown };
+      parsed = v as { author?: unknown; category?: unknown; taxonomy?: unknown };
     }
   } catch {
     return fallback;
   }
-  const pick = (val: unknown, key: "author" | "category"): string => {
-    if (typeof val === "string") {
-      const trimmed = val.trim();
+  const author = ((): string => {
+    if (typeof parsed.author === "string") {
+      const trimmed = parsed.author.trim();
       if (trimmed !== "") {
         return trimmed;
       }
     }
-    return fallback[key];
-  };
-  return {
-    author: pick(parsed.author, "author"),
-    category: pick(parsed.category, "category"),
-  };
+    return fallback.author;
+  })();
+  const taxonomy = ((): string[] => {
+    if (Array.isArray(parsed.taxonomy)) {
+      const entries = parsed.taxonomy.filter((x): x is string => typeof x === "string");
+      if (entries.length > 0) {
+        return entries;
+      }
+    }
+    if (typeof parsed.category === "string") {
+      const trimmed = parsed.category.trim();
+      if (trimmed !== "") {
+        return [trimmed];
+      }
+    }
+    return fallback.taxonomy;
+  })();
+  return { author, taxonomy };
 }

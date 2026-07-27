@@ -275,7 +275,7 @@ export const modulesRoutes = {
   },
 
   async getModules(query?: {
-    category?: string;
+    taxonomy?: string;
     search?: string;
     installed?: boolean;
     page?: number;
@@ -285,6 +285,7 @@ export const modulesRoutes = {
       id: string;
       name: string;
       description: string;
+      taxonomy: string[];
       version: string;
       author: string;
       isInstalled: boolean;
@@ -300,12 +301,12 @@ export const modulesRoutes = {
     const normalized = dbModules
       .filter((m) => !!m.name)
       .map((m) => {
-        const { author, category } = readModuleCatalogFields(m.manifest);
+        const { author, taxonomy } = readModuleCatalogFields(m.manifest);
         return {
           id: m.name,
           name: m.name,
           description: "",
-          category,
+          taxonomy,
           version: m.version ?? "",
           author,
           isInstalled: true,
@@ -326,7 +327,7 @@ export const modulesRoutes = {
     id: string;
     name: string;
     description: string;
-    category: string;
+    taxonomy: string[];
     version: string;
     author: string;
     isInstalled: boolean;
@@ -334,12 +335,12 @@ export const modulesRoutes = {
   } | null> {
     const found = await this.db.getModuleByName(id);
     if (!found) return null;
-    const { author, category } = readModuleCatalogFields(found.manifest);
+    const { author, taxonomy } = readModuleCatalogFields(found.manifest);
     return {
       id: found.name,
       name: found.name,
       description: "",
-      category,
+      taxonomy,
       version: found.version,
       author,
       isInstalled: true,

@@ -127,6 +127,7 @@ export class ApiRouteHost extends RpcTarget {
     triggerJson?: string;
     createdAt?: { seconds?: bigint; nanos?: number };
     updatedAt?: { seconds?: bigint; nanos?: number };
+    taxonomy?: string[];
   }): WorkflowItem {
     return {
       id: wf.id ?? "",
@@ -138,6 +139,7 @@ export class ApiRouteHost extends RpcTarget {
       stats: { runsToday: 0, successRate: 100 },
       createdAt: timestampToIso(wf.createdAt),
       updatedAt: timestampToIso(wf.updatedAt),
+      taxonomy: wf.taxonomy ?? [],
     };
   }
 

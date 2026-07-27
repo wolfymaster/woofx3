@@ -16,7 +16,7 @@ describe("parseModuleTriggerRegistered", () => {
         triggers: [
           {
             id: "uuid-1",
-            category: "platform.twitch",
+            taxonomy: ["platform.twitch", "function.chat"],
             name: "channel.follow",
             description: "desc",
             event: "twitch.channel.follow",
@@ -42,7 +42,7 @@ describe("parseModuleTriggerRegistered", () => {
         triggers: [
           {
             id: "uuid-1",
-            category: "platform.twitch",
+            taxonomy: ["platform.twitch", "function.chat"],
             name: "channel.follow",
             description: "desc",
             event: "twitch.channel.follow",
@@ -87,7 +87,7 @@ describe("parseModuleTriggerRegistered", () => {
         triggers: [
           {
             id: "uuid-1",
-            category: "platform.twitch",
+            taxonomy: ["platform.twitch"],
             name: "channel.follow",
             description: "desc",
             event: "twitch.channel.follow",
@@ -132,6 +132,8 @@ describe("parseModuleActionRegistered", () => {
             description: "desc",
             call: "mod.send",
             params_schema: "{}",
+            output_schema: "[]",
+            taxonomy: ["platform.govee", "function.lighting"],
             created_by_type: "MODULE",
             created_by_ref: "twitch:1.0.0:abcdef1",
           },
@@ -156,12 +158,36 @@ describe("parseModuleActionRegistered", () => {
             description: "desc",
             call: "mod.send",
             paramsSchema: "{}",
+            outputSchema: "[]",
+            taxonomy: ["platform.govee", "function.lighting"],
             createdByType: "MODULE",
             createdByRef: "twitch:1.0.0:abcdef1",
           },
         ],
       },
     });
+  });
+
+  test("degrades a malformed (non-array) taxonomy to an empty array", () => {
+    const ce = {
+      data: {
+        module_key: "k",
+        actions: [{ id: "uuid-a", name: "send", taxonomy: "not-an-array" }],
+      },
+    };
+    const result = parseModuleActionRegistered(ce);
+    expect(result.event.actions[0]?.taxonomy).toEqual([]);
+  });
+
+  test("filters non-string entries out of a taxonomy array", () => {
+    const ce = {
+      data: {
+        module_key: "k",
+        actions: [{ id: "uuid-a", name: "send", taxonomy: ["platform.twitch", 42, null] }],
+      },
+    };
+    const result = parseModuleActionRegistered(ce);
+    expect(result.event.actions[0]?.taxonomy).toEqual(["platform.twitch"]);
   });
 
   test("passes projection_key through as projectionKey on each action", () => {

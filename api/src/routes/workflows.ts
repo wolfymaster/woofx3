@@ -163,6 +163,7 @@ export const workflowsRoutes = {
         isEnabled: false,
         createdAt,
         updatedAt,
+        taxonomy: response.workflow.taxonomy ?? [],
       },
     });
 
@@ -221,6 +222,7 @@ export const workflowsRoutes = {
         isEnabled,
         createdAt,
         updatedAt,
+        taxonomy: response.workflow.taxonomy ?? [],
       },
     });
 
@@ -287,6 +289,7 @@ export const workflowsRoutes = {
           isEnabled,
           createdAt,
           updatedAt,
+          taxonomy: response.workflow.taxonomy ?? [],
         },
       });
     }

@@ -14,4 +14,5 @@ export interface WorkflowItem {
   stats: { runsToday: number; successRate: number };
   createdAt: string;
   updatedAt: string;
+  taxonomy: string[];
 }

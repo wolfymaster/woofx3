@@ -403,7 +403,7 @@ export const subscriptionsRoutes = {
           module_key?: string;
           version?: string;
           author?: string;
-          category?: string;
+          taxonomy?: unknown;
           description?: string;
         };
         const clientId = (ce.client_id as string) ?? "";
@@ -412,11 +412,13 @@ export const subscriptionsRoutes = {
         const moduleVersion = payload.version ?? "";
         const moduleKey = payload.module_key ?? "";
         // Catalog metadata extracted server-side from the stored
-        // manifest. The engine guarantees author/category are non-empty
-        // ("Unknown" when absent); description may be blank when the
-        // manifest declared none.
+        // manifest. The engine guarantees author is non-empty ("Unknown"
+        // when absent); taxonomy may be an empty array; description may
+        // be blank when the manifest declared none.
         const author = payload.author ?? "";
-        const category = payload.category ?? "";
+        const taxonomy = Array.isArray(payload.taxonomy)
+          ? payload.taxonomy.filter((x): x is string => typeof x === "string")
+          : [];
         const description = payload.description ?? "";
 
         if (this.webhookClient) {
@@ -433,7 +435,7 @@ export const subscriptionsRoutes = {
               version: moduleVersion,
               moduleKey,
               author,
-              category,
+              taxonomy,
               description,
             },
             clientId || undefined

@@ -33,6 +33,8 @@ interface RawWorkflowRow {
   enabled?: unknown;
   projection_key?: unknown;
   projectionKey?: unknown;
+  Taxonomy?: unknown;
+  taxonomy?: unknown;
 }
 
 const asString = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -45,6 +47,26 @@ function pickFirst(...values: unknown[]): string {
     }
   }
   return "";
+}
+
+// Taxonomy arrives either as a real array (the snake_case map built by
+// db/app/services/module_event_payload.go `buildWorkflowChangeData`) or as
+// a JSON-encoded string (the raw GORM model's `Taxonomy` column, when the
+// CloudEvent carries the model directly — see the RawWorkflowRow comment
+// above). Accepts either shape, preferring the first non-empty match.
+function asTaxonomy(...values: unknown[]): string[] {
+  for (const v of values) {
+    if (Array.isArray(v)) {
+      return v.filter((x): x is string => typeof x === "string");
+    }
+    if (typeof v === "string" && v !== "") {
+      const parsed = parseJson<unknown>(v, null);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((x): x is string => typeof x === "string");
+      }
+    }
+  }
+  return [];
 }
 
 function readRow(ce: Record<string, unknown>): RawWorkflowRow {
@@ -101,6 +123,7 @@ function buildSnapshot(ce: Record<string, unknown>): WorkflowSnapshot | null {
     isEnabled,
     createdAt: now,
     updatedAt: now,
+    taxonomy: asTaxonomy(row.Taxonomy, row.taxonomy),
   };
   const projectionKey = pickFirst(row.projection_key, row.projectionKey);
   if (projectionKey !== "") {

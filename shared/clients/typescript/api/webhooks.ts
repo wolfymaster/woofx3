@@ -89,7 +89,13 @@ export interface TriggerDefinition {
    * integrations) and legacy event deliveries don't carry one.
    */
   projectionKey?: string;
-  category: string;
+  /**
+   * Open, multi-valued UI classification — dotted hierarchical strings
+   * (e.g. `"platform.twitch.chat"`). Multiple entries express independent
+   * classification axes on the same trigger. Not validated against a
+   * fixed vocabulary. Replaces the legacy single-value `category` field.
+   */
+  taxonomy: string[];
   name: string;
   description: string;
   event: string;
@@ -111,10 +117,21 @@ export interface ActionDefinition {
    * the same reasons (non-MODULE registrations, legacy events).
    */
   projectionKey?: string;
+  /** See TriggerDefinition.taxonomy. */
+  taxonomy: string[];
   name: string;
   description: string;
   call: string;
   paramsSchema: string;
+  /**
+   * JSON-encoded array of ConfigField-shaped output declarations describing
+   * the action function's return value (e.g. the counter module's increment
+   * action returns `{next, previous, step}`). UI-only — the engine treats
+   * function results as opaque at runtime; this powers the workflow
+   * builder's `${stepId.field}` variable autocomplete. `"null"`/absent means
+   * no declared outputs.
+   */
+  outputSchema?: string;
   createdByType: string;
   createdByRef: string;
 }
@@ -501,13 +518,16 @@ export interface ModuleInstalledEvent {
   alreadyInstalled?: boolean;
   /**
    * Catalog metadata extracted from the stored manifest at install
-   * completion. `author` / `category` are guaranteed non-empty by the
-   * engine — "Unknown" when the manifest omitted the field. `description`
-   * may be blank. All three are optional on the wire so older engines
-   * that pre-date this contract still validate.
+   * completion. `author` is guaranteed non-empty by the engine —
+   * "Unknown" when the manifest omitted the field. `taxonomy` is the
+   * manifest's `taxonomy` array (falling back to the legacy single-value
+   * `category` when present, otherwise empty — see moduleCatalogFields in
+   * db/app/services/module_event_payload.go). `description` may be
+   * blank. All fields are optional on the wire so older engines that
+   * pre-date this contract still validate.
    */
   author?: string;
-  category?: string;
+  taxonomy?: string[];
   description?: string;
 }
 
@@ -550,6 +570,8 @@ export interface WorkflowSnapshot {
    * the full rationale — same role here for the workflow surface.
    */
   projectionKey?: string;
+  /** See TriggerDefinition.taxonomy. Set at creation time only. */
+  taxonomy: string[];
 }
 
 export interface WorkflowCreatedEvent {
