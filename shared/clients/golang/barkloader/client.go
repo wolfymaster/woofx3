@@ -43,6 +43,7 @@ type Client struct {
 	shouldReconnect    bool
 	isManualClose      bool
 	mu                 sync.RWMutex
+	writeMu            sync.Mutex
 	pendingInvokes     map[string]chan InvokeResponse
 	pendingInvokesMu   sync.Mutex
 }
@@ -100,7 +101,7 @@ func (c *Client) Connect() error {
 	conn, _, err := dialer.Dial(c.config.WSURL, headers)
 	if err != nil {
 		c.isConnecting = false
-		c.handleConnectionFailure()
+		c.handleConnectionFailureLocked()
 		return fmt.Errorf("failed to connect: %w", err)
 	}
 
@@ -151,6 +152,13 @@ func (c *Client) Send(data string) error {
 		return fmt.Errorf("websocket is not connected")
 	}
 
+	// gorilla/websocket requires the caller to ensure at most one goroutine
+	// calls the write methods at a time. Invoke() calls are multiplexed by
+	// id over one shared connection and can run concurrently, so the wire
+	// write itself must be serialized here even though each caller
+	// otherwise blocks independently on its own response channel.
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	return conn.WriteMessage(websocket.TextMessage, []byte(data))
 }
 
@@ -299,7 +307,19 @@ func (c *Client) messageHandler() {
 	}
 }
 
+// handleConnectionFailure acquires c.mu before scheduling a reconnect
+// attempt. Call this from contexts that don't already hold the lock (e.g.
+// messageHandler's read-error path).
 func (c *Client) handleConnectionFailure() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.handleConnectionFailureLocked()
+}
+
+// handleConnectionFailureLocked schedules a reconnect attempt. Callers must
+// already hold c.mu (e.g. Connect's dial-error path, which is still inside
+// its own locked section when the failure occurs).
+func (c *Client) handleConnectionFailureLocked() {
 	if !c.shouldReconnect || c.isManualClose {
 		return
 	}
@@ -332,6 +352,13 @@ func (c *Client) clearReconnectTimer() {
 
 func (c *Client) Destroy() {
 	c.Disconnect()
+
+	// Disconnect() already clears the reconnect timer and shouldReconnect
+	// under c.mu; these are redundant with that, but kept (now correctly
+	// locked) to preserve Destroy's existing behavior rather than
+	// collapsing it into a bare alias for Disconnect.
+	c.mu.Lock()
 	c.clearReconnectTimer()
 	c.shouldReconnect = false
+	c.mu.Unlock()
 }
