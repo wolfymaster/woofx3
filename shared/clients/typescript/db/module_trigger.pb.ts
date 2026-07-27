@@ -13,7 +13,6 @@ import * as common from "./common.pb";
 
 export interface Trigger {
   id: string;
-  category: string;
   name: string;
   description: string;
   event: string;
@@ -29,16 +28,22 @@ export interface Trigger {
    * reference and ledger row.
    */
   manifestId: string;
+  /**
+   * Open, multi-valued UI classification — dotted hierarchical strings
+   * (e.g. "platform.twitch.chat"). Multiple entries express independent
+   * classification axes. Not validated against a fixed vocabulary.
+   */
+  taxonomy: string[];
 }
 
 export interface TriggerInput {
-  category: string;
   name: string;
   description: string;
   event: string;
   configSchema: string;
   allowVariants: boolean;
   manifestId: string;
+  taxonomy: string[];
 }
 
 export interface RegisterTriggersRequest {
@@ -102,7 +107,6 @@ export const Trigger = {
   initialize: function (msg?: Partial<Trigger>): Trigger {
     return {
       id: "",
-      category: "",
       name: "",
       description: "",
       event: "",
@@ -111,6 +115,7 @@ export const Trigger = {
       createdByType: "",
       createdByRef: "",
       manifestId: "",
+      taxonomy: [],
       ...msg,
     };
   },
@@ -124,9 +129,6 @@ export const Trigger = {
   ): protoscript.BinaryWriter {
     if (msg.id) {
       writer.writeString(1, msg.id);
-    }
-    if (msg.category) {
-      writer.writeString(4, msg.category);
     }
     if (msg.name) {
       writer.writeString(5, msg.name);
@@ -152,6 +154,9 @@ export const Trigger = {
     if (msg.manifestId) {
       writer.writeString(12, msg.manifestId);
     }
+    if (msg.taxonomy?.length) {
+      writer.writeRepeatedString(13, msg.taxonomy);
+    }
     return writer;
   },
 
@@ -167,10 +172,6 @@ export const Trigger = {
       switch (field) {
         case 1: {
           msg.id = reader.readString();
-          break;
-        }
-        case 4: {
-          msg.category = reader.readString();
           break;
         }
         case 5: {
@@ -203,6 +204,10 @@ export const Trigger = {
         }
         case 12: {
           msg.manifestId = reader.readString();
+          break;
+        }
+        case 13: {
+          msg.taxonomy.push(reader.readString());
           break;
         }
         default: {
@@ -241,13 +246,13 @@ export const TriggerInput = {
    */
   initialize: function (msg?: Partial<TriggerInput>): TriggerInput {
     return {
-      category: "",
       name: "",
       description: "",
       event: "",
       configSchema: "",
       allowVariants: false,
       manifestId: "",
+      taxonomy: [],
       ...msg,
     };
   },
@@ -259,9 +264,6 @@ export const TriggerInput = {
     msg: PartialDeep<TriggerInput>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.category) {
-      writer.writeString(1, msg.category);
-    }
     if (msg.name) {
       writer.writeString(2, msg.name);
     }
@@ -280,6 +282,9 @@ export const TriggerInput = {
     if (msg.manifestId) {
       writer.writeString(7, msg.manifestId);
     }
+    if (msg.taxonomy?.length) {
+      writer.writeRepeatedString(8, msg.taxonomy);
+    }
     return writer;
   },
 
@@ -293,10 +298,6 @@ export const TriggerInput = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.category = reader.readString();
-          break;
-        }
         case 2: {
           msg.name = reader.readString();
           break;
@@ -319,6 +320,10 @@ export const TriggerInput = {
         }
         case 7: {
           msg.manifestId = reader.readString();
+          break;
+        }
+        case 8: {
+          msg.taxonomy.push(reader.readString());
           break;
         }
         default: {
@@ -642,7 +647,6 @@ export const TriggerJSON = {
   initialize: function (msg?: Partial<Trigger>): Trigger {
     return {
       id: "",
-      category: "",
       name: "",
       description: "",
       event: "",
@@ -651,6 +655,7 @@ export const TriggerJSON = {
       createdByType: "",
       createdByRef: "",
       manifestId: "",
+      taxonomy: [],
       ...msg,
     };
   },
@@ -662,9 +667,6 @@ export const TriggerJSON = {
     const json: Record<string, unknown> = {};
     if (msg.id) {
       json["id"] = msg.id;
-    }
-    if (msg.category) {
-      json["category"] = msg.category;
     }
     if (msg.name) {
       json["name"] = msg.name;
@@ -690,6 +692,9 @@ export const TriggerJSON = {
     if (msg.manifestId) {
       json["manifestId"] = msg.manifestId;
     }
+    if (msg.taxonomy?.length) {
+      json["taxonomy"] = msg.taxonomy;
+    }
     return json;
   },
 
@@ -700,10 +705,6 @@ export const TriggerJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
-    }
-    const _category_ = json["category"];
-    if (_category_) {
-      msg.category = _category_;
     }
     const _name_ = json["name"];
     if (_name_) {
@@ -737,6 +738,10 @@ export const TriggerJSON = {
     if (_manifestId_) {
       msg.manifestId = _manifestId_;
     }
+    const _taxonomy_ = json["taxonomy"];
+    if (_taxonomy_) {
+      msg.taxonomy = _taxonomy_;
+    }
     return msg;
   },
 };
@@ -764,13 +769,13 @@ export const TriggerInputJSON = {
    */
   initialize: function (msg?: Partial<TriggerInput>): TriggerInput {
     return {
-      category: "",
       name: "",
       description: "",
       event: "",
       configSchema: "",
       allowVariants: false,
       manifestId: "",
+      taxonomy: [],
       ...msg,
     };
   },
@@ -782,9 +787,6 @@ export const TriggerInputJSON = {
     msg: PartialDeep<TriggerInput>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.category) {
-      json["category"] = msg.category;
-    }
     if (msg.name) {
       json["name"] = msg.name;
     }
@@ -803,6 +805,9 @@ export const TriggerInputJSON = {
     if (msg.manifestId) {
       json["manifestId"] = msg.manifestId;
     }
+    if (msg.taxonomy?.length) {
+      json["taxonomy"] = msg.taxonomy;
+    }
     return json;
   },
 
@@ -810,10 +815,6 @@ export const TriggerInputJSON = {
    * @private
    */
   _readMessage: function (msg: TriggerInput, json: any): TriggerInput {
-    const _category_ = json["category"];
-    if (_category_) {
-      msg.category = _category_;
-    }
     const _name_ = json["name"];
     if (_name_) {
       msg.name = _name_;
@@ -837,6 +838,10 @@ export const TriggerInputJSON = {
     const _manifestId_ = json["manifestId"] ?? json["manifest_id"];
     if (_manifestId_) {
       msg.manifestId = _manifestId_;
+    }
+    const _taxonomy_ = json["taxonomy"];
+    if (_taxonomy_) {
+      msg.taxonomy = _taxonomy_;
     }
     return msg;
   },

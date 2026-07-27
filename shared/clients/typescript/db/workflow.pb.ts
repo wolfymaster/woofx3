@@ -53,6 +53,12 @@ export interface Workflow {
    * to derive the UI projectionKey.
    */
   manifestId: string;
+  /**
+   * Open, multi-valued UI classification — dotted hierarchical strings
+   * (e.g. "platform.twitch.chat"). See module.Trigger.taxonomy. Set at
+   * creation time only; not currently updatable via UpdateWorkflowRequest.
+   */
+  taxonomy: string[];
 }
 
 export declare namespace Workflow {
@@ -153,6 +159,7 @@ export interface CreateWorkflowRequest {
    * Manifest-local id for MODULE-owned workflows. See `Workflow.manifest_id`.
    */
   manifestId: string;
+  taxonomy: string[];
 }
 
 export declare namespace CreateWorkflowRequest {
@@ -830,6 +837,7 @@ export const Workflow = {
       stepsJson: "",
       triggerJson: "",
       manifestId: "",
+      taxonomy: [],
       ...msg,
     };
   },
@@ -906,6 +914,9 @@ export const Workflow = {
     }
     if (msg.manifestId) {
       writer.writeString(19, msg.manifestId);
+    }
+    if (msg.taxonomy?.length) {
+      writer.writeRepeatedString(20, msg.taxonomy);
     }
     return writer;
   },
@@ -988,6 +999,10 @@ export const Workflow = {
         }
         case 19: {
           msg.manifestId = reader.readString();
+          break;
+        }
+        case 20: {
+          msg.taxonomy.push(reader.readString());
           break;
         }
         default: {
@@ -1643,6 +1658,7 @@ export const CreateWorkflowRequest = {
       stepsJson: "",
       triggerJson: "",
       manifestId: "",
+      taxonomy: [],
       ...msg,
     };
   },
@@ -1702,6 +1718,9 @@ export const CreateWorkflowRequest = {
     }
     if (msg.manifestId) {
       writer.writeString(16, msg.manifestId);
+    }
+    if (msg.taxonomy?.length) {
+      writer.writeRepeatedString(17, msg.taxonomy);
     }
     return writer;
   },
@@ -1772,6 +1791,10 @@ export const CreateWorkflowRequest = {
         }
         case 16: {
           msg.manifestId = reader.readString();
+          break;
+        }
+        case 17: {
+          msg.taxonomy.push(reader.readString());
           break;
         }
         default: {
@@ -3311,6 +3334,7 @@ export const WorkflowJSON = {
       stepsJson: "",
       triggerJson: "",
       manifestId: "",
+      taxonomy: [],
       ...msg,
     };
   },
@@ -3380,6 +3404,9 @@ export const WorkflowJSON = {
     }
     if (msg.manifestId) {
       json["manifestId"] = msg.manifestId;
+    }
+    if (msg.taxonomy?.length) {
+      json["taxonomy"] = msg.taxonomy;
     }
     return json;
   },
@@ -3460,6 +3487,10 @@ export const WorkflowJSON = {
     const _manifestId_ = json["manifestId"] ?? json["manifest_id"];
     if (_manifestId_) {
       msg.manifestId = _manifestId_;
+    }
+    const _taxonomy_ = json["taxonomy"];
+    if (_taxonomy_) {
+      msg.taxonomy = _taxonomy_;
     }
     return msg;
   },
@@ -4017,6 +4048,7 @@ export const CreateWorkflowRequestJSON = {
       stepsJson: "",
       triggerJson: "",
       manifestId: "",
+      taxonomy: [],
       ...msg,
     };
   },
@@ -4077,6 +4109,9 @@ export const CreateWorkflowRequestJSON = {
     }
     if (msg.manifestId) {
       json["manifestId"] = msg.manifestId;
+    }
+    if (msg.taxonomy?.length) {
+      json["taxonomy"] = msg.taxonomy;
     }
     return json;
   },
@@ -4148,6 +4183,10 @@ export const CreateWorkflowRequestJSON = {
     const _manifestId_ = json["manifestId"] ?? json["manifest_id"];
     if (_manifestId_) {
       msg.manifestId = _manifestId_;
+    }
+    const _taxonomy_ = json["taxonomy"];
+    if (_taxonomy_) {
+      msg.taxonomy = _taxonomy_;
     }
     return msg;
   },

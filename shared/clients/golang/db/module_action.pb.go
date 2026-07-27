@@ -40,7 +40,19 @@ type Action struct {
 	// "alert"). For built-in non-function actions the handler is the
 	// entire dispatch (`call` is empty); for function-type actions
 	// `call` holds the canonical function id.
-	Type          string `protobuf:"bytes,11,opt,name=type,proto3" json:"type,omitempty"`
+	Type string `protobuf:"bytes,11,opt,name=type,proto3" json:"type,omitempty"`
+	// Open, multi-valued UI classification — dotted hierarchical strings
+	// (e.g. "platform.govee", "function.lighting"). See
+	// module.Trigger.taxonomy.
+	Taxonomy []string `protobuf:"bytes,12,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
+	// JSON-encoded array of ConfigField-shaped output declarations
+	// describing the action function's return value (e.g. the counter
+	// module's increment action returns `{next, previous, step}`).
+	// UI-only — the engine treats function results as opaque
+	// map[string]any at runtime; this powers the workflow builder's
+	// ${stepId.field} variable autocomplete. Empty/absent means the
+	// action has no declared outputs.
+	OutputSchema  string `protobuf:"bytes,13,opt,name=output_schema,json=outputSchema,proto3" json:"output_schema,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -138,6 +150,20 @@ func (x *Action) GetType() string {
 	return ""
 }
 
+func (x *Action) GetTaxonomy() []string {
+	if x != nil {
+		return x.Taxonomy
+	}
+	return nil
+}
+
+func (x *Action) GetOutputSchema() string {
+	if x != nil {
+		return x.OutputSchema
+	}
+	return ""
+}
+
 type ActionInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -146,6 +172,8 @@ type ActionInput struct {
 	ParamsSchema  string                 `protobuf:"bytes,4,opt,name=params_schema,json=paramsSchema,proto3" json:"params_schema,omitempty"` // JSON string
 	ManifestId    string                 `protobuf:"bytes,5,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
 	Type          string                 `protobuf:"bytes,6,opt,name=type,proto3" json:"type,omitempty"`
+	Taxonomy      []string               `protobuf:"bytes,7,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
+	OutputSchema  string                 `protobuf:"bytes,8,opt,name=output_schema,json=outputSchema,proto3" json:"output_schema,omitempty"` // JSON string — see Action.output_schema
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -218,6 +246,20 @@ func (x *ActionInput) GetManifestId() string {
 func (x *ActionInput) GetType() string {
 	if x != nil {
 		return x.Type
+	}
+	return ""
+}
+
+func (x *ActionInput) GetTaxonomy() []string {
+	if x != nil {
+		return x.Taxonomy
+	}
+	return nil
+}
+
+func (x *ActionInput) GetOutputSchema() string {
+	if x != nil {
+		return x.OutputSchema
 	}
 	return ""
 }
@@ -428,7 +470,7 @@ var File_module_action_proto protoreflect.FileDescriptor
 
 const file_module_action_proto_rawDesc = "" +
 	"\n" +
-	"\x13module_action.proto\x12\x06module\x1a\fcommon.proto\"\x8a\x02\n" +
+	"\x13module_action.proto\x12\x06module\x1a\fcommon.proto\"\xcb\x02\n" +
 	"\x06Action\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x04 \x01(\tR\x04name\x12 \n" +
@@ -440,7 +482,9 @@ const file_module_action_proto_rawDesc = "" +
 	"\vmanifest_id\x18\n" +
 	" \x01(\tR\n" +
 	"manifestId\x12\x12\n" +
-	"\x04type\x18\v \x01(\tR\x04type\"\xb1\x01\n" +
+	"\x04type\x18\v \x01(\tR\x04type\x12\x1a\n" +
+	"\btaxonomy\x18\f \x03(\tR\btaxonomy\x12#\n" +
+	"\routput_schema\x18\r \x01(\tR\foutputSchema\"\xf2\x01\n" +
 	"\vActionInput\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x12\n" +
@@ -448,7 +492,9 @@ const file_module_action_proto_rawDesc = "" +
 	"\rparams_schema\x18\x04 \x01(\tR\fparamsSchema\x12\x1f\n" +
 	"\vmanifest_id\x18\x05 \x01(\tR\n" +
 	"manifestId\x12\x12\n" +
-	"\x04type\x18\x06 \x01(\tR\x04type\"\x96\x02\n" +
+	"\x04type\x18\x06 \x01(\tR\x04type\x12\x1a\n" +
+	"\btaxonomy\x18\a \x03(\tR\btaxonomy\x12#\n" +
+	"\routput_schema\x18\b \x01(\tR\foutputSchema\"\x96\x02\n" +
 	"\x16RegisterActionsRequest\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +

@@ -157,6 +157,9 @@ impl serde::Serialize for CreateWorkflowRequest {
         if !self.manifest_id.is_empty() {
             len += 1;
         }
+        if !self.taxonomy.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("workflow.CreateWorkflowRequest", len)?;
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
@@ -200,6 +203,9 @@ impl serde::Serialize for CreateWorkflowRequest {
         if !self.manifest_id.is_empty() {
             struct_ser.serialize_field("manifestId", &self.manifest_id)?;
         }
+        if !self.taxonomy.is_empty() {
+            struct_ser.serialize_field("taxonomy", &self.taxonomy)?;
+        }
         struct_ser.end()
     }
 }
@@ -234,6 +240,7 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
             "triggerJson",
             "manifest_id",
             "manifestId",
+            "taxonomy",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -252,6 +259,7 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
             StepsJson,
             TriggerJson,
             ManifestId,
+            Taxonomy,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -287,6 +295,7 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
                             "stepsJson" | "steps_json" => Ok(GeneratedField::StepsJson),
                             "triggerJson" | "trigger_json" => Ok(GeneratedField::TriggerJson),
                             "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
+                            "taxonomy" => Ok(GeneratedField::Taxonomy),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -320,6 +329,7 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
                 let mut steps_json__ = None;
                 let mut trigger_json__ = None;
                 let mut manifest_id__ = None;
+                let mut taxonomy__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Name => {
@@ -412,6 +422,12 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
                             }
                             manifest_id__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Taxonomy => {
+                            if taxonomy__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("taxonomy"));
+                            }
+                            taxonomy__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(CreateWorkflowRequest {
@@ -429,6 +445,7 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
                     steps_json: steps_json__.unwrap_or_default(),
                     trigger_json: trigger_json__.unwrap_or_default(),
                     manifest_id: manifest_id__.unwrap_or_default(),
+                    taxonomy: taxonomy__.unwrap_or_default(),
                 })
             }
         }
@@ -2416,6 +2433,9 @@ impl serde::Serialize for Workflow {
         if !self.manifest_id.is_empty() {
             len += 1;
         }
+        if !self.taxonomy.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("workflow.Workflow", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -2468,6 +2488,9 @@ impl serde::Serialize for Workflow {
         if !self.manifest_id.is_empty() {
             struct_ser.serialize_field("manifestId", &self.manifest_id)?;
         }
+        if !self.taxonomy.is_empty() {
+            struct_ser.serialize_field("taxonomy", &self.taxonomy)?;
+        }
         struct_ser.end()
     }
 }
@@ -2507,6 +2530,7 @@ impl<'de> serde::Deserialize<'de> for Workflow {
             "triggerJson",
             "manifest_id",
             "manifestId",
+            "taxonomy",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -2528,6 +2552,7 @@ impl<'de> serde::Deserialize<'de> for Workflow {
             StepsJson,
             TriggerJson,
             ManifestId,
+            Taxonomy,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -2566,6 +2591,7 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                             "stepsJson" | "steps_json" => Ok(GeneratedField::StepsJson),
                             "triggerJson" | "trigger_json" => Ok(GeneratedField::TriggerJson),
                             "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
+                            "taxonomy" => Ok(GeneratedField::Taxonomy),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -2602,6 +2628,7 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                 let mut steps_json__ = None;
                 let mut trigger_json__ = None;
                 let mut manifest_id__ = None;
+                let mut taxonomy__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -2712,6 +2739,12 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                             }
                             manifest_id__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Taxonomy => {
+                            if taxonomy__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("taxonomy"));
+                            }
+                            taxonomy__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Workflow {
@@ -2732,6 +2765,7 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                     steps_json: steps_json__.unwrap_or_default(),
                     trigger_json: trigger_json__.unwrap_or_default(),
                     manifest_id: manifest_id__.unwrap_or_default(),
+                    taxonomy: taxonomy__.unwrap_or_default(),
                 })
             }
         }

@@ -24,7 +24,6 @@ const (
 type Trigger struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Category      string                 `protobuf:"bytes,4,opt,name=category,proto3" json:"category,omitempty"`
 	Name          string                 `protobuf:"bytes,5,opt,name=name,proto3" json:"name,omitempty"`
 	Description   string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
 	Event         string                 `protobuf:"bytes,7,opt,name=event,proto3" json:"event,omitempty"`
@@ -37,7 +36,11 @@ type Trigger struct {
 	// `created_by_ref` and the literal "trigger" kind, this forms the
 	// canonical id `{moduleId}:trigger:{manifest_id}` used by every
 	// reference and ledger row.
-	ManifestId    string `protobuf:"bytes,12,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
+	ManifestId string `protobuf:"bytes,12,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
+	// Open, multi-valued UI classification — dotted hierarchical strings
+	// (e.g. "platform.twitch.chat"). Multiple entries express independent
+	// classification axes. Not validated against a fixed vocabulary.
+	Taxonomy      []string `protobuf:"bytes,13,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -75,13 +78,6 @@ func (*Trigger) Descriptor() ([]byte, []int) {
 func (x *Trigger) GetId() string {
 	if x != nil {
 		return x.Id
-	}
-	return ""
-}
-
-func (x *Trigger) GetCategory() string {
-	if x != nil {
-		return x.Category
 	}
 	return ""
 }
@@ -142,15 +138,22 @@ func (x *Trigger) GetManifestId() string {
 	return ""
 }
 
+func (x *Trigger) GetTaxonomy() []string {
+	if x != nil {
+		return x.Taxonomy
+	}
+	return nil
+}
+
 type TriggerInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Category      string                 `protobuf:"bytes,1,opt,name=category,proto3" json:"category,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	Event         string                 `protobuf:"bytes,4,opt,name=event,proto3" json:"event,omitempty"`
 	ConfigSchema  string                 `protobuf:"bytes,5,opt,name=config_schema,json=configSchema,proto3" json:"config_schema,omitempty"` // JSON string
 	AllowVariants bool                   `protobuf:"varint,6,opt,name=allow_variants,json=allowVariants,proto3" json:"allow_variants,omitempty"`
 	ManifestId    string                 `protobuf:"bytes,7,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
+	Taxonomy      []string               `protobuf:"bytes,8,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -183,13 +186,6 @@ func (x *TriggerInput) ProtoReflect() protoreflect.Message {
 // Deprecated: Use TriggerInput.ProtoReflect.Descriptor instead.
 func (*TriggerInput) Descriptor() ([]byte, []int) {
 	return file_module_trigger_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *TriggerInput) GetCategory() string {
-	if x != nil {
-		return x.Category
-	}
-	return ""
 }
 
 func (x *TriggerInput) GetName() string {
@@ -232,6 +228,13 @@ func (x *TriggerInput) GetManifestId() string {
 		return x.ManifestId
 	}
 	return ""
+}
+
+func (x *TriggerInput) GetTaxonomy() []string {
+	if x != nil {
+		return x.Taxonomy
+	}
+	return nil
 }
 
 type RegisterTriggersRequest struct {
@@ -440,10 +443,9 @@ var File_module_trigger_proto protoreflect.FileDescriptor
 
 const file_module_trigger_proto_rawDesc = "" +
 	"\n" +
-	"\x14module_trigger.proto\x12\x06module\x1a\fcommon.proto\"\xbc\x02\n" +
+	"\x14module_trigger.proto\x12\x06module\x1a\fcommon.proto\"\xcc\x02\n" +
 	"\aTrigger\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
-	"\bcategory\x18\x04 \x01(\tR\bcategory\x12\x12\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x05 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x06 \x01(\tR\vdescription\x12\x14\n" +
 	"\x05event\x18\a \x01(\tR\x05event\x12#\n" +
@@ -453,16 +455,17 @@ const file_module_trigger_proto_rawDesc = "" +
 	" \x01(\tR\rcreatedByType\x12$\n" +
 	"\x0ecreated_by_ref\x18\v \x01(\tR\fcreatedByRef\x12\x1f\n" +
 	"\vmanifest_id\x18\f \x01(\tR\n" +
-	"manifestId\"\xe3\x01\n" +
-	"\fTriggerInput\x12\x1a\n" +
-	"\bcategory\x18\x01 \x01(\tR\bcategory\x12\x12\n" +
+	"manifestId\x12\x1a\n" +
+	"\btaxonomy\x18\r \x03(\tR\btaxonomyJ\x04\b\x04\x10\x05R\bcategory\"\xf3\x01\n" +
+	"\fTriggerInput\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x14\n" +
 	"\x05event\x18\x04 \x01(\tR\x05event\x12#\n" +
 	"\rconfig_schema\x18\x05 \x01(\tR\fconfigSchema\x12%\n" +
 	"\x0eallow_variants\x18\x06 \x01(\bR\rallowVariants\x12\x1f\n" +
 	"\vmanifest_id\x18\a \x01(\tR\n" +
-	"manifestId\"\x9a\x02\n" +
+	"manifestId\x12\x1a\n" +
+	"\btaxonomy\x18\b \x03(\tR\btaxonomyJ\x04\b\x01\x10\x02R\bcategory\"\x9a\x02\n" +
 	"\x17RegisterTriggersRequest\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +

@@ -25,6 +25,18 @@ message Action {
   // entire dispatch (`call` is empty); for function-type actions
   // `call` holds the canonical function id.
   string type = 11;
+  // Open, multi-valued UI classification — dotted hierarchical strings
+  // (e.g. "platform.govee", "function.lighting"). See
+  // module.Trigger.taxonomy.
+  repeated string taxonomy = 12;
+  // JSON-encoded array of ConfigField-shaped output declarations
+  // describing the action function's return value (e.g. the counter
+  // module's increment action returns `{next, previous, step}`).
+  // UI-only — the engine treats function results as opaque
+  // map[string]any at runtime; this powers the workflow builder's
+  // ${stepId.field} variable autocomplete. Empty/absent means the
+  // action has no declared outputs.
+  string output_schema = 13;
 }
 
 message ActionInput {
@@ -34,6 +46,8 @@ message ActionInput {
   string params_schema = 4;  // JSON string
   string manifest_id = 5;
   string type = 6;
+  repeated string taxonomy = 7;
+  string output_schema = 8;  // JSON string — see Action.output_schema
 }
 
 message RegisterActionsRequest {

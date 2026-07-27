@@ -48,6 +48,11 @@ pub struct Workflow {
     /// to derive the UI projectionKey.
     #[prost(string, tag="19")]
     pub manifest_id: ::prost::alloc::string::String,
+    /// Open, multi-valued UI classification — dotted hierarchical strings
+    /// (e.g. "platform.twitch.chat"). See module.Trigger.taxonomy. Set at
+    /// creation time only; not currently updatable via UpdateWorkflowRequest.
+    #[prost(string, repeated, tag="20")]
+    pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Workflow execution
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -156,6 +161,8 @@ pub struct CreateWorkflowRequest {
     /// Manifest-local id for MODULE-owned workflows. See `Workflow.manifest_id`.
     #[prost(string, tag="16")]
     pub manifest_id: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag="17")]
+    pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Request to get a workflow by ID
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

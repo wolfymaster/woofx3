@@ -68,6 +68,10 @@ message Workflow {
     // (composite moduleKey for MODULE rows) this is what the engine uses
     // to derive the UI projectionKey.
     string manifest_id = 19;
+    // Open, multi-valued UI classification — dotted hierarchical strings
+    // (e.g. "platform.twitch.chat"). See module.Trigger.taxonomy. Set at
+    // creation time only; not currently updatable via UpdateWorkflowRequest.
+    repeated string taxonomy = 20;
 }
 
 // Workflow execution
@@ -126,6 +130,7 @@ message CreateWorkflowRequest {
     string trigger_json = 15;
     // Manifest-local id for MODULE-owned workflows. See `Workflow.manifest_id`.
     string manifest_id = 16;
+    repeated string taxonomy = 17;
 }
 
 // Request to get a workflow by ID

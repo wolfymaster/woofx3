@@ -8,7 +8,8 @@ import "common.proto";
 
 message Trigger {
   string id = 1;
-  string category = 4;
+  reserved 4;                        // was: string category, replaced by taxonomy
+  reserved "category";
   string name = 5;
   string description = 6;
   string event = 7;
@@ -22,16 +23,22 @@ message Trigger {
   // canonical id `{moduleId}:trigger:{manifest_id}` used by every
   // reference and ledger row.
   string manifest_id = 12;
+  // Open, multi-valued UI classification — dotted hierarchical strings
+  // (e.g. "platform.twitch.chat"). Multiple entries express independent
+  // classification axes. Not validated against a fixed vocabulary.
+  repeated string taxonomy = 13;
 }
 
 message TriggerInput {
-  string category = 1;
+  reserved 1;                        // was: string category, replaced by taxonomy
+  reserved "category";
   string name = 2;
   string description = 3;
   string event = 4;
   string config_schema = 5;   // JSON string
   bool allow_variants = 6;
   string manifest_id = 7;
+  repeated string taxonomy = 8;
 }
 
 message RegisterTriggersRequest {

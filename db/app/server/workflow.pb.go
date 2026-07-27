@@ -51,7 +51,11 @@ type Workflow struct {
 	// Empty for USER-authored workflows. Together with `created_by_ref`
 	// (composite moduleKey for MODULE rows) this is what the engine uses
 	// to derive the UI projectionKey.
-	ManifestId    string `protobuf:"bytes,19,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
+	ManifestId string `protobuf:"bytes,19,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
+	// Open, multi-valued UI classification — dotted hierarchical strings
+	// (e.g. "platform.twitch.chat"). See module.Trigger.taxonomy. Set at
+	// creation time only; not currently updatable via UpdateWorkflowRequest.
+	Taxonomy      []string `protobuf:"bytes,20,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -203,6 +207,13 @@ func (x *Workflow) GetManifestId() string {
 		return x.ManifestId
 	}
 	return ""
+}
+
+func (x *Workflow) GetTaxonomy() []string {
+	if x != nil {
+		return x.Taxonomy
+	}
+	return nil
 }
 
 // Workflow execution
@@ -484,7 +495,8 @@ type CreateWorkflowRequest struct {
 	// `workflow_definitions.trigger`.
 	TriggerJson string `protobuf:"bytes,15,opt,name=trigger_json,json=triggerJson,proto3" json:"trigger_json,omitempty"`
 	// Manifest-local id for MODULE-owned workflows. See `Workflow.manifest_id`.
-	ManifestId    string `protobuf:"bytes,16,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
+	ManifestId    string   `protobuf:"bytes,16,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
+	Taxonomy      []string `protobuf:"bytes,17,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -615,6 +627,13 @@ func (x *CreateWorkflowRequest) GetManifestId() string {
 		return x.ManifestId
 	}
 	return ""
+}
+
+func (x *CreateWorkflowRequest) GetTaxonomy() []string {
+	if x != nil {
+		return x.Taxonomy
+	}
+	return nil
 }
 
 // Request to get a workflow by ID
@@ -1566,7 +1585,7 @@ var File_workflow_proto protoreflect.FileDescriptor
 
 const file_workflow_proto_rawDesc = "" +
 	"\n" +
-	"\x0eworkflow.proto\x12\bworkflow\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xde\x05\n" +
+	"\x0eworkflow.proto\x12\bworkflow\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfa\x05\n" +
 	"\bWorkflow\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -1592,7 +1611,8 @@ const file_workflow_proto_rawDesc = "" +
 	"steps_json\x18\x11 \x01(\tR\tstepsJson\x12!\n" +
 	"\ftrigger_json\x18\x12 \x01(\tR\vtriggerJson\x12\x1f\n" +
 	"\vmanifest_id\x18\x13 \x01(\tR\n" +
-	"manifestId\x1a<\n" +
+	"manifestId\x12\x1a\n" +
+	"\btaxonomy\x18\x14 \x03(\tR\btaxonomy\x1a<\n" +
 	"\x0eVariablesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x05\x10\x06J\x04\b\a\x10\bR\n" +
@@ -1642,7 +1662,7 @@ const file_workflow_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a:\n" +
 	"\fOutputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xf2\x04\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8e\x05\n" +
 	"\x15CreateWorkflowRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12%\n" +
@@ -1663,7 +1683,8 @@ const file_workflow_proto_rawDesc = "" +
 	"steps_json\x18\x0e \x01(\tR\tstepsJson\x12!\n" +
 	"\ftrigger_json\x18\x0f \x01(\tR\vtriggerJson\x12\x1f\n" +
 	"\vmanifest_id\x18\x10 \x01(\tR\n" +
-	"manifestId\x1a<\n" +
+	"manifestId\x12\x1a\n" +
+	"\btaxonomy\x18\x11 \x03(\tR\btaxonomy\x1a<\n" +
 	"\x0eVariablesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x04\x10\x05J\x04\b\x06\x10\aR\n" +

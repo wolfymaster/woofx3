@@ -70,8 +70,6 @@ pub struct ListBackgroundTasksResponse {
 pub struct Trigger {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="4")]
-    pub category: ::prost::alloc::string::String,
     #[prost(string, tag="5")]
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag="6")]
@@ -93,11 +91,14 @@ pub struct Trigger {
     /// reference and ledger row.
     #[prost(string, tag="12")]
     pub manifest_id: ::prost::alloc::string::String,
+    /// Open, multi-valued UI classification — dotted hierarchical strings
+    /// (e.g. "platform.twitch.chat"). Multiple entries express independent
+    /// classification axes. Not validated against a fixed vocabulary.
+    #[prost(string, repeated, tag="13")]
+    pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct TriggerInput {
-    #[prost(string, tag="1")]
-    pub category: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
@@ -111,6 +112,8 @@ pub struct TriggerInput {
     pub allow_variants: bool,
     #[prost(string, tag="7")]
     pub manifest_id: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag="8")]
+    pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterTriggersRequest {
@@ -181,6 +184,20 @@ pub struct Action {
     /// `call` holds the canonical function id.
     #[prost(string, tag="11")]
     pub r#type: ::prost::alloc::string::String,
+    /// Open, multi-valued UI classification — dotted hierarchical strings
+    /// (e.g. "platform.govee", "function.lighting"). See
+    /// module.Trigger.taxonomy.
+    #[prost(string, repeated, tag="12")]
+    pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// JSON-encoded array of ConfigField-shaped output declarations
+    /// describing the action function's return value (e.g. the counter
+    /// module's increment action returns `{next, previous, step}`).
+    /// UI-only — the engine treats function results as opaque
+    /// map\[string\]any at runtime; this powers the workflow builder's
+    /// ${stepId.field} variable autocomplete. Empty/absent means the
+    /// action has no declared outputs.
+    #[prost(string, tag="13")]
+    pub output_schema: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ActionInput {
@@ -197,6 +214,11 @@ pub struct ActionInput {
     pub manifest_id: ::prost::alloc::string::String,
     #[prost(string, tag="6")]
     pub r#type: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag="7")]
+    pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// JSON string — see Action.output_schema
+    #[prost(string, tag="8")]
+    pub output_schema: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterActionsRequest {
