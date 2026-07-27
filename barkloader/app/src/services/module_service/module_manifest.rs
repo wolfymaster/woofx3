@@ -25,9 +25,18 @@ pub struct ManifestTrigger {
     /// subject — the two were conflated in earlier versions.
     #[serde(default)]
     pub event: String,
-    /// UX / registry grouping (e.g. platform.twitch). Sent to RegisterTrigger as `category`.
+    /// Legacy UX / registry grouping (e.g. `platform.twitch`). Superseded by
+    /// `taxonomy`; still accepted from older manifests and folded into
+    /// `taxonomy` at registration time (see `resolve_taxonomy`).
     #[serde(default)]
     pub category: Option<String>,
+    /// Open, multi-valued classification for the UI catalog — each entry a
+    /// dotted hierarchical path (e.g. `platform.twitch.chat`,
+    /// `function.chat`). Multiple entries express independent
+    /// classification axes on the same trigger. Not validated against any
+    /// fixed vocabulary; module authors are free to introduce new terms.
+    #[serde(default)]
+    pub taxonomy: Vec<String>,
     #[serde(default)]
     pub schema: Option<serde_json::Value>,
     /// When true, the UI lets the user create multiple bound instances ("variants")
@@ -97,6 +106,19 @@ pub struct ManifestAction {
     ///                    runtime never has to re-resolve.
     #[serde(default)]
     pub schema: serde_json::Value,
+    /// Open, multi-valued classification for the UI catalog. See
+    /// `ManifestTrigger::taxonomy` for the shape/convention.
+    #[serde(default)]
+    pub taxonomy: Vec<String>,
+    /// `ConfigField`-shaped declarations describing the action function's
+    /// return value (e.g. `[{ id: "next", label: "New value", type: "number" }]`
+    /// for the counter module's increment action). UI-only, for the
+    /// workflow builder's `${stepId.field}` variable autocomplete — the
+    /// engine never validates a function's actual return value against
+    /// this. Same array shape as `schema`, minus input-only properties
+    /// (`required`, `placeholder`, `source`, …).
+    #[serde(default)]
+    pub outputs: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,6 +179,10 @@ pub struct ManifestWorkflow {
     pub trigger: String,
     #[serde(default)]
     pub steps: Vec<ManifestWorkflowStep>,
+    /// Open, multi-valued classification for the UI catalog. See
+    /// `ManifestTrigger::taxonomy` for the shape/convention.
+    #[serde(default)]
+    pub taxonomy: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -343,11 +369,16 @@ pub struct ModuleManifest {
     /// modules whose author predates this field.
     #[serde(default)]
     pub author: Option<String>,
-    /// UI catalog grouping for the module as a whole (e.g. `platform`,
-    /// `automation`). Distinct from `triggers[].category`, which groups
-    /// individual triggers in the workflow builder.
+    /// Legacy UI catalog grouping for the module as a whole (e.g.
+    /// `platform`, `automation`). Superseded by `taxonomy`; still accepted
+    /// from older manifests and folded into `taxonomy` at registration time
+    /// (see `resolve_taxonomy`).
     #[serde(default)]
     pub category: Option<String>,
+    /// Open, multi-valued classification for the UI catalog. See
+    /// `ManifestTrigger::taxonomy` for the shape/convention.
+    #[serde(default)]
+    pub taxonomy: Vec<String>,
     #[serde(default)]
     pub triggers: Vec<ManifestTrigger>,
     #[serde(default)]
@@ -564,15 +595,23 @@ impl ManifestAsset {
 }
 
 impl ManifestTrigger {
-    /// Category for `RegisterTrigger` and install-time grouping: manifest `category` when set
-    /// (non-empty after trim), otherwise transport/type (`type` field, e.g. `eventbus`).
-    pub fn register_category(&self) -> String {
-        self.category
+    /// Taxonomy for `RegisterTrigger` and install-time grouping: manifest
+    /// `taxonomy` when non-empty, otherwise the legacy `category` (trimmed,
+    /// wrapped in a single-element list) when set, otherwise transport/type
+    /// (`type` field, e.g. `eventbus`) as a last resort.
+    pub fn resolve_taxonomy(&self) -> Vec<String> {
+        if !self.taxonomy.is_empty() {
+            return self.taxonomy.clone();
+        }
+        match self
+            .category
             .as_ref()
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
-            .map(str::to_owned)
-            .unwrap_or_else(|| self.trigger_type.clone())
+        {
+            Some(category) => vec![category.to_owned()],
+            None => vec![self.trigger_type.clone()],
+        }
     }
 
     /// Build the Twirp TriggerInput JSON for bulk registration.
@@ -605,7 +644,7 @@ impl ManifestTrigger {
             self.event.clone()
         };
         super::db_proxy::TriggerInputJson {
-            category: self.register_category(),
+            taxonomy: self.resolve_taxonomy(),
             name: self.name.clone(),
             description: self.description.clone(),
             event,
@@ -881,6 +920,8 @@ impl ManifestAction {
             description: self.description.clone(),
             call: resolved_call.to_string(),
             params_schema: self.schema.to_string(),
+            output_schema: self.outputs.to_string(),
+            taxonomy: self.taxonomy.clone(),
             manifest_id: self.id.clone(),
         }
     }
@@ -1111,6 +1152,7 @@ impl ManifestWorkflow {
             steps_json: steps_json_string,
             trigger_json: trigger_json_string,
             manifest_id: self.id.clone(),
+            taxonomy: self.taxonomy.clone(),
         };
 
         let client = woofx3_twirp::WorkflowServiceClient::new(db_proxy_url);
@@ -1206,7 +1248,24 @@ mod tests {
     }
 
     #[test]
-    fn trigger_register_category_prefers_manifest_category() {
+    fn trigger_resolve_taxonomy_prefers_taxonomy_over_category() {
+        let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
+            "id": "twitch.foo",
+            "name": "Foo",
+            "description": "d",
+            "type": "eventbus",
+            "category": "platform.twitch",
+            "taxonomy": ["platform.twitch.chat", "function.chat"]
+        }))
+        .expect("parse");
+        assert_eq!(
+            t.resolve_taxonomy(),
+            vec!["platform.twitch.chat".to_string(), "function.chat".to_string()]
+        );
+    }
+
+    #[test]
+    fn trigger_resolve_taxonomy_falls_back_to_legacy_category() {
         let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
             "id": "twitch.foo",
             "name": "Foo",
@@ -1215,11 +1274,11 @@ mod tests {
             "category": "platform.twitch"
         }))
         .expect("parse");
-        assert_eq!(t.register_category(), "platform.twitch");
+        assert_eq!(t.resolve_taxonomy(), vec!["platform.twitch".to_string()]);
     }
 
     #[test]
-    fn trigger_register_category_falls_back_to_type() {
+    fn trigger_resolve_taxonomy_falls_back_to_type() {
         let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
             "id": "twitch.foo",
             "name": "Foo",
@@ -1227,11 +1286,11 @@ mod tests {
             "type": "eventbus"
         }))
         .expect("parse");
-        assert_eq!(t.register_category(), "eventbus");
+        assert_eq!(t.resolve_taxonomy(), vec!["eventbus".to_string()]);
     }
 
     #[test]
-    fn trigger_register_category_ignores_blank_category() {
+    fn trigger_resolve_taxonomy_ignores_blank_category() {
         let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
             "id": "twitch.foo",
             "name": "Foo",
@@ -1240,7 +1299,99 @@ mod tests {
             "category": "   "
         }))
         .expect("parse");
-        assert_eq!(t.register_category(), "eventbus");
+        assert_eq!(t.resolve_taxonomy(), vec!["eventbus".to_string()]);
+    }
+
+    #[test]
+    fn trigger_resolve_taxonomy_ignores_empty_taxonomy_array() {
+        let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
+            "id": "twitch.foo",
+            "name": "Foo",
+            "description": "d",
+            "type": "eventbus",
+            "category": "platform.twitch",
+            "taxonomy": []
+        }))
+        .expect("parse");
+        assert_eq!(t.resolve_taxonomy(), vec!["platform.twitch".to_string()]);
+    }
+
+    #[test]
+    fn trigger_to_input_projects_resolved_taxonomy() {
+        let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
+            "id": "twitch.foo",
+            "name": "Foo",
+            "description": "d",
+            "type": "eventbus",
+            "taxonomy": ["platform.twitch.chat", "function.chat"]
+        }))
+        .expect("parse");
+        assert_eq!(
+            t.to_input().taxonomy,
+            vec!["platform.twitch.chat".to_string(), "function.chat".to_string()]
+        );
+    }
+
+    #[test]
+    fn action_to_input_projects_taxonomy() {
+        let a: ManifestAction = serde_json::from_value(serde_json::json!({
+            "id": "play_alert",
+            "name": "Play Alert",
+            "type": "function",
+            "function": "play_alert",
+            "taxonomy": ["platform.govee", "function.lighting"]
+        }))
+        .expect("parse");
+        assert_eq!(
+            a.to_input("play_alert").taxonomy,
+            vec!["platform.govee".to_string(), "function.lighting".to_string()]
+        );
+    }
+
+    #[test]
+    fn action_to_input_defaults_taxonomy_to_empty() {
+        let a: ManifestAction = serde_json::from_value(serde_json::json!({
+            "id": "play_alert",
+            "name": "Play Alert",
+            "type": "function",
+            "function": "play_alert"
+        }))
+        .expect("parse");
+        assert!(a.to_input("play_alert").taxonomy.is_empty());
+    }
+
+    #[test]
+    fn action_to_input_projects_outputs() {
+        let a: ManifestAction = serde_json::from_value(serde_json::json!({
+            "id": "increment",
+            "name": "Increment Counter",
+            "type": "function",
+            "function": "increment",
+            "outputs": [
+                { "id": "next", "label": "New value", "type": "number" },
+                { "id": "previous", "label": "Previous value", "type": "number" }
+            ]
+        }))
+        .expect("parse");
+        let output_schema = a.to_input("increment").output_schema;
+        let parsed: serde_json::Value = serde_json::from_str(&output_schema).expect("valid json");
+        assert_eq!(parsed[0]["id"], "next");
+        assert_eq!(parsed[1]["id"], "previous");
+    }
+
+    #[test]
+    fn action_to_input_defaults_outputs_to_null_when_absent() {
+        let a: ManifestAction = serde_json::from_value(serde_json::json!({
+            "id": "play_alert",
+            "name": "Play Alert",
+            "type": "function",
+            "function": "play_alert"
+        }))
+        .expect("parse");
+        // Absent `outputs` deserializes to Value::Null, which `.to_string()`s
+        // to the literal "null" — mirrors how `schema` already behaves when
+        // omitted, and the UI-side parser treats non-array JSON as "no fields".
+        assert_eq!(a.to_input("play_alert").output_schema, "null");
     }
 
     #[test]

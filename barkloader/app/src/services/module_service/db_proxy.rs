@@ -34,7 +34,11 @@ pub struct CreateModuleFunctionJson {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TriggerInputJson {
-    pub category: String,
+    /// Open, multi-valued classification (dotted hierarchical strings, e.g.
+    /// `platform.twitch.chat`). Resolved from the manifest's `taxonomy`
+    /// (falling back to legacy `category`, then `type`) before reaching
+    /// this DTO — see `ManifestTrigger::resolve_taxonomy`.
+    pub taxonomy: Vec<String>,
     pub name: String,
     pub description: String,
     pub event: String,
@@ -54,6 +58,13 @@ pub struct ActionInputJson {
     pub description: String,
     pub call: String,
     pub params_schema: String,
+    /// `ConfigField`-shaped output declarations (JSON-encoded array) — see
+    /// `ManifestAction::outputs`. Empty/`"null"` means no declared outputs.
+    pub output_schema: String,
+    /// Open, multi-valued classification (dotted hierarchical strings, e.g.
+    /// `platform.govee`, `function.lighting`). See
+    /// `TriggerInputJson::taxonomy`.
+    pub taxonomy: Vec<String>,
     /// Stable manifest-local id (e.g. "play_alert"). Forms the canonical
     /// id `{moduleId}:action:{manifest_id}`. Required for the
     /// dedupe/upsert key on the actions table.
@@ -1394,6 +1405,90 @@ pub async fn list_resource_instances_by_module(
         .await
         .map_err(|e| anyhow!("parse ListResourceInstancesByModule response: {}", e))?;
     Ok(parsed.instances)
+}
+
+// -----------------------------------------------------------------------
+// Module storage (`ctx.storage.get`/`ctx.storage.set`).
+//
+// Backs the CtxStorage sandbox host surface — a module-scoped persistent
+// KV store, one badger row per (application_id, key). `value` here is
+// always the JSON-encoded form of whatever the module stored; encoding/
+// decoding to/from serde_json::Value happens in the HttpStorageClient
+// bridge, not here.
+// -----------------------------------------------------------------------
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageItemJson {
+    #[serde(default)]
+    pub value: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GetStorageResponseJson {
+    #[serde(default)]
+    item: Option<StorageItemJson>,
+}
+
+/// Twirp JSON for `storage.StorageService/Get`.
+pub async fn storage_get(
+    db_proxy_url: &str,
+    key: &str,
+    application_id: &str,
+) -> Result<Option<StorageItemJson>> {
+    let url = format!("{}/twirp/storage.StorageService/Get", db_proxy_url);
+    let body = serde_json::json!({ "key": key, "application_id": application_id });
+    let response = reqwest::Client::new()
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("Storage Get request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("Storage Get failed {}: {}", status, text));
+    }
+
+    let parsed: GetStorageResponseJson = response
+        .json()
+        .await
+        .map_err(|e| anyhow!("parse Storage Get response: {}", e))?;
+    Ok(parsed.item)
+}
+
+/// Twirp JSON for `storage.StorageService/Set`.
+pub async fn storage_set(
+    db_proxy_url: &str,
+    key: &str,
+    value: &str,
+    application_id: &str,
+) -> Result<()> {
+    let url = format!("{}/twirp/storage.StorageService/Set", db_proxy_url);
+    let body = serde_json::json!({
+        "item": {
+            "key": key,
+            "value": value,
+            "application_id": application_id,
+        }
+    });
+    let response = reqwest::Client::new()
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("Storage Set request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("Storage Set failed {}: {}", status, text));
+    }
+    Ok(())
 }
 
 pub async fn register_background_tasks(

@@ -34,6 +34,11 @@ pub async fn register_builtin_actions(db_proxy_url: &str) -> anyhow::Result<()> 
             description: a.description.to_string(),
             call: format!("builtin:{}", a.name),
             params_schema: a.params_schema.to_string(),
+            // Built-ins don't declare outputs today (none return anything
+            // workflow authors would reference downstream).
+            output_schema: "[]".to_string(),
+            // Built-in actions have no manifest to declare a taxonomy from.
+            taxonomy: Vec::new(),
             manifest_id: a.name.to_string(),
         })
         .collect();
