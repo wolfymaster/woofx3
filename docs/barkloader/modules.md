@@ -181,6 +181,8 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `name` | string | yes | Human-readable name. |
 | `version` | string | no | Semver (recommended). Used for archive naming (`archives/{id}/{version}.zip`) and as the `version` segment of `module_key`. Defaults to empty. |
 | `description` | string | no | Short description. |
+| `taxonomy` | array of string | no | Open, multi-valued UI classification for the module as a whole. **Legacy:** superseded by `category` (single string) on older manifests — see [Taxonomy](#taxonomy). |
+| `category` | string | no | **Legacy.** UI catalog grouping for the module as a whole (e.g. `platform`, `automation`). Still accepted; folded into `taxonomy` at parse time when `taxonomy` is unset. New manifests should use `taxonomy` instead. |
 | `triggers` | array | no | Event sources; see below. |
 | `actions` | array | no | Module-contributed actions — implementations of the workflow engine's `action` step type. Each carries a `type` matching a workflow action handler (`function` is the only one today) and the handler-specific config (e.g. `function` for the canonical function id). See [Module actions vs. action handlers](#module-actions-vs-action-handlers). |
 | `functions` | array | no | Callable assets (`runtime`, `path` relative to ZIP root). |
@@ -201,11 +203,32 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `description` | string | no | Human-readable summary. |
 | `type` | string | yes | Trigger transport: `eventbus`, `webhook`, `command`, `schedule`. Determines how install wires the trigger up. |
 | `event` | string | yes (for `eventbus`) | The NATS subject this trigger fires on (e.g. `channel.subscribe`). Stored on the trigger row as `event`. The trigger's `id` is the manifest-local identifier and is **not** the same as `event` — earlier versions conflated them. |
-| `category` | string | no | UX / registry grouping (e.g. `platform.twitch`). Sent to RegisterTrigger as `category`; falls back to `type` when omitted. |
+| `taxonomy` | array of string | no | Open, multi-valued UI classification (e.g. `["platform.twitch.chat", "function.chat"]`). Sent to RegisterTrigger as `taxonomy`. See [Taxonomy](#taxonomy). **Legacy:** superseded by `category`. |
+| `category` | string | no | **Legacy.** UX / registry grouping (e.g. `platform.twitch`). Still accepted; folded into a single-element `taxonomy` at parse time when `taxonomy` is unset, otherwise falls back to `type`. New manifests should use `taxonomy` instead. |
 | `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this trigger to a workflow; see [Schema field reference](#schema-field-reference). |
 | `allowVariants` | boolean | no | When true, the UI lets a user create multiple bound instances of this trigger (each with its own `schema` values). Used for trigger classes like cheer / subscribe that fan out per tier or threshold. |
 
-On install, when `databaseProxyUrl` is set in `.woofx3.json`, each trigger is registered via Twirp `module.ModuleService/RegisterTrigger`. The trigger row's `event` column carries the NATS subject from the manifest's `event` field; `manifest_id` carries the manifest's `id`; `category` falls back to the `type` field when not set; `config_schema` is the JSON-encoded `schema`.
+On install, when `databaseProxyUrl` is set in `.woofx3.json`, each trigger is registered via Twirp `module.ModuleService/RegisterTrigger`. The trigger row's `event` column carries the NATS subject from the manifest's `event` field; `manifest_id` carries the manifest's `id`; `config_schema` is the JSON-encoded `schema`. `taxonomy` is resolved in priority order: a non-empty `taxonomy` array as given, else a non-empty `category` wrapped in a single-element array, else the `type` field — see [Taxonomy](#taxonomy).
+
+### Taxonomy
+
+Triggers, actions, workflows, and modules all support an open, multi-valued `taxonomy: string[]` field for UI classification. Each entry is a dotted hierarchical path — read left-to-right as most-general → most-specific (e.g. `platform.twitch.chat` reads as platform → twitch → chat) — mirroring the same dotted-path convention already used for CloudEvents subjects (`shared/common/golang/cloudevents/subjects.go`, e.g. `db.workflow.created.*`). Multiple array entries express **independent classification axes** on the same resource, rather than trying to encode everything into one path:
+
+```json
+{
+  "taxonomy": ["platform.twitch.chat", "function.chat"]
+}
+```
+
+```json
+{
+  "taxonomy": ["platform.govee", "function.lighting"]
+}
+```
+
+The vocabulary is intentionally open — there is no fixed enum and the engine does not validate taxonomy terms against a known list. Module authors are free to introduce new terms as new platforms or functional groupings come along; the UI is responsible for interpreting and displaying whatever terms appear.
+
+`taxonomy` replaces the older single-value `category` field, which is still accepted on manifests for backward compatibility: when a manifest sets `category` but not `taxonomy`, the engine folds it into a single-element `taxonomy` array at parse time. Everything downstream of the manifest (the DB row, the outbox events, the API) carries only `taxonomy` — `category` is not persisted.
 
 ### Schema field reference
 
@@ -331,12 +354,38 @@ Common fields:
 | `description` | string | no | Human-readable summary. |
 | `type` | string | yes | Workflow action handler name. Must match an existing engine handler (`function` is the only one today). Determines which other top-level fields are required. |
 | `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this action into a workflow step; see [Schema field reference](#schema-field-reference). Forwarded to the DB as `params_schema`. |
+| `outputs` | array | no | `ConfigField[]`-shaped declarations describing the shape of the value this action's function returns (e.g. `[{ "id": "next", "label": "New value", "type": "number" }]` for an increment-style counter action). UI-only — the engine treats a function's return value as opaque `map[string]any` at runtime and never validates it against this. Powers the workflow builder's `${stepId.field}` variable autocomplete: when a downstream step references `${action-1.next}`, the picker looks up `action-1`'s declared `outputs` to know `next` exists and what it's called. Only `id`, `label`, `type`, and `description` are meaningful here — input-only properties (`required`, `placeholder`, `source`, …) don't apply. Forwarded to the DB as `output_schema`. |
+| `taxonomy` | array of string | no | Open, multi-valued UI classification. See [Taxonomy](#taxonomy). |
 
 Type-specific fields:
 
 | When `type` is | Required field | Description |
 |----------------|----------------|-------------|
 | `function`     | `function`     | Manifest-local function id (or full canonical id for cross-module references). Resolved to the canonical function id at install and stored on the action row's `call` column. |
+
+**Example — an increment action declaring its outputs:**
+
+```json
+{
+  "id": "increment",
+  "name": "Increment Counter",
+  "description": "Increase the chosen counter by the configured step.",
+  "type": "function",
+  "function": "increment",
+  "schema": [
+    { "id": "target", "label": "Counter", "type": "resource_ref", "kind": "counter", "required": true },
+    { "id": "step", "label": "Increment by", "type": "number", "defaultValue": 1, "min": 1 }
+  ],
+  "outputs": [
+    { "id": "target", "label": "Counter", "type": "text" },
+    { "id": "previous", "label": "Previous value", "type": "number" },
+    { "id": "next", "label": "New value", "type": "number" },
+    { "id": "step", "label": "Step applied", "type": "number" }
+  ]
+}
+```
+
+A later workflow step can then reference `${increment.next}` (where `increment` is that step's id) in any of its own field values, and the workflow builder's variable picker will offer `next` / `previous` / `step` with their declared labels.
 
 ### Function entry (`functions[]`)
 
@@ -414,6 +463,7 @@ calling `ctx.chat.sendMessage(...)` directly — see [`ctx.response`](./sandbox.
 | `name` | string | yes | Display name. Presentation only. |
 | `trigger` | string | yes | Reference to a trigger. Use a manifest-local id to point at a trigger declared in this same manifest, or a full canonical id (`other_module:trigger:foo`) to reference a trigger from another module. Resolved to canonical form at install. |
 | `steps[]` | array | yes | Ordered steps. Each step's `action` field references an action by manifest-local id (or full canonical id for cross-module references); resolved at install. |
+| `taxonomy` | array of string | no | Open, multi-valued UI classification. See [Taxonomy](#taxonomy). Set at install time only — not currently editable after creation. |
 
 ### Widget entry (`widgets[]`)
 
