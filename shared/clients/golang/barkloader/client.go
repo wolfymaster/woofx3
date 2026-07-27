@@ -263,9 +263,21 @@ func (c *Client) messageHandler() {
 
 		_, message, err := conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				c.handleConnectionFailure()
+			// Any read error means this connection is dead — not just a
+			// clean WebSocket close frame (IsUnexpectedCloseError only
+			// recognizes *websocket.CloseError). An abrupt peer restart
+			// (e.g. barkloader exiting) tears down the TCP connection
+			// without a close handshake, surfacing as a plain network
+			// error here. Clear c.conn so IsConnected()/Send() stop
+			// believing this dead connection is usable, and always
+			// attempt reconnection — handleConnectionFailure() already
+			// no-ops for manual disconnects (isManualClose/shouldReconnect).
+			c.mu.Lock()
+			if c.conn == conn {
+				c.conn = nil
 			}
+			c.mu.Unlock()
+			c.handleConnectionFailure()
 			return
 		}
 
