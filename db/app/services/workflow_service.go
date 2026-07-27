@@ -94,6 +94,11 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 		createdByType = "USER"
 	}
 
+	taxonomyJSON, err := json.Marshal(req.Taxonomy)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("taxonomy", "failed to marshal taxonomy")
+	}
+
 	// Workflows are inert at create time. The contract documented in
 	// `docs/workflow/api.md` (and relied on by the UI) is "always false
 	// on create; enable via setWorkflowEnabled" — the request's
@@ -107,6 +112,7 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 		CreatedByType: createdByType,
 		CreatedByRef:  req.CreatedByRef,
 		ManifestID:    req.ManifestId,
+		Taxonomy:      string(taxonomyJSON),
 		Enabled:       false,
 	}
 
@@ -466,6 +472,14 @@ func (s *workflowService) CancelWorkflowExecution(ctx context.Context, req *clie
 func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *client.Workflow {
 	var createdAt, updatedAt *timestamppb.Timestamp
 
+	var taxonomy []string
+	if wf.Taxonomy != "" {
+		json.Unmarshal([]byte(wf.Taxonomy), &taxonomy)
+	}
+	if taxonomy == nil {
+		taxonomy = []string{}
+	}
+
 	// `steps_json` and `trigger_json` are the canonical workflow shape
 	// the engine consumes. The typed `WorkflowStep` proto array was
 	// removed in favor of these JSON columns.
@@ -481,6 +495,7 @@ func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *client
 		CreatedByType: wf.CreatedByType,
 		CreatedByRef:  wf.CreatedByRef,
 		ManifestId:    wf.ManifestID,
+		Taxonomy:      taxonomy,
 	}
 }
 

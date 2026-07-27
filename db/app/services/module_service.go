@@ -389,9 +389,13 @@ func (s *moduleService) RegisterTriggers(ctx context.Context, req *client.Regist
 	}
 	saved := make([]*models.Trigger, 0, len(req.Triggers))
 	for _, in := range req.Triggers {
+		taxonomyJSON, err := json.Marshal(in.Taxonomy)
+		if err != nil {
+			return nil, fmt.Errorf("marshal taxonomy for trigger %q: %w", in.Name, err)
+		}
 		t := &models.Trigger{
 			ID:            uuid.New(),
-			Category:      in.Category,
+			Taxonomy:      string(taxonomyJSON),
 			Name:          in.Name,
 			Description:   in.Description,
 			Event:         in.Event,
@@ -510,9 +514,16 @@ func (s *moduleService) DeleteTriggersByModuleId(ctx context.Context, req *clien
 }
 
 func triggerToProto(t *models.Trigger) *client.Trigger {
+	var taxonomy []string
+	if t.Taxonomy != "" {
+		json.Unmarshal([]byte(t.Taxonomy), &taxonomy)
+	}
+	if taxonomy == nil {
+		taxonomy = []string{}
+	}
 	return &client.Trigger{
 		Id:            t.ID.String(),
-		Category:      t.Category,
+		Taxonomy:      taxonomy,
 		Name:          t.Name,
 		Description:   t.Description,
 		Event:         t.Event,
@@ -536,6 +547,10 @@ func (s *moduleService) RegisterActions(ctx context.Context, req *client.Registe
 	}
 	saved := make([]*models.Action, 0, len(req.Actions))
 	for _, in := range req.Actions {
+		taxonomyJSON, err := json.Marshal(in.Taxonomy)
+		if err != nil {
+			return nil, fmt.Errorf("marshal taxonomy for action %q: %w", in.Name, err)
+		}
 		a := &models.Action{
 			ID:            uuid.New(),
 			Name:          in.Name,
@@ -546,6 +561,8 @@ func (s *moduleService) RegisterActions(ctx context.Context, req *client.Registe
 			CreatedByRef:  createdByRef,
 			ManifestID:    in.ManifestId,
 			Type:          in.Type,
+			Taxonomy:      string(taxonomyJSON),
+			OutputSchema:  in.OutputSchema,
 			// Module catalog rows are instance-global; applicationId is
 			// stamped on events / workflow runs, not on action declarations.
 			ApplicationID: "",
@@ -667,6 +684,13 @@ func (s *moduleService) DeleteActionsByModuleId(ctx context.Context, req *client
 }
 
 func actionToProto(a *models.Action) *client.Action {
+	var taxonomy []string
+	if a.Taxonomy != "" {
+		json.Unmarshal([]byte(a.Taxonomy), &taxonomy)
+	}
+	if taxonomy == nil {
+		taxonomy = []string{}
+	}
 	return &client.Action{
 		Id:            a.ID.String(),
 		Name:          a.Name,
@@ -677,6 +701,8 @@ func actionToProto(a *models.Action) *client.Action {
 		CreatedByRef:  a.CreatedByRef,
 		ManifestId:    a.ManifestID,
 		Type:          a.Type,
+		Taxonomy:      taxonomy,
+		OutputSchema:  a.OutputSchema,
 	}
 }
 
@@ -845,15 +871,16 @@ func (s *moduleService) CompleteModuleInstall(ctx context.Context, req *client.C
 		fmt.Printf("CompleteModuleInstall: RequestContext is NIL\n")
 	}
 
-	// Pull catalog metadata (author, category, description) out of the
+	// Pull catalog metadata (author, taxonomy, description) out of the
 	// stored manifest so the UI's moduleRepository row can render real
 	// values instead of falling back to "Unknown" / blank. Best-effort —
 	// any lookup or parse failure leaves the defaults from
 	// moduleCatalogFields in place rather than blocking the event.
-	author, category, description := "Unknown", "Unknown", ""
+	author, description := "Unknown", ""
+	taxonomy := []string{}
 	if moduleID, err := uuid.Parse(req.ModuleId); err == nil {
 		if m, err := s.repo.GetByID(moduleID); err == nil && m != nil {
-			author, category, description = moduleCatalogFields(m.Manifest)
+			author, taxonomy, description = moduleCatalogFields(m.Manifest)
 		}
 	}
 
@@ -872,7 +899,7 @@ func (s *moduleService) CompleteModuleInstall(ctx context.Context, req *client.C
 				"status":      req.Status,
 				"error":       req.Error,
 				"author":      author,
-				"category":    category,
+				"taxonomy":    taxonomy,
 				"description": description,
 			},
 			AutoAcknowledge: true,

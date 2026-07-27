@@ -335,7 +335,7 @@ func (a *WorkflowApp) registerBuiltinTriggers(ctx context.Context) error {
 	inputs := make([]*dbv1.TriggerInput, 0, len(builtins))
 	for _, b := range builtins {
 		inputs = append(inputs, &dbv1.TriggerInput{
-			Category:      "system.workflow",
+			Taxonomy:      []string{"system.workflow"},
 			Name:          b.name,
 			Description:   b.description,
 			Event:         b.event,

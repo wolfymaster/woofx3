@@ -24,6 +24,12 @@ type WorkflowDefinition struct {
 	CreatedByRef  string `gorm:"column:created_by_ref;type:text;not null;default:''"`
 	ManifestID    string `gorm:"column:manifest_id;type:text;not null;default:''"`
 
+	// Taxonomy is a JSON-encoded string array of open, dotted hierarchical
+	// classification terms (e.g. `["platform.twitch.chat"]`). Auto-populated
+	// for MODULE-owned workflows from the manifest; settable directly for
+	// USER-authored workflows. See models.Trigger.Taxonomy.
+	Taxonomy string `gorm:"column:taxonomy;type:jsonb;not null;default:'[]'"`
+
 	// Enabled flips on/off whether the workflow runtime
 	// (`workflow/manager.go`, `workflow/reconcile.go`) considers this row
 	// a candidate to subscribe / execute. Always `false` at create time;

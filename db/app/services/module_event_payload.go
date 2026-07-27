@@ -8,19 +8,24 @@ import (
 )
 
 // moduleCatalogFields parses a stored module manifest (JSON string from
-// `modules.manifest`) and extracts the catalog-facing presentation
-// fields the UI surfaces. `author` and `category` default to "Unknown"
-// when missing, blank, or when the manifest is malformed; `description`
-// defaults to "". The UI must always have a concrete string to render.
-func moduleCatalogFields(rawManifest string) (author, category, description string) {
-	author, category, description = "Unknown", "Unknown", ""
+// `modules.manifest`) and extracts the catalog-facing presentation fields
+// the UI surfaces. `author` defaults to "Unknown" when missing, blank, or
+// when the manifest is malformed; `description` defaults to "". `taxonomy`
+// is the manifest's `taxonomy` array when present; otherwise a non-empty
+// legacy `category` is folded into a single-element list (clean cutover —
+// see ManifestTrigger::resolve_taxonomy in barkloader for the mirrored
+// Rust-side logic); otherwise an empty list. The UI must always have a
+// concrete string to render for author/description.
+func moduleCatalogFields(rawManifest string) (author string, taxonomy []string, description string) {
+	author, taxonomy, description = "Unknown", []string{}, ""
 	if rawManifest == "" {
 		return
 	}
 	var parsed struct {
-		Author      *string `json:"author"`
-		Category    *string `json:"category"`
-		Description *string `json:"description"`
+		Author      *string  `json:"author"`
+		Category    *string  `json:"category"`
+		Taxonomy    []string `json:"taxonomy"`
+		Description *string  `json:"description"`
 	}
 	if err := json.Unmarshal([]byte(rawManifest), &parsed); err != nil {
 		return
@@ -30,15 +35,31 @@ func moduleCatalogFields(rawManifest string) (author, category, description stri
 			author = v
 		}
 	}
-	if parsed.Category != nil {
+	if len(parsed.Taxonomy) > 0 {
+		taxonomy = parsed.Taxonomy
+	} else if parsed.Category != nil {
 		if v := strings.TrimSpace(*parsed.Category); v != "" {
-			category = v
+			taxonomy = []string{v}
 		}
 	}
 	if parsed.Description != nil {
 		description = strings.TrimSpace(*parsed.Description)
 	}
 	return
+}
+
+// parseTaxonomy unmarshals a jsonb-encoded taxonomy column into a string
+// slice, defaulting to an empty (non-nil) slice on absence or malformed
+// JSON so outbox payloads always carry a concrete array.
+func parseTaxonomy(raw string) []string {
+	var taxonomy []string
+	if raw != "" {
+		json.Unmarshal([]byte(raw), &taxonomy)
+	}
+	if taxonomy == nil {
+		taxonomy = []string{}
+	}
+	return taxonomy
 }
 
 // canonicalIDFromCreatedByRef extracts the manifest id (the moduleId
@@ -83,7 +104,7 @@ func buildTriggerRegisteredData(moduleKey, moduleName, version string, triggers 
 	for _, t := range triggers {
 		row := map[string]any{
 			"id":              t.ID.String(),
-			"category":        t.Category,
+			"taxonomy":        parseTaxonomy(t.Taxonomy),
 			"name":            t.Name,
 			"description":     t.Description,
 			"event":           t.Event,
@@ -114,6 +135,8 @@ func buildActionRegisteredData(moduleKey, moduleName, version string, actions []
 			"description":     a.Description,
 			"call":            a.Call,
 			"params_schema":   a.ParamsSchema,
+			"output_schema":   a.OutputSchema,
+			"taxonomy":        parseTaxonomy(a.Taxonomy),
 			"created_by_type": a.CreatedByType,
 			"created_by_ref":  a.CreatedByRef,
 		}
@@ -180,7 +203,7 @@ func buildTriggerDeregisteredData(modulePrefix string, triggers []*models.Trigge
 			"id":             t.ID.String(),
 			"canonical_id":   canonicalIDFor(moduleID, "trigger", t.ManifestID),
 			"manifest_id":    t.ManifestID,
-			"category":       t.Category,
+			"taxonomy":       parseTaxonomy(t.Taxonomy),
 			"name":           t.Name,
 			"description":    t.Description,
 			"event":          t.Event,
@@ -214,6 +237,7 @@ func buildActionDeregisteredData(modulePrefix string, actions []*models.Action) 
 			"description":    a.Description,
 			"call":           a.Call,
 			"params_schema":  a.ParamsSchema,
+			"taxonomy":       parseTaxonomy(a.Taxonomy),
 			"created_by_ref": a.CreatedByRef,
 		}
 		if pk := projectionKeyFor(a.CreatedByType, a.CreatedByRef, "action", a.ManifestID); pk != "" {
@@ -309,6 +333,7 @@ func buildWorkflowChangeData(wf *models.WorkflowDefinition) map[string]any {
 		"created_by_type": wf.CreatedByType,
 		"created_by_ref":  wf.CreatedByRef,
 		"manifest_id":     wf.ManifestID,
+		"taxonomy":        parseTaxonomy(wf.Taxonomy),
 	}
 	if pk := projectionKeyFor(wf.CreatedByType, wf.CreatedByRef, "workflow", wf.ManifestID); pk != "" {
 		row["projection_key"] = pk

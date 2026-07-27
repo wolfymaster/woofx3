@@ -1,6 +1,7 @@
 package services
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/google/uuid"
@@ -11,7 +12,7 @@ func TestBuildTriggerRegisteredData(t *testing.T) {
 	id := uuid.New()
 	triggers := []*models.Trigger{{
 		ID:            id,
-		Category:      "platform.twitch",
+		Taxonomy:      `["platform.twitch","function.chat"]`,
 		Name:          "channel.follow",
 		Description:   "desc",
 		Event:         "twitch.channel.follow",
@@ -44,6 +45,9 @@ func TestBuildTriggerRegisteredData(t *testing.T) {
 	if row["id"] != id.String() {
 		t.Errorf("id = %v", row["id"])
 	}
+	if got, want := row["taxonomy"], []string{"platform.twitch", "function.chat"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("taxonomy = %v, want %v", got, want)
+	}
 	if row["created_by_ref"] != "twitch:1.0.0:abcdef1" {
 		t.Errorf("created_by_ref = %v", row["created_by_ref"])
 	}
@@ -68,6 +72,7 @@ func TestBuildActionRegisteredData(t *testing.T) {
 		Description:   "desc",
 		Call:          "mod.send",
 		ParamsSchema:  "{}",
+		Taxonomy:      `["platform.govee","function.lighting"]`,
 		CreatedByType: "MODULE",
 		CreatedByRef:  "twitch:1.0.0:abcdef1",
 	}}
@@ -88,6 +93,18 @@ func TestBuildActionRegisteredData(t *testing.T) {
 	if row["params_schema"] != "{}" {
 		t.Errorf("params_schema = %v", row["params_schema"])
 	}
+	if got, want := row["taxonomy"], []string{"platform.govee", "function.lighting"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("taxonomy = %v, want %v", got, want)
+	}
+}
+
+func TestBuildActionRegisteredDataDefaultsEmptyTaxonomy(t *testing.T) {
+	actions := []*models.Action{{ID: uuid.New(), Name: "send"}}
+	data := buildActionRegisteredData("k", "n", "v", actions)
+	row := data["actions"].([]map[string]any)[0]
+	if got, want := row["taxonomy"], []string{}; !reflect.DeepEqual(got, want) {
+		t.Errorf("taxonomy = %v, want %v", got, want)
+	}
 }
 
 func TestBuildWorkflowChangeData(t *testing.T) {
@@ -104,6 +121,7 @@ func TestBuildWorkflowChangeData(t *testing.T) {
 			CreatedByType: "MODULE",
 			CreatedByRef:  "wolfy_profile:1.0.0:abc1234",
 			ManifestID:    "follow-workflow",
+			Taxonomy:      `["platform.twitch"]`,
 		}
 
 		row := buildWorkflowChangeData(wf)
@@ -116,6 +134,9 @@ func TestBuildWorkflowChangeData(t *testing.T) {
 		}
 		if got := row["id"]; got != id.String() {
 			t.Errorf("id = %v", got)
+		}
+		if got, want := row["taxonomy"], []string{"platform.twitch"}; !reflect.DeepEqual(got, want) {
+			t.Errorf("taxonomy = %v, want %v", got, want)
 		}
 	})
 
@@ -140,33 +161,58 @@ func TestBuildWorkflowChangeData(t *testing.T) {
 }
 
 func TestModuleCatalogFields(t *testing.T) {
-	t.Run("extracts author, category, and description from a well-formed manifest", func(t *testing.T) {
-		manifest := `{"id":"m","name":"M","author":"WolfyMaster LLC","category":"platform","description":"a module"}`
-		author, category, description := moduleCatalogFields(manifest)
+	t.Run("extracts author, taxonomy, and description from a well-formed manifest", func(t *testing.T) {
+		manifest := `{"id":"m","name":"M","author":"WolfyMaster LLC","taxonomy":["platform.govee","function.lighting"],"description":"a module"}`
+		author, taxonomy, description := moduleCatalogFields(manifest)
 		if author != "WolfyMaster LLC" {
 			t.Errorf("author = %q", author)
 		}
-		if category != "platform" {
-			t.Errorf("category = %q", category)
+		if got, want := taxonomy, []string{"platform.govee", "function.lighting"}; !reflect.DeepEqual(got, want) {
+			t.Errorf("taxonomy = %v, want %v", got, want)
 		}
 		if description != "a module" {
 			t.Errorf("description = %q", description)
 		}
 	})
 
-	t.Run("defaults author and category to Unknown when missing", func(t *testing.T) {
+	t.Run("falls back to legacy category when taxonomy is absent", func(t *testing.T) {
+		manifest := `{"id":"m","name":"M","author":"WolfyMaster LLC","category":"platform"}`
+		_, taxonomy, _ := moduleCatalogFields(manifest)
+		if got, want := taxonomy, []string{"platform"}; !reflect.DeepEqual(got, want) {
+			t.Errorf("taxonomy = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("prefers taxonomy over legacy category when both are present", func(t *testing.T) {
+		manifest := `{"id":"m","name":"M","category":"platform","taxonomy":["platform.spotify"]}`
+		_, taxonomy, _ := moduleCatalogFields(manifest)
+		if got, want := taxonomy, []string{"platform.spotify"}; !reflect.DeepEqual(got, want) {
+			t.Errorf("taxonomy = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("defaults author to Unknown and taxonomy to empty when missing", func(t *testing.T) {
 		manifest := `{"id":"m","name":"M"}`
-		author, category, description := moduleCatalogFields(manifest)
-		if author != "Unknown" || category != "Unknown" || description != "" {
-			t.Errorf("got (%q, %q, %q)", author, category, description)
+		author, taxonomy, description := moduleCatalogFields(manifest)
+		if author != "Unknown" {
+			t.Errorf("author = %q", author)
+		}
+		if got, want := taxonomy, []string{}; !reflect.DeepEqual(got, want) {
+			t.Errorf("taxonomy = %v, want %v", got, want)
+		}
+		if description != "" {
+			t.Errorf("description = %q", description)
 		}
 	})
 
 	t.Run("treats blank values as missing for author and category", func(t *testing.T) {
 		manifest := `{"author":"  ","category":"","description":"  trimmed  "}`
-		author, category, description := moduleCatalogFields(manifest)
-		if author != "Unknown" || category != "Unknown" {
-			t.Errorf("blank fields not defaulted: author=%q category=%q", author, category)
+		author, taxonomy, description := moduleCatalogFields(manifest)
+		if author != "Unknown" {
+			t.Errorf("author not defaulted: author=%q", author)
+		}
+		if got, want := taxonomy, []string{}; !reflect.DeepEqual(got, want) {
+			t.Errorf("blank category should not populate taxonomy: got %v, want %v", got, want)
 		}
 		if description != "trimmed" {
 			t.Errorf("description = %q", description)
@@ -175,9 +221,9 @@ func TestModuleCatalogFields(t *testing.T) {
 
 	t.Run("falls back to defaults on empty or malformed input", func(t *testing.T) {
 		for _, raw := range []string{"", "not-json", "{"} {
-			author, category, description := moduleCatalogFields(raw)
-			if author != "Unknown" || category != "Unknown" || description != "" {
-				t.Errorf("input %q: got (%q, %q, %q)", raw, author, category, description)
+			author, taxonomy, description := moduleCatalogFields(raw)
+			if author != "Unknown" || len(taxonomy) != 0 || description != "" {
+				t.Errorf("input %q: got (%q, %v, %q)", raw, author, taxonomy, description)
 			}
 		}
 	})

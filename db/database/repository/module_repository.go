@@ -85,10 +85,10 @@ func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
 	// `manifest_id` is the stable identifier; `name` is display-only and
 	// can drift between versions without changing the resource identity.
 	err := r.db.Raw(`
-		INSERT INTO public.triggers (id, category, name, description, event, config_schema, allow_variants, created_by_type, created_by_ref, manifest_id, application_id, created_at, updated_at)
+		INSERT INTO public.triggers (id, taxonomy, name, description, event, config_schema, allow_variants, created_by_type, created_by_ref, manifest_id, application_id, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) DO UPDATE SET
-			category = EXCLUDED.category,
+			taxonomy = EXCLUDED.taxonomy,
 			name = EXCLUDED.name,
 			description = EXCLUDED.description,
 			event = EXCLUDED.event,
@@ -97,7 +97,7 @@ func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
 			application_id = EXCLUDED.application_id,
 			updated_at = NOW()
 		RETURNING id
-	`, t.ID, t.Category, t.Name, t.Description, t.Event, t.ConfigSchema, t.AllowVariants, t.CreatedByType, t.CreatedByRef, t.ManifestID, t.ApplicationID).Scan(&result).Error
+	`, t.ID, t.Taxonomy, t.Name, t.Description, t.Event, t.ConfigSchema, t.AllowVariants, t.CreatedByType, t.CreatedByRef, t.ManifestID, t.ApplicationID).Scan(&result).Error
 	if err != nil {
 		return err
 	}
@@ -179,18 +179,19 @@ func (r *ModuleRepository) UpsertAction(a *models.Action) error {
 		a.Type = "function"
 	}
 	err := r.db.Raw(`
-		INSERT INTO public.actions (id, name, description, call, params_schema, created_by_type, created_by_ref, manifest_id, type, application_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO public.actions (id, name, description, call, params_schema, created_by_type, created_by_ref, manifest_id, type, taxonomy, application_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) DO UPDATE SET
 			name = EXCLUDED.name,
 			description = EXCLUDED.description,
 			call = EXCLUDED.call,
 			params_schema = EXCLUDED.params_schema,
 			type = EXCLUDED.type,
+			taxonomy = EXCLUDED.taxonomy,
 			application_id = EXCLUDED.application_id,
 			updated_at = NOW()
 		RETURNING id
-	`, a.ID, a.Name, a.Description, a.Call, a.ParamsSchema, a.CreatedByType, a.CreatedByRef, a.ManifestID, a.Type, a.ApplicationID).Scan(&result).Error
+	`, a.ID, a.Name, a.Description, a.Call, a.ParamsSchema, a.CreatedByType, a.CreatedByRef, a.ManifestID, a.Type, a.Taxonomy, a.ApplicationID).Scan(&result).Error
 	if err != nil {
 		return err
 	}

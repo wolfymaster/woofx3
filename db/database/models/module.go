@@ -87,17 +87,20 @@ type ModuleFunction struct {
 func (ModuleFunction) TableName() string { return "functions" }
 
 type Trigger struct {
-	ID            uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	Category      string    `gorm:"column:category;type:text;not null"`
-	Name          string    `gorm:"column:name;type:text;not null"`
-	Description   string    `gorm:"column:description;type:text;not null"`
-	Event         string    `gorm:"column:event;type:text;not null"`
-	ConfigSchema  string    `gorm:"column:config_schema;type:jsonb;not null;default:'[]'"`
-	AllowVariants bool      `gorm:"column:allow_variants;default:false"`
-	CreatedByType string    `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
-	CreatedByRef  string    `gorm:"column:created_by_ref;type:text;not null;default:''"`
-	ManifestID    string    `gorm:"column:manifest_id;type:text;not null;default:''"`
-	ApplicationID string    `gorm:"column:application_id;type:text;not null;default:''"`
+	ID uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	// Taxonomy is a JSON-encoded string array of open, dotted hierarchical
+	// classification terms (e.g. `["platform.twitch.chat"]`). Marshaled /
+	// unmarshaled at the proto boundary, mirroring Widget.AlertTypes.
+	Taxonomy      string `gorm:"column:taxonomy;type:jsonb;not null;default:'[]'"`
+	Name          string `gorm:"column:name;type:text;not null"`
+	Description   string `gorm:"column:description;type:text;not null"`
+	Event         string `gorm:"column:event;type:text;not null"`
+	ConfigSchema  string `gorm:"column:config_schema;type:jsonb;not null;default:'[]'"`
+	AllowVariants bool   `gorm:"column:allow_variants;default:false"`
+	CreatedByType string `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
+	CreatedByRef  string `gorm:"column:created_by_ref;type:text;not null;default:''"`
+	ManifestID    string `gorm:"column:manifest_id;type:text;not null;default:''"`
+	ApplicationID string `gorm:"column:application_id;type:text;not null;default:''"`
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
@@ -119,9 +122,16 @@ type Action struct {
 	// `Call` holds the canonical function id; for non-function
 	// built-ins (e.g. `alert`) `Call` is empty and `Type` IS the
 	// dispatch.
-	Type      string `gorm:"column:type;type:text;not null;default:'function'"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Type string `gorm:"column:type;type:text;not null;default:'function'"`
+	// Taxonomy is a JSON-encoded string array of open, dotted hierarchical
+	// classification terms. See Trigger.Taxonomy.
+	Taxonomy string `gorm:"column:taxonomy;type:jsonb;not null;default:'[]'"`
+	// OutputSchema is a JSON-encoded array of ConfigField-shaped output
+	// declarations describing the action function's return value. UI-only —
+	// see module_action.proto Action.output_schema.
+	OutputSchema string `gorm:"column:output_schema;type:jsonb;not null;default:'[]'"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 func (Action) TableName() string { return "actions" }
