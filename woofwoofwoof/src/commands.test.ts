@@ -199,6 +199,71 @@ describe("Commands", () => {
     expect(auth).toHaveBeenCalledTimes(1);
   });
 
+  test("caches a permission decision so repeat invocations by the same user skip the auth check", async () => {
+    const auth = mock(async (): Promise<AuthorizationResponse> => ({ granted: true }));
+    const commands = new Commands("#chan", makeChatClient() as never);
+    commands.setAuth(auth);
+    commands.add("hello", "hi there");
+
+    await commands.process("!hello", "anyone");
+    await commands.process("!hello", "anyone");
+    await commands.process("!hello", "anyone");
+    expect(auth).toHaveBeenCalledTimes(1);
+  });
+
+  test("caches per (user, command) — a different user still triggers its own auth check", async () => {
+    const auth = mock(async (): Promise<AuthorizationResponse> => ({ granted: true }));
+    const commands = new Commands("#chan", makeChatClient() as never);
+    commands.setAuth(auth);
+    commands.add("hello", "hi there");
+
+    await commands.process("!hello", "alice");
+    await commands.process("!hello", "bob");
+    expect(auth).toHaveBeenCalledTimes(2);
+  });
+
+  test("caches per (user, command) — a different command still triggers its own auth check", async () => {
+    const auth = mock(async (): Promise<AuthorizationResponse> => ({ granted: true }));
+    const commands = new Commands("#chan", makeChatClient() as never);
+    commands.setAuth(auth);
+    commands.add("hello", "hi there");
+    commands.add("bye", "cya");
+
+    await commands.process("!hello", "anyone");
+    await commands.process("!bye", "anyone");
+    expect(auth).toHaveBeenCalledTimes(2);
+  });
+
+  test("caches a denial as well as a grant", async () => {
+    const auth = mock(async (): Promise<AuthorizationResponse> => ({ granted: false, message: "no" }));
+    const commands = new Commands("#chan", makeChatClient() as never);
+    commands.setAuth(auth);
+    commands.add("secret", "classified");
+
+    const [first] = await commands.process("!secret", "guest");
+    const [second] = await commands.process("!secret", "guest");
+    expect(first).toBe("no");
+    expect(second).toBe("no");
+    expect(auth).toHaveBeenCalledTimes(1);
+  });
+
+  test("replacing the auth function via setAuth invalidates previously cached decisions", async () => {
+    const commands = new Commands("#chan", makeChatClient() as never);
+    commands.add("hello", "hi there");
+
+    const denyAuth = mock(async (): Promise<AuthorizationResponse> => ({ granted: false, message: "no" }));
+    commands.setAuth(denyAuth);
+    const [firstOut] = await commands.process("!hello", "anyone");
+    expect(firstOut).toBe("no");
+
+    const allowAuth = mock(async (): Promise<AuthorizationResponse> => ({ granted: true }));
+    commands.setAuth(allowAuth);
+    const [secondOut, matched] = await commands.process("!hello", "anyone");
+    expect(matched).toBe(true);
+    expect(secondOut).toBe("hi there");
+    expect(allowAuth).toHaveBeenCalledTimes(1);
+  });
+
   test("a single {variable} captures the entire remainder, not split on whitespace", async () => {
     const commands = new Commands("#chan", makeChatClient() as never);
     commands.add("sr", "queued: {songTitle}", { variables: ["songTitle"] });

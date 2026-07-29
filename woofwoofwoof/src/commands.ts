@@ -53,6 +53,20 @@ export type AuthorizationResponse = {
 };
 export type AuthorizationFunction = (user: string, command: string) => Promise<AuthorizationResponse>;
 
+// Bounds how stale a cached permission decision can be after the
+// underlying grant changes (e.g. mod status added/removed). A command can
+// be invoked repeatedly by the same user in quick succession, and the
+// default AuthorizationFunction round-trips to db-proxy — caching per
+// (user, command) removes that RPC from the hot path between "chat
+// message received" and "command dispatched" for repeat invocations,
+// mirroring the cache in workflow/asset_settings.go.
+const AUTH_CACHE_TTL_MS = 5_000;
+
+interface CachedAuth {
+  response: AuthorizationResponse;
+  expiresAt: number;
+}
+
 // Hook for emitting a `chat.command.<slug>` CloudEvent when a command matches.
 // Keeps `Commands` decoupled from EventFactory and the message bus so tests can
 // stub the publisher without wiring real transports.
@@ -80,6 +94,7 @@ export class Commands {
   auth: AuthorizationFunction;
   private publisher?: CommandPublisher;
   private onPublishError?: (err: unknown, match: CommandMatch) => void;
+  private authCache = new Map<string, CachedAuth>();
 
   constructor(
     private channel: string,
@@ -257,11 +272,23 @@ export class Commands {
     }
   }
 
-  async checkPermissions(user: string, cmd: string) {
-    return await this.auth(user, cmd);
+  async checkPermissions(user: string, cmd: string): Promise<AuthorizationResponse> {
+    const key = `${user.trim().toLowerCase()} ${cmd}`;
+    const now = Date.now();
+    const cached = this.authCache.get(key);
+    if (cached && cached.expiresAt > now) {
+      return cached.response;
+    }
+
+    const response = await this.auth(user, cmd);
+    this.authCache.set(key, { response, expiresAt: now + AUTH_CACHE_TTL_MS });
+    return response;
   }
 
   setAuth(authFunc: AuthorizationFunction) {
     this.auth = authFunc;
+    // A previously cached decision came from the old auth function — keeping
+    // it around could serve a stale grant/denial from before the swap.
+    this.authCache.clear();
   }
 }
