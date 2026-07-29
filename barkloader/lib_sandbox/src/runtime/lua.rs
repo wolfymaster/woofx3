@@ -3,7 +3,8 @@ use crate::host::InvocationContext;
 use crate::runtime::RuntimeAdapter;
 use mlua::{Function, HookTriggers, Lua, LuaOptions, LuaSerdeExt, StdLib, Value as LuaValue, VmState};
 use serde_json::Value;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 const DEFAULT_MEMORY_LIMIT: usize = 16 * 1024 * 1024;
 const DEFAULT_MAX_INSTRUCTIONS: u64 = 10_000_000;
@@ -206,17 +207,39 @@ fn build_lua_ctx(
         module_tbl.set("name", invocation.module_name.clone())?;
         module_tbl.set("version", invocation.module_version.clone())?;
 
-        let settings_map = invocation
-            .host
-            .settings
-            .list_by_module(&invocation.module_id)
-            .unwrap_or_default();
-        let settings_tbl = lua.create_table()?;
-        for (k, v) in &settings_map {
-            let lua_val = lua.to_value(v)?;
-            settings_tbl.set(k.as_str(), lua_val)?;
-        }
-        module_tbl.set("settings", settings_tbl)?;
+        // `ctx.module.settings` is fetched lazily, on first access, rather
+        // than unconditionally before the function body runs — most
+        // invocations never read it, and the fetch is a synchronous host
+        // round trip (a Twirp call to db-proxy). Implemented via a
+        // metatable `__index` hook rather than a plain table field, since
+        // `id`/`name`/`version` are already set directly and only
+        // `settings` needs to intercept access; the result is cached in
+        // `settings_cache` after the first access so repeated reads within
+        // this invocation only pay for one fetch.
+        let settings_client = invocation.host.settings.clone();
+        let module_id_for_settings = invocation.module_id.clone();
+        let settings_cache: Rc<RefCell<Option<mlua::Table>>> = Rc::new(RefCell::new(None));
+        let metatable = lua.create_table()?;
+        let index_fn = lua.create_function(move |lua, (_tbl, key): (mlua::Table, String)| {
+            if key != "settings" {
+                return Ok(LuaValue::Nil);
+            }
+            let mut cache = settings_cache.borrow_mut();
+            if cache.is_none() {
+                let settings_map = settings_client
+                    .list_by_module(&module_id_for_settings)
+                    .unwrap_or_default();
+                let settings_tbl = lua.create_table()?;
+                for (k, v) in &settings_map {
+                    let lua_val = lua.to_value(v)?;
+                    settings_tbl.set(k.as_str(), lua_val)?;
+                }
+                *cache = Some(settings_tbl);
+            }
+            Ok(LuaValue::Table(cache.as_ref().expect("populated above").clone()))
+        })?;
+        metatable.set("__index", index_fn)?;
+        module_tbl.set_metatable(Some(metatable));
         ctx.set("module", module_tbl)?;
     }
 
@@ -366,5 +389,107 @@ mod tests {
         assert_eq!(result["v"], 1);
         assert_eq!(result["success"], false);
         assert_eq!(result["message"], "nope");
+    }
+
+    struct CountingSettingsClient {
+        calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        data: std::collections::HashMap<String, serde_json::Value>,
+    }
+
+    impl crate::host::SettingsClient for CountingSettingsClient {
+        fn list_by_module(
+            &self,
+            _module_id: &str,
+        ) -> Result<std::collections::HashMap<String, serde_json::Value>, String> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(self.data.clone())
+        }
+        fn set(&self, _module_id: &str, _key: &str, _value: &str) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn lua_ctx_module_settings_not_fetched_when_unused() {
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut host = noop_host_context();
+        host.settings = std::sync::Arc::new(CountingSettingsClient {
+            calls: calls.clone(),
+            data: std::collections::HashMap::new(),
+        });
+        let adapter = LuaAdapter::new().unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host,
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+        };
+        // Never touches ctx.module.settings.
+        let code = r#"
+            function run(ctx)
+                return { id = ctx.module.id }
+            end
+        "#;
+        adapter.execute(code, "run", &invocation).unwrap();
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn lua_ctx_module_settings_fetched_once_and_cached_per_invocation() {
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut data = std::collections::HashMap::new();
+        data.insert("apiKey".to_string(), serde_json::json!("secret"));
+        let mut host = noop_host_context();
+        host.settings = std::sync::Arc::new(CountingSettingsClient {
+            calls: calls.clone(),
+            data,
+        });
+        let adapter = LuaAdapter::new().unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host,
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+        };
+        // Reads ctx.module.settings twice — should still be one host fetch.
+        let code = r#"
+            function run(ctx)
+                local a = ctx.module.settings.apiKey
+                local b = ctx.module.settings.apiKey
+                return { a = a, b = b }
+            end
+        "#;
+        let result = adapter.execute(code, "run", &invocation).unwrap();
+        assert_eq!(result["a"], "secret");
+        assert_eq!(result["b"], "secret");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn lua_ctx_module_id_name_version_still_direct_fields() {
+        // Guards against the __index metatable hook accidentally shadowing
+        // the plain fields set directly on module_tbl.
+        let adapter = LuaAdapter::new().unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+        };
+        let code = r#"
+            function run(ctx)
+                return { id = ctx.module.id, name = ctx.module.name, version = ctx.module.version }
+            end
+        "#;
+        let result = adapter.execute(code, "run", &invocation).unwrap();
+        assert_eq!(result["id"], "mymod");
+        assert_eq!(result["name"], "My Module");
+        assert_eq!(result["version"], "2.0.0");
     }
 }

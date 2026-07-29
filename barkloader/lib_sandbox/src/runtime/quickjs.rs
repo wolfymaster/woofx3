@@ -5,9 +5,13 @@ use rquickjs::{
     Array, Context, Ctx, Function as JsFunction, Object, Runtime,
     Value as JsValue,
     function::Opt,
+    object::Accessor,
 };
 use serde_json::Value;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 const DEFAULT_MEMORY_LIMIT: usize = 16 * 1024 * 1024;
@@ -446,17 +450,41 @@ fn build_module_namespace<'js>(
     let version_str = rquickjs::String::from_str(ctx.clone(), &invocation.module_version).map_err(map)?;
     module.set("version", version_str).map_err(map)?;
 
-    let settings_map = invocation
-        .host
-        .settings
-        .list_by_module(&invocation.module_id)
-        .unwrap_or_default();
-    let settings_obj = Object::new(ctx.clone()).map_err(map)?;
-    for (k, v) in &settings_map {
-        let js_val = json_to_js(ctx, v)?;
-        settings_obj.set(k.as_str(), js_val).map_err(map)?;
-    }
-    module.set("settings", settings_obj).map_err(map)?;
+    // `ctx.module.settings` is fetched lazily, on first property access,
+    // rather than unconditionally before the function body runs — most
+    // invocations never read it, and the fetch is a synchronous host round
+    // trip (a Twirp call to db-proxy). The result is cached in `settings_cache`
+    // after the first access so repeated reads within this invocation
+    // (`ctx.module.settings.a`, then `.b`) only pay for one fetch.
+    let settings_client = invocation.host.settings.clone();
+    let module_id_for_settings = invocation.module_id.clone();
+    let settings_cache: Rc<RefCell<Option<HashMap<String, Value>>>> = Rc::new(RefCell::new(None));
+    module
+        .prop(
+            "settings",
+            Accessor::from(move |ctx| {
+                let mut cache = settings_cache.borrow_mut();
+                if cache.is_none() {
+                    *cache = Some(
+                        settings_client
+                            .list_by_module(&module_id_for_settings)
+                            .unwrap_or_default(),
+                    );
+                }
+                let settings_map = cache.as_ref().expect("populated above");
+                let settings_obj =
+                    Object::new(Ctx::clone(&ctx)).map_err(|e| host_err(e.to_string()))?;
+                for (k, v) in settings_map {
+                    let js_val = json_to_js(&ctx, v).map_err(|e| host_err(e.to_string()))?;
+                    settings_obj
+                        .set(k.as_str(), js_val)
+                        .map_err(|e| host_err(e.to_string()))?;
+                }
+                Ok::<_, rquickjs::Error>(settings_obj)
+            })
+            .enumerable(),
+        )
+        .map_err(map)?;
 
     // `ctx.module.setSetting(key, value)` — write-through to the module's own
     // settings store. Unlike `ctx.module.settings` (a snapshot taken once per
@@ -648,5 +676,77 @@ mod tests {
         assert_eq!(result["v"], 1);
         assert_eq!(result["success"], false);
         assert_eq!(result["message"], "nope");
+    }
+
+    struct CountingSettingsClient {
+        calls: Arc<AtomicUsize>,
+        data: std::collections::HashMap<String, serde_json::Value>,
+    }
+
+    impl crate::host::SettingsClient for CountingSettingsClient {
+        fn list_by_module(
+            &self,
+            _module_id: &str,
+        ) -> Result<std::collections::HashMap<String, serde_json::Value>, String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(self.data.clone())
+        }
+        fn set(&self, _module_id: &str, _key: &str, _value: &str) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn quickjs_ctx_module_settings_not_fetched_when_unused() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut host = noop_host_context();
+        host.settings = Arc::new(CountingSettingsClient {
+            calls: calls.clone(),
+            data: std::collections::HashMap::new(),
+        });
+        let adapter = QuickJSAdapter::new().unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host,
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+        };
+        // Never touches ctx.module.settings.
+        let code = "function run(ctx) { return { id: ctx.module.id }; }";
+        adapter.execute(code, "run", &invocation).unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn quickjs_ctx_module_settings_fetched_once_and_cached_per_invocation() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut data = std::collections::HashMap::new();
+        data.insert("apiKey".to_string(), serde_json::json!("secret"));
+        let mut host = noop_host_context();
+        host.settings = Arc::new(CountingSettingsClient {
+            calls: calls.clone(),
+            data,
+        });
+        let adapter = QuickJSAdapter::new().unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host,
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+        };
+        // Reads ctx.module.settings twice — should still be one host fetch.
+        let code = "function run(ctx) { \
+            const a = ctx.module.settings.apiKey; \
+            const b = ctx.module.settings.apiKey; \
+            return { a, b }; \
+        }";
+        let result = adapter.execute(code, "run", &invocation).unwrap();
+        assert_eq!(result["a"], "secret");
+        assert_eq!(result["b"], "secret");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }
