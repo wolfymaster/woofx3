@@ -1,5 +1,16 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
+
+/// Shared, pooled HTTP client for every Twirp call this module makes to
+/// db-proxy. `reqwest::Client` is cheap to clone (it's Arc-backed
+/// internally) but expensive to construct — a fresh `Client::new()` per
+/// call meant every RPC paid a cold connection-pool warmup (TCP, and TLS
+/// if db-proxy is behind https) instead of reusing a keep-alive
+/// connection. One process-lifetime client, cloned at each call site,
+/// mirrors the pattern `ReqwestHttpClient` (services/http_client.rs)
+/// already uses correctly for `ctx.http.request`.
+static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 
 fn parse_module_response(text: &str) -> Result<Option<ModuleRecord>> {
     let body: ModuleResponseBody = serde_json::from_str(text)
@@ -231,7 +242,7 @@ pub async fn register_triggers(
         triggers,
         application_id: application_id.to_string(),
     };
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -294,7 +305,7 @@ pub async fn register_actions_with(
         created_by_ref: created_by_ref.to_string(),
         application_id: application_id.to_string(),
     };
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -319,7 +330,7 @@ pub async fn delete_triggers_by_module_id(
 ) -> Result<()> {
     let url = format!("{}/twirp/module.ModuleService/DeleteTriggersByModuleId", db_proxy_url);
     let body = DeleteByModuleIdJson { module_id: module_id.to_string() };
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -343,7 +354,7 @@ pub async fn delete_actions_by_module_id(
 ) -> Result<()> {
     let url = format!("{}/twirp/module.ModuleService/DeleteActionsByModuleId", db_proxy_url);
     let body = DeleteByModuleIdJson { module_id: module_id.to_string() };
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -467,7 +478,7 @@ pub async fn create_module(
         "module_key": module_key,
     });
 
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -518,7 +529,7 @@ pub async fn create_command(
         created_by_ref: module_name.to_string(),
     };
 
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -544,7 +555,7 @@ pub async fn delete_commands_by_module(db_proxy_url: &str, module_name: &str) ->
         "include_disabled": true
     });
 
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&list_url)
         .header("Content-Type", "application/json")
@@ -609,7 +620,7 @@ pub async fn delete_workflows_by_module(
         "application_id": application_id
     });
 
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&list_url)
         .header("Content-Type", "application/json")
@@ -684,7 +695,7 @@ pub async fn create_module_resource(
         "version": version,
     });
 
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -712,7 +723,7 @@ pub async fn delete_module_resources(
         "module_id": module_id,
     });
 
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -772,7 +783,7 @@ pub async fn check_module_resource_usage(
         "application_id": application_id,
     });
 
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -826,7 +837,7 @@ pub async fn complete_module_delete(
         });
     }
 
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -850,7 +861,7 @@ pub async fn delete_module(db_proxy_url: &str, module_name: &str) -> Result<()> 
     let url = format!("{}/twirp/module.ModuleService/DeleteModule", db_proxy_url);
     let body = serde_json::json!({ "name": module_name });
 
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -894,7 +905,7 @@ pub async fn complete_module_install(
         });
     }
 
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -928,7 +939,7 @@ pub async fn get_trigger_event_by_canonical_id(
         db_proxy_url
     );
     let body = serde_json::json!({ "canonical_id": canonical_id });
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -983,7 +994,7 @@ pub async fn get_action_ref_by_canonical_id(
         db_proxy_url
     );
     let body = serde_json::json!({ "canonical_id": canonical_id });
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1063,7 +1074,7 @@ async fn fetch_module_by_name_raw(
         name: name.to_string(),
     };
 
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1095,7 +1106,7 @@ pub async fn list_modules(
         "state": state.unwrap_or(""),
     });
 
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1137,7 +1148,7 @@ pub async fn register_widgets(
         created_by_ref: String::new(),
         application_id: application_id.to_string(),
     };
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1160,7 +1171,7 @@ pub async fn delete_widgets_by_module_id(db_proxy_url: &str, module_id: &str) ->
     let body = DeleteByModuleIdJson {
         module_id: module_id.to_string(),
     };
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1196,7 +1207,7 @@ pub async fn register_assets(
         created_by_type: String::new(),
         created_by_ref: String::new(),
     };
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1283,7 +1294,7 @@ pub async fn create_resource_instance(
         "display_name": display_name,
         "request_context": request_context,
     });
-    let response = reqwest::Client::new()
+    let response = HTTP_CLIENT.clone()
         .post(&url)
         .header("Content-Type", "application/json")
         .json(&body)
@@ -1321,7 +1332,7 @@ pub async fn delete_resource_instance(
         "canonical_id": canonical_id,
         "request_context": request_context,
     });
-    let response = reqwest::Client::new()
+    let response = HTTP_CLIENT.clone()
         .post(&url)
         .header("Content-Type", "application/json")
         .json(&body)
@@ -1349,7 +1360,7 @@ pub async fn list_resource_instances_by_kind(
         db_proxy_url
     );
     let body = serde_json::json!({ "kind": kind });
-    let response = reqwest::Client::new()
+    let response = HTTP_CLIENT.clone()
         .post(&url)
         .header("Content-Type", "application/json")
         .json(&body)
@@ -1384,7 +1395,7 @@ pub async fn list_resource_instances_by_module(
         db_proxy_url
     );
     let body = serde_json::json!({ "module_id": module_id });
-    let response = reqwest::Client::new()
+    let response = HTTP_CLIENT.clone()
         .post(&url)
         .header("Content-Type", "application/json")
         .json(&body)
@@ -1439,7 +1450,7 @@ pub async fn storage_get(
 ) -> Result<Option<StorageItemJson>> {
     let url = format!("{}/twirp/storage.StorageService/Get", db_proxy_url);
     let body = serde_json::json!({ "key": key, "application_id": application_id });
-    let response = reqwest::Client::new()
+    let response = HTTP_CLIENT.clone()
         .post(&url)
         .header("Content-Type", "application/json")
         .json(&body)
@@ -1475,7 +1486,7 @@ pub async fn storage_set(
             "application_id": application_id,
         }
     });
-    let response = reqwest::Client::new()
+    let response = HTTP_CLIENT.clone()
         .post(&url)
         .header("Content-Type", "application/json")
         .json(&body)
@@ -1507,7 +1518,7 @@ pub async fn register_background_tasks(
         tasks,
         application_id: application_id.to_string(),
     };
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1528,7 +1539,7 @@ pub async fn list_background_tasks(
 ) -> Result<Vec<BackgroundTaskJson>> {
     let url = format!("{}/twirp/module.ModuleService/ListBackgroundTasks", db_proxy_url);
     let body = serde_json::json!({ "createdByType": "", "createdByRef": "" });
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1553,7 +1564,7 @@ pub async fn delete_background_tasks_by_module_id(db_proxy_url: &str, module_id:
     let body = DeleteByModuleIdJson {
         module_id: module_id.to_string(),
     };
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -1614,7 +1625,7 @@ pub async fn register_module_settings(
         settings,
     };
     let endpoint = format!("{}/twirp/module_setting.ModuleSettingService/RegisterModuleSettings", url);
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&endpoint)
         .json(&body)
@@ -1634,7 +1645,7 @@ pub async fn get_module_settings(
 ) -> Result<Vec<ModuleSettingJson>> {
     let body = serde_json::json!({ "module_id": module_id });
     let endpoint = format!("{}/twirp/module_setting.ModuleSettingService/ListModuleSettings", url);
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&endpoint)
         .json(&body)
@@ -1681,7 +1692,7 @@ pub async fn set_module_setting(url: &str, module_id: &str, key: &str, value: &s
         value_type,
     };
     let endpoint = format!("{}/twirp/module_setting.ModuleSettingService/SetModuleSetting", url);
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let response = client
         .post(&endpoint)
         .json(&body)
