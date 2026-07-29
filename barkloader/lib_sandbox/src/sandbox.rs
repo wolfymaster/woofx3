@@ -68,7 +68,7 @@ impl SandboxFactory {
         match tokio::task::spawn_blocking(move || {
             factory
                 .create()
-                .and_then(|sandbox| sandbox.invoke(request))
+                .and_then(|mut sandbox| sandbox.invoke(request))
                 .map_err(|e| e.to_string())
         })
         .await
@@ -99,13 +99,13 @@ impl Sandbox {
     ) -> Result<Self, Error> {
         Ok(Self {
             registry,
-            function_executor: FunctionExecutor::new()?,
+            function_executor: FunctionExecutor::new(),
             host_ctx,
             builtin_dispatcher,
         })
     }
 
-    pub fn invoke(&self, request: InvokeRequest) -> Result<Value, Error> {
+    pub fn invoke(&mut self, request: InvokeRequest) -> Result<Value, Error> {
         info!("Invoking function function={}", request.function);
 
         let result = if let Some(name) = request.function.strip_prefix("builtin:") {

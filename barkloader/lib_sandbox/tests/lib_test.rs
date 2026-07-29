@@ -55,7 +55,7 @@ fn test_sandbox_instance() -> Sandbox {
 
 #[test]
 fn test_sandbox() {
-    let sandbox = test_sandbox_instance();
+    let mut sandbox = test_sandbox_instance();
 
     let result = sandbox
         .invoke(InvokeRequest {
@@ -78,7 +78,7 @@ fn test_sandbox() {
 
 #[test]
 fn test_lua_adapter() {
-    let sandbox = test_sandbox_instance();
+    let mut sandbox = test_sandbox_instance();
 
     let result = sandbox
         .invoke(InvokeRequest {
@@ -94,7 +94,7 @@ fn test_lua_adapter() {
 
 #[test]
 fn test_quickjs_adapter() {
-    let sandbox = test_sandbox_instance();
+    let mut sandbox = test_sandbox_instance();
 
     let result = sandbox
         .invoke(InvokeRequest {
@@ -110,7 +110,7 @@ fn test_quickjs_adapter() {
 
 #[test]
 fn test_null_event() {
-    let sandbox = test_sandbox_instance();
+    let mut sandbox = test_sandbox_instance();
 
     let result = sandbox
         .invoke(InvokeRequest {
@@ -148,7 +148,7 @@ fn test_js_instruction_limit() {
 
     registry.register_module("limits".to_string(), module).unwrap();
 
-    let sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
+    let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
 
     let result = sandbox.invoke(InvokeRequest {
         function: "limits:function:infinite".to_string(),
@@ -198,7 +198,7 @@ function main(ctx) {
 
     registry.register_module("example".to_string(), module).unwrap();
 
-    let sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
+    let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
 
     let result1 = sandbox
         .invoke(InvokeRequest {
@@ -257,7 +257,7 @@ fn test_ctx_event_data() {
 
     registry.register_module("example".to_string(), module).unwrap();
 
-    let sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
+    let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
 
     let result = sandbox
         .invoke(InvokeRequest {
@@ -315,7 +315,7 @@ fn test_ctx_chat_send_message_routes_to_host() {
         ExtensionRegistry::new().with(Arc::new(ChatExtension::new(capturing.clone()))),
     );
 
-    let sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
     let result = sandbox
         .invoke(InvokeRequest {
             function: "chat_test:function:send".to_string(),
@@ -386,7 +386,7 @@ fn test_quickjs_twitch_extension_publishes_canonical_command() {
         ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(nats.clone()))),
     );
 
-    let sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
     sandbox
         .invoke(InvokeRequest {
             function: "twitch_test:function:moderate".to_string(),
@@ -425,7 +425,7 @@ end
         ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(nats.clone()))),
     );
 
-    let sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
     sandbox
         .invoke(InvokeRequest {
             function: "twitch_test:function:moderate".to_string(),
@@ -461,7 +461,7 @@ fn test_quickjs_zero_arg_extension_function() {
         ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(nats.clone()))),
     );
 
-    let sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
     sandbox
         .invoke(InvokeRequest {
             function: "twitch_test:function:clip_test".to_string(),
@@ -492,7 +492,7 @@ fn test_quickjs_nested_namespace_platform_alerts() {
             .with(Arc::new(PlatformAlertsExtension::new(nats.clone()))),
     );
 
-    let sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
     sandbox
         .invoke(InvokeRequest {
             function: "alerts_test:function:alert_test".to_string(),
@@ -522,7 +522,7 @@ fn test_unregistered_extension_namespace_is_undefined() {
     let registry = extension_test_module("noext_test", "probe", code, "js");
 
     let host_ctx = noop_host_context();
-    let sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
     let result = sandbox
         .invoke(InvokeRequest {
             function: "noext_test:function:probe".to_string(),
@@ -564,7 +564,7 @@ fn test_builtin_prefix_routes_to_dispatcher() {
     let dispatcher = Arc::new(RecordingBuiltinDispatcher {
         calls: Mutex::new(vec![]),
     });
-    let sandbox = Sandbox::new_with_builtin_dispatcher(
+    let mut sandbox = Sandbox::new_with_builtin_dispatcher(
         registry,
         noop_host_context(),
         Some(dispatcher.clone()),
@@ -595,7 +595,7 @@ fn test_builtin_unknown_name_returns_function_not_found() {
     let dispatcher = Arc::new(RecordingBuiltinDispatcher {
         calls: Mutex::new(vec![]),
     });
-    let sandbox = Sandbox::new_with_builtin_dispatcher(
+    let mut sandbox = Sandbox::new_with_builtin_dispatcher(
         registry,
         noop_host_context(),
         Some(dispatcher),
@@ -621,7 +621,7 @@ fn test_builtin_unknown_name_returns_function_not_found() {
 #[test]
 fn test_builtin_without_dispatcher_fails_fast() {
     let registry = Arc::new(ModuleRegistry::new());
-    let sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
+    let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
 
     let err = sandbox
         .invoke(InvokeRequest {

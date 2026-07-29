@@ -13,36 +13,55 @@ pub struct FunctionExecutor {
 }
 
 impl FunctionExecutor {
-    pub fn new() -> Result<Self, Error> {
-        let mut executor = Self {
+    pub fn new() -> Self {
+        Self {
             adapters: HashMap::new(),
-        };
-
-        executor.add_adapter("echo".to_string(), Box::new(EchoAdapter::new()));
-        executor.add_adapter("lua".to_string(), Box::new(LuaAdapter::new()?));
-        executor.add_adapter("js".to_string(), Box::new(QuickJSAdapter::new()?));
-
-        Ok(executor)
+        }
     }
 
     pub fn add_adapter(&mut self, extension: String, adapter: Box<dyn RuntimeAdapter>) {
         self.adapters.insert(extension, adapter);
     }
 
+    /// Builds and caches the adapter for `extension` on first use. A fresh
+    /// `Sandbox` (and its `FunctionExecutor`) is created per invoke, and
+    /// each invoke only ever needs one runtime — eagerly constructing every
+    /// supported runtime (QuickJS *and* Lua) up front wasted a VM
+    /// allocation on every single call regardless of which one the
+    /// function actually used.
+    fn adapter_for(&mut self, extension: &str) -> Result<&dyn RuntimeAdapter, Error> {
+        if !self.adapters.contains_key(extension) {
+            let adapter: Box<dyn RuntimeAdapter> = match extension {
+                "echo" => Box::new(EchoAdapter::new()),
+                "lua" => Box::new(LuaAdapter::new()?),
+                "js" => Box::new(QuickJSAdapter::new()?),
+                other => return Err(Error::UnsupportedRuntime(other.to_string())),
+            };
+            self.adapters.insert(extension.to_string(), adapter);
+        }
+
+        Ok(self
+            .adapters
+            .get(extension)
+            .expect("adapter inserted above")
+            .as_ref())
+    }
+
     pub fn execute(
-        &self,
+        &mut self,
         function: &Function,
         invocation: &InvocationContext,
     ) -> Result<Value, Error> {
         let extension = function.get_extension().ok_or(Error::UnknownFunctionType)?;
-
-        let adapter = self
-            .adapters
-            .get(&extension)
-            .ok_or(Error::UnsupportedRuntime(extension.clone()))?;
-
+        let adapter = self.adapter_for(&extension)?;
         let entry_point = function.resolved_entry_point();
         adapter.execute(&function.code, entry_point, invocation)
+    }
+}
+
+impl Default for FunctionExecutor {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -81,16 +100,38 @@ mod tests {
     }
 
     #[test]
-    fn test_new_executor() {
-        let result = FunctionExecutor::new();
-        assert!(result.is_ok());
-        let executor = result.unwrap();
-        assert_eq!(executor.adapters.len(), 3);
+    fn test_new_executor_builds_no_adapters_up_front() {
+        // Adapter construction is lazy: a fresh executor hasn't paid for
+        // any runtime (echo/lua/js) until execute() actually needs one.
+        let executor = FunctionExecutor::new();
+        assert!(executor.adapters.is_empty());
+    }
+
+    #[test]
+    fn test_execute_only_builds_the_requested_runtime() {
+        let mut executor = FunctionExecutor::new();
+        let adapter = Box::new(MockRuntimeAdapter);
+        executor.add_adapter("mock".to_string(), adapter);
+
+        let function = Function {
+            name: "test_function".to_string(),
+            file_name: "hello.mock".to_string(),
+            code: "wolfy".to_string(),
+            is_trusted: false,
+            entry_point: None,
+        };
+        let invocation = test_invocation(json!({ "input": "test" }));
+        executor.execute(&function, &invocation).unwrap();
+
+        // Only the "mock" extension was ever requested — echo/lua/js were
+        // never constructed.
+        assert_eq!(executor.adapters.len(), 1);
+        assert!(executor.adapters.contains_key("mock"));
     }
 
     #[test]
     fn test_add_adapter() {
-        let mut executor = FunctionExecutor::new().unwrap();
+        let mut executor = FunctionExecutor::new();
         let adapter = Box::new(MockRuntimeAdapter);
 
         executor.add_adapter("mock".to_string(), adapter);
@@ -99,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_execute_with_adapter() {
-        let mut executor = FunctionExecutor::new().unwrap();
+        let mut executor = FunctionExecutor::new();
         let adapter = Box::new(MockRuntimeAdapter);
         executor.add_adapter("mock".to_string(), adapter);
 
@@ -123,7 +164,7 @@ mod tests {
 
     #[test]
     fn test_execute_without_adapter() {
-        let executor = FunctionExecutor::new().unwrap();
+        let mut executor = FunctionExecutor::new();
         let function = Function {
             name: "test_function".to_string(),
             file_name: "test_function.nonexistent".to_string(),
@@ -141,7 +182,7 @@ mod tests {
 
     #[test]
     fn test_execute_with_unknown_extension() {
-        let executor = FunctionExecutor::new().unwrap();
+        let mut executor = FunctionExecutor::new();
         let function = Function {
             name: "test_function".to_string(),
             file_name: "test_function".to_string(),
