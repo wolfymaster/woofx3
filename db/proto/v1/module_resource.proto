@@ -48,6 +48,38 @@ message DeleteModuleResourcesRequest {
   string module_id = 1;
 }
 
+// Selective single-resource hard delete used by barkloader's diff-based
+// module upgrade path, for the one resource kind where hard deletion on
+// removal is safe: nothing resolves a background task by canonical id at
+// runtime the way workflows resolve triggers/actions/functions, so
+// there's no "existing reference would break" concern to preserve.
+message DeleteResourceByManifestIdRequest {
+  // Stable manifest module id (== manifest.json `id`, first segment of
+  // every canonical id for this module) — same convention as
+  // `DeleteByModuleIdRequest.module_id`, NOT the modules.id UUID.
+  string module_id = 1;
+  // "background_task" is the only supported value.
+  string resource_type = 2;
+  string manifest_id = 3;
+}
+
+// Selective single-resource archive (soft delete) used by barkloader's
+// diff-based module upgrade path: when a resource id present in the
+// previously installed manifest is absent from the newly installed one,
+// this archives just that resource (sets `archived_at`) instead of
+// deleting it or nuking the module's entire catalog. Archived rows stay
+// resolvable by canonical id — a workflow/command that already
+// references one keeps working — but are excluded from catalog listings
+// (`ListTriggers`/`ListActions`/`ListWidgets`) going forward. See
+// migration 0029_archived_at_columns.
+message ArchiveResourceByManifestIdRequest {
+  // Stable manifest module id — see DeleteResourceByManifestIdRequest.
+  string module_id = 1;
+  // "trigger" | "action" | "widget" | "function".
+  string resource_type = 2;
+  string manifest_id = 3;
+}
+
 message UpdateModuleResourceVersionRequest {
   string id = 1;
   string version = 2;

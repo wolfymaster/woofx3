@@ -39,6 +39,8 @@ type ModuleService interface {
 
 	GetModuleByModuleKey(context.Context, *GetModuleByModuleKeyRequest) (*ModuleResponse, error)
 
+	GetModuleByModuleId(context.Context, *GetModuleByModuleIdRequest) (*ModuleResponse, error)
+
 	ListModules(context.Context, *ListModulesRequest) (*ListModulesResponse, error)
 
 	SetModuleState(context.Context, *SetModuleStateRequest) (*ModuleResponse, error)
@@ -85,6 +87,10 @@ type ModuleService interface {
 
 	DeleteModuleResources(context.Context, *DeleteModuleResourcesRequest) (*ResponseStatus, error)
 
+	DeleteResourceByManifestId(context.Context, *DeleteResourceByManifestIdRequest) (*ResponseStatus, error)
+
+	ArchiveResourceByManifestId(context.Context, *ArchiveResourceByManifestIdRequest) (*ResponseStatus, error)
+
 	UpdateModuleResourceVersion(context.Context, *UpdateModuleResourceVersionRequest) (*ModuleResourceResponse, error)
 
 	CompleteModuleInstall(context.Context, *CompleteModuleInstallRequest) (*ResponseStatus, error)
@@ -104,6 +110,8 @@ type ModuleService interface {
 	ListResourceInstancesByKind(context.Context, *ListResourceInstancesByKindRequest) (*ListResourceInstancesResponse, error)
 
 	ListResourceInstancesByModule(context.Context, *ListResourceInstancesByModuleRequest) (*ListResourceInstancesResponse, error)
+
+	ListAllResourceInstances(context.Context, *ListAllResourceInstancesRequest) (*ListResourceInstancesResponse, error)
 }
 
 // =============================
@@ -112,7 +120,7 @@ type ModuleService interface {
 
 type moduleServiceProtobufClient struct {
 	client      HTTPClient
-	urls        [38]string
+	urls        [42]string
 	interceptor twirp.Interceptor
 	opts        twirp.ClientOptions
 }
@@ -140,13 +148,14 @@ func NewModuleServiceProtobufClient(baseURL string, client HTTPClient, opts ...t
 	// Build method URLs: <baseURL>[<prefix>]/<package>.<Service>/<Method>
 	serviceURL := sanitizeBaseURL(baseURL)
 	serviceURL += baseServicePath(pathPrefix, "module", "ModuleService")
-	urls := [38]string{
+	urls := [42]string{
 		serviceURL + "CreateModule",
 		serviceURL + "UpdateModule",
 		serviceURL + "DeleteModule",
 		serviceURL + "GetModule",
 		serviceURL + "GetModuleByName",
 		serviceURL + "GetModuleByModuleKey",
+		serviceURL + "GetModuleByModuleId",
 		serviceURL + "ListModules",
 		serviceURL + "SetModuleState",
 		serviceURL + "RegisterTriggers",
@@ -170,6 +179,8 @@ func NewModuleServiceProtobufClient(baseURL string, client HTTPClient, opts ...t
 		serviceURL + "CreateModuleResource",
 		serviceURL + "ListModuleResources",
 		serviceURL + "DeleteModuleResources",
+		serviceURL + "DeleteResourceByManifestId",
+		serviceURL + "ArchiveResourceByManifestId",
 		serviceURL + "UpdateModuleResourceVersion",
 		serviceURL + "CompleteModuleInstall",
 		serviceURL + "CheckModuleResourceUsage",
@@ -179,6 +190,7 @@ func NewModuleServiceProtobufClient(baseURL string, client HTTPClient, opts ...t
 		serviceURL + "GetResourceInstance",
 		serviceURL + "ListResourceInstancesByKind",
 		serviceURL + "ListResourceInstancesByModule",
+		serviceURL + "ListAllResourceInstances",
 	}
 
 	return &moduleServiceProtobufClient{
@@ -465,6 +477,52 @@ func (c *moduleServiceProtobufClient) callGetModuleByModuleKey(ctx context.Conte
 	return out, nil
 }
 
+func (c *moduleServiceProtobufClient) GetModuleByModuleId(ctx context.Context, in *GetModuleByModuleIdRequest) (*ModuleResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "GetModuleByModuleId")
+	caller := c.callGetModuleByModuleId
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *GetModuleByModuleIdRequest) (*ModuleResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetModuleByModuleIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetModuleByModuleIdRequest) when calling interceptor")
+					}
+					return c.callGetModuleByModuleId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ModuleResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ModuleResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceProtobufClient) callGetModuleByModuleId(ctx context.Context, in *GetModuleByModuleIdRequest) (*ModuleResponse, error) {
+	out := new(ModuleResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[6], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
 func (c *moduleServiceProtobufClient) ListModules(ctx context.Context, in *ListModulesRequest) (*ListModulesResponse, error) {
 	ctx = ctxsetters.WithPackageName(ctx, "module")
 	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
@@ -496,7 +554,7 @@ func (c *moduleServiceProtobufClient) ListModules(ctx context.Context, in *ListM
 
 func (c *moduleServiceProtobufClient) callListModules(ctx context.Context, in *ListModulesRequest) (*ListModulesResponse, error) {
 	out := new(ListModulesResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[6], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[7], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -542,7 +600,7 @@ func (c *moduleServiceProtobufClient) SetModuleState(ctx context.Context, in *Se
 
 func (c *moduleServiceProtobufClient) callSetModuleState(ctx context.Context, in *SetModuleStateRequest) (*ModuleResponse, error) {
 	out := new(ModuleResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[7], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[8], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -588,7 +646,7 @@ func (c *moduleServiceProtobufClient) RegisterTriggers(ctx context.Context, in *
 
 func (c *moduleServiceProtobufClient) callRegisterTriggers(ctx context.Context, in *RegisterTriggersRequest) (*ListTriggersResponse, error) {
 	out := new(ListTriggersResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[8], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[9], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -634,7 +692,7 @@ func (c *moduleServiceProtobufClient) ListTriggers(ctx context.Context, in *List
 
 func (c *moduleServiceProtobufClient) callListTriggers(ctx context.Context, in *ListTriggersRequest) (*ListTriggersResponse, error) {
 	out := new(ListTriggersResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[9], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[10], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -680,7 +738,7 @@ func (c *moduleServiceProtobufClient) GetTriggerByCanonicalId(ctx context.Contex
 
 func (c *moduleServiceProtobufClient) callGetTriggerByCanonicalId(ctx context.Context, in *GetByCanonicalIdRequest) (*TriggerResponse, error) {
 	out := new(TriggerResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[10], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[11], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -726,7 +784,7 @@ func (c *moduleServiceProtobufClient) DeleteTriggersByModuleId(ctx context.Conte
 
 func (c *moduleServiceProtobufClient) callDeleteTriggersByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[11], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[12], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -772,7 +830,7 @@ func (c *moduleServiceProtobufClient) RegisterActions(ctx context.Context, in *R
 
 func (c *moduleServiceProtobufClient) callRegisterActions(ctx context.Context, in *RegisterActionsRequest) (*ListActionsResponse, error) {
 	out := new(ListActionsResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[12], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[13], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -818,7 +876,7 @@ func (c *moduleServiceProtobufClient) ListActions(ctx context.Context, in *ListA
 
 func (c *moduleServiceProtobufClient) callListActions(ctx context.Context, in *ListActionsRequest) (*ListActionsResponse, error) {
 	out := new(ListActionsResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[13], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[14], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -864,7 +922,7 @@ func (c *moduleServiceProtobufClient) GetActionByCanonicalId(ctx context.Context
 
 func (c *moduleServiceProtobufClient) callGetActionByCanonicalId(ctx context.Context, in *GetByCanonicalIdRequest) (*ActionResponse, error) {
 	out := new(ActionResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[14], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[15], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -910,7 +968,7 @@ func (c *moduleServiceProtobufClient) DeleteActionsByModuleId(ctx context.Contex
 
 func (c *moduleServiceProtobufClient) callDeleteActionsByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[15], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[16], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -956,7 +1014,7 @@ func (c *moduleServiceProtobufClient) RegisterWidgets(ctx context.Context, in *R
 
 func (c *moduleServiceProtobufClient) callRegisterWidgets(ctx context.Context, in *RegisterWidgetsRequest) (*ListWidgetsResponse, error) {
 	out := new(ListWidgetsResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[16], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[17], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1002,7 +1060,7 @@ func (c *moduleServiceProtobufClient) ListWidgets(ctx context.Context, in *ListW
 
 func (c *moduleServiceProtobufClient) callListWidgets(ctx context.Context, in *ListWidgetsRequest) (*ListWidgetsResponse, error) {
 	out := new(ListWidgetsResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[17], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[18], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1048,7 +1106,7 @@ func (c *moduleServiceProtobufClient) GetWidgetByCanonicalId(ctx context.Context
 
 func (c *moduleServiceProtobufClient) callGetWidgetByCanonicalId(ctx context.Context, in *GetByCanonicalIdRequest) (*WidgetResponse, error) {
 	out := new(WidgetResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[18], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[19], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1094,7 +1152,7 @@ func (c *moduleServiceProtobufClient) DeleteWidgetsByModuleId(ctx context.Contex
 
 func (c *moduleServiceProtobufClient) callDeleteWidgetsByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[19], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[20], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1140,7 +1198,7 @@ func (c *moduleServiceProtobufClient) RegisterBackgroundTasks(ctx context.Contex
 
 func (c *moduleServiceProtobufClient) callRegisterBackgroundTasks(ctx context.Context, in *RegisterBackgroundTasksRequest) (*ListBackgroundTasksResponse, error) {
 	out := new(ListBackgroundTasksResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[20], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[21], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1186,7 +1244,7 @@ func (c *moduleServiceProtobufClient) ListBackgroundTasks(ctx context.Context, i
 
 func (c *moduleServiceProtobufClient) callListBackgroundTasks(ctx context.Context, in *ListBackgroundTasksRequest) (*ListBackgroundTasksResponse, error) {
 	out := new(ListBackgroundTasksResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[21], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[22], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1232,7 +1290,7 @@ func (c *moduleServiceProtobufClient) DeleteBackgroundTasksByModuleId(ctx contex
 
 func (c *moduleServiceProtobufClient) callDeleteBackgroundTasksByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[22], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[23], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1278,7 +1336,7 @@ func (c *moduleServiceProtobufClient) RegisterAssets(ctx context.Context, in *Re
 
 func (c *moduleServiceProtobufClient) callRegisterAssets(ctx context.Context, in *RegisterAssetsRequest) (*ListAssetsResponse, error) {
 	out := new(ListAssetsResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[23], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[24], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1324,7 +1382,7 @@ func (c *moduleServiceProtobufClient) ListAssets(ctx context.Context, in *ListAs
 
 func (c *moduleServiceProtobufClient) callListAssets(ctx context.Context, in *ListAssetsRequest) (*ListAssetsResponse, error) {
 	out := new(ListAssetsResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[24], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[25], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1370,7 +1428,7 @@ func (c *moduleServiceProtobufClient) DeleteAssetsByModuleId(ctx context.Context
 
 func (c *moduleServiceProtobufClient) callDeleteAssetsByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[25], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[26], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1416,7 +1474,7 @@ func (c *moduleServiceProtobufClient) CreateModuleResource(ctx context.Context, 
 
 func (c *moduleServiceProtobufClient) callCreateModuleResource(ctx context.Context, in *CreateModuleResourceRequest) (*ModuleResourceResponse, error) {
 	out := new(ModuleResourceResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[26], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[27], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1462,7 +1520,7 @@ func (c *moduleServiceProtobufClient) ListModuleResources(ctx context.Context, i
 
 func (c *moduleServiceProtobufClient) callListModuleResources(ctx context.Context, in *ListModuleResourcesRequest) (*ListModuleResourcesResponse, error) {
 	out := new(ListModuleResourcesResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[27], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[28], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1508,7 +1566,99 @@ func (c *moduleServiceProtobufClient) DeleteModuleResources(ctx context.Context,
 
 func (c *moduleServiceProtobufClient) callDeleteModuleResources(ctx context.Context, in *DeleteModuleResourcesRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[28], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[29], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceProtobufClient) DeleteResourceByManifestId(ctx context.Context, in *DeleteResourceByManifestIdRequest) (*ResponseStatus, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteResourceByManifestId")
+	caller := c.callDeleteResourceByManifestId
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *DeleteResourceByManifestIdRequest) (*ResponseStatus, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteResourceByManifestIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteResourceByManifestIdRequest) when calling interceptor")
+					}
+					return c.callDeleteResourceByManifestId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceProtobufClient) callDeleteResourceByManifestId(ctx context.Context, in *DeleteResourceByManifestIdRequest) (*ResponseStatus, error) {
+	out := new(ResponseStatus)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[30], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceProtobufClient) ArchiveResourceByManifestId(ctx context.Context, in *ArchiveResourceByManifestIdRequest) (*ResponseStatus, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "ArchiveResourceByManifestId")
+	caller := c.callArchiveResourceByManifestId
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *ArchiveResourceByManifestIdRequest) (*ResponseStatus, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ArchiveResourceByManifestIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ArchiveResourceByManifestIdRequest) when calling interceptor")
+					}
+					return c.callArchiveResourceByManifestId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceProtobufClient) callArchiveResourceByManifestId(ctx context.Context, in *ArchiveResourceByManifestIdRequest) (*ResponseStatus, error) {
+	out := new(ResponseStatus)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[31], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1554,7 +1704,7 @@ func (c *moduleServiceProtobufClient) UpdateModuleResourceVersion(ctx context.Co
 
 func (c *moduleServiceProtobufClient) callUpdateModuleResourceVersion(ctx context.Context, in *UpdateModuleResourceVersionRequest) (*ModuleResourceResponse, error) {
 	out := new(ModuleResourceResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[29], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[32], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1600,7 +1750,7 @@ func (c *moduleServiceProtobufClient) CompleteModuleInstall(ctx context.Context,
 
 func (c *moduleServiceProtobufClient) callCompleteModuleInstall(ctx context.Context, in *CompleteModuleInstallRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[30], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[33], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1646,7 +1796,7 @@ func (c *moduleServiceProtobufClient) CheckModuleResourceUsage(ctx context.Conte
 
 func (c *moduleServiceProtobufClient) callCheckModuleResourceUsage(ctx context.Context, in *CheckModuleResourceUsageRequest) (*CheckModuleResourceUsageResponse, error) {
 	out := new(CheckModuleResourceUsageResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[31], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[34], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1692,7 +1842,7 @@ func (c *moduleServiceProtobufClient) CompleteModuleDelete(ctx context.Context, 
 
 func (c *moduleServiceProtobufClient) callCompleteModuleDelete(ctx context.Context, in *CompleteModuleDeleteRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[32], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[35], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1738,7 +1888,7 @@ func (c *moduleServiceProtobufClient) CreateResourceInstance(ctx context.Context
 
 func (c *moduleServiceProtobufClient) callCreateResourceInstance(ctx context.Context, in *CreateResourceInstanceRequest) (*ResourceInstanceResponse, error) {
 	out := new(ResourceInstanceResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[33], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[36], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1784,7 +1934,7 @@ func (c *moduleServiceProtobufClient) DeleteResourceInstance(ctx context.Context
 
 func (c *moduleServiceProtobufClient) callDeleteResourceInstance(ctx context.Context, in *DeleteResourceInstanceRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[34], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[37], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1830,7 +1980,7 @@ func (c *moduleServiceProtobufClient) GetResourceInstance(ctx context.Context, i
 
 func (c *moduleServiceProtobufClient) callGetResourceInstance(ctx context.Context, in *GetResourceInstanceRequest) (*ResourceInstanceResponse, error) {
 	out := new(ResourceInstanceResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[35], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[38], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1876,7 +2026,7 @@ func (c *moduleServiceProtobufClient) ListResourceInstancesByKind(ctx context.Co
 
 func (c *moduleServiceProtobufClient) callListResourceInstancesByKind(ctx context.Context, in *ListResourceInstancesByKindRequest) (*ListResourceInstancesResponse, error) {
 	out := new(ListResourceInstancesResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[36], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[39], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1922,7 +2072,53 @@ func (c *moduleServiceProtobufClient) ListResourceInstancesByModule(ctx context.
 
 func (c *moduleServiceProtobufClient) callListResourceInstancesByModule(ctx context.Context, in *ListResourceInstancesByModuleRequest) (*ListResourceInstancesResponse, error) {
 	out := new(ListResourceInstancesResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[37], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[40], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceProtobufClient) ListAllResourceInstances(ctx context.Context, in *ListAllResourceInstancesRequest) (*ListResourceInstancesResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "ListAllResourceInstances")
+	caller := c.callListAllResourceInstances
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *ListAllResourceInstancesRequest) (*ListResourceInstancesResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListAllResourceInstancesRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListAllResourceInstancesRequest) when calling interceptor")
+					}
+					return c.callListAllResourceInstances(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListResourceInstancesResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListResourceInstancesResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceProtobufClient) callListAllResourceInstances(ctx context.Context, in *ListAllResourceInstancesRequest) (*ListResourceInstancesResponse, error) {
+	out := new(ListResourceInstancesResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[41], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -1943,7 +2139,7 @@ func (c *moduleServiceProtobufClient) callListResourceInstancesByModule(ctx cont
 
 type moduleServiceJSONClient struct {
 	client      HTTPClient
-	urls        [38]string
+	urls        [42]string
 	interceptor twirp.Interceptor
 	opts        twirp.ClientOptions
 }
@@ -1971,13 +2167,14 @@ func NewModuleServiceJSONClient(baseURL string, client HTTPClient, opts ...twirp
 	// Build method URLs: <baseURL>[<prefix>]/<package>.<Service>/<Method>
 	serviceURL := sanitizeBaseURL(baseURL)
 	serviceURL += baseServicePath(pathPrefix, "module", "ModuleService")
-	urls := [38]string{
+	urls := [42]string{
 		serviceURL + "CreateModule",
 		serviceURL + "UpdateModule",
 		serviceURL + "DeleteModule",
 		serviceURL + "GetModule",
 		serviceURL + "GetModuleByName",
 		serviceURL + "GetModuleByModuleKey",
+		serviceURL + "GetModuleByModuleId",
 		serviceURL + "ListModules",
 		serviceURL + "SetModuleState",
 		serviceURL + "RegisterTriggers",
@@ -2001,6 +2198,8 @@ func NewModuleServiceJSONClient(baseURL string, client HTTPClient, opts ...twirp
 		serviceURL + "CreateModuleResource",
 		serviceURL + "ListModuleResources",
 		serviceURL + "DeleteModuleResources",
+		serviceURL + "DeleteResourceByManifestId",
+		serviceURL + "ArchiveResourceByManifestId",
 		serviceURL + "UpdateModuleResourceVersion",
 		serviceURL + "CompleteModuleInstall",
 		serviceURL + "CheckModuleResourceUsage",
@@ -2010,6 +2209,7 @@ func NewModuleServiceJSONClient(baseURL string, client HTTPClient, opts ...twirp
 		serviceURL + "GetResourceInstance",
 		serviceURL + "ListResourceInstancesByKind",
 		serviceURL + "ListResourceInstancesByModule",
+		serviceURL + "ListAllResourceInstances",
 	}
 
 	return &moduleServiceJSONClient{
@@ -2296,6 +2496,52 @@ func (c *moduleServiceJSONClient) callGetModuleByModuleKey(ctx context.Context, 
 	return out, nil
 }
 
+func (c *moduleServiceJSONClient) GetModuleByModuleId(ctx context.Context, in *GetModuleByModuleIdRequest) (*ModuleResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "GetModuleByModuleId")
+	caller := c.callGetModuleByModuleId
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *GetModuleByModuleIdRequest) (*ModuleResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetModuleByModuleIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetModuleByModuleIdRequest) when calling interceptor")
+					}
+					return c.callGetModuleByModuleId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ModuleResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ModuleResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceJSONClient) callGetModuleByModuleId(ctx context.Context, in *GetModuleByModuleIdRequest) (*ModuleResponse, error) {
+	out := new(ModuleResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[6], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
 func (c *moduleServiceJSONClient) ListModules(ctx context.Context, in *ListModulesRequest) (*ListModulesResponse, error) {
 	ctx = ctxsetters.WithPackageName(ctx, "module")
 	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
@@ -2327,7 +2573,7 @@ func (c *moduleServiceJSONClient) ListModules(ctx context.Context, in *ListModul
 
 func (c *moduleServiceJSONClient) callListModules(ctx context.Context, in *ListModulesRequest) (*ListModulesResponse, error) {
 	out := new(ListModulesResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[6], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[7], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2373,7 +2619,7 @@ func (c *moduleServiceJSONClient) SetModuleState(ctx context.Context, in *SetMod
 
 func (c *moduleServiceJSONClient) callSetModuleState(ctx context.Context, in *SetModuleStateRequest) (*ModuleResponse, error) {
 	out := new(ModuleResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[7], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[8], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2419,7 +2665,7 @@ func (c *moduleServiceJSONClient) RegisterTriggers(ctx context.Context, in *Regi
 
 func (c *moduleServiceJSONClient) callRegisterTriggers(ctx context.Context, in *RegisterTriggersRequest) (*ListTriggersResponse, error) {
 	out := new(ListTriggersResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[8], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[9], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2465,7 +2711,7 @@ func (c *moduleServiceJSONClient) ListTriggers(ctx context.Context, in *ListTrig
 
 func (c *moduleServiceJSONClient) callListTriggers(ctx context.Context, in *ListTriggersRequest) (*ListTriggersResponse, error) {
 	out := new(ListTriggersResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[9], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[10], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2511,7 +2757,7 @@ func (c *moduleServiceJSONClient) GetTriggerByCanonicalId(ctx context.Context, i
 
 func (c *moduleServiceJSONClient) callGetTriggerByCanonicalId(ctx context.Context, in *GetByCanonicalIdRequest) (*TriggerResponse, error) {
 	out := new(TriggerResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[10], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[11], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2557,7 +2803,7 @@ func (c *moduleServiceJSONClient) DeleteTriggersByModuleId(ctx context.Context, 
 
 func (c *moduleServiceJSONClient) callDeleteTriggersByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[11], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[12], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2603,7 +2849,7 @@ func (c *moduleServiceJSONClient) RegisterActions(ctx context.Context, in *Regis
 
 func (c *moduleServiceJSONClient) callRegisterActions(ctx context.Context, in *RegisterActionsRequest) (*ListActionsResponse, error) {
 	out := new(ListActionsResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[12], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[13], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2649,7 +2895,7 @@ func (c *moduleServiceJSONClient) ListActions(ctx context.Context, in *ListActio
 
 func (c *moduleServiceJSONClient) callListActions(ctx context.Context, in *ListActionsRequest) (*ListActionsResponse, error) {
 	out := new(ListActionsResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[13], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[14], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2695,7 +2941,7 @@ func (c *moduleServiceJSONClient) GetActionByCanonicalId(ctx context.Context, in
 
 func (c *moduleServiceJSONClient) callGetActionByCanonicalId(ctx context.Context, in *GetByCanonicalIdRequest) (*ActionResponse, error) {
 	out := new(ActionResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[14], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[15], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2741,7 +2987,7 @@ func (c *moduleServiceJSONClient) DeleteActionsByModuleId(ctx context.Context, i
 
 func (c *moduleServiceJSONClient) callDeleteActionsByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[15], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[16], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2787,7 +3033,7 @@ func (c *moduleServiceJSONClient) RegisterWidgets(ctx context.Context, in *Regis
 
 func (c *moduleServiceJSONClient) callRegisterWidgets(ctx context.Context, in *RegisterWidgetsRequest) (*ListWidgetsResponse, error) {
 	out := new(ListWidgetsResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[16], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[17], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2833,7 +3079,7 @@ func (c *moduleServiceJSONClient) ListWidgets(ctx context.Context, in *ListWidge
 
 func (c *moduleServiceJSONClient) callListWidgets(ctx context.Context, in *ListWidgetsRequest) (*ListWidgetsResponse, error) {
 	out := new(ListWidgetsResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[17], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[18], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2879,7 +3125,7 @@ func (c *moduleServiceJSONClient) GetWidgetByCanonicalId(ctx context.Context, in
 
 func (c *moduleServiceJSONClient) callGetWidgetByCanonicalId(ctx context.Context, in *GetByCanonicalIdRequest) (*WidgetResponse, error) {
 	out := new(WidgetResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[18], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[19], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2925,7 +3171,7 @@ func (c *moduleServiceJSONClient) DeleteWidgetsByModuleId(ctx context.Context, i
 
 func (c *moduleServiceJSONClient) callDeleteWidgetsByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[19], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[20], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -2971,7 +3217,7 @@ func (c *moduleServiceJSONClient) RegisterBackgroundTasks(ctx context.Context, i
 
 func (c *moduleServiceJSONClient) callRegisterBackgroundTasks(ctx context.Context, in *RegisterBackgroundTasksRequest) (*ListBackgroundTasksResponse, error) {
 	out := new(ListBackgroundTasksResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[20], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[21], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3017,7 +3263,7 @@ func (c *moduleServiceJSONClient) ListBackgroundTasks(ctx context.Context, in *L
 
 func (c *moduleServiceJSONClient) callListBackgroundTasks(ctx context.Context, in *ListBackgroundTasksRequest) (*ListBackgroundTasksResponse, error) {
 	out := new(ListBackgroundTasksResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[21], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[22], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3063,7 +3309,7 @@ func (c *moduleServiceJSONClient) DeleteBackgroundTasksByModuleId(ctx context.Co
 
 func (c *moduleServiceJSONClient) callDeleteBackgroundTasksByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[22], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[23], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3109,7 +3355,7 @@ func (c *moduleServiceJSONClient) RegisterAssets(ctx context.Context, in *Regist
 
 func (c *moduleServiceJSONClient) callRegisterAssets(ctx context.Context, in *RegisterAssetsRequest) (*ListAssetsResponse, error) {
 	out := new(ListAssetsResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[23], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[24], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3155,7 +3401,7 @@ func (c *moduleServiceJSONClient) ListAssets(ctx context.Context, in *ListAssets
 
 func (c *moduleServiceJSONClient) callListAssets(ctx context.Context, in *ListAssetsRequest) (*ListAssetsResponse, error) {
 	out := new(ListAssetsResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[24], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[25], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3201,7 +3447,7 @@ func (c *moduleServiceJSONClient) DeleteAssetsByModuleId(ctx context.Context, in
 
 func (c *moduleServiceJSONClient) callDeleteAssetsByModuleId(ctx context.Context, in *DeleteByModuleIdRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[25], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[26], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3247,7 +3493,7 @@ func (c *moduleServiceJSONClient) CreateModuleResource(ctx context.Context, in *
 
 func (c *moduleServiceJSONClient) callCreateModuleResource(ctx context.Context, in *CreateModuleResourceRequest) (*ModuleResourceResponse, error) {
 	out := new(ModuleResourceResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[26], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[27], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3293,7 +3539,7 @@ func (c *moduleServiceJSONClient) ListModuleResources(ctx context.Context, in *L
 
 func (c *moduleServiceJSONClient) callListModuleResources(ctx context.Context, in *ListModuleResourcesRequest) (*ListModuleResourcesResponse, error) {
 	out := new(ListModuleResourcesResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[27], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[28], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3339,7 +3585,99 @@ func (c *moduleServiceJSONClient) DeleteModuleResources(ctx context.Context, in 
 
 func (c *moduleServiceJSONClient) callDeleteModuleResources(ctx context.Context, in *DeleteModuleResourcesRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[28], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[29], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceJSONClient) DeleteResourceByManifestId(ctx context.Context, in *DeleteResourceByManifestIdRequest) (*ResponseStatus, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteResourceByManifestId")
+	caller := c.callDeleteResourceByManifestId
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *DeleteResourceByManifestIdRequest) (*ResponseStatus, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteResourceByManifestIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteResourceByManifestIdRequest) when calling interceptor")
+					}
+					return c.callDeleteResourceByManifestId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceJSONClient) callDeleteResourceByManifestId(ctx context.Context, in *DeleteResourceByManifestIdRequest) (*ResponseStatus, error) {
+	out := new(ResponseStatus)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[30], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceJSONClient) ArchiveResourceByManifestId(ctx context.Context, in *ArchiveResourceByManifestIdRequest) (*ResponseStatus, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "ArchiveResourceByManifestId")
+	caller := c.callArchiveResourceByManifestId
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *ArchiveResourceByManifestIdRequest) (*ResponseStatus, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ArchiveResourceByManifestIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ArchiveResourceByManifestIdRequest) when calling interceptor")
+					}
+					return c.callArchiveResourceByManifestId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceJSONClient) callArchiveResourceByManifestId(ctx context.Context, in *ArchiveResourceByManifestIdRequest) (*ResponseStatus, error) {
+	out := new(ResponseStatus)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[31], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3385,7 +3723,7 @@ func (c *moduleServiceJSONClient) UpdateModuleResourceVersion(ctx context.Contex
 
 func (c *moduleServiceJSONClient) callUpdateModuleResourceVersion(ctx context.Context, in *UpdateModuleResourceVersionRequest) (*ModuleResourceResponse, error) {
 	out := new(ModuleResourceResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[29], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[32], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3431,7 +3769,7 @@ func (c *moduleServiceJSONClient) CompleteModuleInstall(ctx context.Context, in 
 
 func (c *moduleServiceJSONClient) callCompleteModuleInstall(ctx context.Context, in *CompleteModuleInstallRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[30], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[33], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3477,7 +3815,7 @@ func (c *moduleServiceJSONClient) CheckModuleResourceUsage(ctx context.Context, 
 
 func (c *moduleServiceJSONClient) callCheckModuleResourceUsage(ctx context.Context, in *CheckModuleResourceUsageRequest) (*CheckModuleResourceUsageResponse, error) {
 	out := new(CheckModuleResourceUsageResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[31], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[34], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3523,7 +3861,7 @@ func (c *moduleServiceJSONClient) CompleteModuleDelete(ctx context.Context, in *
 
 func (c *moduleServiceJSONClient) callCompleteModuleDelete(ctx context.Context, in *CompleteModuleDeleteRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[32], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[35], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3569,7 +3907,7 @@ func (c *moduleServiceJSONClient) CreateResourceInstance(ctx context.Context, in
 
 func (c *moduleServiceJSONClient) callCreateResourceInstance(ctx context.Context, in *CreateResourceInstanceRequest) (*ResourceInstanceResponse, error) {
 	out := new(ResourceInstanceResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[33], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[36], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3615,7 +3953,7 @@ func (c *moduleServiceJSONClient) DeleteResourceInstance(ctx context.Context, in
 
 func (c *moduleServiceJSONClient) callDeleteResourceInstance(ctx context.Context, in *DeleteResourceInstanceRequest) (*ResponseStatus, error) {
 	out := new(ResponseStatus)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[34], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[37], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3661,7 +3999,7 @@ func (c *moduleServiceJSONClient) GetResourceInstance(ctx context.Context, in *G
 
 func (c *moduleServiceJSONClient) callGetResourceInstance(ctx context.Context, in *GetResourceInstanceRequest) (*ResourceInstanceResponse, error) {
 	out := new(ResourceInstanceResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[35], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[38], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3707,7 +4045,7 @@ func (c *moduleServiceJSONClient) ListResourceInstancesByKind(ctx context.Contex
 
 func (c *moduleServiceJSONClient) callListResourceInstancesByKind(ctx context.Context, in *ListResourceInstancesByKindRequest) (*ListResourceInstancesResponse, error) {
 	out := new(ListResourceInstancesResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[36], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[39], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3753,7 +4091,53 @@ func (c *moduleServiceJSONClient) ListResourceInstancesByModule(ctx context.Cont
 
 func (c *moduleServiceJSONClient) callListResourceInstancesByModule(ctx context.Context, in *ListResourceInstancesByModuleRequest) (*ListResourceInstancesResponse, error) {
 	out := new(ListResourceInstancesResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[37], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[40], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *moduleServiceJSONClient) ListAllResourceInstances(ctx context.Context, in *ListAllResourceInstancesRequest) (*ListResourceInstancesResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleService")
+	ctx = ctxsetters.WithMethodName(ctx, "ListAllResourceInstances")
+	caller := c.callListAllResourceInstances
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *ListAllResourceInstancesRequest) (*ListResourceInstancesResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListAllResourceInstancesRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListAllResourceInstancesRequest) when calling interceptor")
+					}
+					return c.callListAllResourceInstances(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListResourceInstancesResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListResourceInstancesResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleServiceJSONClient) callListAllResourceInstances(ctx context.Context, in *ListAllResourceInstancesRequest) (*ListResourceInstancesResponse, error) {
+	out := new(ListResourceInstancesResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[41], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -3883,6 +4267,9 @@ func (s *moduleServiceServer) ServeHTTP(resp http.ResponseWriter, req *http.Requ
 	case "GetModuleByModuleKey":
 		s.serveGetModuleByModuleKey(ctx, resp, req)
 		return
+	case "GetModuleByModuleId":
+		s.serveGetModuleByModuleId(ctx, resp, req)
+		return
 	case "ListModules":
 		s.serveListModules(ctx, resp, req)
 		return
@@ -3952,6 +4339,12 @@ func (s *moduleServiceServer) ServeHTTP(resp http.ResponseWriter, req *http.Requ
 	case "DeleteModuleResources":
 		s.serveDeleteModuleResources(ctx, resp, req)
 		return
+	case "DeleteResourceByManifestId":
+		s.serveDeleteResourceByManifestId(ctx, resp, req)
+		return
+	case "ArchiveResourceByManifestId":
+		s.serveArchiveResourceByManifestId(ctx, resp, req)
+		return
 	case "UpdateModuleResourceVersion":
 		s.serveUpdateModuleResourceVersion(ctx, resp, req)
 		return
@@ -3978,6 +4371,9 @@ func (s *moduleServiceServer) ServeHTTP(resp http.ResponseWriter, req *http.Requ
 		return
 	case "ListResourceInstancesByModule":
 		s.serveListResourceInstancesByModule(ctx, resp, req)
+		return
+	case "ListAllResourceInstances":
+		s.serveListAllResourceInstances(ctx, resp, req)
 		return
 	default:
 		msg := fmt.Sprintf("no handler for path %q", req.URL.Path)
@@ -5043,6 +5439,186 @@ func (s *moduleServiceServer) serveGetModuleByModuleKeyProtobuf(ctx context.Cont
 	}
 	if respContent == nil {
 		s.writeError(ctx, resp, twirp.InternalError("received a nil *ModuleResponse and nil error while calling GetModuleByModuleKey. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveGetModuleByModuleId(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveGetModuleByModuleIdJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveGetModuleByModuleIdProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleServiceServer) serveGetModuleByModuleIdJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "GetModuleByModuleId")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(GetModuleByModuleIdRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleService.GetModuleByModuleId
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *GetModuleByModuleIdRequest) (*ModuleResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetModuleByModuleIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetModuleByModuleIdRequest) when calling interceptor")
+					}
+					return s.ModuleService.GetModuleByModuleId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ModuleResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ModuleResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ModuleResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ModuleResponse and nil error while calling GetModuleByModuleId. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveGetModuleByModuleIdProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "GetModuleByModuleId")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(GetModuleByModuleIdRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleService.GetModuleByModuleId
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *GetModuleByModuleIdRequest) (*ModuleResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetModuleByModuleIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetModuleByModuleIdRequest) when calling interceptor")
+					}
+					return s.ModuleService.GetModuleByModuleId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ModuleResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ModuleResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ModuleResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ModuleResponse and nil error while calling GetModuleByModuleId. nil responses are not supported"))
 		return
 	}
 
@@ -9206,6 +9782,366 @@ func (s *moduleServiceServer) serveDeleteModuleResourcesProtobuf(ctx context.Con
 	callResponseSent(ctx, s.hooks)
 }
 
+func (s *moduleServiceServer) serveDeleteResourceByManifestId(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveDeleteResourceByManifestIdJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveDeleteResourceByManifestIdProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleServiceServer) serveDeleteResourceByManifestIdJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteResourceByManifestId")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(DeleteResourceByManifestIdRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleService.DeleteResourceByManifestId
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *DeleteResourceByManifestIdRequest) (*ResponseStatus, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteResourceByManifestIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteResourceByManifestIdRequest) when calling interceptor")
+					}
+					return s.ModuleService.DeleteResourceByManifestId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ResponseStatus
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ResponseStatus and nil error while calling DeleteResourceByManifestId. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveDeleteResourceByManifestIdProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "DeleteResourceByManifestId")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(DeleteResourceByManifestIdRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleService.DeleteResourceByManifestId
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *DeleteResourceByManifestIdRequest) (*ResponseStatus, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*DeleteResourceByManifestIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*DeleteResourceByManifestIdRequest) when calling interceptor")
+					}
+					return s.ModuleService.DeleteResourceByManifestId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ResponseStatus
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ResponseStatus and nil error while calling DeleteResourceByManifestId. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveArchiveResourceByManifestId(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveArchiveResourceByManifestIdJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveArchiveResourceByManifestIdProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleServiceServer) serveArchiveResourceByManifestIdJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "ArchiveResourceByManifestId")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(ArchiveResourceByManifestIdRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleService.ArchiveResourceByManifestId
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *ArchiveResourceByManifestIdRequest) (*ResponseStatus, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ArchiveResourceByManifestIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ArchiveResourceByManifestIdRequest) when calling interceptor")
+					}
+					return s.ModuleService.ArchiveResourceByManifestId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ResponseStatus
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ResponseStatus and nil error while calling ArchiveResourceByManifestId. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveArchiveResourceByManifestIdProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "ArchiveResourceByManifestId")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(ArchiveResourceByManifestIdRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleService.ArchiveResourceByManifestId
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *ArchiveResourceByManifestIdRequest) (*ResponseStatus, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ArchiveResourceByManifestIdRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ArchiveResourceByManifestIdRequest) when calling interceptor")
+					}
+					return s.ModuleService.ArchiveResourceByManifestId(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ResponseStatus)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ResponseStatus) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ResponseStatus
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ResponseStatus and nil error while calling ArchiveResourceByManifestId. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
 func (s *moduleServiceServer) serveUpdateModuleResourceVersion(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
 	header := req.Header.Get("Content-Type")
 	i := strings.Index(header, ";")
@@ -10826,6 +11762,186 @@ func (s *moduleServiceServer) serveListResourceInstancesByModuleProtobuf(ctx con
 	callResponseSent(ctx, s.hooks)
 }
 
+func (s *moduleServiceServer) serveListAllResourceInstances(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveListAllResourceInstancesJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveListAllResourceInstancesProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleServiceServer) serveListAllResourceInstancesJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "ListAllResourceInstances")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(ListAllResourceInstancesRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleService.ListAllResourceInstances
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *ListAllResourceInstancesRequest) (*ListResourceInstancesResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListAllResourceInstancesRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListAllResourceInstancesRequest) when calling interceptor")
+					}
+					return s.ModuleService.ListAllResourceInstances(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListResourceInstancesResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListResourceInstancesResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ListResourceInstancesResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ListResourceInstancesResponse and nil error while calling ListAllResourceInstances. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleServiceServer) serveListAllResourceInstancesProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "ListAllResourceInstances")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(ListAllResourceInstancesRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleService.ListAllResourceInstances
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *ListAllResourceInstancesRequest) (*ListResourceInstancesResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*ListAllResourceInstancesRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*ListAllResourceInstancesRequest) when calling interceptor")
+					}
+					return s.ModuleService.ListAllResourceInstances(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*ListResourceInstancesResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*ListResourceInstancesResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *ListResourceInstancesResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *ListResourceInstancesResponse and nil error while calling ListAllResourceInstances. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
 func (s *moduleServiceServer) ServiceDescriptor() ([]byte, int) {
 	return twirpFileDescriptor6, 0
 }
@@ -10842,115 +11958,119 @@ func (s *moduleServiceServer) PathPrefix() string {
 }
 
 var twirpFileDescriptor6 = []byte{
-	// 1755 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xcc, 0x59, 0x4f, 0x6f, 0xdb, 0xc6,
-	0x12, 0x87, 0x64, 0x5b, 0xb2, 0x46, 0xb2, 0x6c, 0xac, 0xff, 0x31, 0x52, 0x6c, 0xf9, 0xd1, 0xf9,
-	0x63, 0x07, 0x81, 0x8d, 0xe7, 0x3c, 0x3c, 0xa0, 0x40, 0x83, 0xc2, 0x76, 0x10, 0x43, 0x70, 0x13,
-	0x34, 0xb2, 0xdd, 0x00, 0x29, 0x50, 0x81, 0x16, 0x57, 0x32, 0x61, 0x89, 0x54, 0xb9, 0x94, 0x13,
-	0xdd, 0x0a, 0xf4, 0xd8, 0x2f, 0xd4, 0x5b, 0x4f, 0x3d, 0xf6, 0xd4, 0x53, 0x3f, 0x40, 0xbf, 0x47,
-	0xc1, 0xdd, 0x1d, 0x92, 0x4b, 0x91, 0xb4, 0xe2, 0xfa, 0xd0, 0x9b, 0x39, 0x33, 0xfb, 0xdb, 0xd9,
-	0x99, 0xdf, 0xcc, 0xce, 0x5a, 0x50, 0x19, 0x38, 0xe6, 0xa8, 0x4f, 0xf7, 0x86, 0xae, 0xe3, 0x39,
-	0xa4, 0x20, 0xbe, 0x6a, 0x95, 0x8e, 0x33, 0x18, 0x38, 0xb6, 0x90, 0xd6, 0x1a, 0x3d, 0xc7, 0xe9,
-	0xf5, 0xe9, 0x3e, 0xff, 0xba, 0x1c, 0x75, 0xf7, 0x3d, 0x6b, 0x40, 0x99, 0x67, 0x0c, 0x86, 0xd2,
-	0x60, 0x45, 0x2c, 0x6b, 0x7b, 0xae, 0xd5, 0xeb, 0x51, 0x57, 0x4a, 0x97, 0xa5, 0xd4, 0xe8, 0x78,
-	0x56, 0x80, 0xb5, 0x2a, 0x85, 0x2e, 0x65, 0xce, 0xc8, 0xed, 0xc8, 0x8d, 0x6b, 0x9b, 0x31, 0x71,
-	0xdb, 0xb2, 0x99, 0x67, 0xd8, 0x81, 0x1e, 0xb1, 0x3e, 0x5a, 0x66, 0x8f, 0x7a, 0x52, 0x48, 0x70,
-	0x03, 0xc6, 0x02, 0xd9, 0xea, 0xa5, 0xd1, 0xb9, 0xee, 0xb9, 0xce, 0xc8, 0x36, 0xdb, 0x9e, 0xc1,
-	0xae, 0x85, 0x58, 0xff, 0x63, 0x06, 0x0a, 0x6f, 0xb8, 0x35, 0xa9, 0x42, 0xde, 0x32, 0xb5, 0xdc,
-	0x56, 0x6e, 0xa7, 0xd4, 0xca, 0x5b, 0x26, 0x21, 0x30, 0x6b, 0x1b, 0x03, 0xaa, 0xe5, 0xb9, 0x84,
-	0xff, 0x4d, 0xea, 0x50, 0x92, 0xd8, 0x96, 0xa9, 0x2d, 0x70, 0xc5, 0xbc, 0x10, 0x34, 0x4d, 0xa2,
-	0x41, 0xf1, 0x86, 0xba, 0xcc, 0x72, 0x6c, 0x6d, 0x86, 0xab, 0xf0, 0x93, 0xd4, 0x60, 0x7e, 0x60,
-	0xd8, 0x56, 0x97, 0x32, 0x4f, 0x9b, 0x95, 0xab, 0xe4, 0x37, 0x59, 0x81, 0x39, 0xe6, 0x19, 0x1e,
-	0xd5, 0xe6, 0xb8, 0x42, 0x7c, 0x90, 0x06, 0x94, 0x0d, 0xb7, 0x73, 0x65, 0xdd, 0xd0, 0xf6, 0x35,
-	0x1d, 0x6b, 0x05, 0xae, 0x03, 0x29, 0x3a, 0xa5, 0x63, 0xf2, 0x3f, 0x28, 0x75, 0x47, 0x36, 0x8f,
-	0x20, 0xd3, 0x8a, 0x5b, 0x33, 0x3b, 0xe5, 0x83, 0xb5, 0x3d, 0x99, 0x33, 0x71, 0xa0, 0xd7, 0x52,
-	0xdd, 0x0a, 0x0d, 0xc9, 0x4b, 0xa8, 0xf0, 0x00, 0xf6, 0xfb, 0xd4, 0x6c, 0x1b, 0x9e, 0x36, 0xbf,
-	0x95, 0xdb, 0x29, 0x1f, 0xd4, 0xf6, 0x44, 0x22, 0xf7, 0x30, 0x91, 0x7b, 0xe7, 0x98, 0xc8, 0x56,
-	0x39, 0xb0, 0x3f, 0xf4, 0xc8, 0x17, 0x00, 0xa3, 0xa1, 0x69, 0x78, 0x62, 0x71, 0xe9, 0xd6, 0xc5,
-	0x25, 0x69, 0x7d, 0xe8, 0x91, 0x27, 0xb0, 0xd8, 0x71, 0x29, 0x5f, 0x7a, 0x39, 0x6e, 0x7b, 0xe3,
-	0x21, 0xd5, 0x80, 0x1f, 0x6a, 0x41, 0x8a, 0x8f, 0xc6, 0xe7, 0xe3, 0x21, 0x25, 0x8f, 0xa0, 0x1a,
-	0xb1, 0x73, 0x69, 0x57, 0x2b, 0x73, 0xb3, 0x4a, 0x60, 0xd6, 0xa2, 0x5d, 0xb2, 0x01, 0x20, 0xf3,
-	0xe0, 0x47, 0xa7, 0xc2, 0x2d, 0x64, 0x66, 0x4e, 0xe9, 0x58, 0xff, 0x2b, 0x07, 0x55, 0x35, 0x08,
-	0x13, 0xd9, 0x55, 0x32, 0x99, 0x8f, 0x65, 0xb2, 0x01, 0x65, 0xcc, 0x8f, 0xaf, 0x16, 0xd9, 0x04,
-	0x14, 0x35, 0xf9, 0xea, 0xae, 0xd5, 0xa7, 0x6d, 0x4e, 0x10, 0x99, 0x51, 0x5f, 0xf0, 0xd6, 0x27,
-	0xc9, 0x03, 0xe0, 0x7f, 0x73, 0xd7, 0x44, 0x52, 0x8b, 0xfe, 0xb7, 0x9f, 0xb5, 0x06, 0x94, 0xa9,
-	0xed, 0xb9, 0xe3, 0xf6, 0xd0, 0xb1, 0x6c, 0x0f, 0xd3, 0xca, 0x45, 0xdf, 0xf8, 0x12, 0x9f, 0x43,
-	0xee, 0xc8, 0xf6, 0xeb, 0x48, 0x2b, 0x8a, 0xa5, 0xf2, 0x33, 0xa0, 0xe3, 0x7c, 0x48, 0x47, 0xfd,
-	0xf7, 0x3c, 0x2c, 0x1f, 0xf3, 0xb8, 0x88, 0xd3, 0xb6, 0xe8, 0x0f, 0x23, 0x9f, 0x53, 0x68, 0x9b,
-	0x8b, 0x50, 0x37, 0xc2, 0xce, 0x7c, 0x3a, 0x3b, 0x67, 0x62, 0xec, 0x8c, 0xf1, 0x70, 0x76, 0x82,
-	0x87, 0x87, 0x51, 0x1e, 0xce, 0x71, 0x1e, 0x6e, 0x23, 0x0f, 0xa3, 0xae, 0x05, 0x6c, 0x14, 0x2e,
-	0x46, 0x49, 0x99, 0x40, 0x8d, 0xc2, 0x74, 0xd4, 0x28, 0xde, 0x4a, 0x8d, 0xf9, 0x18, 0x35, 0xd4,
-	0xbc, 0x97, 0xd4, 0xbc, 0xeb, 0xbf, 0xe5, 0xa0, 0x9e, 0xe1, 0x74, 0x9c, 0x17, 0xb9, 0x6c, 0x5e,
-	0xe4, 0x33, 0x78, 0x31, 0x93, 0xc9, 0x8b, 0xd9, 0x2c, 0x5e, 0xcc, 0x25, 0xf3, 0xa2, 0x10, 0xe1,
-	0xc5, 0xaf, 0x39, 0x58, 0xbe, 0xe0, 0xa5, 0xa7, 0xf2, 0x22, 0x5e, 0x04, 0xff, 0x5a, 0x4e, 0xe8,
-	0xbb, 0xb0, 0xfc, 0x8a, 0xf6, 0xe9, 0x14, 0xc4, 0xd6, 0x75, 0x58, 0x3a, 0xa1, 0x5e, 0xe6, 0x41,
-	0xf5, 0xe7, 0xb0, 0x16, 0xd8, 0x1c, 0x8d, 0xfd, 0x6c, 0x64, 0x21, 0x7e, 0x09, 0xf5, 0x88, 0xf5,
-	0x1b, 0xe4, 0x0e, 0x2e, 0x51, 0x19, 0x96, 0x8b, 0x37, 0x9f, 0x67, 0x40, 0xbe, 0xb6, 0x98, 0x5c,
-	0xce, 0x70, 0x51, 0xd0, 0xe6, 0x73, 0x91, 0x36, 0xaf, 0x1f, 0xc2, 0xea, 0x19, 0xee, 0x74, 0xe6,
-	0x4b, 0xb2, 0x2a, 0x38, 0x80, 0xc8, 0x47, 0x21, 0xae, 0xb0, 0xd5, 0xb5, 0x28, 0x1b, 0x3a, 0x36,
-	0xa3, 0x64, 0x0f, 0x0a, 0xbe, 0x6a, 0xc4, 0xf8, 0x6a, 0xff, 0x5e, 0x90, 0xb7, 0x36, 0x5a, 0x9c,
-	0x71, 0x6d, 0x4b, 0x5a, 0x91, 0x27, 0x20, 0xaf, 0x77, 0x0e, 0x5c, 0x3e, 0xa8, 0xaa, 0xf7, 0x48,
-	0x4b, 0x6a, 0x75, 0x07, 0x96, 0x95, 0x83, 0xdd, 0x71, 0xbb, 0x1d, 0x28, 0x0a, 0x40, 0xa6, 0xe5,
-	0x39, 0x37, 0xe2, 0xfb, 0xa1, 0xda, 0x6f, 0xe3, 0x0f, 0x8f, 0x9d, 0xc1, 0x30, 0xe4, 0x41, 0x53,
-	0x5c, 0x46, 0x18, 0x25, 0xa5, 0x98, 0x73, 0x09, 0x4d, 0x5c, 0x28, 0x23, 0xd5, 0x28, 0x33, 0xf7,
-	0x36, 0xd6, 0x11, 0x63, 0xf7, 0xf5, 0x5a, 0x70, 0x24, 0x41, 0x6e, 0x74, 0x7d, 0x05, 0xe6, 0xa8,
-	0xeb, 0x3a, 0x2e, 0xde, 0xd5, 0xfc, 0x83, 0x7c, 0x05, 0x8b, 0xae, 0x70, 0xa8, 0xdd, 0x71, 0x6c,
-	0x8f, 0x7e, 0x12, 0x8d, 0x5d, 0x89, 0x04, 0x57, 0x1f, 0x0b, 0x6d, 0xab, 0xea, 0x2a, 0xdf, 0xfa,
-	0x4f, 0x39, 0x98, 0xbf, 0x60, 0x46, 0x8f, 0xfa, 0xfd, 0xab, 0x01, 0x65, 0x39, 0xea, 0xf0, 0x4e,
-	0x28, 0x7b, 0x8c, 0x10, 0xf1, 0x36, 0x58, 0x87, 0x12, 0xce, 0x42, 0xc1, 0xcd, 0x25, 0x04, 0xe2,
-	0xd0, 0x52, 0xc9, 0x0f, 0x3d, 0x13, 0x5d, 0x8d, 0x87, 0x46, 0x27, 0xc5, 0xd9, 0xf0, 0x53, 0xff,
-	0x33, 0x07, 0x0b, 0x2d, 0x39, 0x66, 0x71, 0x6f, 0x7c, 0xb0, 0x70, 0xee, 0x0a, 0xda, 0x1d, 0x8a,
-	0x9a, 0x26, 0xd9, 0x86, 0x85, 0xc0, 0x80, 0x7b, 0x2b, 0xdc, 0xa9, 0xa0, 0x90, 0xfb, 0x1b, 0x35,
-	0x8a, 0x38, 0x15, 0x18, 0x71, 0xb7, 0x76, 0xa1, 0x38, 0x62, 0xbc, 0xb1, 0x6b, 0xb3, 0x9c, 0x14,
-	0x4b, 0x48, 0x0a, 0x0c, 0x4c, 0xab, 0xe0, 0x1b, 0x1c, 0x8d, 0xc9, 0x01, 0xac, 0x06, 0x78, 0xa6,
-	0xc5, 0x86, 0x7d, 0x63, 0x2c, 0x70, 0x45, 0x52, 0x96, 0x51, 0xf9, 0x4a, 0xe8, 0x7c, 0x78, 0x9d,
-	0x42, 0xe3, 0xf8, 0x8a, 0x76, 0xae, 0x83, 0x4a, 0x09, 0x4f, 0x39, 0x15, 0x97, 0x1e, 0x43, 0xd5,
-	0x18, 0x0e, 0xfb, 0x56, 0xc7, 0xf0, 0xdb, 0x53, 0x18, 0xf8, 0x85, 0x88, 0xb4, 0x69, 0xea, 0x3f,
-	0xe6, 0x60, 0x2b, 0x7d, 0x9f, 0x3b, 0xd6, 0xcb, 0x73, 0x28, 0x58, 0x76, 0x7b, 0xc4, 0xa8, 0x2c,
-	0x97, 0x55, 0x8c, 0x8c, 0x0a, 0x3f, 0x67, 0xd9, 0x17, 0x8c, 0xea, 0x3f, 0xe7, 0xa1, 0xae, 0xd6,
-	0x8c, 0xe8, 0xa3, 0xf7, 0x53, 0x32, 0x61, 0x61, 0xcc, 0x24, 0x17, 0xc6, 0xac, 0x5a, 0x18, 0x4b,
-	0xc2, 0xf3, 0x60, 0x7c, 0xc7, 0xeb, 0x20, 0xe5, 0x0c, 0x55, 0x7e, 0x06, 0x94, 0xb1, 0x7f, 0x5e,
-	0x59, 0xff, 0x87, 0x75, 0x71, 0x7c, 0x6c, 0xe3, 0x4d, 0x73, 0x9a, 0x40, 0xe8, 0x1d, 0x58, 0x3f,
-	0xa1, 0xde, 0xd1, 0xf8, 0xd8, 0xb0, 0x1d, 0xdb, 0xea, 0x18, 0xfd, 0x70, 0xdd, 0x7f, 0xa0, 0xd2,
-	0x41, 0x69, 0xb8, 0xb4, 0xdc, 0x09, 0x2d, 0xa7, 0x65, 0x4b, 0x1f, 0x16, 0xcf, 0xc5, 0xc3, 0xe8,
-	0xce, 0xdc, 0xd8, 0x85, 0xa2, 0x7c, 0x5b, 0xc9, 0xde, 0xbd, 0x88, 0x81, 0x45, 0x64, 0xd4, 0xfb,
-	0xf7, 0xc4, 0xa1, 0xbc, 0x6d, 0xef, 0x7e, 0x4f, 0x88, 0x27, 0x5b, 0xfc, 0x9e, 0x90, 0xb8, 0x52,
-	0x7b, 0xf0, 0xcb, 0x03, 0x58, 0x90, 0x57, 0x1a, 0x75, 0x6f, 0xac, 0x0e, 0x25, 0xc7, 0x50, 0x89,
-	0xde, 0xfb, 0xa4, 0x9e, 0x34, 0x0d, 0xc8, 0x00, 0xd7, 0x62, 0xcf, 0x98, 0xc0, 0xdd, 0x63, 0xa8,
-	0x44, 0x67, 0x9a, 0x10, 0x24, 0x61, 0xd2, 0xc9, 0x02, 0x89, 0xce, 0x15, 0x21, 0x48, 0xc2, 0xb4,
-	0x51, 0x4b, 0x09, 0x08, 0x79, 0x09, 0xa5, 0x60, 0x3e, 0x20, 0x1a, 0x22, 0xc4, 0x87, 0x90, 0x54,
-	0x1f, 0x9a, 0xb0, 0x18, 0x1b, 0x46, 0xc8, 0xe6, 0x04, 0x88, 0x32, 0xa5, 0xa4, 0x42, 0x9d, 0xc1,
-	0x4a, 0xd2, 0xa4, 0x42, 0xb6, 0x13, 0xf0, 0xe2, 0x73, 0x4c, 0x2a, 0xe8, 0x6b, 0x28, 0x47, 0xee,
-	0x79, 0x52, 0x43, 0xb3, 0xc9, 0xa9, 0xa6, 0x56, 0x4f, 0xd4, 0x49, 0x9c, 0x13, 0xa8, 0xaa, 0xc3,
-	0x0d, 0xd9, 0x40, 0xf3, 0xc4, 0xa1, 0x27, 0xd5, 0xa1, 0x77, 0xb0, 0xd4, 0xa2, 0x3d, 0x8b, 0x79,
-	0xd4, 0x95, 0xb4, 0x66, 0xa4, 0x11, 0x76, 0x10, 0x55, 0x83, 0x60, 0x0f, 0xa3, 0xae, 0x85, 0xca,
-	0x20, 0x07, 0x95, 0xa8, 0x9c, 0xd4, 0x93, 0xad, 0xa7, 0x81, 0x3a, 0xe3, 0xbd, 0x42, 0x8a, 0x95,
-	0x96, 0x11, 0x3a, 0x99, 0xd2, 0x4c, 0x6a, 0xeb, 0xf1, 0x72, 0x0d, 0x41, 0x35, 0xc1, 0x48, 0xdc,
-	0x2e, 0x6c, 0x60, 0x21, 0x6a, 0x4a, 0x6b, 0x4b, 0xe5, 0xed, 0x5b, 0x58, 0xc4, 0x68, 0x1d, 0xca,
-	0xb7, 0xd7, 0x66, 0x3c, 0x8c, 0x52, 0x91, 0x98, 0xe0, 0x40, 0xa7, 0x12, 0x05, 0xb1, 0x6a, 0x89,
-	0xb6, 0x53, 0xe0, 0xbc, 0xe3, 0xd3, 0xb9, 0x90, 0x7e, 0x66, 0x00, 0xd7, 0x62, 0x3d, 0x08, 0x21,
-	0x5b, 0xd8, 0xf8, 0xe5, 0x5e, 0xf7, 0x1c, 0xbe, 0xf7, 0xfc, 0xdf, 0x4d, 0x09, 0xe1, 0x93, 0x8a,
-	0xc4, 0x63, 0x07, 0x3a, 0x35, 0x7c, 0x88, 0x55, 0x4b, 0xb4, 0x9d, 0x02, 0x47, 0x84, 0x4f, 0x48,
-	0xef, 0x1a, 0x3e, 0xb1, 0x7a, 0x32, 0x7c, 0x72, 0xaf, 0xfb, 0x08, 0x5f, 0x17, 0xd6, 0x31, 0x4a,
-	0x47, 0xc1, 0xff, 0xe2, 0xce, 0x0d, 0x76, 0xcd, 0xc8, 0x93, 0x78, 0x18, 0x63, 0x06, 0x08, 0xbd,
-	0x1d, 0x0d, 0xc3, 0x84, 0x8d, 0xf4, 0xfd, 0x7b, 0xf1, 0x4c, 0x89, 0xef, 0xa1, 0x67, 0xae, 0xfd,
-	0x0c, 0xfc, 0x0f, 0xd0, 0x90, 0x47, 0x57, 0x0d, 0xee, 0x23, 0x46, 0xa7, 0x50, 0x0d, 0x0a, 0x91,
-	0x31, 0x9f, 0x15, 0x1b, 0x13, 0x05, 0xca, 0xe5, 0x08, 0xa4, 0xd6, 0x9c, 0x54, 0x05, 0x77, 0x1d,
-	0x84, 0x52, 0xf2, 0x20, 0xc9, 0xf2, 0x76, 0x90, 0x77, 0xb0, 0x26, 0x0b, 0x89, 0xcb, 0xef, 0xe3,
-	0x90, 0xdf, 0xc1, 0x8a, 0x7a, 0xef, 0x8b, 0x71, 0x8f, 0x6c, 0x27, 0x4f, 0x05, 0x42, 0x8b, 0xa0,
-	0x9b, 0x13, 0x77, 0x84, 0x54, 0xab, 0xd9, 0x57, 0xb5, 0xb1, 0xec, 0xc7, 0x94, 0x89, 0xd9, 0x9f,
-	0xb0, 0x91, 0xf8, 0x17, 0xb0, 0xaa, 0x8e, 0x0a, 0xb8, 0xc3, 0xa3, 0xe4, 0x49, 0x22, 0xb6, 0x47,
-	0x5a, 0x4c, 0x2c, 0xa8, 0xab, 0x63, 0x8c, 0x58, 0xf7, 0xad, 0x7c, 0x90, 0x3e, 0x4b, 0x9e, 0x75,
-	0x14, 0xa3, 0x69, 0x23, 0x74, 0x01, 0xab, 0x89, 0x8f, 0xea, 0xf0, 0x04, 0x59, 0x6f, 0xee, 0xd4,
-	0x13, 0x0c, 0x40, 0x4b, 0x7b, 0xfa, 0x90, 0xa7, 0x01, 0x72, 0xf6, 0x23, 0xac, 0xb6, 0x73, 0xbb,
-	0x61, 0x38, 0xf9, 0x24, 0x3d, 0x73, 0x22, 0x24, 0x4a, 0x7f, 0x04, 0xa5, 0x9e, 0xc1, 0x80, 0x35,
-	0xc1, 0x3d, 0xdc, 0xb3, 0x29, 0x7f, 0x6d, 0x20, 0x8f, 0x55, 0x6e, 0xc6, 0xf5, 0x08, 0xbc, 0x15,
-	0x7f, 0xd7, 0x84, 0x06, 0xd2, 0xef, 0xf7, 0x58, 0x4f, 0xe9, 0x5b, 0x24, 0xeb, 0x6f, 0xaf, 0xaa,
-	0xe5, 0x13, 0xde, 0xc1, 0x55, 0x54, 0x3d, 0x72, 0x05, 0xdc, 0xdd, 0xeb, 0x21, 0xd4, 0xfd, 0xa2,
-	0x88, 0xeb, 0xd9, 0xd1, 0xf8, 0xd4, 0xb2, 0xcd, 0x90, 0x9e, 0x19, 0x46, 0xb8, 0xd9, 0xe3, 0x4c,
-	0xdb, 0x60, 0x47, 0x0f, 0x36, 0x52, 0xc0, 0xe4, 0xdc, 0xfd, 0xfc, 0x96, 0x3d, 0xd5, 0x59, 0x7c,
-	0xba, 0x5d, 0x8f, 0x76, 0x3f, 0x3c, 0xed, 0x59, 0xde, 0xd5, 0xe8, 0xd2, 0x0f, 0xf2, 0xfe, 0x47,
-	0xa7, 0xdf, 0x1d, 0x0f, 0x0c, 0xbf, 0xeb, 0xee, 0x7f, 0x74, 0x9c, 0xee, 0xa7, 0x17, 0xfb, 0xe6,
-	0xe5, 0x7e, 0x8f, 0xda, 0xfb, 0x37, 0xff, 0xbd, 0x2c, 0xf0, 0xdf, 0x3b, 0x5e, 0xfc, 0x1d, 0x00,
-	0x00, 0xff, 0xff, 0x5c, 0x77, 0x26, 0x93, 0x29, 0x1b, 0x00, 0x00,
+	// 1823 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xcc, 0x59, 0x4b, 0x6f, 0xdb, 0xc6,
+	0x16, 0x86, 0x64, 0x5b, 0xb2, 0x8e, 0x64, 0xd9, 0x18, 0xbf, 0x18, 0x2a, 0xb6, 0x7c, 0xe9, 0x3c,
+	0xec, 0x20, 0xb0, 0x71, 0x9d, 0x8b, 0x0b, 0x04, 0xb8, 0xc1, 0x85, 0xe5, 0x20, 0x81, 0xe0, 0x9b,
+	0xe0, 0x46, 0xb6, 0x1b, 0x20, 0x05, 0x2a, 0xd0, 0xd2, 0x48, 0x66, 0x2d, 0x91, 0x2a, 0x49, 0x39,
+	0xe1, 0xae, 0x40, 0x97, 0xfd, 0x49, 0x5d, 0x74, 0xd5, 0x65, 0x57, 0x5d, 0xf5, 0x07, 0xf4, 0x7f,
+	0x14, 0x9c, 0x17, 0x39, 0x23, 0x92, 0x92, 0x5d, 0x2f, 0xba, 0x33, 0xcf, 0x39, 0xf3, 0xcd, 0xcc,
+	0x39, 0xdf, 0x79, 0x8c, 0x0c, 0x95, 0xa1, 0xd3, 0x1d, 0x0f, 0xf0, 0xc1, 0xc8, 0x75, 0x7c, 0x07,
+	0x15, 0xe8, 0x97, 0x5e, 0xe9, 0x38, 0xc3, 0xa1, 0x63, 0x53, 0xa9, 0x5e, 0xef, 0x3b, 0x4e, 0x7f,
+	0x80, 0x0f, 0xc9, 0xd7, 0xe5, 0xb8, 0x77, 0xe8, 0x5b, 0x43, 0xec, 0xf9, 0xe6, 0x70, 0xc4, 0x0c,
+	0xd6, 0xe8, 0xb2, 0xb6, 0xef, 0x5a, 0xfd, 0x3e, 0x76, 0x99, 0x74, 0x95, 0x49, 0xcd, 0x8e, 0x6f,
+	0x09, 0xac, 0x75, 0x26, 0x74, 0xb1, 0xe7, 0x8c, 0xdd, 0x0e, 0xdb, 0x58, 0xdf, 0x56, 0xc4, 0x6d,
+	0xcb, 0xf6, 0x7c, 0xd3, 0x16, 0x7a, 0x8e, 0xf5, 0xd9, 0xea, 0xf6, 0xb1, 0xcf, 0x84, 0x88, 0x6f,
+	0xe0, 0x79, 0x42, 0xb6, 0x7e, 0x69, 0x76, 0xae, 0xfb, 0xae, 0x33, 0xb6, 0xbb, 0x6d, 0xdf, 0xf4,
+	0xae, 0xa9, 0xd8, 0xf8, 0x6d, 0x0e, 0x0a, 0xef, 0x88, 0x35, 0xaa, 0x42, 0xde, 0xea, 0x6a, 0xb9,
+	0x9d, 0xdc, 0x5e, 0xa9, 0x95, 0xb7, 0xba, 0x08, 0xc1, 0xbc, 0x6d, 0x0e, 0xb1, 0x96, 0x27, 0x12,
+	0xf2, 0x37, 0xaa, 0x41, 0x89, 0x61, 0x5b, 0x5d, 0x6d, 0x89, 0x28, 0x16, 0xa9, 0xa0, 0xd9, 0x45,
+	0x1a, 0x14, 0x6f, 0xb0, 0xeb, 0x59, 0x8e, 0xad, 0xcd, 0x11, 0x15, 0xff, 0x44, 0x3a, 0x2c, 0x0e,
+	0x4d, 0xdb, 0xea, 0x61, 0xcf, 0xd7, 0xe6, 0xd9, 0x2a, 0xf6, 0x8d, 0xd6, 0x60, 0xc1, 0xf3, 0x4d,
+	0x1f, 0x6b, 0x0b, 0x44, 0x41, 0x3f, 0x50, 0x1d, 0xca, 0xa6, 0xdb, 0xb9, 0xb2, 0x6e, 0x70, 0xfb,
+	0x1a, 0x07, 0x5a, 0x81, 0xe8, 0x80, 0x89, 0x4e, 0x71, 0x80, 0xfe, 0x05, 0xa5, 0xde, 0xd8, 0x26,
+	0x1e, 0xf4, 0xb4, 0xe2, 0xce, 0xdc, 0x5e, 0xf9, 0x68, 0xe3, 0x80, 0xc5, 0x8c, 0x5e, 0xe8, 0x0d,
+	0x53, 0xb7, 0x22, 0x43, 0xf4, 0x0a, 0x2a, 0xc4, 0x81, 0x83, 0x01, 0xee, 0xb6, 0x4d, 0x5f, 0x5b,
+	0xdc, 0xc9, 0xed, 0x95, 0x8f, 0xf4, 0x03, 0x1a, 0xc8, 0x03, 0x1e, 0xc8, 0x83, 0x73, 0x1e, 0xc8,
+	0x56, 0x59, 0xd8, 0x1f, 0xfb, 0xe8, 0x25, 0xc0, 0x78, 0xd4, 0x35, 0x7d, 0xba, 0xb8, 0x34, 0x75,
+	0x71, 0x89, 0x59, 0x1f, 0xfb, 0xe8, 0x09, 0x2c, 0x77, 0x5c, 0x4c, 0x96, 0x5e, 0x06, 0x6d, 0x3f,
+	0x18, 0x61, 0x0d, 0xc8, 0xa5, 0x96, 0x98, 0xb8, 0x11, 0x9c, 0x07, 0x23, 0x8c, 0x1e, 0x41, 0x35,
+	0x66, 0xe7, 0xe2, 0x9e, 0x56, 0x26, 0x66, 0x15, 0x61, 0xd6, 0xc2, 0x3d, 0xb4, 0x05, 0xc0, 0xe2,
+	0x10, 0x7a, 0xa7, 0x42, 0x2c, 0x58, 0x64, 0x4e, 0x71, 0x60, 0xfc, 0x91, 0x83, 0xaa, 0xec, 0x84,
+	0x89, 0xe8, 0x4a, 0x91, 0xcc, 0x2b, 0x91, 0xac, 0x43, 0x99, 0xc7, 0x27, 0x54, 0xd3, 0x68, 0x02,
+	0x17, 0x35, 0xc9, 0xea, 0x9e, 0x35, 0xc0, 0x6d, 0x42, 0x10, 0x16, 0xd1, 0x50, 0xf0, 0x3e, 0x24,
+	0xc9, 0x03, 0x20, 0x7f, 0x93, 0xa3, 0xd1, 0xa0, 0x16, 0xc3, 0xef, 0x30, 0x6a, 0x75, 0x28, 0x63,
+	0xdb, 0x77, 0x83, 0xf6, 0xc8, 0xb1, 0x6c, 0x9f, 0x87, 0x95, 0x88, 0xfe, 0x1f, 0x4a, 0x42, 0x0e,
+	0xb9, 0x63, 0x3b, 0xcc, 0x23, 0xad, 0x48, 0x97, 0xb2, 0x4f, 0x41, 0xc7, 0xc5, 0x88, 0x8e, 0xc6,
+	0xaf, 0x79, 0x58, 0x3d, 0x21, 0x7e, 0xa1, 0xb7, 0x6d, 0xe1, 0xef, 0xc6, 0x21, 0xa7, 0xb8, 0x6d,
+	0x2e, 0x46, 0xdd, 0x18, 0x3b, 0xf3, 0xe9, 0xec, 0x9c, 0x53, 0xd8, 0xa9, 0xf0, 0x70, 0x7e, 0x82,
+	0x87, 0xc7, 0x71, 0x1e, 0x2e, 0x10, 0x1e, 0xee, 0x72, 0x1e, 0xc6, 0x8f, 0x26, 0xd8, 0x48, 0x8f,
+	0x18, 0x27, 0x65, 0x02, 0x35, 0x0a, 0xb3, 0x51, 0xa3, 0x38, 0x95, 0x1a, 0x8b, 0x0a, 0x35, 0xe4,
+	0xb8, 0x97, 0xe4, 0xb8, 0x1b, 0xbf, 0xe4, 0xa0, 0x96, 0x71, 0x68, 0x95, 0x17, 0xb9, 0x6c, 0x5e,
+	0xe4, 0x33, 0x78, 0x31, 0x97, 0xc9, 0x8b, 0xf9, 0x2c, 0x5e, 0x2c, 0x24, 0xf3, 0xa2, 0x10, 0xe3,
+	0xc5, 0xcf, 0x39, 0x58, 0xbd, 0x20, 0xa9, 0x27, 0xf3, 0x42, 0x4d, 0x82, 0xbf, 0x2d, 0x27, 0x8c,
+	0x7d, 0x58, 0x7d, 0x8d, 0x07, 0x78, 0x06, 0x62, 0x1b, 0x06, 0xac, 0xbc, 0xc5, 0x7e, 0xe6, 0x45,
+	0x8d, 0xe7, 0xb0, 0x21, 0x6c, 0x1a, 0x41, 0x18, 0x8d, 0x2c, 0xc4, 0xff, 0x40, 0x2d, 0x66, 0xfd,
+	0x8e, 0x73, 0x87, 0x2f, 0x91, 0x19, 0x96, 0x53, 0x8b, 0xcf, 0x4b, 0xd0, 0x27, 0x56, 0x37, 0xbb,
+	0x7c, 0xb1, 0xc4, 0xbf, 0x9c, 0xc2, 0xbf, 0x67, 0x80, 0xfe, 0x67, 0x79, 0x6c, 0xad, 0xc7, 0x97,
+	0x88, 0x0e, 0x91, 0x8b, 0x75, 0x08, 0xe3, 0x18, 0xd6, 0xcf, 0xf8, 0x36, 0x67, 0xa1, 0x24, 0x2b,
+	0xf9, 0x05, 0x44, 0x3e, 0x0e, 0x71, 0xc5, 0xab, 0x64, 0x0b, 0x7b, 0x23, 0xc7, 0xf6, 0x30, 0x3a,
+	0x80, 0x42, 0xa8, 0x1a, 0x7b, 0x64, 0x75, 0xd8, 0x52, 0x58, 0xc3, 0xe7, 0x16, 0x67, 0x44, 0xdb,
+	0x62, 0x56, 0xe8, 0x09, 0xb0, 0xc9, 0x80, 0x00, 0x97, 0x8f, 0xaa, 0x72, 0x0b, 0x6a, 0x31, 0xad,
+	0xe1, 0xc0, 0xaa, 0x74, 0xb1, 0x3b, 0x6e, 0xb7, 0x07, 0x45, 0x0a, 0xe8, 0x69, 0x79, 0x42, 0x2b,
+	0x75, 0x3f, 0xae, 0x0e, 0x3b, 0xc0, 0xc3, 0x13, 0x67, 0x38, 0x8a, 0x28, 0xd4, 0xa4, 0x7d, 0x6c,
+	0x96, 0x38, 0x90, 0x3c, 0xa7, 0xca, 0x58, 0x22, 0xb3, 0xa0, 0xbf, 0x57, 0x8a, 0xa9, 0xd2, 0xea,
+	0x37, 0xc4, 0x95, 0x68, 0x5e, 0xf0, 0xa3, 0xaf, 0xc1, 0x02, 0x76, 0x5d, 0xc7, 0xe5, 0x6d, 0x9e,
+	0x7c, 0xa0, 0xff, 0xc2, 0xb2, 0x4b, 0x0f, 0xd4, 0xee, 0x38, 0xb6, 0x8f, 0xbf, 0xd0, 0x9e, 0x20,
+	0x79, 0x82, 0xa8, 0x4f, 0xa8, 0xb6, 0x55, 0x75, 0xa5, 0x6f, 0xe3, 0x87, 0x1c, 0x2c, 0x5e, 0x78,
+	0x66, 0x1f, 0x87, 0xa5, 0xaf, 0x0e, 0x65, 0x36, 0x25, 0x91, 0x22, 0xca, 0xca, 0x13, 0x15, 0x91,
+	0x0a, 0x5a, 0x83, 0x12, 0x1f, 0xa3, 0x44, 0xd3, 0xa3, 0x02, 0x7a, 0x69, 0xa6, 0x24, 0x97, 0x9e,
+	0x8b, 0xaf, 0xe6, 0x97, 0xe6, 0x87, 0xa4, 0x77, 0xe3, 0x9f, 0xc6, 0xef, 0x39, 0x58, 0x6a, 0xb1,
+	0x09, 0x8d, 0x9c, 0x26, 0x04, 0x8b, 0x46, 0x36, 0x51, 0x29, 0xb9, 0xa8, 0xd9, 0x45, 0xbb, 0xb0,
+	0x24, 0x0c, 0xc8, 0x69, 0xe9, 0x71, 0x2a, 0x5c, 0x48, 0xce, 0x1b, 0x37, 0x8a, 0x1d, 0x4a, 0x18,
+	0x91, 0x63, 0xed, 0x43, 0x71, 0xec, 0x91, 0x9e, 0xa0, 0xcd, 0x13, 0x52, 0xac, 0x70, 0x52, 0x70,
+	0xc7, 0xb4, 0x0a, 0xa1, 0x41, 0x23, 0x40, 0x47, 0xb0, 0x2e, 0xf0, 0xba, 0x96, 0x37, 0x1a, 0x98,
+	0x01, 0xc5, 0xa5, 0x41, 0x59, 0xe5, 0xca, 0xd7, 0x54, 0x17, 0xc2, 0x1b, 0x18, 0xea, 0x27, 0x57,
+	0xb8, 0x73, 0x2d, 0x32, 0x25, 0xba, 0xe5, 0x4c, 0x5c, 0x7a, 0x0c, 0x55, 0x73, 0x34, 0x1a, 0x58,
+	0x1d, 0x33, 0xac, 0x6c, 0x91, 0xe3, 0x97, 0x62, 0xd2, 0x66, 0xd7, 0xf8, 0x3e, 0x07, 0x3b, 0xe9,
+	0xfb, 0xdc, 0x31, 0x5f, 0x9e, 0x43, 0xc1, 0xb2, 0xdb, 0x63, 0x0f, 0xb3, 0x74, 0x59, 0xe7, 0x9e,
+	0x91, 0xe1, 0x17, 0x2c, 0xfb, 0xc2, 0xc3, 0xc6, 0x8f, 0x79, 0xa8, 0xc9, 0x39, 0x43, 0x4b, 0xf0,
+	0xfd, 0xa4, 0x4c, 0x94, 0x18, 0x73, 0xc9, 0x89, 0x31, 0x2f, 0x27, 0xc6, 0x0a, 0x3d, 0xb9, 0x98,
+	0xfc, 0x79, 0x27, 0x49, 0xb9, 0x43, 0x95, 0xdc, 0x81, 0xcb, 0xbc, 0xbf, 0x9e, 0x59, 0xff, 0x86,
+	0x4d, 0x7a, 0xfd, 0x5b, 0xd6, 0xf0, 0x0e, 0x6c, 0xbe, 0xc5, 0x7e, 0x23, 0x38, 0x31, 0x6d, 0xc7,
+	0xb6, 0x3a, 0xe6, 0x20, 0x5a, 0xf7, 0x0f, 0xa8, 0x74, 0xb8, 0x34, 0x5a, 0x5a, 0xee, 0x44, 0x96,
+	0xb3, 0xb2, 0x65, 0x00, 0xcb, 0xe7, 0xf4, 0x4d, 0x75, 0x67, 0x6e, 0xec, 0x43, 0x91, 0x3d, 0xcb,
+	0x58, 0xed, 0x5e, 0xe6, 0x8e, 0xe5, 0xc8, 0x5c, 0x1f, 0xf6, 0x89, 0x63, 0xd6, 0xa8, 0xef, 0xde,
+	0x27, 0xe8, 0x6b, 0x4f, 0xed, 0x13, 0x0c, 0x97, 0x69, 0x8f, 0x7e, 0x7a, 0x08, 0x4b, 0xac, 0xa5,
+	0x61, 0xf7, 0xc6, 0xea, 0x60, 0x74, 0x02, 0x95, 0xf8, 0xc8, 0x80, 0x6a, 0x49, 0x83, 0x04, 0x73,
+	0xb0, 0xae, 0xbc, 0x80, 0xc4, 0x71, 0x4f, 0xa0, 0x12, 0x1f, 0x87, 0x22, 0x90, 0x84, 0x21, 0x29,
+	0x0b, 0x24, 0x3e, 0x92, 0x44, 0x20, 0x09, 0x83, 0x8a, 0x9e, 0xe2, 0x10, 0xf4, 0x0a, 0x4a, 0x62,
+	0x38, 0x40, 0x1a, 0x47, 0x50, 0xe7, 0x97, 0xd4, 0x33, 0x34, 0x61, 0x59, 0x99, 0x63, 0xd0, 0xf6,
+	0x04, 0x88, 0x34, 0xe0, 0xa4, 0x42, 0x9d, 0xc1, 0x5a, 0xd2, 0x90, 0x83, 0x76, 0x13, 0xf0, 0xd4,
+	0x11, 0x28, 0x15, 0xf4, 0x03, 0xac, 0x26, 0xcc, 0x3e, 0xc8, 0x48, 0xc5, 0x14, 0xc9, 0x91, 0x0a,
+	0xf9, 0x06, 0xca, 0xb1, 0xd1, 0x01, 0xe9, 0xdc, 0x6c, 0x72, 0x50, 0xd2, 0x6b, 0x89, 0x3a, 0x86,
+	0xf3, 0x16, 0xaa, 0xf2, 0xbc, 0x84, 0xb6, 0xb8, 0x79, 0xe2, 0x1c, 0x95, 0x71, 0xc7, 0x95, 0x16,
+	0xee, 0x5b, 0x9e, 0x8f, 0x5d, 0x96, 0x29, 0x1e, 0xaa, 0x47, 0x45, 0x49, 0xd6, 0x70, 0xb0, 0x87,
+	0xf1, 0xa3, 0x45, 0x4a, 0x11, 0xd6, 0x4a, 0x5c, 0x8e, 0x6a, 0xc9, 0xd6, 0xb3, 0x40, 0x9d, 0x91,
+	0xf2, 0xc3, 0xc4, 0x52, 0x15, 0x8a, 0x0e, 0x99, 0x52, 0x9f, 0xf4, 0x4d, 0xb5, 0x02, 0x44, 0xa0,
+	0x1a, 0x25, 0x39, 0xdf, 0x2e, 0x16, 0xdb, 0xba, 0x9c, 0x06, 0x49, 0x81, 0x4d, 0x4e, 0x85, 0xf7,
+	0xb0, 0xcc, 0xbd, 0x75, 0xcc, 0x5e, 0x82, 0xdb, 0xaa, 0x1b, 0x99, 0x22, 0x31, 0xc0, 0x42, 0x27,
+	0x13, 0x85, 0x63, 0xe9, 0x89, 0xb6, 0x33, 0xe0, 0x7c, 0x20, 0x6f, 0x05, 0x2a, 0xbd, 0xa5, 0x03,
+	0x37, 0x94, 0xb2, 0xc6, 0x21, 0x5b, 0xbc, 0x97, 0xb0, 0xbd, 0xee, 0xd9, 0x7d, 0x1f, 0xc9, 0x8f,
+	0x5f, 0x09, 0xee, 0x63, 0x8a, 0xc4, 0x6b, 0x0b, 0x9d, 0xec, 0x3e, 0x8e, 0xa5, 0x27, 0xda, 0xce,
+	0x80, 0x43, 0xdd, 0x47, 0xa5, 0x77, 0x75, 0x1f, 0x5d, 0x3d, 0xe9, 0x3e, 0xb6, 0xd7, 0x7d, 0xb8,
+	0xaf, 0x07, 0x9b, 0xdc, 0x4b, 0x0d, 0xf1, 0xcb, 0xe0, 0xb9, 0xe9, 0x5d, 0x7b, 0xe8, 0x89, 0xea,
+	0x46, 0xc5, 0x80, 0x43, 0xef, 0xc6, 0xdd, 0x30, 0x61, 0xc3, 0xce, 0xfe, 0x0d, 0x7d, 0xf9, 0xa8,
+	0x7b, 0x18, 0x99, 0x6b, 0x6f, 0x81, 0xff, 0x09, 0xea, 0xec, 0xea, 0xb2, 0xc1, 0x7d, 0xf8, 0xe8,
+	0x14, 0xaa, 0x22, 0x11, 0x3d, 0x2f, 0x64, 0xc5, 0xd6, 0x44, 0x82, 0x12, 0x39, 0x07, 0x92, 0x73,
+	0x8e, 0xa9, 0x44, 0xfb, 0x84, 0x48, 0x8a, 0x1e, 0x24, 0x59, 0x4e, 0x07, 0xf9, 0x00, 0x1b, 0x2c,
+	0x91, 0x88, 0xfc, 0x3e, 0x2e, 0xf9, 0x35, 0xac, 0xc9, 0xa3, 0x04, 0x9d, 0x20, 0xd1, 0x6e, 0xf2,
+	0xa0, 0x41, 0xb5, 0x1c, 0x74, 0x7b, 0xa2, 0x47, 0x30, 0xb5, 0x1c, 0x7d, 0x59, 0xab, 0x44, 0x5f,
+	0x51, 0x26, 0x46, 0x7f, 0xc2, 0x86, 0xe1, 0x5f, 0xc0, 0xba, 0x3c, 0x7d, 0xf0, 0x1d, 0x1e, 0x25,
+	0x0f, 0x27, 0xca, 0x1e, 0x69, 0x3e, 0x69, 0x83, 0xce, 0x47, 0x7f, 0xba, 0xa2, 0x11, 0xbc, 0x8b,
+	0x7e, 0xe4, 0xda, 0x97, 0xb1, 0x93, 0x6c, 0xa6, 0x6d, 0x60, 0x42, 0xed, 0x98, 0xfe, 0x5e, 0x94,
+	0xb8, 0xc3, 0x33, 0x51, 0x47, 0xd3, 0x8d, 0xa6, 0x6d, 0x61, 0x41, 0x4d, 0x9e, 0xee, 0x28, 0xc4,
+	0x57, 0xec, 0x9d, 0xfe, 0x2c, 0x79, 0x04, 0x94, 0x8c, 0x66, 0x8d, 0xf2, 0x05, 0xac, 0x27, 0xfe,
+	0xd6, 0x10, 0x45, 0x21, 0xeb, 0xa7, 0x88, 0xd4, 0x1b, 0x0c, 0x41, 0x4b, 0x7b, 0x11, 0xa2, 0xa7,
+	0x02, 0x39, 0xfb, 0x6d, 0xaa, 0xef, 0x4d, 0x37, 0x8c, 0x06, 0xc2, 0xa4, 0xd7, 0x5f, 0x2c, 0x11,
+	0xd2, 0xdf, 0x86, 0x19, 0x81, 0xde, 0xa0, 0xf9, 0xc3, 0xf7, 0x6c, 0xb2, 0xff, 0xdf, 0xa0, 0xc7,
+	0x72, 0x7e, 0xa9, 0x7a, 0x0e, 0xbc, 0xa3, 0x3e, 0xf7, 0x22, 0x03, 0x76, 0xee, 0x8f, 0xbc, 0x26,
+	0xa4, 0x6f, 0x91, 0xac, 0x9f, 0x5e, 0x19, 0xc2, 0x61, 0x76, 0x02, 0x35, 0x3e, 0xcc, 0xde, 0xfd,
+	0xd4, 0x23, 0xa8, 0x85, 0x89, 0xad, 0xea, 0xbd, 0x46, 0x70, 0x6a, 0xd9, 0xb1, 0x0c, 0xc8, 0x30,
+	0xe2, 0x9b, 0x3d, 0xce, 0xb4, 0x15, 0x3b, 0xfa, 0xb0, 0x95, 0x02, 0xc6, 0x9e, 0x23, 0xcf, 0xa7,
+	0xec, 0x29, 0x3f, 0x51, 0x66, 0xdc, 0xf5, 0x5b, 0xd0, 0x48, 0x1d, 0x0f, 0xe9, 0xae, 0xd8, 0x44,
+	0x24, 0x4e, 0xb3, 0xb8, 0xdd, 0x5e, 0x8d, 0xfd, 0x4f, 0x4f, 0xfb, 0x96, 0x7f, 0x35, 0xbe, 0x0c,
+	0x03, 0x7a, 0xf8, 0xd9, 0x19, 0xf4, 0x82, 0xa1, 0x19, 0x76, 0xa9, 0xc3, 0xcf, 0x8e, 0xd3, 0xfb,
+	0xf2, 0xe2, 0xb0, 0x7b, 0x79, 0xd8, 0xc7, 0xf6, 0xe1, 0xcd, 0x3f, 0x2f, 0x0b, 0xe4, 0xbf, 0x55,
+	0x2f, 0xfe, 0x0c, 0x00, 0x00, 0xff, 0xff, 0xd5, 0x73, 0xc3, 0x1a, 0xe7, 0x1c, 0x00, 0x00,
 }

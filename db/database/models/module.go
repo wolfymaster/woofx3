@@ -82,6 +82,11 @@ type ModuleFunction struct {
 	FileKey    string `gorm:"column:file_key;type:text;not null"`
 	EntryPoint string `gorm:"column:entry_point;type:text;default:'main'"`
 	Runtime    string `gorm:"column:runtime;type:text;not null"`
+	// ArchivedAt is set when a module upgrade drops this function from
+	// the manifest. Archived rows stay resolvable (existing workflow
+	// steps that invoke this function by canonical id keep working) but
+	// are excluded from catalog listings. Nil means active.
+	ArchivedAt *time.Time `gorm:"column:archived_at"`
 }
 
 func (ModuleFunction) TableName() string { return "functions" }
@@ -101,8 +106,13 @@ type Trigger struct {
 	CreatedByRef  string `gorm:"column:created_by_ref;type:text;not null;default:''"`
 	ManifestID    string `gorm:"column:manifest_id;type:text;not null;default:''"`
 	ApplicationID string `gorm:"column:application_id;type:text;not null;default:''"`
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// ArchivedAt is set when a module upgrade drops this trigger from
+	// the manifest. Archived rows stay resolvable by canonical id
+	// (existing workflows keep working) but are excluded from catalog
+	// listings. Nil means active.
+	ArchivedAt *time.Time `gorm:"column:archived_at"`
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 func (Trigger) TableName() string { return "triggers" }
@@ -130,8 +140,13 @@ type Action struct {
 	// declarations describing the action function's return value. UI-only —
 	// see module_action.proto Action.output_schema.
 	OutputSchema string `gorm:"column:output_schema;type:jsonb;not null;default:'[]'"`
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// ArchivedAt is set when a module upgrade drops this action from the
+	// manifest. Archived rows stay resolvable by canonical id (existing
+	// workflows keep working) but are excluded from catalog listings.
+	// Nil means active.
+	ArchivedAt *time.Time `gorm:"column:archived_at"`
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 func (Action) TableName() string { return "actions" }
@@ -194,8 +209,13 @@ type Widget struct {
 	CreatedByRef   string `gorm:"column:created_by_ref;type:text;not null;default:''"`
 	ManifestID     string `gorm:"column:manifest_id;type:text;not null;default:''"`
 	ApplicationID  string `gorm:"column:application_id;type:text;not null;default:''"`
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// ArchivedAt is set when a module upgrade drops this widget from the
+	// manifest. Archived rows stay resolvable by canonical id (existing
+	// workflows/scenes keep working) but are excluded from catalog
+	// listings. Nil means active.
+	ArchivedAt *time.Time `gorm:"column:archived_at"`
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 func (Widget) TableName() string { return "widgets" }

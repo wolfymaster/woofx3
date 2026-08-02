@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/google/uuid"
@@ -63,7 +64,11 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 	// (module row persisted, downstream RPCs failed) or the user is upgrading
 	// to a new version/hash without an explicit update call. Rewriting the
 	// row in place keeps the `modules_name_key` constraint happy and lets
-	// install retries converge. Functions are replaced wholesale.
+	// install retries converge. Functions are diffed against the manifest,
+	// not replaced wholesale: kept ids update in place, new ids insert,
+	// and ids the new manifest drops are archived (not deleted) — a
+	// workflow step that invokes a dropped function by canonical id keeps
+	// resolving instead of failing at execution time. See migration 0029.
 	if req.Name != "" {
 		existing, err := s.repo.GetByName(req.Name)
 		if err == nil && existing != nil {
@@ -83,13 +88,29 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 			if err := s.repo.Update(existing); err != nil {
 				return nil, err
 			}
-			if err := s.repo.DeleteFunctionsByModuleID(existing.ID); err != nil {
+
+			priorFunctions, err := s.repo.ListActiveFunctionsByModuleID(existing.ID)
+			if err != nil {
 				return nil, err
+			}
+			newManifestIDs := make(map[string]bool, len(req.Functions))
+			for _, f := range req.Functions {
+				if f.ManifestId != "" {
+					newManifestIDs[f.ManifestId] = true
+				}
+			}
+			for _, prior := range priorFunctions {
+				if prior.ManifestID != "" && !newManifestIDs[prior.ManifestID] {
+					if err := s.repo.ArchiveFunctionByManifestID(existing.ID, prior.ManifestID); err != nil {
+						return nil, err
+					}
+				}
 			}
 
 			functions := make([]models.ModuleFunction, 0, len(req.Functions))
 			for _, f := range req.Functions {
-				functions = append(functions, models.ModuleFunction{
+				fn := models.ModuleFunction{
+					ID:         uuid.New(),
 					ModuleID:   existing.ID,
 					ManifestID: f.ManifestId,
 					Name:       f.Name,
@@ -97,12 +118,11 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 					FileKey:    f.FileKey,
 					EntryPoint: f.EntryPoint,
 					Runtime:    f.Runtime,
-				})
-			}
-			if len(functions) > 0 {
-				if err := s.repo.CreateFunctions(functions); err != nil {
+				}
+				if err := s.repo.UpsertFunction(&fn); err != nil {
 					return nil, err
 				}
+				functions = append(functions, fn)
 			}
 			existing.Functions = functions
 
@@ -311,6 +331,28 @@ func (s *moduleService) GetModuleByName(ctx context.Context, req *client.GetModu
 func (s *moduleService) GetModuleByModuleKey(ctx context.Context, req *client.GetModuleByModuleKeyRequest) (*client.ModuleResponse, error) {
 	m, err := s.repo.GetByModuleKey(req.ModuleKey)
 	if err != nil {
+		return nil, err
+	}
+
+	return &client.ModuleResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Module retrieved successfully",
+		},
+		Module: moduleToProto(m),
+	}, nil
+}
+
+// GetModuleByModuleId looks a module up by its stable manifest module id
+// (manifest.json `id`) — see the proto comment on
+// GetModuleByModuleIdRequest for how this differs from GetModuleByName
+// (display name) and GetModuleByModuleKey (composite, version-pinned key).
+func (s *moduleService) GetModuleByModuleId(ctx context.Context, req *client.GetModuleByModuleIdRequest) (*client.ModuleResponse, error) {
+	m, err := s.repo.GetByModuleID(req.ModuleId)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, twirp.NotFoundError(fmt.Sprintf("module with module_id %q not found", req.ModuleId))
+		}
 		return nil, err
 	}
 
@@ -781,7 +823,11 @@ func (s *moduleService) CreateModuleResource(ctx context.Context, req *client.Cr
 		CurrentVersion:  req.Version,
 	}
 
-	if err := s.repo.CreateModuleResource(res); err != nil {
+	// Upsert on (module_id, resource_type, manifest_id) — see migration
+	// 0028. A module reinstall/upgrade that keeps the same resource id
+	// updates the ledger row in place (current_version moves,
+	// original_version stays put) instead of appending a duplicate.
+	if err := s.repo.UpsertModuleResource(res); err != nil {
 		return nil, err
 	}
 
@@ -832,6 +878,78 @@ func (s *moduleService) DeleteModuleResources(ctx context.Context, req *client.D
 	return &client.ResponseStatus{
 		Code:    client.ResponseStatus_OK,
 		Message: "Module resources deleted successfully",
+	}, nil
+}
+
+// DeleteResourceByManifestId hard-deletes a single background task —
+// the one resource kind where that's safe on removal, since nothing
+// resolves a background task by canonical id at runtime the way
+// workflows resolve triggers/actions/functions (see the proto comment).
+// Used by barkloader's diff-based upgrade path when a background task
+// present in the previously installed manifest is absent from the newly
+// installed one.
+func (s *moduleService) DeleteResourceByManifestId(ctx context.Context, req *client.DeleteResourceByManifestIdRequest) (*client.ResponseStatus, error) {
+	if req.ResourceType != "background_task" {
+		return nil, twirp.InvalidArgumentError("resource_type", fmt.Sprintf("unsupported resource_type %q (only background_task hard-deletes; other kinds archive)", req.ResourceType))
+	}
+	if err := s.repo.DeleteBackgroundTaskByManifestID(req.ModuleId, req.ManifestId); err != nil {
+		return nil, err
+	}
+
+	// Ledger cleanup is best-effort: the module row's UUID is only
+	// resolvable if the module itself still exists (it always does at
+	// this call site — mid-upgrade — but treat a lookup miss as
+	// non-fatal rather than failing the whole delete).
+	if m, err := s.repo.GetByModuleID(req.ModuleId); err == nil && m != nil {
+		if err := s.repo.DeleteModuleResourceByManifestID(m.ID, req.ResourceType, req.ManifestId); err != nil {
+			log.Printf("DeleteResourceByManifestId: ledger cleanup failed for %s %s/%s: %v", req.ModuleId, req.ResourceType, req.ManifestId, err)
+		}
+	}
+
+	return &client.ResponseStatus{
+		Code:    client.ResponseStatus_OK,
+		Message: "Resource deleted successfully",
+	}, nil
+}
+
+// ArchiveResourceByManifestId archives (soft-deletes) a single
+// trigger/action/widget/function — identified by the stable manifest
+// module id and the resource's manifest-local id. Used by barkloader's
+// diff-based upgrade path when a resource present in the previously
+// installed manifest is absent from the newly installed one: archiving
+// instead of deleting keeps it resolvable by canonical id, so any
+// workflow or command that already references it keeps working, while
+// hiding it from catalog listings going forward. See migration
+// 0029_archived_at_columns.
+func (s *moduleService) ArchiveResourceByManifestId(ctx context.Context, req *client.ArchiveResourceByManifestIdRequest) (*client.ResponseStatus, error) {
+	switch req.ResourceType {
+	case "trigger":
+		if err := s.repo.ArchiveTriggerByManifestID(req.ModuleId, req.ManifestId); err != nil {
+			return nil, err
+		}
+	case "action":
+		if err := s.repo.ArchiveActionByManifestID(req.ModuleId, req.ManifestId); err != nil {
+			return nil, err
+		}
+	case "widget":
+		if err := s.repo.ArchiveWidgetByManifestID(req.ModuleId, req.ManifestId); err != nil {
+			return nil, err
+		}
+	case "function":
+		m, err := s.repo.GetByModuleID(req.ModuleId)
+		if err != nil {
+			return nil, fmt.Errorf("resolve module %q for function archive: %w", req.ModuleId, err)
+		}
+		if err := s.repo.ArchiveFunctionByManifestID(m.ID, req.ManifestId); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, twirp.InvalidArgumentError("resource_type", fmt.Sprintf("unsupported resource_type %q", req.ResourceType))
+	}
+
+	return &client.ResponseStatus{
+		Code:    client.ResponseStatus_OK,
+		Message: "Resource archived successfully",
 	}, nil
 }
 

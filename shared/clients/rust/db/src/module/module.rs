@@ -324,6 +324,44 @@ pub struct DeleteModuleResourcesRequest {
     #[prost(string, tag="1")]
     pub module_id: ::prost::alloc::string::String,
 }
+/// Selective single-resource hard delete used by barkloader's diff-based
+/// module upgrade path, for the one resource kind where hard deletion on
+/// removal is safe: nothing resolves a background task by canonical id at
+/// runtime the way workflows resolve triggers/actions/functions, so
+/// there's no "existing reference would break" concern to preserve.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteResourceByManifestIdRequest {
+    /// Stable manifest module id (== manifest.json `id`, first segment of
+    /// every canonical id for this module) — same convention as
+    /// `DeleteByModuleIdRequest.module_id`, NOT the modules.id UUID.
+    #[prost(string, tag="1")]
+    pub module_id: ::prost::alloc::string::String,
+    /// "background_task" is the only supported value.
+    #[prost(string, tag="2")]
+    pub resource_type: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub manifest_id: ::prost::alloc::string::String,
+}
+/// Selective single-resource archive (soft delete) used by barkloader's
+/// diff-based module upgrade path: when a resource id present in the
+/// previously installed manifest is absent from the newly installed one,
+/// this archives just that resource (sets `archived_at`) instead of
+/// deleting it or nuking the module's entire catalog. Archived rows stay
+/// resolvable by canonical id — a workflow/command that already
+/// references one keeps working — but are excluded from catalog listings
+/// (`ListTriggers`/`ListActions`/`ListWidgets`) going forward. See
+/// migration 0029_archived_at_columns.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ArchiveResourceByManifestIdRequest {
+    /// Stable manifest module id — see DeleteResourceByManifestIdRequest.
+    #[prost(string, tag="1")]
+    pub module_id: ::prost::alloc::string::String,
+    /// "trigger" | "action" | "widget" | "function".
+    #[prost(string, tag="2")]
+    pub resource_type: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub manifest_id: ::prost::alloc::string::String,
+}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UpdateModuleResourceVersionRequest {
     #[prost(string, tag="1")]
@@ -370,6 +408,13 @@ pub struct ModuleResourceInstance {
     pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
     #[prost(message, optional, tag="9")]
     pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// The owning module's stable composite key (`{moduleId}:{version}:{hash}`).
+    /// Unlike `module_id` (a raw UUID consumers can't index on directly) or
+    /// `module_name` (ambiguous across multiple installs/instances sharing a
+    /// name), `module_key` is what downstream consumers should resolve the
+    /// owning module by.
+    #[prost(string, tag="10")]
+    pub module_key: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateResourceInstanceRequest {
@@ -429,6 +474,12 @@ pub struct ListResourceInstancesByKindRequest {
 pub struct ListResourceInstancesByModuleRequest {
     #[prost(string, tag="1")]
     pub module_id: ::prost::alloc::string::String,
+}
+/// Empty — lists every resource instance across every module for this
+/// deployment. The engine is single-tenant (no application scoping on
+/// ModuleResourceInstance), so no filter field is needed.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListAllResourceInstancesRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListResourceInstancesResponse {
@@ -867,6 +918,18 @@ pub struct GetModuleByNameRequest {
 pub struct GetModuleByModuleKeyRequest {
     #[prost(string, tag="1")]
     pub module_key: ::prost::alloc::string::String,
+}
+/// GetModuleByModuleIdRequest looks a module up by its stable manifest
+/// module id (manifest.json `id`, e.g. `twitch_platform`) — distinct from
+/// `GetModuleByNameRequest` (the human display name, e.g. "Twitch
+/// Platform") and `GetModuleByModuleKeyRequest` (the composite
+/// `{id}:{version}:{hash}` key, which changes every version). Used by
+/// barkloader's diff-based upgrade path to look up the previously
+/// installed version of a module before registering a new one.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetModuleByModuleIdRequest {
+    #[prost(string, tag="1")]
+    pub module_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListModulesRequest {

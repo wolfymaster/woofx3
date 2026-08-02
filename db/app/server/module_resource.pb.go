@@ -422,6 +422,146 @@ func (x *DeleteModuleResourcesRequest) GetModuleId() string {
 	return ""
 }
 
+// Selective single-resource hard delete used by barkloader's diff-based
+// module upgrade path, for the one resource kind where hard deletion on
+// removal is safe: nothing resolves a background task by canonical id at
+// runtime the way workflows resolve triggers/actions/functions, so
+// there's no "existing reference would break" concern to preserve.
+type DeleteResourceByManifestIdRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Stable manifest module id (== manifest.json `id`, first segment of
+	// every canonical id for this module) — same convention as
+	// `DeleteByModuleIdRequest.module_id`, NOT the modules.id UUID.
+	ModuleId string `protobuf:"bytes,1,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
+	// "background_task" is the only supported value.
+	ResourceType  string `protobuf:"bytes,2,opt,name=resource_type,json=resourceType,proto3" json:"resource_type,omitempty"`
+	ManifestId    string `protobuf:"bytes,3,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteResourceByManifestIdRequest) Reset() {
+	*x = DeleteResourceByManifestIdRequest{}
+	mi := &file_module_resource_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteResourceByManifestIdRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteResourceByManifestIdRequest) ProtoMessage() {}
+
+func (x *DeleteResourceByManifestIdRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_module_resource_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteResourceByManifestIdRequest.ProtoReflect.Descriptor instead.
+func (*DeleteResourceByManifestIdRequest) Descriptor() ([]byte, []int) {
+	return file_module_resource_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *DeleteResourceByManifestIdRequest) GetModuleId() string {
+	if x != nil {
+		return x.ModuleId
+	}
+	return ""
+}
+
+func (x *DeleteResourceByManifestIdRequest) GetResourceType() string {
+	if x != nil {
+		return x.ResourceType
+	}
+	return ""
+}
+
+func (x *DeleteResourceByManifestIdRequest) GetManifestId() string {
+	if x != nil {
+		return x.ManifestId
+	}
+	return ""
+}
+
+// Selective single-resource archive (soft delete) used by barkloader's
+// diff-based module upgrade path: when a resource id present in the
+// previously installed manifest is absent from the newly installed one,
+// this archives just that resource (sets `archived_at`) instead of
+// deleting it or nuking the module's entire catalog. Archived rows stay
+// resolvable by canonical id — a workflow/command that already
+// references one keeps working — but are excluded from catalog listings
+// (`ListTriggers`/`ListActions`/`ListWidgets`) going forward. See
+// migration 0029_archived_at_columns.
+type ArchiveResourceByManifestIdRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Stable manifest module id — see DeleteResourceByManifestIdRequest.
+	ModuleId string `protobuf:"bytes,1,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
+	// "trigger" | "action" | "widget" | "function".
+	ResourceType  string `protobuf:"bytes,2,opt,name=resource_type,json=resourceType,proto3" json:"resource_type,omitempty"`
+	ManifestId    string `protobuf:"bytes,3,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ArchiveResourceByManifestIdRequest) Reset() {
+	*x = ArchiveResourceByManifestIdRequest{}
+	mi := &file_module_resource_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArchiveResourceByManifestIdRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArchiveResourceByManifestIdRequest) ProtoMessage() {}
+
+func (x *ArchiveResourceByManifestIdRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_module_resource_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArchiveResourceByManifestIdRequest.ProtoReflect.Descriptor instead.
+func (*ArchiveResourceByManifestIdRequest) Descriptor() ([]byte, []int) {
+	return file_module_resource_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ArchiveResourceByManifestIdRequest) GetModuleId() string {
+	if x != nil {
+		return x.ModuleId
+	}
+	return ""
+}
+
+func (x *ArchiveResourceByManifestIdRequest) GetResourceType() string {
+	if x != nil {
+		return x.ResourceType
+	}
+	return ""
+}
+
+func (x *ArchiveResourceByManifestIdRequest) GetManifestId() string {
+	if x != nil {
+		return x.ManifestId
+	}
+	return ""
+}
+
 type UpdateModuleResourceVersionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -432,7 +572,7 @@ type UpdateModuleResourceVersionRequest struct {
 
 func (x *UpdateModuleResourceVersionRequest) Reset() {
 	*x = UpdateModuleResourceVersionRequest{}
-	mi := &file_module_resource_proto_msgTypes[6]
+	mi := &file_module_resource_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -444,7 +584,7 @@ func (x *UpdateModuleResourceVersionRequest) String() string {
 func (*UpdateModuleResourceVersionRequest) ProtoMessage() {}
 
 func (x *UpdateModuleResourceVersionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_module_resource_proto_msgTypes[6]
+	mi := &file_module_resource_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -457,7 +597,7 @@ func (x *UpdateModuleResourceVersionRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use UpdateModuleResourceVersionRequest.ProtoReflect.Descriptor instead.
 func (*UpdateModuleResourceVersionRequest) Descriptor() ([]byte, []int) {
-	return file_module_resource_proto_rawDescGZIP(), []int{6}
+	return file_module_resource_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *UpdateModuleResourceVersionRequest) GetId() string {
@@ -513,7 +653,17 @@ const file_module_resource_proto_rawDesc = "" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x122\n" +
 	"\bresource\x18\x02 \x01(\v2\x16.module.ModuleResourceR\bresource\";\n" +
 	"\x1cDeleteModuleResourcesRequest\x12\x1b\n" +
-	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\"N\n" +
+	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\"\x86\x01\n" +
+	"!DeleteResourceByManifestIdRequest\x12\x1b\n" +
+	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\x12#\n" +
+	"\rresource_type\x18\x02 \x01(\tR\fresourceType\x12\x1f\n" +
+	"\vmanifest_id\x18\x03 \x01(\tR\n" +
+	"manifestId\"\x87\x01\n" +
+	"\"ArchiveResourceByManifestIdRequest\x12\x1b\n" +
+	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\x12#\n" +
+	"\rresource_type\x18\x02 \x01(\tR\fresourceType\x12\x1f\n" +
+	"\vmanifest_id\x18\x03 \x01(\tR\n" +
+	"manifestId\"N\n" +
 	"\"UpdateModuleResourceVersionRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversionB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
@@ -530,7 +680,7 @@ func file_module_resource_proto_rawDescGZIP() []byte {
 	return file_module_resource_proto_rawDescData
 }
 
-var file_module_resource_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_module_resource_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_module_resource_proto_goTypes = []any{
 	(*ModuleResource)(nil),                     // 0: module.ModuleResource
 	(*CreateModuleResourceRequest)(nil),        // 1: module.CreateModuleResourceRequest
@@ -538,22 +688,24 @@ var file_module_resource_proto_goTypes = []any{
 	(*ListModuleResourcesResponse)(nil),        // 3: module.ListModuleResourcesResponse
 	(*ModuleResourceResponse)(nil),             // 4: module.ModuleResourceResponse
 	(*DeleteModuleResourcesRequest)(nil),       // 5: module.DeleteModuleResourcesRequest
-	(*UpdateModuleResourceVersionRequest)(nil), // 6: module.UpdateModuleResourceVersionRequest
-	(*timestamppb.Timestamp)(nil),              // 7: google.protobuf.Timestamp
-	(*ResponseStatus)(nil),                     // 8: common.ResponseStatus
+	(*DeleteResourceByManifestIdRequest)(nil),  // 6: module.DeleteResourceByManifestIdRequest
+	(*ArchiveResourceByManifestIdRequest)(nil), // 7: module.ArchiveResourceByManifestIdRequest
+	(*UpdateModuleResourceVersionRequest)(nil), // 8: module.UpdateModuleResourceVersionRequest
+	(*timestamppb.Timestamp)(nil),              // 9: google.protobuf.Timestamp
+	(*ResponseStatus)(nil),                     // 10: common.ResponseStatus
 }
 var file_module_resource_proto_depIdxs = []int32{
-	7, // 0: module.ModuleResource.installed_at:type_name -> google.protobuf.Timestamp
-	7, // 1: module.ModuleResource.updated_at:type_name -> google.protobuf.Timestamp
-	8, // 2: module.ListModuleResourcesResponse.status:type_name -> common.ResponseStatus
-	0, // 3: module.ListModuleResourcesResponse.resources:type_name -> module.ModuleResource
-	8, // 4: module.ModuleResourceResponse.status:type_name -> common.ResponseStatus
-	0, // 5: module.ModuleResourceResponse.resource:type_name -> module.ModuleResource
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	9,  // 0: module.ModuleResource.installed_at:type_name -> google.protobuf.Timestamp
+	9,  // 1: module.ModuleResource.updated_at:type_name -> google.protobuf.Timestamp
+	10, // 2: module.ListModuleResourcesResponse.status:type_name -> common.ResponseStatus
+	0,  // 3: module.ListModuleResourcesResponse.resources:type_name -> module.ModuleResource
+	10, // 4: module.ModuleResourceResponse.status:type_name -> common.ResponseStatus
+	0,  // 5: module.ModuleResourceResponse.resource:type_name -> module.ModuleResource
+	6,  // [6:6] is the sub-list for method output_type
+	6,  // [6:6] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_module_resource_proto_init() }
@@ -568,7 +720,7 @@ func file_module_resource_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_module_resource_proto_rawDesc), len(file_module_resource_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

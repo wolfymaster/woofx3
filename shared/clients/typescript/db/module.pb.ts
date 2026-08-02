@@ -113,6 +113,19 @@ export interface GetModuleByModuleKeyRequest {
   moduleKey: string;
 }
 
+/**
+ * GetModuleByModuleIdRequest looks a module up by its stable manifest
+ * module id (manifest.json `id`, e.g. `twitch_platform`) — distinct from
+ * `GetModuleByNameRequest` (the human display name, e.g. "Twitch
+ * Platform") and `GetModuleByModuleKeyRequest` (the composite
+ * `{id}:{version}:{hash}` key, which changes every version). Used by
+ * barkloader's diff-based upgrade path to look up the previously
+ * installed version of a module before registering a new one.
+ */
+export interface GetModuleByModuleIdRequest {
+  moduleId: string;
+}
+
 export interface ListModulesRequest {
   state: string;
 }
@@ -283,6 +296,18 @@ export async function GetModuleByModuleKey(
   const response = await PBrequest(
     "/module.ModuleService/GetModuleByModuleKey",
     GetModuleByModuleKeyRequest.encode(getModuleByModuleKeyRequest),
+    config,
+  );
+  return ModuleResponse.decode(response);
+}
+
+export async function GetModuleByModuleId(
+  getModuleByModuleIdRequest: GetModuleByModuleIdRequest,
+  config?: ClientConfiguration,
+): Promise<ModuleResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/GetModuleByModuleId",
+    GetModuleByModuleIdRequest.encode(getModuleByModuleIdRequest),
     config,
   );
   return ModuleResponse.decode(response);
@@ -574,6 +599,34 @@ export async function DeleteModuleResources(
   return common.ResponseStatus.decode(response);
 }
 
+export async function DeleteResourceByManifestId(
+  deleteResourceByManifestIdRequest: module_resource.DeleteResourceByManifestIdRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/module.ModuleService/DeleteResourceByManifestId",
+    module_resource.DeleteResourceByManifestIdRequest.encode(
+      deleteResourceByManifestIdRequest,
+    ),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
+}
+
+export async function ArchiveResourceByManifestId(
+  archiveResourceByManifestIdRequest: module_resource.ArchiveResourceByManifestIdRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/module.ModuleService/ArchiveResourceByManifestId",
+    module_resource.ArchiveResourceByManifestIdRequest.encode(
+      archiveResourceByManifestIdRequest,
+    ),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
+}
+
 export async function UpdateModuleResourceVersion(
   updateModuleResourceVersionRequest: module_resource.UpdateModuleResourceVersionRequest,
   config?: ClientConfiguration,
@@ -702,6 +755,22 @@ export async function ListResourceInstancesByModule(
   );
 }
 
+export async function ListAllResourceInstances(
+  listAllResourceInstancesRequest: module_resource_instance.ListAllResourceInstancesRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource_instance.ListResourceInstancesResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/ListAllResourceInstances",
+    module_resource_instance.ListAllResourceInstancesRequest.encode(
+      listAllResourceInstancesRequest,
+    ),
+    config,
+  );
+  return module_resource_instance.ListResourceInstancesResponse.decode(
+    response,
+  );
+}
+
 //========================================//
 //       ModuleService JSON Client        //
 //========================================//
@@ -773,6 +842,18 @@ export async function GetModuleByModuleKeyJSON(
   const response = await JSONrequest(
     "/module.ModuleService/GetModuleByModuleKey",
     GetModuleByModuleKeyRequestJSON.encode(getModuleByModuleKeyRequest),
+    config,
+  );
+  return ModuleResponseJSON.decode(response);
+}
+
+export async function GetModuleByModuleIdJSON(
+  getModuleByModuleIdRequest: GetModuleByModuleIdRequest,
+  config?: ClientConfiguration,
+): Promise<ModuleResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/GetModuleByModuleId",
+    GetModuleByModuleIdRequestJSON.encode(getModuleByModuleIdRequest),
     config,
   );
   return ModuleResponseJSON.decode(response);
@@ -1064,6 +1145,34 @@ export async function DeleteModuleResourcesJSON(
   return common.ResponseStatusJSON.decode(response);
 }
 
+export async function DeleteResourceByManifestIdJSON(
+  deleteResourceByManifestIdRequest: module_resource.DeleteResourceByManifestIdRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/module.ModuleService/DeleteResourceByManifestId",
+    module_resource.DeleteResourceByManifestIdRequestJSON.encode(
+      deleteResourceByManifestIdRequest,
+    ),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
+export async function ArchiveResourceByManifestIdJSON(
+  archiveResourceByManifestIdRequest: module_resource.ArchiveResourceByManifestIdRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/module.ModuleService/ArchiveResourceByManifestId",
+    module_resource.ArchiveResourceByManifestIdRequestJSON.encode(
+      archiveResourceByManifestIdRequest,
+    ),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
 export async function UpdateModuleResourceVersionJSON(
   updateModuleResourceVersionRequest: module_resource.UpdateModuleResourceVersionRequest,
   config?: ClientConfiguration,
@@ -1192,6 +1301,22 @@ export async function ListResourceInstancesByModuleJSON(
   );
 }
 
+export async function ListAllResourceInstancesJSON(
+  listAllResourceInstancesRequest: module_resource_instance.ListAllResourceInstancesRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource_instance.ListResourceInstancesResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/ListAllResourceInstances",
+    module_resource_instance.ListAllResourceInstancesRequestJSON.encode(
+      listAllResourceInstancesRequest,
+    ),
+    config,
+  );
+  return module_resource_instance.ListResourceInstancesResponseJSON.decode(
+    response,
+  );
+}
+
 //========================================//
 //             ModuleService              //
 //========================================//
@@ -1219,6 +1344,10 @@ export interface ModuleService<Context = unknown> {
   ) => Promise<ModuleResponse> | ModuleResponse;
   GetModuleByModuleKey: (
     getModuleByModuleKeyRequest: GetModuleByModuleKeyRequest,
+    context: Context,
+  ) => Promise<ModuleResponse> | ModuleResponse;
+  GetModuleByModuleId: (
+    getModuleByModuleIdRequest: GetModuleByModuleIdRequest,
     context: Context,
   ) => Promise<ModuleResponse> | ModuleResponse;
   ListModules: (
@@ -1335,6 +1464,14 @@ export interface ModuleService<Context = unknown> {
     deleteModuleResourcesRequest: module_resource.DeleteModuleResourcesRequest,
     context: Context,
   ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  DeleteResourceByManifestId: (
+    deleteResourceByManifestIdRequest: module_resource.DeleteResourceByManifestIdRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  ArchiveResourceByManifestId: (
+    archiveResourceByManifestIdRequest: module_resource.ArchiveResourceByManifestIdRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
   UpdateModuleResourceVersion: (
     updateModuleResourceVersionRequest: module_resource.UpdateModuleResourceVersionRequest,
     context: Context,
@@ -1387,6 +1524,12 @@ export interface ModuleService<Context = unknown> {
   ) =>
     | Promise<module_resource_instance.ListResourceInstancesResponse>
     | module_resource_instance.ListResourceInstancesResponse;
+  ListAllResourceInstances: (
+    listAllResourceInstancesRequest: module_resource_instance.ListAllResourceInstancesRequest,
+    context: Context,
+  ) =>
+    | Promise<module_resource_instance.ListResourceInstancesResponse>
+    | module_resource_instance.ListResourceInstancesResponse;
 }
 
 export function createModuleService<Context>(service: ModuleService<Context>) {
@@ -1435,6 +1578,15 @@ export function createModuleService<Context>(service: ModuleService<Context>) {
         input: {
           protobuf: GetModuleByModuleKeyRequest,
           json: GetModuleByModuleKeyRequestJSON,
+        },
+        output: { protobuf: ModuleResponse, json: ModuleResponseJSON },
+      },
+      GetModuleByModuleId: {
+        name: "GetModuleByModuleId",
+        handler: service.GetModuleByModuleId,
+        input: {
+          protobuf: GetModuleByModuleIdRequest,
+          json: GetModuleByModuleIdRequestJSON,
         },
         output: { protobuf: ModuleResponse, json: ModuleResponseJSON },
       },
@@ -1702,6 +1854,30 @@ export function createModuleService<Context>(service: ModuleService<Context>) {
           json: common.ResponseStatusJSON,
         },
       },
+      DeleteResourceByManifestId: {
+        name: "DeleteResourceByManifestId",
+        handler: service.DeleteResourceByManifestId,
+        input: {
+          protobuf: module_resource.DeleteResourceByManifestIdRequest,
+          json: module_resource.DeleteResourceByManifestIdRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
+      },
+      ArchiveResourceByManifestId: {
+        name: "ArchiveResourceByManifestId",
+        handler: service.ArchiveResourceByManifestId,
+        input: {
+          protobuf: module_resource.ArchiveResourceByManifestIdRequest,
+          json: module_resource.ArchiveResourceByManifestIdRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
+      },
       UpdateModuleResourceVersion: {
         name: "UpdateModuleResourceVersion",
         handler: service.UpdateModuleResourceVersion,
@@ -1805,6 +1981,18 @@ export function createModuleService<Context>(service: ModuleService<Context>) {
           protobuf:
             module_resource_instance.ListResourceInstancesByModuleRequest,
           json: module_resource_instance.ListResourceInstancesByModuleRequestJSON,
+        },
+        output: {
+          protobuf: module_resource_instance.ListResourceInstancesResponse,
+          json: module_resource_instance.ListResourceInstancesResponseJSON,
+        },
+      },
+      ListAllResourceInstances: {
+        name: "ListAllResourceInstances",
+        handler: service.ListAllResourceInstances,
+        input: {
+          protobuf: module_resource_instance.ListAllResourceInstancesRequest,
+          json: module_resource_instance.ListAllResourceInstancesRequestJSON,
         },
         output: {
           protobuf: module_resource_instance.ListResourceInstancesResponse,
@@ -2748,6 +2936,76 @@ export const GetModuleByModuleKeyRequest = {
       switch (field) {
         case 1: {
           msg.moduleKey = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const GetModuleByModuleIdRequest = {
+  /**
+   * Serializes GetModuleByModuleIdRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<GetModuleByModuleIdRequest>): Uint8Array {
+    return GetModuleByModuleIdRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes GetModuleByModuleIdRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): GetModuleByModuleIdRequest {
+    return GetModuleByModuleIdRequest._readMessage(
+      GetModuleByModuleIdRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes GetModuleByModuleIdRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetModuleByModuleIdRequest>,
+  ): GetModuleByModuleIdRequest {
+    return {
+      moduleId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetModuleByModuleIdRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.moduleId) {
+      writer.writeString(1, msg.moduleId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetModuleByModuleIdRequest,
+    reader: protoscript.BinaryReader,
+  ): GetModuleByModuleIdRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.moduleId = reader.readString();
           break;
         }
         default: {
@@ -4769,6 +5027,64 @@ export const GetModuleByModuleKeyRequestJSON = {
     const _moduleKey_ = json["moduleKey"] ?? json["module_key"];
     if (_moduleKey_) {
       msg.moduleKey = _moduleKey_;
+    }
+    return msg;
+  },
+};
+
+export const GetModuleByModuleIdRequestJSON = {
+  /**
+   * Serializes GetModuleByModuleIdRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<GetModuleByModuleIdRequest>): string {
+    return JSON.stringify(GetModuleByModuleIdRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes GetModuleByModuleIdRequest from JSON.
+   */
+  decode: function (json: string): GetModuleByModuleIdRequest {
+    return GetModuleByModuleIdRequestJSON._readMessage(
+      GetModuleByModuleIdRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes GetModuleByModuleIdRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetModuleByModuleIdRequest>,
+  ): GetModuleByModuleIdRequest {
+    return {
+      moduleId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetModuleByModuleIdRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.moduleId) {
+      json["moduleId"] = msg.moduleId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetModuleByModuleIdRequest,
+    json: any,
+  ): GetModuleByModuleIdRequest {
+    const _moduleId_ = json["moduleId"] ?? json["module_id"];
+    if (_moduleId_) {
+      msg.moduleId = _moduleId_;
     }
     return msg;
   },

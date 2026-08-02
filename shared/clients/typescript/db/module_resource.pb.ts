@@ -52,6 +52,50 @@ export interface DeleteModuleResourcesRequest {
   moduleId: string;
 }
 
+/**
+ * Selective single-resource hard delete used by barkloader's diff-based
+ * module upgrade path, for the one resource kind where hard deletion on
+ * removal is safe: nothing resolves a background task by canonical id at
+ * runtime the way workflows resolve triggers/actions/functions, so
+ * there's no "existing reference would break" concern to preserve.
+ */
+export interface DeleteResourceByManifestIdRequest {
+  /**
+   * Stable manifest module id (== manifest.json `id`, first segment of
+   * every canonical id for this module) — same convention as
+   * `DeleteByModuleIdRequest.module_id`, NOT the modules.id UUID.
+   */
+  moduleId: string;
+  /**
+   * "background_task" is the only supported value.
+   */
+  resourceType: string;
+  manifestId: string;
+}
+
+/**
+ * Selective single-resource archive (soft delete) used by barkloader's
+ * diff-based module upgrade path: when a resource id present in the
+ * previously installed manifest is absent from the newly installed one,
+ * this archives just that resource (sets `archived_at`) instead of
+ * deleting it or nuking the module's entire catalog. Archived rows stay
+ * resolvable by canonical id — a workflow/command that already
+ * references one keeps working — but are excluded from catalog listings
+ * (`ListTriggers`/`ListActions`/`ListWidgets`) going forward. See
+ * migration 0029_archived_at_columns.
+ */
+export interface ArchiveResourceByManifestIdRequest {
+  /**
+   * Stable manifest module id — see DeleteResourceByManifestIdRequest.
+   */
+  moduleId: string;
+  /**
+   * "trigger" | "action" | "widget" | "function".
+   */
+  resourceType: string;
+  manifestId: string;
+}
+
 export interface UpdateModuleResourceVersionRequest {
   id: string;
   version: string;
@@ -622,6 +666,182 @@ export const DeleteModuleResourcesRequest = {
       switch (field) {
         case 1: {
           msg.moduleId = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const DeleteResourceByManifestIdRequest = {
+  /**
+   * Serializes DeleteResourceByManifestIdRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<DeleteResourceByManifestIdRequest>,
+  ): Uint8Array {
+    return DeleteResourceByManifestIdRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes DeleteResourceByManifestIdRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): DeleteResourceByManifestIdRequest {
+    return DeleteResourceByManifestIdRequest._readMessage(
+      DeleteResourceByManifestIdRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes DeleteResourceByManifestIdRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<DeleteResourceByManifestIdRequest>,
+  ): DeleteResourceByManifestIdRequest {
+    return {
+      moduleId: "",
+      resourceType: "",
+      manifestId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<DeleteResourceByManifestIdRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.moduleId) {
+      writer.writeString(1, msg.moduleId);
+    }
+    if (msg.resourceType) {
+      writer.writeString(2, msg.resourceType);
+    }
+    if (msg.manifestId) {
+      writer.writeString(3, msg.manifestId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: DeleteResourceByManifestIdRequest,
+    reader: protoscript.BinaryReader,
+  ): DeleteResourceByManifestIdRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.moduleId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.resourceType = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.manifestId = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ArchiveResourceByManifestIdRequest = {
+  /**
+   * Serializes ArchiveResourceByManifestIdRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<ArchiveResourceByManifestIdRequest>,
+  ): Uint8Array {
+    return ArchiveResourceByManifestIdRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ArchiveResourceByManifestIdRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): ArchiveResourceByManifestIdRequest {
+    return ArchiveResourceByManifestIdRequest._readMessage(
+      ArchiveResourceByManifestIdRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ArchiveResourceByManifestIdRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ArchiveResourceByManifestIdRequest>,
+  ): ArchiveResourceByManifestIdRequest {
+    return {
+      moduleId: "",
+      resourceType: "",
+      manifestId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ArchiveResourceByManifestIdRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.moduleId) {
+      writer.writeString(1, msg.moduleId);
+    }
+    if (msg.resourceType) {
+      writer.writeString(2, msg.resourceType);
+    }
+    if (msg.manifestId) {
+      writer.writeString(3, msg.manifestId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ArchiveResourceByManifestIdRequest,
+    reader: protoscript.BinaryReader,
+  ): ArchiveResourceByManifestIdRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.moduleId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.resourceType = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.manifestId = reader.readString();
           break;
         }
         default: {
@@ -1206,6 +1426,162 @@ export const DeleteModuleResourcesRequestJSON = {
     const _moduleId_ = json["moduleId"] ?? json["module_id"];
     if (_moduleId_) {
       msg.moduleId = _moduleId_;
+    }
+    return msg;
+  },
+};
+
+export const DeleteResourceByManifestIdRequestJSON = {
+  /**
+   * Serializes DeleteResourceByManifestIdRequest to JSON.
+   */
+  encode: function (
+    msg: PartialDeep<DeleteResourceByManifestIdRequest>,
+  ): string {
+    return JSON.stringify(
+      DeleteResourceByManifestIdRequestJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes DeleteResourceByManifestIdRequest from JSON.
+   */
+  decode: function (json: string): DeleteResourceByManifestIdRequest {
+    return DeleteResourceByManifestIdRequestJSON._readMessage(
+      DeleteResourceByManifestIdRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes DeleteResourceByManifestIdRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<DeleteResourceByManifestIdRequest>,
+  ): DeleteResourceByManifestIdRequest {
+    return {
+      moduleId: "",
+      resourceType: "",
+      manifestId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<DeleteResourceByManifestIdRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.moduleId) {
+      json["moduleId"] = msg.moduleId;
+    }
+    if (msg.resourceType) {
+      json["resourceType"] = msg.resourceType;
+    }
+    if (msg.manifestId) {
+      json["manifestId"] = msg.manifestId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: DeleteResourceByManifestIdRequest,
+    json: any,
+  ): DeleteResourceByManifestIdRequest {
+    const _moduleId_ = json["moduleId"] ?? json["module_id"];
+    if (_moduleId_) {
+      msg.moduleId = _moduleId_;
+    }
+    const _resourceType_ = json["resourceType"] ?? json["resource_type"];
+    if (_resourceType_) {
+      msg.resourceType = _resourceType_;
+    }
+    const _manifestId_ = json["manifestId"] ?? json["manifest_id"];
+    if (_manifestId_) {
+      msg.manifestId = _manifestId_;
+    }
+    return msg;
+  },
+};
+
+export const ArchiveResourceByManifestIdRequestJSON = {
+  /**
+   * Serializes ArchiveResourceByManifestIdRequest to JSON.
+   */
+  encode: function (
+    msg: PartialDeep<ArchiveResourceByManifestIdRequest>,
+  ): string {
+    return JSON.stringify(
+      ArchiveResourceByManifestIdRequestJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes ArchiveResourceByManifestIdRequest from JSON.
+   */
+  decode: function (json: string): ArchiveResourceByManifestIdRequest {
+    return ArchiveResourceByManifestIdRequestJSON._readMessage(
+      ArchiveResourceByManifestIdRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ArchiveResourceByManifestIdRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ArchiveResourceByManifestIdRequest>,
+  ): ArchiveResourceByManifestIdRequest {
+    return {
+      moduleId: "",
+      resourceType: "",
+      manifestId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ArchiveResourceByManifestIdRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.moduleId) {
+      json["moduleId"] = msg.moduleId;
+    }
+    if (msg.resourceType) {
+      json["resourceType"] = msg.resourceType;
+    }
+    if (msg.manifestId) {
+      json["manifestId"] = msg.manifestId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ArchiveResourceByManifestIdRequest,
+    json: any,
+  ): ArchiveResourceByManifestIdRequest {
+    const _moduleId_ = json["moduleId"] ?? json["module_id"];
+    if (_moduleId_) {
+      msg.moduleId = _moduleId_;
+    }
+    const _resourceType_ = json["resourceType"] ?? json["resource_type"];
+    if (_resourceType_) {
+      msg.resourceType = _resourceType_;
+    }
+    const _manifestId_ = json["manifestId"] ?? json["manifest_id"];
+    if (_manifestId_) {
+      msg.manifestId = _manifestId_;
     }
     return msg;
   },

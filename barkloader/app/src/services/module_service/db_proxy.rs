@@ -740,6 +740,89 @@ pub async fn delete_module_resources(
     Ok(())
 }
 
+/// Twirp JSON for `module.ModuleService/DeleteResourceByManifestId`.
+///
+/// Selective single-resource hard delete used by the diff-based upgrade
+/// path in `module_install.rs`, for the one resource kind where that's
+/// safe on removal: nothing resolves a background task by canonical id
+/// at runtime the way workflows resolve triggers/actions/functions, so
+/// there's no existing reference that would break. `resource_type` must
+/// be "background_task" — `module_id` is the stable manifest module id,
+/// matching `DeleteByModuleIdRequest`.
+pub async fn delete_resource_by_manifest_id(
+    db_proxy_url: &str,
+    module_id: &str,
+    resource_type: &str,
+    manifest_id: &str,
+) -> Result<()> {
+    let url = format!("{}/twirp/module.ModuleService/DeleteResourceByManifestId", db_proxy_url);
+    let body = serde_json::json!({
+        "module_id": module_id,
+        "resource_type": resource_type,
+        "manifest_id": manifest_id,
+    });
+
+    let client = HTTP_CLIENT.clone();
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("DeleteResourceByManifestId request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("DeleteResourceByManifestId failed {}: {}", status, text));
+    }
+
+    Ok(())
+}
+
+/// Twirp JSON for `module.ModuleService/ArchiveResourceByManifestId`.
+///
+/// Selective single-resource archive (soft delete) used by the
+/// diff-based upgrade path in `module_install.rs`: when a resource id
+/// present in the previously installed manifest is absent from the
+/// newly installed one, this archives just that resource instead of
+/// deleting it or nuking everything the module owns. Archived rows stay
+/// resolvable by canonical id (a workflow/command that already
+/// references one keeps working) but are excluded from catalog listings
+/// going forward. `resource_type` is one of "trigger", "action",
+/// "widget", "function" — `module_id` is the stable manifest module id,
+/// matching `DeleteByModuleIdRequest`.
+pub async fn archive_resource_by_manifest_id(
+    db_proxy_url: &str,
+    module_id: &str,
+    resource_type: &str,
+    manifest_id: &str,
+) -> Result<()> {
+    let url = format!("{}/twirp/module.ModuleService/ArchiveResourceByManifestId", db_proxy_url);
+    let body = serde_json::json!({
+        "module_id": module_id,
+        "resource_type": resource_type,
+        "manifest_id": manifest_id,
+    });
+
+    let client = HTTP_CLIENT.clone();
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("ArchiveResourceByManifestId request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("ArchiveResourceByManifestId failed {}: {}", status, text));
+    }
+
+    Ok(())
+}
+
 /// A single external reference to a module resource, mirrored from the
 /// CheckModuleResourceUsage RPC response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1090,6 +1173,42 @@ async fn fetch_module_by_name_raw(
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
         return Err(anyhow!("GetModuleByName failed {}: {}", status, text));
+    }
+
+    let text = response.text().await.unwrap_or_default();
+    Ok(Some(text))
+}
+
+/// Look up a module by its stable manifest module id (manifest.json
+/// `id`) rather than its display `name` — the two commonly differ (e.g.
+/// id `twitch_platform`, name `"Twitch Platform"`), so `get_module_by_name`
+/// cannot be used to find "the currently installed version of this
+/// manifest" during an upgrade. Returns `Ok(None)` on 404 (fresh install,
+/// nothing previously installed).
+pub async fn get_module_by_module_id(
+    db_proxy_url: &str,
+    module_id: &str,
+) -> Result<Option<String>> {
+    let url = format!("{}/twirp/module.ModuleService/GetModuleByModuleId", db_proxy_url);
+    let body = serde_json::json!({ "module_id": module_id });
+
+    let client = HTTP_CLIENT.clone();
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("GetModuleByModuleId request failed: {}", e))?;
+
+    if response.status() == 404 {
+        return Ok(None);
+    }
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("GetModuleByModuleId failed {}: {}", status, text));
     }
 
     let text = response.text().await.unwrap_or_default();

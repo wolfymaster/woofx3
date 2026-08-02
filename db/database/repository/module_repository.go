@@ -28,37 +28,37 @@ func (r *ModuleRepository) Delete(m *models.Module) error {
 
 func (r *ModuleRepository) GetByID(id uuid.UUID) (*models.Module, error) {
 	var mod models.Module
-	err := r.db.Preload("Functions").Where("id = ?", id).First(&mod).Error
+	err := r.db.Preload("Functions", func(db *gorm.DB) *gorm.DB { return db.Where("archived_at IS NULL") }).Where("id = ?", id).First(&mod).Error
 	return &mod, err
 }
 
 func (r *ModuleRepository) GetByName(name string) (*models.Module, error) {
 	var mod models.Module
-	err := r.db.Preload("Functions").Where("module_id = ? OR name = ?", name, name).First(&mod).Error
+	err := r.db.Preload("Functions", func(db *gorm.DB) *gorm.DB { return db.Where("archived_at IS NULL") }).Where("module_id = ? OR name = ?", name, name).First(&mod).Error
 	return &mod, err
 }
 
 func (r *ModuleRepository) GetByModuleID(moduleID string) (*models.Module, error) {
 	var mod models.Module
-	err := r.db.Preload("Functions").Where("module_id = ?", moduleID).First(&mod).Error
+	err := r.db.Preload("Functions", func(db *gorm.DB) *gorm.DB { return db.Where("archived_at IS NULL") }).Where("module_id = ?", moduleID).First(&mod).Error
 	return &mod, err
 }
 
 func (r *ModuleRepository) GetByModuleKey(moduleKey string) (*models.Module, error) {
 	var mod models.Module
-	err := r.db.Preload("Functions").Where("module_key = ?", moduleKey).First(&mod).Error
+	err := r.db.Preload("Functions", func(db *gorm.DB) *gorm.DB { return db.Where("archived_at IS NULL") }).Where("module_key = ?", moduleKey).First(&mod).Error
 	return &mod, err
 }
 
 func (r *ModuleRepository) GetAll() ([]*models.Module, error) {
 	var modules []*models.Module
-	err := r.db.Preload("Functions").Find(&modules).Error
+	err := r.db.Preload("Functions", func(db *gorm.DB) *gorm.DB { return db.Where("archived_at IS NULL") }).Find(&modules).Error
 	return modules, err
 }
 
 func (r *ModuleRepository) GetByState(state string) ([]*models.Module, error) {
 	var modules []*models.Module
-	err := r.db.Preload("Functions").Where("state = ?", state).Find(&modules).Error
+	err := r.db.Preload("Functions", func(db *gorm.DB) *gorm.DB { return db.Where("archived_at IS NULL") }).Where("state = ?", state).Find(&modules).Error
 	return modules, err
 }
 
@@ -73,6 +73,56 @@ func (r *ModuleRepository) CreateFunctions(functions []models.ModuleFunction) er
 	return r.db.Create(&functions).Error
 }
 
+// ListActiveFunctionsByModuleID returns a module's non-archived
+// functions — used to diff the previously installed set against a new
+// manifest's functions on upgrade (see CreateModule's layer-2 path).
+func (r *ModuleRepository) ListActiveFunctionsByModuleID(moduleID uuid.UUID) ([]models.ModuleFunction, error) {
+	var functions []models.ModuleFunction
+	err := r.db.Where("module_id = ? AND archived_at IS NULL", moduleID).Find(&functions).Error
+	return functions, err
+}
+
+// UpsertFunction creates or updates a function keyed on
+// (module_id, manifest_id), scoped to the active row via the partial
+// unique index added in migration 0029 — same pattern as
+// UpsertTrigger/UpsertAction/UpsertWidget. A module upgrade that keeps a
+// function's id updates the row in place (new file_key, same identity)
+// instead of archiving-and-recreating it.
+func (r *ModuleRepository) UpsertFunction(f *models.ModuleFunction) error {
+	var result struct {
+		ID uuid.UUID `gorm:"column:id"`
+	}
+	err := r.db.Raw(`
+		INSERT INTO public.functions (id, module_id, manifest_id, name, file_name, file_key, entry_point, runtime)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (module_id, manifest_id) WHERE archived_at IS NULL AND manifest_id <> '' DO UPDATE SET
+			name = EXCLUDED.name,
+			file_name = EXCLUDED.file_name,
+			file_key = EXCLUDED.file_key,
+			entry_point = EXCLUDED.entry_point,
+			runtime = EXCLUDED.runtime
+		RETURNING id
+	`, f.ID, f.ModuleID, f.ManifestID, f.Name, f.FileName, f.FileKey, f.EntryPoint, f.Runtime).Scan(&result).Error
+	if err != nil {
+		return err
+	}
+	f.ID = result.ID
+	return nil
+}
+
+// ArchiveFunctionByManifestID soft-deletes a single function — used by
+// the diff-based upgrade path when a function id present in the
+// previously installed manifest is absent from the newly installed one.
+// Keeps the row resolvable (a workflow step that invokes this function
+// by canonical id keeps working) while excluding it from future
+// resolution of *new* function references and from any catalog listing.
+func (r *ModuleRepository) ArchiveFunctionByManifestID(moduleID uuid.UUID, manifestID string) error {
+	return r.db.Model(&models.ModuleFunction{}).Where(
+		"module_id = ? AND manifest_id = ? AND archived_at IS NULL",
+		moduleID, manifestID,
+	).Update("archived_at", gorm.Expr("NOW()")).Error
+}
+
 func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
 	// GORM's .Scan(dest) treats a raw `*uuid.UUID` ([16]byte) as an array of
 	// uint8 columns and fails with `converting driver.Value type string ...
@@ -81,13 +131,18 @@ func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
 	var result struct {
 		ID uuid.UUID `gorm:"column:id"`
 	}
-	// Upsert keyed on (created_by_type, created_by_ref, manifest_id) —
-	// `manifest_id` is the stable identifier; `name` is display-only and
-	// can drift between versions without changing the resource identity.
+	// Upsert keyed on (created_by_type, created_by_ref, manifest_id),
+	// scoped to the active (non-archived) row via the partial unique
+	// index added in migration 0029 — `manifest_id` is the stable
+	// identifier; `name` is display-only and can drift between versions
+	// without changing the resource identity. A conflict can only occur
+	// against an active row, so this never resurrects an archived one;
+	// archived rows and a fresh insert for the same manifest_id coexist
+	// (see AddArchivedAtColumns).
 	err := r.db.Raw(`
 		INSERT INTO public.triggers (id, taxonomy, name, description, event, config_schema, allow_variants, created_by_type, created_by_ref, manifest_id, application_id, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-		ON CONFLICT (created_by_type, created_by_ref, manifest_id) DO UPDATE SET
+		ON CONFLICT (created_by_type, created_by_ref, manifest_id) WHERE archived_at IS NULL DO UPDATE SET
 			taxonomy = EXCLUDED.taxonomy,
 			name = EXCLUDED.name,
 			description = EXCLUDED.description,
@@ -105,9 +160,14 @@ func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
 	return nil
 }
 
+// ListTriggers returns active (non-archived) triggers — this backs the
+// UI's catalog / "create workflow" pickers, which should never surface a
+// trigger a module upgrade has dropped. Existing workflows still resolve
+// archived triggers directly via GetTriggerByModuleAndManifestID /
+// GetTriggerByCanonicalId.
 func (r *ModuleRepository) ListTriggers(createdByType, createdByRef string) ([]*models.Trigger, error) {
 	var triggers []*models.Trigger
-	q := r.db
+	q := r.db.Where("archived_at IS NULL")
 	if createdByType != "" {
 		q = q.Where("created_by_type = ?", createdByType)
 	}
@@ -123,6 +183,20 @@ func (r *ModuleRepository) DeleteTriggersByModulePrefix(moduleID string) error {
 		"created_by_type = ? AND created_by_ref = ?",
 		"MODULE", moduleID,
 	).Delete(&models.Trigger{}).Error
+}
+
+// ArchiveTriggerByManifestID soft-deletes a single trigger — used by the
+// diff-based upgrade path when a trigger id present in the previously
+// installed manifest is absent from the newly installed one. Unlike a
+// hard delete, this keeps the row resolvable by canonical id (any
+// workflow that references it keeps working) while hiding it from
+// ListTriggers. Only archives an active row — idempotent if called
+// again for an already-archived id.
+func (r *ModuleRepository) ArchiveTriggerByManifestID(moduleID, manifestID string) error {
+	return r.db.Model(&models.Trigger{}).Where(
+		"created_by_type = ? AND created_by_ref = ? AND manifest_id = ? AND archived_at IS NULL",
+		"MODULE", moduleID, manifestID,
+	).Update("archived_at", gorm.Expr("NOW()")).Error
 }
 
 // ListTriggersByModulePrefix returns every trigger registered under the
@@ -145,6 +219,15 @@ func (r *ModuleRepository) ListTriggersByModulePrefix(moduleID string) ([]*model
 // built-ins, future integrations — already used the bare id) so a single
 // equality check resolves both.
 //
+// Prefers the active row, falling back to an archived one — a trigger a
+// module upgrade dropped from its manifest is archived, not deleted
+// (see migration 0029), so a workflow created against it keeps
+// resolving. `ORDER BY (archived_at IS NULL) DESC` sorts the active row
+// (if any) first; there is at most one active row per manifest_id at a
+// time (the partial unique index enforces this), but an archived row for
+// the same manifest_id can also exist if the resource was removed then
+// later re-added.
+//
 // Returns gorm.ErrRecordNotFound if no match.
 //
 // Module triggers/actions are instance-global (not scoped by application_id).
@@ -154,7 +237,7 @@ func (r *ModuleRepository) GetTriggerByModuleAndManifestID(moduleID, manifestID 
 	err := r.db.Where(
 		"manifest_id = ? AND created_by_ref = ?",
 		manifestID, moduleID,
-	).First(&trigger).Error
+	).Order("(archived_at IS NULL) DESC").First(&trigger).Error
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +261,7 @@ func (r *ModuleRepository) UpsertAction(a *models.Action) error {
 	err := r.db.Raw(`
 		INSERT INTO public.actions (id, name, description, call, params_schema, created_by_type, created_by_ref, manifest_id, type, taxonomy, application_id, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-		ON CONFLICT (created_by_type, created_by_ref, manifest_id) DO UPDATE SET
+		ON CONFLICT (created_by_type, created_by_ref, manifest_id) WHERE archived_at IS NULL DO UPDATE SET
 			name = EXCLUDED.name,
 			description = EXCLUDED.description,
 			call = EXCLUDED.call,
@@ -196,9 +279,10 @@ func (r *ModuleRepository) UpsertAction(a *models.Action) error {
 	return nil
 }
 
+// ListActions returns active (non-archived) actions — see ListTriggers.
 func (r *ModuleRepository) ListActions(createdByType, createdByRef string) ([]*models.Action, error) {
 	var actions []*models.Action
-	q := r.db
+	q := r.db.Where("archived_at IS NULL")
 	if createdByType != "" {
 		q = q.Where("created_by_type = ?", createdByType)
 	}
@@ -216,6 +300,14 @@ func (r *ModuleRepository) DeleteActionsByModulePrefix(moduleID string) error {
 	).Delete(&models.Action{}).Error
 }
 
+// ArchiveActionByManifestID mirrors ArchiveTriggerByManifestID for actions.
+func (r *ModuleRepository) ArchiveActionByManifestID(moduleID, manifestID string) error {
+	return r.db.Model(&models.Action{}).Where(
+		"created_by_type = ? AND created_by_ref = ? AND manifest_id = ? AND archived_at IS NULL",
+		"MODULE", moduleID, manifestID,
+	).Update("archived_at", gorm.Expr("NOW()")).Error
+}
+
 // ListActionsByModulePrefix mirrors ListTriggersByModulePrefix for the
 // actions table. Used to capture rows for the deregistration event before
 // they are removed.
@@ -231,7 +323,7 @@ func (r *ModuleRepository) ListActionsByModulePrefix(moduleID string) ([]*models
 // GetActionByModuleAndManifestID mirrors the trigger helper for the
 // actions table. See GetTriggerByModuleAndManifestID for why a single
 // equality check on `created_by_ref` resolves both MODULE and non-MODULE
-// rows.
+// rows, and for the active-first/archived-fallback ordering.
 //
 // Module triggers/actions are instance-global (not scoped by application_id).
 func (r *ModuleRepository) GetActionByModuleAndManifestID(moduleID, manifestID string) (*models.Action, error) {
@@ -239,7 +331,7 @@ func (r *ModuleRepository) GetActionByModuleAndManifestID(moduleID, manifestID s
 	err := r.db.Where(
 		"manifest_id = ? AND created_by_ref = ?",
 		manifestID, moduleID,
-	).First(&action).Error
+	).Order("(archived_at IS NULL) DESC").First(&action).Error
 	if err != nil {
 		return nil, err
 	}
@@ -308,10 +400,56 @@ func (r *ModuleRepository) DeleteAssetsByModulePrefix(moduleID string) error {
 	).Delete(&models.Asset{}).Error
 }
 
+// Note: assets have no selective per-manifest-id delete/archive path.
+// Unlike triggers/actions/functions/widgets, nothing resolves an asset
+// by canonical id at runtime, and a widget's baked-in
+// `${woofx3_asset_url:...}` reference is already a concrete URL by the
+// time it's stored — so an asset a module upgrade drops from its
+// manifest is simply left alone: not archived, not deleted. Only a full
+// module delete removes asset rows (DeleteAssetsByModulePrefix).
+
 // Module Resources
 
 func (r *ModuleRepository) CreateModuleResource(res *models.ModuleResource) error {
 	return r.db.Create(res).Error
+}
+
+// UpsertModuleResource creates or updates the ledger row for a
+// (module, resource kind, manifest id) triple — the unique key added by
+// migration 0028. `original_version` is intentionally left out of the
+// UPDATE SET: it's set once, on first install, and never touched again,
+// so the ledger always remembers which version first introduced a
+// resource even as `current_version` tracks the latest.
+func (r *ModuleRepository) UpsertModuleResource(res *models.ModuleResource) error {
+	var result struct {
+		ID uuid.UUID `gorm:"column:id"`
+	}
+	err := r.db.Raw(`
+		INSERT INTO public.module_resources (id, module_id, resource_type, resource_id, manifest_id, resource_name, original_version, current_version, installed_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		ON CONFLICT (module_id, resource_type, manifest_id) DO UPDATE SET
+			resource_id = EXCLUDED.resource_id,
+			resource_name = EXCLUDED.resource_name,
+			current_version = EXCLUDED.current_version,
+			updated_at = NOW()
+		RETURNING id
+	`, res.ID, res.ModuleID, res.ResourceType, res.ResourceID, res.ManifestID, res.ResourceName, res.OriginalVersion, res.CurrentVersion).Scan(&result).Error
+	if err != nil {
+		return err
+	}
+	res.ID = result.ID
+	return nil
+}
+
+// DeleteModuleResourceByManifestID removes a single ledger row — the
+// counterpart to the selective Delete*ByManifestID methods below, used
+// when a resource present in a previously installed manifest is absent
+// from the newly installed one.
+func (r *ModuleRepository) DeleteModuleResourceByManifestID(moduleID uuid.UUID, resourceType, manifestID string) error {
+	return r.db.Where(
+		"module_id = ? AND resource_type = ? AND manifest_id = ?",
+		moduleID, resourceType, manifestID,
+	).Delete(&models.ModuleResource{}).Error
 }
 
 func (r *ModuleRepository) ListModuleResources(moduleID uuid.UUID, resourceType string) ([]*models.ModuleResource, error) {
@@ -339,7 +477,7 @@ func (r *ModuleRepository) UpsertWidget(w *models.Widget) error {
 	err := r.db.Raw(`
 		INSERT INTO public.widgets (id, name, description, directory, entry, alert_types, settings_schema, surface, created_by_type, created_by_ref, manifest_id, application_id, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-		ON CONFLICT (created_by_type, created_by_ref, manifest_id) DO UPDATE SET
+		ON CONFLICT (created_by_type, created_by_ref, manifest_id) WHERE archived_at IS NULL DO UPDATE SET
 			name = EXCLUDED.name,
 			description = EXCLUDED.description,
 			directory = EXCLUDED.directory,
@@ -358,9 +496,10 @@ func (r *ModuleRepository) UpsertWidget(w *models.Widget) error {
 	return nil
 }
 
+// ListWidgets returns active (non-archived) widgets — see ListTriggers.
 func (r *ModuleRepository) ListWidgets(createdByType, createdByRef string) ([]*models.Widget, error) {
 	var widgets []*models.Widget
-	q := r.db
+	q := r.db.Where("archived_at IS NULL")
 	if createdByType != "" {
 		q = q.Where("created_by_type = ?", createdByType)
 	}
@@ -384,13 +523,14 @@ func (r *ModuleRepository) ListWidgetsByModulePrefix(moduleID string) ([]*models
 
 // GetWidgetByModuleAndManifestID mirrors the trigger helper for widgets.
 // See GetTriggerByModuleAndManifestID for why a single equality check on
-// `created_by_ref` resolves both MODULE and non-MODULE rows.
+// `created_by_ref` resolves both MODULE and non-MODULE rows, and for the
+// active-first/archived-fallback ordering.
 func (r *ModuleRepository) GetWidgetByModuleAndManifestID(moduleID, manifestID string) (*models.Widget, error) {
 	var widget models.Widget
 	err := r.db.Where(
 		"manifest_id = ? AND created_by_ref = ?",
 		manifestID, moduleID,
-	).First(&widget).Error
+	).Order("(archived_at IS NULL) DESC").First(&widget).Error
 	if err != nil {
 		return nil, err
 	}
@@ -402,6 +542,14 @@ func (r *ModuleRepository) DeleteWidgetsByModulePrefix(moduleID string) error {
 		"created_by_type = ? AND created_by_ref = ?",
 		"MODULE", moduleID,
 	).Delete(&models.Widget{}).Error
+}
+
+// ArchiveWidgetByManifestID mirrors ArchiveTriggerByManifestID for widgets.
+func (r *ModuleRepository) ArchiveWidgetByManifestID(moduleID, manifestID string) error {
+	return r.db.Model(&models.Widget{}).Where(
+		"created_by_type = ? AND created_by_ref = ? AND manifest_id = ? AND archived_at IS NULL",
+		"MODULE", moduleID, manifestID,
+	).Update("archived_at", gorm.Expr("NOW()")).Error
 }
 
 func (r *ModuleRepository) UpsertBackgroundTask(t *models.BackgroundTask) error {
@@ -453,6 +601,15 @@ func (r *ModuleRepository) DeleteBackgroundTasksByModulePrefix(moduleID string) 
 	return r.db.Where(
 		"created_by_type = ? AND created_by_ref = ?",
 		"MODULE", moduleID,
+	).Delete(&models.BackgroundTask{}).Error
+}
+
+// DeleteBackgroundTaskByManifestID mirrors DeleteTriggerByManifestID for
+// background tasks.
+func (r *ModuleRepository) DeleteBackgroundTaskByManifestID(moduleID, manifestID string) error {
+	return r.db.Where(
+		"created_by_type = ? AND created_by_ref = ? AND manifest_id = ?",
+		"MODULE", moduleID, manifestID,
 	).Delete(&models.BackgroundTask{}).Error
 }
 

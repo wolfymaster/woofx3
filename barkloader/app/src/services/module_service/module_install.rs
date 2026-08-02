@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use lib_repository::Repository;
 use log::{info, warn};
+use std::collections::HashMap;
 use std::path::Path;
 
 use super::db_proxy::{create_module, create_module_resource, CreateModuleFunctionJson};
@@ -56,6 +57,146 @@ async fn rollback_db_install(
         warn!("rollback: delete_module({}) failed: {}", module_name, e);
     } else {
         info!("rollback: removed module row for {}", module_name);
+    }
+}
+
+/// Extracts `module.manifest` (the raw manifest JSON string stored at
+/// install time) from a `GetModuleByModuleId`/`GetModuleByName` Twirp JSON
+/// response body. Returns `None` if the shape doesn't match — treated the
+/// same as "no previous install" by callers.
+fn extract_stored_manifest_json(module_response_json: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(module_response_json).ok()?;
+    value
+        .get("module")?
+        .get("manifest")?
+        .as_str()
+        .map(|s| s.to_string())
+}
+
+/// Diffs two manifests' declared resource ids, kind by kind, and returns
+/// every `(resource_type, manifest_id)` present in `old` but absent from
+/// `new` — i.e. every resource the upgrade should archive (or, for
+/// background_task, hard-delete — see `prune_removed_resources`).
+///
+/// Covers triggers, actions, widgets, functions, and background tasks —
+/// the kinds a workflow/command can reference by canonical id at
+/// creation *and* execution time, where deleting a removed one would
+/// break anything still pointing at it. Assets are deliberately excluded:
+/// nothing resolves an asset by canonical id at runtime (a workflow's
+/// `${woofx3_asset_url:...}` reference is already a concrete URL by the
+/// time it's baked in), so an asset dropped from the manifest is simply
+/// left alone — not archived, not deleted.
+fn removed_manifest_ids(old: &ModuleManifest, new: &ModuleManifest) -> Vec<(&'static str, String)> {
+    fn removed<'a>(
+        old_ids: impl Iterator<Item = &'a str>,
+        new_ids: &std::collections::HashSet<&str>,
+    ) -> Vec<String> {
+        old_ids
+            .filter(|id| !new_ids.contains(id))
+            .map(|id| id.to_string())
+            .collect()
+    }
+
+    let mut out = Vec::new();
+
+    let new_triggers: std::collections::HashSet<&str> =
+        new.triggers.iter().map(|t| t.id.as_str()).collect();
+    out.extend(
+        removed(old.triggers.iter().map(|t| t.id.as_str()), &new_triggers)
+            .into_iter()
+            .map(|id| ("trigger", id)),
+    );
+
+    let new_actions: std::collections::HashSet<&str> =
+        new.actions.iter().map(|a| a.id.as_str()).collect();
+    out.extend(
+        removed(old.actions.iter().map(|a| a.id.as_str()), &new_actions)
+            .into_iter()
+            .map(|id| ("action", id)),
+    );
+
+    let new_widgets: std::collections::HashSet<&str> =
+        new.widgets.iter().map(|w| w.id.as_str()).collect();
+    out.extend(
+        removed(old.widgets.iter().map(|w| w.id.as_str()), &new_widgets)
+            .into_iter()
+            .map(|id| ("widget", id)),
+    );
+
+    let new_functions: std::collections::HashSet<&str> =
+        new.functions.iter().map(|f| f.id.as_str()).collect();
+    out.extend(
+        removed(old.functions.iter().map(|f| f.id.as_str()), &new_functions)
+            .into_iter()
+            .map(|id| ("function", id)),
+    );
+
+    let new_background_tasks: std::collections::HashSet<&str> =
+        new.background_tasks.iter().map(|t| t.id.as_str()).collect();
+    out.extend(
+        removed(old.background_tasks.iter().map(|t| t.id.as_str()), &new_background_tasks)
+            .into_iter()
+            .map(|id| ("background_task", id)),
+    );
+
+    out
+}
+
+/// Fetches the previously installed version of this module (by stable
+/// manifest id) and, for every trigger/action/widget/function/
+/// background_task that existed in that version but is absent from
+/// `new_manifest`: archives it (background_task is hard-deleted instead
+/// — see `db_proxy::delete_resource_by_manifest_id`'s doc comment for
+/// why that one kind is safe to delete outright). Archiving keeps a
+/// removed resource resolvable by canonical id, so any workflow or
+/// command that already references it keeps working, while hiding it
+/// from catalog listings going forward. A fresh install (no previous
+/// version, or an unparseable stored manifest) is a no-op.
+async fn prune_removed_resources(
+    db_proxy_url: &str,
+    module_key: &str,
+    new_manifest: &ModuleManifest,
+) {
+    let prev_response = match super::db_proxy::get_module_by_module_id(db_proxy_url, module_key).await {
+        Ok(Some(body)) => body,
+        Ok(None) => return,
+        Err(e) => {
+            warn!("prune_removed_resources: lookup failed for {}: {}", module_key, e);
+            return;
+        }
+    };
+
+    let Some(prev_manifest_json) = extract_stored_manifest_json(&prev_response) else {
+        return;
+    };
+
+    let prev_manifest: ModuleManifest = match serde_json::from_str(&prev_manifest_json) {
+        Ok(m) => m,
+        Err(e) => {
+            warn!("prune_removed_resources: failed to parse stored manifest for {}: {}", module_key, e);
+            return;
+        }
+    };
+
+    for (resource_type, manifest_id) in removed_manifest_ids(&prev_manifest, new_manifest) {
+        let result = if resource_type == "background_task" {
+            super::db_proxy::delete_resource_by_manifest_id(db_proxy_url, module_key, resource_type, &manifest_id)
+                .await
+        } else {
+            super::db_proxy::archive_resource_by_manifest_id(db_proxy_url, module_key, resource_type, &manifest_id)
+                .await
+        };
+        if let Err(e) = result {
+            warn!(
+                "prune_removed_resources: failed to remove {} {} for {}: {}",
+                resource_type, manifest_id, module_key, e
+            );
+        } else {
+            info!(
+                "Removed {} '{}' from module {} (dropped from manifest)",
+                resource_type, manifest_id, module_key
+            );
+        }
     }
 }
 
@@ -175,6 +316,15 @@ pub async fn run_install<R: Repository>(
 
     if let Some(url) = db_proxy_url {
         validate_cross_module_dependencies(url, &resolved).await?;
+
+        // Diff against the previously installed version (if any) and
+        // prune anything the new manifest no longer declares, before
+        // registering what it does declare. This is what makes an
+        // upgrade converge to exactly the new manifest's resource set
+        // instead of only ever adding/updating.
+        if !cleanup_old {
+            prune_removed_resources(url, module_key, manifest).await;
+        }
     }
 
     let mut fn_rows: Vec<CreateModuleFunctionJson> =
@@ -206,14 +356,25 @@ pub async fn run_install<R: Repository>(
     }
 
     // Upload static assets declared in manifest.assets[]. Each asset
-    // is written to the repository under
-    // `modules/<moduleKey>/assets/<path>` and the resulting key is
-    // captured for the RegisterAssets call further down.
+    // is written to the repository under `modules/<moduleKey>/<path>`
+    // (path already carries its own directory, e.g. `assets/bell.mp3`
+    // — see ManifestAsset::upload_to_repository) and the resulting key
+    // is captured for the RegisterAssets call further down.
     let mut asset_keys: Vec<String> = Vec::with_capacity(manifest.assets.len());
     for a in &manifest.assets {
         let repo_key = a.upload_to_repository(&module_key, files, repository).await?;
         asset_keys.push(repo_key);
     }
+    // Manifest-local asset id -> repository key, used to bake
+    // `${asset:<id>}` markers in workflow step parameters into
+    // `${woofx3_asset_url:<repositoryKey>}` at registration time (see
+    // ManifestWorkflow::register / encode_asset_url_markers).
+    let asset_repo_keys: HashMap<String, String> = manifest
+        .assets
+        .iter()
+        .zip(asset_keys.iter())
+        .map(|(a, key)| (a.id.clone(), key.clone()))
+        .collect();
 
     if let Some(url) = db_proxy_url {
         if cleanup_old {
@@ -562,6 +723,7 @@ pub async fn run_install<R: Repository>(
                     url,
                     &resolved_trigger_ctx,
                     &resolved_steps_ctx,
+                    &asset_repo_keys,
                 )
                 .await?;
                 let canonical = resolved_wf.canonical_id.to_string();
@@ -634,6 +796,73 @@ mod tests {
         ModuleFile, ModuleFileKind, ModuleValidManifestKind, ModuleValidProgramKind,
     };
     use lib_repository::{FileRepository, FileRepositoryConfig, Repository};
+
+    fn manifest_with_trigger_ids(ids: &[&str]) -> ModuleManifest {
+        let triggers: Vec<serde_json::Value> = ids
+            .iter()
+            .map(|id| serde_json::json!({ "id": id, "name": id, "event": id }))
+            .collect();
+        let manifest_json = serde_json::json!({
+            "id": "diff-mod",
+            "name": "Diff Mod",
+            "version": "1.0.0",
+            "triggers": triggers,
+        });
+        serde_json::from_value(manifest_json).expect("manifest")
+    }
+
+    #[test]
+    fn removed_manifest_ids_reports_only_ids_dropped_from_the_new_manifest() {
+        // v1 declares {A, B}; v2 declares {B, C} — A should be reported
+        // for removal, B is kept (present in both, handled by the normal
+        // upsert path), C is new (also handled by upsert, not by this
+        // diff, since it's absent from `old`).
+        let old = manifest_with_trigger_ids(&["A", "B"]);
+        let new = manifest_with_trigger_ids(&["B", "C"]);
+
+        let removed = removed_manifest_ids(&old, &new);
+
+        assert_eq!(removed, vec![("trigger", "A".to_string())]);
+    }
+
+    #[test]
+    fn removed_manifest_ids_is_empty_when_nothing_was_dropped() {
+        let old = manifest_with_trigger_ids(&["A", "B"]);
+        let new = manifest_with_trigger_ids(&["A", "B", "C"]);
+
+        assert!(removed_manifest_ids(&old, &new).is_empty());
+    }
+
+    #[test]
+    fn removed_manifest_ids_reports_dropped_functions_but_never_assets() {
+        let old_json = serde_json::json!({
+            "id": "diff-mod",
+            "name": "Diff Mod",
+            "version": "1.0.0",
+            "functions": [
+                { "id": "f1", "name": "F1", "runtime": "lua", "path": "functions/f1.lua" },
+            ],
+            "assets": [
+                { "id": "a1", "name": "A1", "path": "assets/a1.mp3" },
+            ],
+        });
+        let new_json = serde_json::json!({
+            "id": "diff-mod",
+            "name": "Diff Mod",
+            "version": "2.0.0",
+            "functions": [],
+            "assets": [],
+        });
+        let old: ModuleManifest = serde_json::from_value(old_json).expect("old manifest");
+        let new: ModuleManifest = serde_json::from_value(new_json).expect("new manifest");
+
+        let removed = removed_manifest_ids(&old, &new);
+
+        // The dropped function is reported (so it gets archived, not
+        // deleted); the dropped asset is never reported — assets are
+        // left alone entirely, per the "should not be removed" contract.
+        assert_eq!(removed, vec![("function", "f1".to_string())]);
+    }
 
     #[tokio::test]
     async fn install_stores_function_without_db_proxy() {
@@ -746,6 +975,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn install_stores_top_level_asset_without_doubling_assets_prefix() {
+        // Regression: manifest.assets[].path is the full zip-relative path
+        // (e.g. "assets/bell.mp3", matching the functions[].path convention
+        // — "functions/foo.lua"), so the repository key must not prepend
+        // another "assets/" segment on top of it.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+
+        let manifest_json = br#"{
+            "id": "am",
+            "name": "Asset Mod",
+            "version": "1.0.0",
+            "assets": [{
+                "id": "bell",
+                "name": "Bell",
+                "path": "assets/bell.mp3"
+            }]
+        }"#;
+
+        let files = vec![
+            ModuleFile::new(
+                "module.json".into(),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                manifest_json.to_vec(),
+            ),
+            ModuleFile::new(
+                "assets/bell.mp3".into(),
+                ModuleFileKind::ASSET("mp3".into()),
+                b"fake-mp3-bytes".to_vec(),
+            ),
+        ];
+
+        let manifest: ModuleManifest = serde_json::from_slice(manifest_json).expect("manifest");
+        let mid = manifest.compute_module_key(manifest_json);
+        run_install(&manifest, &files, &repo, "archives/am/1.0.0.zip", None, "", false, &mid, "")
+            .await
+            .expect("install");
+
+        let bytes = repo
+            .read_file("modules/am/assets/bell.mp3")
+            .await
+            .expect("asset stored at modules/{module_key}/assets/bell.mp3, not nested under assets/assets/");
+        assert_eq!(bytes, b"fake-mp3-bytes");
+
+        // The bug this guards against: a doubled "assets/assets/" prefix.
+        assert!(
+            repo.read_file("modules/am/assets/assets/bell.mp3")
+                .await
+                .is_err(),
+            "asset must not be stored under a doubled assets/assets/ prefix"
+        );
+    }
+
+    #[tokio::test]
     async fn install_rejects_widget_entry_outside_assets() {
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = FileRepository::new(FileRepositoryConfig {
@@ -780,6 +1066,104 @@ mod tests {
             err.to_string().contains("must live inside the `assets` directory"),
             "unexpected error: {err}"
         );
+    }
+
+    #[tokio::test]
+    async fn install_rejects_widget_zip_member_name_traversal() {
+        // Regression test for a confirmed zip-slip: the declared `entry`/
+        // `assets` manifest strings are clean, but a zip archive member's
+        // own *file name* resolves (after prefix-stripping) to a path
+        // containing `..`. Before the fix, this survived normalize_rel_path
+        // unchanged and produced a repository key like
+        // "modules/wm3/widgets/w1/../../../evil.js", which FileRepository's
+        // `destination.join(key)` + `create_dir_all` would honor, writing
+        // outside `destination`. Assert both that install fails and that no
+        // file lands anywhere outside the tempdir.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+
+        let manifest_json = br#"{
+            "id": "wm3",
+            "name": "Widget Mod 3",
+            "version": "1.0.0",
+            "widgets": [{
+                "id": "w1",
+                "name": "W",
+                "entry": "w/index.html",
+                "assets": "w/"
+            }]
+        }"#;
+
+        let files = vec![
+            ModuleFile::new(
+                "module.json".into(),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                manifest_json.to_vec(),
+            ),
+            ModuleFile::new(
+                "w/index.html".into(),
+                ModuleFileKind::ASSET("html".into()),
+                b"<!doctype html>".to_vec(),
+            ),
+            // Malicious zip member: starts with the "w/" assets prefix, but
+            // strips down to a `..`-containing relative path.
+            ModuleFile::new(
+                "w/../../../evil.js".into(),
+                ModuleFileKind::ASSET("js".into()),
+                b"pwned".to_vec(),
+            ),
+        ];
+
+        let manifest: ModuleManifest = serde_json::from_slice(manifest_json).expect("manifest");
+        let mid = manifest.compute_module_key(manifest_json);
+        let err = run_install(&manifest, &files, &repo, "archives/wm3/1.0.0.zip", None, "", false, &mid, "")
+            .await
+            .expect_err("zip member name traversal must fail install");
+        assert!(
+            err.to_string().contains("invalid file name in archive"),
+            "unexpected error: {err}"
+        );
+
+        // No file escaped the tempdir, at any depth.
+        for entry in walk_all_files(dir.path()) {
+            let rel = entry.strip_prefix(dir.path()).expect("within tempdir");
+            assert!(
+                !rel.to_string_lossy().contains(".."),
+                "found a path outside destination: {}",
+                entry.display()
+            );
+        }
+        // And the legitimate entry file still installed successfully up to
+        // the point of failure is irrelevant here — the whole install must
+        // fail, so evil.js must not exist anywhere on disk.
+        assert!(
+            walk_all_files(dir.path())
+                .iter()
+                .all(|p| p.file_name().map(|n| n != "evil.js").unwrap_or(true)),
+            "evil.js must never be written"
+        );
+    }
+
+    fn walk_all_files(root: &Path) -> Vec<std::path::PathBuf> {
+        let mut out = Vec::new();
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else {
+                    out.push(path);
+                }
+            }
+        }
+        out
     }
 
     #[tokio::test]

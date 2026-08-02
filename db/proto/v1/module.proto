@@ -20,6 +20,7 @@ service ModuleService {
   rpc GetModule(GetModuleRequest) returns (ModuleResponse);
   rpc GetModuleByName(GetModuleByNameRequest) returns (ModuleResponse);
   rpc GetModuleByModuleKey(GetModuleByModuleKeyRequest) returns (ModuleResponse);
+  rpc GetModuleByModuleId(GetModuleByModuleIdRequest) returns (ModuleResponse);
   rpc ListModules(ListModulesRequest) returns (ListModulesResponse);
   rpc SetModuleState(SetModuleStateRequest) returns (ModuleResponse);
   rpc RegisterTriggers(RegisterTriggersRequest) returns (ListTriggersResponse);
@@ -43,6 +44,8 @@ service ModuleService {
   rpc CreateModuleResource(CreateModuleResourceRequest) returns (ModuleResourceResponse);
   rpc ListModuleResources(ListModuleResourcesRequest) returns (ListModuleResourcesResponse);
   rpc DeleteModuleResources(DeleteModuleResourcesRequest) returns (common.ResponseStatus);
+  rpc DeleteResourceByManifestId(DeleteResourceByManifestIdRequest) returns (common.ResponseStatus);
+  rpc ArchiveResourceByManifestId(ArchiveResourceByManifestIdRequest) returns (common.ResponseStatus);
   rpc UpdateModuleResourceVersion(UpdateModuleResourceVersionRequest) returns (ModuleResourceResponse);
   rpc CompleteModuleInstall(CompleteModuleInstallRequest) returns (common.ResponseStatus);
   rpc CheckModuleResourceUsage(CheckModuleResourceUsageRequest) returns (CheckModuleResourceUsageResponse);
@@ -54,6 +57,7 @@ service ModuleService {
   rpc GetResourceInstance(GetResourceInstanceRequest) returns (ResourceInstanceResponse);
   rpc ListResourceInstancesByKind(ListResourceInstancesByKindRequest) returns (ListResourceInstancesResponse);
   rpc ListResourceInstancesByModule(ListResourceInstancesByModuleRequest) returns (ListResourceInstancesResponse);
+  rpc ListAllResourceInstances(ListAllResourceInstancesRequest) returns (ListResourceInstancesResponse);
 }
 
 message Module {
@@ -136,6 +140,17 @@ message GetModuleByNameRequest {
 
 message GetModuleByModuleKeyRequest {
   string module_key = 1;
+}
+
+// GetModuleByModuleIdRequest looks a module up by its stable manifest
+// module id (manifest.json `id`, e.g. `twitch_platform`) — distinct from
+// `GetModuleByNameRequest` (the human display name, e.g. "Twitch
+// Platform") and `GetModuleByModuleKeyRequest` (the composite
+// `{id}:{version}:{hash}` key, which changes every version). Used by
+// barkloader's diff-based upgrade path to look up the previously
+// installed version of a module before registering a new one.
+message GetModuleByModuleIdRequest {
+  string module_id = 1;
 }
 
 message ListModulesRequest {

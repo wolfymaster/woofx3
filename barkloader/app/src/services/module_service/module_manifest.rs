@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use std::collections::HashMap;
 use lib_repository::{CreateFileRequest, Repository};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
@@ -217,10 +218,12 @@ pub struct ManifestAsset {
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
-    /// Relative path inside the module zip. Resolved via
-    /// `resolve_zip_file` at install time; the resulting bytes are
-    /// written into the repository under
-    /// `modules/{module_key}/assets/{path}`.
+    /// Relative path inside the module zip, e.g. `assets/bell.mp3`
+    /// (the module root, not a directory implicitly named `assets/`).
+    /// Resolved via `resolve_zip_file` at install time; the resulting
+    /// bytes are written into the repository under
+    /// `modules/{module_key}/{path}` — do not prepend another
+    /// `assets/` segment, since `path` already carries it.
     pub path: String,
     /// Optional broad-category hint for the editor's UI filter:
     /// `"image" | "audio" | "video" | "font" | "data"`. Free-form;
@@ -280,7 +283,7 @@ pub struct ModuleWidget {
     pub assets: Option<String>,
     #[serde(default)]
     pub settings_schema: Option<serde_json::Value>,
-    /// Canonical trigger ids (e.g. `twitch_platform:trigger:follow.user.twitch`)
+    /// Canonical trigger ids (e.g. `twitch_platform:trigger:follow.channel.twitch`)
     /// the widget consumes. Resolved at install via `manifest_validate.rs` to
     /// confirm those triggers actually exist in the engine — this is the
     /// engine-internal reference graph.
@@ -479,20 +482,36 @@ fn to_snake_case(s: &str) -> String {
     result
 }
 
-fn normalize_rel_path(s: &str) -> String {
-    s.trim_start_matches("./")
+/// Normalize a manifest- or zip-declared relative path and reject any `..`
+/// segment. Every repository key derived from a manifest/zip path funnels
+/// through here — rejecting traversal at this single point (rather than only
+/// at the manifest-string validation layer) means a crafted zip *member
+/// name* (not just a declared `entry`/`assets`/`path` config string) can
+/// never produce a `..`-containing repository key, which `lib_repository`'s
+/// file backend would otherwise honor via `PathBuf::join`, writing outside
+/// the configured storage root.
+fn normalize_rel_path(s: &str) -> Result<String> {
+    let normalized = s
+        .trim_start_matches("./")
         .replace('\\', "/")
         .trim_start_matches('/')
-        .to_string()
+        .to_string();
+    if normalized.split('/').any(|segment| segment == "..") {
+        return Err(anyhow!("path must not contain `..` segments, got {:?}", s));
+    }
+    Ok(normalized)
 }
 
 pub fn resolve_zip_file<'a>(files: &'a [ModuleFile], rel_path: &str) -> Option<&'a ModuleFile> {
-    let rel = normalize_rel_path(rel_path);
+    let rel = normalize_rel_path(rel_path).ok()?;
     if rel.is_empty() {
         return None;
     }
     files.iter().find(|f| {
-        let n = normalize_rel_path(&f.name);
+        let n = match normalize_rel_path(&f.name) {
+            Ok(n) => n,
+            Err(_) => return false,
+        };
         n == rel || n.ends_with(&format!("/{rel}")) || rel.ends_with(&n)
     })
 }
@@ -522,7 +541,7 @@ impl ManifestFunction {
         // Manifest paths are relative to the module root (e.g.
         // `functions/sendChatMessage.js`). Do not prepend another
         // `functions/` segment — that produced `functions/functions/...`.
-        let rel_in_module = normalize_rel_path(&self.path);
+        let rel_in_module = normalize_rel_path(&self.path)?;
         let repo_key = format!("modules/{module_key}/{rel_in_module}");
         let ext = extension_for_path(&self.path);
         let req = CreateFileRequest {
@@ -544,9 +563,13 @@ impl ManifestFunction {
 impl ManifestAsset {
     /// Resolve the asset's path inside the module zip and write the
     /// bytes into the engine's repository under
-    /// `modules/{module_key}/assets/{rel_in_module}`. Mirror of
+    /// `modules/{module_key}/{rel_in_module}`. Mirror of
     /// `ManifestFunction::upload_to_repository` — same failure modes,
-    /// same key shape (just `assets/` instead of `functions/`).
+    /// same key shape. `rel_in_module` (== `self.path`, normalized)
+    /// already carries whatever directory the author put the file
+    /// under in the zip (conventionally `assets/`, e.g.
+    /// `assets/bell.mp3`) — do not prepend another `assets/` segment
+    /// here, that produces `assets/assets/...`.
     pub async fn upload_to_repository<R: Repository>(
         &self,
         module_key: &str,
@@ -560,8 +583,8 @@ impl ManifestAsset {
                 self.path
             )
         })?;
-        let rel_in_module = normalize_rel_path(&self.path);
-        let repo_key = format!("modules/{module_key}/assets/{rel_in_module}");
+        let rel_in_module = normalize_rel_path(&self.path)?;
+        let repo_key = format!("modules/{module_key}/{rel_in_module}");
         let ext = extension_for_path(&self.path);
         let req = CreateFileRequest {
             content: Some(file.contents.clone()),
@@ -655,12 +678,12 @@ impl ManifestTrigger {
     }
 }
 
-fn widget_asset_prefix(assets: &str) -> String {
-    normalize_rel_path(assets).trim_end_matches('/').to_string() + "/"
+fn widget_asset_prefix(assets: &str) -> Result<String> {
+    Ok(normalize_rel_path(assets)?.trim_end_matches('/').to_string() + "/")
 }
 
 /// Map a canonical trigger id (e.g.
-/// `twitch_platform:trigger:follow.user.twitch`) to the AlertContext.type
+/// `twitch_platform:trigger:follow.channel.twitch`) to the AlertContext.type
 /// the engine emits for that event. Returns `None` for triggers that
 /// don't translate to an alert (chat messages, internal events, etc.) —
 /// those widgets must declare `alert_types` explicitly in the manifest.
@@ -671,13 +694,13 @@ fn widget_asset_prefix(assets: &str) -> String {
 pub fn alert_type_for_canonical(canonical: &str) -> Option<&'static str> {
     let event = canonical.rsplit(':').next().unwrap_or(canonical);
     match event {
-        "follow.user.twitch" => Some("follow"),
-        "cheer.user.twitch" => Some("cheer"),
-        "subscribe.user.twitch" => Some("subscribe"),
-        "subscription.gift.twitch" => Some("sub_gift"),
+        "follow.channel.twitch" => Some("follow"),
+        "cheer.channel.twitch" => Some("cheer"),
+        "subscribe.channel.twitch" => Some("subscribe"),
+        "subscriptionGift.channel.twitch" => Some("sub_gift"),
         "hypetrain.channel.twitch" => Some("hypetrain"),
-        "raid.user.twitch" => Some("raid"),
-        "online.user.twitch" => Some("stream_online"),
+        "raid.channel.twitch" => Some("raid"),
+        "online.channel.twitch" => Some("stream_online"),
         _ => None,
     }
 }
@@ -719,7 +742,7 @@ impl ModuleWidget {
         let Some(entry) = &self.entry else {
             return Ok(None);
         };
-        let normalized = normalize_rel_path(entry);
+        let normalized = normalize_rel_path(entry)?;
         if normalized.is_empty() {
             return Err(anyhow!(
                 "widget {}: `entry` must be a non-empty relative path",
@@ -733,7 +756,7 @@ impl ModuleWidget {
                 entry
             ));
         };
-        let prefix = widget_asset_prefix(assets);
+        let prefix = widget_asset_prefix(assets)?;
         let rel = normalized.strip_prefix(&prefix).unwrap_or_default();
         if rel.is_empty() {
             return Err(anyhow!(
@@ -761,7 +784,17 @@ impl ModuleWidget {
         let directory = self
             .assets
             .as_ref()
-            .map(|a| normalize_rel_path(a).trim_end_matches('/').to_string())
+            .map(|a| {
+                normalize_rel_path(a)
+                    .map(|n| n.trim_end_matches('/').to_string())
+                    .unwrap_or_else(|_| {
+                        debug_assert!(
+                            false,
+                            "widget assets dir failed normalization after validation"
+                        );
+                        String::new()
+                    })
+            })
             .unwrap_or_default();
         let settings_schema = match &self.settings_schema {
             Some(v) => v.to_string(),
@@ -798,7 +831,7 @@ impl ModuleWidget {
         rel_under_widget: &str,
         repository: &R,
     ) -> Result<String> {
-        let rel = normalize_rel_path(rel_under_widget);
+        let rel = normalize_rel_path(rel_under_widget)?;
         let repo_key = format!("modules/{module_key}/widgets/{}/{rel}", self.id);
         let ext = extension_for_path(&file.name);
         let mut failed = Vec::new();
@@ -845,9 +878,16 @@ impl ModuleWidget {
         }
 
         if let Some(assets_dir) = &self.assets {
-            let prefix = widget_asset_prefix(assets_dir);
+            let prefix = widget_asset_prefix(assets_dir)?;
             for file in files {
-                let n = normalize_rel_path(&file.name);
+                // Reject rather than skip: a `..`-containing zip member name
+                // anywhere in the archive is never legitimate (no tool
+                // produces one), so treat it as a corrupt/malicious archive
+                // and fail the whole widget upload rather than silently
+                // dropping the offending file.
+                let n = normalize_rel_path(&file.name).map_err(|e| {
+                    anyhow!("widget {}: invalid file name in archive: {e}", self.id)
+                })?;
                 if !n.starts_with(&prefix) {
                     continue;
                 }
@@ -884,7 +924,7 @@ impl ManifestOverlay {
                 self.entry
             )
         })?;
-        let rel = normalize_rel_path(&self.entry);
+        let rel = normalize_rel_path(&self.entry)?;
         let repo_key = format!("modules/{module_key}/overlays/{}/{rel}", self.id);
         let ext = extension_for_path(&self.entry);
         let mut failed = Vec::new();
@@ -1022,12 +1062,93 @@ pub struct ResolvedWorkflowStep {
 /// (`ManifestWorkflowStep` has no type discriminator). When the manifest
 /// gains support for wait / condition / log / sub-workflow steps, this
 /// helper grows a branch.
+/// Prefix an author writes inside a workflow step's `parameters` to
+/// reference one of this module's own declared assets, e.g.
+/// `${asset:pleasure_sound}` where `pleasure_sound` matches an
+/// `assets[].id` in the same manifest.
+const ASSET_MARKER_PREFIX: &str = "${asset:";
+
+/// Rewrite every `${asset:<id>}` marker in `value` (recursively, through
+/// objects and arrays) into `${woofx3_asset_url:<repositoryKey>}`, baking
+/// the module-qualified repository key directly into the persisted
+/// workflow JSON at install time.
+///
+/// This exists because a workflow step's parameters can reach a widget
+/// whose own `<base href>` belongs to a *different* module (e.g. a
+/// generic `MediaWidget` rendering an asset declared by the module that
+/// triggered the alert) — a bare relative filename has no way to carry
+/// "this belongs to module X" through to the browser. Baking the full
+/// repository key in at install time, with a recognizable
+/// `woofx3_asset_url:` prefix the workflow engine resolves via simple
+/// string concatenation against `storage.baseUrl` (see
+/// `workflow/internal/expression/resolver.go`), fixes that without
+/// requiring the workflow engine to do a DB lookup at execution time.
+///
+/// Fails loudly — rather than leaving an unresolved `${asset:...}` marker
+/// to break silently at runtime — if a marker references an asset id not
+/// declared in this manifest's `assets[]`.
+fn encode_asset_url_markers(
+    value: &serde_json::Value,
+    asset_repo_keys: &HashMap<String, String>,
+) -> Result<serde_json::Value> {
+    match value {
+        serde_json::Value::String(s) => Ok(serde_json::Value::String(rewrite_asset_markers(
+            s,
+            asset_repo_keys,
+        )?)),
+        serde_json::Value::Array(items) => {
+            let rewritten = items
+                .iter()
+                .map(|v| encode_asset_url_markers(v, asset_repo_keys))
+                .collect::<Result<Vec<_>>>()?;
+            Ok(serde_json::Value::Array(rewritten))
+        }
+        serde_json::Value::Object(map) => {
+            let rewritten = map
+                .iter()
+                .map(|(k, v)| Ok((k.clone(), encode_asset_url_markers(v, asset_repo_keys)?)))
+                .collect::<Result<serde_json::Map<String, serde_json::Value>>>()?;
+            Ok(serde_json::Value::Object(rewritten))
+        }
+        other => Ok(other.clone()),
+    }
+}
+
+fn rewrite_asset_markers(s: &str, asset_repo_keys: &HashMap<String, String>) -> Result<String> {
+    if !s.contains(ASSET_MARKER_PREFIX) {
+        return Ok(s.to_string());
+    }
+    let mut result = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(start) = rest.find(ASSET_MARKER_PREFIX) {
+        result.push_str(&rest[..start]);
+        let after_prefix = &rest[start + ASSET_MARKER_PREFIX.len()..];
+        let end = after_prefix
+            .find('}')
+            .ok_or_else(|| anyhow!("unterminated ${{asset:...}} marker in workflow parameters: {:?}", s))?;
+        let asset_id = &after_prefix[..end];
+        let repo_key = asset_repo_keys.get(asset_id).ok_or_else(|| {
+            anyhow!(
+                "workflow parameters reference ${{asset:{}}}, but no assets[] entry with that id exists in this manifest",
+                asset_id
+            )
+        })?;
+        result.push_str("${woofx3_asset_url:");
+        result.push_str(repo_key);
+        result.push('}');
+        rest = &after_prefix[end + 1..];
+    }
+    result.push_str(rest);
+    Ok(result)
+}
+
 fn step_to_task_json(
     step_id_prefix: &str,
     step_index: usize,
     step: &ManifestWorkflowStep,
     resolved: &ResolvedWorkflowStep,
-) -> serde_json::Value {
+    asset_repo_keys: &HashMap<String, String>,
+) -> Result<serde_json::Value> {
     let mut task = serde_json::Map::new();
     task.insert(
         "id".to_string(),
@@ -1044,12 +1165,15 @@ fn step_to_task_json(
             serde_json::Value::String(function.clone()),
         );
     }
-    task.insert("parameters".to_string(), step.parameters.clone());
+    task.insert(
+        "parameters".to_string(),
+        encode_asset_url_markers(&step.parameters, asset_repo_keys)?,
+    );
     task.insert(
         "$ref".to_string(),
         serde_json::Value::String(resolved.action_ref.clone()),
     );
-    serde_json::Value::Object(task)
+    Ok(serde_json::Value::Object(task))
 }
 
 /// Resolution context for a bundled workflow's trigger.
@@ -1077,6 +1201,7 @@ impl ManifestWorkflow {
         db_proxy_url: &str,
         resolved_trigger: &ResolvedWorkflowTrigger,
         resolved_steps: &[ResolvedWorkflowStep],
+        asset_repo_keys: &HashMap<String, String>,
     ) -> Result<()> {
         if resolved_steps.len() != self.steps.len() {
             return Err(anyhow!(
@@ -1101,8 +1226,8 @@ impl ManifestWorkflow {
             .steps
             .iter()
             .enumerate()
-            .map(|(i, s)| step_to_task_json(&step_id_prefix, i, s, &resolved_steps[i]))
-            .collect();
+            .map(|(i, s)| step_to_task_json(&step_id_prefix, i, s, &resolved_steps[i], asset_repo_keys))
+            .collect::<Result<Vec<_>>>()?;
 
         // Trigger JSON. `$ref` is reference metadata for the graph;
         // `type` and `event` are what the workflow engine consumes
@@ -1200,6 +1325,70 @@ impl ManifestWorkflow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn asset_map(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
+
+    #[test]
+    fn encode_asset_url_markers_rewrites_a_bare_string() {
+        let map = asset_map(&[("pleasure_sound", "modules/wolfy_profile/assets/pleasure.mp3")]);
+        let value = serde_json::json!("${asset:pleasure_sound}");
+        let result = encode_asset_url_markers(&value, &map).expect("rewrite");
+        assert_eq!(
+            result,
+            serde_json::json!("${woofx3_asset_url:modules/wolfy_profile/assets/pleasure.mp3}")
+        );
+    }
+
+    #[test]
+    fn encode_asset_url_markers_leaves_unrelated_strings_untouched() {
+        let map = asset_map(&[]);
+        let value = serde_json::json!("<3 {primary}${trigger.data.userName}{primary} followed <3");
+        let result = encode_asset_url_markers(&value, &map).expect("rewrite");
+        assert_eq!(result, value);
+    }
+
+    #[test]
+    fn encode_asset_url_markers_recurses_through_arrays_and_objects() {
+        let map = asset_map(&[
+            ("overlay", "modules/wm/assets/bit_overlay.json"),
+            ("confetti", "modules/wm/assets/confetti2.gif"),
+        ]);
+        let value = serde_json::json!({
+            "widget": "MediaWidget",
+            "mediaUrl": ["${asset:overlay}", "${asset:confetti}"],
+            "duration": 10,
+        });
+        let result = encode_asset_url_markers(&value, &map).expect("rewrite");
+        assert_eq!(
+            result,
+            serde_json::json!({
+                "widget": "MediaWidget",
+                "mediaUrl": [
+                    "${woofx3_asset_url:modules/wm/assets/bit_overlay.json}",
+                    "${woofx3_asset_url:modules/wm/assets/confetti2.gif}"
+                ],
+                "duration": 10,
+            })
+        );
+    }
+
+    #[test]
+    fn encode_asset_url_markers_rejects_unknown_asset_id() {
+        let map = asset_map(&[]);
+        let value = serde_json::json!("${asset:does_not_exist}");
+        let err = encode_asset_url_markers(&value, &map).expect_err("must fail");
+        assert!(err.to_string().contains("does_not_exist"));
+    }
+
+    #[test]
+    fn encode_asset_url_markers_rejects_unterminated_marker() {
+        let map = asset_map(&[]);
+        let value = serde_json::json!("${asset:pleasure_sound");
+        let err = encode_asset_url_markers(&value, &map).expect_err("must fail");
+        assert!(err.to_string().contains("unterminated"));
+    }
 
     #[test]
     fn parses_spec_manifest_json() {
@@ -1411,7 +1600,7 @@ mod tests {
                     "description": "Counts incoming raids.",
                     "entry": "widgets/raid_counter/index.html",
                     "assets": "widgets/raid_counter",
-                    "acceptedEvents": ["twitch_platform:trigger:raid.user.twitch"],
+                    "acceptedEvents": ["twitch_platform:trigger:raid.channel.twitch"],
                     "settingsSchema": {
                         "fields": [
                             {
@@ -1437,7 +1626,7 @@ mod tests {
         assert_eq!(w.id, "raid_counter");
         assert_eq!(w.entry.as_deref(), Some("widgets/raid_counter/index.html"));
         assert_eq!(w.assets.as_deref(), Some("widgets/raid_counter"));
-        assert_eq!(w.accepted_events, vec!["twitch_platform:trigger:raid.user.twitch"]);
+        assert_eq!(w.accepted_events, vec!["twitch_platform:trigger:raid.channel.twitch"]);
         let schema = w.settings_schema.as_ref().expect("settings_schema present");
         let fields = schema.get("fields").and_then(|v| v.as_array()).expect("fields array");
         assert_eq!(fields.len(), 2);
@@ -1457,7 +1646,7 @@ mod tests {
                     "name": "Recent Followers",
                     "entry": "widgets/recent_followers/index.html",
                     "assets": "widgets/recent_followers",
-                    "acceptedEvents": ["twitch_platform:trigger:follow.user.twitch"]
+                    "acceptedEvents": ["twitch_platform:trigger:follow.channel.twitch"]
                 },
                 {
                     "id": "alert_feed",
@@ -1465,9 +1654,9 @@ mod tests {
                     "entry": "widgets/alert_feed/index.html",
                     "assets": "widgets/alert_feed",
                     "acceptedEvents": [
-                        "twitch_platform:trigger:follow.user.twitch",
-                        "twitch_platform:trigger:cheer.user.twitch",
-                        "twitch_platform:trigger:raid.user.twitch"
+                        "twitch_platform:trigger:follow.channel.twitch",
+                        "twitch_platform:trigger:cheer.channel.twitch",
+                        "twitch_platform:trigger:raid.channel.twitch"
                     ]
                 }
             ]
@@ -1483,7 +1672,7 @@ mod tests {
         let w: ModuleWidget = serde_json::from_value(serde_json::json!({
             "id": "x",
             "name": "X",
-            "acceptedEvents": ["twitch_platform:trigger:follow.user.twitch"],
+            "acceptedEvents": ["twitch_platform:trigger:follow.channel.twitch"],
             "alertTypes": ["follow", "raid"]
         }))
         .expect("parse");
@@ -1496,9 +1685,9 @@ mod tests {
             "id": "x",
             "name": "X",
             "acceptedEvents": [
-                "twitch_platform:trigger:follow.user.twitch",
-                "twitch_platform:trigger:raid.user.twitch",
-                "twitch_platform:trigger:cheer.user.twitch"
+                "twitch_platform:trigger:follow.channel.twitch",
+                "twitch_platform:trigger:raid.channel.twitch",
+                "twitch_platform:trigger:cheer.channel.twitch"
             ]
         }))
         .expect("parse");
@@ -1513,7 +1702,7 @@ mod tests {
             "name": "X",
             "acceptedEvents": [
                 "twitch_platform:trigger:message.user.twitch",
-                "twitch_platform:trigger:follow.user.twitch"
+                "twitch_platform:trigger:follow.channel.twitch"
             ]
         }))
         .expect("parse");
@@ -1526,8 +1715,8 @@ mod tests {
             "id": "x",
             "name": "X",
             "acceptedEvents": [
-                "twitch_platform:trigger:follow.user.twitch",
-                "twitch_platform:trigger:follow.user.twitch"
+                "twitch_platform:trigger:follow.channel.twitch",
+                "twitch_platform:trigger:follow.channel.twitch"
             ]
         }))
         .expect("parse");
@@ -1536,13 +1725,13 @@ mod tests {
 
     #[test]
     fn alert_type_for_canonical_recognizes_full_alert_set() {
-        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:follow.user.twitch"), Some("follow"));
-        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:cheer.user.twitch"), Some("cheer"));
-        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:subscribe.user.twitch"), Some("subscribe"));
-        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:subscription.gift.twitch"), Some("sub_gift"));
+        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:follow.channel.twitch"), Some("follow"));
+        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:cheer.channel.twitch"), Some("cheer"));
+        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:subscribe.channel.twitch"), Some("subscribe"));
+        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:subscriptionGift.channel.twitch"), Some("sub_gift"));
         assert_eq!(alert_type_for_canonical("twitch_platform:trigger:hypetrain.channel.twitch"), Some("hypetrain"));
-        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:raid.user.twitch"), Some("raid"));
-        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:online.user.twitch"), Some("stream_online"));
+        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:raid.channel.twitch"), Some("raid"));
+        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:online.channel.twitch"), Some("stream_online"));
         assert_eq!(alert_type_for_canonical("twitch_platform:trigger:message.user.twitch"), None);
     }
 
@@ -1554,7 +1743,7 @@ mod tests {
             "description": "Counts incoming raids.",
             "entry": "widgets/raid_counter/index.html",
             "assets": "widgets/raid_counter",
-            "acceptedEvents": ["twitch_platform:trigger:raid.user.twitch"],
+            "acceptedEvents": ["twitch_platform:trigger:raid.channel.twitch"],
             "settingsSchema": {
                 "fields": [
                     { "key": "minViewers", "fieldType": "number", "label": "Minimum viewers", "defaultValue": 1 }
@@ -1669,7 +1858,7 @@ mod tests {
             "name": "Raid Counter",
             "entry": "widgets/raid_counter/index.html",
             "assets": "widgets/raid_counter",
-            "acceptedEvents": ["twitch_platform:trigger:raid.user.twitch"]
+            "acceptedEvents": ["twitch_platform:trigger:raid.channel.twitch"]
         }"#;
         let w: ModuleWidget = serde_json::from_str(j).expect("parse");
         let s = serde_json::to_string(&w).expect("serialize");
