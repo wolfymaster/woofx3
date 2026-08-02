@@ -2,6 +2,7 @@ pub mod background_scheduler;
 pub mod builtin_actions;
 pub mod field_options;
 pub mod http_client;
+pub mod http_storage_client;
 pub mod env_reader;
 pub mod chat;
 pub mod file_service;

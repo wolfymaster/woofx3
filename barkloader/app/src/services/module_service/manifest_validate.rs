@@ -214,13 +214,51 @@ fn validate_resource_kinds(items: &[ManifestResourceKind]) -> Result<()> {
     Ok(())
 }
 
+/// Reject a manifest-declared relative path that escapes the module root:
+/// a leading `/`/`\`, or any `..` path segment. Shared by asset-path and
+/// widget-entry/assets validation — `ctx` is prepended to the error message
+/// (e.g. `"widget #0: \`entry\`"`).
+fn reject_traversal(path: &str, ctx: &str) -> Result<()> {
+    let trimmed = path.trim();
+    if trimmed.starts_with('/') || trimmed.starts_with('\\') {
+        return Err(anyhow!(
+            "{ctx} must be relative to the module root, got {:?}",
+            path
+        ));
+    }
+    for segment in trimmed.split(['/', '\\']) {
+        if segment == ".." {
+            return Err(anyhow!(
+                "{ctx} must not contain `..` segments, got {:?}",
+                path
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Authoring constraint (design 5.2.5): a widget `entry` must live
 /// inside the widget's `assets` directory, because the registered
 /// entry is normalized assets-relative and resolved against the
 /// prefix-stripped repository keys
 /// (`modules/{module_key}/widgets/{id}/{entry}`).
+///
+/// Validates the declared `entry`/`assets` strings directly (so a bad
+/// path fails fast with a clear, field-scoped error) in addition to
+/// calling `entry_relative_to_assets()`, which independently enforces
+/// the same rule (via `normalize_rel_path`) for every install-time
+/// caller — this is a second, earlier checkpoint, not a replacement.
+/// `entry_relative_to_assets()` alone would miss a `..`-containing
+/// `assets` directory when no `entry` is declared, since it returns
+/// `Ok(None)` before ever inspecting `assets` in that case.
 fn validate_widget_entries(widgets: &[ModuleWidget]) -> Result<()> {
     for (i, w) in widgets.iter().enumerate() {
+        if let Some(entry) = &w.entry {
+            reject_traversal(entry, &format!("widget #{i}: `entry`"))?;
+        }
+        if let Some(assets) = &w.assets {
+            reject_traversal(assets, &format!("widget #{i}: `assets`"))?;
+        }
         w.entry_relative_to_assets()
             .map_err(|e| anyhow!("widget #{i}: {e}"))?;
     }
@@ -240,24 +278,7 @@ fn validate_asset_paths(assets: &[ManifestAsset]) -> Result<()> {
                 a.id
             ));
         }
-        if trimmed.starts_with('/') || trimmed.starts_with('\\') {
-            return Err(anyhow!(
-                "asset #{i} ({}): `path` must be relative to the module root, got {:?}",
-                a.id,
-                a.path
-            ));
-        }
-        // Reject `..` segments — same guard the asset proxy used to apply,
-        // applied earlier in the pipeline.
-        for segment in trimmed.split(['/', '\\']) {
-            if segment == ".." {
-                return Err(anyhow!(
-                    "asset #{i} ({}): `path` must not contain `..` segments, got {:?}",
-                    a.id,
-                    a.path
-                ));
-            }
-        }
+        reject_traversal(&a.path, &format!("asset #{i} ({}): `path`", a.id))?;
     }
     Ok(())
 }
@@ -767,6 +788,31 @@ mod tests {
             "assets": [{ "id": "x", "name": "X", "path": "assets/../../etc/passwd" }]"#,
         );
         let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains(".."), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_widget_entry_path_traversal() {
+        let m = minimal(
+            r#",
+            "widgets": [{ "id": "w", "name": "W", "entry": "assets/../../etc/passwd", "assets": "assets/" }]"#,
+        );
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("widget #0"), "got: {err}");
+        assert!(err.contains(".."), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_widget_assets_path_traversal_even_without_entry() {
+        // entry_relative_to_assets() alone returns Ok(None) when `entry` is
+        // absent, never inspecting `assets` — this guards the case where
+        // only `assets` is declared and it contains `..`.
+        let m = minimal(
+            r#",
+            "widgets": [{ "id": "w", "name": "W", "assets": "assets/../../etc" }]"#,
+        );
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("widget #0"), "got: {err}");
         assert!(err.contains(".."), "got: {err}");
     }
 

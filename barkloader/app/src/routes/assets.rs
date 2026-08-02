@@ -2,9 +2,17 @@ use actix_web::web::{Data, Path, ServiceConfig};
 use actix_web::{HttpResponse, get};
 use lib_repository::{Repository, RepositoryImpl};
 
+/// Top-level repository key prefixes this route will ever serve.
+/// `user/` is reserved for a not-yet-implemented user-asset upload
+/// feature — allowlisting it now is inert (nothing writes under it, so
+/// it 404s the same as any other miss) but means adding that feature
+/// later isn't a breaking change to this route's accepted key shape.
+const ALLOWED_TOP_LEVEL_PREFIXES: &[&str] = &["modules/", "builtin/", "user/"];
+
 /// Serve module files straight from the repository (file/S3 agnostic).
 /// Keys mirror repository keys exactly, e.g.
-/// `GET /assets/modules/{module_key}/widgets/{widget_id}/{entry}`.
+/// `GET /assets/modules/{module_key}/widgets/{widget_id}/{entry}`,
+/// `GET /assets/builtin/widgets/{widget_id}/{entry}`.
 ///
 /// Every rejection — traversal attempt, bad prefix, missing file — is a
 /// uniform 404 with no detail, so callers cannot probe the key space.
@@ -28,8 +36,8 @@ fn not_found() -> HttpResponse {
 
 /// Traversal pipeline (design 5.2.9 — order is load-bearing):
 /// percent-decode, then canonicalize path segments, then reject any
-/// `.`/`..` segment or backslash, then require the `modules/` prefix.
-/// Returns the canonical repository key, or `None` to reject.
+/// `.`/`..` segment or backslash, then require an allowlisted top-level
+/// prefix. Returns the canonical repository key, or `None` to reject.
 fn sanitize_asset_key(raw: &str) -> Option<String> {
     let decoded = percent_decode(raw)?;
     if decoded.contains('\\') {
@@ -47,7 +55,7 @@ fn sanitize_asset_key(raw: &str) -> Option<String> {
         }
     }
     let key = segments.join("/");
-    if !key.starts_with("modules/") {
+    if !ALLOWED_TOP_LEVEL_PREFIXES.iter().any(|p| key.starts_with(p)) {
         return None;
     }
     Some(key)
@@ -144,10 +152,29 @@ mod tests {
         // Malformed percent sequences reject outright.
         assert_eq!(sanitize_asset_key("modules/%zz/x"), None);
         assert_eq!(sanitize_asset_key("modules/x%2"), None);
-        // Prefix enforcement: only modules/ keys are servable.
+        // Prefix enforcement: only allowlisted top-level keys are servable.
         assert_eq!(sanitize_asset_key("archives/m.zip"), None);
         assert_eq!(sanitize_asset_key("modules"), None);
         assert_eq!(sanitize_asset_key(""), None);
+        // Traversal rejection is prefix-agnostic — applies under builtin/ too.
+        assert_eq!(sanitize_asset_key("builtin/../etc/passwd"), None);
+    }
+
+    #[test]
+    fn sanitize_allows_builtin_and_reserved_user_prefixes() {
+        // builtin/ is a real, servable prefix (migrated builtin widgets).
+        assert_eq!(
+            sanitize_asset_key("builtin/widgets/media_alert/index.html").as_deref(),
+            Some("builtin/widgets/media_alert/index.html")
+        );
+        // user/ is allowlisted (reserved for a future upload feature) even
+        // though nothing writes there today — sanitization still passes it
+        // through; the route 404s on the repository miss, same as any
+        // other absent key, not on the prefix check.
+        assert_eq!(
+            sanitize_asset_key("user/whatever").as_deref(),
+            Some("user/whatever")
+        );
     }
 
     #[test]
@@ -278,6 +305,45 @@ mod tests {
             let body = actix_test::read_body(resp).await;
             assert!(body.is_empty(), "404 body must not leak detail for {uri}");
         }
+    }
+
+    #[actix_web::test]
+    async fn get_serves_builtin_prefixed_keys() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = file_backed_repo(dir.path()).await;
+        seed(&repo, "builtin/widgets/media_alert/index.html", b"<!doctype html>").await;
+
+        let app = actix_test::init_service(
+            App::new().app_data(Data::new(repo)).configure(configure),
+        )
+        .await;
+
+        let req = actix_test::TestRequest::get()
+            .uri("/assets/builtin/widgets/media_alert/index.html")
+            .to_request();
+        let resp = actix_test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body = actix_test::read_body(resp).await;
+        assert_eq!(&body[..], b"<!doctype html>");
+    }
+
+    #[actix_web::test]
+    async fn get_reserved_user_prefix_404s_cleanly() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = file_backed_repo(dir.path()).await;
+
+        let app = actix_test::init_service(
+            App::new().app_data(Data::new(repo)).configure(configure),
+        )
+        .await;
+
+        let req = actix_test::TestRequest::get()
+            .uri("/assets/user/anything")
+            .to_request();
+        let resp = actix_test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 404);
+        let body = actix_test::read_body(resp).await;
+        assert!(body.is_empty());
     }
 
     #[actix_web::test]

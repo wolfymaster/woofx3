@@ -41,13 +41,14 @@ struct GetSettingResponse {
 
 #[derive(Debug, Deserialize)]
 struct SettingPayload {
-    value: Option<SettingValue>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SettingValue {
-    #[serde(rename = "stringValue", default)]
-    string_value: Option<String>,
+    // `value` is a `google.protobuf.Value` on the wire. protojson (used by
+    // Twirp's JSON codec) maps that well-known type to the bare JSON value
+    // it wraps rather than an object with a `stringValue` field — e.g. a
+    // string setting round-trips as `"value": "file"`, not
+    // `"value": {"stringValue": "file"}`. All settings barkloader reads are
+    // written as strings (see db-proxy's SetSetting), so a plain `String`
+    // here matches what's actually on the wire.
+    value: Option<String>,
 }
 
 /// Look up a single setting by key. Returns `Ok(None)` when the
@@ -88,7 +89,6 @@ pub async fn get_setting(db_proxy_url: &str, key: &str) -> Result<Option<String>
     Ok(parsed
         .setting
         .and_then(|s| s.value)
-        .and_then(|v| v.string_value)
         .filter(|s| !s.is_empty()))
 }
 
@@ -185,4 +185,40 @@ async fn resolve_s3_config(db_proxy_url: Option<&str>) -> Result<S3RepositoryCon
         secret_key,
         force_path_style,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // db-proxy's Twirp JSON codec (protojson) collapses `google.protobuf.Value`
+    // to the bare JSON scalar it wraps, not `{"stringValue": ...}` — this is
+    // what protojson.Marshal actually emits for a string-valued Setting.
+    #[test]
+    fn deserializes_protojson_collapsed_value() {
+        let body = r#"{"setting":{"id":"1","key":"storage.provider","value":"s3","valueType":"string","applicationId":"","userId":""}}"#;
+        let parsed: GetSettingResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(parsed.setting.and_then(|s| s.value), Some("s3".to_string()));
+    }
+
+    #[test]
+    fn deserializes_missing_setting_as_none() {
+        let body = r#"{"setting":null}"#;
+        let parsed: GetSettingResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(parsed.setting.and_then(|s| s.value), None);
+    }
+
+    #[test]
+    fn env_or_setting_prefers_setting_over_env() {
+        // SAFETY: test-only env mutation; not run concurrently with other
+        // tests that touch this var.
+        unsafe {
+            std::env::set_var("STORAGE_SETTINGS_TEST_VAR", "from-env");
+        }
+        let result = env_or_setting(Some("from-setting".to_string()), "STORAGE_SETTINGS_TEST_VAR");
+        assert_eq!(result, Some("from-setting".to_string()));
+        unsafe {
+            std::env::remove_var("STORAGE_SETTINGS_TEST_VAR");
+        }
+    }
 }

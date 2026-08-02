@@ -33,7 +33,6 @@ impl HttpResourceClient {
     /// module_key) that travels with every call. Today the sandbox
     /// invocations don't have a per-call context distinct from the engine
     /// instance's own, so a single bound value covers it.
-    #[allow(dead_code)]
     pub fn with_request_context(mut self, ctx: DbRequestContext) -> Self {
         self.request_context = Some(Arc::new(ctx));
         self

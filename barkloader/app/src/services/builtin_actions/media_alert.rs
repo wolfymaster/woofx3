@@ -120,7 +120,7 @@ mod tests {
     fn follow_event(app_id: &str) -> Value {
         json!({
             "applicationId": app_id,
-            "type": "builtin:trigger:follow.user.twitch",
+            "type": "builtin:trigger:follow.channel.twitch",
             "source": "twitch",
             "time": "2026-06-20T00:00:00Z",
             "data": { "username": "coolguy" }
@@ -157,7 +157,7 @@ mod tests {
         assert!(!envelope["id"].as_str().unwrap().is_empty(), "id must be non-empty");
         assert_eq!(envelope["applicationId"], "app-xyz");
         // Embedded event
-        assert_eq!(envelope["event"]["type"], "builtin:trigger:follow.user.twitch");
+        assert_eq!(envelope["event"]["type"], "builtin:trigger:follow.channel.twitch");
         assert_eq!(envelope["event"]["source"], "twitch");
         assert!(envelope["event"]["time"].is_string());
         assert_eq!(envelope["event"]["data"]["username"], "coolguy");
@@ -180,7 +180,7 @@ mod tests {
     fn rejects_missing_application_id() {
         let (_, ctx) = make_ctx();
         let event = json!({
-            "type": "builtin:trigger:follow.user.twitch",
+            "type": "builtin:trigger:follow.channel.twitch",
             "source": "twitch",
             "time": "2026-06-20T00:00:00Z",
             "data": {}

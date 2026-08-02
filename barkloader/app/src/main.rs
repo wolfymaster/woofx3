@@ -6,15 +6,15 @@ use actix_web::{App, HttpServer, middleware::Logger, web::Data};
 use anyhow::Result;
 use env_logger::Env;
 use lib_repository::{Repository, RepositoryFactory, RepositoryImpl};
-use futures::executor::block_on;
 use lib_sandbox::extensions::{
     ChatExtension, PlatformAlertsExtension, PlatformChatExtension, TwitchExtension,
 };
-use lib_sandbox::host::grpc::GrpcStorageClient;
 use lib_sandbox::host::noop::{noop_host_context, NoopChatSender};
 use lib_sandbox::host::{ChatSender, ExtensionRegistry};
 use crate::services::env_reader::OsEnvReader;
 use crate::services::http_client::ReqwestHttpClient;
+use crate::services::http_storage_client::HttpStorageClient;
+use crate::services::module_service::db_proxy::RequestContext as DbRequestContext;
 use crate::services::sandbox_resources::HttpResourceClient;
 use lib_sandbox::{ModuleRegistry, SandboxFactory};
 use log::{info, warn};
@@ -23,6 +23,7 @@ use types::AppContext;
 
 mod errors;
 mod routes;
+mod seed_builtin_widgets;
 mod services;
 mod types;
 mod util;
@@ -38,21 +39,6 @@ async fn setup() -> Result<AppContext> {
 
     let host_ctx = {
         let mut ctx = noop_host_context();
-
-        let storage_addr = get_env_or_default("STORAGE_ADDR", "");
-        if !storage_addr.is_empty() {
-            match block_on(GrpcStorageClient::new(storage_addr.clone(), String::new())) {
-                Ok(client) => {
-                    info!("Connected to storage service at {}", storage_addr);
-                    ctx.storage = Arc::new(client);
-                }
-                Err(e) => {
-                    warn!("Failed to connect to storage service: {}; falling back to noop", e);
-                }
-            }
-        } else {
-            info!("STORAGE_ADDR not set; using noop storage client");
-        }
 
         let mut chat_sender: Arc<dyn ChatSender> = Arc::new(NoopChatSender);
 
@@ -88,19 +74,34 @@ async fn setup() -> Result<AppContext> {
                 .with(Arc::new(ChatExtension::new(chat_sender))),
         );
 
-        // Resource-instance lifecycle (`ctx.resources.*`) — backed by db-proxy via Twirp.
+        // Resource-instance lifecycle (`ctx.resources.*`) and module storage
+        // (`ctx.storage.*`) — both backed by db-proxy via Twirp. Bound with
+        // the engine's own applicationId: today one barkloader process
+        // serves exactly one application, so a single startup-time value
+        // (rather than a per-invocation one) correctly scopes both.
         let resource_proxy_url = get_woofx3_json_value("databaseProxyUrl", "");
+        let application_id = get_woofx3_json_value("applicationId", "");
+        if application_id.is_empty() {
+            warn!("applicationId not set in .woofx3.json; ctx.resources/ctx.storage calls will be unscoped");
+        }
         if !resource_proxy_url.is_empty() {
             info!(
-                "Wiring HttpResourceClient against db-proxy {}",
+                "Wiring HttpResourceClient/HttpStorageClient against db-proxy {}",
                 resource_proxy_url
             );
-            ctx.resources = Arc::new(HttpResourceClient::new(resource_proxy_url.clone()));
-            ctx.settings = Arc::new(
-                crate::services::module_settings_client::HttpSettingsClient::new(resource_proxy_url)
+            ctx.resources = Arc::new(
+                HttpResourceClient::new(resource_proxy_url.clone()).with_request_context(DbRequestContext {
+                    client_id: String::new(),
+                    application_id: application_id.clone(),
+                    module_key: String::new(),
+                }),
             );
+            ctx.settings = Arc::new(
+                crate::services::module_settings_client::HttpSettingsClient::new(resource_proxy_url.clone())
+            );
+            ctx.storage = Arc::new(HttpStorageClient::new(resource_proxy_url, application_id));
         } else {
-            info!("databaseProxyUrl not set in .woofx3.json; using noop resource and settings clients");
+            info!("databaseProxyUrl not set in .woofx3.json; using noop resource, settings, and storage clients");
         }
 
         ctx.env = Arc::new(OsEnvReader);
@@ -190,6 +191,14 @@ async fn boot_modules(
 async fn main() -> std::io::Result<()> {
     // Initialize env_logger
     env_logger::init_from_env(Env::default().default_filter_or("info"));
+
+    // `cargo run --bin barkloader -- seed-builtin-widgets [--source-dir <path>]`
+    // uploads builtin widget files into repository storage. A one-off,
+    // manually-invoked deploy step — see seed_builtin_widgets for why.
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("seed-builtin-widgets") {
+        return seed_builtin_widgets::run(&args[2..]).await;
+    }
 
     // Validate required config
     if let Err(e) = validate_required_config(&["WOOFX3_BARKLOADER_KEY"]) {

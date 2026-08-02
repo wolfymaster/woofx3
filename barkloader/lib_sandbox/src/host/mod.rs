@@ -1,5 +1,4 @@
 pub mod extension;
-pub mod grpc;
 pub mod noop;
 
 pub use extension::{ExtensionRegistry, HandlerFn, HostExtension, HostFunction};
