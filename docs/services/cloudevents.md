@@ -76,12 +76,12 @@ Twitch channel events carry a full CloudEvent envelope. The NATS subject doubles
 | Method | NATS Subject / Type | Description |
 |--------|---------------------|-------------|
 | `chatMessage` | `message.user.twitch` | A chat message was sent in the channel |
-| `cheer` | `cheer.user.twitch` | A viewer cheered with bits |
-| `follow` | `follow.user.twitch` | A viewer followed the channel |
+| `cheer` | `cheer.channel.twitch` | A viewer cheered with bits |
+| `follow` | `follow.channel.twitch` | A viewer followed the channel |
 | `hypeTrainBegin` | `hypetrain.channel.twitch` | A hype train started |
-| `streamOnline` | `online.user.twitch` | The stream went online |
-| `subscribe` | `subscribe.user.twitch` | A viewer subscribed |
-| `subscriptionGift` | `subscription.gift.twitch` | A subscription was gifted |
+| `streamOnline` | `online.channel.twitch` | The stream went online |
+| `subscribe` | `subscribe.channel.twitch` | A viewer subscribed |
+| `subscriptionGift` | `subscriptionGift.channel.twitch` | A subscription was gifted |
 
 ### Payloads
 

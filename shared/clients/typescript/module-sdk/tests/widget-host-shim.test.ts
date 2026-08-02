@@ -266,7 +266,7 @@ describe("installWidgetHostShim — events", () => {
     const subId = h.sent("events.subscribe")[0]!.subId as string;
 
     const event = {
-      type: "twitch_platform:trigger:follow.user.twitch",
+      type: "twitch_platform:trigger:follow.channel.twitch",
       source: "twitch",
       time: "2026-06-12T00:00:00Z",
       data: { userName: "wolfy" },

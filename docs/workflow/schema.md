@@ -36,7 +36,7 @@ Defines the event that starts a workflow execution.
 {
   "$ref": "twitch_platform:trigger:channel_cheer",
   "type": "event",
-  "event": "cheer.user.twitch",
+  "event": "cheer.channel.twitch",
   "conditions": [
     { "field": "${trigger.data.amount}", "operator": "gte", "value": 100 }
   ]
@@ -47,7 +47,7 @@ Defines the event that starts a workflow execution.
 |----------|------|----------|-------------|
 | `$ref` | `string` | No | Canonical id of the trigger declaration this workflow references (see [Canonical IDs and References](../barkloader/modules.md#canonical-ids-and-references)). Recorded in `resource_references` so the system knows which trigger declaration — and which module — this workflow depends on. The engine **ignores `$ref` at execution time**; subscription is driven by `event`. Module-bundled workflows populate `$ref` automatically; UI-created workflows should populate it from the user's trigger selection so module deletion can detect the dependency. |
 | `type` | `string` | Yes | Trigger type. Currently only `"event"` is supported. |
-| `event` | `string` | Yes | NATS subject to subscribe to. Uses dot notation (e.g., `cheer.user.twitch`). Supports NATS-style wildcards (`*` for one token, `>` for the remaining tail). Same value lives on the underlying trigger row's `event` column. |
+| `event` | `string` | Yes | NATS subject to subscribe to. Uses dot notation (e.g., `cheer.channel.twitch`). Supports NATS-style wildcards (`*` for one token, `>` for the remaining tail). Same value lives on the underlying trigger row's `event` column. |
 | `conditions` | [ConditionConfig[]](#conditionconfig) | No | Optional conditions evaluated against the matching event payload before the workflow starts. All conditions are evaluated with AND logic; if any returns false the workflow does not run. The same `${trigger.data.X}` expression syntax used in step conditions is available here. If omitted, any event matching `event` triggers the workflow. |
 
 > **Why `$ref` and `event` are both present.** `event` is execution data — the actual NATS subject the workflow engine subscribes to, baked into the workflow at create time so the engine never needs a runtime lookup. `$ref` is reference metadata — the canonical id of the trigger declaration that owns that event, used only by the reference graph (in-use checks, upgrade tracking, "what depends on this module"). They live together in the same JSON object because they describe the same trigger from two different angles, but neither is derived from the other; both are populated at workflow create time.
@@ -162,7 +162,7 @@ Configuration for `wait` type tasks. Pauses workflow execution until a matching 
 ```json
 {
   "type": "aggregation",
-  "event": "cheer.user.twitch",
+  "event": "cheer.channel.twitch",
   "conditions": [
     { "field": "${trigger.data.channelId}", "operator": "eq", "value": "${trigger.data.channelId}" }
   ],
@@ -310,7 +310,7 @@ The `trigger` source exposes the full CloudEvents structure:
 | Path | Type | Description |
 |------|------|-------------|
 | `trigger.id` | `string` | Event UUID |
-| `trigger.type` | `string` | Event type (e.g., `cheer.user.twitch`) |
+| `trigger.type` | `string` | Event type (e.g., `cheer.channel.twitch`) |
 | `trigger.source` | `string` | Event source (e.g., `twitch`) |
 | `trigger.time` | `time` | Event timestamp |
 | `trigger.data` | `object` | Event-specific payload |

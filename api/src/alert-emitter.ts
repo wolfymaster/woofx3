@@ -13,13 +13,13 @@ import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
 import type { ConvexWebhookClient } from "./convex-webhook-client";
 
-const SUBJECT_FOLLOW = "follow.user.twitch";
-const SUBJECT_CHEER = "cheer.user.twitch";
-const SUBJECT_SUBSCRIBE = "subscribe.user.twitch";
-const SUBJECT_SUB_GIFT = "subscription.gift.twitch";
+const SUBJECT_FOLLOW = "follow.channel.twitch";
+const SUBJECT_CHEER = "cheer.channel.twitch";
+const SUBJECT_SUBSCRIBE = "subscribe.channel.twitch";
+const SUBJECT_SUB_GIFT = "subscriptionGift.channel.twitch";
 const SUBJECT_HYPETRAIN = "hypetrain.channel.twitch";
-const SUBJECT_RAID = "raid.user.twitch";
-const SUBJECT_STREAM_ONLINE = "online.user.twitch";
+const SUBJECT_RAID = "raid.channel.twitch";
+const SUBJECT_STREAM_ONLINE = "online.channel.twitch";
 
 interface CloudEventEnvelope<T> {
   type?: string;

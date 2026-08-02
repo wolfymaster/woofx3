@@ -86,18 +86,18 @@ describe("parseSceneConfigFromUrl", () => {
           bundleUrl: "u",
           position: { x: 0, y: 0, width: 1, height: 1 },
           acceptedEvents: [
-            "twitch_platform:trigger:follow.user.twitch",
+            "twitch_platform:trigger:follow.channel.twitch",
             42,
             "",
-            "twitch_platform:trigger:cheer.user.twitch",
+            "twitch_platform:trigger:cheer.channel.twitch",
           ],
         },
       ],
     });
     const result = parseSceneConfigFromUrl(search);
     expect(result.widgets[0]?.acceptedEvents).toEqual([
-      "twitch_platform:trigger:follow.user.twitch",
-      "twitch_platform:trigger:cheer.user.twitch",
+      "twitch_platform:trigger:follow.channel.twitch",
+      "twitch_platform:trigger:cheer.channel.twitch",
     ]);
   });
 

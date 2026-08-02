@@ -58,7 +58,7 @@ describe("createMockHost", () => {
     ctrl.host.onEvent(a);
     ctrl.host.onEvent(b);
     ctrl.fireEvent({
-      type: "twitch_platform:trigger:follow.user.twitch",
+      type: "twitch_platform:trigger:follow.channel.twitch",
       source: "twitch",
       time: "2026-05-09T00:00:00Z",
       data: { userName: "alice" },

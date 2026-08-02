@@ -43,13 +43,12 @@ untouched (`workflow/internal/expression/resolver.go:41`).
 | Source | What it carries |
 |---|---|
 | `trigger.id` | CloudEvent id of the firing event |
-| `trigger.type` | CloudEvent type (e.g. `cheer.user.twitch`) |
+| `trigger.type` | CloudEvent type (e.g. `cheer.channel.twitch`) |
 | `trigger.source` | CloudEvent source (e.g. `twitch`) |
 | `trigger.time` | RFC3339 timestamp |
 | `trigger.data.X` | Anything on the event's `data` map |
 | `<taskId>.X` | Exports from a previously-executed task in the same workflow |
 | `env.NAME` | Process environment variable (read at substitute time) |
-| `woofx3_asset_url` | The engine's configured asset base URL (bare source, no dot-path — see below) |
 
 **Semantics**: path lookup only. No operators, no comparisons, no
 ternary, no string concatenation, no function calls. The grammar is
@@ -79,37 +78,73 @@ literal token in place and returns the surrounding string unchanged
 (`workflow/internal/expression/resolver.go:50-58`). That makes
 authoring errors visible at render time rather than swallowed.
 
-### `${woofx3_asset_url}` — referencing module/uploaded assets
+### Referencing module assets from a bundled workflow (`${asset:<id>}`)
 
 Modules and workflows must never bake a deployment-specific host into
 an asset reference (a repository URL is meaningless on a different
 install, and hardcoding one defeats the whole point of a portable
 manifest — see `db/proto/v1/module_asset.proto`'s "resolving this to
-a public URL is the deployer's concern" note). Instead, reference the
-asset relative to `${woofx3_asset_url}`, and the engine substitutes
-the configured base URL at task-execution time:
+a public URL is the deployer's concern" note). There is also a
+structural constraint an earlier `${woofx3_asset_url}` source didn't
+satisfy: an asset referenced in a workflow step's `parameters` (e.g. an
+alert's `audioUrl`) can be rendered by a *generic* widget (like the
+builtin `MediaWidget`) whose own `<base href>` belongs to a different
+module than the one that declared the asset — so a bare relative
+filename or a base-URL-relative template can't safely reach it (see
+[Asset prefix rules](../woofwoofwoof/streamware/asset-prefix.md) for
+why asset routes are public/token-independent, which is the other half
+of this constraint).
 
-```jsonc
-"mediaUrl": "${woofx3_asset_url}/modules/twitch_platform/assets/bell.mp3"
-```
+The fix is a two-phase encoding, not a workflow-engine expression
+source:
 
-**Where the value comes from** (`workflow/asset_settings.go`,
-`AssetSettingsResolver`):
+1. **Manifest authoring**: reference one of *this module's own*
+   `assets[]` entries by id, inside a workflow step's `parameters`:
+   ```jsonc
+   "assets": [
+     { "id": "pleasure", "name": "Pleasure", "path": "assets/pleasure.mp3" }
+   ],
+   "workflows": [{
+     "steps": [{
+       "parameters": { "audioUrl": "${asset:pleasure}" }
+     }]
+   }]
+   ```
+2. **Install-time baking** (barkloader, `encode_asset_url_markers` in
+   `module_manifest.rs`): every `${asset:<id>}` marker anywhere in a
+   bundled workflow's step `parameters` (recursively — including inside
+   arrays, e.g. a `mediaUrl` list) is rewritten into
+   `${woofx3_asset_url:<repositoryKey>}`, using the *just-uploaded*
+   asset's actual repository key (e.g.
+   `modules/wolfy_profile/assets/pleasure.mp3`) — this is what gets
+   persisted in the workflow's `steps_json`. Install fails loudly if a
+   marker references an asset id not declared in `assets[]`, rather than
+   persisting something that would silently fail to resolve later.
+3. **Execution-time resolution** (workflow engine,
+   `workflow/internal/expression/resolver.go`): `${woofx3_asset_url:...}`
+   is recognized as a distinct token shape (not the ordinary
+   `source.path` grammar — repository keys contain dots from file
+   extensions, which would otherwise be misparsed as a path segment) and
+   resolved via plain string concatenation:
+   `{overlayPublicUrl}/overlay/assets/{repositoryKey}`. No DB lookup at
+   execution time — the repository key was already baked in at install
+   time.
 
-1. The db-proxy `settings` table, key `assets.baseUrl`, scoped to the
-   workflow's `applicationId`. This is what a future UI settings page
-   writes to point the engine at a custom CDN/host.
-2. If that setting is unset, falls back to `WOOFX3_BARKLOADER_URL` +
-   `/assets` (barkloader serves uploaded module assets itself at
-   `/assets/{repositoryKey}` — see `barkloader/app/src/routes/assets.rs`
-   and [Modules → Assets](../barkloader/modules.md)). Locally this
-   resolves from the `barkloaderUrl` key in `.woofx3.json` — no extra
-   configuration needed for dev.
+`overlayPublicUrl` is the `overlay.publicUrl` engine setting (see
+[Engine settings the UI configures](../services/engine-settings-ui.md) —
+`getEngineInfo().overlayPublicUrl` / `setOverlayPublicUrl`), resolved once
+per workflow execution via `workflow/overlay_public_url_resolver.go`'s
+`OverlayPublicURLResolver` (30s cache, process-wide, falls back to this
+service's own env-configured `WOOFX3_OVERLAY_PUBLIC_URL` when unset, and
+to an empty string beyond that — no further hardcoded guess, so an
+unconfigured deployment resolves asset URLs as host-less relative paths).
 
-Resolution is cached per `applicationId` for 30s (`assetURLCacheTTL` in
-`workflow/asset_settings.go`) so high-frequency task execution doesn't
-round-trip to db-proxy on every parameter resolution; a lookup failure
-falls back to the default rather than failing the workflow.
+This mechanism is scoped to a module's **own** declared assets,
+referenced from **that module's own bundled workflows** — it does not
+cover cross-module asset references or the `asset`-typed
+`settingsSchema` field an external editor UI might populate for
+user-authored workflows (see [Module manifest reference](../barkloader/modules.md)
+for that field's separate, still-unresolved authoring story).
 
 ## Layer 2 — streamware MediaWidget (TypeScript)
 

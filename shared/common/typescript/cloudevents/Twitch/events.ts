@@ -1,14 +1,28 @@
 export enum EventType {
     ChatMessage = 'message.user.twitch',
-    Cheer = 'cheer.user.twitch',
-    Follow = 'follow.user.twitch',
+    Cheer = 'cheer.channel.twitch',
+    Follow = 'follow.channel.twitch',
     HypeTrainBegin = 'hypetrain.channel.twitch',
-    Raid = 'raid.user.twitch',
+    Raid = 'raid.channel.twitch',
     Redeem = 'redeem.channelpoints.twitch',
-    StreamOnline = 'online.user.twitch',
-    StreamOffline = 'offline.user.twitch',
-    Subscribe = 'subscribe.user.twitch',
-    SubscriptionGift = 'subscription.gift.twitch',
+    StreamOnline = 'online.channel.twitch',
+    StreamOffline = 'offline.channel.twitch',
+    Subscribe = 'subscribe.channel.twitch',
+    SubscriptionGift = 'subscriptionGift.channel.twitch',
+    Resub = 'resub.channel.twitch',
+    GiftPaidUpgrade = 'giftPaidUpgrade.channel.twitch',
+    PrimePaidUpgrade = 'primePaidUpgrade.channel.twitch',
+    Unraid = 'unraid.channel.twitch',
+    PayItForward = 'payItForward.channel.twitch',
+    Announcement = 'announcement.channel.twitch',
+    CharityDonation = 'charityDonation.channel.twitch',
+    BitsBadgeTier = 'bitsBadgeTier.channel.twitch',
+    WatchStreak = 'watchStreak.channel.twitch',
+    SharedResub = 'sharedResub.channel.twitch',
+    SharedGiftPaidUpgrade = 'sharedGiftPaidUpgrade.channel.twitch',
+    SharedPrimePaidUpgrade = 'sharedPrimePaidUpgrade.channel.twitch',
+    SharedPayItForward = 'sharedPayItForward.channel.twitch',
+    SharedAnnouncement = 'sharedAnnouncement.channel.twitch',
 }
 
 export interface ChatMessage {
@@ -82,5 +96,79 @@ export interface SubscriptionGift {
     gifterId: string;
     gifterName: string;
     isAnonymous: boolean;
-    tier: string;        
+    tier: string;
 }
+
+// Fields shared by every channel.chat.notification subtype.
+export interface NotificationBase {
+    broadcasterId: string;
+    broadcasterName: string;
+    chatterId: string;
+    chatterName: string;
+    chatterIsAnonymous: boolean;
+    messageId: string;
+    messageText: string;
+    // Only set when the notification happens in another channel's chat
+    // during a shared chat session; null otherwise.
+    sourceBroadcasterId: string | null;
+    sourceBroadcasterName: string | null;
+}
+
+export interface Resub extends NotificationBase {
+    tier: string;
+    isPrime: boolean;
+    durationMonths: number;
+    cumulativeMonths: number;
+    streakMonths: number | null;
+    isGift: boolean;
+    gifterIsAnonymous: boolean | null;
+    gifterId: string | null;
+    gifterName: string | null;
+}
+
+export interface GiftPaidUpgrade extends NotificationBase {
+    isGifterAnonymous: boolean;
+    gifterId: string | null;
+    gifterName: string | null;
+}
+
+export interface PrimePaidUpgrade extends NotificationBase {
+    tier: string;
+}
+
+export interface Unraid extends NotificationBase {}
+
+export interface PayItForward extends NotificationBase {
+    isGifterAnonymous: boolean;
+    gifterId: string | null;
+    gifterName: string | null;
+}
+
+export interface Announcement extends NotificationBase {
+    color: string;
+}
+
+export interface CharityDonation extends NotificationBase {
+    charityName: string;
+    amount: number;
+    currency: string;
+}
+
+export interface BitsBadgeTier extends NotificationBase {
+    newTier: number;
+}
+
+export interface WatchStreak extends NotificationBase {
+    streakCount: number;
+    channelPointsAwarded: number;
+}
+
+export interface SharedResub extends Resub {}
+
+export interface SharedGiftPaidUpgrade extends GiftPaidUpgrade {}
+
+export interface SharedPrimePaidUpgrade extends PrimePaidUpgrade {}
+
+export interface SharedPayItForward extends PayItForward {}
+
+export interface SharedAnnouncement extends Announcement {}

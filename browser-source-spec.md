@@ -202,7 +202,7 @@ A barkloader module declares widgets in its `manifest.json`:
       "description": "Counts incoming raids.",
       "entry": "widgets/raid_counter/index.html",
       "assets": "widgets/raid_counter",
-      "acceptedEvents": ["twitch_platform:trigger:raid.user.twitch"],
+      "acceptedEvents": ["twitch_platform:trigger:raid.channel.twitch"],
       "settingsSchema": {
         "fields": [
           { "key": "minViewers", "fieldType": "number", "label": "Minimum viewers", "defaultValue": 1 }

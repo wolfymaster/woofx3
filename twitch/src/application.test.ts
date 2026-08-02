@@ -16,6 +16,7 @@ function createMockListener() {
     stop: mock(() => {}),
     onChannelBan: mock(() => subscriptionStub()),
     onChannelChatMessage: mock(() => subscriptionStub()),
+    onChannelChatNotification: mock(() => subscriptionStub()),
     onChannelCheer: mock(() => subscriptionStub()),
     onChannelFollow: mock(() => subscriptionStub()),
     onChannelHypeTrainBegin: mock(() => subscriptionStub()),

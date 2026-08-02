@@ -19,7 +19,7 @@ import "strings"
 //	Matches("foo.*", "foo.bar")          // true  (single-token wildcard)
 //	Matches("foo.>", "foo.bar.baz")      // true  (multi-token tail)
 //	Matches("foo.bar", "foo.baz")        // false
-//	Matches("*.user.twitch", "cheer.user.twitch") // true
+//	Matches("*.channel.twitch", "cheer.channel.twitch") // true
 func Matches(pattern, subject string) bool {
 	pp := strings.Split(pattern, ".")
 	sp := strings.Split(subject, ".")

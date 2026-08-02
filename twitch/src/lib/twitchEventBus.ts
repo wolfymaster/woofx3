@@ -3,13 +3,12 @@ import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { Context } from "src/types";
 import onChannelBan from "./subscriptions/onChannelBan";
 import onChannelChatmessage from "./subscriptions/onChannelChatMessage";
+import onChannelChatNotification from "./subscriptions/onChannelChatNotification";
 import onChannelCheer from "./subscriptions/onChannelCheer";
 import onChannelFollow from "./subscriptions/onChannelFollow";
 import onChannelHypeTrainBegin from "./subscriptions/onChannelHypeTrainBegin";
 import onChannelRaid from "./subscriptions/onChannelRaid";
 import onChannelRedemptionAdd from "./subscriptions/onChannelRedemptionAdd";
-import onChannelSubscription from "./subscriptions/onChannelSubscription";
-import onChannelSubscriptionGift from "./subscriptions/onChannelSubscriptionGift";
 import onStreamOffline from "./subscriptions/onStreamOffline";
 import onStreamOnline from "./subscriptions/onStreamOnline";
 
@@ -45,13 +44,12 @@ export default class TwitchEventBus {
     const funcs = [
       onChannelBan,
       onChannelChatmessage,
+      onChannelChatNotification,
       onChannelCheer,
       onChannelFollow,
       onChannelHypeTrainBegin,
       onChannelRaid,
       onChannelRedemptionAdd,
-      onChannelSubscription,
-      onChannelSubscriptionGift,
       onStreamOnline,
       onStreamOffline,
     ];

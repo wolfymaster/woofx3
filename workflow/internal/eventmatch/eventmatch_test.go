@@ -15,10 +15,10 @@ func TestMatches(t *testing.T) {
 		{"foo.bar.baz", "foo.bar", false},
 
 		// Single-token wildcard
-		{"*.user.twitch", "cheer.user.twitch", true},
-		{"*.user.twitch", "follow.user.twitch", true},
-		{"*.user.twitch", "user.twitch", false},
-		{"*.user.twitch", "cheer.channel.twitch", false},
+		{"*.channel.twitch", "cheer.channel.twitch", true},
+		{"*.channel.twitch", "follow.channel.twitch", true},
+		{"*.channel.twitch", "channel.twitch", false},
+		{"*.channel.twitch", "message.user.twitch", false},
 		{"foo.*", "foo.bar", true},
 		{"foo.*", "foo", false},
 		{"foo.*", "foo.bar.baz", false},

@@ -39,7 +39,7 @@ export interface StorageChangedPayload {
 export interface WidgetEventPushPayload {
   kind: "event";
   id?: string;
-  /** Canonical trigger id, e.g. `twitch_platform:trigger:follow.user.twitch`. */
+  /** Canonical trigger id, e.g. `twitch_platform:trigger:follow.channel.twitch`. */
   type: string;
   source: string;
   /** RFC3339. */

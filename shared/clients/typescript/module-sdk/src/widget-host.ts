@@ -41,7 +41,7 @@ export interface WidgetHostStorage {
  *
  * `type` is the canonical trigger id from the widget's
  * `acceptedEvents` declaration (e.g.
- * `"twitch_platform:trigger:follow.user.twitch"`). The same shape covers
+ * `"twitch_platform:trigger:follow.channel.twitch"`). The same shape covers
  * every event class — alerts are one example, not a special case.
  */
 export interface WidgetEvent {

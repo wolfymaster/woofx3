@@ -133,13 +133,13 @@ describe("AlertEmitter wiring", () => {
     const subjects = nats.subscribe.mock.calls.map((c: any) => c[0]).sort();
     expect(subjects).toEqual(
       [
-        "cheer.user.twitch",
-        "follow.user.twitch",
+        "cheer.channel.twitch",
+        "follow.channel.twitch",
         "hypetrain.channel.twitch",
-        "online.user.twitch",
-        "raid.user.twitch",
-        "subscribe.user.twitch",
-        "subscription.gift.twitch",
+        "online.channel.twitch",
+        "raid.channel.twitch",
+        "subscribe.channel.twitch",
+        "subscriptionGift.channel.twitch",
       ].sort()
     );
   });
@@ -147,7 +147,7 @@ describe("AlertEmitter wiring", () => {
   it("forwards a follow event to the webhook with the configured channelId", async () => {
     const { emitter, webhook, handlers } = setup();
     await emitter.start();
-    handlers.get("follow.user.twitch")!(makeMsg("follow.user.twitch", { userName: "alice" }));
+    handlers.get("follow.channel.twitch")!(makeMsg("follow.channel.twitch", { userName: "alice" }));
     await Promise.resolve();
     expect(webhook.sendAlert).toHaveBeenCalledTimes(1);
     expect(webhook.sendAlert).toHaveBeenCalledWith("ch-1", { type: "follow", user: "alice" });
@@ -156,8 +156,8 @@ describe("AlertEmitter wiring", () => {
   it("forwards a raid event", async () => {
     const { emitter, webhook, handlers } = setup();
     await emitter.start();
-    handlers.get("raid.user.twitch")!(
-      makeMsg("raid.user.twitch", {
+    handlers.get("raid.channel.twitch")!(
+      makeMsg("raid.channel.twitch", {
         fromBroadcasterUserId: "b1",
         fromBroadcasterUserName: "RaidingStreamer",
         viewers: 42,
@@ -175,7 +175,7 @@ describe("AlertEmitter wiring", () => {
     const { emitter, webhook, handlers, nats: _nats } = setup();
     await emitter.start();
     const badMsg: Msg = {
-      subject: "follow.user.twitch",
+      subject: "follow.channel.twitch",
       data: new TextEncoder().encode("not-json"),
       json: () => {
         throw new Error("invalid json");
@@ -183,7 +183,7 @@ describe("AlertEmitter wiring", () => {
       string: () => "not-json",
       respond: () => false,
     };
-    expect(() => handlers.get("follow.user.twitch")!(badMsg)).not.toThrow();
+    expect(() => handlers.get("follow.channel.twitch")!(badMsg)).not.toThrow();
     await Promise.resolve();
     expect(webhook.sendAlert).not.toHaveBeenCalled();
   });
@@ -192,7 +192,7 @@ describe("AlertEmitter wiring", () => {
     const { emitter, webhook, handlers } = setup();
     await emitter.start();
     emitter.setChannelId("ch-2");
-    handlers.get("follow.user.twitch")!(makeMsg("follow.user.twitch", { userName: "bob" }));
+    handlers.get("follow.channel.twitch")!(makeMsg("follow.channel.twitch", { userName: "bob" }));
     await Promise.resolve();
     expect(webhook.sendAlert).toHaveBeenCalledWith("ch-2", { type: "follow", user: "bob" });
   });

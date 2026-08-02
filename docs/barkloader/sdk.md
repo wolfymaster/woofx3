@@ -103,7 +103,7 @@ const host: WidgetHost = window.widgetHost!;
 
 // Subscribe to events the widget declared in `acceptedEvents[]`.
 host.onEvent((event: WidgetEvent) => {
-  if (event.type === "twitch_platform:trigger:follow.user.twitch") {
+  if (event.type === "twitch_platform:trigger:follow.channel.twitch") {
     appendFollower(event.data);
   }
 });

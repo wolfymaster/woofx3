@@ -66,7 +66,7 @@ and calls `bridge.sendStorageChanged(subId, key, value, occurredAt)` for each.
 ```json
 {
   "kind": "event",
-  "type": "twitch_platform:trigger:follow.user.twitch",
+  "type": "twitch_platform:trigger:follow.channel.twitch",
   "source": "twitch",
   "time": "2026-06-12T10:00:00.000Z",
   "data": { "username": "someviewer" }

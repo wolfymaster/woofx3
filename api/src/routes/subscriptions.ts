@@ -920,7 +920,7 @@ export const subscriptionsRoutes = {
     });
 
     // Twitch stream lifecycle. The twitch service publishes
-    // `online.user.twitch` / `offline.user.twitch` cloudevents from
+    // `online.channel.twitch` / `offline.channel.twitch` cloudevents from
     // its EventSub listener; we translate them to the webhook
     // `stream.online` / `stream.offline` events the UI subscribes to.
     //
@@ -928,7 +928,7 @@ export const subscriptionsRoutes = {
     // the engine is single-broadcaster-per-deployment today, so every
     // emitted event scopes to the same id. The `_d` is the raw
     // CloudEvent data; we read the broadcaster fields directly.
-    await this.nats.subscribe("online.user.twitch", async (msg) => {
+    await this.nats.subscribe("online.channel.twitch", async (msg) => {
       try {
         const ce = msg.json() as Record<string, unknown>;
         const data = (ce.data as Record<string, unknown> | undefined) ?? ce;
@@ -978,13 +978,13 @@ export const subscriptionsRoutes = {
           viewerCount: enrichment?.viewerCount,
         });
       } catch (err) {
-        this.logger.error("online.user.twitch: handler failed", {
+        this.logger.error("online.channel.twitch: handler failed", {
           error: err instanceof Error ? err.message : String(err),
         });
       }
     });
 
-    await this.nats.subscribe("offline.user.twitch", async (msg) => {
+    await this.nats.subscribe("offline.channel.twitch", async (msg) => {
       try {
         const ce = msg.json() as Record<string, unknown>;
         const data = (ce.data as Record<string, unknown> | undefined) ?? ce;
@@ -1012,7 +1012,7 @@ export const subscriptionsRoutes = {
           twitchUserId,
         });
       } catch (err) {
-        this.logger.error("offline.user.twitch: handler failed", {
+        this.logger.error("offline.channel.twitch: handler failed", {
           error: err instanceof Error ? err.message : String(err),
         });
       }

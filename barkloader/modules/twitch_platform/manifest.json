@@ -2,11 +2,11 @@
   "id": "twitch_platform",
   "name": "Twitch Platform",
   "author": "WolfyMaster LLC",
-  "version": "1.0.0",
-  "description": "Twitch EventSub subscription types as eventbus triggers. IDs are twitch.<EventSub subscription type>. See https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/",
+  "version": "1.1.0",
+  "description": "Twitch EventSub subscription types as eventbus triggers. Trigger IDs are the NATS subject each event publishes on (see shared/common/typescript/cloudevents/Twitch/events.ts EventType). See https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/",
   "triggers": [
     {
-      "id": "follow.user.twitch",
+      "id": "follow.channel.twitch",
       "name": "Channel follow",
       "description": "Twitch EventSub: channel.follow",
       "type": "eventbus",
@@ -20,7 +20,7 @@
       "category": "platform.twitch"
     },
     {
-      "id": "subscribe.user.twitch",
+      "id": "subscribe.channel.twitch",
       "name": "Channel subscribe",
       "description": "Twitch EventSub: channel.subscribe",
       "type": "eventbus",
@@ -51,7 +51,7 @@
       ]
     },
     {
-      "id": "subscription.gift.twitch",
+      "id": "subscriptionGift.channel.twitch",
       "name": "Channel subscription gift",
       "description": "Twitch EventSub: channel.subscription.gift",
       "type": "eventbus",
@@ -93,7 +93,7 @@
       ]
     },
     {
-      "id": "cheer.user.twitch",
+      "id": "cheer.channel.twitch",
       "name": "Channel cheer",
       "description": "Twitch EventSub: channel.cheer",
       "type": "eventbus",
@@ -124,7 +124,7 @@
       "category": "platform.twitch"
     },
     {
-      "id": "online.user.twitch",
+      "id": "online.channel.twitch",
       "name": "Stream online",
       "description": "Twitch EventSub: stream.online",
       "type": "eventbus",
@@ -160,11 +160,276 @@
       ]
     },
     {
-      "id": "twitch.stream.offline",
+      "id": "offline.channel.twitch",
       "name": "Stream offline",
       "description": "Twitch EventSub: stream.offline",
       "type": "eventbus",
       "category": "platform.twitch"
+    },
+    {
+      "id": "raid.channel.twitch",
+      "name": "Channel raid",
+      "description": "Twitch EventSub: channel.raid",
+      "type": "eventbus",
+      "category": "platform.twitch",
+      "allowVariants": true,
+      "schema": [
+        {
+          "id": "minViewers",
+          "label": "Minimum viewers",
+          "type": "number",
+          "required": true,
+          "min": 1,
+          "defaultValue": 1,
+          "placeholder": "e.g. 25",
+          "eventPath": "viewers",
+          "operator": "gte",
+          "description": "Only fire when the raid brings at least this many viewers.",
+          "dataSchema": "{\n  \"fromBroadcasterUserId\": \"123456\",\n  \"fromBroadcasterUserName\": \"raider99\",\n  \"viewers\": 50\n}"
+        }
+      ]
+    },
+    {
+      "id": "resub.channel.twitch",
+      "name": "Channel resub",
+      "description": "Twitch EventSub: channel.chat.notification (resub)",
+      "type": "eventbus",
+      "category": "platform.twitch",
+      "allowVariants": true,
+      "schema": [
+        {
+          "id": "tier",
+          "label": "Subscription tier",
+          "type": "select",
+          "required": true,
+          "options": [
+            { "value": "1000", "label": "Tier 1" },
+            { "value": "2000", "label": "Tier 2" },
+            { "value": "3000", "label": "Tier 3" }
+          ],
+          "defaultValue": "1000",
+          "dataSchema": "{\n  \"broadcasterId\": \"123456\",\n  \"broadcasterName\": \"streamer\",\n  \"chatterId\": \"78910\",\n  \"chatterName\": \"viewer42\",\n  \"chatterIsAnonymous\": false,\n  \"tier\": \"1000\",\n  \"isPrime\": false,\n  \"durationMonths\": 1,\n  \"cumulativeMonths\": 6,\n  \"streakMonths\": 3,\n  \"isGift\": false,\n  \"gifterIsAnonymous\": null,\n  \"gifterId\": null,\n  \"gifterName\": null,\n  \"messageId\": \"...\",\n  \"messageText\": \"...\"\n}"
+        }
+      ]
+    },
+    {
+      "id": "sharedResub.channel.twitch",
+      "name": "Channel resub (shared chat)",
+      "description": "Twitch EventSub: channel.chat.notification (shared_chat_resub) — fires when the resub is announced in another broadcaster's chat during a shared chat session.",
+      "type": "eventbus",
+      "category": "platform.twitch",
+      "allowVariants": true,
+      "schema": [
+        {
+          "id": "tier",
+          "label": "Subscription tier",
+          "type": "select",
+          "required": true,
+          "options": [
+            { "value": "1000", "label": "Tier 1" },
+            { "value": "2000", "label": "Tier 2" },
+            { "value": "3000", "label": "Tier 3" }
+          ],
+          "defaultValue": "1000"
+        }
+      ]
+    },
+    {
+      "id": "giftPaidUpgrade.channel.twitch",
+      "name": "Gift sub upgraded to paid",
+      "description": "Twitch EventSub: channel.chat.notification (gift_paid_upgrade) — a user upgraded their gifted sub to a paid one.",
+      "type": "eventbus",
+      "category": "platform.twitch"
+    },
+    {
+      "id": "sharedGiftPaidUpgrade.channel.twitch",
+      "name": "Gift sub upgraded to paid (shared chat)",
+      "description": "Twitch EventSub: channel.chat.notification (shared_chat_gift_paid_upgrade)",
+      "type": "eventbus",
+      "category": "platform.twitch"
+    },
+    {
+      "id": "primePaidUpgrade.channel.twitch",
+      "name": "Prime sub upgraded to paid",
+      "description": "Twitch EventSub: channel.chat.notification (prime_paid_upgrade) — a user upgraded their Prime sub to a paid one.",
+      "type": "eventbus",
+      "category": "platform.twitch",
+      "allowVariants": true,
+      "schema": [
+        {
+          "id": "tier",
+          "label": "Subscription tier",
+          "type": "select",
+          "required": true,
+          "options": [
+            { "value": "1000", "label": "Tier 1" },
+            { "value": "2000", "label": "Tier 2" },
+            { "value": "3000", "label": "Tier 3" }
+          ],
+          "defaultValue": "1000"
+        }
+      ]
+    },
+    {
+      "id": "sharedPrimePaidUpgrade.channel.twitch",
+      "name": "Prime sub upgraded to paid (shared chat)",
+      "description": "Twitch EventSub: channel.chat.notification (shared_chat_prime_paid_upgrade)",
+      "type": "eventbus",
+      "category": "platform.twitch",
+      "allowVariants": true,
+      "schema": [
+        {
+          "id": "tier",
+          "label": "Subscription tier",
+          "type": "select",
+          "required": true,
+          "options": [
+            { "value": "1000", "label": "Tier 1" },
+            { "value": "2000", "label": "Tier 2" },
+            { "value": "3000", "label": "Tier 3" }
+          ],
+          "defaultValue": "1000"
+        }
+      ]
+    },
+    {
+      "id": "unraid.channel.twitch",
+      "name": "Raid cancelled (unraid)",
+      "description": "Twitch EventSub: channel.chat.notification (unraid) — the broadcaster cancelled an outgoing raid.",
+      "type": "eventbus",
+      "category": "platform.twitch"
+    },
+    {
+      "id": "payItForward.channel.twitch",
+      "name": "Gift sub paid forward",
+      "description": "Twitch EventSub: channel.chat.notification (pay_it_forward) — a recipient of a gifted sub paid it forward by gifting another sub.",
+      "type": "eventbus",
+      "category": "platform.twitch"
+    },
+    {
+      "id": "sharedPayItForward.channel.twitch",
+      "name": "Gift sub paid forward (shared chat)",
+      "description": "Twitch EventSub: channel.chat.notification (shared_chat_pay_it_forward)",
+      "type": "eventbus",
+      "category": "platform.twitch"
+    },
+    {
+      "id": "announcement.channel.twitch",
+      "name": "Chat announcement",
+      "description": "Twitch EventSub: channel.chat.notification (announcement)",
+      "type": "eventbus",
+      "category": "platform.twitch",
+      "allowVariants": true,
+      "schema": [
+        {
+          "id": "color",
+          "label": "Announcement color",
+          "type": "select",
+          "required": true,
+          "options": [
+            { "value": "primary", "label": "Primary" },
+            { "value": "blue", "label": "Blue" },
+            { "value": "green", "label": "Green" },
+            { "value": "orange", "label": "Orange" },
+            { "value": "purple", "label": "Purple" }
+          ],
+          "defaultValue": "primary",
+          "dataSchema": "{\n  \"broadcasterId\": \"123456\",\n  \"broadcasterName\": \"streamer\",\n  \"chatterId\": \"78910\",\n  \"chatterName\": \"moderator1\",\n  \"color\": \"primary\",\n  \"messageId\": \"...\",\n  \"messageText\": \"Going live in 5 minutes!\"\n}"
+        }
+      ]
+    },
+    {
+      "id": "sharedAnnouncement.channel.twitch",
+      "name": "Chat announcement (shared chat)",
+      "description": "Twitch EventSub: channel.chat.notification (shared_chat_announcement)",
+      "type": "eventbus",
+      "category": "platform.twitch",
+      "allowVariants": true,
+      "schema": [
+        {
+          "id": "color",
+          "label": "Announcement color",
+          "type": "select",
+          "required": true,
+          "options": [
+            { "value": "primary", "label": "Primary" },
+            { "value": "blue", "label": "Blue" },
+            { "value": "green", "label": "Green" },
+            { "value": "orange", "label": "Orange" },
+            { "value": "purple", "label": "Purple" }
+          ],
+          "defaultValue": "primary"
+        }
+      ]
+    },
+    {
+      "id": "charityDonation.channel.twitch",
+      "name": "Charity donation",
+      "description": "Twitch EventSub: channel.chat.notification (charity_donation)",
+      "type": "eventbus",
+      "category": "platform.twitch",
+      "allowVariants": true,
+      "schema": [
+        {
+          "id": "minAmount",
+          "label": "Minimum donation amount",
+          "type": "number",
+          "required": true,
+          "min": 0,
+          "defaultValue": 5,
+          "placeholder": "e.g. 5",
+          "eventPath": "amount",
+          "operator": "gte",
+          "description": "Only fire when the donation meets or exceeds this amount, in the currency's major unit (e.g. dollars, not cents).",
+          "dataSchema": "{\n  \"broadcasterId\": \"123456\",\n  \"broadcasterName\": \"streamer\",\n  \"chatterId\": \"78910\",\n  \"chatterName\": \"viewer42\",\n  \"charityName\": \"Direct Relief\",\n  \"amount\": 25.5,\n  \"currency\": \"USD\"\n}"
+        }
+      ]
+    },
+    {
+      "id": "bitsBadgeTier.channel.twitch",
+      "name": "New bits badge tier reached",
+      "description": "Twitch EventSub: channel.chat.notification (bits_badge_tier)",
+      "type": "eventbus",
+      "category": "platform.twitch",
+      "allowVariants": true,
+      "schema": [
+        {
+          "id": "minTier",
+          "label": "Minimum tier",
+          "type": "number",
+          "required": true,
+          "min": 1,
+          "defaultValue": 1,
+          "placeholder": "e.g. 1000",
+          "eventPath": "newTier",
+          "operator": "gte",
+          "description": "Only fire when the newly reached bits badge tier meets or exceeds this value.",
+          "dataSchema": "{\n  \"broadcasterId\": \"123456\",\n  \"broadcasterName\": \"streamer\",\n  \"chatterId\": \"78910\",\n  \"chatterName\": \"viewer42\",\n  \"newTier\": 1000\n}"
+        }
+      ]
+    },
+    {
+      "id": "watchStreak.channel.twitch",
+      "name": "Watch streak milestone",
+      "description": "Twitch EventSub: channel.chat.notification (watch_streak)",
+      "type": "eventbus",
+      "category": "platform.twitch",
+      "allowVariants": true,
+      "schema": [
+        {
+          "id": "minStreakCount",
+          "label": "Minimum streak count",
+          "type": "number",
+          "required": true,
+          "min": 1,
+          "defaultValue": 1,
+          "placeholder": "e.g. 5",
+          "eventPath": "streakCount",
+          "operator": "gte",
+          "description": "Only fire when the watch streak meets or exceeds this many consecutive broadcasts.",
+          "dataSchema": "{\n  \"broadcasterId\": \"123456\",\n  \"broadcasterName\": \"streamer\",\n  \"chatterId\": \"78910\",\n  \"chatterName\": \"viewer42\",\n  \"streakCount\": 5,\n  \"channelPointsAwarded\": 500\n}"
+        }
+      ]
     }
   ],
   "functions": [

@@ -29,7 +29,7 @@ import type { WidgetHost, WidgetEvent } from "@woofx3/module-sdk";
 const host: WidgetHost = window.widgetHost!;
 
 host.onEvent((event: WidgetEvent) => {
-  // event.type === "twitch_platform:trigger:follow.user.twitch"
+  // event.type === "twitch_platform:trigger:follow.channel.twitch"
   // event.data.userName, etc.
 });
 

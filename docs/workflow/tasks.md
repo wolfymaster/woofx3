@@ -192,7 +192,7 @@ Waits for one matching event:
   "type": "wait",
   "wait": {
     "type": "event",
-    "eventType": "follow.user.twitch",
+    "eventType": "follow.channel.twitch",
     "conditions": [
       { "field": "${trigger.data.userId}", "operator": "eq", "value": "${trigger.data.userId}" }
     ],
@@ -212,7 +212,7 @@ Collects multiple events and checks a threshold:
   "type": "wait",
   "wait": {
     "type": "aggregation",
-    "eventType": "cheer.user.twitch",
+    "eventType": "cheer.channel.twitch",
     "aggregation": {
       "strategy": "sum",
       "field": "data.amount",

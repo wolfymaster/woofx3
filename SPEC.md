@@ -126,7 +126,7 @@ Each streamer operates within an isolated data context identified by an `engineI
 id: workflow-uuid
 name: On Follow Greeting
 trigger:
-  type: follow.user.twitch
+  type: follow.channel.twitch
 steps:
   - id: check-tier
     type: condition
@@ -312,10 +312,10 @@ Events → Fact Updates → Rete Network → Rule Evaluation → Actions/Fire
 | Subject | Trigger |
 |---------|---------|
 | `message.user.twitch` | Chat message received |
-| `cheer.user.twitch` | Bits cheered |
-| `follow.user.twitch` | New follow |
-| `subscribe.user.twitch` | Subscription event |
-| `raid.user.twitch` | Raid incoming |
+| `cheer.channel.twitch` | Bits cheered |
+| `follow.channel.twitch` | New follow |
+| `subscribe.channel.twitch` | Subscription event |
+| `raid.channel.twitch` | Raid incoming |
 | `channel.state.twitch` | Stream state change |
 
 #### 3.5.2 WoofWoofWoof (Chatbot)

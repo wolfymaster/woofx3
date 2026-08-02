@@ -42,7 +42,7 @@ describe("P1 woofx3.widget — envelope guard", () => {
       type: "init",
       settings: { label: "x" },
       capabilities: ["storage"],
-      acceptedEvents: ["twitch_platform:trigger:follow.user.twitch"],
+      acceptedEvents: ["twitch_platform:trigger:follow.channel.twitch"],
     },
     {
       proto: WIDGET_PROTOCOL,
@@ -75,7 +75,7 @@ describe("P1 woofx3.widget — envelope guard", () => {
       type: "event.deliver",
       subId: "e1",
       event: {
-        type: "twitch_platform:trigger:follow.user.twitch",
+        type: "twitch_platform:trigger:follow.channel.twitch",
         source: "twitch",
         time: "2026-06-12T00:00:00Z",
         data: { userName: "wolfy" },
@@ -154,7 +154,7 @@ describe("P2 woofx3.overlay-events — frame round-trip", () => {
     },
     {
       kind: "event",
-      type: "twitch_platform:trigger:follow.user.twitch",
+      type: "twitch_platform:trigger:follow.channel.twitch",
       source: "twitch",
       time: "2026-06-12T00:00:00Z",
       data: { userName: "wolfy" },

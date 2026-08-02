@@ -20,7 +20,7 @@ Or paste the URL into the input at the top of the panel and click
   per-instance settings JSON. **Apply & reload** re-injects with the
   new values.
 - **Fire event** — type a canonical trigger id (e.g.
-  `twitch_platform:trigger:follow.user.twitch`), the event payload
+  `twitch_platform:trigger:follow.channel.twitch`), the event payload
   JSON, and click **Fire onEvent**. The widget's `widgetHost.onEvent`
   handler runs synchronously.
 - **Log panel** (bottom right) — every `host.reportStatus` /
@@ -64,7 +64,7 @@ await import("./my-widget/main.js");
 // Drive the widget by mutating storage / firing events.
 ctrl.setStorage("count", 3);
 ctrl.fireEvent({
-  type: "twitch_platform:trigger:follow.user.twitch",
+  type: "twitch_platform:trigger:follow.channel.twitch",
   source: "twitch",
   time: new Date().toISOString(),
   data: { userName: "alice" },
