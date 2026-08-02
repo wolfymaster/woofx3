@@ -42,6 +42,14 @@ export interface ModuleResourceInstance {
   canonicalId: string;
   createdAt: protoscript.Timestamp;
   updatedAt: protoscript.Timestamp;
+  /**
+   * The owning module's stable composite key (`{moduleId}:{version}:{hash}`).
+   * Unlike `module_id` (a raw UUID consumers can't index on directly) or
+   * `module_name` (ambiguous across multiple installs/instances sharing a
+   * name), `module_key` is what downstream consumers should resolve the
+   * owning module by.
+   */
+  moduleKey: string;
 }
 
 export interface CreateResourceInstanceRequest {
@@ -95,6 +103,13 @@ export interface ListResourceInstancesByKindRequest {
 export interface ListResourceInstancesByModuleRequest {
   moduleId: string;
 }
+
+/**
+ * Empty — lists every resource instance across every module for this
+ * deployment. The engine is single-tenant (no application scoping on
+ * ModuleResourceInstance), so no filter field is needed.
+ */
+export interface ListAllResourceInstancesRequest {}
 
 export interface ListResourceInstancesResponse {
   status: common.ResponseStatus;
@@ -179,6 +194,7 @@ export const ModuleResourceInstance = {
       canonicalId: "",
       createdAt: protoscript.Timestamp.initialize(),
       updatedAt: protoscript.Timestamp.initialize(),
+      moduleKey: "",
       ...msg,
     };
   },
@@ -224,6 +240,9 @@ export const ModuleResourceInstance = {
         msg.updatedAt,
         protoscript.Timestamp._writeMessage,
       );
+    }
+    if (msg.moduleKey) {
+      writer.writeString(10, msg.moduleKey);
     }
     return writer;
   },
@@ -272,6 +291,10 @@ export const ModuleResourceInstance = {
         }
         case 9: {
           reader.readMessage(msg.updatedAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 10: {
+          msg.moduleKey = reader.readString();
           break;
         }
         default: {
@@ -799,6 +822,55 @@ export const ListResourceInstancesByModuleRequest = {
       }
     }
     return msg;
+  },
+};
+
+export const ListAllResourceInstancesRequest = {
+  /**
+   * Serializes ListAllResourceInstancesRequest to protobuf.
+   */
+  encode: function (
+    _msg?: PartialDeep<ListAllResourceInstancesRequest>,
+  ): Uint8Array {
+    return new Uint8Array();
+  },
+
+  /**
+   * Deserializes ListAllResourceInstancesRequest from protobuf.
+   */
+  decode: function (_bytes?: ByteSource): ListAllResourceInstancesRequest {
+    return {};
+  },
+
+  /**
+   * Initializes ListAllResourceInstancesRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListAllResourceInstancesRequest>,
+  ): ListAllResourceInstancesRequest {
+    return {
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    _msg: PartialDeep<ListAllResourceInstancesRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    _msg: ListAllResourceInstancesRequest,
+    _reader: protoscript.BinaryReader,
+  ): ListAllResourceInstancesRequest {
+    return _msg;
   },
 };
 
@@ -1383,6 +1455,7 @@ export const ModuleResourceInstanceJSON = {
       canonicalId: "",
       createdAt: protoscript.TimestampJSON.initialize(),
       updatedAt: protoscript.TimestampJSON.initialize(),
+      moduleKey: "",
       ...msg,
     };
   },
@@ -1420,6 +1493,9 @@ export const ModuleResourceInstanceJSON = {
     }
     if (msg.updatedAt && (msg.updatedAt.seconds || msg.updatedAt.nanos)) {
       json["updatedAt"] = protoscript.serializeTimestamp(msg.updatedAt);
+    }
+    if (msg.moduleKey) {
+      json["moduleKey"] = msg.moduleKey;
     }
     return json;
   },
@@ -1466,6 +1542,10 @@ export const ModuleResourceInstanceJSON = {
     const _updatedAt_ = json["updatedAt"] ?? json["updated_at"];
     if (_updatedAt_) {
       msg.updatedAt = protoscript.parseTimestamp(_updatedAt_);
+    }
+    const _moduleKey_ = json["moduleKey"] ?? json["module_key"];
+    if (_moduleKey_) {
+      msg.moduleKey = _moduleKey_;
     }
     return msg;
   },
@@ -1918,6 +1998,54 @@ export const ListResourceInstancesByModuleRequestJSON = {
     if (_moduleId_) {
       msg.moduleId = _moduleId_;
     }
+    return msg;
+  },
+};
+
+export const ListAllResourceInstancesRequestJSON = {
+  /**
+   * Serializes ListAllResourceInstancesRequest to JSON.
+   */
+  encode: function (
+    _msg?: PartialDeep<ListAllResourceInstancesRequest>,
+  ): string {
+    return "{}";
+  },
+
+  /**
+   * Deserializes ListAllResourceInstancesRequest from JSON.
+   */
+  decode: function (_json?: string): ListAllResourceInstancesRequest {
+    return {};
+  },
+
+  /**
+   * Initializes ListAllResourceInstancesRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListAllResourceInstancesRequest>,
+  ): ListAllResourceInstancesRequest {
+    return {
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    _msg: PartialDeep<ListAllResourceInstancesRequest>,
+  ): Record<string, unknown> {
+    return {};
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListAllResourceInstancesRequest,
+    _json: any,
+  ): ListAllResourceInstancesRequest {
     return msg;
   },
 };

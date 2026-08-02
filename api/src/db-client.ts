@@ -425,4 +425,10 @@ async listWidgetStatus(
   ): Promise<common.ResponseStatus> {
     return module.DeleteResourceInstance(req, this.config);
   }
+
+  async listAllResourceInstances(
+    req: module_resource_instance.ListAllResourceInstancesRequest
+  ): Promise<module_resource_instance.ListResourceInstancesResponse> {
+    return module.ListAllResourceInstances(req, this.config);
+  }
 }

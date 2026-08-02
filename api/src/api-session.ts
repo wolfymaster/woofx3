@@ -60,6 +60,18 @@ export class ApiSession extends RpcTarget {
       moduleKey: context?.moduleKey,
     });
   }
+
+  async createResourceInstance(moduleName: string, kind: string, instanceId: string, displayName: string) {
+    return this.api.createResourceInstance(moduleName, kind, instanceId, displayName, {
+      clientId: this.clientId,
+    });
+  }
+
+  async deleteResourceInstance(canonicalId: string) {
+    return this.api.deleteResourceInstance(canonicalId, {
+      clientId: this.clientId,
+    });
+  }
 }
 
 // Delegate all Api prototype methods onto ApiSession prototype so capnweb

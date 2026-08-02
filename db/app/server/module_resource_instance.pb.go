@@ -74,7 +74,7 @@ func (x ConnectionState_Status) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ConnectionState_Status.Descriptor instead.
 func (ConnectionState_Status) EnumDescriptor() ([]byte, []int) {
-	return file_module_resource_instance_proto_rawDescGZIP(), []int{8, 0}
+	return file_module_resource_instance_proto_rawDescGZIP(), []int{9, 0}
 }
 
 // ModuleResourceInstance is a runtime-created instance of a kind that an
@@ -98,16 +98,22 @@ func (ConnectionState_Status) EnumDescriptor() ([]byte, []int) {
 // `display_name` is the user-facing label. It can drift across the
 // instance's lifetime without affecting identity.
 type ModuleResourceInstance struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ModuleId      string                 `protobuf:"bytes,2,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
-	ModuleName    string                 `protobuf:"bytes,3,opt,name=module_name,json=moduleName,proto3" json:"module_name,omitempty"`
-	Kind          string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
-	InstanceId    string                 `protobuf:"bytes,5,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,6,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	CanonicalId   string                 `protobuf:"bytes,7,opt,name=canonical_id,json=canonicalId,proto3" json:"canonical_id,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ModuleId    string                 `protobuf:"bytes,2,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
+	ModuleName  string                 `protobuf:"bytes,3,opt,name=module_name,json=moduleName,proto3" json:"module_name,omitempty"`
+	Kind        string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
+	InstanceId  string                 `protobuf:"bytes,5,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	DisplayName string                 `protobuf:"bytes,6,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	CanonicalId string                 `protobuf:"bytes,7,opt,name=canonical_id,json=canonicalId,proto3" json:"canonical_id,omitempty"`
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt   *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// The owning module's stable composite key (`{moduleId}:{version}:{hash}`).
+	// Unlike `module_id` (a raw UUID consumers can't index on directly) or
+	// `module_name` (ambiguous across multiple installs/instances sharing a
+	// name), `module_key` is what downstream consumers should resolve the
+	// owning module by.
+	ModuleKey     string `protobuf:"bytes,10,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -203,6 +209,13 @@ func (x *ModuleResourceInstance) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *ModuleResourceInstance) GetModuleKey() string {
+	if x != nil {
+		return x.ModuleKey
+	}
+	return ""
 }
 
 type CreateResourceInstanceRequest struct {
@@ -552,6 +565,45 @@ func (x *ListResourceInstancesByModuleRequest) GetModuleId() string {
 	return ""
 }
 
+// Empty — lists every resource instance across every module for this
+// deployment. The engine is single-tenant (no application scoping on
+// ModuleResourceInstance), so no filter field is needed.
+type ListAllResourceInstancesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAllResourceInstancesRequest) Reset() {
+	*x = ListAllResourceInstancesRequest{}
+	mi := &file_module_resource_instance_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAllResourceInstancesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAllResourceInstancesRequest) ProtoMessage() {}
+
+func (x *ListAllResourceInstancesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_module_resource_instance_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAllResourceInstancesRequest.ProtoReflect.Descriptor instead.
+func (*ListAllResourceInstancesRequest) Descriptor() ([]byte, []int) {
+	return file_module_resource_instance_proto_rawDescGZIP(), []int{7}
+}
+
 type ListResourceInstancesResponse struct {
 	state         protoimpl.MessageState    `protogen:"open.v1"`
 	Status        *ResponseStatus           `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
@@ -562,7 +614,7 @@ type ListResourceInstancesResponse struct {
 
 func (x *ListResourceInstancesResponse) Reset() {
 	*x = ListResourceInstancesResponse{}
-	mi := &file_module_resource_instance_proto_msgTypes[7]
+	mi := &file_module_resource_instance_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -574,7 +626,7 @@ func (x *ListResourceInstancesResponse) String() string {
 func (*ListResourceInstancesResponse) ProtoMessage() {}
 
 func (x *ListResourceInstancesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_module_resource_instance_proto_msgTypes[7]
+	mi := &file_module_resource_instance_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -587,7 +639,7 @@ func (x *ListResourceInstancesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResourceInstancesResponse.ProtoReflect.Descriptor instead.
 func (*ListResourceInstancesResponse) Descriptor() ([]byte, []int) {
-	return file_module_resource_instance_proto_rawDescGZIP(), []int{7}
+	return file_module_resource_instance_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListResourceInstancesResponse) GetStatus() *ResponseStatus {
@@ -617,7 +669,7 @@ type ConnectionState struct {
 
 func (x *ConnectionState) Reset() {
 	*x = ConnectionState{}
-	mi := &file_module_resource_instance_proto_msgTypes[8]
+	mi := &file_module_resource_instance_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -629,7 +681,7 @@ func (x *ConnectionState) String() string {
 func (*ConnectionState) ProtoMessage() {}
 
 func (x *ConnectionState) ProtoReflect() protoreflect.Message {
-	mi := &file_module_resource_instance_proto_msgTypes[8]
+	mi := &file_module_resource_instance_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -642,7 +694,7 @@ func (x *ConnectionState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectionState.ProtoReflect.Descriptor instead.
 func (*ConnectionState) Descriptor() ([]byte, []int) {
-	return file_module_resource_instance_proto_rawDescGZIP(), []int{8}
+	return file_module_resource_instance_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ConnectionState) GetStatus() ConnectionState_Status {
@@ -682,7 +734,7 @@ type GetConnectionStateRequest struct {
 
 func (x *GetConnectionStateRequest) Reset() {
 	*x = GetConnectionStateRequest{}
-	mi := &file_module_resource_instance_proto_msgTypes[9]
+	mi := &file_module_resource_instance_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -694,7 +746,7 @@ func (x *GetConnectionStateRequest) String() string {
 func (*GetConnectionStateRequest) ProtoMessage() {}
 
 func (x *GetConnectionStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_module_resource_instance_proto_msgTypes[9]
+	mi := &file_module_resource_instance_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -707,7 +759,7 @@ func (x *GetConnectionStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetConnectionStateRequest.ProtoReflect.Descriptor instead.
 func (*GetConnectionStateRequest) Descriptor() ([]byte, []int) {
-	return file_module_resource_instance_proto_rawDescGZIP(), []int{9}
+	return file_module_resource_instance_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetConnectionStateRequest) GetCanonicalId() string {
@@ -727,7 +779,7 @@ type ConnectionStateResponse struct {
 
 func (x *ConnectionStateResponse) Reset() {
 	*x = ConnectionStateResponse{}
-	mi := &file_module_resource_instance_proto_msgTypes[10]
+	mi := &file_module_resource_instance_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -739,7 +791,7 @@ func (x *ConnectionStateResponse) String() string {
 func (*ConnectionStateResponse) ProtoMessage() {}
 
 func (x *ConnectionStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_module_resource_instance_proto_msgTypes[10]
+	mi := &file_module_resource_instance_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -752,7 +804,7 @@ func (x *ConnectionStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectionStateResponse.ProtoReflect.Descriptor instead.
 func (*ConnectionStateResponse) Descriptor() ([]byte, []int) {
-	return file_module_resource_instance_proto_rawDescGZIP(), []int{10}
+	return file_module_resource_instance_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ConnectionStateResponse) GetStatus() *ResponseStatus {
@@ -779,7 +831,7 @@ type SendConnectionMessageRequest struct {
 
 func (x *SendConnectionMessageRequest) Reset() {
 	*x = SendConnectionMessageRequest{}
-	mi := &file_module_resource_instance_proto_msgTypes[11]
+	mi := &file_module_resource_instance_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -791,7 +843,7 @@ func (x *SendConnectionMessageRequest) String() string {
 func (*SendConnectionMessageRequest) ProtoMessage() {}
 
 func (x *SendConnectionMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_module_resource_instance_proto_msgTypes[11]
+	mi := &file_module_resource_instance_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -804,7 +856,7 @@ func (x *SendConnectionMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendConnectionMessageRequest.ProtoReflect.Descriptor instead.
 func (*SendConnectionMessageRequest) Descriptor() ([]byte, []int) {
-	return file_module_resource_instance_proto_rawDescGZIP(), []int{11}
+	return file_module_resource_instance_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *SendConnectionMessageRequest) GetCanonicalId() string {
@@ -830,7 +882,7 @@ type ConnectionMessageResponse struct {
 
 func (x *ConnectionMessageResponse) Reset() {
 	*x = ConnectionMessageResponse{}
-	mi := &file_module_resource_instance_proto_msgTypes[12]
+	mi := &file_module_resource_instance_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -842,7 +894,7 @@ func (x *ConnectionMessageResponse) String() string {
 func (*ConnectionMessageResponse) ProtoMessage() {}
 
 func (x *ConnectionMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_module_resource_instance_proto_msgTypes[12]
+	mi := &file_module_resource_instance_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -855,7 +907,7 @@ func (x *ConnectionMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectionMessageResponse.ProtoReflect.Descriptor instead.
 func (*ConnectionMessageResponse) Descriptor() ([]byte, []int) {
-	return file_module_resource_instance_proto_rawDescGZIP(), []int{12}
+	return file_module_resource_instance_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ConnectionMessageResponse) GetStatus() *ResponseStatus {
@@ -869,7 +921,7 @@ var File_module_resource_instance_proto protoreflect.FileDescriptor
 
 const file_module_resource_instance_proto_rawDesc = "" +
 	"\n" +
-	"\x1emodule_resource_instance.proto\x12\x06module\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd7\x02\n" +
+	"\x1emodule_resource_instance.proto\x12\x06module\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf6\x02\n" +
 	"\x16ModuleResourceInstance\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tmodule_id\x18\x02 \x01(\tR\bmoduleId\x12\x1f\n" +
@@ -883,7 +935,10 @@ const file_module_resource_instance_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xcc\x02\n" +
+	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1d\n" +
+	"\n" +
+	"module_key\x18\n" +
+	" \x01(\tR\tmoduleKey\"\xcc\x02\n" +
 	"\x1dCreateResourceInstanceRequest\x12\x1b\n" +
 	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x1f\n" +
@@ -906,7 +961,8 @@ const file_module_resource_instance_proto_rawDesc = "" +
 	"\"ListResourceInstancesByKindRequest\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\"C\n" +
 	"$ListResourceInstancesByModuleRequest\x12\x1b\n" +
-	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\"\x8d\x01\n" +
+	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\"!\n" +
+	"\x1fListAllResourceInstancesRequest\"\x8d\x01\n" +
 	"\x1dListResourceInstancesResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12<\n" +
 	"\tinstances\x18\x02 \x03(\v2\x1e.module.ModuleResourceInstanceR\tinstances\"\xc5\x02\n" +
@@ -945,7 +1001,7 @@ func file_module_resource_instance_proto_rawDescGZIP() []byte {
 }
 
 var file_module_resource_instance_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_module_resource_instance_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_module_resource_instance_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_module_resource_instance_proto_goTypes = []any{
 	(ConnectionState_Status)(0),                  // 0: module.ConnectionState.Status
 	(*ModuleResourceInstance)(nil),               // 1: module.ModuleResourceInstance
@@ -955,30 +1011,31 @@ var file_module_resource_instance_proto_goTypes = []any{
 	(*GetResourceInstanceRequest)(nil),           // 5: module.GetResourceInstanceRequest
 	(*ListResourceInstancesByKindRequest)(nil),   // 6: module.ListResourceInstancesByKindRequest
 	(*ListResourceInstancesByModuleRequest)(nil), // 7: module.ListResourceInstancesByModuleRequest
-	(*ListResourceInstancesResponse)(nil),        // 8: module.ListResourceInstancesResponse
-	(*ConnectionState)(nil),                      // 9: module.ConnectionState
-	(*GetConnectionStateRequest)(nil),            // 10: module.GetConnectionStateRequest
-	(*ConnectionStateResponse)(nil),              // 11: module.ConnectionStateResponse
-	(*SendConnectionMessageRequest)(nil),         // 12: module.SendConnectionMessageRequest
-	(*ConnectionMessageResponse)(nil),            // 13: module.ConnectionMessageResponse
-	(*timestamppb.Timestamp)(nil),                // 14: google.protobuf.Timestamp
-	(*RequestContext)(nil),                       // 15: common.RequestContext
-	(*ResponseStatus)(nil),                       // 16: common.ResponseStatus
+	(*ListAllResourceInstancesRequest)(nil),      // 8: module.ListAllResourceInstancesRequest
+	(*ListResourceInstancesResponse)(nil),        // 9: module.ListResourceInstancesResponse
+	(*ConnectionState)(nil),                      // 10: module.ConnectionState
+	(*GetConnectionStateRequest)(nil),            // 11: module.GetConnectionStateRequest
+	(*ConnectionStateResponse)(nil),              // 12: module.ConnectionStateResponse
+	(*SendConnectionMessageRequest)(nil),         // 13: module.SendConnectionMessageRequest
+	(*ConnectionMessageResponse)(nil),            // 14: module.ConnectionMessageResponse
+	(*timestamppb.Timestamp)(nil),                // 15: google.protobuf.Timestamp
+	(*RequestContext)(nil),                       // 16: common.RequestContext
+	(*ResponseStatus)(nil),                       // 17: common.ResponseStatus
 }
 var file_module_resource_instance_proto_depIdxs = []int32{
-	14, // 0: module.ModuleResourceInstance.created_at:type_name -> google.protobuf.Timestamp
-	14, // 1: module.ModuleResourceInstance.updated_at:type_name -> google.protobuf.Timestamp
-	15, // 2: module.CreateResourceInstanceRequest.request_context:type_name -> common.RequestContext
-	16, // 3: module.ResourceInstanceResponse.status:type_name -> common.ResponseStatus
+	15, // 0: module.ModuleResourceInstance.created_at:type_name -> google.protobuf.Timestamp
+	15, // 1: module.ModuleResourceInstance.updated_at:type_name -> google.protobuf.Timestamp
+	16, // 2: module.CreateResourceInstanceRequest.request_context:type_name -> common.RequestContext
+	17, // 3: module.ResourceInstanceResponse.status:type_name -> common.ResponseStatus
 	1,  // 4: module.ResourceInstanceResponse.instance:type_name -> module.ModuleResourceInstance
-	15, // 5: module.DeleteResourceInstanceRequest.request_context:type_name -> common.RequestContext
-	16, // 6: module.ListResourceInstancesResponse.status:type_name -> common.ResponseStatus
+	16, // 5: module.DeleteResourceInstanceRequest.request_context:type_name -> common.RequestContext
+	17, // 6: module.ListResourceInstancesResponse.status:type_name -> common.ResponseStatus
 	1,  // 7: module.ListResourceInstancesResponse.instances:type_name -> module.ModuleResourceInstance
 	0,  // 8: module.ConnectionState.status:type_name -> module.ConnectionState.Status
-	14, // 9: module.ConnectionState.last_connected:type_name -> google.protobuf.Timestamp
-	16, // 10: module.ConnectionStateResponse.status:type_name -> common.ResponseStatus
-	9,  // 11: module.ConnectionStateResponse.state:type_name -> module.ConnectionState
-	16, // 12: module.ConnectionMessageResponse.status:type_name -> common.ResponseStatus
+	15, // 9: module.ConnectionState.last_connected:type_name -> google.protobuf.Timestamp
+	17, // 10: module.ConnectionStateResponse.status:type_name -> common.ResponseStatus
+	10, // 11: module.ConnectionStateResponse.state:type_name -> module.ConnectionState
+	17, // 12: module.ConnectionMessageResponse.status:type_name -> common.ResponseStatus
 	13, // [13:13] is the sub-list for method output_type
 	13, // [13:13] is the sub-list for method input_type
 	13, // [13:13] is the sub-list for extension type_name
@@ -998,7 +1055,7 @@ func file_module_resource_instance_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_module_resource_instance_proto_rawDesc), len(file_module_resource_instance_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   13,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

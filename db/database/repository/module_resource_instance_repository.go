@@ -65,3 +65,12 @@ func (r *ModuleResourceInstanceRepository) CountByModuleID(moduleID uuid.UUID) (
 	err := r.db.Model(&models.ModuleResourceInstance{}).Where("module_id = ?", moduleID).Count(&count).Error
 	return count, err
 }
+
+// ListAll returns every resource instance across every module. Backs the
+// periodic full-snapshot reconcile the Convex UI runs to self-heal its
+// cache (the engine is single-tenant, so no further scoping is needed).
+func (r *ModuleResourceInstanceRepository) ListAll() ([]*models.ModuleResourceInstance, error) {
+	var instances []*models.ModuleResourceInstance
+	err := r.db.Find(&instances).Error
+	return instances, err
+}

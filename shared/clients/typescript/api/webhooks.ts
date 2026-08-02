@@ -450,6 +450,14 @@ export interface ResourceInstanceDefinition {
   displayName: string;
   /** Fully-formed canonical id. */
   canonicalId: string;
+  /**
+   * Owning module's stable composite key (`{moduleId}:{version}:{hash}`).
+   * Unlike `moduleId` (a raw engine UUID) or `moduleName` (ambiguous across
+   * multiple installs/instances sharing a name), this is what consumers
+   * should resolve the owning module by — mirrors widget snapshots'
+   * `createdByRef`.
+   */
+  moduleKey: string;
 }
 
 /**

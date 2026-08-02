@@ -498,6 +498,7 @@ interface RawResourceInstance {
   instance_id?: unknown;
   display_name?: unknown;
   canonical_id?: unknown;
+  module_key?: unknown;
 }
 
 function mapResourceInstance(raw: RawResourceInstance): ResourceInstanceDefinition {
@@ -509,6 +510,7 @@ function mapResourceInstance(raw: RawResourceInstance): ResourceInstanceDefiniti
     instanceId: asString(raw.instance_id),
     displayName: asString(raw.display_name),
     canonicalId: asString(raw.canonical_id),
+    moduleKey: asString(raw.module_key),
   };
 }
 

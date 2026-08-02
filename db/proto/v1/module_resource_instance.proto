@@ -36,6 +36,12 @@ message ModuleResourceInstance {
   string canonical_id = 7;
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp updated_at = 9;
+  // The owning module's stable composite key (`{moduleId}:{version}:{hash}`).
+  // Unlike `module_id` (a raw UUID consumers can't index on directly) or
+  // `module_name` (ambiguous across multiple installs/instances sharing a
+  // name), `module_key` is what downstream consumers should resolve the
+  // owning module by.
+  string module_key = 10;
 }
 
 message CreateResourceInstanceRequest {
@@ -81,6 +87,11 @@ message ListResourceInstancesByKindRequest {
 message ListResourceInstancesByModuleRequest {
   string module_id = 1;
 }
+
+// Empty — lists every resource instance across every module for this
+// deployment. The engine is single-tenant (no application scoping on
+// ModuleResourceInstance), so no filter field is needed.
+message ListAllResourceInstancesRequest {}
 
 message ListResourceInstancesResponse {
   common.ResponseStatus status = 1;

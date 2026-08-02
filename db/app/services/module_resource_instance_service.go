@@ -153,6 +153,20 @@ func (s *moduleService) ListResourceInstancesByModule(ctx context.Context, req *
 	return s.respondWithInstances(instances)
 }
 
+// ListAllResourceInstances backs the Convex UI's periodic full-snapshot
+// reconcile — lets it self-heal its cache from the engine's authoritative
+// data instead of relying solely on webhook delivery.
+func (s *moduleService) ListAllResourceInstances(ctx context.Context, req *client.ListAllResourceInstancesRequest) (*client.ListResourceInstancesResponse, error) {
+	if s.instanceRepo == nil {
+		return nil, twirp.NewError(twirp.Internal, "resource instance repository not configured")
+	}
+	instances, err := s.instanceRepo.ListAll()
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("list all instances: %w", err))
+	}
+	return s.respondWithInstances(instances)
+}
+
 // resolveInstanceFromCanonical parses a canonical id and looks up the
 // owning module + instance row in one shot. Returns Twirp errors so
 // callers can return them directly.
@@ -256,6 +270,10 @@ func resourceInstanceToProto(module *models.Module, inst *models.ModuleResourceI
 	if moduleName != "" {
 		canonicalID = canonicalIDFor(moduleName, inst.Kind, inst.InstanceID)
 	}
+	moduleKey := ""
+	if module != nil {
+		moduleKey = module.ModuleKey
+	}
 	return &client.ModuleResourceInstance{
 		Id:          inst.ID.String(),
 		ModuleId:    inst.ModuleID.String(),
@@ -266,6 +284,7 @@ func resourceInstanceToProto(module *models.Module, inst *models.ModuleResourceI
 		CanonicalId: canonicalID,
 		CreatedAt:   timestamppb.New(inst.CreatedAt),
 		UpdatedAt:   timestamppb.New(inst.UpdatedAt),
+		ModuleKey:   moduleKey,
 	}
 }
 
@@ -274,8 +293,10 @@ func resourceInstanceToProto(module *models.Module, inst *models.ModuleResourceI
 // Mirrors the trigger / action builders in module_event_payload.go.
 func buildResourceInstanceData(module *models.Module, inst *models.ModuleResourceInstance) map[string]interface{} {
 	moduleName := ""
+	moduleKey := ""
 	if module != nil {
 		moduleName = module.Name
+		moduleKey = module.ModuleKey
 	}
 	canonicalID := ""
 	if moduleName != "" {
@@ -289,5 +310,6 @@ func buildResourceInstanceData(module *models.Module, inst *models.ModuleResourc
 		"instance_id":  inst.InstanceID,
 		"display_name": inst.DisplayName,
 		"canonical_id": canonicalID,
+		"module_key":   moduleKey,
 	}
 }
