@@ -8,6 +8,7 @@ import type {
   ModuleSetting,
   ModuleSettingsResponse,
   PingResponse,
+  ResourceInstanceDefinition,
   Scene,
   StorageConfig,
   UpdateCommandInput,
@@ -422,5 +423,79 @@ export const modulesRoutes = {
     } catch {
       return null;
     }
-  }
+  },
+
+  /**
+   * Creates a runtime instance of a module-declared resource kind (e.g. a
+   * user-defined counter). `moduleName` is the manifest-local module id,
+   * same as `getModuleSettings`/`getModuleManifest`. `instanceId` is a
+   * caller-chosen manifest-local id; combined with moduleName/kind it forms
+   * the canonical id `{moduleName}:{kind}:{instanceId}`.
+   *
+   * `clientId` is injected automatically by the authenticated ApiSession
+   * (see api-session.ts) so the resulting webhook event routes to the
+   * right callback.
+   */
+  async createResourceInstance(
+    moduleName: string,
+    kind: string,
+    instanceId: string,
+    displayName: string,
+    context: { clientId: string }
+  ): Promise<ResourceInstanceDefinition> {
+    const result = await this.db.createResourceInstance({
+      moduleId: "",
+      moduleName,
+      kind,
+      instanceId,
+      displayName,
+      connectionKind: "",
+      connectionConfig: "",
+      requestContext: { clientId: context.clientId, applicationId: this.applicationId ?? "", moduleKey: "" },
+    });
+    return {
+      id: result.instance.id,
+      moduleId: result.instance.moduleId,
+      moduleName: result.instance.moduleName,
+      kind: result.instance.kind,
+      instanceId: result.instance.instanceId,
+      displayName: result.instance.displayName,
+      canonicalId: result.instance.canonicalId,
+      moduleKey: result.instance.moduleKey,
+    };
+  },
+
+  /**
+   * Deletes a resource instance by its canonical id
+   * (`{moduleName}:{kind}:{instanceId}`). `clientId` is injected
+   * automatically by the authenticated ApiSession.
+   */
+  async deleteResourceInstance(canonicalId: string, context: { clientId: string }): Promise<void> {
+    await this.db.deleteResourceInstance({
+      canonicalId,
+      requestContext: { clientId: context.clientId, applicationId: this.applicationId ?? "", moduleKey: "" },
+    });
+  },
+
+  /**
+   * Lists every resource instance across every installed module — backs
+   * the Convex UI's periodic reconcile so its cache self-heals from the
+   * engine's authoritative data instead of depending solely on webhook
+   * delivery (see createResourceInstance/deleteResourceInstance above,
+   * which fire the create/delete webhooks this list would otherwise be the
+   * only way to recover from if one is ever missed or misresolved).
+   */
+  async listAllResourceInstances(): Promise<ResourceInstanceDefinition[]> {
+    const response = await this.db.listAllResourceInstances({});
+    return (response.instances ?? []).map((instance) => ({
+      id: instance.id,
+      moduleId: instance.moduleId,
+      moduleName: instance.moduleName,
+      kind: instance.kind,
+      instanceId: instance.instanceId,
+      displayName: instance.displayName,
+      canonicalId: instance.canonicalId,
+      moduleKey: instance.moduleKey,
+    }));
+  },
 };
