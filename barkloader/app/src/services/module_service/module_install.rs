@@ -305,6 +305,22 @@ pub async fn run_install<R: Repository>(
     // returned to the UI — these two are NOT the same.
     let module_key = manifest.module_key();
 
+    // Short content-hash segment of `composite_module_key` — the trailing
+    // `{hash}` in `{id}:{version}:{hash}`. Used as a version-scoped
+    // storage directory (see `upload_content_addressed` in
+    // module_manifest.rs) so upgrading a module never overwrites the
+    // previous version's function/widget/asset/overlay bytes: every
+    // version's files live under their own directory, sibling relative
+    // references within a version (e.g. a widget's `<link href="style.css">`)
+    // keep resolving correctly since they share that one directory, and
+    // re-installing byte-identical content reuses the same directory for
+    // free via the `exists()` short-circuit.
+    let version_dir = composite_module_key
+        .rsplit(':')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(composite_module_key);
+
     // Validate the manifest and resolve every intra-manifest reference
     // before any side effect runs. Validation enforces the canonical-id
     // contract documented in `docs/barkloader/modules.md`: required ids,
@@ -331,7 +347,7 @@ pub async fn run_install<R: Repository>(
         Vec::with_capacity(manifest.functions.len());
 
     for f in &manifest.functions {
-        let file_key = f.upload_to_repository(&module_key, files, repository).await?;
+        let file_key = f.upload_to_repository(&module_key, version_dir, files, repository).await?;
         let file_name = Path::new(&f.path)
             .file_name()
             .and_then(|s| s.to_str())
@@ -348,21 +364,21 @@ pub async fn run_install<R: Repository>(
     }
 
     for w in &manifest.widgets {
-        w.upload_assets(&module_key, files, repository).await?;
+        w.upload_assets(&module_key, version_dir, files, repository).await?;
     }
 
     for o in &manifest.overlays {
-        o.upload_entry(&module_key, files, repository).await?;
+        o.upload_entry(&module_key, version_dir, files, repository).await?;
     }
 
     // Upload static assets declared in manifest.assets[]. Each asset
-    // is written to the repository under `modules/<moduleKey>/<path>`
+    // is written to the repository under `modules/<moduleKey>/<versionDir>/<path>`
     // (path already carries its own directory, e.g. `assets/bell.mp3`
     // — see ManifestAsset::upload_to_repository) and the resulting key
     // is captured for the RegisterAssets call further down.
     let mut asset_keys: Vec<String> = Vec::with_capacity(manifest.assets.len());
     for a in &manifest.assets {
-        let repo_key = a.upload_to_repository(&module_key, files, repository).await?;
+        let repo_key = a.upload_to_repository(&module_key, version_dir, files, repository).await?;
         asset_keys.push(repo_key);
     }
     // Manifest-local asset id -> repository key, used to bake
@@ -797,6 +813,13 @@ mod tests {
     };
     use lib_repository::{FileRepository, FileRepositoryConfig, Repository};
 
+    /// Mirrors `run_install`'s `version_dir` derivation, for tests that
+    /// need to predict the version-scoped storage path a given
+    /// composite module key (`mid`) produces.
+    fn version_dir_of(mid: &str) -> &str {
+        mid.rsplit(':').next().unwrap_or(mid)
+    }
+
     fn manifest_with_trigger_ids(ids: &[&str]) -> ModuleManifest {
         let triggers: Vec<serde_json::Value> = ids
             .iter()
@@ -909,7 +932,7 @@ mod tests {
         .expect("install");
 
         let stored = repo
-            .read_file("modules/test-mod/functions/f1.lua")
+            .read_file(&format!("modules/test-mod/{}/functions/f1.lua", version_dir_of(&mid)))
             .await
             .expect("read");
         assert_eq!(stored, b"return 1");
@@ -960,15 +983,16 @@ mod tests {
             .expect("install");
 
         // Entry and assets-dir files share one key shape: assets-relative
-        // under `modules/{module_key}/widgets/{widget_id}/` — so the
-        // registered `entry` ("index.html") resolves directly.
+        // under `modules/{module_key}/{version_dir}/widgets/{widget_id}/`
+        // — so the registered `entry` ("index.html") resolves directly.
+        let version_dir = version_dir_of(&mid);
         let html = repo
-            .read_file("modules/wm/widgets/w1/index.html")
+            .read_file(&format!("modules/wm/{version_dir}/widgets/w1/index.html"))
             .await
             .expect("html");
         assert_eq!(html, b"<!doctype html>");
         let css = repo
-            .read_file("modules/wm/widgets/w1/static/theme.css")
+            .read_file(&format!("modules/wm/{version_dir}/widgets/w1/static/theme.css"))
             .await
             .expect("css");
         assert_eq!(css, b"body{}");
@@ -1016,15 +1040,16 @@ mod tests {
             .await
             .expect("install");
 
+        let version_dir = version_dir_of(&mid);
         let bytes = repo
-            .read_file("modules/am/assets/bell.mp3")
+            .read_file(&format!("modules/am/{version_dir}/assets/bell.mp3"))
             .await
-            .expect("asset stored at modules/{module_key}/assets/bell.mp3, not nested under assets/assets/");
+            .expect("asset stored at modules/{module_key}/{version_dir}/assets/bell.mp3, not nested under assets/assets/");
         assert_eq!(bytes, b"fake-mp3-bytes");
 
         // The bug this guards against: a doubled "assets/assets/" prefix.
         assert!(
-            repo.read_file("modules/am/assets/assets/bell.mp3")
+            repo.read_file(&format!("modules/am/{version_dir}/assets/assets/bell.mp3"))
                 .await
                 .is_err(),
             "asset must not be stored under a doubled assets/assets/ prefix"
@@ -1200,8 +1225,9 @@ mod tests {
             .await
             .expect("install");
 
+        let version_dir = version_dir_of(&mid);
         let html = repo
-            .read_file("modules/om/overlays/o1/overlays/o1/index.html")
+            .read_file(&format!("modules/om/{version_dir}/overlays/o1/overlays/o1/index.html"))
             .await
             .expect("overlay html");
         assert_eq!(html, b"<html/>");

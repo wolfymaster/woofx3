@@ -1,6 +1,7 @@
 import * as alert from "@woofx3/db/alert.pb";
 import * as overlay_token from "@woofx3/db/overlay_token.pb";
 import * as scene from "@woofx3/db/scene.pb";
+import * as setting from "@woofx3/db/setting.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
 import { RegisterWidgets } from "@woofx3/db/module.pb";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
@@ -108,6 +109,17 @@ export class DbClient {
     return ListWidgets(req, this.config);
   }
 
+  // Resolves a module's current composite module_key (`{id}:{version}:{hash}`)
+  // from its stable manifest id — used by WidgetAssetProxy to derive the
+  // version-scoped storage directory barkloader currently serves a
+  // module's files from, without the proxy needing to reconstruct or
+  // guess it. Returns null when no module with that id is installed.
+  async getModuleKeyForModuleId(moduleId: string): Promise<string | null> {
+    const { GetModuleByModuleId } = await import("@woofx3/db/module.pb");
+    const resp = await GetModuleByModuleId({ moduleId }, this.config);
+    return resp.module?.moduleKey || null;
+  }
+
   // Overlay-token resolution — engine-internal only. Streamware is the
   // single resolver of plaintext tokens (design 2.1); the api gateway
   // proxies bytes without ever resolving them.
@@ -115,6 +127,14 @@ export class DbClient {
     req: overlay_token.ResolveOverlayTokenRequest
   ): Promise<overlay_token.ResolveOverlayTokenResponse> {
     return overlay_token.ResolveOverlayToken(req, this.config);
+  }
+
+  // Read-only: streamware only needs to resolve `overlay.publicUrl`
+  // (see OverlayPublicUrlResolver); writes happen via the api service's
+  // settings form.
+  async getSetting(key: string, applicationId: string): Promise<string | null> {
+    const resp = await setting.GetSetting({ key, applicationId }, this.config);
+    return resp.setting?.value?.stringValue ?? null;
   }
 }
 

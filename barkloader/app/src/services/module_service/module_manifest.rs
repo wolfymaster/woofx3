@@ -524,10 +524,45 @@ fn extension_for_path(path: &str) -> String {
         .to_string()
 }
 
+/// Writes `contents` to `repository` at `repo_key`, skipping the write
+/// entirely if that exact key already exists.
+///
+/// `repo_key` is expected to already carry a version-scoped directory
+/// segment (see `run_install`'s `version_dir`) ahead of the file's
+/// relative path, so this is content-addressed at the *version* level:
+/// re-running an install with byte-identical content (a retry, or a
+/// rollback to a version whose files are still present) is a no-op
+/// here, while a genuine version bump always writes to a fresh
+/// directory rather than overwriting the previous version's bytes —
+/// which is what makes rollback possible.
+async fn upload_content_addressed<R: Repository>(
+    repository: &R,
+    repo_key: &str,
+    contents: &[u8],
+    extension: String,
+) -> Result<()> {
+    if repository.exists(repo_key).await.unwrap_or(false) {
+        return Ok(());
+    }
+    let req = CreateFileRequest {
+        content: Some(contents.to_vec()),
+        extension: Some(extension),
+        file_name: repo_key.to_string(),
+    };
+    let mut failed = Vec::new();
+    repository.create([req], &mut failed).await?;
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow!("Failed to store file at {}", repo_key))
+    }
+}
+
 impl ManifestFunction {
     pub async fn upload_to_repository<R: Repository>(
         &self,
         module_key: &str,
+        version_dir: &str,
         files: &[ModuleFile],
         repository: &R,
     ) -> Result<String> {
@@ -542,28 +577,18 @@ impl ManifestFunction {
         // `functions/sendChatMessage.js`). Do not prepend another
         // `functions/` segment — that produced `functions/functions/...`.
         let rel_in_module = normalize_rel_path(&self.path)?;
-        let repo_key = format!("modules/{module_key}/{rel_in_module}");
+        let repo_key = format!("modules/{module_key}/{version_dir}/{rel_in_module}");
         let ext = extension_for_path(&self.path);
-        let req = CreateFileRequest {
-            content: Some(file.contents.clone()),
-            extension: Some(ext),
-            file_name: repo_key.clone(),
-        };
-        let mut failed = Vec::new();
-        repository.create([req], &mut failed).await?;
-        if failed.is_empty() {
-            info!("Stored function {} at {}", self.id, repo_key);
-            Ok(repo_key)
-        } else {
-            Err(anyhow!("Failed to store function {}", self.id))
-        }
+        upload_content_addressed(repository, &repo_key, &file.contents, ext).await?;
+        info!("Stored function {} at {}", self.id, repo_key);
+        Ok(repo_key)
     }
 }
 
 impl ManifestAsset {
     /// Resolve the asset's path inside the module zip and write the
     /// bytes into the engine's repository under
-    /// `modules/{module_key}/{rel_in_module}`. Mirror of
+    /// `modules/{module_key}/{version_dir}/{rel_in_module}`. Mirror of
     /// `ManifestFunction::upload_to_repository` — same failure modes,
     /// same key shape. `rel_in_module` (== `self.path`, normalized)
     /// already carries whatever directory the author put the file
@@ -573,6 +598,7 @@ impl ManifestAsset {
     pub async fn upload_to_repository<R: Repository>(
         &self,
         module_key: &str,
+        version_dir: &str,
         files: &[ModuleFile],
         repository: &R,
     ) -> Result<String> {
@@ -584,21 +610,11 @@ impl ManifestAsset {
             )
         })?;
         let rel_in_module = normalize_rel_path(&self.path)?;
-        let repo_key = format!("modules/{module_key}/{rel_in_module}");
+        let repo_key = format!("modules/{module_key}/{version_dir}/{rel_in_module}");
         let ext = extension_for_path(&self.path);
-        let req = CreateFileRequest {
-            content: Some(file.contents.clone()),
-            extension: Some(ext),
-            file_name: repo_key.clone(),
-        };
-        let mut failed = Vec::new();
-        repository.create([req], &mut failed).await?;
-        if failed.is_empty() {
-            info!("Stored asset {} at {}", self.id, repo_key);
-            Ok(repo_key)
-        } else {
-            Err(anyhow!("Failed to store asset {}", self.id))
-        }
+        upload_content_addressed(repository, &repo_key, &file.contents, ext).await?;
+        info!("Stored asset {} at {}", self.id, repo_key);
+        Ok(repo_key)
     }
 
     /// Build the Twirp `AssetInput` JSON for bulk registration. Pairs
@@ -827,34 +843,22 @@ impl ModuleWidget {
     async fn upload_one_file<R: Repository>(
         &self,
         module_key: &str,
+        version_dir: &str,
         file: &ModuleFile,
         rel_under_widget: &str,
         repository: &R,
     ) -> Result<String> {
         let rel = normalize_rel_path(rel_under_widget)?;
-        let repo_key = format!("modules/{module_key}/widgets/{}/{rel}", self.id);
+        let repo_key = format!("modules/{module_key}/{version_dir}/widgets/{}/{rel}", self.id);
         let ext = extension_for_path(&file.name);
-        let mut failed = Vec::new();
-        repository
-            .create(
-                [CreateFileRequest {
-                    content: Some(file.contents.clone()),
-                    extension: Some(ext),
-                    file_name: repo_key.clone(),
-                }],
-                &mut failed,
-            )
-            .await?;
-        if failed.is_empty() {
-            Ok(repo_key)
-        } else {
-            Err(anyhow!("Failed to store widget file for {}", self.id))
-        }
+        upload_content_addressed(repository, &repo_key, &file.contents, ext).await?;
+        Ok(repo_key)
     }
 
     pub async fn upload_assets<R: Repository>(
         &self,
         module_key: &str,
+        version_dir: &str,
         files: &[ModuleFile],
         repository: &R,
     ) -> Result<Vec<String>> {
@@ -863,14 +867,19 @@ impl ModuleWidget {
         // The entry is stored at its assets-relative key — the same key
         // shape the assets-dir walk below produces — so the registered
         // `entry` always resolves as
-        // `modules/{module_key}/widgets/{id}/{entry}` (design 5.2.5).
-        // Manifest validation already guarantees the entry normalizes;
-        // failing here means upload ran without validation.
+        // `modules/{module_key}/{version_dir}/widgets/{id}/{entry}`
+        // (design 5.2.5, extended with the version-scoped directory so a
+        // module upgrade never overwrites a previous version's widget
+        // files — every file belonging to one version shares the same
+        // `version_dir`, so relative references between sibling files,
+        // e.g. `index.html` linking `style.css`, keep resolving
+        // correctly). Manifest validation already guarantees the entry
+        // normalizes; failing here means upload ran without validation.
         let entry_rel = self.entry_relative_to_assets()?;
         let mut entry_uploaded = false;
         if let (Some(entry), Some(rel)) = (&self.entry, &entry_rel) {
             if let Some(f) = resolve_zip_file(files, entry) {
-                keys.push(self.upload_one_file(module_key, f, rel, repository).await?);
+                keys.push(self.upload_one_file(module_key, version_dir, f, rel, repository).await?);
                 entry_uploaded = true;
             } else {
                 warn!("Widget {} entry '{}' not found in archive", self.id, entry);
@@ -900,7 +909,7 @@ impl ModuleWidget {
                     continue;
                 }
                 keys.push(
-                    self.upload_one_file(module_key, file, &rel_under, repository)
+                    self.upload_one_file(module_key, version_dir, file, &rel_under, repository)
                         .await?,
                 );
             }
@@ -914,6 +923,7 @@ impl ManifestOverlay {
     pub async fn upload_entry<R: Repository>(
         &self,
         module_key: &str,
+        version_dir: &str,
         files: &[ModuleFile],
         repository: &R,
     ) -> Result<String> {
@@ -925,24 +935,10 @@ impl ManifestOverlay {
             )
         })?;
         let rel = normalize_rel_path(&self.entry)?;
-        let repo_key = format!("modules/{module_key}/overlays/{}/{rel}", self.id);
+        let repo_key = format!("modules/{module_key}/{version_dir}/overlays/{}/{rel}", self.id);
         let ext = extension_for_path(&self.entry);
-        let mut failed = Vec::new();
-        repository
-            .create(
-                [CreateFileRequest {
-                    content: Some(file.contents.clone()),
-                    extension: Some(ext),
-                    file_name: repo_key.clone(),
-                }],
-                &mut failed,
-            )
-            .await?;
-        if failed.is_empty() {
-            Ok(repo_key)
-        } else {
-            Err(anyhow!("Failed to store overlay {}", self.id))
-        }
+        upload_content_addressed(repository, &repo_key, &file.contents, ext).await?;
+        Ok(repo_key)
     }
 }
 

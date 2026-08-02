@@ -11,7 +11,7 @@ const ALLOWED_TOP_LEVEL_PREFIXES: &[&str] = &["modules/", "builtin/", "user/"];
 
 /// Serve module files straight from the repository (file/S3 agnostic).
 /// Keys mirror repository keys exactly, e.g.
-/// `GET /assets/modules/{module_key}/widgets/{widget_id}/{entry}`,
+/// `GET /assets/modules/{module_key}/{version_dir}/widgets/{widget_id}/{entry}`,
 /// `GET /assets/builtin/widgets/{widget_id}/{entry}`.
 ///
 /// Every rejection — traversal attempt, bad prefix, missing file — is a

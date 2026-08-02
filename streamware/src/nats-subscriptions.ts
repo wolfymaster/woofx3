@@ -6,6 +6,7 @@ import type Manager from "./obs/manager";
 import { mapStorageChangedEnvelope, type StorageBroadcaster, type WidgetEventPushPayload } from "./storage/broadcaster";
 import type { OverlayTokenResolver } from "./overlay/token-resolver";
 import { maskToken } from "./overlay/token-resolver";
+import type { ModuleVersionResolver } from "./overlay/module-version-resolver";
 
 interface InitArgs {
   nats: NATSClient | null;
@@ -13,6 +14,7 @@ interface InitArgs {
   storageBroadcaster: StorageBroadcaster;
   logger: SharedLogger;
   resolver?: OverlayTokenResolver;
+  moduleVersions?: ModuleVersionResolver;
 }
 
 /**
@@ -40,6 +42,7 @@ export async function initSubscriptions({
   storageBroadcaster,
   logger,
   resolver,
+  moduleVersions,
 }: InitArgs): Promise<void> {
   if (!nats) {
     logger.warn("NATS unavailable — event subscriptions skipped (overlay will receive nothing)");
@@ -117,6 +120,16 @@ export async function initSubscriptions({
     resolver?.invalidateAll();
   });
   logger.info("Subscribed to db.overlay_token.updated.*");
+
+  // Module install/upgrade notification (see db/app/services/module_service.go
+  // CompleteModuleInstall): poison the shared ModuleVersionResolver cache
+  // (used by both WidgetAssetProxy and FrameAssembler) so widget/asset
+  // requests pick up the newly installed version's storage directory
+  // immediately rather than waiting out the TTL.
+  await nats.subscribe("db.module.installed.*", (_msg) => {
+    moduleVersions?.invalidateAll();
+  });
+  logger.info("Subscribed to db.module.installed.*");
 
   // Scene update notification: push a scene.updated frame to every overlay
   // WS connection whose sceneId matches the updated scene. The client re-fetches

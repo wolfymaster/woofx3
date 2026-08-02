@@ -4,6 +4,8 @@ import type { WidgetBootPayload } from "@woofx3/module-sdk/src/widget-protocol";
 import { BUILTIN_MODULE_KEY, type OverlayHost, type OverlayWidgetInstance } from "./scene-host";
 import { maskToken } from "./token-resolver";
 import { sanitizeAssetPath } from "./asset-proxy";
+import type { ModuleVersionResolver } from "./module-version-resolver";
+import type { OverlayPublicUrlResolver } from "./overlay-public-url-resolver";
 
 /**
  * Uniform blank document (design 5.2.11): served byte-for-byte
@@ -36,8 +38,22 @@ const NONCE_PATTERN = /^[A-Za-z0-9_-]{1,256}$/;
 export interface FrameAssemblerOptions {
   barkloaderUrl: string;
   publicDir: string;
-  /** CDN override (design 2.5). Empty -> relative <base>. */
-  widgetAssetBaseUrl: string;
+  /** Resolves the single public base URL this deployment's overlay
+   * surface is reachable at — the same value used for token-scoped
+   * overlay access, since every asset kind (module widgets/assets,
+   * builtin widgets) is proxied through the same `/overlay/` surface.
+   * Asset routes are public and token-independent regardless of this
+   * value (see overlay-public-url-resolver.ts). */
+  overlayPublicUrlResolver: OverlayPublicUrlResolver;
+  /**
+   * Resolves a module's current version-scoped storage directory —
+   * required to fetch a module widget's entry HTML directly from
+   * barkloader (see `loadEntryHtml`), since that storage is
+   * version-scoped but the widget catalog's `entry` field isn't. `null`
+   * (no db-proxy configured) means module widget entries can't be
+   * fetched; builtin widgets are unaffected (read from local disk).
+   */
+  moduleVersions: ModuleVersionResolver | null;
   fetchFn?: typeof fetch;
   generateNonce?: () => string;
 }
@@ -171,26 +187,32 @@ export class FrameAssembler {
       settings: instance.settings,
       capabilities: [...FRAME_CAPABILITIES],
     };
-    const scaffold = buildFrameScaffold({ boot, baseHref: this.baseHrefFor(instance) });
+    const baseHref = await this.baseHrefFor(instance);
+    const scaffold = buildFrameScaffold({ boot, baseHref });
     const assembled = injectFrameScaffold(entryHtml, scaffold);
     return new Response(assembled, { status: 200, headers: { ...FRAME_HEADERS } });
   }
 
   /**
-   * Widget asset root for the frame's <base> (design 2.5). Relative by
-   * default so subresources resolve through whatever public prefix the
-   * page loaded under; absolute when the CDN override is set. Built-ins
-   * always use the relative token-scoped prefix — their assets live in
-   * streamware's public dir, not behind the CDN's barkloader layout.
+   * Widget asset root for the frame's <base>. Always absolute, resolved
+   * through the unified `overlay.publicUrl` setting plus the `/overlay/assets`
+   * suffix (the public, non-token asset route family) — builtin widgets
+   * are served from the same `builtin/widgets/...` repository prefix as
+   * module widgets are served from `modules/{id}/widgets/...`, so there's
+   * no relative/CDN branching left: one base, two prefixes. This is a
+   * public, token-independent, application-agnostic route (see
+   * overlay-public-url-resolver.ts) — no token or applicationId is
+   * threaded into the constructed href.
    */
-  private baseHrefFor(instance: OverlayWidgetInstance): string {
-    const moduleKey = encodeURIComponent(instance.moduleId);
+  private async baseHrefFor(instance: OverlayWidgetInstance): Promise<string> {
     const manifestId = encodeURIComponent(instance.manifestId);
-    if (this.opts.widgetAssetBaseUrl && instance.moduleId !== BUILTIN_MODULE_KEY) {
-      const cdn = this.opts.widgetAssetBaseUrl.replace(/\/+$/, "");
-      return `${cdn}/modules/${moduleKey}/widgets/${manifestId}/`;
+    const overlayPublicUrl = await this.opts.overlayPublicUrlResolver.resolve();
+    const base = `${overlayPublicUrl}/overlay/assets`;
+    if (instance.moduleId === BUILTIN_MODULE_KEY) {
+      return `${base}/builtin/widgets/${manifestId}/`;
     }
-    return `../widget-assets/${moduleKey}/${manifestId}/`;
+    const moduleKey = encodeURIComponent(instance.moduleId);
+    return `${base}/modules/${moduleKey}/widgets/${manifestId}/`;
   }
 
   private async loadEntryHtml(instance: OverlayWidgetInstance): Promise<string | null> {
@@ -214,9 +236,18 @@ export class FrameAssembler {
       return this.readBuiltinEntry(instance.manifestId, entry);
     }
 
+    const versionDir = await this.opts.moduleVersions?.resolve(instance.moduleId);
+    if (!versionDir) {
+      this.logger.warn("widget entry fetch skipped — module version unresolvable", {
+        widgetCanonicalId: instance.widgetCanonicalId,
+        moduleId: instance.moduleId,
+      });
+      return null;
+    }
+
     const url =
       `${this.opts.barkloaderUrl.replace(/\/+$/, "")}/assets/modules/` +
-      `${encodeURIComponent(instance.moduleId)}/widgets/` +
+      `${encodeURIComponent(instance.moduleId)}/${encodeURIComponent(versionDir)}/widgets/` +
       `${encodeURIComponent(instance.manifestId)}/` +
       entry.split("/").map(encodeURIComponent).join("/");
     try {

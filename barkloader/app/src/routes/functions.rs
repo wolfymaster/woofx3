@@ -585,6 +585,29 @@ async fn get_handler(
     }
 }
 
+/// Resolves the `{name}` path param (the sandbox registry's display-name
+/// key, same convention as `state_handler`/`get_handler`) to the stable
+/// manifest module id, via the same `GetModuleByName` lookup
+/// `refresh_module_in_registry` already uses internally.
+async fn resolve_module_id(db_proxy_url: &str, module_name: &str) -> Result<String, Error> {
+    let record = db_proxy::fetch_module_by_name(db_proxy_url, module_name)
+        .await
+        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?
+        .ok_or_else(|| actix_web::error::ErrorNotFound(format!("Module '{}' not found", module_name)))?;
+    if record.module_id.is_empty() {
+        return Err(actix_web::error::ErrorInternalServerError(format!(
+            "module '{}' has no module_id in db (reinstall to populate)",
+            module_name
+        )));
+    }
+    Ok(record.module_id)
+}
+
+/// Every version of a module ever installed has a permanent archive at
+/// `archives/{module_id}:{version}:{hash}.zip` (see `upload_handler` —
+/// installs never overwrite or delete a prior archive), so version
+/// history needs no separate ledger: it's recovered by listing that
+/// prefix.
 #[actix_web::get("/functions/{name}/versions")]
 async fn versions_handler(
     ctx: Data<AppContext>,
@@ -592,17 +615,27 @@ async fn versions_handler(
 ) -> Result<HttpResponse, Error> {
     let module_name = path.into_inner();
 
-    let prefix = format!("archives/{}/", module_name);
+    let db_proxy_url = ctx.db_proxy_url.as_deref().ok_or_else(|| {
+        actix_web::error::ErrorInternalServerError("databaseProxyUrl is not configured in .woofx3.json")
+    })?;
+    let module_id = resolve_module_id(db_proxy_url, &module_name).await?;
+
+    let prefix = format!("archives/{}:", module_id);
     let archive_keys = ctx.repository.list_prefix(&prefix).await
         .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
 
-    let versions: Vec<String> = archive_keys.iter()
+    // Each key is `archives/{module_id}:{version}:{hash}.zip` — the
+    // version is the middle `:`-delimited segment of the file stem.
+    // Dedup: a version re-uploaded more than once (e.g. force=true
+    // reinstalls with different content) has one archive per hash.
+    let mut versions: Vec<String> = archive_keys.iter()
         .filter_map(|key| {
-            std::path::Path::new(key).file_stem()
-                .and_then(|s| s.to_str())
-                .map(|s| s.to_string())
+            let stem = std::path::Path::new(key).file_stem()?.to_str()?;
+            stem.splitn(3, ':').nth(1).map(|v| v.to_string())
         })
         .collect();
+    versions.sort();
+    versions.dedup();
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "module": module_name,
@@ -610,6 +643,16 @@ async fn versions_handler(
     })))
 }
 
+/// Rolls a module back to a previously installed version by re-running
+/// the same diff-aware install path (`run_install`, via
+/// `ModuleService::create_plan`/`execute_plan`) against that version's
+/// archived manifest — treating "roll back" as "install this old
+/// manifest over the current state," exactly like any other upgrade.
+/// Removed-then-restored resources are re-added, resources the newer
+/// version added get pruned, and files this version already uploaded
+/// are still sitting at their content-addressed key (installs never
+/// overwrite), so re-uploading them is a no-op via the `exists()`
+/// short-circuit in `upload_content_addressed`.
 #[post("/functions/{name}/rollback")]
 async fn rollback_handler(
     ctx: Data<AppContext>,
@@ -619,71 +662,95 @@ async fn rollback_handler(
     let module_name = path.into_inner();
     let version = &query.version;
 
-    let archive_key = format!("archives/{}/{}.zip", module_name, version);
+    let db_proxy_url = ctx.db_proxy_url.as_deref().ok_or_else(|| {
+        actix_web::error::ErrorInternalServerError("databaseProxyUrl is not configured in .woofx3.json")
+    })?;
+    let module_id = resolve_module_id(db_proxy_url, &module_name).await?;
+
+    let prefix = format!("archives/{}:{}:", module_id, version);
+    let mut matches = ctx.repository.list_prefix(&prefix).await
+        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
+    matches.sort();
+    let archive_key = matches.into_iter().next().ok_or_else(|| {
+        actix_web::error::ErrorNotFound(format!(
+            "No archive found for module '{}' ({}) version '{}'",
+            module_name, module_id, version
+        ))
+    })?;
+
     let zip_bytes = ctx.repository.read_file(&archive_key).await
-        .map_err(|e| actix_web::error::ErrorNotFound(
-            format!("Archive not found for module '{}' version '{}': {}", module_name, version, e)
+        .map_err(|e| actix_web::error::ErrorInternalServerError(
+            format!("Failed to read archive {}: {}", archive_key, e)
         ))?;
 
-    let temp_dir = tempfile::tempdir()
+    let mut hasher = Sha256::new();
+    hasher.update(&zip_bytes);
+    let hash = format!("{:x}", hasher.finalize());
+    let hash_short = hash[..7_usize.min(hash.len())].to_string();
+
+    let cursor = std::io::Cursor::new(&zip_bytes);
+    let mut archive = zip::ZipArchive::new(cursor)
         .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
 
-    let zip_path = temp_dir.path().join(format!("{}.zip", version));
-    fs::write(&zip_path, &zip_bytes)
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-
-    let zip_file = fs::File::open(&zip_path)
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-    let mut archive = zip::ZipArchive::new(zip_file)
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-
-    let module_prefix = format!("modules/{}", module_name);
-    let _ = ctx.repository.delete_prefix(&module_prefix).await;
+    let module_config = ModuleServiceConfig { repository: ctx.repository.clone() };
+    let mut module = ModuleService::new(module_config);
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)
             .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-
         if file.is_dir() {
             continue;
         }
-
         let file_name = file.name().to_string();
         let extension = std::path::Path::new(&file_name)
             .extension()
             .and_then(|e| e.to_str())
-            .unwrap_or("");
-
+            .unwrap_or("")
+            .to_string();
+        let Ok(kind) = extension.parse::<ModuleFileKind>() else {
+            // Mirrors upload_handler: unknown extensions are skipped,
+            // not fatal — the zip may carry files barkloader doesn't
+            // track (READMEs, screenshots, ...).
+            continue;
+        };
         let mut contents = Vec::new();
         file.read_to_end(&mut contents)
             .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-
-        if extension == "js" || extension == "lua" || extension == "json" {
-            let base_name = std::path::Path::new(&file_name)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(&file_name);
-
-            let repo_key = format!("modules/{}/{}", module_name, base_name);
-            let req = CreateFileRequest {
-                content: Some(contents.clone()),
-                extension: Some(extension.to_string()),
-                file_name: repo_key,
-            };
-            let mut failed = Vec::new();
-            ctx.repository.create([req], &mut failed).await
-                .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-        }
+        module.add_file(kind, file_name, contents);
     }
 
-    let db_proxy_url = ctx.db_proxy_url.as_deref().ok_or_else(|| {
-        actix_web::error::ErrorInternalServerError("databaseProxyUrl is not configured in .woofx3.json")
+    let module_plan = module.create_plan().map_err(|e| {
+        actix_web::error::ErrorInternalServerError(format!("Failed to parse archived manifest: {}", e))
     })?;
+
+    let (manifest_module_id, resolved_name, resolved_version) =
+        match (module.module_id(), module.module_name(), module.module_version()) {
+            (Some(id), Some(n), Some(v)) => (id.to_string(), n.to_string(), v.to_string()),
+            _ => {
+                return Err(actix_web::error::ErrorInternalServerError(
+                    "module identity missing after create_plan",
+                ));
+            }
+        };
+    let composite_module_key = format!("{}:{}:{}", manifest_module_id, resolved_version, hash_short);
+
+    module
+        .execute_plan(
+            &module_plan,
+            &archive_key,
+            Some(db_proxy_url),
+            "",
+            false, // not force — go through the diff-aware upgrade path, same as any install
+            &composite_module_key,
+            "",
+        )
+        .await
+        .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Rollback install failed: {}", e)))?;
 
     registry_loader::refresh_module_in_registry(
         &ctx.registry,
         db_proxy_url,
-        &module_name,
+        &resolved_name,
         &ctx.repository,
         &ctx.scheduler,
     )
@@ -692,7 +759,7 @@ async fn rollback_handler(
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "success": true,
-        "module": module_name,
+        "module": resolved_name,
         "version": version,
         "message": format!("Module rolled back to version {}", version)
     })))

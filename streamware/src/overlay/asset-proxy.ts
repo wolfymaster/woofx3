@@ -1,4 +1,5 @@
 import type { SharedLogger } from "@woofx3/common/logging";
+import type { ModuleVersionResolver } from "./module-version-resolver";
 
 /**
  * Traversal pipeline (design 5.2.9) applied to every untrusted path
@@ -36,10 +37,25 @@ export function sanitizeAssetPath(raw: string): string | null {
   return normalized;
 }
 
+function encodePathSegments(path: string): string {
+  return path.split("/").map(encodeURIComponent).join("/");
+}
+
 /**
- * Proxies widget asset requests to barkloader's asset route.
- * Applies the full traversal pipeline (design 5.2.9) to all
+ * Proxies module/builtin asset requests to barkloader's repository-backed
+ * asset route. Applies the full traversal pipeline (design 5.2.9) to all
  * untrusted path components before constructing the upstream URL.
+ *
+ * Module widget/asset files are stored version-scoped
+ * (`modules/{moduleKey}/{versionDir}/...` — see barkloader's
+ * `module_install.rs` `version_dir`) so an upgrade never overwrites a
+ * previous version's bytes. The public-facing URL a widget/browser holds
+ * never embeds that version directory (it can't — the widget's own HTML
+ * references sibling files by plain relative path), so this proxy
+ * resolves the module's *current* version directory via the shared
+ * `ModuleVersionResolver` (also used by `FrameAssembler`, for the
+ * server-side entry-HTML fetch) and injects it before forwarding to
+ * barkloader.
  */
 export class WidgetAssetProxy {
   private readonly fetchFn: typeof fetch;
@@ -47,44 +63,81 @@ export class WidgetAssetProxy {
   constructor(
     private readonly barkloaderUrl: string,
     private readonly logger: SharedLogger,
+    private readonly versions: ModuleVersionResolver | null = null,
     fetchFn?: typeof fetch
   ) {
     this.fetchFn = fetchFn ?? fetch;
   }
 
   /**
-   * Proxy a widget asset request to barkloader's
-   * `/assets/modules/{moduleKey}/widgets/{manifestId}/{tail}`.
-   *
-   * Sanitizes moduleKey, manifestId, and tail individually.
-   * Returns 404 if any component fails the pipeline.
-   * Forwards the response body and Content-Type verbatim.
-   * Returns 502 on fetch errors.
+   * Proxy a module widget asset request to barkloader's
+   * `/assets/modules/{moduleKey}/{versionDir}/widgets/{manifestId}/{tail}`.
+   * Sanitizes moduleKey, manifestId, and tail individually; returns 404
+   * if any component fails the pipeline or the module's current version
+   * can't be resolved.
    */
-  async proxy(moduleKey: string, manifestId: string, tail: string): Promise<Response> {
+  async proxyModuleWidgetAsset(moduleKey: string, manifestId: string, tail: string): Promise<Response> {
     const cleanModule = sanitizeAssetPath(moduleKey);
-    if (!cleanModule) {
-      return new Response(null, { status: 404 });
-    }
     const cleanManifest = sanitizeAssetPath(manifestId);
-    if (!cleanManifest) {
-      return new Response(null, { status: 404 });
-    }
     const cleanTail = sanitizeAssetPath(tail);
-    if (cleanTail === null) {
+    if (!cleanModule || !cleanManifest || cleanTail === null) {
       return new Response(null, { status: 404 });
     }
+    const versionDir = await this.versions?.resolve(cleanModule);
+    if (!versionDir) {
+      return new Response(null, { status: 404 });
+    }
+    return this.proxyToBarkloader(
+      `modules/${encodeURIComponent(cleanModule)}/${encodeURIComponent(versionDir)}/widgets/${encodeURIComponent(cleanManifest)}/${encodePathSegments(cleanTail)}`
+    );
+  }
 
+  /**
+   * Proxy a generic module asset request (manifest `assets[]`, not
+   * widgets) to barkloader's
+   * `/assets/modules/{moduleKey}/{versionDir}/assets/{tail}`.
+   */
+  async proxyModuleAsset(moduleKey: string, tail: string): Promise<Response> {
+    const cleanModule = sanitizeAssetPath(moduleKey);
+    const cleanTail = sanitizeAssetPath(tail);
+    if (!cleanModule || cleanTail === null) {
+      return new Response(null, { status: 404 });
+    }
+    const versionDir = await this.versions?.resolve(cleanModule);
+    if (!versionDir) {
+      return new Response(null, { status: 404 });
+    }
+    return this.proxyToBarkloader(
+      `modules/${encodeURIComponent(cleanModule)}/${encodeURIComponent(versionDir)}/assets/${encodePathSegments(cleanTail)}`
+    );
+  }
+
+  /**
+   * Proxy a builtin widget asset request to barkloader's
+   * `/assets/builtin/widgets/{manifestId}/{tail}` — builtin widget files
+   * are seeded into the same repository storage as module assets (see
+   * barkloader's `seed-builtin-widgets` CLI), so this is servable the
+   * same way as `proxyModuleWidgetAsset`, just without a module key.
+   */
+  async proxyBuiltinWidgetAsset(manifestId: string, tail: string): Promise<Response> {
+    const cleanManifest = sanitizeAssetPath(manifestId);
+    const cleanTail = sanitizeAssetPath(tail);
+    if (!cleanManifest || cleanTail === null) {
+      return new Response(null, { status: 404 });
+    }
+    return this.proxyToBarkloader(
+      `builtin/widgets/${encodeURIComponent(cleanManifest)}/${encodePathSegments(cleanTail)}`
+    );
+  }
+
+  /**
+   * Fetch an already-sanitized, already-encoded repository key from
+   * barkloader's `/assets/{key}` route. Forwards the response body and
+   * Content-Type verbatim; returns 502 on fetch errors.
+   */
+  private async proxyToBarkloader(key: string): Promise<Response> {
     const base = this.barkloaderUrl.replace(/\/+$/, "");
-    const tailPath = cleanTail
-      .split("/")
-      .map(encodeURIComponent)
-      .join("/");
-    const url =
-      `${base}/assets/modules/` +
-      `${encodeURIComponent(cleanModule)}/widgets/` +
-      `${encodeURIComponent(cleanManifest)}/` +
-      tailPath;
+    const url = `${base}/assets/${key}`;
 
     let upstream: Response;
     try {

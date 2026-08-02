@@ -1,11 +1,16 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import {
   buildFrameScaffold,
+  FrameAssembler,
   injectFrameScaffold,
   SHIM_SRC,
 } from "../../src/overlay/frame-assembler";
 import { sanitizeAssetPath } from "../../src/overlay/asset-proxy";
 import type { FrameScaffold } from "../../src/overlay/frame-assembler";
+import { BUILTIN_MODULE_KEY } from "../../src/overlay/scene-host";
+import type { OverlayHost, OverlaySceneState, OverlayWidgetInstance } from "../../src/overlay/scene-host";
+import { OverlayPublicUrlResolver } from "../../src/overlay/overlay-public-url-resolver";
+import { ModuleVersionResolver, type ModuleVersionDb } from "../../src/overlay/module-version-resolver";
 
 function minimalBoot(): FrameScaffold["boot"] {
   return {
@@ -146,5 +151,108 @@ describe("sanitizeAssetPath", () => {
   it("returns null for paths that throw during decodeURIComponent", () => {
     // A lone % that is not a valid percent-encoding sequence.
     expect(sanitizeAssetPath("%GG")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FrameAssembler.assemble — baseHref resolution (regression coverage for
+// the unified overlay.publicUrl scheme: absolute for both module and
+// builtin widgets, no more relative/CDN branching).
+// ---------------------------------------------------------------------------
+
+function fakeLogger() {
+  return {
+    debug: () => {},
+    info: () => {},
+    warn: () => {},
+    error: () => {},
+  } as any;
+}
+
+function widgetInstance(overrides: Partial<OverlayWidgetInstance>): OverlayWidgetInstance {
+  return {
+    id: "inst-1",
+    widgetCanonicalId: "mod:widget:w",
+    moduleId: "mod",
+    manifestId: "w",
+    position: { x: 0, y: 0, width: 100, height: 100 },
+    settings: {},
+    acceptedEvents: [],
+    frameUrl: "",
+    ...overrides,
+  };
+}
+
+function fakeModuleVersions(compositeKey: string | null): ModuleVersionResolver {
+  const db: ModuleVersionDb = {
+    getModuleKeyForModuleId: async (_moduleId: string) => compositeKey,
+  };
+  return new ModuleVersionResolver(db, fakeLogger());
+}
+
+function fakeHost(state: OverlaySceneState, entry: string): OverlayHost {
+  return {
+    async loadScene(_token: string) {
+      return state;
+    },
+    async lookupWidgetDefinition(moduleKey: string, manifestId: string) {
+      return { moduleKey, manifestId, entry };
+    },
+  } as unknown as OverlayHost;
+}
+
+describe("FrameAssembler.assemble baseHref", () => {
+  it("uses an absolute modules/{id}/widgets/{id}/ base href for a module widget", async () => {
+    const instance = widgetInstance({ moduleId: "mymod", manifestId: "mywid" });
+    const state: OverlaySceneState = {
+      sceneId: "scene-1",
+      applicationId: "app-1",
+      name: "Scene",
+      layout: {},
+      instances: [instance],
+    };
+    const fetchFn = mock(async (_url: string) => new Response("<!doctype html><body></body>", { status: 200 }));
+    const resolver = new OverlayPublicUrlResolver(null, "https://streamware.example.com", fakeLogger());
+    const assembler = new FrameAssembler(fakeHost(state, "index.html"), fakeLogger(), {
+      barkloaderUrl: "http://barkloader",
+      publicDir: "/nonexistent",
+      overlayPublicUrlResolver: resolver,
+      moduleVersions: fakeModuleVersions("mymod:1.0.0:abc1234"),
+      fetchFn: fetchFn as any,
+    });
+
+    const resp = await assembler.assemble("tok", "inst-1", null);
+    const html = await resp.text();
+    expect(html).toContain(
+      '<base href="https://streamware.example.com/overlay/assets/modules/mymod/widgets/mywid/">'
+    );
+  });
+
+  it("uses an absolute builtin/widgets/{id}/ base href for a builtin widget, served from repository-seeded local disk", async () => {
+    const instance = widgetInstance({ moduleId: BUILTIN_MODULE_KEY, manifestId: "media_alert" });
+    const state: OverlaySceneState = {
+      sceneId: "scene-1",
+      applicationId: "app-1",
+      name: "Scene",
+      layout: {},
+      instances: [instance],
+    };
+    const resolver = new OverlayPublicUrlResolver(null, "https://streamware.example.com", fakeLogger());
+    const assembler = new FrameAssembler(fakeHost(state, "index.html"), fakeLogger(), {
+      barkloaderUrl: "http://barkloader",
+      // Real public dir — builtin/media_alert/index.html genuinely exists
+      // here, so this exercises readBuiltinEntry's actual local-disk read
+      // (kept as-is per design: the repository upload is for the
+      // browser-facing proxy route, not streamware's own HTML assembly).
+      publicDir: `${import.meta.dir}/../../public`,
+      overlayPublicUrlResolver: resolver,
+      moduleVersions: null,
+    });
+
+    const resp = await assembler.assemble("tok", "inst-1", null);
+    const html = await resp.text();
+    expect(html).toContain(
+      '<base href="https://streamware.example.com/overlay/assets/builtin/widgets/media_alert/">'
+    );
   });
 });
