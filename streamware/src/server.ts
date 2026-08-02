@@ -17,6 +17,7 @@ import { maskToken, OverlayTokenResolver } from "./overlay/token-resolver";
 import type { OverlayConnectionMeta, OverlayConnectionStore } from "./overlay/connections";
 import { StorageBroadcaster } from "./storage/broadcaster";
 import { WidgetAssetProxy, sanitizeAssetPath } from "./overlay/asset-proxy";
+import { ModuleVersionResolver } from "./overlay/module-version-resolver";
 import { OverlayPublicUrlResolver } from "./overlay/overlay-public-url-resolver";
 
 async function main() {
@@ -56,12 +57,18 @@ async function main() {
   const resolver = new OverlayTokenResolver(db, logger);
   const overlayHost = new OverlayHost(resolver, db, logger);
   const overlayPublicUrlResolver = new OverlayPublicUrlResolver(db, config.overlayPublicUrl, logger);
+  // Shared between FrameAssembler (server-side entry-HTML fetch) and
+  // WidgetAssetProxy (browser asset requests) so both resolve a
+  // module's current version-scoped storage directory through one
+  // cache, invalidated together on `db.module.installed.*`.
+  const moduleVersions = new ModuleVersionResolver(db, logger);
   const frameAssembler = new FrameAssembler(overlayHost, logger, {
     barkloaderUrl: config.barkloaderUrl,
     publicDir: config.publicDir,
     overlayPublicUrlResolver,
+    moduleVersions,
   });
-  const widgetAssetProxy = new WidgetAssetProxy(config.barkloaderUrl, logger);
+  const widgetAssetProxy = new WidgetAssetProxy(config.barkloaderUrl, logger, moduleVersions);
 
   await initSubscriptions({
     nats,
@@ -69,6 +76,7 @@ async function main() {
     storageBroadcaster,
     logger,
     resolver,
+    moduleVersions,
   });
 
   let alertQueue: EventQueueManager | null = null;
