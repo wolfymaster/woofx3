@@ -127,7 +127,7 @@ fn test_null_event() {
 #[test]
 fn test_js_instruction_limit() {
     let registry = build_registry();
-    let code = r#"function main(ctx) { while(true) {} }"#;
+    let code = r#"function infinite(ctx) { while(true) {} }"#;
 
     let mut functions = HashMap::new();
     functions.insert(
@@ -171,7 +171,7 @@ fn test_js_instruction_limit() {
 fn test_js_isolation() {
     let code = r#"
 var counter = 0;
-function main(ctx) {
+function isolation(ctx) {
     counter += 1;
     return { count: counter };
 }
@@ -229,7 +229,7 @@ fn test_custom_entry_point() {
 
 #[test]
 fn test_ctx_event_data() {
-    let code = r#"function main(ctx) {
+    let code = r#"function ctx_test(ctx) {
     return {
         has_event: ctx.event !== null && ctx.event !== undefined,
         amount: ctx.event ? ctx.event.amount : 0,
@@ -286,7 +286,7 @@ impl ChatSender for CapturingChatSender {
 
 #[test]
 fn test_ctx_chat_send_message_routes_to_host() {
-    let code = r#"function main(ctx) {
+    let code = r#"function send(ctx) {
     ctx.chat.sendMessage(ctx.event.text);
     return { ok: true };
 }"#;
@@ -373,7 +373,7 @@ fn extension_test_module(name: &str, func_name: &str, code: &str, ext: &str) -> 
 
 #[test]
 fn test_quickjs_twitch_extension_publishes_canonical_command() {
-    let code = r#"function main(ctx) {
+    let code = r#"function moderate(ctx) {
     ctx.twitch.addModerator({ userId: "u1" });
     return { ok: true };
 }"#;
@@ -411,7 +411,7 @@ fn test_quickjs_twitch_extension_publishes_canonical_command() {
 #[test]
 fn test_lua_twitch_extension_publishes_canonical_command() {
     let code = r#"
-function main(ctx)
+function moderate(ctx)
     ctx.twitch.addModerator({ userId = "u1" })
     return { ok = true }
 end
@@ -449,7 +449,7 @@ end
 
 #[test]
 fn test_quickjs_zero_arg_extension_function() {
-    let code = r#"function main(ctx) {
+    let code = r#"function clip_test(ctx) {
     ctx.twitch.clip();
     return { ok: true };
 }"#;
@@ -479,7 +479,7 @@ fn test_quickjs_zero_arg_extension_function() {
 
 #[test]
 fn test_quickjs_nested_namespace_platform_alerts() {
-    let code = r#"function main(ctx) {
+    let code = r#"function alert_test(ctx) {
     ctx.platform.alerts.alert({ type: "follow", message: "hi" });
     return { ok: true };
 }"#;
@@ -516,7 +516,7 @@ fn test_quickjs_nested_namespace_platform_alerts() {
 
 #[test]
 fn test_unregistered_extension_namespace_is_undefined() {
-    let code = r#"function main(ctx) {
+    let code = r#"function probe(ctx) {
     return { has_twitch: typeof ctx.twitch !== "undefined" };
 }"#;
     let registry = extension_test_module("noext_test", "probe", code, "js");
