@@ -5,11 +5,11 @@ type Subject string
 const (
 	// Twitch user events
 	SubjectTwitchChatMessage      Subject = "message.user.twitch"
-	SubjectTwitchCheer            Subject = "cheer.user.twitch"
-	SubjectTwitchFollow           Subject = "follow.user.twitch"
-	SubjectTwitchSubscribe        Subject = "subscribe.user.twitch"
-	SubjectTwitchSubscriptionGift Subject = "subscription.gift.twitch"
-	SubjectTwitchStreamOnline     Subject = "online.user.twitch"
+	SubjectTwitchCheer            Subject = "cheer.channel.twitch"
+	SubjectTwitchFollow           Subject = "follow.channel.twitch"
+	SubjectTwitchSubscribe        Subject = "subscribe.channel.twitch"
+	SubjectTwitchSubscriptionGift Subject = "subscriptionGift.channel.twitch"
+	SubjectTwitchStreamOnline     Subject = "online.channel.twitch"
 
 	// Twitch channel events
 	SubjectTwitchHypeTrainBegin Subject = "hypetrain.channel.twitch"
