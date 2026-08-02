@@ -142,6 +142,10 @@ export async function initBuiltinWidgets(
         moduleKey: "builtin",
         moduleName: "Built-in",
         version: "1.0.0",
+        // Module/builtin widget rows are instance-global, not scoped to
+        // one application — see ManifestWidget::to_input in
+        // module_manifest.rs for the same convention on the module side.
+        applicationId: "",
         createdByType: "SYSTEM",
         createdByRef: "builtin",
         widgets: defs.map((d) => ({
@@ -149,6 +153,12 @@ export async function initBuiltinWidgets(
           name: d.name,
           description: d.description ?? "",
           directory: d.directory,
+          // Builtin widgets have no manifest-declared entry — same
+          // "unset means index.html" convention module widgets use (see
+          // ManifestWidget::to_input in module_manifest.rs and
+          // FrameAssembler.loadEntryHtml's `definition?.entry || "index.html"`
+          // fallback).
+          entry: "",
           alertTypes: d.alertTypes,
           settingsSchema: JSON.stringify(d.settings),
           surface: d.surface ?? "scene",
