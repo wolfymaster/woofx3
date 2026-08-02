@@ -17,13 +17,18 @@ type EventPublisher interface {
 	Publish(event *types.Event) error
 }
 
-// AssetURLResolver resolves the engine's configured asset base URL for a
-// given application. Backed by the db-proxy `settings` table in production
-// (see workflow/asset_settings.go) so a UI settings page can override the
-// default without redeploying the engine; kept as an interface here so the
-// engine package doesn't need to depend on the db client.
+// AssetURLResolver resolves the engine's configured `overlay.publicUrl`
+// setting (bare, no suffix — buildResolver appends `/overlay/assets`) —
+// the base URL `${woofx3_asset_url:<repositoryKey>}` tokens (baked by
+// barkloader at module-install time; see ManifestWorkflow::register /
+// encode_asset_url_markers in module_manifest.rs) are resolved against.
+// Backed by the db-proxy `settings` table in production (see
+// workflow/overlay_public_url_resolver.go) so a UI settings page can
+// override the default without redeploying the engine; kept as an
+// interface here so the engine package doesn't need to depend on the db
+// client. Process-wide, not per-application.
 type AssetURLResolver interface {
-	Resolve(applicationID string) string
+	Resolve() string
 }
 
 type Engine[TServices any] struct {
@@ -120,8 +125,10 @@ func (e *Engine[TServices]) SetPublisher(publisher EventPublisher) {
 	e.registerPublishAction()
 }
 
-// SetAssetURLResolver wires the resolver backing the `${woofx3_asset_url}`
-// expression source. Optional — when unset, that source resolves to "".
+// SetAssetURLResolver wires the resolver backing `${woofx3_asset_url:...}`
+// tokens. Optional — a workflow containing such a token fails to resolve
+// (rather than silently resolving to an empty/broken URL) when unset; see
+// expression.Resolver.SetAssetURLBase.
 func (e *Engine[TServices]) SetAssetURLResolver(resolver AssetURLResolver) {
 	e.assetURLResolver = resolver
 }
@@ -406,7 +413,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 		// For non-condition tasks, evaluate conditions as guards (skip if false)
 		// Condition tasks use conditions for branching (OnTrue/OnFalse), not skipping
 		if taskDef.Type != "condition" && (taskDef.Condition != nil || len(taskDef.Conditions) > 0) {
-			resolver := e.buildResolver(execution.WorkflowID, triggerEvent, taskExports)
+			resolver := e.buildResolver(triggerEvent, taskExports)
 			condTask := &tasks.ConditionTask{}
 
 			shouldRun, err := condTask.Evaluate(taskDef, resolver)
@@ -440,7 +447,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 		}
 
 		if taskDef.Type == "condition" && (taskDef.Condition != nil || len(taskDef.Conditions) > 0) {
-			resolver := e.buildResolver(execution.WorkflowID, triggerEvent, taskExports)
+			resolver := e.buildResolver(triggerEvent, taskExports)
 			condTask := &tasks.ConditionTask{}
 
 			result, err := condTask.Evaluate(taskDef, resolver)
@@ -522,7 +529,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 			workflowConfig := taskDef.Workflow
 			if workflowConfig == nil {
 				// Try to build workflow config from parameters
-				resolver := e.buildResolver(execution.WorkflowID, triggerEvent, taskExports)
+				resolver := e.buildResolver(triggerEvent, taskExports)
 				resolvedParams, err := resolver.Resolve(taskDef.Parameters)
 				if err == nil {
 					if params, ok := resolvedParams.(map[string]any); ok {
@@ -639,7 +646,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 	e.checkSubWorkflowCompletion(execution.ID)
 }
 
-func (e *Engine[TServices]) buildResolver(workflowID string, triggerEvent *types.Event, taskExports map[string]map[string]any) *expression.Resolver {
+func (e *Engine[TServices]) buildResolver(triggerEvent *types.Event, taskExports map[string]map[string]any) *expression.Resolver {
 	resolver := expression.NewResolver()
 
 	triggerData := map[string]any{
@@ -655,30 +662,24 @@ func (e *Engine[TServices]) buildResolver(workflowID string, triggerEvent *types
 		resolver.AddSource(taskID, exports)
 	}
 
-	// Bare source (no dot-path) so workflow authors write `${woofx3_asset_url}`
-	// instead of baking a deployment-specific host into module/workflow
-	// content. See AssetURLResolver doc comment for where the value comes from.
-	resolver.AddSource("woofx3_asset_url", e.assetURL(e.resolveApplicationID(workflowID)))
+	if e.assetURLResolver != nil {
+		// The resolver returns the bare overlay.publicUrl value; the
+		// /overlay/assets suffix is asset-resolution-specific, not part of
+		// the setting itself (see OverlayPublicURLResolver doc comment).
+		resolver.SetAssetURLBase(e.assetURLResolver.Resolve() + "/overlay/assets")
+	}
 
 	return resolver
 }
 
 // resolveApplicationID looks up the owning workflow's applicationId from the
 // registry. Mirrors the fallback used for action-handler attribution
-// (executeTask below) — a missing definition just yields "", which
-// AssetURLResolver implementations treat as "default application".
+// (executeTask below) — a missing definition just yields "".
 func (e *Engine[TServices]) resolveApplicationID(workflowID string) string {
 	if def, err := e.workflowRegistry.Get(workflowID); err == nil && def != nil {
 		return def.ApplicationID
 	}
 	return ""
-}
-
-func (e *Engine[TServices]) assetURL(applicationID string) string {
-	if e.assetURLResolver == nil {
-		return ""
-	}
-	return e.assetURLResolver.Resolve(applicationID)
 }
 
 func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, taskDef *types.TaskDefinition, taskExec *types.TaskExecution, executionOrder []*types.TaskDefinition, currentIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event) string {
@@ -721,7 +722,7 @@ func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, t
 func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecution, taskDef *types.TaskDefinition, taskExec *types.TaskExecution, executionOrder []*types.TaskDefinition, currentIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event) string {
 	if taskExec.WorkflowState == nil {
 		// Resolve workflow config parameters
-		resolver := e.buildResolver(execution.WorkflowID, triggerEvent, taskExports)
+		resolver := e.buildResolver(triggerEvent, taskExports)
 
 		// Resolve workflowID if it contains expressions
 		workflowIDRaw := taskDef.Workflow.WorkflowID
@@ -1020,7 +1021,7 @@ func (e *Engine[TServices]) resumeExecution(w *WaitingExecution) {
 }
 
 func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution *types.WorkflowExecution, event *types.Event, taskExports map[string]map[string]any) (*types.TaskResult, error) {
-	resolver := e.buildResolver(execution.WorkflowID, event, taskExports)
+	resolver := e.buildResolver(event, taskExports)
 
 	// Diagnostic: log what the resolver will see and what it produced.
 	// Workflow authors hit "${trigger.data.X} not substituted" most often

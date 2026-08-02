@@ -86,18 +86,15 @@ func main() {
 				return err
 			}
 
-			// Default `${woofx3_asset_url}` value until a UI-configured
-			// `assets.baseUrl` engine setting overrides it. Assets are served
-			// from barkloader at /assets (barkloader/app/src/routes/assets.rs).
-			defaultAssetBaseURL := ""
-			if cfg.BarkloaderURL != "" {
-				defaultAssetBaseURL = strings.TrimRight(cfg.BarkloaderURL, "/") + "/assets"
-			}
-
 			// Wire runtime services into the application now that config is loaded
 			// and the post-config services have been constructed. natsSvc was
 			// constructed pre-config in main(); the others are local to this scope.
-			app.SetServices(natsSvc, barkloaderService, dbClient, defaultAssetBaseURL)
+			// Default `overlay.publicUrl` base until a UI-configured setting
+			// overrides it — no hardcoded fallback beyond the env value; an
+			// unconfigured deployment resolves asset URLs as host-less
+			// relative paths rather than a guessed address (see
+			// WorkflowEnvConfig.OverlayPublicURL).
+			app.SetServices(natsSvc, barkloaderService, dbClient, cfg.OverlayPublicURL)
 
 			return nil
 		},

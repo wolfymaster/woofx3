@@ -265,19 +265,30 @@ These three `type` values render dedicated pickers in the UI rather than freefor
 
 `resource_ref` is the discriminator that lets actions and widgets reference runtime instances (counters, future timers/polls/leaderboards, etc.) without the engine learning what each kind means. See [Runtime resource instances](#runtime-resource-instances).
 
-> **Asset URLs must not be baked into saved workflows.** A repository
-> key (`asset.repositoryKey` on the `Asset` row, see
-> `db/proto/v1/module_asset.proto`) only resolves to a servable URL on
+> **Asset URLs must not be baked into saved workflows at manifest-authoring
+> time.** A repository key (`asset.repositoryKey` on the `Asset` row, see
+> `db/proto/v1/module_asset.proto`) only resolves to a servable path on
 > the deployment that installed the module — hardcoding a resolved
 > `http://…` string breaks the moment the workflow runs on a different
 > install, or the deployer moves assets to a different host/CDN.
-> Instead, save the field's value as a path relative to the engine's
-> asset base URL and let the engine substitute it at execution time via
-> `${woofx3_asset_url}` (e.g. `${woofx3_asset_url}/modules/<moduleKey>/assets/<path>`).
-> See [Expression resolution → `${woofx3_asset_url}`](../workflow/expressions.md#woofx3_asset_url-referencing-module-uploaded-assets)
-> for how that source is resolved and how to override it (a future UI
-> settings page will write the `assets.baseUrl` engine setting; today it
-> falls back to barkloader's own `/assets` route).
+>
+> For a **settingsSchema `asset` field** (an operator-facing picker, filled
+> in by an external editor UI when configuring a user-authored workflow),
+> the stored value is the asset's canonical id
+> (`"twitch_platform:asset:bell.mp3"`). Resolving that to a fetchable URL
+> is the responsibility of whatever produces the saved workflow (today,
+> external editor tooling, not this repo) — there is no
+> workflow-engine expression-language mechanism for this specific case.
+>
+> For a **bundled workflow referencing one of its own module's declared
+> `assets[]`** (e.g. `wolfy_profile`'s alert workflows), there is a
+> mechanism: write `${asset:<id>}` in the step's `parameters`, matching an
+> `assets[].id` in the same manifest. Barkloader bakes it into an absolute,
+> deployment-portable form at install time — see
+> [Expression resolution → Referencing module assets](../workflow/expressions.md#referencing-module-assets-from-a-bundled-workflow-asset-id)
+> for the full mechanism (`overlay.publicUrl`, the `${woofx3_asset_url:...}`
+> baked form, and why `${woofx3_asset_url}` alone — the earlier, retired
+> mechanism — wasn't sufficient).
 
 
 
@@ -496,7 +507,7 @@ interface WidgetHost {
 }
 
 interface WidgetEvent {
-  type: string;       // canonical trigger id, e.g. "twitch_platform:trigger:follow.user.twitch"
+  type: string;       // canonical trigger id, e.g. "twitch_platform:trigger:follow.channel.twitch"
   source: string;     // CloudEvent source
   time: string;       // RFC3339
   data: unknown;      // event payload
@@ -505,7 +516,7 @@ interface WidgetEvent {
 
 `reportStatus` and `reportComplete` send a P1 `status.report` message to the scene manager, which forwards it over the unified `widget.event` NATS channel. The streamware dispatcher persists generic events to the `widget_status` table and routes `alert.lifecycle` reports to the [event queue](../streamware/alert-queue.md) — see [Widget event channel](../services/widget-events.md).
 
-`onEvent` is the downward channel: the widget sends a P1 `events.subscribe` message, and the scene manager matches engine-side trigger events (delivered over the P2 `event` frame) against the widget's `acceptedEvents` declaration before relaying a matching one as `event.deliver`. A widget that lists `twitch_platform:trigger:follow.user.twitch` in its manifest will see every follower event the engine processes. Widgets without `acceptedEvents` receive nothing — that's the right default for static display-only widgets.
+`onEvent` is the downward channel: the widget sends a P1 `events.subscribe` message, and the scene manager matches engine-side trigger events (delivered over the P2 `event` frame) against the widget's `acceptedEvents` declaration before relaying a matching one as `event.deliver`. A widget that lists `twitch_platform:trigger:follow.channel.twitch` in its manifest will see every follower event the engine processes. Widgets without `acceptedEvents` receive nothing — that's the right default for static display-only widgets.
 
 `widgetHost.storage` reads the latest module-storage value for `(moduleId, key)` from the local cache populated by `module.storage.changed` events, delivered over the P2 `storage` frame.
 
@@ -845,7 +856,9 @@ Module files are stored via the `Repository` trait (filesystem or S3). See [API 
 modules/
   {module-id}/
     functions/
-      ...                    # paths from manifest function.path
+      ...                    # paths from manifest function.path, e.g. functions/foo.lua
+    assets/
+      ...                    # paths from manifest assets[].path, e.g. assets/bell.mp3
     widgets/
       {widget-id}/...
     overlays/
@@ -854,6 +867,13 @@ archives/
   {module-id}/
     {version}.zip
 ```
+
+`functions[].path` and `assets[].path` are both **full zip-relative paths**,
+already including whatever directory the author put the file under (by
+convention `functions/` and `assets/` respectively) — the upload key is
+`modules/{module-id}/{path}` verbatim, not `modules/{module-id}/assets/{path}`.
+Declaring `"path": "assets/bell.mp3"` is correct; it does not produce
+`modules/{module-id}/assets/assets/bell.mp3`.
 
 **Registration** (`POST /functions/{name}/register`) loads **`.lua` and `.js`** files found under `modules/{name}/` into the in-memory `ModuleRegistry` for WebSocket invocation. Other extensions in the tree (HTML, CSS, etc.) are ignored by the registry but remain in storage for browser sources / future loaders.
 

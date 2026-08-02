@@ -25,7 +25,7 @@ func TestEvaluateTrigger_AcceptsWhenConditionsMatch(t *testing.T) {
 	wf := &types.WorkflowDefinition{
 		Trigger: &types.TriggerConfig{
 			Type:  "event",
-			Event: "cheer.user.twitch",
+			Event: "cheer.channel.twitch",
 			Conditions: []types.ConditionConfig{
 				{Field: "${trigger.data.amount}", Operator: "gte", Value: 100},
 			},
@@ -33,7 +33,7 @@ func TestEvaluateTrigger_AcceptsWhenConditionsMatch(t *testing.T) {
 	}
 	event := &types.Event{
 		ID:   "evt-1",
-		Type: "cheer.user.twitch",
+		Type: "cheer.channel.twitch",
 		Time: time.Now(),
 		Data: map[string]any{"amount": 500},
 	}
@@ -46,7 +46,7 @@ func TestEvaluateTrigger_RejectsWhenConditionFails(t *testing.T) {
 	wf := &types.WorkflowDefinition{
 		Trigger: &types.TriggerConfig{
 			Type:  "event",
-			Event: "cheer.user.twitch",
+			Event: "cheer.channel.twitch",
 			Conditions: []types.ConditionConfig{
 				{Field: "${trigger.data.amount}", Operator: "gte", Value: 100},
 			},
@@ -54,7 +54,7 @@ func TestEvaluateTrigger_RejectsWhenConditionFails(t *testing.T) {
 	}
 	event := &types.Event{
 		ID:   "evt-2",
-		Type: "cheer.user.twitch",
+		Type: "cheer.channel.twitch",
 		Time: time.Now(),
 		Data: map[string]any{"amount": 50},
 	}
@@ -68,12 +68,12 @@ func TestEvaluateTrigger_NoConditionsAlwaysAccepts(t *testing.T) {
 	wf := &types.WorkflowDefinition{
 		Trigger: &types.TriggerConfig{
 			Type:  "event",
-			Event: "cheer.user.twitch",
+			Event: "cheer.channel.twitch",
 		},
 	}
 	event := &types.Event{
 		ID:   "evt-3",
-		Type: "cheer.user.twitch",
+		Type: "cheer.channel.twitch",
 		Time: time.Now(),
 		Data: map[string]any{},
 	}
@@ -86,7 +86,7 @@ func TestEvaluateTrigger_RejectsEventMismatchEvenWithMatchingConditions(t *testi
 	wf := &types.WorkflowDefinition{
 		Trigger: &types.TriggerConfig{
 			Type:  "event",
-			Event: "cheer.user.twitch",
+			Event: "cheer.channel.twitch",
 			Conditions: []types.ConditionConfig{
 				{Field: "${trigger.data.amount}", Operator: "gte", Value: 0},
 			},
@@ -94,7 +94,7 @@ func TestEvaluateTrigger_RejectsEventMismatchEvenWithMatchingConditions(t *testi
 	}
 	event := &types.Event{
 		ID:   "evt-4",
-		Type: "follow.user.twitch",
+		Type: "follow.channel.twitch",
 		Time: time.Now(),
 		Data: map[string]any{"amount": 500},
 	}

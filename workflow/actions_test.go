@@ -11,7 +11,7 @@ import (
 func TestBuildAlertEnvelope_WithTriggerEvent(t *testing.T) {
 	event := &types.Event{
 		ID:     "evt-1",
-		Type:   "cheer.user.twitch",
+		Type:   "cheer.channel.twitch",
 		Source: "twitch",
 		Time:   time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC),
 		Data: map[string]any{
@@ -56,8 +56,8 @@ func TestBuildAlertEnvelope_WithTriggerEvent(t *testing.T) {
 	if got.Event == nil {
 		t.Fatal("event was unexpectedly nil")
 	}
-	if got.Event.Type != "cheer.user.twitch" {
-		t.Errorf("event.type = %v, want cheer.user.twitch", got.Event.Type)
+	if got.Event.Type != "cheer.channel.twitch" {
+		t.Errorf("event.type = %v, want cheer.channel.twitch", got.Event.Type)
 	}
 	if got.Event.Data["userName"] != "alice" {
 		t.Errorf("event.data.userName = %v, want alice", got.Event.Data["userName"])

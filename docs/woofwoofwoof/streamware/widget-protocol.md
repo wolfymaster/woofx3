@@ -94,7 +94,7 @@ ahead of the widget's `<base>` tag:
 ```html
 <script>window.__WOOFX3_WIDGET_BOOT__ = { ... };</script>
 <script src="../assets/widget-host-shim.js"></script>
-<base href="../widget-assets/spotify_sr/now_playing/">
+<base href="https://streamware.example.com/overlay/assets/modules/spotify_sr/widgets/now_playing/">
 ```
 
 Ordering is normative: the boot payload global must be set before the shim runs; the

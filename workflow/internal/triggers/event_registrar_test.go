@@ -60,7 +60,7 @@ func TestEventRegistrar_UnsubscribesOnlyWhenRefCountHitsZero(t *testing.T) {
 	fs := newFakeSubscriber()
 	r := NewEventTriggerRegistrar(fs, nil, nil)
 
-	trig := &types.TriggerConfig{Type: "event", Event: "cheer.user.twitch"}
+	trig := &types.TriggerConfig{Type: "event", Event: "cheer.channel.twitch"}
 
 	_ = r.Register("wf-1", trig)
 	_ = r.Register("wf-2", trig)
@@ -68,14 +68,14 @@ func TestEventRegistrar_UnsubscribesOnlyWhenRefCountHitsZero(t *testing.T) {
 	if err := r.Unregister("wf-1", trig); err != nil {
 		t.Fatalf("unregister wf-1: %v", err)
 	}
-	if got := fs.unsubscribed["cheer.user.twitch"]; got != 0 {
+	if got := fs.unsubscribed["cheer.channel.twitch"]; got != 0 {
 		t.Errorf("premature unsubscribe; got %d calls, want 0", got)
 	}
 
 	if err := r.Unregister("wf-2", trig); err != nil {
 		t.Fatalf("unregister wf-2: %v", err)
 	}
-	if got := fs.unsubscribed["cheer.user.twitch"]; got != 1 {
+	if got := fs.unsubscribed["cheer.channel.twitch"]; got != 1 {
 		t.Errorf("Unsubscribe call count after last unregister = %d, want 1", got)
 	}
 }
@@ -84,13 +84,13 @@ func TestEventRegistrar_IdempotentRegisterSameWorkflow(t *testing.T) {
 	fs := newFakeSubscriber()
 	r := NewEventTriggerRegistrar(fs, nil, nil)
 
-	trig := &types.TriggerConfig{Type: "event", Event: "follow.user.twitch"}
+	trig := &types.TriggerConfig{Type: "event", Event: "follow.channel.twitch"}
 
 	_ = r.Register("wf-1", trig)
 	_ = r.Register("wf-1", trig) // duplicate register for same workflow must not double the ref count
 	_ = r.Unregister("wf-1", trig)
 
-	if got := fs.unsubscribed["follow.user.twitch"]; got != 1 {
+	if got := fs.unsubscribed["follow.channel.twitch"]; got != 1 {
 		t.Errorf("Unsubscribe = %d after single unregister; ref count was double-counted (want 1)", got)
 	}
 }
@@ -138,7 +138,7 @@ func TestEventRegistrar_UpdateReleasesOldSubjectAndSubscribesNew(t *testing.T) {
 	r := NewEventTriggerRegistrar(fs, nil, nil)
 
 	subjectA := "message.user.twitch"
-	subjectB := "cheer.user.twitch"
+	subjectB := "cheer.channel.twitch"
 
 	if err := r.Register("wf-1", &types.TriggerConfig{Type: "event", Event: subjectA}); err != nil {
 		t.Fatalf("register wf-1 to %s: %v", subjectA, err)

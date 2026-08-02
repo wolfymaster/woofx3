@@ -2,6 +2,7 @@ import type { CommandSnapshot, CommandType, Scene, WorkflowDefinition } from "@w
 import type * as command from "@woofx3/db/command.pb";
 import type * as scene from "@woofx3/db/scene.pb";
 import * as protoscript from "protoscript";
+import type { DbClient } from "../db-client";
 
 /**
  * Helper to create a protoscript.Timestamp from a Date
@@ -27,6 +28,21 @@ export function timestampToIso(ts: { seconds?: bigint; nanos?: number } | undefi
   }
   const ms = Number(ts.seconds) * 1000 + Math.floor((ts.nanos ?? 0) / 1_000_000);
   return new Date(ms).toISOString();
+}
+
+/**
+ * Resolves the public base URL the api's overlay gateway is reachable at —
+ * the `overlay.publicUrl` engine setting when configured, otherwise the
+ * service's own env-configured default (`overlayPublicUrl` / `WOOFX3_OVERLAY_
+ * PUBLIC_URL`, see api/src/config.ts). Process-wide, not application-scoped —
+ * this describes the deployment's own network topology, not anything
+ * per-application. The single source every consumer (engine.ts's
+ * getEngineInfo, overlay-tokens.ts, and — via getEngineInfo().overlayPublicUrl —
+ * streamware/workflow's asset URL resolution) resolves identically from.
+ */
+export async function resolveOverlayPublicUrl(db: DbClient, envDefault: string): Promise<string> {
+  const dbValue = await db.getSetting("overlay.publicUrl", "");
+  return (dbValue || envDefault).replace(/\/+$/, "");
 }
 
 /**

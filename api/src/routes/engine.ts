@@ -39,6 +39,7 @@ import {
   dbSceneToWire,
   readModuleCatalogFields,
   rebuildWorkflowDefinition,
+  resolveOverlayPublicUrl,
   timestampFromDate,
   timestampToIso,
 } from "./helpers";
@@ -68,90 +69,65 @@ export const engineRoutes = {
   },
 
   /**
-   * Surface deployment URLs to the UI so it can compose iframe
-   * sources and asset URLs deterministically. Called once per UI
-   * session and cached.
+   * Surface deployment URLs to the UI. Called once per UI session and
+   * cached.
    *
-   * `widgetAssetBaseUrl` is sourced from the engine's settings
-   * (`widget_asset_base_url`), which the operator configures to point
-   * at whatever storage backend hosts module assets — Convex
-   * storage, an S3/R2 public bucket, a CDN, or a local static
-   * server in dev. Barkloader only writes to the configured
-   * repository; serving the files is the repository's concern, not
-   * a barkloader HTTP route.
+   * `overlayPublicUrl` is the single public base URL for reaching this
+   * api's overlay surface — both the token-scoped overlay tree
+   * (`/overlay/{token}/...`, what `mintOverlayToken`/`rotateOverlayToken`/
+   * `listOverlayTokens` compose their `url` from) and, via the same
+   * `/overlay/assets/...` route, every widget/module asset kind. There is
+   * deliberately only this one setting: everything is proxied through the
+   * api gateway's `/overlay/` surface today, so a separate
+   * "streamware app" URL or a separate "asset storage" URL would just be
+   * two more names for the same value — see
+   * docs/services/engine-settings-ui.md for the history of why this used
+   * to be three settings.
    *
-   * `assetsBaseUrl` is sourced from the engine's settings
-   * (`assets.baseUrl`) and is what the *workflow engine* substitutes
-   * for `${woofx3_asset_url}` when resolving a step's parameters at
-   * execution time (see `workflow/asset_settings.go` and
-   * docs/workflow/expressions.md). Distinct from `widgetAssetBaseUrl`
-   * — that one composes overlay widget iframe sources in the
-   * browser; this one is baked into workflow step parameters
-   * (e.g. an alert's `mediaUrl`) server-side before dispatch. They
-   * often point at the same host but don't have to. Unset returns
-   * barkloader's own `/assets` route (its default per
-   * `workflow/asset_settings.go`'s `AssetSettingsResolver` fallback),
-   * not empty string — there's always a working default.
+   * Read via `resolveOverlayPublicUrl`: the `overlay.publicUrl` engine
+   * setting, falling back to this service's own env-configured
+   * `overlayPublicUrl` (`WOOFX3_OVERLAY_PUBLIC_URL`) when unset. No
+   * further hardcoded fallback beyond that — an unconfigured deployment
+   * gets an empty string here rather than a guessed value.
    *
-   * `engineSceneOverlayBaseUrl` is the streamware URL (always
-   * served by streamware itself — overlay HTML is engine-owned).
+   * `engineSceneOverlayBaseUrl` is a cheap derivation
+   * (`${overlayPublicUrl}/overlay/scene`), kept for backward
+   * compatibility with existing UI code. Note: as of this writing
+   * `/overlay/scene/{id}` isn't wired to a working streamware route
+   * (real scene loading goes through the token-based
+   * `/overlay/{token}/...` routes instead) — this field's value isn't
+   * currently fetchable, which predates this change and is tracked
+   * separately.
    *
    * All URLs strip trailing slashes so callers can join with `/`
-   * without worrying about double-slashes. An empty
-   * `widgetAssetBaseUrl` is a valid response — it signals to the UI
-   * that storage isn't configured yet, and the editor renders the
-   * "widget unavailable" placeholder instead of a broken iframe.
+   * without worrying about double-slashes.
    */
   async getEngineInfo(): Promise<{
-    widgetAssetBaseUrl: string;
-    assetsBaseUrl: string;
     engineSceneOverlayBaseUrl: string;
+    overlayPublicUrl: string;
   }> {
-    const applicationId = await this.ensureApplicationId();
-    const [widgetAssetBaseUrl, assetsBaseUrl] = await Promise.all([
-      this.db.getSetting("widget_asset_base_url", applicationId),
-      this.db.getSetting("assets.baseUrl", applicationId),
-    ]);
-    const streamware = this.streamwareUrl.replace(/\/+$/, "");
+    const overlayPublicUrl = await resolveOverlayPublicUrl(this.db, this.overlayPublicUrl);
     return {
-      widgetAssetBaseUrl: (widgetAssetBaseUrl ?? "").replace(/\/+$/, ""),
-      assetsBaseUrl: (assetsBaseUrl || `${this.getBarkloaderBaseUrl()}/assets`).replace(/\/+$/, ""),
-      engineSceneOverlayBaseUrl: `${streamware}/overlay/scene`,
+      engineSceneOverlayBaseUrl: `${overlayPublicUrl}/overlay/scene`,
+      overlayPublicUrl,
     };
   },
 
   /**
-   * Update the engine-stored widget asset base URL. Used by the UI
-   * settings form; the operator points it at whichever storage
-   * backend they've configured barkloader's repository to write to
-   * (Convex storage signed URL pattern, R2 public bucket, S3 with
-   * CloudFront, etc.).
+   * Update the engine-stored public base URL the api's overlay gateway is
+   * reachable at (`overlay.publicUrl` setting) — used to compose the `url`
+   * returned by mintOverlayToken/rotateOverlayToken/listOverlayTokens, and
+   * (via `getEngineInfo().overlayPublicUrl`) every widget/module asset
+   * URL streamware and workflow construct. Used by the UI settings form;
+   * the operator points it at wherever this api service sits behind a
+   * tunnel or reverse proxy. Process-wide — not application-scoped.
    *
-   * Empty string is allowed and clears the setting — the UI
-   * displays widgets as unavailable until a URL is configured.
+   * Empty string is allowed and clears the setting — the engine then falls
+   * back to its own env-configured `overlayPublicUrl` (WOOFX3_OVERLAY_PUBLIC_URL).
    */
-  async setWidgetAssetBaseUrl(value: string): Promise<{ success: boolean }> {
-    const applicationId = await this.ensureApplicationId();
+  async setOverlayPublicUrl(value: string): Promise<{ success: boolean }> {
     const normalized = value.trim().replace(/\/+$/, "");
-    const response = await this.db.setSetting("widget_asset_base_url", normalized, applicationId);
-    return { success: response.status?.code === "OK" };
-  },
-
-  /**
-   * Update the engine-stored workflow asset base URL
-   * (`assets.baseUrl`). Used by the UI settings form; the operator
-   * points it at wherever they want `${woofx3_asset_url}` to resolve
-   * to at workflow-execution time (see `getEngineInfo` doc comment
-   * above for how this differs from `widgetAssetBaseUrl`).
-   *
-   * Empty string is allowed and clears the setting — the engine then
-   * falls back to barkloader's own `/assets` route, it does not go
-   * unresolved.
-   */
-  async setAssetsBaseUrl(value: string): Promise<{ success: boolean }> {
-    const applicationId = await this.ensureApplicationId();
-    const normalized = value.trim().replace(/\/+$/, "");
-    const response = await this.db.setSetting("assets.baseUrl", normalized, applicationId);
+    const response = await this.db.setSetting("overlay.publicUrl", normalized, "");
     return { success: response.status?.code === "OK" };
   },
 
@@ -161,6 +137,12 @@ export const engineRoutes = {
    * are returned as undefined. Secret values (`accessKey`,
    * `secretKey`) are masked — read returns `"***"` when set, empty
    * when unset. Writes pass through directly via setStorageConfig.
+   *
+   * This is purely about which repository backend barkloader writes
+   * bytes to (file vs. s3) — not where those bytes are publicly
+   * reachable from. That's `getEngineInfo().overlayPublicUrl`
+   * (everything, including assets, is proxied through the same
+   * `/overlay/` surface today — see that method's doc comment).
    */
   async getStorageConfig(): Promise<StorageConfig> {
     // Storage settings are not application-scoped — the repository

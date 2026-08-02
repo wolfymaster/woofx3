@@ -27,6 +27,7 @@ export interface ApiOptions {
   nats: NATSClient | null;
   barkloaderUrl: string;
   streamwareUrl?: string;
+  overlayPublicUrl?: string;
   logger: SharedLogger;
 }
 
@@ -48,6 +49,7 @@ export class ApiRouteHost extends RpcTarget {
   protected applicationId: string | null = null;
   protected barkloaderUrl: string;
   protected streamwareUrl: string;
+  protected overlayPublicUrl: string;
   protected logger: SharedLogger;
 
   protected currentUser = {
@@ -709,6 +711,7 @@ export class ApiRouteHost extends RpcTarget {
     this.nats = opts.nats;
     this.barkloaderUrl = opts.barkloaderUrl;
     this.streamwareUrl = opts.streamwareUrl ?? "";
+    this.overlayPublicUrl = opts.overlayPublicUrl ?? "http://127.0.0.1:9100";
     this.logger = opts.logger;
   }
 }

@@ -10,8 +10,20 @@ import (
 
 var expressionPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 
+// assetURLPrefix marks a token baked by barkloader at module-install time
+// (see ManifestWorkflow::register / encode_asset_url_markers in
+// module_manifest.rs) — the literal text after the prefix is a repository
+// key (e.g. "modules/wolfy_profile/assets/pleasure.mp3"), resolved here via
+// plain string concatenation against the configured asset base URL. Never
+// dot-split like an ordinary source.path expression: repository keys
+// legitimately contain dots (file extensions), which would otherwise be
+// misparsed as a path segment.
+const assetURLPrefix = "woofx3_asset_url:"
+
 type Resolver struct {
-	sources map[string]any
+	sources         map[string]any
+	assetURLBase    string
+	hasAssetURLBase bool
 }
 
 func NewResolver() *Resolver {
@@ -22,6 +34,14 @@ func NewResolver() *Resolver {
 
 func (r *Resolver) AddSource(name string, data any) {
 	r.sources[name] = data
+}
+
+// SetAssetURLBase configures the base URL that `${woofx3_asset_url:<repositoryKey>}`
+// tokens resolve against. Optional — a workflow containing such a token
+// without this configured fails to resolve (see evaluateExpression).
+func (r *Resolver) SetAssetURLBase(base string) {
+	r.assetURLBase = strings.TrimRight(base, "/")
+	r.hasAssetURLBase = true
 }
 
 func (r *Resolver) Resolve(value any) (any, error) {
@@ -79,6 +99,13 @@ func isFullExpression(s string) bool {
 }
 
 func (r *Resolver) evaluateExpression(expr string) (any, error) {
+	if rel, ok := strings.CutPrefix(expr, assetURLPrefix); ok {
+		if !r.hasAssetURLBase {
+			return nil, fmt.Errorf("%s%s: no asset base URL configured on this resolver", assetURLPrefix, rel)
+		}
+		return r.assetURLBase + "/" + rel, nil
+	}
+
 	parts := strings.SplitN(expr, ".", 2)
 	if len(parts) == 0 {
 		return nil, fmt.Errorf("empty expression")

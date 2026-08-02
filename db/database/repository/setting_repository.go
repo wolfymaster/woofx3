@@ -65,8 +65,13 @@ func (r *SettingRepository) UpsertSetting(appID uuid.UUID, key, value string, us
 		Value:         value,
 		UserID:        userID,
 	}
+	// Assign() must take a map, not a struct: GORM's struct-based Assign/Updates
+	// silently omits zero-valued fields (Go's "" for string) from the generated
+	// UPDATE, so clearing a setting back to an empty string on an existing row
+	// would otherwise leave the old value in place. A map forces every given
+	// key into the SET clause regardless of value.
 	return r.db.Where("application_id = ? AND key = ?", appID, key).
-		Assign(models.Setting{Value: value, UserID: userID}).
+		Assign(map[string]any{"value": value, "user_id": userID}).
 		FirstOrCreate(&setting).Error
 }
 

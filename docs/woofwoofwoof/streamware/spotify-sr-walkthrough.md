@@ -209,7 +209,7 @@ The iframe request reaches streamware at `/o/{token}/frame/wp1?nonce=abc123...`.
    <head>
      <script>window.__WOOFX3_WIDGET_BOOT__ = { ... };</script>
      <script src="../assets/widget-host-shim.js"></script>
-     <base href="../widget-assets/spotify_sr/now_playing/">
+     <base href="https://streamware.example.com/overlay/assets/modules/spotify_sr/widgets/now_playing/">
      <!-- rest of original <head> -->
    ```
 7. Returns the assembled document with `Referrer-Policy: no-referrer`,

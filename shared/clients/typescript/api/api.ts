@@ -1,6 +1,6 @@
 // Shared API Types for woofx3 UI and Backend
 
-import type { ActionDefinition, TriggerDefinition } from "./webhooks";
+import type { ActionDefinition, ResourceInstanceDefinition, TriggerDefinition } from "./webhooks";
 import type { WorkflowDefinition } from "./workflow-definition";
 
 // ==================== User & Auth ====================
@@ -583,45 +583,44 @@ export interface Woofx3EngineGateway {
 }
 
 /**
- * Deployment-level information the UI needs to construct URLs and
- * compose widget previews. Returned by `getEngineInfo()` — typically
- * called once per UI session and cached.
+ * Deployment-level information the UI needs to construct URLs.
+ * Returned by `getEngineInfo()` — typically called once per UI
+ * session and cached.
  *
- * `widgetAssetBaseUrl` is the URL prefix that serves widget assets
- * from whichever storage backend the engine's repository is
- * configured to write to (Convex storage, R2/S3 public bucket,
- * CloudFront in front of S3, etc.). The operator sets this via the
- * UI settings form; it lives in the engine's `settings` table.
+ * `overlayPublicUrl` is the single public base URL for reaching this
+ * api's overlay surface — both what `mintOverlayToken`/`rotateOverlayToken`/
+ * `listOverlayTokens` compose their returned `url` from
+ * (`${overlayPublicUrl}/overlay/{token}/`), and, via the same
+ * `/overlay/assets/...` route, every widget/module asset kind
+ * (module-contributed widgets and generic assets, builtin
+ * (engine-bundled) widgets, and reserved user uploads). There is
+ * deliberately only one such setting — everything is proxied through
+ * the api gateway's `/overlay/` surface today, so a separate
+ * "streamware app" URL or a separate "asset storage" URL would just be
+ * two more names for the same value (an earlier iteration of this API
+ * had exactly that split — `streamwareBaseUrl` and
+ * `StorageConfig.baseUrl` — and it was a mistake: three settings meant
+ * three places to independently misconfigure, for a scenario — assets
+ * served from somewhere other than streamware — that isn't built).
  *
- * Composition pattern (subject to the storage backend's URL scheme):
- *   `${widgetAssetBaseUrl}/${moduleKey}/${manifestId}/${entry}`
+ * Lives in the engine's `settings` table under `overlay.publicUrl`
+ * (process-wide — not application-scoped); set via
+ * `setOverlayPublicUrl`. Falls back to this service's own
+ * env-configured `overlayPublicUrl` (`WOOFX3_OVERLAY_PUBLIC_URL`) when
+ * no override is configured, and to an empty string beyond that — no
+ * further hardcoded guess.
  *
- * Empty string is a valid value — it signals "storage not
- * configured." The UI editor falls back to a "widget unavailable"
- * placeholder in that state.
- *
- * `assetsBaseUrl` is the URL prefix the *workflow engine* substitutes
- * for `${woofx3_asset_url}` when it resolves a step's parameters at
- * execution time (see docs/workflow/expressions.md). Distinct from
- * `widgetAssetBaseUrl`: that one is consumed client-side to compose
- * overlay widget iframe sources; this one is baked into workflow
- * step parameters (e.g. an alert action's `mediaUrl`) server-side
- * before the step dispatches. The operator sets this via the same
- * settings form; it lives in the engine's `settings` table under
- * `assets.baseUrl`. Unlike `widgetAssetBaseUrl`, this is never empty
- * — `getEngineInfo()` returns barkloader's own `/assets` route as the
- * default when no override has been configured, so workflow authors
- * always get a working value.
- *
- * `engineSceneOverlayBaseUrl` is the URL prefix that serves the
- * streamware overlay HTML. The full per-scene URL is
- * `${engineSceneOverlayBaseUrl}/${engineSceneId}`. The UI's browser-
- * source page iframes that URL.
+ * `engineSceneOverlayBaseUrl` is a cheap derivation
+ * (`${overlayPublicUrl}/overlay/scene`), kept for backward
+ * compatibility. Note: as of this writing `/overlay/scene/{id}` isn't
+ * wired to a working streamware route — real scene loading goes
+ * through the token-based `/overlay/{token}/...` routes instead — so
+ * this field's value isn't currently fetchable. Pre-existing gap,
+ * tracked separately.
  */
 export interface EngineInfo {
-  widgetAssetBaseUrl: string;
-  assetsBaseUrl: string;
   engineSceneOverlayBaseUrl: string;
+  overlayPublicUrl: string;
 }
 
 /**
@@ -645,6 +644,12 @@ export interface EngineInfo {
  * responsible for protecting that surface. AWS S3 deployments can
  * leave `accessKey` / `secretKey` empty to use the engine's default
  * AWS credential chain (instance profile, env vars, etc.).
+ *
+ * This is purely about which repository backend barkloader writes
+ * bytes to — not where those bytes are publicly reachable from. That's
+ * `EngineInfo.overlayPublicUrl` (see its doc comment): everything,
+ * including assets, is proxied through the same `/overlay/` surface
+ * today regardless of which provider is selected here.
  */
 export interface StorageConfig {
   provider: "file" | "s3";
@@ -672,37 +677,30 @@ export interface Woofx3EngineApi {
   getEngineInfo(): Promise<EngineInfo>;
 
   /**
-   * Set the widget asset base URL that `getEngineInfo()` returns.
-   * The operator wires this to whichever storage backend the
-   * engine's repository writes to — Convex storage URL, R2 public
-   * bucket, S3 with CDN, etc. Empty string clears the setting.
-   * Wired to the UI settings form.
+   * Set the `overlayPublicUrl` that `getEngineInfo()` returns — the
+   * single public base URL for both overlay access and asset
+   * resolution (see `EngineInfo`'s doc comment). The operator points
+   * this at wherever this api service sits behind a tunnel or reverse
+   * proxy. Empty string clears the setting (falls back to the
+   * service's own env-configured default, then to an empty string —
+   * no further hardcoded guess). Wired to the UI settings form.
    */
-  setWidgetAssetBaseUrl(value: string): Promise<{ success: boolean }>;
-
-  /**
-   * Set the workflow asset base URL (`assetsBaseUrl` on
-   * `getEngineInfo()`) that the engine substitutes for
-   * `${woofx3_asset_url}` in workflow step parameters. Empty string
-   * clears the override — the engine then falls back to barkloader's
-   * own `/assets` route rather than leaving the expression
-   * unresolved. Wired to the UI settings form, alongside
-   * `setWidgetAssetBaseUrl`.
-   */
-  setAssetsBaseUrl(value: string): Promise<{ success: boolean }>;
+  setOverlayPublicUrl(value: string): Promise<{ success: boolean }>;
 
   /**
    * Read the current storage backend configuration from engine
-   * settings. Credentials (accessKey/secretKey) are masked or
-   * returned blank to the UI — the operator can write new values
-   * but cannot read existing ones.
+   * settings — which repository backend barkloader writes bytes to,
+   * not where they're publicly reachable from (see `StorageConfig`'s
+   * doc comment). Credentials (accessKey/secretKey) are masked or
+   * returned blank to the UI — the operator can write new values but
+   * cannot read existing ones.
    */
   getStorageConfig(): Promise<StorageConfig>;
 
   /**
    * Persist storage backend configuration to engine settings. The
-   * engine reads these on next startup to construct its Repository.
-   * Restart required after changing the provider.
+   * engine reads these on next startup to construct its Repository —
+   * restart required after changing the provider.
    */
   setStorageConfig(config: StorageConfig): Promise<{ success: boolean }>;
 
@@ -811,6 +809,37 @@ export interface Woofx3EngineApi {
    * with that id is installed, or its stored manifest fails to parse.
    */
   getModuleManifest(moduleId: string): Promise<Record<string, unknown> | null>;
+
+  /**
+   * Creates a runtime instance of a module-declared resource kind (e.g. a
+   * user-defined counter — see manifest `resources[]`). `moduleName` is the
+   * manifest-local module id, same as `getModuleSettings`. `instanceId` is
+   * a caller-chosen manifest-local id; combined with moduleName/kind it
+   * forms the canonical id `{moduleName}:{kind}:{instanceId}` that
+   * `resource_ref` ConfigField values store. Fires
+   * `MODULE_RESOURCE_INSTANCE_CREATED` on success.
+   */
+  createResourceInstance(
+    moduleName: string,
+    kind: string,
+    instanceId: string,
+    displayName: string
+  ): Promise<ResourceInstanceDefinition>;
+
+  /**
+   * Deletes a resource instance by its canonical id
+   * (`{moduleName}:{kind}:{instanceId}`). Fires
+   * `MODULE_RESOURCE_INSTANCE_DELETED` on success.
+   */
+  deleteResourceInstance(canonicalId: string): Promise<void>;
+
+  /**
+   * Lists every resource instance across every installed module for this
+   * deployment. Backs a periodic full-snapshot reconcile so a consumer's
+   * cache can self-heal from the engine's authoritative data instead of
+   * relying solely on the create/delete webhooks above.
+   */
+  listAllResourceInstances(): Promise<ResourceInstanceDefinition[]>;
 
   // Triggers & actions catalog
   getTriggers(createdByType?: string, createdByRef?: string): Promise<TriggerDefinition[]>;

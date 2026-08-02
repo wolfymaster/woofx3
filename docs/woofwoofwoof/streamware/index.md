@@ -31,15 +31,28 @@ OBS browser source
               ├─ /o/{token}/          → SPA shell (React, served from ui dist)
               ├─ /o/{token}/config    → scene config JSON (token → scene)
               ├─ /o/{token}/frame/{instanceId}?nonce=... → assembled widget frame
-              ├─ /o/{token}/widget-assets/{moduleKey}/{manifestId}/**
-              │                       → proxied to barkloader GET /assets/modules/...
               ├─ /o/{token}/assets/widget-host-shim.js → the P1 shim IIFE
               └─ /o/{token}/events    → P2 WebSocket (woofx3.overlay-events v1)
+
+Widget/module assets (public — no token; see Asset prefix rules doc)
+  └─> GET /overlay/assets/**    (api :9100, same dumb /overlay/ → /o/ proxy)
+        └─> GET /o/assets/**    (streamware :9101 loopback)
+              ├─ /o/assets/modules/{moduleId}/widgets/{manifestId}/**
+              │                       → proxied to barkloader GET /assets/modules/.../widgets/...
+              ├─ /o/assets/modules/{moduleId}/assets/**
+              │                       → proxied to barkloader GET /assets/modules/.../assets/...
+              ├─ /o/assets/builtin/widgets/{manifestId}/**
+              │                       → proxied to barkloader GET /assets/builtin/widgets/...
+              └─ /o/assets/user/**    → reserved, 404s (no upload feature yet)
 ```
 
-The api proxy strips `/overlay/{token}` and forwards to streamware as
-`/o/{token}/...`. All URLs inside the SPA shell and widget frames are relative to
-the overlay root, so they survive any proxy prefix unchanged.
+The api proxy strips `/overlay/{token}` (or, for asset routes, `/overlay/`)
+and forwards to streamware as `/o/{token}/...` (or `/o/assets/...`) — the
+same dumb byte-level rewrite handles both, since it only depends on the
+`/overlay/` prefix, not on what follows. All URLs inside the SPA shell and
+widget frames are relative to the overlay root, so they survive any proxy
+prefix unchanged. Asset routes are deliberately public/non-token — see
+[Asset prefix rules](./asset-prefix.md) for why.
 
 ## Target-state architecture
 

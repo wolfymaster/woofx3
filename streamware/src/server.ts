@@ -17,6 +17,7 @@ import { maskToken, OverlayTokenResolver } from "./overlay/token-resolver";
 import type { OverlayConnectionMeta, OverlayConnectionStore } from "./overlay/connections";
 import { StorageBroadcaster } from "./storage/broadcaster";
 import { WidgetAssetProxy, sanitizeAssetPath } from "./overlay/asset-proxy";
+import { OverlayPublicUrlResolver } from "./overlay/overlay-public-url-resolver";
 
 async function main() {
   const config = loadConfig();
@@ -54,10 +55,11 @@ async function main() {
 
   const resolver = new OverlayTokenResolver(db, logger);
   const overlayHost = new OverlayHost(resolver, db, logger);
+  const overlayPublicUrlResolver = new OverlayPublicUrlResolver(db, config.overlayPublicUrl, logger);
   const frameAssembler = new FrameAssembler(overlayHost, logger, {
     barkloaderUrl: config.barkloaderUrl,
     publicDir: config.publicDir,
-    widgetAssetBaseUrl: config.widgetAssetBaseUrl,
+    overlayPublicUrlResolver,
   });
   const widgetAssetProxy = new WidgetAssetProxy(config.barkloaderUrl, logger);
 
@@ -102,10 +104,15 @@ async function main() {
   );
 }
 
-main().catch((err) => {
-  console.error("Failed to start streamware:", err);
-  process.exit(1);
-});
+// Guarded so importing this module (e.g. from tests exercising
+// handleOverlayRoutes directly) never triggers a real NATS/OBS/db-proxy
+// connection attempt — only running it as the entrypoint does.
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error("Failed to start streamware:", err);
+    process.exit(1);
+  });
+}
 
 type OverlayConnectionTag = OverlayConnectionMeta & { kind: "overlay" };
 
@@ -174,7 +181,27 @@ function startHttpServer(
         return new Response(null, { status: 204, headers: CORS_HEADERS });
       }
 
+      // Accept the same /overlay/ prefix the api gateway's proxy rewrites
+      // to /o/ — streamware is also reachable directly (e.g.
+      // streamwareProxy's tunnel in process-compose.yml, bypassing api
+      // entirely), and a client hitting streamware's own public address
+      // has no way to know whether it's going through api's rewrite or
+      // not. Normalizing here means every route below works identically
+      // either way.
+      url.pathname = normalizeOverlayPrefix(url.pathname);
+
       const response: Response = await (async (): Promise<Response> => {
+        // Public, token-independent asset byte routes. Must be checked
+        // BEFORE the generic /o/{token}/... dispatch below — otherwise
+        // "assets" would be misread as a token. Asset bytes cannot be
+        // token-scoped: URLs referencing them may be constructed by
+        // workflow (server-side, before any overlay/token is known) or by
+        // a future CDN override, neither of which has a per-viewer token
+        // to embed (see docs/woofwoofwoof/streamware/asset-prefix.md).
+        if (url.pathname.startsWith("/o/assets/")) {
+          return handleAssetRoutes(req, url, widgetAssetProxy, logger);
+        }
+
         // Token-scoped overlay routes (design §5.2).
         if (url.pathname.startsWith("/o/")) {
           logger.info("overlay route", { method: req.method, path: url.pathname });
@@ -185,7 +212,6 @@ function startHttpServer(
             uiDist,
             overlayHost,
             frameAssembler,
-            widgetAssetProxy,
             resolver,
             overlayConnections,
             logger
@@ -244,18 +270,80 @@ function startHttpServer(
 }
 
 /**
+ * Rewrite the api gateway's public `/overlay/` prefix to streamware's
+ * internal `/o/` prefix, so a request reaching streamware directly (not
+ * proxied through api) is handled identically to one that was. Idempotent
+ * for paths that already use `/o/` — only `/overlay/`-prefixed paths are
+ * touched.
+ */
+export function normalizeOverlayPrefix(pathname: string): string {
+  if (pathname.startsWith("/overlay/")) {
+    return "/o/" + pathname.slice("/overlay/".length);
+  }
+  return pathname;
+}
+
+/**
+ * Handle all routes under `/o/assets/`: module widgets, module assets,
+ * builtin widgets, and the reserved `/user` prefix. Deliberately public
+ * and token-independent — see the comment at this route's dispatch site
+ * in `startHttpServer`'s fetch handler for why. Reuses the same
+ * `WidgetAssetProxy` sanitization/proxy pipeline the (removed) token-
+ * scoped variant of this route used.
+ */
+export async function handleAssetRoutes(
+  req: Request,
+  url: URL,
+  widgetAssetProxy: WidgetAssetProxy,
+  logger: ReturnType<typeof createServiceLogger>
+): Promise<Response> {
+  if (req.method !== "GET") {
+    return new Response(null, { status: 404 });
+  }
+
+  const rest = url.pathname.slice("/o/assets/".length);
+  const parts = rest.split("/");
+
+  if (parts[0] === "user") {
+    // Reserved prefix — recognized by the parser, not yet implemented.
+    return new Response(null, { status: 404 });
+  }
+
+  if (parts[0] === "builtin" && parts[1] === "widgets" && parts.length >= 3) {
+    const manifestId = parts[2]!;
+    const tail = parts.slice(3).join("/");
+    return widgetAssetProxy.proxyBuiltinWidgetAsset(manifestId, tail);
+  }
+
+  if (parts[0] === "modules" && parts.length >= 3) {
+    const moduleId = parts[1]!;
+    if (parts[2] === "widgets" && parts.length >= 4) {
+      const manifestId = parts[3]!;
+      const tail = parts.slice(4).join("/");
+      return widgetAssetProxy.proxyModuleWidgetAsset(moduleId, manifestId, tail);
+    }
+    if (parts[2] === "assets") {
+      const tail = parts.slice(3).join("/");
+      return widgetAssetProxy.proxyModuleAsset(moduleId, tail);
+    }
+  }
+
+  logger.warn("asset route not matched", { path: url.pathname });
+  return new Response(null, { status: 404 });
+}
+
+/**
  * Handle all routes under `/o/{token}/`. The token is extracted from
  * the second path segment; the remaining path is dispatched to the
  * appropriate sub-handler.
  */
-async function handleOverlayRoutes(
+export async function handleOverlayRoutes(
   req: Request,
   url: URL,
   server: { upgrade(req: Request, opts: { data: unknown }): boolean },
   uiDist: string,
   overlayHost: OverlayHost,
   frameAssembler: FrameAssembler,
-  widgetAssetProxy: WidgetAssetProxy,
   resolver: OverlayTokenResolver,
   overlayConnections: OverlayConnectionStore,
   logger: ReturnType<typeof createServiceLogger>
@@ -292,19 +380,6 @@ async function handleOverlayRoutes(
   if (remaining.startsWith("frame/") && req.method === "GET") {
     const instanceId = decodeURIComponent(remaining.slice("frame/".length));
     return frameAssembler.assemble(token, instanceId, url.searchParams.get("nonce"));
-  }
-
-  // 3. GET /o/{token}/widget-assets/{moduleKey}/{manifestId}/{tail...}
-  if (remaining.startsWith("widget-assets/") && req.method === "GET") {
-    const rest = remaining.slice("widget-assets/".length);
-    const parts = rest.split("/");
-    if (parts.length < 2) {
-      return new Response(null, { status: 404 });
-    }
-    const moduleKey = parts[0]!;
-    const manifestId = parts[1]!;
-    const tail = parts.slice(2).join("/");
-    return widgetAssetProxy.proxy(moduleKey, manifestId, tail);
   }
 
   // 4. GET /o/{token}/assets/{tail...}

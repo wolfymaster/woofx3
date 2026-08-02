@@ -85,23 +85,29 @@ Loaded from `.woofx3.json` plus environment-variable overrides. See `streamware/
 | `WOOFX3_STREAMWARE_PORT` | `9700` | HTTP / WS server port |
 | `WOOFX3_DATABASE_PROXY_URL` | -- | Required for alert orchestration and overlay token resolution. |
 | `WOOFX3_MESSAGEBUS_URL` | -- | NATS URL. Without it, streamware logs a warning and runs in offline mode (overlays receive nothing). |
-| `WOOFX3_WIDGET_ASSET_BASE_URL` | -- | Optional CDN override for widget assets — see [Asset prefix rules](../woofwoofwoof/streamware/asset-prefix.md). |
+| `WOOFX3_OVERLAY_PUBLIC_URL` | *(empty)* | Fallback default for the `overlay.publicUrl` engine setting (db-proxy `settings` table) when unset — the single public base URL for both overlay access and asset resolution. Same env var name `api/src/config.ts` and `workflow/config.go` use for the identical concept. No further hardcoded fallback beyond this: if unset here and unset in the DB, asset URLs resolve as host-less relative paths. See [Engine settings the UI configures](../services/engine-settings-ui.md) and [Asset prefix rules](../woofwoofwoof/streamware/asset-prefix.md). |
 
 ## HTTP routes
 
-The only overlay-serving surface is the token-scoped tree under `/o/{token}/**`
-(`streamware/src/server.ts:178-376`); the legacy `/ws/alerts` and `/ws/module-state`
-routes documented here previously were removed when the overlay-token architecture
+Overlay/scene-manager access is the token-scoped tree under `/o/{token}/**`
+(`streamware/src/server.ts`); asset bytes are served from a separate,
+public, non-token route under `/o/assets/**` (see
+[Asset prefix rules](../woofwoofwoof/streamware/asset-prefix.md) for why
+these are split). The legacy `/ws/alerts` and `/ws/module-state` routes
+documented here previously were removed when the overlay-token architecture
 replaced them (see the architecture doc linked above).
 
 | Path | Purpose |
 |------|---------|
 | `GET /health` | Liveness probe |
+| `GET /o/assets/modules/{moduleId}/widgets/{manifestId}/**` | Public, no token. Proxied to barkloader `GET /assets/modules/{moduleId}/widgets/...` |
+| `GET /o/assets/modules/{moduleId}/assets/**` | Public, no token. Proxied to barkloader `GET /assets/modules/{moduleId}/assets/...` |
+| `GET /o/assets/builtin/widgets/{manifestId}/**` | Public, no token. Proxied to barkloader `GET /assets/builtin/widgets/...` |
+| `GET /o/assets/user/**` | Reserved prefix — 404s, no real user-asset upload feature exists yet |
 | `GET /o/{token}/` | SPA shell (React, served from `streamware/ui` dist) |
 | `GET /o/{token}/config` | Scene config JSON (token → scene) |
 | `GET /o/{token}/frame/{instanceId}?nonce=...` | Assembled widget frame |
-| `GET /o/{token}/widget-assets/{moduleKey}/{manifestId}/**` | Proxied to barkloader `GET /assets/modules/...` |
-| `GET /o/{token}/assets/widget-host-shim.js` | The P1 shim IIFE |
+| `GET /o/{token}/assets/widget-host-shim.js` | The P1 shim IIFE (streamware's own static asset, unrelated to module/widget assets above) |
 | `GET /o/{token}/events` | P2 WebSocket (`woofx3.overlay-events` v1) |
 
 ## Read more
