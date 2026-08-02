@@ -293,7 +293,7 @@ pub async fn run_install<R: Repository>(
             );
             super::db_proxy::register_triggers(
                 url,
-                composite_module_key,
+                module_key,
                 &manifest.name,
                 &manifest.version,
                 trigger_inputs,
@@ -335,7 +335,7 @@ pub async fn run_install<R: Repository>(
             );
             super::db_proxy::register_actions(
                 url,
-                composite_module_key,
+                module_key,
                 &manifest.name,
                 &manifest.version,
                 action_inputs,
@@ -362,7 +362,7 @@ pub async fn run_install<R: Repository>(
                 );
                 super::db_proxy::register_widgets(
                     url,
-                    composite_module_key,
+                    module_key,
                     &manifest.name,
                     &manifest.version,
                     widget_inputs,
@@ -389,7 +389,7 @@ pub async fn run_install<R: Repository>(
                 );
                 super::db_proxy::register_background_tasks(
                     url,
-                    composite_module_key,
+                    module_key,
                     &manifest.name,
                     &manifest.version,
                     task_inputs,
@@ -440,7 +440,7 @@ pub async fn run_install<R: Repository>(
                 );
                 super::db_proxy::register_assets(
                     url,
-                    composite_module_key,
+                    module_key,
                     &manifest.name,
                     &manifest.version,
                     asset_inputs,
@@ -559,7 +559,6 @@ pub async fn run_install<R: Repository>(
 
                 wf.register(
                     module_key,
-                    composite_module_key,
                     url,
                     &resolved_trigger_ctx,
                     &resolved_steps_ctx,

@@ -120,33 +120,30 @@ func (r *ModuleRepository) ListTriggers(createdByType, createdByRef string) ([]*
 
 func (r *ModuleRepository) DeleteTriggersByModulePrefix(moduleID string) error {
 	return r.db.Where(
-		"created_by_type = ? AND created_by_ref LIKE ?",
-		"MODULE", moduleID+":%",
+		"created_by_type = ? AND created_by_ref = ?",
+		"MODULE", moduleID,
 	).Delete(&models.Trigger{}).Error
 }
 
-// ListTriggersByModulePrefix returns every trigger whose created_by_ref
-// starts with `{moduleID}:` — i.e. every trigger installed under any
-// version of the given manifest id. Used to fetch the rows that
+// ListTriggersByModulePrefix returns every trigger registered under the
+// given stable manifest module id. Used to fetch the rows that
 // `DeleteTriggersByModulePrefix` will remove so the caller can publish a
 // deregistration event before the rows disappear.
 func (r *ModuleRepository) ListTriggersByModulePrefix(moduleID string) ([]*models.Trigger, error) {
 	var triggers []*models.Trigger
 	err := r.db.Where(
-		"created_by_type = ? AND created_by_ref LIKE ?",
-		"MODULE", moduleID+":%",
+		"created_by_type = ? AND created_by_ref = ?",
+		"MODULE", moduleID,
 	).Find(&triggers).Error
 	return triggers, err
 }
 
 // GetTriggerByModuleAndManifestID resolves a canonical id
-// (`{moduleID}:trigger:{manifestID}`) to its row. Two registration
-// shapes share the canonical-id space:
-//   - MODULE rows store `created_by_ref` as `{moduleId}:{version}:{hash}`
-//     and the canonical-id moduleId segment matches the prefix before the
-//     first `:`.
-//   - non-MODULE rows (SYSTEM built-ins, future integrations) store
-//     `created_by_ref` as the bare moduleId segment.
+// (`{moduleID}:trigger:{manifestID}`) to its row. `created_by_ref` stores
+// the bare stable manifest module id regardless of creator type (MODULE
+// installs upsert in place across versions; non-MODULE rows — SYSTEM
+// built-ins, future integrations — already used the bare id) so a single
+// equality check resolves both.
 //
 // Returns gorm.ErrRecordNotFound if no match.
 //
@@ -155,8 +152,8 @@ func (r *ModuleRepository) ListTriggersByModulePrefix(moduleID string) ([]*model
 func (r *ModuleRepository) GetTriggerByModuleAndManifestID(moduleID, manifestID string) (*models.Trigger, error) {
 	var trigger models.Trigger
 	err := r.db.Where(
-		"manifest_id = ? AND ((created_by_type = ? AND created_by_ref LIKE ?) OR (created_by_type <> ? AND created_by_ref = ?))",
-		manifestID, "MODULE", moduleID+":%", "MODULE", moduleID,
+		"manifest_id = ? AND created_by_ref = ?",
+		manifestID, moduleID,
 	).First(&trigger).Error
 	if err != nil {
 		return nil, err
@@ -214,8 +211,8 @@ func (r *ModuleRepository) ListActions(createdByType, createdByRef string) ([]*m
 
 func (r *ModuleRepository) DeleteActionsByModulePrefix(moduleID string) error {
 	return r.db.Where(
-		"created_by_type = ? AND created_by_ref LIKE ?",
-		"MODULE", moduleID+":%",
+		"created_by_type = ? AND created_by_ref = ?",
+		"MODULE", moduleID,
 	).Delete(&models.Action{}).Error
 }
 
@@ -225,23 +222,23 @@ func (r *ModuleRepository) DeleteActionsByModulePrefix(moduleID string) error {
 func (r *ModuleRepository) ListActionsByModulePrefix(moduleID string) ([]*models.Action, error) {
 	var actions []*models.Action
 	err := r.db.Where(
-		"created_by_type = ? AND created_by_ref LIKE ?",
-		"MODULE", moduleID+":%",
+		"created_by_type = ? AND created_by_ref = ?",
+		"MODULE", moduleID,
 	).Find(&actions).Error
 	return actions, err
 }
 
 // GetActionByModuleAndManifestID mirrors the trigger helper for the
-// actions table. See GetTriggerByModuleAndManifestID for the two
-// registration shapes (MODULE composite ref vs non-MODULE bare ref) that
-// share the canonical-id space.
+// actions table. See GetTriggerByModuleAndManifestID for why a single
+// equality check on `created_by_ref` resolves both MODULE and non-MODULE
+// rows.
 //
 // Module triggers/actions are instance-global (not scoped by application_id).
 func (r *ModuleRepository) GetActionByModuleAndManifestID(moduleID, manifestID string) (*models.Action, error) {
 	var action models.Action
 	err := r.db.Where(
-		"manifest_id = ? AND ((created_by_type = ? AND created_by_ref LIKE ?) OR (created_by_type <> ? AND created_by_ref = ?))",
-		manifestID, "MODULE", moduleID+":%", "MODULE", moduleID,
+		"manifest_id = ? AND created_by_ref = ?",
+		manifestID, moduleID,
 	).First(&action).Error
 	if err != nil {
 		return nil, err
@@ -251,8 +248,9 @@ func (r *ModuleRepository) GetActionByModuleAndManifestID(moduleID, manifestID s
 
 // Assets — mirror the Action helpers above. Identity comes from
 // (created_by_type, created_by_ref, manifest_id), same as triggers
-// and actions; module-installer registrations carry the composite
-// moduleKey in `created_by_ref` so prefix queries scope cleanly.
+// and actions; module-installer registrations carry the stable manifest
+// module id in `created_by_ref` so it stays identical across versions
+// and upserts scope cleanly.
 
 func (r *ModuleRepository) UpsertAsset(a *models.Asset) error {
 	var result struct {
@@ -297,16 +295,16 @@ func (r *ModuleRepository) ListAssets(createdByType, createdByRef string) ([]*mo
 func (r *ModuleRepository) ListAssetsByModulePrefix(moduleID string) ([]*models.Asset, error) {
 	var assets []*models.Asset
 	err := r.db.Where(
-		"created_by_type = ? AND created_by_ref LIKE ?",
-		"MODULE", moduleID+":%",
+		"created_by_type = ? AND created_by_ref = ?",
+		"MODULE", moduleID,
 	).Find(&assets).Error
 	return assets, err
 }
 
 func (r *ModuleRepository) DeleteAssetsByModulePrefix(moduleID string) error {
 	return r.db.Where(
-		"created_by_type = ? AND created_by_ref LIKE ?",
-		"MODULE", moduleID+":%",
+		"created_by_type = ? AND created_by_ref = ?",
+		"MODULE", moduleID,
 	).Delete(&models.Asset{}).Error
 }
 
@@ -378,21 +376,20 @@ func (r *ModuleRepository) ListWidgets(createdByType, createdByRef string) ([]*m
 func (r *ModuleRepository) ListWidgetsByModulePrefix(moduleID string) ([]*models.Widget, error) {
 	var widgets []*models.Widget
 	err := r.db.Where(
-		"created_by_type = ? AND created_by_ref LIKE ?",
-		"MODULE", moduleID+":%",
+		"created_by_type = ? AND created_by_ref = ?",
+		"MODULE", moduleID,
 	).Find(&widgets).Error
 	return widgets, err
 }
 
 // GetWidgetByModuleAndManifestID mirrors the trigger helper for widgets.
-// See GetTriggerByModuleAndManifestID for the two registration shapes
-// (MODULE composite ref vs non-MODULE bare ref) that share the
-// canonical-id space.
+// See GetTriggerByModuleAndManifestID for why a single equality check on
+// `created_by_ref` resolves both MODULE and non-MODULE rows.
 func (r *ModuleRepository) GetWidgetByModuleAndManifestID(moduleID, manifestID string) (*models.Widget, error) {
 	var widget models.Widget
 	err := r.db.Where(
-		"manifest_id = ? AND ((created_by_type = ? AND created_by_ref LIKE ?) OR (created_by_type <> ? AND created_by_ref = ?))",
-		manifestID, "MODULE", moduleID+":%", "MODULE", moduleID,
+		"manifest_id = ? AND created_by_ref = ?",
+		manifestID, moduleID,
 	).First(&widget).Error
 	if err != nil {
 		return nil, err
@@ -402,8 +399,8 @@ func (r *ModuleRepository) GetWidgetByModuleAndManifestID(moduleID, manifestID s
 
 func (r *ModuleRepository) DeleteWidgetsByModulePrefix(moduleID string) error {
 	return r.db.Where(
-		"created_by_type = ? AND created_by_ref LIKE ?",
-		"MODULE", moduleID+":%",
+		"created_by_type = ? AND created_by_ref = ?",
+		"MODULE", moduleID,
 	).Delete(&models.Widget{}).Error
 }
 
@@ -446,16 +443,16 @@ func (r *ModuleRepository) ListBackgroundTasks(createdByType, createdByRef strin
 func (r *ModuleRepository) ListBackgroundTasksByModulePrefix(moduleID string) ([]*models.BackgroundTask, error) {
 	var tasks []*models.BackgroundTask
 	err := r.db.Where(
-		"created_by_type = ? AND created_by_ref LIKE ?",
-		"MODULE", moduleID+":%",
+		"created_by_type = ? AND created_by_ref = ?",
+		"MODULE", moduleID,
 	).Find(&tasks).Error
 	return tasks, err
 }
 
 func (r *ModuleRepository) DeleteBackgroundTasksByModulePrefix(moduleID string) error {
 	return r.db.Where(
-		"created_by_type = ? AND created_by_ref LIKE ?",
-		"MODULE", moduleID+":%",
+		"created_by_type = ? AND created_by_ref = ?",
+		"MODULE", moduleID,
 	).Delete(&models.BackgroundTask{}).Error
 }
 

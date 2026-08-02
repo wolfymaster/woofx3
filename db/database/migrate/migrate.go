@@ -34,6 +34,8 @@ func Migrate(db *gorm.DB) error {
 		migrations.AddCommandArgumentPatternColumn(),
 		migrations.AddTaxonomyColumns(),
 		migrations.AddActionOutputSchemaColumn(),
+		migrations.AddWorkflowDefinitionsUniqueConstraint(),
+		migrations.BackfillModuleCreatedByRef(),
 	})
 
 	return m.Migrate()
@@ -67,6 +69,8 @@ func Rollback(db *gorm.DB) error {
 		migrations.AddCommandArgumentPatternColumn(),
 		migrations.AddTaxonomyColumns(),
 		migrations.AddActionOutputSchemaColumn(),
+		migrations.AddWorkflowDefinitionsUniqueConstraint(),
+		migrations.BackfillModuleCreatedByRef(),
 	})
 
 	return m.RollbackLast()

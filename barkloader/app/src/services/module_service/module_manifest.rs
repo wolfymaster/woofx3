@@ -1074,7 +1074,6 @@ impl ManifestWorkflow {
     pub async fn register(
         &self,
         module_name: &str,
-        composite_module_key: &str,
         db_proxy_url: &str,
         resolved_trigger: &ResolvedWorkflowTrigger,
         resolved_steps: &[ResolvedWorkflowStep],
@@ -1125,11 +1124,13 @@ impl ManifestWorkflow {
         let trigger_json_string = serde_json::to_string(&trigger_json)
             .map_err(|e| anyhow!("marshal trigger_json: {}", e))?;
 
-        // `created_by_ref` carries the composite moduleKey so the engine
-        // can derive the UI projectionKey
-        // (`{moduleKey}:workflow:{manifestId}`) symmetrically with the
-        // trigger / action rows. `manifest_id` is the workflow's
-        // manifest-local id (e.g. `follow-workflow`).
+        // `created_by_ref` carries the stable manifest module id (not the
+        // composite `{id}:{version}:{hash}` key) so upgrades upsert this
+        // workflow in place instead of duplicating it on every version
+        // bump — symmetric with the trigger / action / widget rows, which
+        // upsert on `(created_by_type, created_by_ref, manifest_id)`.
+        // `manifest_id` is the workflow's manifest-local id (e.g.
+        // `follow-workflow`).
         let request = woofx3::db::workflow::CreateWorkflowRequest {
             name: format!("{}/{}", module_name, self.name),
             description: format!(
@@ -1148,7 +1149,7 @@ impl ManifestWorkflow {
             max_retries: 0,
             timeout_seconds: 0,
             created_by_type: "MODULE".to_string(),
-            created_by_ref: composite_module_key.to_string(),
+            created_by_ref: module_name.to_string(),
             steps_json: steps_json_string,
             trigger_json: trigger_json_string,
             manifest_id: self.id.clone(),

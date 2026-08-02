@@ -105,6 +105,7 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 	// `enabled` field is ignored so callers can't accidentally ship a
 	// workflow live before they intend to.
 	wf := &models.WorkflowDefinition{
+		ID:            uuid.New(),
 		ApplicationID: applicationID,
 		Name:          req.Name,
 		Steps:         stepsJSON,
@@ -116,7 +117,16 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 		Enabled:       false,
 	}
 
-	err = s.workflowRepo.Create(wf)
+	// MODULE-owned workflows (non-empty ManifestID) upsert on
+	// (created_by_type, created_by_ref, manifest_id) so a module upgrade
+	// updates the existing workflow in place instead of duplicating it.
+	// USER-authored workflows always insert — ManifestID is empty and
+	// isn't covered by that unique index.
+	if createdByType == "MODULE" && wf.ManifestID != "" {
+		err = s.workflowRepo.Upsert(wf)
+	} else {
+		err = s.workflowRepo.Create(wf)
+	}
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create workflow: %w", err))
 	}

@@ -14,8 +14,10 @@ type WorkflowDefinition struct {
 
 	// Origin metadata. CreatedByType is "USER" for UI-authored workflows
 	// and "MODULE" for workflows registered by barkloader during a module
-	// install. CreatedByRef is the composite moduleKey
-	// (`{moduleId}:{version}:{hash}`) for MODULE rows; empty for USER rows.
+	// install. CreatedByRef is the stable manifest module id (e.g.
+	// `twitch_platform`) for MODULE rows — not the composite
+	// `{moduleId}:{version}:{hash}` key, so the row upserts in place
+	// across versions instead of duplicating; empty for USER rows.
 	// ManifestID is the manifest-local id (e.g. `follow-workflow`) for
 	// MODULE rows; empty for USER rows. Together with CreatedByRef this
 	// is what the engine derives a UI projectionKey from

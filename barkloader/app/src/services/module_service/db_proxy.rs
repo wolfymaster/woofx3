@@ -640,13 +640,12 @@ pub async fn delete_workflows_by_module(
     };
 
     let workflows = value.get("workflows").and_then(|w| w.as_array());
-    let ref_prefix = format!("{}:", module_name);
 
     if let Some(wflows) = workflows {
         for wf in wflows {
             let created_by_type = wf.get("created_by_type").and_then(|v| v.as_str()).unwrap_or("");
             let created_by_ref = wf.get("created_by_ref").and_then(|v| v.as_str()).unwrap_or("");
-            if created_by_type != "MODULE" || !created_by_ref.starts_with(&ref_prefix) {
+            if created_by_type != "MODULE" || created_by_ref != module_name {
                 continue;
             }
             let id = match wf.get("id").and_then(|v| v.as_str()) {
