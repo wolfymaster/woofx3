@@ -21,7 +21,16 @@ func InitializeDB(dsn string, slogger *slog.Logger) (*gorm.DB, error) {
 		Colorful:                  false,
 	})
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: dsn,
+		// The configured DSN may point at a PgBouncer-style transaction pooler
+		// (e.g. Neon's "-pooler" endpoint), which routes each statement to a
+		// possibly different backend connection. The extended query protocol's
+		// named server-side prepared statements don't survive that, causing
+		// "prepared statement ... already in use" errors under concurrent load.
+		// Simple protocol avoids server-side prepare entirely.
+		PreferSimpleProtocol: true,
+	}), &gorm.Config{
 		Logger: slogAdapter,
 		NamingStrategy: schema.NamingStrategy{
 			SingularTable: true,
