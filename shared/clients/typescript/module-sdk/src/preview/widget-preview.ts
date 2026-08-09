@@ -13,12 +13,14 @@
 // effects).
 
 import type {
+  DeliveredWidgetEvent,
   WidgetEvent,
   WidgetEventHandler,
   WidgetHost,
   WidgetHostStorage,
   WidgetStatusReport,
 } from "../widget-host";
+import type { EventQueueConfig } from "../widget-protocol";
 
 export interface MockHostOptions {
   /** Module id surfaced as `widgetHost.moduleId`. */
@@ -31,7 +33,14 @@ export interface MockHostOptions {
    *  `{ "<key>": value }` (the moduleId from `opts.moduleId` is
    *  prepended automatically when the key has no `:`). */
   storage?: Record<string, unknown>;
+  /** Base URL `getResourceUrl` resolves paths against. */
+  resourceBaseUrl?: string;
 }
+
+/** `fireEvent` input — `eventId` is optional; the mock assigns one
+ *  when omitted so existing call sites (and widget authors' own
+ *  tests) don't need to supply it. */
+export type MockFireEventInput = Omit<WidgetEvent, "eventId"> & { eventId?: string };
 
 export interface MockHostController {
   /** The injected host object. Pass to your widget's bootstrap or call
@@ -40,9 +49,12 @@ export interface MockHostController {
 
   /**
    * Inject a `WidgetEvent` as if it arrived via `onEvent`. Synchronous
-   * — every subscribed handler fires before the call returns.
+   * — every subscribed handler fires before the call returns. `eventId`
+   * is optional; the mock assigns one when omitted. The delivered
+   * event's `complete()` is a no-op — this mock doesn't simulate queue
+   * timing/retry, only delivery.
    */
-  fireEvent(event: WidgetEvent): void;
+  fireEvent(event: MockFireEventInput): void;
 
   /**
    * Mutate a storage key. Fires every `storage.subscribe` callback
@@ -92,8 +104,10 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
     }
   }
   const storageSubs = new Set<StorageSubscription>();
-  const eventSubs = new Set<WidgetEventHandler>();
+  const eventSubs = new Set<{ handler: WidgetEventHandler; queue?: EventQueueConfig }>();
   const reportSubs = new Set<(r: WidgetStatusReport) => void>();
+  const resourceBaseUrl = opts.resourceBaseUrl ?? "https://preview.local/resources";
+  let nextMockEventId = 0;
 
   const storage: WidgetHostStorage = {
     async get(key: string): Promise<unknown> {
@@ -137,10 +151,14 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
     instanceId,
     settings,
     storage,
-    onEvent(handler: WidgetEventHandler): () => void {
-      eventSubs.add(handler);
+    getResourceUrl(path: string): string {
+      return resourceBaseUrl.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
+    },
+    onEvent(handler: WidgetEventHandler, queue?: EventQueueConfig): () => void {
+      const sub = { handler, queue };
+      eventSubs.add(sub);
       return () => {
-        eventSubs.delete(handler);
+        eventSubs.delete(sub);
       };
     },
     reportStatus(key: string, value: unknown): void {
@@ -155,10 +173,18 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
 
   return {
     host,
-    fireEvent(event: WidgetEvent): void {
-      for (const fn of eventSubs) {
+    fireEvent(event: MockFireEventInput): void {
+      const eventId = event.eventId && event.eventId.length > 0 ? event.eventId : `mock-evt-${++nextMockEventId}`;
+      const delivered: DeliveredWidgetEvent = {
+        ...event,
+        eventId,
+        // This mock simulates delivery, not queue timing/retry — complete()
+        // is a no-op rather than a real acknowledgement.
+        complete: () => {},
+      };
+      for (const sub of eventSubs) {
         try {
-          fn(event);
+          sub.handler(delivered);
         } catch (err) {
           console.error("[mock-host] event subscriber threw", err);
         }

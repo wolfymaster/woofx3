@@ -11,6 +11,8 @@
 // Anything in this file is part of the public API surface. Breaking
 // changes require a major version bump.
 
+import type { EventQueueConfig } from "./widget-protocol";
+
 /**
  * Module-storage read surface scoped to the widget's owning module.
  *
@@ -60,9 +62,32 @@ export interface WidgetEvent {
    *  parameters bag. Widgets that consume alert-style configuration
    *  read it from here in preference to their per-instance settings. */
   parameters?: Record<string, unknown>;
+  /** Host-assigned id for this specific delivery, unique per delivery
+   *  attempt (a redelivered/retried event gets a fresh id). Echoed
+   *  back on `event.complete`; also the correlation key for the
+   *  server-side durable-delivery log. */
+  eventId: string;
 }
 
-export type WidgetEventHandler = (event: WidgetEvent) => void;
+/**
+ * `WidgetEvent` as handed to an `onEvent` handler: the same wire
+ * fields plus a shim-local `complete()` closure. `complete()` is never
+ * part of the wire message (it can't survive postMessage structured
+ * clone) — the shim attaches it fresh on every delivery, correlated by
+ * `eventId`. Calling it more than once for the same delivery is a
+ * no-op.
+ */
+export interface DeliveredWidgetEvent extends WidgetEvent {
+  /**
+   * Acknowledge this event as handled. Required when the subscription
+   * was opened with `queue.autoComplete: false`; harmless (a no-op
+   * beyond the first call) otherwise, since the shim already posts the
+   * same completion automatically when the handler returns.
+   */
+  complete(): void;
+}
+
+export type WidgetEventHandler = (event: DeliveredWidgetEvent) => void;
 
 /**
  * Per-widget event source the host shell wires up. Multiple widgets in
@@ -99,11 +124,26 @@ export interface WidgetHost {
   readonly storage: WidgetHostStorage;
 
   /**
+   * Resolve a path against this widget's public resource base URL —
+   * sugar over `<base href>`-relative resolution for widget code that
+   * builds asset URLs dynamically (e.g. `ctx.getResourceUrl("asset.png")`
+   * for an `<img src>` set from JS). Pure and synchronous: derived
+   * entirely from the boot payload, no network round trip.
+   */
+  getResourceUrl(path: string): string;
+
+  /**
    * Subscribe to engine-pushed events the widget declared interest in
    * via its manifest's `acceptedEvents[]`. The handler fires for every
-   * matching event. Returns an unsubscribe function.
+   * matching event, decorated with `complete()`. Returns an
+   * unsubscribe function.
+   *
+   * `queue` registers this instance's client-side dispatch policy
+   * (retry timeout, max-in-flight, autoComplete, priority) with the
+   * host's per-instance queue — omit it to accept the host's defaults
+   * (FIFO, `autoComplete: true`, one in flight).
    */
-  onEvent(handler: WidgetEventHandler): () => void;
+  onEvent(handler: WidgetEventHandler, queue?: EventQueueConfig): () => void;
 
   /**
    * Report a per-widget status update — counters, timer state, goal

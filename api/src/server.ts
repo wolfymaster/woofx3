@@ -10,7 +10,6 @@ import { ConvexWebhookClient } from "./convex-webhook-client";
 import { DbClient } from "./db-client";
 import { ApiGateway } from "./gateway";
 import { initOverlayTokenHandlers } from "./overlay-token-handlers";
-import { parseOverlayWsPath, proxyRequest } from "./overlay-proxy";
 import { StorageChangeEmitter } from "./storage-change-emitter";
 import { WebhookClient } from "./webhook-client";
 
@@ -130,15 +129,6 @@ class BunWebSocketAdapter {
 // Map to track WebSocket adapters by their Bun WebSocket (capnweb path)
 const wsAdapters = new WeakMap<ServerWebSocket<unknown>, BunWebSocketAdapter>();
 
-// Map to track upstream WebSocket connections for overlay pump sessions
-const overlayUpstreams = new WeakMap<ServerWebSocket<unknown>, WebSocket>();
-
-interface OverlayPumpData {
-  kind: "overlay-pump";
-  upstreamUrl: string;
-  token: string;
-}
-
 async function main() {
   const config = loadConfig();
 
@@ -231,34 +221,6 @@ async function main() {
     port: config.port,
     async fetch(req, server) {
       const url = new URL(req.url);
-
-      // Overlay proxy — dumb byte-level forward for /overlay/** paths.
-      // WebSocket upgrade for /overlay/{token}/events is handled first;
-      // all other /overlay/ paths are proxied via HTTP GET/HEAD.
-      if (url.pathname.startsWith("/overlay/")) {
-        if (req.headers.get("upgrade") === "websocket") {
-          const overlayWs = parseOverlayWsPath(url.pathname, config.streamwareUrl);
-          if (overlayWs) {
-            // Cast to any: Bun.serve is called without a generic data-type
-            // parameter so the default is `undefined`. We carry runtime data
-            // via the options object and read it back through `ws.data` at
-            // handler time — the cast is the approved pattern for this Bun API.
-            const upgraded = (server.upgrade as any)(req, {
-              data: { kind: "overlay-pump", upstreamUrl: overlayWs.upstreamUrl, token: overlayWs.token },
-            });
-            if (!upgraded) {
-              logger.error("Overlay WebSocket upgrade failed");
-              return new Response("WebSocket upgrade failed", { status: 500 });
-            }
-            return undefined;
-          }
-          // Unrecognised overlay WS path — fall through to proxyRequest which returns 405.
-        }
-        logger.info("Overlay proxy", { method: req.method, path: url.pathname, upstream: config.streamwareUrl });
-        const proxyResp = await proxyRequest(req, config.streamwareUrl, logger);
-        logger.info("Overlay proxy response", { path: url.pathname, status: proxyResp.status });
-        return proxyResp;
-      }
 
       // Handle WebSocket upgrade
       if (url.pathname === "/api" && req.headers.get("upgrade") === "websocket") {
@@ -357,16 +319,6 @@ async function main() {
     },
     websocket: {
       message(ws, message) {
-        const data = ws.data as unknown;
-        if (data !== null && typeof data === "object" && (data as Record<string, unknown>).kind === "overlay-pump") {
-          // Relay client message to the upstream streamware WebSocket.
-          const upstream = overlayUpstreams.get(ws);
-          if (upstream && upstream.readyState === WebSocket.OPEN) {
-            upstream.send(message);
-          }
-          return;
-        }
-        // capnweb path
         const adapter = wsAdapters.get(ws);
         if (adapter) {
           adapter.dispatchMessage(typeof message === "string" ? message : message.toString());
@@ -377,45 +329,6 @@ async function main() {
         }
       },
       open(ws) {
-        const data = ws.data as unknown;
-        if (data !== null && typeof data === "object" && (data as Record<string, unknown>).kind === "overlay-pump") {
-          // Overlay pump: open a WebSocket to the upstream streamware WS URL
-          // and wire bidirectional relay.
-          const pumpData = data as OverlayPumpData;
-          logger.debug("Overlay WS pump opening upstream connection", {
-            upstreamUrl: pumpData.upstreamUrl,
-          });
-          const upstream = new WebSocket(pumpData.upstreamUrl);
-          overlayUpstreams.set(ws, upstream);
-
-          upstream.addEventListener("open", () => {
-            logger.debug("Overlay WS pump: upstream connected");
-          });
-
-          upstream.addEventListener("message", (evt) => {
-            // Relay upstream message to client; drop on backpressure (code 1013).
-            const backpressure = ws.send(
-              typeof evt.data === "string" ? evt.data : (evt.data as ArrayBuffer)
-            );
-            if (backpressure === -1) {
-              logger.warn("Overlay WS pump: client send buffer full, closing with 1013");
-              ws.close(1013, "Try Again Later");
-              upstream.close();
-            }
-          });
-
-          upstream.addEventListener("close", (evt) => {
-            logger.debug("Overlay WS pump: upstream closed", { code: evt.code, reason: evt.reason });
-            ws.close(evt.code || 1001, evt.reason || "upstream closed");
-          });
-
-          upstream.addEventListener("error", (evt) => {
-            logger.error("Overlay WS pump: upstream error", { error: String(evt) });
-            ws.close(1011, "upstream error");
-          });
-          return;
-        }
-        // capnweb path
         logger.info("WebSocket connection opened");
         try {
           const adapter = new BunWebSocketAdapter(ws, logger);
@@ -438,16 +351,6 @@ async function main() {
         }
       },
       close(ws, code, reason) {
-        const data = ws.data as unknown;
-        if (data !== null && typeof data === "object" && (data as Record<string, unknown>).kind === "overlay-pump") {
-          logger.debug("Overlay WS pump: client closed", { code, reason });
-          const upstream = overlayUpstreams.get(ws);
-          if (upstream) {
-            upstream.close(code || 1000, reason);
-            overlayUpstreams.delete(ws);
-          }
-          return;
-        }
         logger.info("WebSocket connection closed", { code, reason });
         const adapter = wsAdapters.get(ws);
         if (adapter) {
@@ -456,16 +359,6 @@ async function main() {
         }
       },
       error(ws, error) {
-        const data = ws.data as unknown;
-        if (data !== null && typeof data === "object" && (data as Record<string, unknown>).kind === "overlay-pump") {
-          logger.error("Overlay WS pump: client error", { error: error.message });
-          const upstream = overlayUpstreams.get(ws);
-          if (upstream) {
-            upstream.close(1011, "client error");
-            overlayUpstreams.delete(ws);
-          }
-          return;
-        }
         logger.error("WebSocket error", { error: error.message, stack: error.stack });
         const adapter = wsAdapters.get(ws);
         if (adapter) {

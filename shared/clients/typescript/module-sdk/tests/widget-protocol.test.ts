@@ -67,6 +67,15 @@ describe("P1 woofx3.widget — envelope guard", () => {
       occurredAt: "2026-06-12T00:00:00Z",
     },
     { proto: WIDGET_PROTOCOL, v: PROTOCOL_VERSION, nonce: "n1", type: "events.subscribe", subId: "e1" },
+    {
+      proto: WIDGET_PROTOCOL,
+      v: PROTOCOL_VERSION,
+      nonce: "n1",
+      type: "events.subscribe",
+      subId: "e2",
+      types: ["twitch_platform:trigger:follow.channel.twitch"],
+      queue: { retryTimeoutMs: 5000, maxInFlight: 1, autoComplete: false, priorityExpr: "data.amount ?? 0" },
+    },
     { proto: WIDGET_PROTOCOL, v: PROTOCOL_VERSION, nonce: "n1", type: "events.unsubscribe", subId: "e1" },
     {
       proto: WIDGET_PROTOCOL,
@@ -79,8 +88,10 @@ describe("P1 woofx3.widget — envelope guard", () => {
         source: "twitch",
         time: "2026-06-12T00:00:00Z",
         data: { userName: "wolfy" },
+        eventId: "evt-1",
       },
     },
+    { proto: WIDGET_PROTOCOL, v: PROTOCOL_VERSION, nonce: "n1", type: "event.complete", subId: "e1", eventId: "evt-1" },
     {
       proto: WIDGET_PROTOCOL,
       v: PROTOCOL_VERSION,
@@ -122,6 +133,7 @@ describe("P1 woofx3.widget — boot payload guard", () => {
     widgetCanonicalId: "mod-1:widget:w1",
     settings: { label: "x" },
     capabilities: ["storage"],
+    resourceBaseUrl: "https://cdn.example.test/modules/mod-1/abc123/widgets/w1/",
   };
 
   it("accepts a valid payload (with and without the optional canonical id)", () => {
@@ -137,6 +149,8 @@ describe("P1 woofx3.widget — boot payload guard", () => {
     expect(isWidgetBootPayload({ ...boot, moduleId: 7 })).toBe(false);
     expect(isWidgetBootPayload({ ...boot, settings: null })).toBe(false);
     expect(isWidgetBootPayload({ ...boot, capabilities: "storage" })).toBe(false);
+    expect(isWidgetBootPayload({ ...boot, resourceBaseUrl: "" })).toBe(false);
+    expect(isWidgetBootPayload({ ...boot, resourceBaseUrl: undefined })).toBe(false);
     expect(isWidgetBootPayload(null)).toBe(false);
   });
 });

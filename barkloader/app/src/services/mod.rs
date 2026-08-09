@@ -11,3 +11,4 @@ pub mod nats;
 pub mod sandbox_resources;
 pub mod storage_settings;
 pub mod module_settings_client;
+pub mod public_url;

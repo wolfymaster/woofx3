@@ -19,8 +19,20 @@ interface OverlayTokenRow {
   createdAt: { seconds?: bigint; nanos?: number } | undefined;
 }
 
-function buildOverlayUrl(overlayPublicUrl: string, token: string): string {
-  return `${overlayPublicUrl.replace(/\/+$/, "")}/overlay/${token}/`;
+/**
+ * sceneManager is reached directly now (no more `api`-proxied
+ * `/overlay/{token}/` — see the removed overlay-proxy.ts); scenes
+ * render at `/scene/{sceneId}?token={token}`. Still built from the
+ * `overlay.publicUrl` setting (see `resolveOverlayPublicUrl`) — same
+ * "this deployment's public base URL" concept, just a different path
+ * convention on top of it.
+ *
+ * NOTE: this URL shape is what Convex is expected to consume for the
+ * scene-manager palette; verify against the live Convex integration
+ * before relying on it — see the sceneManager migration notes.
+ */
+function buildOverlayUrl(overlayPublicUrl: string, sceneId: string, token: string): string {
+  return `${overlayPublicUrl.replace(/\/+$/, "")}/scene/${sceneId}?token=${token}`;
 }
 
 function toMintedResult(overlayPublicUrl: string, row: OverlayTokenRow) {
@@ -32,7 +44,7 @@ function toMintedResult(overlayPublicUrl: string, row: OverlayTokenRow) {
     label: row.label,
     status: row.status,
     createdAt: timestampToIso(row.createdAt),
-    url: buildOverlayUrl(overlayPublicUrl, row.token),
+    url: buildOverlayUrl(overlayPublicUrl, row.sceneId, row.token),
   };
 }
 
@@ -78,7 +90,7 @@ export const overlayTokenRoutes = {
       label: row.label,
       status: row.status,
       createdAt: timestampToIso(row.createdAt),
-      url: buildOverlayUrl(overlayPublicUrl, row.token),
+      url: buildOverlayUrl(overlayPublicUrl, row.sceneId, row.token),
     }));
   },
 };

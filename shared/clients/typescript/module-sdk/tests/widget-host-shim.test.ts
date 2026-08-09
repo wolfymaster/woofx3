@@ -28,6 +28,7 @@ function makeBoot(overrides: Partial<WidgetBootPayload> = {}): WidgetBootPayload
     widgetCanonicalId: "mod-1:widget:w1",
     settings: { label: "watchers", accent: "#fff" },
     capabilities: ["storage", "events", "status"],
+    resourceBaseUrl: "https://cdn.example.test/modules/mod-1/abc123/widgets/w1/",
     ...overrides,
   };
 }
@@ -109,6 +110,22 @@ describe("installWidgetHostShim — boot + handshake", () => {
     expect(host!.instanceId).toBe("inst-1");
     expect(host!.settings.label).toBe("watchers");
     expect(Object.isFrozen(host!.settings)).toBe(true);
+  });
+
+  it("getResourceUrl joins the boot payload's resourceBaseUrl and a path, tolerating extra/missing slashes", () => {
+    const h = makeHarness(
+      makeBoot({ resourceBaseUrl: "https://cdn.example.test/modules/mod-1/abc123/widgets/w1/" })
+    );
+    const host = install(h)!;
+    expect(host.getResourceUrl("asset.png")).toBe(
+      "https://cdn.example.test/modules/mod-1/abc123/widgets/w1/asset.png"
+    );
+    expect(host.getResourceUrl("/asset.png")).toBe(
+      "https://cdn.example.test/modules/mod-1/abc123/widgets/w1/asset.png"
+    );
+    const h2 = makeHarness(makeBoot({ resourceBaseUrl: "https://cdn.example.test/w1" }));
+    const host2 = install(h2)!;
+    expect(host2.getResourceUrl("asset.png")).toBe("https://cdn.example.test/w1/asset.png");
   });
 
   it("posts a valid hello immediately with targetOrigin '*'", () => {
@@ -256,7 +273,19 @@ describe("installWidgetHostShim — storage", () => {
 });
 
 describe("installWidgetHostShim — events", () => {
-  it("event.deliver fires the matching onEvent handler with the typed event", () => {
+  function makeEvent(overrides: Record<string, unknown> = {}) {
+    return {
+      type: "twitch_platform:trigger:follow.channel.twitch",
+      source: "twitch",
+      time: "2026-06-12T00:00:00Z",
+      data: { userName: "wolfy" },
+      parameters: { text: "thanks!" },
+      eventId: "evt-1",
+      ...overrides,
+    };
+  }
+
+  it("event.deliver fires the matching onEvent handler with the typed event, decorated with complete()", () => {
     const h = makeHarness(makeBoot());
     const host = install(h)!;
     h.deliver(initMsg());
@@ -265,21 +294,88 @@ describe("installWidgetHostShim — events", () => {
     const unsubscribe = host.onEvent(handler);
     const subId = h.sent("events.subscribe")[0]!.subId as string;
 
-    const event = {
-      type: "twitch_platform:trigger:follow.channel.twitch",
-      source: "twitch",
-      time: "2026-06-12T00:00:00Z",
-      data: { userName: "wolfy" },
-      parameters: { text: "thanks!" },
-    };
+    const event = makeEvent();
     h.deliver(fromParent({ type: "event.deliver", subId, event }));
     expect(handler).toHaveBeenCalledTimes(1);
-    expect(handler).toHaveBeenCalledWith(event);
+    const delivered = handler.mock.calls[0]![0] as Record<string, unknown>;
+    expect(delivered).toMatchObject(event);
+    expect(typeof delivered.complete).toBe("function");
 
     unsubscribe();
     expect(h.sent("events.unsubscribe")[0]!.subId).toBe(subId);
     h.deliver(fromParent({ type: "event.deliver", subId, event }));
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes queue config through on events.subscribe", () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+
+    const queue = { retryTimeoutMs: 5000, maxInFlight: 2, autoComplete: false, priorityExpr: "data.amount ?? 0" };
+    host.onEvent(() => {}, queue);
+    const sub = h.sent("events.subscribe")[0]!;
+    expect(sub.queue).toEqual(queue);
+  });
+
+  it("autoComplete default (true): posts event.complete right after the handler returns", () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+
+    host.onEvent(() => {});
+    const subId = h.sent("events.subscribe")[0]!.subId as string;
+    h.deliver(fromParent({ type: "event.deliver", subId, event: makeEvent() }));
+
+    const complete = h.sent("event.complete");
+    expect(complete.length).toBe(1);
+    expect(complete[0]).toMatchObject({ subId, eventId: "evt-1" });
+  });
+
+  it("autoComplete:false — no event.complete until the widget calls it explicitly, and a repeat call is a no-op", () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+
+    let handlerEvent: { complete(): void } | undefined;
+    host.onEvent((event) => {
+      handlerEvent = event;
+    }, { autoComplete: false });
+    const subId = h.sent("events.subscribe")[0]!.subId as string;
+    h.deliver(fromParent({ type: "event.deliver", subId, event: makeEvent() }));
+
+    expect(h.sent("event.complete").length).toBe(0);
+    handlerEvent!.complete();
+    expect(h.sent("event.complete").length).toBe(1);
+    handlerEvent!.complete();
+    expect(h.sent("event.complete").length).toBe(1);
+  });
+
+  it("calling complete() inside the handler suppresses the auto-complete follow-up", () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+
+    host.onEvent((event) => {
+      event.complete();
+    });
+    const subId = h.sent("events.subscribe")[0]!.subId as string;
+    h.deliver(fromParent({ type: "event.deliver", subId, event: makeEvent() }));
+
+    expect(h.sent("event.complete").length).toBe(1);
+  });
+
+  it("event.deliver with a missing or empty eventId is dropped", () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+
+    const handler = mock(() => {});
+    host.onEvent(handler);
+    const subId = h.sent("events.subscribe")[0]!.subId as string;
+    h.deliver(fromParent({ type: "event.deliver", subId, event: makeEvent({ eventId: undefined }) }));
+    h.deliver(fromParent({ type: "event.deliver", subId, event: makeEvent({ eventId: "" }) }));
+    expect(handler).not.toHaveBeenCalled();
   });
 });
 

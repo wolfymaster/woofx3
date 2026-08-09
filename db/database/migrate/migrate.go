@@ -36,6 +36,9 @@ func Migrate(db *gorm.DB) error {
 		migrations.AddActionOutputSchemaColumn(),
 		migrations.AddWorkflowDefinitionsUniqueConstraint(),
 		migrations.BackfillModuleCreatedByRef(),
+		migrations.AddArchivedAtColumns(),
+		migrations.CreateSceneEventsTables(),
+		migrations.RenameOverlayPublicUrlSetting(),
 	})
 
 	return m.Migrate()
@@ -71,6 +74,9 @@ func Rollback(db *gorm.DB) error {
 		migrations.AddActionOutputSchemaColumn(),
 		migrations.AddWorkflowDefinitionsUniqueConstraint(),
 		migrations.BackfillModuleCreatedByRef(),
+		migrations.AddArchivedAtColumns(),
+		migrations.CreateSceneEventsTables(),
+		migrations.RenameOverlayPublicUrlSetting(),
 	})
 
 	return m.RollbackLast()

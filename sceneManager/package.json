@@ -1,0 +1,26 @@
+{
+  "name": "@woofx3/scene-manager",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/server.ts",
+    "dev": "bun run --watch src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "build:client": "bun build public/scene-manager/index.ts --outdir public/scene-manager --format esm --target browser"
+  },
+  "dependencies": {
+    "@woofx3/api": "file:../shared/clients/typescript/api",
+    "@woofx3/common": "file:../shared/common/typescript",
+    "@woofx3/db": "file:../shared/clients/typescript/db",
+    "@woofx3/module-sdk": "file:../shared/clients/typescript/module-sdk",
+    "@woofx3/nats": "file:../shared/clients/typescript/nats",
+    "jose": "^5.9.6",
+    "obs-websocket-js": "^5.0.6",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  }
+}

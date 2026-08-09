@@ -143,6 +143,12 @@ async fn setup() -> Result<AppContext> {
     let repository = RepositoryFactory::new(&repository_config).await?;
     repository.setup()?;
 
+    let default_public_url = get_woofx3_json_value("barkloaderUrl", "");
+    let public_url_resolver = Arc::new(services::public_url::PublicUrlResolver::new(
+        Some(db_proxy_url.clone()),
+        default_public_url,
+    ));
+
     boot_modules(&registry, &repository, &db_proxy_url, &scheduler).await?;
 
     // Register compile-time built-in actions (see builtin_actions::REGISTRY).
@@ -166,6 +172,7 @@ async fn setup() -> Result<AppContext> {
         registry,
         db_proxy_url: Some(db_proxy_url),
         scheduler,
+        public_url_resolver,
     };
 
     Ok(ctx)
@@ -230,6 +237,7 @@ async fn main() -> std::io::Result<()> {
             .configure(routes::echo::configure)
             .configure(routes::websocket::configure)
             .configure(routes::functions::configure)
+            .configure(routes::widgets::configure)
     })
     .bind(bind_addr)?
     .shutdown_timeout(5)

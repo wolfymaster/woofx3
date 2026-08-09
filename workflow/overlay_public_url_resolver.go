@@ -12,12 +12,17 @@ import (
 
 // OverlayPublicURLSettingKey is the db-proxy `settings` row a UI settings
 // page writes to configure the single public base URL this deployment's
-// overlay surface is reachable at — both token-scoped overlay access and
-// (via the same `/overlay/` surface) asset resolution (see
+// scene surface is reachable at — both session/token-scoped scene access
+// and (via the same base) asset resolution (see
 // docs/services/engine-settings-ui.md). Process-wide, not scoped per
 // application — it describes the deployment's own network topology, not
 // anything per-application.
-const OverlayPublicURLSettingKey = "overlay.publicUrl"
+//
+// Renamed from "overlay.publicUrl" to "scene.publicUrl" when
+// sceneManager replaced streamware as this setting's primary owner (see
+// db migration 0031_rename_overlay_public_url_setting) — same setting,
+// same purpose.
+const OverlayPublicURLSettingKey = "scene.publicUrl"
 
 const overlayPublicURLCacheTTL = 30 * time.Second
 const overlayPublicURLRequestTimeout = 2 * time.Second

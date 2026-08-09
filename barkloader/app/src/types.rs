@@ -6,6 +6,7 @@ use lib_repository::RepositoryImpl;
 use lib_sandbox::{ModuleRegistry, SandboxFactory};
 
 use crate::services::background_scheduler::BackgroundTaskScheduler;
+use crate::services::public_url::PublicUrlResolver;
 use crate::util;
 
 #[allow(dead_code)]
@@ -16,6 +17,7 @@ pub struct AppContext {
     pub registry: Arc<ModuleRegistry>,
     pub db_proxy_url: Option<String>,
     pub scheduler: Arc<BackgroundTaskScheduler>,
+    pub public_url_resolver: Arc<PublicUrlResolver>,
 }
 
 pub struct SafeTempDir {

@@ -114,20 +114,24 @@ export const engineRoutes = {
   },
 
   /**
-   * Update the engine-stored public base URL the api's overlay gateway is
-   * reachable at (`overlay.publicUrl` setting) — used to compose the `url`
-   * returned by mintOverlayToken/rotateOverlayToken/listOverlayTokens, and
-   * (via `getEngineInfo().overlayPublicUrl`) every widget/module asset
-   * URL streamware and workflow construct. Used by the UI settings form;
-   * the operator points it at wherever this api service sits behind a
-   * tunnel or reverse proxy. Process-wide — not application-scoped.
+   * Update the engine-stored public base URL sceneManager (and its
+   * built-in widgets) is reachable at (`scene.publicUrl` setting,
+   * renamed from `overlay.publicUrl` when sceneManager replaced
+   * streamware — see db migration 0031) — used to compose the `url`
+   * returned by mintOverlayToken/rotateOverlayToken/listOverlayTokens,
+   * and (via `getEngineInfo().overlayPublicUrl`) every widget/module
+   * asset URL sceneManager and workflow construct. Used by the UI
+   * settings form; the operator points it at wherever sceneManager
+   * sits behind a tunnel or reverse proxy. Process-wide — not
+   * application-scoped. The RPC method name is unchanged (Convex's
+   * contract), only the underlying setting key moved.
    *
    * Empty string is allowed and clears the setting — the engine then falls
    * back to its own env-configured `overlayPublicUrl` (WOOFX3_OVERLAY_PUBLIC_URL).
    */
   async setOverlayPublicUrl(value: string): Promise<{ success: boolean }> {
     const normalized = value.trim().replace(/\/+$/, "");
-    const response = await this.db.setSetting("overlay.publicUrl", normalized, "");
+    const response = await this.db.setSetting("scene.publicUrl", normalized, "");
     return { success: response.status?.code === "OK" };
   },
 

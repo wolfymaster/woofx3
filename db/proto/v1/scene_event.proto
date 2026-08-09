@@ -1,0 +1,160 @@
+syntax = "proto3";
+
+package scene_event;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// Durable, at-least-once scene event delivery — the transactional-
+// outbox pipeline sceneManager uses to guarantee every engine-
+// triggered event reaches the browser session, survives sceneManager's
+// own restarts without losing track of what's unconfirmed, and keeps a
+// full, replayable timeline. This is NOT the per-widget client-side
+// dispatch queue (retry timeout / max-in-flight / priority — that
+// lives entirely in the browser scene-manager runtime); this service
+// only answers "did the browser session see this event, and did each
+// widget it fanned out to finish handling it."
+//
+// Three-table shape, chosen to be cheap on both Postgres and SQLite
+// (plain indexed inserts, no exotic features):
+//   - `scene_events`           append-only parent (one per engine event)
+//   - `scene_event_log`        append-only timeline (one row per state
+//                               transition per (event, instance) — never
+//                               updated, only inserted)
+//   - `scene_event_deliveries` mutable working set (one row per open
+//                               fan-out target; deleted once completed)
+service SceneEventService {
+    // Persists the parent event plus one open delivery row per fan-out
+    // target, in a single transaction. Call this before pushing the
+    // event down the SSE stream — the row must exist first so a crash
+    // between persistence and delivery is still recoverable on restart.
+    rpc RecordSceneEvent(RecordSceneEventRequest) returns (SceneEventResponse);
+
+    // Marks one fan-out target as delivered: appends a `delivered`
+    // `scene_event_log` row and updates the matching
+    // `scene_event_deliveries` row's `delivered_at`/`last_attempt_at`.
+    rpc RecordDelivery(RecordDeliveryRequest) returns (common.ResponseStatus);
+
+    // Marks one fan-out target as completed: appends a `completed`
+    // `scene_event_log` row and removes the matching
+    // `scene_event_deliveries` row (its job as a working-set entry is
+    // done; the log row is the permanent record).
+    rpc RecordCompletion(RecordCompletionRequest) returns (common.ResponseStatus);
+
+    // Startup hydration / redelivery sweep source: every currently-open
+    // delivery, across every scene unless `scene_id` narrows it. Because
+    // `scene_event_deliveries` only ever holds open rows, this is a
+    // cheap, bounded scan — never a scan over full event history.
+    rpc ListOpenSceneEventDeliveries(ListOpenSceneEventDeliveriesRequest) returns (ListOpenSceneEventDeliveriesResponse);
+
+    // Fetches a historical parent event by id — the read path for a
+    // `POST .../events/{id}/replay` endpoint (re-push the stored
+    // `value` as a fresh delivery).
+    rpc GetSceneEvent(GetSceneEventRequest) returns (SceneEventResponse);
+
+    // Timeline / replay query over `scene_event_log`, filtered by
+    // parent event id and/or scene id.
+    rpc ListSceneEventLog(ListSceneEventLogRequest) returns (ListSceneEventLogResponse);
+}
+
+message SceneEvent {
+    string id = 1;
+    string scene_id = 2;
+    string application_id = 3;
+    // Event class, e.g. "widget.event", "alert" — mirrors the
+    // `OverlayWidgetEvent`/CloudEvent `type` convention used elsewhere.
+    string type = 4;
+    // Event name owned by the target widget(s), e.g. "count",
+    // "alert.lifecycle" — same meaning as `OverlayWidgetEvent.key`.
+    string key = 5;
+    // JSON-encoded payload, stored verbatim so replay can reconstruct
+    // the event exactly.
+    string value = 6;
+    google.protobuf.Timestamp occurred_at = 7;
+    google.protobuf.Timestamp created_at = 8;
+}
+
+message SceneEventDelivery {
+    string scene_event_id = 1;
+    string scene_id = 2;
+    string instance_id = 3;
+    // Unset (zero value) until the browser's per-instance queue acks
+    // receipt+enqueue.
+    google.protobuf.Timestamp delivered_at = 4;
+    // Unset until that widget instance finishes handling the event
+    // (auto or explicit `event.complete()`).
+    google.protobuf.Timestamp completed_at = 5;
+    google.protobuf.Timestamp last_attempt_at = 6;
+    google.protobuf.Timestamp created_at = 7;
+}
+
+message SceneEventLogEntry {
+    string id = 1;
+    string scene_event_id = 2;
+    string scene_id = 3;
+    string instance_id = 4;
+    // "delivered" | "completed" | "failed".
+    string kind = 5;
+    google.protobuf.Timestamp occurred_at = 6;
+    google.protobuf.Timestamp created_at = 7;
+}
+
+message RecordSceneEventRequest {
+    string scene_id = 1;
+    string application_id = 2;
+    string type = 3;
+    string key = 4;
+    // JSON-encoded payload.
+    string value = 5;
+    // Optional ISO-8601 timestamp; the service stamps `now()` when
+    // omitted (same convention as `UpsertWidgetStatusRequest.occurred_at`).
+    string occurred_at = 6;
+    // Fan-out target instance ids — one `scene_event_deliveries` row is
+    // created per entry, in the same transaction as the parent row.
+    repeated string target_instance_ids = 7;
+}
+
+message SceneEventResponse {
+    common.ResponseStatus status = 1;
+    SceneEvent scene_event = 2;
+}
+
+message RecordDeliveryRequest {
+    string scene_event_id = 1;
+    string instance_id = 2;
+}
+
+message RecordCompletionRequest {
+    string scene_event_id = 1;
+    string instance_id = 2;
+}
+
+message ListOpenSceneEventDeliveriesRequest {
+    // Empty = every scene.
+    string scene_id = 1;
+}
+
+message ListOpenSceneEventDeliveriesResponse {
+    common.ResponseStatus status = 1;
+    repeated SceneEventDelivery deliveries = 2;
+}
+
+message GetSceneEventRequest {
+    string id = 1;
+}
+
+message ListSceneEventLogRequest {
+    // At least one of these should be set; both narrow further when
+    // both are provided.
+    string scene_event_id = 1;
+    string scene_id = 2;
+    int32 limit = 3;
+    int32 offset = 4;
+}
+
+message ListSceneEventLogResponse {
+    common.ResponseStatus status = 1;
+    repeated SceneEventLogEntry entries = 2;
+    int64 total_count = 3;
+}

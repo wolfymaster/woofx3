@@ -25,8 +25,23 @@ async fn assets_handler(repository: Data<RepositoryImpl>, path: Path<String>) ->
     match repository.read_file(&key).await {
         Ok(bytes) => HttpResponse::Ok()
             .content_type(content_type_for_key(&key))
+            .insert_header(("Cache-Control", cache_control_for_key(&key)))
             .body(bytes),
         Err(_) => not_found(),
+    }
+}
+
+/// Only `modules/{module_key}/{version_dir}/...` keys are safe to cache
+/// as immutable: `version_dir` is a content hash, so the same key never
+/// serves different bytes over time (see `run_install`'s content-
+/// addressed write). `builtin/...` keys are NOT version-scoped — a
+/// `seed-builtin-widgets` re-run can replace bytes at the same key — so
+/// they get a short, revalidatable cache instead.
+fn cache_control_for_key(key: &str) -> &'static str {
+    if key.starts_with("modules/") {
+        "public, max-age=31536000, immutable"
+    } else {
+        "public, max-age=60, must-revalidate"
     }
 }
 
@@ -193,6 +208,19 @@ mod tests {
             sanitize_asset_key("modules/m1/my%20file.png").as_deref(),
             Some("modules/m1/my file.png")
         );
+    }
+
+    #[test]
+    fn cache_control_is_immutable_for_modules_only() {
+        assert_eq!(
+            cache_control_for_key("modules/m1/abc123/widgets/w1/index.html"),
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(
+            cache_control_for_key("builtin/widgets/media_alert/index.html"),
+            "public, max-age=60, must-revalidate"
+        );
+        assert_eq!(cache_control_for_key("user/whatever"), "public, max-age=60, must-revalidate");
     }
 
     #[test]

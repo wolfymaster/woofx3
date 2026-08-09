@@ -49,6 +49,11 @@ export interface WidgetBootPayload {
   /** Host capability identifiers (e.g. "storage", "events", "status").
    *  Widgets may feature-detect on this; the set is open-ended. */
   capabilities: string[];
+  /** Absolute public base URL for this widget's resource root — the
+   *  same value the host used to build the frame's `<base href>`.
+   *  `WidgetHost.getResourceUrl(path)` is `resourceBaseUrl + path`,
+   *  computed locally with no round trip. */
+  resourceBaseUrl: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -108,20 +113,61 @@ export interface WidgetStorageUnsubscribeMessage extends WidgetProtocolEnvelope 
 }
 
 /**
+ * Per-subscription client-side dispatch policy — enforced entirely by
+ * the host-side (browser scene-manager) queue, never by the backend.
+ * The shim only ever carries this up from the widget's `onEvent` call;
+ * it never inspects or acts on it.
+ */
+export interface EventQueueConfig {
+  /** Milliseconds to wait for `complete()` before treating a delivery
+   *  as timed out. Omitted = no timeout. */
+  retryTimeoutMs?: number;
+  /** Concurrent uncompleted deliveries allowed to this instance at
+   *  once. Omitted = 1. */
+  maxInFlight?: number;
+  /** `true` (default): handler return = completion, no explicit ack
+   *  needed. `false`: the widget must call `event.complete()` (or
+   *  `ctx.completeEvent(event)`-equivalent) itself. */
+  autoComplete?: boolean;
+  /** Safe expression (resolver.ts grammar — ternary/comparisons/arith/
+   *  paths, no `eval`, no DOM/global access) evaluated by the host
+   *  queue against each arriving `WidgetEvent` to get its priority for
+   *  a priority-heap ordering. Omitted = FIFO. */
+  priorityExpr?: string;
+}
+
+/**
  * Open an event subscription. `types` optionally narrows beyond the
  * instance's `acceptedEvents`; when absent the host delivers every
  * accepted event. Deliveries arrive as `event.deliver` with the same
- * `subId`.
+ * `subId`. `queue` registers this instance's dispatch policy with the
+ * host's per-instance queue — this is the "widget registers itself
+ * with a queue configuration" moment.
  */
 export interface WidgetEventsSubscribeMessage extends WidgetProtocolEnvelope {
   type: "events.subscribe";
   subId: string;
   types?: string[];
+  queue?: EventQueueConfig;
 }
 
 export interface WidgetEventsUnsubscribeMessage extends WidgetProtocolEnvelope {
   type: "events.unsubscribe";
   subId: string;
+}
+
+/**
+ * Widget acknowledges it has finished handling a delivered event —
+ * either explicitly (`event.complete()`, required when that
+ * subscription's `queue.autoComplete` is `false`) or automatically
+ * posted by the shim right after the handler returns (default
+ * `autoComplete` behavior). Always sent exactly once per delivered
+ * `eventId`; a repeat call is a shim-side no-op (never re-posted).
+ */
+export interface WidgetEventCompleteMessage extends WidgetProtocolEnvelope {
+  type: "event.complete";
+  subId: string;
+  eventId: string;
 }
 
 /** `widgetHost.reportStatus` on the wire — the parent forwards it onto
@@ -181,7 +227,8 @@ export interface WidgetStorageChangedMessage extends WidgetProtocolEnvelope {
 }
 
 /** One event delivery on an open event subscription. `event` preserves
- *  the typed `WidgetEvent` shape end to end. */
+ *  the typed `WidgetEvent` shape end to end, including the host-
+ *  assigned `eventId` the widget echoes back in `event.complete`. */
 export interface WidgetEventDeliverMessage extends WidgetProtocolEnvelope {
   type: "event.deliver";
   subId: string;
@@ -223,6 +270,7 @@ export type WidgetToHostMessage =
   | WidgetStorageUnsubscribeMessage
   | WidgetEventsSubscribeMessage
   | WidgetEventsUnsubscribeMessage
+  | WidgetEventCompleteMessage
   | WidgetStatusReportMessage
   | WidgetPingMessage
   | WidgetPongMessage;
@@ -282,7 +330,9 @@ export function isWidgetBootPayload(value: unknown): value is WidgetBootPayload 
     (boot.widgetCanonicalId === undefined || typeof boot.widgetCanonicalId === "string") &&
     typeof boot.settings === "object" &&
     boot.settings !== null &&
-    Array.isArray(boot.capabilities)
+    Array.isArray(boot.capabilities) &&
+    typeof boot.resourceBaseUrl === "string" &&
+    boot.resourceBaseUrl.length > 0
   );
 }
 

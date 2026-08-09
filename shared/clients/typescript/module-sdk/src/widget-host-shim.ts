@@ -16,6 +16,7 @@
 // CSPRNG nonce from the boot payload. Anything else is dropped.
 
 import type {
+  DeliveredWidgetEvent,
   WidgetEvent,
   WidgetEventHandler,
   WidgetHost,
@@ -27,6 +28,7 @@ import {
   WIDGET_PROTOCOL,
   isWidgetBootPayload,
   isWidgetProtocolEnvelope,
+  type EventQueueConfig,
   type WidgetBootPayload,
   type WidgetToHostMessage,
 } from "./widget-protocol";
@@ -125,7 +127,11 @@ export function installWidgetHostShim(
 
   const pendingGets = new Map<string, (value: unknown) => void>();
   const storageSubs = new Map<string, { key: string; cb: (value: unknown) => void }>();
-  const eventSubs = new Map<string, WidgetEventHandler>();
+  const eventSubs = new Map<string, { handler: WidgetEventHandler; queue?: EventQueueConfig }>();
+  // Delivery ids the shim has already posted `event.complete` for —
+  // guards double-sends whether the widget calls `.complete()` itself,
+  // the shim auto-completes on handler return, or both.
+  const completedEventIds = new Set<string>();
   let nextLocalId = 0;
 
   function allocId(prefix: string): string {
@@ -189,6 +195,7 @@ export function installWidgetHostShim(
     pendingGets.clear();
     storageSubs.clear();
     eventSubs.clear();
+    completedEventIds.clear();
     outQueue.length = 0;
   }
 
@@ -258,9 +265,30 @@ export function installWidgetHostShim(
         if (typeof m.subId !== "string") {
           return;
         }
-        const handler = eventSubs.get(m.subId);
-        if (handler !== undefined && typeof m.event === "object" && m.event !== null) {
-          handler(m.event as WidgetEvent);
+        const sub = eventSubs.get(m.subId);
+        if (sub === undefined || typeof m.event !== "object" || m.event === null) {
+          return;
+        }
+        const rawEvent = m.event as WidgetEvent;
+        if (typeof rawEvent.eventId !== "string" || rawEvent.eventId.length === 0) {
+          return;
+        }
+        const subId = m.subId;
+        const eventId = rawEvent.eventId;
+        const completeOnce = (): void => {
+          if (completedEventIds.has(eventId)) {
+            return;
+          }
+          completedEventIds.add(eventId);
+          send(envelope({ type: "event.complete" as const, subId, eventId }));
+        };
+        const delivered: DeliveredWidgetEvent = { ...rawEvent, complete: completeOnce };
+        sub.handler(delivered);
+        // Default (autoComplete !== false): the handler having returned
+        // *is* completion — post it now unless the widget already
+        // called complete() itself inside the handler (idempotent).
+        if (sub.queue?.autoComplete !== false) {
+          completeOnce();
         }
         return;
       }
@@ -319,13 +347,16 @@ export function installWidgetHostShim(
     moduleId: boot.moduleId,
     instanceId: boot.instanceId,
     storage,
-    onEvent(handler: WidgetEventHandler): () => void {
+    getResourceUrl(path: string): string {
+      return boot.resourceBaseUrl.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
+    },
+    onEvent(handler: WidgetEventHandler, queue?: EventQueueConfig): () => void {
       if (typeof handler !== "function") {
         throw new Error("[widget-host-shim] onEvent requires a handler function");
       }
       const subId = allocId("esub");
-      eventSubs.set(subId, handler);
-      send(envelope({ type: "events.subscribe" as const, subId }));
+      eventSubs.set(subId, { handler, queue });
+      send(envelope({ type: "events.subscribe" as const, subId, queue }));
       return () => {
         if (!eventSubs.delete(subId)) {
           return;

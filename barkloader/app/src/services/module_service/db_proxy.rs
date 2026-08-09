@@ -1215,6 +1215,87 @@ pub async fn get_module_by_module_id(
     Ok(Some(text))
 }
 
+/// Resolve a stable manifest module id (e.g. "spotify") to its current
+/// version-scoped storage directory — the trailing hash segment of the
+/// composite `module_key` (`{id}:{version}:{hash}`), same derivation
+/// `run_install` uses when writing files (see `module_install.rs`).
+/// `Ok(None)` means the module id has no installed row (never resolved
+/// to a version directory, not a transport error).
+pub async fn resolve_module_version_dir(db_proxy_url: &str, module_id: &str) -> Result<Option<String>> {
+    let Some(body) = get_module_by_module_id(db_proxy_url, module_id).await? else {
+        return Ok(None);
+    };
+    let parsed: ModuleResponseBody = serde_json::from_str(&body)
+        .map_err(|e| anyhow!("parse GetModuleByModuleId response: {}", e))?;
+    let Some(module) = parsed.module else {
+        return Ok(None);
+    };
+    let version_dir = module
+        .module_key
+        .rsplit(':')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&module.module_key)
+        .to_string();
+    Ok(Some(version_dir))
+}
+
+/// Look up a registered widget's entry document path by canonical id
+/// (`{module_id}:widget:{manifest_id}`). Falls back to "index.html"
+/// when the row exists but has no explicit `entry` (same fallback
+/// convention as the widget catalog everywhere else). `Ok(None)` means
+/// no widget is registered under that canonical id.
+pub async fn get_widget_entry(
+    db_proxy_url: &str,
+    module_id: &str,
+    manifest_id: &str,
+) -> Result<Option<String>> {
+    #[derive(Debug, Deserialize)]
+    struct WidgetRecord {
+        #[serde(default)]
+        entry: String,
+    }
+    #[derive(Debug, Deserialize)]
+    struct WidgetResponseBody {
+        #[serde(default)]
+        widget: Option<WidgetRecord>,
+    }
+
+    let canonical_id = format!("{module_id}:widget:{manifest_id}");
+    let url = format!("{}/twirp/module.ModuleService/GetWidgetByCanonicalId", db_proxy_url);
+    let body = serde_json::json!({ "canonical_id": canonical_id, "application_id": "" });
+
+    let client = HTTP_CLIENT.clone();
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("GetWidgetByCanonicalId request failed: {}", e))?;
+
+    if response.status() == 404 {
+        return Ok(None);
+    }
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("GetWidgetByCanonicalId failed {}: {}", status, text));
+    }
+
+    let text = response.text().await.unwrap_or_default();
+    let parsed: WidgetResponseBody = serde_json::from_str(&text)
+        .map_err(|e| anyhow!("parse GetWidgetByCanonicalId response: {}", e))?;
+    let Some(widget) = parsed.widget else {
+        return Ok(None);
+    };
+    Ok(Some(if widget.entry.is_empty() {
+        "index.html".to_string()
+    } else {
+        widget.entry
+    }))
+}
+
 pub async fn list_modules(
     db_proxy_url: &str,
     state: Option<&str>,

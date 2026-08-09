@@ -1,6 +1,11 @@
 import type { SharedLogger } from "@woofx3/common/logging";
 
-export const OVERLAY_PUBLIC_URL_SETTING_KEY = "overlay.publicUrl";
+// Renamed from "overlay.publicUrl" to "scene.publicUrl" when
+// sceneManager replaced streamware as this setting's primary owner
+// (see db migration 0031_rename_overlay_public_url_setting) — same
+// setting, same purpose, kept in sync here so streamware keeps
+// resolving it correctly during the deprecation window.
+export const OVERLAY_PUBLIC_URL_SETTING_KEY = "scene.publicUrl";
 export const OVERLAY_PUBLIC_URL_CACHE_TTL_MS = 30_000;
 
 /** The slice of DbClient the resolver depends on (injectable for tests). */

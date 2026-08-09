@@ -10,6 +10,7 @@
 // at "@woofx3/module-sdk/preview" — see preview/widget-preview.ts.
 
 export type {
+  DeliveredWidgetEvent,
   StorageChangeStream,
   StorageChangedFrame,
   WidgetEvent,
@@ -30,9 +31,11 @@ export { createMockHost } from "./preview/widget-preview";
 // manager). Streamware's widget bridge consumes the parent-side
 // types; the child side ships pre-built as dist/widget-host-shim.js.
 export type {
+  EventQueueConfig,
   HostToWidgetMessage,
   WidgetBootPayload,
   WidgetDisposeMessage,
+  WidgetEventCompleteMessage,
   WidgetEventDeliverMessage,
   WidgetEventsSubscribeMessage,
   WidgetEventsUnsubscribeMessage,
