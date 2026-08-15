@@ -21,12 +21,14 @@
 //! before any database or file-system side effect runs.
 
 use anyhow::{anyhow, Result};
-use std::collections::HashMap;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use super::canonical_id::{
     looks_like_canonical_id, validate_segment, CanonicalId, ResourceKind,
     CANONICAL_ID_SEPARATOR,
 };
+use super::db_proxy_client::ModuleDbProxy;
 use super::module_manifest::{
     ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestFunction,
     ManifestOverlay, ManifestResourceKind, ManifestTrigger, ManifestWorkflow, ModuleManifest,
@@ -188,6 +190,276 @@ pub fn validate(manifest: &ModuleManifest) -> Result<ResolvedManifest> {
         overlays,
         assets,
     })
+}
+
+/// One unit of work in an install plan. Each variant names exactly one
+/// thing `module_install.rs`'s executor does against the repository or
+/// db-proxy — see its `SagaState::execute` for what each one runs.
+///
+/// The two bulk-registered kinds this crate doesn't resolve to canonical
+/// ids — `backgroundTasks` and `settings` — have no `ResourceKind`
+/// variant (nothing else in the system references either by canonical
+/// id: a background task's `function` field is a raw manifest-local
+/// string, never resolved, and settings have no reference fields at
+/// all), so their steps carry no per-item identity, matching their
+/// single-bulk-call registration today.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum InstallStep {
+    UploadFunctionFiles,
+    UploadWidgetAssets,
+    UploadOverlayEntries,
+    UploadAssets,
+    CreateModule,
+    RegisterTriggers,
+    RegisterActions,
+    RegisterWidgets,
+    RegisterBackgroundTasks,
+    RegisterSettings,
+    RegisterAssets,
+    RegisterWorkflow(CanonicalId),
+    RegisterCommand(CanonicalId),
+}
+
+/// A node in the install dependency graph, before topological sort.
+struct StepNode {
+    step: InstallStep,
+    /// Tie-break key for otherwise-independent steps, reproducing
+    /// `run_install`'s current fixed statement order (uploads, then
+    /// `CreateModule`, then the kind-level bulk registrations in their
+    /// current order, then every workflow in manifest order, then every
+    /// command in manifest order) — real data dependencies are expressed
+    /// as edges (`deps`) below; this only orders steps the edges leave
+    /// unconstrained, deterministically, matching today's behavior
+    /// rather than introducing new parallelism the db-proxy backend
+    /// hasn't been verified to tolerate.
+    phase: (u8, u8, u32),
+    deps: Vec<usize>,
+}
+
+fn add_step(
+    nodes: &mut Vec<StepNode>,
+    index_of: &mut HashMap<InstallStep, usize>,
+    step: InstallStep,
+    phase: (u8, u8, u32),
+    deps: &[&InstallStep],
+) -> usize {
+    let dep_indices = deps.iter().map(|d| index_of[*d]).collect();
+    let idx = nodes.len();
+    index_of.insert(step.clone(), idx);
+    nodes.push(StepNode { step, phase, deps: dep_indices });
+    idx
+}
+
+/// Build the ordered list of install operations for `manifest`: a
+/// dependency graph over [`InstallStep`]s — nodes are the resources
+/// `resolved` carries, edges are the data dependencies traced through
+/// `run_install`'s current body (see the design notes in the
+/// `barkloader` implementation plan) — validated (including every
+/// cross-module reference, via `db_proxy`) and topologically sorted.
+/// Replaces `run_install`'s previously hand-ordered ~500-line sequence
+/// with an explicit, independently testable value.
+pub async fn build_install_plan(
+    manifest: &ModuleManifest,
+    resolved: &ResolvedManifest,
+    db_proxy: &dyn ModuleDbProxy,
+) -> Result<Vec<InstallStep>> {
+    validate_cross_module_refs(resolved, db_proxy).await?;
+
+    let mut nodes: Vec<StepNode> = Vec::new();
+    let mut index_of: HashMap<InstallStep, usize> = HashMap::new();
+
+    add_step(&mut nodes, &mut index_of, InstallStep::UploadFunctionFiles, (0, 0, 0), &[]);
+    add_step(&mut nodes, &mut index_of, InstallStep::UploadWidgetAssets, (0, 1, 0), &[]);
+    add_step(&mut nodes, &mut index_of, InstallStep::UploadOverlayEntries, (0, 2, 0), &[]);
+    add_step(&mut nodes, &mut index_of, InstallStep::UploadAssets, (0, 3, 0), &[]);
+
+    add_step(
+        &mut nodes,
+        &mut index_of,
+        InstallStep::CreateModule,
+        (1, 0, 0),
+        &[&InstallStep::UploadFunctionFiles],
+    );
+
+    // Triggers and actions register unconditionally today (even with an
+    // empty list) — functions and overlays have no bulk-registration
+    // call of their own, only the upload + (for functions) the ledger
+    // entries `CreateModule` writes.
+    add_step(&mut nodes, &mut index_of, InstallStep::RegisterTriggers, (2, 0, 0), &[&InstallStep::CreateModule]);
+    add_step(&mut nodes, &mut index_of, InstallStep::RegisterActions, (2, 1, 0), &[&InstallStep::CreateModule]);
+
+    if !resolved.widgets.is_empty() {
+        add_step(&mut nodes, &mut index_of, InstallStep::RegisterWidgets, (2, 2, 0), &[&InstallStep::CreateModule]);
+    }
+    if !manifest.background_tasks.is_empty() {
+        add_step(
+            &mut nodes,
+            &mut index_of,
+            InstallStep::RegisterBackgroundTasks,
+            (2, 3, 0),
+            &[&InstallStep::CreateModule],
+        );
+    }
+    // "button" settings are UI-only triggers, not stored values — same
+    // filter `run_install` applies before deciding whether there's
+    // anything to register.
+    if manifest.settings.iter().any(|s| s.setting_type != "button") {
+        add_step(&mut nodes, &mut index_of, InstallStep::RegisterSettings, (2, 4, 0), &[&InstallStep::CreateModule]);
+    }
+    if !resolved.assets.is_empty() {
+        add_step(
+            &mut nodes,
+            &mut index_of,
+            InstallStep::RegisterAssets,
+            (2, 5, 0),
+            &[&InstallStep::CreateModule, &InstallStep::UploadAssets],
+        );
+    }
+
+    for (i, wf) in resolved.workflows.iter().enumerate() {
+        add_step(
+            &mut nodes,
+            &mut index_of,
+            InstallStep::RegisterWorkflow(wf.canonical_id.clone()),
+            (3, 0, i as u32),
+            // `asset_repo_keys`, built during `UploadAssets`, is threaded
+            // into every workflow's registration for `${asset:...}`
+            // marker substitution regardless of whether that particular
+            // workflow uses one.
+            &[&InstallStep::CreateModule, &InstallStep::UploadAssets],
+        );
+    }
+
+    for (i, cmd) in resolved.commands.iter().enumerate() {
+        let step = InstallStep::RegisterCommand(cmd.canonical_id.clone());
+        let mut deps = vec![InstallStep::CreateModule];
+        // A command referencing a workflow declared in *this* manifest
+        // must run after that workflow registers. A cross-module
+        // workflow reference has no node in this plan — it was already
+        // validated above and is (by definition) already installed.
+        if let Some(wf_id) = &cmd.workflow {
+            if resolved.workflows.iter().any(|w| &w.canonical_id == wf_id) {
+                deps.push(InstallStep::RegisterWorkflow(wf_id.clone()));
+            }
+        }
+        let dep_refs: Vec<&InstallStep> = deps.iter().collect();
+        add_step(&mut nodes, &mut index_of, step, (4, 0, i as u32), &dep_refs);
+    }
+
+    Ok(topo_sort(nodes))
+}
+
+/// Kahn's algorithm with a priority tie-break (`StepNode::phase`) so the
+/// output is deterministic even among steps with no edge forcing an
+/// order between them.
+fn topo_sort(nodes: Vec<StepNode>) -> Vec<InstallStep> {
+    let n = nodes.len();
+    let mut indegree = vec![0usize; n];
+    let mut dependents: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (i, node) in nodes.iter().enumerate() {
+        indegree[i] = node.deps.len();
+        for &d in &node.deps {
+            dependents[d].push(i);
+        }
+    }
+
+    let mut ready: BinaryHeap<Reverse<((u8, u8, u32), usize)>> = BinaryHeap::new();
+    for (i, node) in nodes.iter().enumerate() {
+        if indegree[i] == 0 {
+            ready.push(Reverse((node.phase, i)));
+        }
+    }
+
+    let mut order = Vec::with_capacity(n);
+    while let Some(Reverse((_, i))) = ready.pop() {
+        order.push(i);
+        for &dep in &dependents[i] {
+            indegree[dep] -= 1;
+            if indegree[dep] == 0 {
+                ready.push(Reverse((nodes[dep].phase, dep)));
+            }
+        }
+    }
+
+    debug_assert_eq!(order.len(), n, "install step graph must be acyclic by construction");
+
+    let mut steps: Vec<Option<InstallStep>> = nodes.into_iter().map(|node| Some(node.step)).collect();
+    order.into_iter().map(|i| steps[i].take().expect("each index visited exactly once")).collect()
+}
+
+/// Check every cross-module reference this manifest declares (a
+/// workflow's trigger, a workflow step's action, a widget's accepted
+/// event) resolves against an already-installed module, via `db_proxy`.
+/// Same checks and error message as the old `validate_cross_module_dependencies`
+/// in `module_install.rs`, computed once here as part of building the
+/// plan instead of a second traversal of `resolved`.
+async fn validate_cross_module_refs(
+    resolved: &ResolvedManifest,
+    db_proxy: &dyn ModuleDbProxy,
+) -> Result<()> {
+    let is_external = |id: &CanonicalId| {
+        id.module_id() != resolved.module_id.as_str() && id.module_id() != "builtin"
+    };
+
+    let mut missing: Vec<String> = Vec::new();
+    let mut checked: HashSet<String> = HashSet::new();
+
+    for wf in &resolved.workflows {
+        let canonical = &wf.trigger;
+        if !is_external(canonical) || !checked.insert(canonical.to_string()) {
+            continue;
+        }
+        if let Err(e) = db_proxy.get_trigger_event_by_canonical_id(&canonical.to_string()).await {
+            missing.push(format!(
+                "workflow '{}' → trigger '{}' ({})",
+                wf.canonical_id.resource_id(),
+                canonical,
+                e
+            ));
+        }
+    }
+
+    for widget in &resolved.widgets {
+        for event in &widget.accepted_events {
+            if !is_external(event) || !checked.insert(event.to_string()) {
+                continue;
+            }
+            if let Err(e) = db_proxy.get_trigger_event_by_canonical_id(&event.to_string()).await {
+                missing.push(format!(
+                    "widget '{}' → trigger '{}' ({})",
+                    widget.canonical_id.resource_id(),
+                    event,
+                    e
+                ));
+            }
+        }
+    }
+
+    for wf in &resolved.workflows {
+        for (si, action_canonical) in wf.step_actions.iter().enumerate() {
+            if !is_external(action_canonical) || !checked.insert(action_canonical.to_string()) {
+                continue;
+            }
+            if let Err(e) = db_proxy.get_action_ref_by_canonical_id(&action_canonical.to_string()).await {
+                missing.push(format!(
+                    "workflow '{}' step #{} → action '{}' ({})",
+                    wf.canonical_id.resource_id(),
+                    si,
+                    action_canonical,
+                    e
+                ));
+            }
+        }
+    }
+
+    if !missing.is_empty() {
+        return Err(anyhow!(
+            "Module depends on resources from other modules that are not installed:\n  - {}",
+            missing.join("\n  - ")
+        ));
+    }
+
+    Ok(())
 }
 
 /// Validate `manifest.resources[]`: every kind must be non-empty,
@@ -541,6 +813,105 @@ mod tests {
             }}"#
         );
         parse(&json)
+    }
+
+    // ---------------------------------------------------------------
+    // Install plan: graph construction, ordering, validation
+    // ---------------------------------------------------------------
+
+    use super::super::db_proxy_client::FakeDbProxyClient;
+
+    #[tokio::test]
+    async fn build_install_plan_orders_uploads_before_create_module_before_registration() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus" }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [{ "action": "a1" }] }],
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix", "workflow": "w1" }]"#);
+        let resolved = validate(&m).expect("validate ok");
+        let db_proxy = FakeDbProxyClient::new();
+        let plan = build_install_plan(&m, &resolved, &db_proxy).await.expect("plan ok");
+
+        let workflow_step = InstallStep::RegisterWorkflow(resolved.workflows[0].canonical_id.clone());
+        let command_step = InstallStep::RegisterCommand(resolved.commands[0].canonical_id.clone());
+        let pos = |step: &InstallStep| {
+            plan.iter()
+                .position(|s| s == step)
+                .unwrap_or_else(|| panic!("{step:?} missing from plan: {plan:?}"))
+        };
+
+        assert!(pos(&InstallStep::UploadFunctionFiles) < pos(&InstallStep::CreateModule));
+        assert!(pos(&InstallStep::CreateModule) < pos(&InstallStep::RegisterTriggers));
+        assert!(pos(&InstallStep::CreateModule) < pos(&InstallStep::RegisterActions));
+        assert!(pos(&InstallStep::CreateModule) < pos(&workflow_step));
+        // The whole reason this is a real dependency graph edge and not
+        // just phase ordering: a command referencing a workflow must
+        // come after that workflow, specifically.
+        assert!(pos(&workflow_step) < pos(&command_step));
+    }
+
+    #[tokio::test]
+    async fn build_install_plan_omits_bulk_steps_for_empty_or_button_only_kinds() {
+        let m = minimal(r#",
+            "settings": [{ "id": "s1", "name": "S1", "type": "button" }]"#);
+        let resolved = validate(&m).expect("validate ok");
+        let db_proxy = FakeDbProxyClient::new();
+        let plan = build_install_plan(&m, &resolved, &db_proxy).await.expect("plan ok");
+
+        assert!(!plan.contains(&InstallStep::RegisterWidgets));
+        assert!(!plan.contains(&InstallStep::RegisterBackgroundTasks));
+        assert!(!plan.contains(&InstallStep::RegisterAssets));
+        assert!(
+            !plan.contains(&InstallStep::RegisterSettings),
+            "a button-only settings list has nothing to store, same as today's filtered empty check"
+        );
+        // Triggers/actions register unconditionally today, even empty.
+        assert!(plan.contains(&InstallStep::RegisterTriggers));
+        assert!(plan.contains(&InstallStep::RegisterActions));
+    }
+
+    #[tokio::test]
+    async fn build_install_plan_includes_bulk_steps_when_kinds_are_present() {
+        let m = minimal(r#",
+            "widgets": [{ "id": "w1", "name": "W1" }],
+            "backgroundTasks": [{ "id": "bg1", "function": "f1", "schedule": "* * * * * *" }],
+            "settings": [{ "id": "s1", "name": "S1", "type": "string" }],
+            "assets": [{ "id": "a1", "name": "A1", "path": "assets/a.png" }]"#);
+        let resolved = validate(&m).expect("validate ok");
+        let db_proxy = FakeDbProxyClient::new();
+        let plan = build_install_plan(&m, &resolved, &db_proxy).await.expect("plan ok");
+
+        assert!(plan.contains(&InstallStep::RegisterWidgets));
+        assert!(plan.contains(&InstallStep::RegisterBackgroundTasks));
+        assert!(plan.contains(&InstallStep::RegisterSettings));
+        assert!(plan.contains(&InstallStep::RegisterAssets));
+    }
+
+    #[tokio::test]
+    async fn build_install_plan_fails_fast_on_unresolvable_cross_module_trigger() {
+        let m = minimal(r#",
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "other_mod:trigger:missing", "steps": [] }]"#);
+        let resolved = validate(&m).expect("validate ok");
+        let db_proxy = FakeDbProxyClient::failing_on(["get_trigger_event_by_canonical_id"]);
+
+        let err = build_install_plan(&m, &resolved, &db_proxy).await.expect_err("should fail");
+        assert!(
+            err.to_string().contains("depends on resources from other modules that are not installed"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_install_plan_passes_when_cross_module_trigger_resolves() {
+        let m = minimal(r#",
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "other_mod:trigger:exists", "steps": [] }]"#);
+        let resolved = validate(&m).expect("validate ok");
+        let db_proxy = FakeDbProxyClient::new();
+
+        let plan = build_install_plan(&m, &resolved, &db_proxy).await.expect("should resolve via the fake");
+        let workflow_step = InstallStep::RegisterWorkflow(resolved.workflows[0].canonical_id.clone());
+        assert!(plan.contains(&workflow_step));
     }
 
     #[test]

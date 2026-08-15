@@ -4,31 +4,33 @@ use log::{info, warn};
 use std::collections::HashMap;
 use std::path::Path;
 
-use super::db_proxy::{create_module, create_module_resource, CreateModuleFunctionJson};
-use super::manifest_validate::{self, ResolvedActionImpl};
+use super::canonical_id::CanonicalId;
+use super::db_proxy::CreateModuleFunctionJson;
+use super::db_proxy_client::ModuleDbProxy;
+use super::manifest_validate::{self, InstallStep, ResolvedActionImpl, ResolvedManifest};
 use super::module_file::ModuleFile;
 use super::module_manifest::{ModuleManifest, ResolvedWorkflowStep, ResolvedWorkflowTrigger};
 
 pub async fn cleanup_old_version(
     module_name: &str,
-    db_proxy_url: Option<&str>,
+    db_proxy: Option<&dyn ModuleDbProxy>,
     application_id: &str,
 ) -> Result<()> {
-    let url = match db_proxy_url {
-        Some(u) => u,
+    let proxy = match db_proxy {
+        Some(p) => p,
         None => return Ok(()),
     };
 
-    super::db_proxy::delete_triggers_by_module_id(url, module_name).await?;
-    super::db_proxy::delete_actions_by_module_id(url, module_name).await?;
-    super::db_proxy::delete_widgets_by_module_id(url, module_name).await?;
-    super::db_proxy::delete_background_tasks_by_module_id(url, module_name).await?;
+    proxy.delete_triggers_by_module_id(module_name).await?;
+    proxy.delete_actions_by_module_id(module_name).await?;
+    proxy.delete_widgets_by_module_id(module_name).await?;
+    proxy.delete_background_tasks_by_module_id(module_name).await?;
     info!("Deleted triggers, actions, widgets, and background tasks for module {}", module_name);
 
-    super::db_proxy::delete_workflows_by_module(url, "", module_name).await?;
+    proxy.delete_workflows_by_module("", module_name).await?;
     info!("Deleted workflows for module {}", module_name);
 
-    super::db_proxy::delete_commands_by_module(url, module_name).await?;
+    proxy.delete_commands_by_module(module_name).await?;
     info!("Deleted commands for module {}", module_name);
 
     Ok(())
@@ -40,20 +42,20 @@ pub async fn cleanup_old_version(
 /// cleanup error is logged and suppressed so the original install error
 /// surfaces to the caller.
 async fn rollback_db_install(
-    db_proxy_url: &str,
+    db_proxy: &dyn ModuleDbProxy,
     manifest_module_key: &str,
     module_name: &str,
     application_id: &str,
 ) {
     if let Err(e) =
-        cleanup_old_version(manifest_module_key, Some(db_proxy_url), application_id).await
+        cleanup_old_version(manifest_module_key, Some(db_proxy), application_id).await
     {
         warn!(
             "rollback: cleanup_old_version({}) failed: {}",
             manifest_module_key, e
         );
     }
-    if let Err(e) = super::db_proxy::delete_module(db_proxy_url, module_name).await {
+    if let Err(e) = db_proxy.delete_module(module_name).await {
         warn!("rollback: delete_module({}) failed: {}", module_name, e);
     } else {
         info!("rollback: removed module row for {}", module_name);
@@ -153,11 +155,11 @@ fn removed_manifest_ids(old: &ModuleManifest, new: &ModuleManifest) -> Vec<(&'st
 /// from catalog listings going forward. A fresh install (no previous
 /// version, or an unparseable stored manifest) is a no-op.
 async fn prune_removed_resources(
-    db_proxy_url: &str,
+    db_proxy: &dyn ModuleDbProxy,
     module_key: &str,
     new_manifest: &ModuleManifest,
 ) {
-    let prev_response = match super::db_proxy::get_module_by_module_id(db_proxy_url, module_key).await {
+    let prev_response = match db_proxy.get_module_by_module_id(module_key).await {
         Ok(Some(body)) => body,
         Ok(None) => return,
         Err(e) => {
@@ -180,11 +182,9 @@ async fn prune_removed_resources(
 
     for (resource_type, manifest_id) in removed_manifest_ids(&prev_manifest, new_manifest) {
         let result = if resource_type == "background_task" {
-            super::db_proxy::delete_resource_by_manifest_id(db_proxy_url, module_key, resource_type, &manifest_id)
-                .await
+            db_proxy.delete_resource_by_manifest_id(module_key, resource_type, &manifest_id).await
         } else {
-            super::db_proxy::archive_resource_by_manifest_id(db_proxy_url, module_key, resource_type, &manifest_id)
-                .await
+            db_proxy.archive_resource_by_manifest_id(module_key, resource_type, &manifest_id).await
         };
         if let Err(e) = result {
             warn!(
@@ -200,91 +200,531 @@ async fn prune_removed_resources(
     }
 }
 
-async fn validate_cross_module_dependencies(
-    db_proxy_url: &str,
-    resolved: &manifest_validate::ResolvedManifest,
-) -> Result<()> {
-    use std::collections::HashSet;
+/// Mutable state threaded through a single install's step execution:
+/// values every step's own code needs, plus values later steps need that
+/// an earlier step computed (`db_record_id` from `CreateModule`,
+/// `module_record_id_for_commands` resolved lazily on the first
+/// `RegisterCommand`). One `SagaState` per `run_install` call — steps run
+/// strictly sequentially, so this never needs to be `Sync`.
+struct SagaState<'a, R: Repository> {
+    manifest: &'a ModuleManifest,
+    resolved: &'a ResolvedManifest,
+    files: &'a [ModuleFile],
+    repository: &'a R,
+    module_key: &'a str,
+    version_dir: &'a str,
+    composite_module_key: &'a str,
+    application_id: &'a str,
+    client_id: &'a str,
+    archive_key: &'a str,
+    fn_rows: Vec<CreateModuleFunctionJson>,
+    asset_keys: Vec<String>,
+    asset_repo_keys: HashMap<String, String>,
+    db_record_id: Option<String>,
+    module_record_id_for_commands: Option<String>,
+}
 
-    let mut missing: Vec<String> = Vec::new();
-    let mut checked: HashSet<String> = HashSet::new();
-
-    for wf in &resolved.workflows {
-        let canonical = &wf.trigger;
-        if canonical.module_id() == resolved.module_id
-            || canonical.module_id() == "builtin"
-            || !checked.insert(canonical.to_string())
-        {
-            continue;
-        }
-        if let Err(e) =
-            super::db_proxy::get_trigger_event_by_canonical_id(db_proxy_url, &canonical.to_string())
-                .await
-        {
-            missing.push(format!(
-                "workflow '{}' → trigger '{}' ({})",
-                wf.canonical_id.resource_id(),
-                canonical,
-                e
-            ));
+impl<'a, R: Repository> SagaState<'a, R> {
+    async fn execute(&mut self, step: &InstallStep, db_proxy: &dyn ModuleDbProxy) -> Result<()> {
+        match step {
+            // Uploads already ran unconditionally in `run_install` before
+            // the plan executes (the no-db-proxy dry-validation path
+            // needs files persisted too, so they can't live only inside
+            // a plan that's built exclusively when `db_proxy` is
+            // `Some`). Kept as explicit steps so the plan is a complete,
+            // first-class picture of the install, and so `CreateModule`
+            // / `RegisterAssets` / `RegisterWorkflow` can declare their
+            // real dependency on them.
+            InstallStep::UploadFunctionFiles
+            | InstallStep::UploadWidgetAssets
+            | InstallStep::UploadOverlayEntries
+            | InstallStep::UploadAssets => Ok(()),
+            InstallStep::CreateModule => self.execute_create_module(db_proxy).await,
+            InstallStep::RegisterTriggers => self.execute_register_triggers(db_proxy).await,
+            InstallStep::RegisterActions => self.execute_register_actions(db_proxy).await,
+            InstallStep::RegisterWidgets => self.execute_register_widgets(db_proxy).await,
+            InstallStep::RegisterBackgroundTasks => self.execute_register_background_tasks(db_proxy).await,
+            InstallStep::RegisterSettings => self.execute_register_settings(db_proxy).await,
+            InstallStep::RegisterAssets => self.execute_register_assets(db_proxy).await,
+            InstallStep::RegisterWorkflow(canonical_id) => {
+                self.execute_register_workflow(canonical_id, db_proxy).await
+            }
+            InstallStep::RegisterCommand(canonical_id) => {
+                self.execute_register_command(canonical_id, db_proxy).await
+            }
         }
     }
 
-    for widget in &resolved.widgets {
-        for event in &widget.accepted_events {
-            if event.module_id() == resolved.module_id
-                || event.module_id() == "builtin"
-                || !checked.insert(event.to_string())
-            {
-                continue;
-            }
-            if let Err(e) =
-                super::db_proxy::get_trigger_event_by_canonical_id(db_proxy_url, &event.to_string())
-                    .await
-            {
-                missing.push(format!(
-                    "widget '{}' → trigger '{}' ({})",
-                    widget.canonical_id.resource_id(),
-                    event,
-                    e
-                ));
-            }
+    async fn upload_files(&mut self) -> Result<()> {
+        for f in &self.manifest.functions {
+            let file_key = f
+                .upload_to_repository(self.module_key, self.version_dir, self.files, self.repository)
+                .await?;
+            let file_name = Path::new(&f.path)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("function")
+                .to_string();
+            self.fn_rows.push(CreateModuleFunctionJson {
+                manifest_id: f.id.clone(),
+                name: f.name.clone(),
+                file_name,
+                file_key,
+                entry_point: f.entry_point.clone().unwrap_or_default(),
+                runtime: f.runtime.clone(),
+            });
         }
+
+        for w in &self.manifest.widgets {
+            w.upload_assets(self.module_key, self.version_dir, self.files, self.repository).await?;
+        }
+
+        for o in &self.manifest.overlays {
+            o.upload_entry(self.module_key, self.version_dir, self.files, self.repository).await?;
+        }
+
+        // Upload static assets declared in manifest.assets[]. Each asset
+        // is written to the repository under `modules/<moduleKey>/<versionDir>/<path>`
+        // (path already carries its own directory, e.g. `assets/bell.mp3`
+        // — see ManifestAsset::upload_to_repository) and the resulting key
+        // is captured for the RegisterAssets call further down.
+        for a in &self.manifest.assets {
+            let repo_key = a
+                .upload_to_repository(self.module_key, self.version_dir, self.files, self.repository)
+                .await?;
+            self.asset_keys.push(repo_key);
+        }
+        // Manifest-local asset id -> repository key, used to bake
+        // `${asset:<id>}` markers in workflow step parameters into
+        // `${woofx3_asset_url:<repositoryKey>}` at registration time (see
+        // ManifestWorkflow::register / encode_asset_url_markers).
+        self.asset_repo_keys = self
+            .manifest
+            .assets
+            .iter()
+            .zip(self.asset_keys.iter())
+            .map(|(a, key)| (a.id.clone(), key.clone()))
+            .collect();
+
+        Ok(())
     }
 
-    for wf in &resolved.workflows {
-        for (si, action_canonical) in wf.step_actions.iter().enumerate() {
-            if action_canonical.module_id() == resolved.module_id
-                || action_canonical.module_id() == "builtin"
-                || !checked.insert(action_canonical.to_string())
-            {
-                continue;
-            }
-            if let Err(e) = super::db_proxy::get_action_ref_by_canonical_id(
-                db_proxy_url,
-                &action_canonical.to_string(),
+    async fn execute_create_module(&mut self, db_proxy: &dyn ModuleDbProxy) -> Result<()> {
+        let manifest_json = serde_json::to_string(self.manifest)
+            .map_err(|e| anyhow!("serialize manifest: {}", e))?;
+        let db_record_id = db_proxy
+            .create_module(
+                &self.manifest.name,
+                self.module_key,
+                &self.manifest.version,
+                &manifest_json,
+                self.archive_key,
+                &self.fn_rows,
+                self.composite_module_key,
+                self.client_id,
             )
-            .await
+            .await?;
+
+        // Record function resources in ledger. `resource_name` is the
+        // canonical id — that's the value the in-use check and any
+        // future reference resolution joins on. `manifest_id` keeps
+        // the author's local id for debugging / display.
+        for (i, f) in self.manifest.functions.iter().enumerate() {
+            let canonical = self.resolved.functions[i].canonical_id.to_string();
+            if let Err(e) = db_proxy
+                .create_module_resource(&db_record_id, "function", "", &f.id, &canonical, &self.manifest.version)
+                .await
             {
-                missing.push(format!(
-                    "workflow '{}' step #{} → action '{}' ({})",
-                    wf.canonical_id.resource_id(),
-                    si,
-                    action_canonical,
-                    e
-                ));
+                warn!("Failed to record function resource {}: {}", canonical, e);
             }
         }
+
+        // Record widget resources in ledger
+        for (i, w) in self.manifest.widgets.iter().enumerate() {
+            let canonical = self.resolved.widgets[i].canonical_id.to_string();
+            if let Err(e) = db_proxy
+                .create_module_resource(&db_record_id, "widget", "", &w.id, &canonical, &self.manifest.version)
+                .await
+            {
+                warn!("Failed to record widget resource {}: {}", canonical, e);
+            }
+        }
+
+        // Record overlay resources in ledger
+        for (i, o) in self.manifest.overlays.iter().enumerate() {
+            let canonical = self.resolved.overlays[i].canonical_id.to_string();
+            if let Err(e) = db_proxy
+                .create_module_resource(&db_record_id, "overlay", "", &o.id, &canonical, &self.manifest.version)
+                .await
+            {
+                warn!("Failed to record overlay resource {}: {}", canonical, e);
+            }
+        }
+
+        self.db_record_id = Some(db_record_id);
+        Ok(())
     }
 
-    if !missing.is_empty() {
-        return Err(anyhow!(
-            "Module depends on resources from other modules that are not installed:\n  - {}",
-            missing.join("\n  - ")
-        ));
+    async fn execute_register_triggers(&self, db_proxy: &dyn ModuleDbProxy) -> Result<()> {
+        let db_record_id = self
+            .db_record_id
+            .as_deref()
+            .expect("CreateModule runs before RegisterTriggers");
+
+        // Register triggers as a single bulk call keyed by the composite module_key.
+        // The trigger row's `event` field is the actual NATS subject
+        // the trigger fires on (publishers emit on this subject;
+        // workflows subscribe to it). The trigger's *canonical id*
+        // (`{moduleId}:trigger:{id}`) is recorded separately in the
+        // module_resources ledger as `resource_name`, and referenced
+        // from workflow `$ref` fields — never on the trigger row.
+        let trigger_inputs: Vec<_> = self.manifest.triggers.iter().map(|t| t.to_input()).collect();
+        info!(
+            "Registering {} trigger(s) for module {} (moduleKey={})",
+            trigger_inputs.len(),
+            self.module_key,
+            self.composite_module_key
+        );
+        db_proxy
+            .register_triggers(self.module_key, &self.manifest.name, &self.manifest.version, trigger_inputs, "")
+            .await?;
+
+        // Ledger rows record one resource per trigger, keyed by canonical id.
+        for (i, t) in self.manifest.triggers.iter().enumerate() {
+            let canonical = self.resolved.triggers[i].canonical_id.to_string();
+            if let Err(e) = db_proxy
+                .create_module_resource(db_record_id, "trigger", "", &t.id, &canonical, &self.manifest.version)
+                .await
+            {
+                warn!("Failed to record trigger resource {}: {}", canonical, e);
+            }
+        }
+        Ok(())
     }
 
-    Ok(())
+    async fn execute_register_actions(&self, db_proxy: &dyn ModuleDbProxy) -> Result<()> {
+        let db_record_id = self
+            .db_record_id
+            .as_deref()
+            .expect("CreateModule runs before RegisterActions");
+
+        // Register actions as a single bulk call keyed by the composite module_key.
+        // The action's `call` field is the resolved canonical function
+        // id of the action's resolved implementation.
+        let action_inputs: Vec<_> = self
+            .manifest
+            .actions
+            .iter()
+            .enumerate()
+            .map(|(i, a)| {
+                let resolved_call = match &self.resolved.actions[i].implementation {
+                    ResolvedActionImpl::Function { canonical_function_id } => canonical_function_id.to_string(),
+                };
+                a.to_input(&resolved_call)
+            })
+            .collect();
+        info!(
+            "Registering {} action(s) for module {} (moduleKey={})",
+            action_inputs.len(),
+            self.module_key,
+            self.composite_module_key
+        );
+        db_proxy
+            .register_actions(self.module_key, &self.manifest.name, &self.manifest.version, action_inputs, "")
+            .await?;
+
+        for (i, a) in self.manifest.actions.iter().enumerate() {
+            let canonical = self.resolved.actions[i].canonical_id.to_string();
+            if let Err(e) = db_proxy
+                .create_module_resource(db_record_id, "action", "", &a.id, &canonical, &self.manifest.version)
+                .await
+            {
+                warn!("Failed to record action resource {}: {}", canonical, e);
+            }
+        }
+        Ok(())
+    }
+
+    async fn execute_register_widgets(&self, db_proxy: &dyn ModuleDbProxy) -> Result<()> {
+        let widget_inputs: Vec<_> = self.manifest.widgets.iter().map(|w| w.to_input()).collect();
+        info!(
+            "Registering {} widget(s) for module {} (moduleKey={})",
+            widget_inputs.len(),
+            self.module_key,
+            self.composite_module_key
+        );
+        db_proxy
+            .register_widgets(
+                self.module_key,
+                &self.manifest.name,
+                &self.manifest.version,
+                widget_inputs,
+                self.application_id,
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn execute_register_background_tasks(&self, db_proxy: &dyn ModuleDbProxy) -> Result<()> {
+        let task_inputs: Vec<_> = self
+            .manifest
+            .background_tasks
+            .iter()
+            .map(|t| super::db_proxy::BackgroundTaskInputJson {
+                manifest_id: t.id.clone(),
+                name: t.id.clone(),
+                description: t.description.clone(),
+                function: t.function.clone(),
+                schedule: t.schedule.clone(),
+            })
+            .collect();
+        info!(
+            "Registering {} background task(s) for module {} (moduleKey={})",
+            task_inputs.len(),
+            self.module_key,
+            self.composite_module_key
+        );
+        db_proxy
+            .register_background_tasks(
+                self.module_key,
+                &self.manifest.name,
+                &self.manifest.version,
+                task_inputs,
+                self.application_id,
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn execute_register_settings(&self, db_proxy: &dyn ModuleDbProxy) -> Result<()> {
+        // "button" settings are UI-only triggers, not stored values — skip
+        // them here so we don't register a meaningless empty-string row.
+        let setting_inputs: Vec<_> = self
+            .manifest
+            .settings
+            .iter()
+            .filter(|s| s.setting_type != "button")
+            .map(|s| super::db_proxy::SettingInputJson {
+                key: s.id.clone(),
+                value: s.resolved_default(),
+                value_type: s.setting_type.clone(),
+            })
+            .collect();
+        info!("Registering {} setting(s) for module {}", setting_inputs.len(), self.module_key);
+        db_proxy
+            .register_module_settings(self.module_key, setting_inputs)
+            .await
+            .map_err(|e| anyhow!("register settings: {}", e))?;
+        Ok(())
+    }
+
+    async fn execute_register_assets(&self, db_proxy: &dyn ModuleDbProxy) -> Result<()> {
+        let db_record_id = self
+            .db_record_id
+            .as_deref()
+            .expect("CreateModule runs before RegisterAssets");
+
+        // Register module assets — same idempotent pattern as actions.
+        // `asset_keys[i]` was captured during the upload pass earlier in
+        // `run_install`, so the order matches `manifest.assets[i]`.
+        let asset_inputs: Vec<_> = self
+            .manifest
+            .assets
+            .iter()
+            .enumerate()
+            .map(|(i, a)| a.to_input(self.asset_keys[i].clone()))
+            .collect();
+        info!(
+            "Registering {} asset(s) for module {} (moduleKey={})",
+            asset_inputs.len(),
+            self.module_key,
+            self.composite_module_key
+        );
+        db_proxy
+            .register_assets(self.module_key, &self.manifest.name, &self.manifest.version, asset_inputs)
+            .await?;
+
+        for (i, a) in self.manifest.assets.iter().enumerate() {
+            let canonical = self.resolved.assets[i].canonical_id.to_string();
+            if let Err(e) = db_proxy
+                .create_module_resource(db_record_id, "asset", "", &a.id, &canonical, &self.manifest.version)
+                .await
+            {
+                warn!("Failed to record asset resource {}: {}", canonical, e);
+            }
+        }
+        Ok(())
+    }
+
+    async fn execute_register_workflow(
+        &self,
+        canonical_id: &CanonicalId,
+        db_proxy: &dyn ModuleDbProxy,
+    ) -> Result<()> {
+        let db_record_id = self
+            .db_record_id
+            .as_deref()
+            .expect("CreateModule runs before RegisterWorkflow");
+        let i = self
+            .resolved
+            .workflows
+            .iter()
+            .position(|w| &w.canonical_id == canonical_id)
+            .ok_or_else(|| anyhow!("internal: install plan references workflow {} not found in resolved manifest", canonical_id))?;
+        let wf = &self.manifest.workflows[i];
+        let resolved_wf = &self.resolved.workflows[i];
+
+        // Build the trigger context: $ref carries the canonical
+        // trigger id; event_subject carries the NATS subject the
+        // workflow engine actually subscribes to.
+        //
+        // Same-module triggers resolve via the local manifest.
+        // Cross-module triggers (canonical id pointing at another
+        // module's trigger declaration) get a db lookup to recover
+        // the trigger row's `event` field — that module must be
+        // installed first or this fails loudly.
+        let resolved_trigger_ctx = if resolved_wf.trigger.module_id() == self.resolved.module_id {
+            let trigger_local_id = resolved_wf.trigger.resource_id();
+            let trigger_event_subject = self
+                .manifest
+                .triggers
+                .iter()
+                .find(|t| t.id == trigger_local_id)
+                .map(|t| if t.event.is_empty() { t.id.clone() } else { t.event.clone() })
+                .ok_or_else(|| anyhow!(
+                    "internal: bundled workflow {} references local trigger {} not found in manifest",
+                    wf.id,
+                    trigger_local_id,
+                ))?;
+            ResolvedWorkflowTrigger {
+                trigger_ref: resolved_wf.trigger.to_string(),
+                event_subject: trigger_event_subject,
+            }
+        } else {
+            let canonical = resolved_wf.trigger.to_string();
+            let event_subject = db_proxy
+                .get_trigger_event_by_canonical_id(&canonical)
+                .await
+                .map_err(|e| anyhow!(
+                    "bundled workflow {} references trigger {} but the trigger could not be resolved (is the owning module installed?): {}",
+                    wf.id,
+                    canonical,
+                    e,
+                ))?;
+            ResolvedWorkflowTrigger { trigger_ref: canonical, event_subject }
+        };
+
+        // Build per-step context. Each step references an action
+        // by canonical id. Same-module actions resolve via the
+        // local manifest's resolved actions table. Cross-module
+        // actions get a db lookup to recover the action's `call`
+        // (a canonical function id) so the workflow step's
+        // `function` field can be baked in.
+        //
+        // We can't async-map a Vec inline, so collect step
+        // contexts in a sequential loop.
+        let mut resolved_steps_ctx: Vec<ResolvedWorkflowStep> = Vec::with_capacity(resolved_wf.step_actions.len());
+        for (si, action_canonical) in resolved_wf.step_actions.iter().enumerate() {
+            // (engine_action, function_call) — engine_action is
+            // the workflow handler name (function / alert / …);
+            // function_call is set only when engine_action is
+            // "function" (the canonical fn id to invoke).
+            let (engine_action, function_call): (String, Option<String>) =
+                if action_canonical.module_id() == self.resolved.module_id {
+                    let resolved_action = self
+                        .resolved
+                        .actions
+                        .iter()
+                        .find(|a| a.canonical_id.resource_id() == action_canonical.resource_id())
+                        .ok_or_else(|| anyhow!(
+                            "internal: bundled workflow {} step #{} references action {} not found in resolved actions",
+                            wf.id,
+                            si,
+                            action_canonical,
+                        ))?;
+                    match &resolved_action.implementation {
+                        ResolvedActionImpl::Function { canonical_function_id: cid } => {
+                            ("function".to_string(), Some(cid.to_string()))
+                        }
+                    }
+                } else {
+                    let canonical = action_canonical.to_string();
+                    let resolved_ref = db_proxy
+                        .get_action_ref_by_canonical_id(&canonical)
+                        .await
+                        .map_err(|e| anyhow!(
+                            "bundled workflow {} step #{} references action {} but the action could not be resolved (is the owning module installed?): {}",
+                            wf.id,
+                            si,
+                            canonical,
+                            e,
+                        ))?;
+                    (resolved_ref.action_type, resolved_ref.function_call)
+                };
+            resolved_steps_ctx.push(ResolvedWorkflowStep {
+                action_ref: action_canonical.to_string(),
+                engine_action,
+                function_call,
+            });
+        }
+
+        wf.register(self.module_key, db_proxy.base_url(), &resolved_trigger_ctx, &resolved_steps_ctx, &self.asset_repo_keys)
+            .await?;
+        let canonical = resolved_wf.canonical_id.to_string();
+        if let Err(e) = db_proxy
+            .create_module_resource(db_record_id, "workflow", "", &wf.id, &canonical, &self.manifest.version)
+            .await
+        {
+            warn!("Failed to record workflow resource {}: {}", canonical, e);
+        }
+        Ok(())
+    }
+
+    async fn execute_register_command(
+        &mut self,
+        canonical_id: &CanonicalId,
+        db_proxy: &dyn ModuleDbProxy,
+    ) -> Result<()> {
+        let i = self
+            .resolved
+            .commands
+            .iter()
+            .position(|c| &c.canonical_id == canonical_id)
+            .ok_or_else(|| anyhow!("internal: install plan references command {} not found in resolved manifest", canonical_id))?;
+        let cmd = &self.manifest.commands[i];
+        let resolved_cmd = &self.resolved.commands[i];
+        let resolved_workflow = resolved_cmd.workflow.as_ref().map(|c| c.to_string());
+        cmd.register(self.module_key, db_proxy.base_url(), resolved_workflow.as_deref()).await?;
+
+        // Resolved lazily and cached: today's code looks this up once,
+        // unconditionally, before the (possibly empty) commands loop;
+        // since this plan only has a `RegisterCommand` node per actual
+        // command, resolving on first use gets the same "looked up (at
+        // most) once" behavior without a synthetic non-step graph node,
+        // and skips the read entirely when there are no commands.
+        if self.module_record_id_for_commands.is_none() {
+            let mid = match db_proxy.get_module_by_name(self.module_key).await {
+                Ok(Some(resp)) => {
+                    let v: serde_json::Value = serde_json::from_str(&resp).unwrap_or_default();
+                    v.get("module").and_then(|m| m.get("id")).and_then(|v| v.as_str()).unwrap_or("").to_string()
+                }
+                _ => String::new(),
+            };
+            self.module_record_id_for_commands = Some(mid);
+        }
+        let mid = self.module_record_id_for_commands.as_deref().unwrap_or("");
+
+        let canonical = resolved_cmd.canonical_id.to_string();
+        if !mid.is_empty() {
+            if let Err(e) = db_proxy
+                .create_module_resource(mid, "command", "", &cmd.id, &canonical, &self.manifest.version)
+                .await
+            {
+                warn!("Failed to record command resource {}: {}", canonical, e);
+            }
+        }
+        Ok(())
+    }
 }
 
 pub async fn run_install<R: Repository>(
@@ -292,7 +732,7 @@ pub async fn run_install<R: Repository>(
     files: &[ModuleFile],
     repository: &R,
     archive_key: &str,
-    db_proxy_url: Option<&str>,
+    db_proxy: Option<&dyn ModuleDbProxy>,
     application_id: &str,
     cleanup_old: bool,
     composite_module_key: &str,
@@ -330,454 +770,59 @@ pub async fn run_install<R: Repository>(
     let resolved = manifest_validate::validate(manifest)
         .map_err(|e| anyhow!("manifest validation failed: {}", e))?;
 
-    if let Some(url) = db_proxy_url {
-        validate_cross_module_dependencies(url, &resolved).await?;
+    // Build the full install plan (graph + cross-module validation +
+    // topo-sort) up front, before any side effect runs — same fail-fast
+    // guarantee `validate_cross_module_dependencies` used to give on its
+    // own, now folded into plan construction (see
+    // `manifest_validate::build_install_plan`).
+    let plan = match db_proxy {
+        Some(proxy) => Some(manifest_validate::build_install_plan(manifest, &resolved, proxy).await?),
+        None => None,
+    };
 
+    if let (Some(proxy), false) = (db_proxy, cleanup_old) {
         // Diff against the previously installed version (if any) and
         // prune anything the new manifest no longer declares, before
         // registering what it does declare. This is what makes an
         // upgrade converge to exactly the new manifest's resource set
         // instead of only ever adding/updating.
-        if !cleanup_old {
-            prune_removed_resources(url, module_key, manifest).await;
-        }
+        prune_removed_resources(proxy, module_key, manifest).await;
     }
 
-    let mut fn_rows: Vec<CreateModuleFunctionJson> =
-        Vec::with_capacity(manifest.functions.len());
+    let mut state = SagaState {
+        manifest,
+        resolved: &resolved,
+        files,
+        repository,
+        module_key,
+        version_dir,
+        composite_module_key,
+        application_id,
+        client_id,
+        archive_key,
+        fn_rows: Vec::with_capacity(manifest.functions.len()),
+        asset_keys: Vec::with_capacity(manifest.assets.len()),
+        asset_repo_keys: HashMap::new(),
+        db_record_id: None,
+        module_record_id_for_commands: None,
+    };
+    state.upload_files().await?;
 
-    for f in &manifest.functions {
-        let file_key = f.upload_to_repository(&module_key, version_dir, files, repository).await?;
-        let file_name = Path::new(&f.path)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("function")
-            .to_string();
-        fn_rows.push(CreateModuleFunctionJson {
-            manifest_id: f.id.clone(),
-            name: f.name.clone(),
-            file_name,
-            file_key,
-            entry_point: f.entry_point.clone().unwrap_or_default(),
-            runtime: f.runtime.clone(),
-        });
-    }
+    if let Some(proxy) = db_proxy {
+        let plan = plan.expect("plan was built above whenever db_proxy is Some");
 
-    for w in &manifest.widgets {
-        w.upload_assets(&module_key, version_dir, files, repository).await?;
-    }
-
-    for o in &manifest.overlays {
-        o.upload_entry(&module_key, version_dir, files, repository).await?;
-    }
-
-    // Upload static assets declared in manifest.assets[]. Each asset
-    // is written to the repository under `modules/<moduleKey>/<versionDir>/<path>`
-    // (path already carries its own directory, e.g. `assets/bell.mp3`
-    // — see ManifestAsset::upload_to_repository) and the resulting key
-    // is captured for the RegisterAssets call further down.
-    let mut asset_keys: Vec<String> = Vec::with_capacity(manifest.assets.len());
-    for a in &manifest.assets {
-        let repo_key = a.upload_to_repository(&module_key, version_dir, files, repository).await?;
-        asset_keys.push(repo_key);
-    }
-    // Manifest-local asset id -> repository key, used to bake
-    // `${asset:<id>}` markers in workflow step parameters into
-    // `${woofx3_asset_url:<repositoryKey>}` at registration time (see
-    // ManifestWorkflow::register / encode_asset_url_markers).
-    let asset_repo_keys: HashMap<String, String> = manifest
-        .assets
-        .iter()
-        .zip(asset_keys.iter())
-        .map(|(a, key)| (a.id.clone(), key.clone()))
-        .collect();
-
-    if let Some(url) = db_proxy_url {
         if cleanup_old {
-            cleanup_old_version(module_key, Some(url), application_id).await?;
+            cleanup_old_version(module_key, Some(proxy), application_id).await?;
         }
 
-        // Saga-style install: every step after `create_module` must be paired
-        // with a compensating cleanup if the install fails partway through.
-        // We run the whole db-side sequence inside an async block so a single
-        // rollback path handles any failure.
+        // Saga-style install: every step after `CreateModule` must be
+        // paired with a compensating cleanup if the install fails
+        // partway through. Run the whole plan inside one async block so
+        // a single rollback path handles any step's failure.
         let install_result: Result<()> = async {
-            let manifest_json = serde_json::to_string(manifest)
-                .map_err(|e| anyhow!("serialize manifest: {}", e))?;
-            let db_record_id = create_module(
-                url,
-                &manifest.name,
-                module_key,
-                &manifest.version,
-                &manifest_json,
-                archive_key,
-                &fn_rows,
-                composite_module_key,
-                client_id,
-            )
-            .await?;
-
-            // Record function resources in ledger. `resource_name` is the
-            // canonical id — that's the value the in-use check and any
-            // future reference resolution joins on. `manifest_id` keeps
-            // the author's local id for debugging / display.
-            for (i, f) in manifest.functions.iter().enumerate() {
-                let canonical = resolved.functions[i].canonical_id.to_string();
-                if let Err(e) = create_module_resource(
-                    url, &db_record_id, "function", "", &f.id, &canonical, &manifest.version,
-                ).await {
-                    warn!("Failed to record function resource {}: {}", canonical, e);
-                }
+            for step in &plan {
+                state.execute(step, proxy).await?;
             }
-
-            // Record widget resources in ledger
-            for (i, w) in manifest.widgets.iter().enumerate() {
-                let canonical = resolved.widgets[i].canonical_id.to_string();
-                if let Err(e) = create_module_resource(
-                    url, &db_record_id, "widget", "", &w.id, &canonical, &manifest.version,
-                ).await {
-                    warn!("Failed to record widget resource {}: {}", canonical, e);
-                }
-            }
-
-            // Record overlay resources in ledger
-            for (i, o) in manifest.overlays.iter().enumerate() {
-                let canonical = resolved.overlays[i].canonical_id.to_string();
-                if let Err(e) = create_module_resource(
-                    url, &db_record_id, "overlay", "", &o.id, &canonical, &manifest.version,
-                ).await {
-                    warn!("Failed to record overlay resource {}: {}", canonical, e);
-                }
-            }
-
-            // Register triggers as a single bulk call keyed by the composite module_key.
-            // The trigger row's `event` field is the actual NATS subject
-            // the trigger fires on (publishers emit on this subject;
-            // workflows subscribe to it). The trigger's *canonical id*
-            // (`{moduleId}:trigger:{id}`) is recorded separately in the
-            // module_resources ledger as `resource_name`, and referenced
-            // from workflow `$ref` fields — never on the trigger row.
-            let trigger_inputs: Vec<_> = manifest
-                .triggers
-                .iter()
-                .map(|t| t.to_input())
-                .collect();
-            info!(
-                "Registering {} trigger(s) for module {} (moduleKey={})",
-                trigger_inputs.len(),
-                module_key,
-                composite_module_key
-            );
-            super::db_proxy::register_triggers(
-                url,
-                module_key,
-                &manifest.name,
-                &manifest.version,
-                trigger_inputs,
-                "",
-            )
-            .await?;
-
-            // Ledger rows record one resource per trigger, keyed by canonical id.
-            for (i, t) in manifest.triggers.iter().enumerate() {
-                let canonical = resolved.triggers[i].canonical_id.to_string();
-                if let Err(e) = create_module_resource(
-                    url, &db_record_id, "trigger", "", &t.id, &canonical, &manifest.version,
-                ).await {
-                    warn!("Failed to record trigger resource {}: {}", canonical, e);
-                }
-            }
-
-            // Register actions as a single bulk call keyed by the composite module_key.
-            // The action's `call` field is the resolved canonical function
-            // id of the action's resolved implementation.
-            let action_inputs: Vec<_> = manifest
-                .actions
-                .iter()
-                .enumerate()
-                .map(|(i, a)| {
-                    let resolved_call = match &resolved.actions[i].implementation {
-                        ResolvedActionImpl::Function { canonical_function_id } => {
-                            canonical_function_id.to_string()
-                        }
-                    };
-                    a.to_input(&resolved_call)
-                })
-                .collect();
-            info!(
-                "Registering {} action(s) for module {} (moduleKey={})",
-                action_inputs.len(),
-                module_key,
-                composite_module_key
-            );
-            super::db_proxy::register_actions(
-                url,
-                module_key,
-                &manifest.name,
-                &manifest.version,
-                action_inputs,
-                "",
-            )
-            .await?;
-
-            for (i, a) in manifest.actions.iter().enumerate() {
-                let canonical = resolved.actions[i].canonical_id.to_string();
-                if let Err(e) = create_module_resource(
-                    url, &db_record_id, "action", "", &a.id, &canonical, &manifest.version,
-                ).await {
-                    warn!("Failed to record action resource {}: {}", canonical, e);
-                }
-            }
-
-            if !manifest.widgets.is_empty() {
-                let widget_inputs: Vec<_> = manifest.widgets.iter().map(|w| w.to_input()).collect();
-                info!(
-                    "Registering {} widget(s) for module {} (moduleKey={})",
-                    widget_inputs.len(),
-                    module_key,
-                    composite_module_key
-                );
-                super::db_proxy::register_widgets(
-                    url,
-                    module_key,
-                    &manifest.name,
-                    &manifest.version,
-                    widget_inputs,
-                    application_id,
-                )
-                .await?;
-            }
-
-            if !manifest.background_tasks.is_empty() {
-                let task_inputs: Vec<_> = manifest.background_tasks.iter().map(|t| {
-                    super::db_proxy::BackgroundTaskInputJson {
-                        manifest_id: t.id.clone(),
-                        name: t.id.clone(),
-                        description: t.description.clone(),
-                        function: t.function.clone(),
-                        schedule: t.schedule.clone(),
-                    }
-                }).collect();
-                info!(
-                    "Registering {} background task(s) for module {} (moduleKey={})",
-                    task_inputs.len(),
-                    module_key,
-                    composite_module_key
-                );
-                super::db_proxy::register_background_tasks(
-                    url,
-                    module_key,
-                    &manifest.name,
-                    &manifest.version,
-                    task_inputs,
-                    application_id,
-                )
-                .await?;
-            }
-
-            // "button" settings are UI-only triggers, not stored values — skip
-            // them here so we don't register a meaningless empty-string row.
-            let setting_inputs: Vec<_> = manifest
-                .settings
-                .iter()
-                .filter(|s| s.setting_type != "button")
-                .map(|s| super::db_proxy::SettingInputJson {
-                    key: s.id.clone(),
-                    value: s.resolved_default(),
-                    value_type: s.setting_type.clone(),
-                })
-                .collect();
-            if !setting_inputs.is_empty() {
-                info!(
-                    "Registering {} setting(s) for module {}",
-                    setting_inputs.len(),
-                    module_key
-                );
-                super::db_proxy::register_module_settings(url, module_key, setting_inputs)
-                    .await
-                    .map_err(|e| anyhow!("register settings: {}", e))?;
-            }
-
-            // Register module assets — same idempotent pattern as
-            // actions. `asset_keys[i]` was captured during the upload
-            // pass earlier in this function, so the order matches
-            // `manifest.assets[i]`.
-            if !manifest.assets.is_empty() {
-                let asset_inputs: Vec<_> = manifest
-                    .assets
-                    .iter()
-                    .enumerate()
-                    .map(|(i, a)| a.to_input(asset_keys[i].clone()))
-                    .collect();
-                info!(
-                    "Registering {} asset(s) for module {} (moduleKey={})",
-                    asset_inputs.len(),
-                    module_key,
-                    composite_module_key
-                );
-                super::db_proxy::register_assets(
-                    url,
-                    module_key,
-                    &manifest.name,
-                    &manifest.version,
-                    asset_inputs,
-                )
-                .await?;
-
-                for (i, a) in manifest.assets.iter().enumerate() {
-                    let canonical = resolved.assets[i].canonical_id.to_string();
-                    if let Err(e) = create_module_resource(
-                        url, &db_record_id, "asset", "", &a.id, &canonical, &manifest.version,
-                    ).await {
-                        warn!("Failed to record asset resource {}: {}", canonical, e);
-                    }
-                }
-            }
-
-            for (i, wf) in manifest.workflows.iter().enumerate() {
-                let resolved_wf = &resolved.workflows[i];
-
-                // Build the trigger context: $ref carries the canonical
-                // trigger id; event_subject carries the NATS subject the
-                // workflow engine actually subscribes to.
-                //
-                // Same-module triggers resolve via the local manifest.
-                // Cross-module triggers (canonical id pointing at another
-                // module's trigger declaration) get a db lookup to recover
-                // the trigger row's `event` field — that module must be
-                // installed first or this fails loudly.
-                let resolved_trigger_ctx = if resolved_wf.trigger.module_id() == resolved.module_id {
-                    let trigger_local_id = resolved_wf.trigger.resource_id();
-                    let trigger_event_subject = manifest
-                        .triggers
-                        .iter()
-                        .find(|t| t.id == trigger_local_id)
-                        .map(|t| if t.event.is_empty() { t.id.clone() } else { t.event.clone() })
-                        .ok_or_else(|| anyhow!(
-                            "internal: bundled workflow {} references local trigger {} not found in manifest",
-                            wf.id,
-                            trigger_local_id,
-                        ))?;
-                    ResolvedWorkflowTrigger {
-                        trigger_ref: resolved_wf.trigger.to_string(),
-                        event_subject: trigger_event_subject,
-                    }
-                } else {
-                    let canonical = resolved_wf.trigger.to_string();
-                    let event_subject = super::db_proxy::get_trigger_event_by_canonical_id(
-                        url,
-                        &canonical,
-                    )
-                    .await
-                    .map_err(|e| anyhow!(
-                        "bundled workflow {} references trigger {} but the trigger could not be resolved (is the owning module installed?): {}",
-                        wf.id,
-                        canonical,
-                        e,
-                    ))?;
-                    ResolvedWorkflowTrigger {
-                        trigger_ref: canonical,
-                        event_subject,
-                    }
-                };
-
-                // Build per-step context. Each step references an action
-                // by canonical id. Same-module actions resolve via the
-                // local manifest's resolved actions table. Cross-module
-                // actions get a db lookup to recover the action's `call`
-                // (a canonical function id) so the workflow step's
-                // `function` field can be baked in.
-                //
-                // We can't async-map a Vec inline, so collect step
-                // contexts in a sequential loop.
-                let mut resolved_steps_ctx: Vec<ResolvedWorkflowStep> =
-                    Vec::with_capacity(resolved_wf.step_actions.len());
-                for (si, action_canonical) in resolved_wf.step_actions.iter().enumerate() {
-                    // (engine_action, function_call) — engine_action is
-                    // the workflow handler name (function / alert / …);
-                    // function_call is set only when engine_action is
-                    // "function" (the canonical fn id to invoke).
-                    let (engine_action, function_call): (String, Option<String>) =
-                        if action_canonical.module_id() == resolved.module_id {
-                            let resolved_action = resolved
-                                .actions
-                                .iter()
-                                .find(|a| a.canonical_id.resource_id() == action_canonical.resource_id())
-                                .ok_or_else(|| anyhow!(
-                                    "internal: bundled workflow {} step #{} references action {} not found in resolved actions",
-                                    wf.id,
-                                    si,
-                                    action_canonical,
-                                ))?;
-                            match &resolved_action.implementation {
-                                ResolvedActionImpl::Function { canonical_function_id: cid } => {
-                                    ("function".to_string(), Some(cid.to_string()))
-                                }
-                            }
-                        } else {
-                            let canonical = action_canonical.to_string();
-                            let resolved_ref = super::db_proxy::get_action_ref_by_canonical_id(url, &canonical)
-                                .await
-                                .map_err(|e| anyhow!(
-                                    "bundled workflow {} step #{} references action {} but the action could not be resolved (is the owning module installed?): {}",
-                                    wf.id,
-                                    si,
-                                    canonical,
-                                    e,
-                                ))?;
-                            (resolved_ref.action_type, resolved_ref.function_call)
-                        };
-                    resolved_steps_ctx.push(ResolvedWorkflowStep {
-                        action_ref: action_canonical.to_string(),
-                        engine_action,
-                        function_call,
-                    });
-                }
-
-                wf.register(
-                    module_key,
-                    url,
-                    &resolved_trigger_ctx,
-                    &resolved_steps_ctx,
-                    &asset_repo_keys,
-                )
-                .await?;
-                let canonical = resolved_wf.canonical_id.to_string();
-                if let Err(e) = create_module_resource(
-                    url, &db_record_id, "workflow", "", &wf.id, &canonical, &manifest.version,
-                ).await {
-                    warn!("Failed to record workflow resource {}: {}", canonical, e);
-                }
-            }
-
-            // module_id may have been set above; retrieve it for resource tracking
-            let mid = match super::db_proxy::get_module_by_name(url, module_key).await {
-                Ok(Some(resp)) => {
-                    let v: serde_json::Value = serde_json::from_str(&resp).unwrap_or_default();
-                    v.get("module").and_then(|m| m.get("id")).and_then(|v| v.as_str()).unwrap_or("").to_string()
-                }
-                _ => String::new(),
-            };
-
-            for (i, cmd) in manifest.commands.iter().enumerate() {
-                let resolved_cmd = &resolved.commands[i];
-                let resolved_workflow = resolved_cmd.workflow.as_ref().map(|c| c.to_string());
-                cmd.register(
-                    module_key,
-                    url,
-                    resolved_workflow.as_deref(),
-                )
-                .await?;
-                let canonical = resolved_cmd.canonical_id.to_string();
-                if !mid.is_empty() {
-                    if let Err(e) = create_module_resource(
-                        url, &mid, "command", "", &cmd.id, &canonical, &manifest.version,
-                    ).await {
-                        warn!("Failed to record command resource {}: {}", canonical, e);
-                    }
-                }
-            }
-
             Ok(())
         }
         .await;
@@ -787,7 +832,7 @@ pub async fn run_install<R: Repository>(
                 "install failed for module {} ({}): rolling back db state: {}",
                 manifest.name, composite_module_key, e
             );
-            rollback_db_install(url, module_key, &manifest.name, application_id).await;
+            rollback_db_install(proxy, module_key, &manifest.name, application_id).await;
             return Err(e);
         }
     } else {
@@ -808,10 +853,143 @@ pub async fn run_install<R: Repository>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::db_proxy_client::FakeDbProxyClient;
     use crate::services::module_service::module_file::{
         ModuleFile, ModuleFileKind, ModuleValidManifestKind, ModuleValidProgramKind,
     };
     use lib_repository::{FileRepository, FileRepositoryConfig, Repository};
+
+    // ---------------------------------------------------------------
+    // Install plan execution against a fake db-proxy: the coverage gap
+    // this whole refactor exists to close — the saga's partial-failure
+    // rollback path had zero direct tests before this (the only prior
+    // integration-style tests passed `db_proxy_url: None`, skipping the
+    // entire branch). Manifests here deliberately have no
+    // workflows/commands: `RegisterWorkflow`/`RegisterCommand` aren't
+    // part of the `ModuleDbProxy` seam (see its `base_url` doc comment)
+    // and would attempt a real network call.
+    // ---------------------------------------------------------------
+
+    fn fault_test_manifest(id: &str) -> (ModuleManifest, Vec<u8>) {
+        let manifest_json = format!(
+            r#"{{
+                "id": "{id}",
+                "name": "Test Mod",
+                "version": "1.0.0",
+                "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus" }}],
+                "functions": [{{ "id": "f1", "name": "F1", "runtime": "lua", "path": "functions/f1.lua" }}],
+                "actions": [{{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }}]
+            }}"#
+        )
+        .into_bytes();
+        let manifest: ModuleManifest = serde_json::from_slice(&manifest_json).expect("manifest");
+        (manifest, manifest_json)
+    }
+
+    #[tokio::test]
+    async fn install_with_db_proxy_runs_create_module_then_triggers_then_actions_in_order() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = fault_test_manifest("fault-mod-1");
+        let files = vec![
+            ModuleFile::new("module.json".into(), ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON), manifest_json.clone()),
+            ModuleFile::new("functions/f1.lua".into(), ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA), b"return 1".to_vec()),
+        ];
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        let db_proxy = FakeDbProxyClient::new();
+        run_install(
+            &manifest, &files, &repo, "archives/fault-mod-1.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy), "", false, &mid, "",
+        )
+        .await
+        .expect("install should succeed against a fake with no configured failures");
+
+        // create_module (+ its embedded function ledger write) before
+        // triggers before actions — the exact order `InstallStep::phase`
+        // documents.
+        let calls = db_proxy.calls();
+        let idx = |name: &str| calls.iter().position(|c| c == name).unwrap_or_else(|| panic!("{name} not called: {calls:?}"));
+        assert!(idx("create_module") < idx("register_triggers"));
+        assert!(idx("register_triggers") < idx("register_actions"));
+    }
+
+    #[tokio::test]
+    async fn install_failure_after_create_module_triggers_full_rollback() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = fault_test_manifest("fault-mod-2");
+        let files = vec![
+            ModuleFile::new("module.json".into(), ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON), manifest_json.clone()),
+            ModuleFile::new("functions/f1.lua".into(), ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA), b"return 1".to_vec()),
+        ];
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        let db_proxy = FakeDbProxyClient::failing_on(["register_actions"]);
+        let err = run_install(
+            &manifest, &files, &repo, "archives/fault-mod-2.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy), "", false, &mid, "",
+        )
+        .await
+        .expect_err("install should fail when register_actions fails");
+        assert!(err.to_string().contains("register_actions"), "got: {err}");
+
+        let calls = db_proxy.calls();
+        let rollback_start = calls.iter().position(|c| c == "register_actions").expect("register_actions was attempted") + 1;
+        assert_eq!(
+            &calls[rollback_start..],
+            &[
+                "delete_triggers_by_module_id",
+                "delete_actions_by_module_id",
+                "delete_widgets_by_module_id",
+                "delete_background_tasks_by_module_id",
+                "delete_workflows_by_module",
+                "delete_commands_by_module",
+                "delete_module",
+            ],
+            "rollback_db_install's exact compensating sequence must run after any post-CreateModule failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn install_failure_before_create_module_does_not_roll_back() {
+        // A failure resolving a cross-module reference aborts inside
+        // `build_install_plan`, before any db-proxy write — there is
+        // nothing to compensate for, so `delete_module` etc. must never
+        // be called.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        repo.setup().expect("setup");
+
+        let manifest_json = br#"{
+            "id": "fault-mod-3",
+            "name": "Test Mod",
+            "version": "1.0.0",
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "other_mod:trigger:missing", "steps": [] }]
+        }"#;
+        let files = vec![ModuleFile::new(
+            "module.json".into(),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+            manifest_json.to_vec(),
+        )];
+        let manifest: ModuleManifest = serde_json::from_slice(manifest_json).expect("manifest");
+        let mid = manifest.compute_module_key(manifest_json);
+
+        let db_proxy = FakeDbProxyClient::failing_on(["get_trigger_event_by_canonical_id"]);
+        let err = run_install(
+            &manifest, &files, &repo, "archives/fault-mod-3.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy), "", false, &mid, "",
+        )
+        .await
+        .expect_err("unresolvable cross-module trigger must fail install");
+        assert!(err.to_string().contains("not installed"), "got: {err}");
+        // Only the failing lookup itself ran — no write, and no rollback.
+        assert_eq!(db_proxy.calls(), vec!["get_trigger_event_by_canonical_id".to_string()]);
+    }
 
     /// Mirrors `run_install`'s `version_dir` derivation, for tests that
     /// need to predict the version-scoped storage path a given

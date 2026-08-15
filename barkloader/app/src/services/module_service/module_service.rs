@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use lib_repository::Repository;
 
+use super::db_proxy_client::HttpDbProxyClient;
 use super::module_file::ModuleFile;
 use super::module_install::run_install;
 use super::module_manifest::ModuleManifest;
@@ -108,12 +109,13 @@ where
             .stored_manifest
             .as_ref()
             .ok_or_else(|| anyhow!("execute_plan: manifest not loaded; call create_plan first"))?;
+        let client = db_proxy_url.map(HttpDbProxyClient::new);
         run_install(
             manifest,
             &self.files,
             &self.repository,
             archive_key,
-            db_proxy_url,
+            client.as_ref().map(|c| c as &dyn super::db_proxy_client::ModuleDbProxy),
             application_id,
             cleanup_old,
             composite_module_key,
