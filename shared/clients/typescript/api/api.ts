@@ -1,6 +1,6 @@
 // Shared API Types for woofx3 UI and Backend
 
-import type { ActionDefinition, ResourceInstanceDefinition, TriggerDefinition } from "./webhooks";
+import type { ActionDefinition, ModuleResourceUsage, ResourceInstanceDefinition, TriggerDefinition } from "./webhooks";
 import type { WorkflowDefinition } from "./workflow-definition";
 
 // ==================== User & Auth ====================
@@ -774,6 +774,13 @@ export interface Woofx3EngineApi {
   uninstallEngineModule(name: string, context?: { moduleKey?: string }): Promise<UninstallModuleResponse>;
 
   /**
+   * Every `module_resources` row owned by this module that is still referenced
+   * by an external workflow, command, or other consumer. Empty when nothing
+   * outside the module depends on it. Keyed by composite `moduleKey`.
+   */
+  checkModuleResourceUsage(moduleKey: string): Promise<ModuleResourceUsage[]>;
+
+  /**
    * Module-level settings declared in the manifest (`settings[]`), registered
    * at install time and read back by sandboxed functions as `ctx.module.settings`.
    * `moduleId` is the manifest-local module id (same id `ctx.module.id`
@@ -828,6 +835,17 @@ export interface Woofx3EngineApi {
    * relying solely on the create/delete webhooks above.
    */
   listAllResourceInstances(): Promise<ResourceInstanceDefinition[]>;
+
+  /**
+   * Resource instances owned by one installed module (keyed by composite
+   * `moduleKey`). Used by the module detail RESOURCES tab. Optional
+   * `moduleName` is a fallback when the composite key does not match the
+   * engine row (e.g. reinstall hash drift).
+   */
+  listResourceInstancesForModule(
+    moduleKey: string,
+    moduleName?: string
+  ): Promise<ResourceInstanceDefinition[]>;
 
   // Triggers & actions catalog
   getTriggers(createdByType?: string, createdByRef?: string): Promise<TriggerDefinition[]>;

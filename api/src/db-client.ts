@@ -273,6 +273,42 @@ async listWidgetStatus(
     }
   }
 
+  /**
+   * Resources owned by this module that are still referenced externally
+   * (workflows, commands, etc.). `moduleId` is the engine modules.id UUID.
+   */
+  async checkModuleResourceUsage(
+    moduleId: string,
+    applicationId = ""
+  ): Promise<
+    Array<{
+      resourceId: string;
+      resourceType: string;
+      resourceName: string;
+      resourceDisplayName?: string;
+      usedBy: Array<{
+        sourceType: string;
+        sourceId: string;
+        sourceName: string;
+        context: string;
+      }>;
+    }>
+  > {
+    const resp = await module.CheckModuleResourceUsage({ moduleId, applicationId }, this.config);
+    return (resp.inUse ?? []).map((row) => ({
+      resourceId: row.resourceId,
+      resourceType: row.resourceType,
+      resourceName: row.resourceName,
+      resourceDisplayName: row.resourceDisplayName || undefined,
+      usedBy: (row.usedBy ?? []).map((u) => ({
+        sourceType: u.sourceType,
+        sourceId: u.sourceId,
+        sourceName: u.sourceName,
+        context: u.context,
+      })),
+    }));
+  }
+
   async listTriggers(createdByType?: string, createdByRef?: string): Promise<module_trigger.Trigger[]> {
     const resp = await module.ListTriggers(
       { createdByType: createdByType ?? "", createdByRef: createdByRef ?? "" },
@@ -435,5 +471,11 @@ async listWidgetStatus(
     req: module_resource_instance.ListAllResourceInstancesRequest
   ): Promise<module_resource_instance.ListResourceInstancesResponse> {
     return module.ListAllResourceInstances(req, this.config);
+  }
+
+  async listResourceInstancesByModule(
+    moduleId: string
+  ): Promise<module_resource_instance.ListResourceInstancesResponse> {
+    return module.ListResourceInstancesByModule({ moduleId }, this.config);
   }
 }

@@ -1,4 +1,9 @@
-import type { ModuleSetting, ModuleSettingsResponse, ResourceInstanceDefinition } from "@woofx3/api";
+import type {
+  ModuleSetting,
+  ModuleSettingsResponse,
+  ModuleResourceUsage,
+  ResourceInstanceDefinition,
+} from "@woofx3/api";
 import { ApiRouteHost } from "./context";
 import { readModuleCatalogFields } from "./helpers";
 import type { UninstallModuleResponse } from "./types";
@@ -315,6 +320,22 @@ export const modulesRoutes = {
   },
 
   /**
+   * Returns every module_resources row owned by this module that is still
+   * referenced by an external workflow, command, or other consumer. Keyed
+   * by composite `moduleKey` so the UI does not need the engine UUID.
+   */
+  async checkModuleResourceUsage(moduleKey: string): Promise<ModuleResourceUsage[]> {
+    if (!moduleKey) {
+      throw new Error("checkModuleResourceUsage: moduleKey is required");
+    }
+    const found = await this.db.getModuleByModuleKey(moduleKey);
+    if (!found) {
+      throw new Error(`checkModuleResourceUsage: no module found for moduleKey "${moduleKey}"`);
+    }
+    return this.db.checkModuleResourceUsage(found.id, this.applicationId ?? "");
+  },
+
+  /**
    * `moduleId` is the manifest-local module id (same id `ctx.module.id`
    * resolves to at runtime), not the composite moduleKey used for install/
    * uninstall. Listing a module with no registered settings returns an
@@ -434,6 +455,52 @@ export const modulesRoutes = {
       displayName: instance.displayName,
       canonicalId: instance.canonicalId,
       moduleKey: instance.moduleKey,
+    }));
+  },
+
+  /**
+   * Resource instances owned by a single installed module, keyed by composite
+   * `moduleKey`. Used by the UI RESOURCES tab so it can show engine-backed
+   * rows even when a create webhook was missed. Optional `moduleName` falls
+   * back when the composite key does not match the engine modules row
+   * (reinstall hash drift, manual installs, etc.).
+   */
+  async listResourceInstancesForModule(
+    moduleKey: string,
+    moduleName?: string
+  ): Promise<ResourceInstanceDefinition[]> {
+    if (!moduleKey && !moduleName) {
+      throw new Error("listResourceInstancesForModule: moduleKey or moduleName is required");
+    }
+
+    let found = moduleKey ? await this.db.getModuleByModuleKey(moduleKey) : null;
+    if (!found && moduleName) {
+      found = await this.db.getModuleByName(moduleName);
+    }
+    if (!found && moduleKey) {
+      const manifestId = moduleKey.split(":")[0];
+      if (manifestId) {
+        found = await this.db.getModuleByName(manifestId);
+      }
+    }
+    if (!found) {
+      throw new Error(
+        `listResourceInstancesForModule: no module found for moduleKey "${moduleKey}"` +
+          (moduleName ? ` / moduleName "${moduleName}"` : "")
+      );
+    }
+
+    const response = await this.db.listResourceInstancesByModule(found.id);
+    const resolvedKey = found.moduleKey || moduleKey || "";
+    return (response.instances ?? []).map((instance) => ({
+      id: instance.id,
+      moduleId: instance.moduleId,
+      moduleName: instance.moduleName,
+      kind: instance.kind,
+      instanceId: instance.instanceId,
+      displayName: instance.displayName,
+      canonicalId: instance.canonicalId,
+      moduleKey: instance.moduleKey || resolvedKey,
     }));
   },
 };
