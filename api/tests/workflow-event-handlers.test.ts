@@ -4,7 +4,7 @@ import {
   parseWorkflowCreated,
   parseWorkflowDeleted,
   parseWorkflowUpdated,
-} from "./workflow-event-handlers";
+} from "../src/workflow-event-handlers";
 
 const sampleSteps = JSON.stringify([
   {

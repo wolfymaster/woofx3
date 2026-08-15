@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readModuleCatalogFields } from "./api";
+import { readModuleCatalogFields } from "../src/api";
 
 describe("readModuleCatalogFields", () => {
   test("returns author and taxonomy from a well-formed manifest", () => {

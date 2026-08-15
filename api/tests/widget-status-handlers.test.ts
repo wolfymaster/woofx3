@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { EngineEventType } from "@woofx3/api/webhooks";
-import { initWidgetStatusHandlers, parseWidgetStatusUpdated } from "./widget-status-handlers";
+import { initWidgetStatusHandlers, parseWidgetStatusUpdated } from "../src/widget-status-handlers";
 
 describe("parseWidgetStatusUpdated", () => {
   it("maps snake_case NATS payload to the WidgetStatusChangedEvent shape", () => {

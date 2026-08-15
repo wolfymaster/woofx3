@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { initOverlayTokenHandlers } from "./overlay-token-handlers";
+import { initOverlayTokenHandlers } from "../src/overlay-token-handlers";
 
 // ---------------------------------------------------------------------------
 // Test infrastructure: minimal stubs for NATSClient and WebhookClient

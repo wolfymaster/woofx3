@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { createHmac } from "node:crypto";
-import { ConvexWebhookClient } from "./convex-webhook-client";
+import { ConvexWebhookClient } from "../src/convex-webhook-client";
 
 function fakeLogger() {
   return {

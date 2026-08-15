@@ -9,7 +9,7 @@ import {
   parseModuleActionRegistered,
   parseModuleWidgetRegistered,
   parseModuleWidgetDeregistered,
-} from "./module-event-handlers";
+} from "../src/module-event-handlers";
 
 describe("parseModuleTriggerRegistered", () => {
   test("maps snake_case NATS payload to camelCase webhook shape", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { EngineEventType } from "@woofx3/api/webhooks";
-import { initAlertLogHandlers, parseAlertCreated, parseAlertUpdated } from "./alert-log-handlers";
+import { initAlertLogHandlers, parseAlertCreated, parseAlertUpdated } from "../src/alert-log-handlers";
 
 const APP_ID = "11111111-1111-1111-1111-111111111111";
 const ALERT_ID = "22222222-2222-2222-2222-222222222222";

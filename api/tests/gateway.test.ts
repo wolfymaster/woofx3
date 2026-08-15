@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
-import { ApiGateway } from "./gateway";
-import { Api } from "./api";
-import { WebhookClient } from "./webhook-client";
+import { ApiGateway } from "../src/gateway";
+import { Api } from "../src/api";
+import { WebhookClient } from "../src/webhook-client";
 
 function fakeLogger() {
   return {

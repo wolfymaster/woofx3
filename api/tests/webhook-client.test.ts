@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { WebhookClient } from "./webhook-client";
+import { WebhookClient } from "../src/webhook-client";
 
 function fakeLogger() {
   return {

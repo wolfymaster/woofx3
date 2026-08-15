@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { Api } from "./api";
+import { Api } from "../src/api";
 
 function fakeLogger() {
   return {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { validateWorkflowDefinition } from "./validate-definition";
+import { validateWorkflowDefinition } from "../../src/workflow/validate-definition";
 
 describe("validateWorkflowDefinition", () => {
   test("accepts a minimal valid definition", () => {

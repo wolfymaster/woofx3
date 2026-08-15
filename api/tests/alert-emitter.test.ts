@@ -8,7 +8,7 @@ import {
   mapStreamOnline,
   mapSubGift,
   mapSubscribe,
-} from "./alert-emitter";
+} from "../src/alert-emitter";
 import type { Msg } from "@woofx3/nats/src/types";
 
 function fakeLogger() {
