@@ -1,83 +1,41 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/go-gormigrate/gormigrate/v2"
-	"github.com/wolfymaster/woofx3/db/database/migrate/migrations"
+	"github.com/wolfymaster/woofx3/db/database"
+	"github.com/wolfymaster/woofx3/db/database/migrate/migrations/postgres"
+	"github.com/wolfymaster/woofx3/db/database/migrate/migrations/sqlite"
 	"gorm.io/gorm"
 )
 
-// Migrate runs all database migrations
-func Migrate(db *gorm.DB) error {
-	m := gormigrate.New(db, gormigrate.DefaultOptions, []*gormigrate.Migration{
-		migrations.CreateInitialSchema(),
-		migrations.AddCanonicalIDColumns(),
-		migrations.AddActionTypeColumn(),
-		migrations.AddWorkflowManifestIDColumn(),
-		migrations.AddWorkflowEnabledColumn(),
-		migrations.CreateScenesTable(),
-		migrations.CreateAssetsTable(),
-		migrations.CreateAlertsTable(),
-		migrations.CreateModuleResourceInstancesTable(),
-		migrations.AddAlertLifecycle(),
-		migrations.CreateWidgetStatusTable(),
-		migrations.CreateModuleWidgetsTable(),
-		migrations.AddApplicationIDColumns(),
-		migrations.DropLegacyCreatedByColumns(),
-		migrations.AddModulesModuleIDColumn(),
-		migrations.RenameModuleWidgetsToWidgets(),
-		migrations.CreateOverlayTokensTable(),
-		migrations.AddWidgetEntryColumn(),
-		migrations.CreateBackgroundTasksTable(),
-		migrations.CreateModuleSettingsTables(),
-		migrations.CreateCommandGroupsTables(),
-		migrations.NormalizeCommandTypes(),
-		migrations.AddCommandArgumentPatternColumn(),
-		migrations.AddTaxonomyColumns(),
-		migrations.AddActionOutputSchemaColumn(),
-		migrations.AddWorkflowDefinitionsUniqueConstraint(),
-		migrations.BackfillModuleCreatedByRef(),
-		migrations.AddArchivedAtColumns(),
-		migrations.CreateSceneEventsTables(),
-		migrations.RenameOverlayPublicUrlSetting(),
-	})
-
-	return m.Migrate()
+// MigrationsFor returns the dialect-specific migration chain.
+func MigrationsFor(dialect database.Dialect) ([]*gormigrate.Migration, error) {
+	switch dialect {
+	case database.DialectPostgres:
+		return postgres.All(), nil
+	case database.DialectSQLite:
+		return sqlite.All(), nil
+	default:
+		return nil, fmt.Errorf("no migrations registered for dialect %q", dialect)
+	}
 }
 
-// Rollback rolls back the last migration
-func Rollback(db *gorm.DB) error {
-	m := gormigrate.New(db, gormigrate.DefaultOptions, []*gormigrate.Migration{
-		migrations.CreateInitialSchema(),
-		migrations.AddCanonicalIDColumns(),
-		migrations.AddActionTypeColumn(),
-		migrations.AddWorkflowManifestIDColumn(),
-		migrations.AddWorkflowEnabledColumn(),
-		migrations.CreateScenesTable(),
-		migrations.CreateAssetsTable(),
-		migrations.CreateAlertsTable(),
-		migrations.CreateModuleResourceInstancesTable(),
-		migrations.AddAlertLifecycle(),
-		migrations.CreateWidgetStatusTable(),
-		migrations.CreateModuleWidgetsTable(),
-		migrations.AddApplicationIDColumns(),
-		migrations.DropLegacyCreatedByColumns(),
-		migrations.AddModulesModuleIDColumn(),
-		migrations.RenameModuleWidgetsToWidgets(),
-		migrations.CreateOverlayTokensTable(),
-		migrations.AddWidgetEntryColumn(),
-		migrations.CreateBackgroundTasksTable(),
-		migrations.CreateModuleSettingsTables(),
-		migrations.CreateCommandGroupsTables(),
-		migrations.NormalizeCommandTypes(),
-		migrations.AddCommandArgumentPatternColumn(),
-		migrations.AddTaxonomyColumns(),
-		migrations.AddActionOutputSchemaColumn(),
-		migrations.AddWorkflowDefinitionsUniqueConstraint(),
-		migrations.BackfillModuleCreatedByRef(),
-		migrations.AddArchivedAtColumns(),
-		migrations.CreateSceneEventsTables(),
-		migrations.RenameOverlayPublicUrlSetting(),
-	})
+// Migrate runs all migrations for the dialect of the open connection.
+func Migrate(db *gorm.DB, dialect database.Dialect) error {
+	migrations, err := MigrationsFor(dialect)
+	if err != nil {
+		return err
+	}
+	return gormigrate.New(db, gormigrate.DefaultOptions, migrations).Migrate()
+}
 
-	return m.RollbackLast()
+// Rollback rolls back the last migration for the dialect of the open connection.
+func Rollback(db *gorm.DB, dialect database.Dialect) error {
+	migrations, err := MigrationsFor(dialect)
+	if err != nil {
+		return err
+	}
+	return gormigrate.New(db, gormigrate.DefaultOptions, migrations).RollbackLast()
 }

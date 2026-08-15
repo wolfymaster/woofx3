@@ -1,10 +1,12 @@
 package database
 
 import (
+	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/dgraph-io/badger/v3"
+	"github.com/glebarez/sqlite"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/driver/postgres"
@@ -13,15 +15,44 @@ import (
 	"gorm.io/gorm/schema"
 )
 
-// InitializeDB initializes the database with the given DSN and logger
+// InitializeDB opens the system database using the dialector matching the URL
+// scheme (postgresql:// / postgres:// → Postgres; sqlite:// → SQLite).
+//
+// Note: gormigrate SQL under database/migrate is still Postgres-dialect. SQLite
+// is suitable for GORM usage and tests; running those migrations against
+// SQLite will fail until dual-dialect migrations exist.
 func InitializeDB(dsn string, slogger *slog.Logger) (*gorm.DB, error) {
-	// slog logger
+	parsed, err := ParseDatabaseURL(dsn)
+	if err != nil {
+		return nil, err
+	}
+
 	slogAdapter := NewSlogAdapter(slogger, logger.Config{
 		SlowThreshold:             200 * time.Millisecond,
 		LogLevel:                  logger.Info,
 		IgnoreRecordNotFoundError: true,
 		Colorful:                  false,
 	})
+
+	gormCfg := &gorm.Config{
+		Logger: slogAdapter,
+		NamingStrategy: schema.NamingStrategy{
+			SingularTable: true,
+		},
+	}
+
+	switch parsed.Dialect {
+	case DialectPostgres:
+		return openPostgres(parsed.DriverDSN, gormCfg, slogger)
+	case DialectSQLite:
+		return openSQLite(parsed.DriverDSN, gormCfg, slogger)
+	default:
+		return nil, fmt.Errorf("unhandled database dialect %q", parsed.Dialect)
+	}
+}
+
+func openPostgres(dsn string, gormCfg *gorm.Config, slogger *slog.Logger) (*gorm.DB, error) {
+	slogger.Info("Opening system database", "dialect", DialectPostgres)
 
 	// The configured DSN may point at a PgBouncer-style transaction pooler
 	// (e.g. Neon's "-pooler" endpoint), which routes each statement to a
@@ -42,18 +73,11 @@ func InitializeDB(dsn string, slogger *slog.Logger) (*gorm.DB, error) {
 
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		Conn: stdlib.OpenDB(*pgxConfig),
-	}), &gorm.Config{
-		Logger: slogAdapter,
-		NamingStrategy: schema.NamingStrategy{
-			SingularTable: true,
-		},
-	})
-
+	}), gormCfg)
 	if err != nil {
 		return nil, err
 	}
 
-	// Get underlying SQL DB to set connection pool parameters
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, err
@@ -67,11 +91,34 @@ func InitializeDB(dsn string, slogger *slog.Logger) (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(10)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
-	// Enable UUID extension if it's not already enabled
-	db.Exec("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"")
+	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error; err != nil {
+		return nil, fmt.Errorf("enable uuid-ossp extension: %w", err)
+	}
 
-	// TODO: Enable
-	// db.AutoMigrate(&User{}, &Setting{}, &UserEvent{}, &UserMessage{})
+	return db, nil
+}
+
+func openSQLite(path string, gormCfg *gorm.Config, slogger *slog.Logger) (*gorm.DB, error) {
+	slogger.Info("Opening system database", "dialect", DialectSQLite, "path", path)
+
+	db, err := gorm.Open(sqlite.Open(path), gormCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+
+	// SQLite is process-local; a single writer is the safe default.
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
+
+	// Foreign keys are off by default in SQLite; match Postgres expectations.
+	if err := db.Exec("PRAGMA foreign_keys = ON").Error; err != nil {
+		return nil, fmt.Errorf("enable sqlite foreign_keys: %w", err)
+	}
 
 	return db, nil
 }

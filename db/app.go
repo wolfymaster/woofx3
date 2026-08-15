@@ -81,11 +81,11 @@ func (a *DatabaseApp) Init(ctx context.Context) error {
 	services := a.Context().Services
 
 	// Type-safe service access without casting - thanks to generics!
-	if postgresSvc, ok := services["postgres"]; ok {
-		if typedSvc, ok := postgresSvc.(interface{ Client() *gorm.DB }); ok {
+	if databaseSvc, ok := services["database"]; ok {
+		if typedSvc, ok := databaseSvc.(interface{ Client() *gorm.DB }); ok {
 			a.db = typedSvc.Client()
 		} else {
-			a.logger.Warn("Postgres service does not implement Client() *gorm.DB")
+			a.logger.Warn("Database service does not implement Client() *gorm.DB")
 		}
 	}
 

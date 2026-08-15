@@ -27,17 +27,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Initialize database connection
+	parsed, err := db.ParseDatabaseURL(*dbURL)
+	if err != nil {
+		logger.Info("Invalid database URL", "error", err)
+		os.Exit(1)
+	}
+
 	database, err := db.InitializeDB(*dbURL, logger)
 	if err != nil {
 		logger.Info("Failed to connect to database", "error", err)
 		os.Exit(1)
 	}
 
+	logger.Info("Selected migration dialect", "dialect", parsed.Dialect)
+
 	switch *cmd {
 	case "up":
 		logger.Info("Running migrations...")
-		if err := Migrate(database); err != nil {
+		if err := Migrate(database, parsed.Dialect); err != nil {
 			logger.Info("Migration failed", "error", err)
 			os.Exit(1)
 		}
@@ -45,7 +52,7 @@ func main() {
 
 	case "down":
 		logger.Info("Rolling back last migration...")
-		if err := Rollback(database); err != nil {
+		if err := Rollback(database, parsed.Dialect); err != nil {
 			logger.Info("Rollback failed", "error", err)
 			os.Exit(1)
 		}

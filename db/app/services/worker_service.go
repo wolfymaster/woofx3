@@ -17,7 +17,7 @@ import (
 type WorkerService struct {
 	*runtime.BaseService[*WorkerService]
 	logger          *slog.Logger
-	postgresSvc     *PostgresService
+	databaseSvc     *DatabaseService
 	natsSvc         *service.NATSService
 	db              *gorm.DB
 	natsConn        *nats.Conn
@@ -29,11 +29,11 @@ type WorkerService struct {
 	eventPublisher  *workers.EventPublisher
 }
 
-func NewWorkerService(logger *slog.Logger, postgresSvc *PostgresService, natsSvc *service.NATSService) *WorkerService {
+func NewWorkerService(logger *slog.Logger, databaseSvc *DatabaseService, natsSvc *service.NATSService) *WorkerService {
 	svc := &WorkerService{
-		BaseService: runtime.NewBaseServiceWithDeps[*WorkerService]("workers", "workers", nil, false, []string{"postgres", "nats"}), // Workers don't need external heartbeat monitoring
+		BaseService: runtime.NewBaseServiceWithDeps[*WorkerService]("workers", "workers", nil, false, []string{"database", "nats"}),
 		logger:      logger,
-		postgresSvc: postgresSvc,
+		databaseSvc: databaseSvc,
 		natsSvc:     natsSvc,
 	}
 	// Initialize client after struct creation
@@ -44,9 +44,9 @@ func NewWorkerService(logger *slog.Logger, postgresSvc *PostgresService, natsSvc
 func (s *WorkerService) Connect(ctx context.Context, appCtx *runtime.ApplicationContext) error {
 	s.logger.Info("Initializing worker service")
 
-	s.db = s.postgresSvc.Client()
+	s.db = s.databaseSvc.Client()
 	if s.db == nil {
-		return fmt.Errorf("postgres service has no client; check service connect order")
+		return fmt.Errorf("database service has no client; check service connect order")
 	}
 
 	s.natsConn = s.natsSvc.Connection()

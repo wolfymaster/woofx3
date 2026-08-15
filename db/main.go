@@ -63,8 +63,8 @@ func main() {
 				}
 			}
 
-			postgresSvc := services.NewPostgresService(databaseURL, logger)
-			if err := application.Register("postgres", postgresSvc); err != nil {
+			databaseSvc := services.NewDatabaseService(databaseURL, logger)
+			if err := application.Register("database", databaseSvc); err != nil {
 				return err
 			}
 
@@ -77,7 +77,7 @@ func main() {
 				return err
 			}
 
-			workerSvc := services.NewWorkerService(logger, postgresSvc, natsSvc)
+			workerSvc := services.NewWorkerService(logger, databaseSvc, natsSvc)
 			if err := application.Register("workers", workerSvc); err != nil {
 				return err
 			}
