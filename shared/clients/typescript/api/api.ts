@@ -707,18 +707,6 @@ export interface Woofx3EngineApi {
   // Client Management
   deleteClient(clientId: string): Promise<{ success: boolean; message: string }>;
 
-  // User & Auth
-  getUser(): Promise<User>;
-
-  // Teams
-  getTeams(): Promise<Team[]>;
-  getTeam(id: string): Promise<Team | null>;
-  getTeamMembers(teamId: string): Promise<TeamMember[]>;
-
-  // Accounts
-  getAccounts(teamId?: string): Promise<Account[]>;
-  getAccount(id: string): Promise<Account | null>;
-
   // Modules — catalog + async install/uninstall lifecycle
   getModules(query?: ModulesQuery): Promise<PaginatedModules>;
   getModule(id: string): Promise<Module | null>;
@@ -899,18 +887,6 @@ export interface Woofx3EngineApi {
     correlationKey: string
   ): Promise<{ dispatched: boolean }>;
 
-  // Assets
-  getAssets(query?: AssetsQuery): Promise<PaginatedAssets>;
-  getAsset(id: string): Promise<Asset | null>;
-  createAsset(data: {
-    name: string;
-    type: string;
-    url: string;
-    accountId: string;
-    size: number;
-  }): Promise<{ id: string }>;
-  deleteAsset(id: string): Promise<{ success: boolean }>;
-
   // Scenes
   //
   // Mirrors the workflow CRUD shape: the engine treats widgetsJson +
@@ -978,10 +954,7 @@ export interface Woofx3EngineApi {
   ): Promise<{ success: boolean }>;
   deleteScene(id: string, correlationKey?: string): Promise<{ success: boolean }>;
 
-  // Chat & Events
-  getChatMessages(accountId: string, limit?: number): Promise<ChatMessage[]>;
-  sendChatMessage(accountId: string, message: string): Promise<{ success: boolean; messageId: string }>;
-  getStreamEvents(query: StreamEventsQuery): Promise<StreamEvent[]>;
+  // Stream status
   getStreamStatus(accountId: string): Promise<StreamStatus>;
 
   /**
@@ -999,14 +972,8 @@ export interface Woofx3EngineApi {
     userId?: string
   ): Promise<TriggerWorkflowResponse>;
 
-  // User Preferences
-  getUserPreferences(): Promise<UserPreferences>;
-  updateUserPreferences(prefs: UserPreferences): Promise<{ success: boolean }>;
-
   // Dashboard
   getDashboardStats(): Promise<DashboardStats>;
-  getDashboardLayout(accountId: string): Promise<DashboardModule[]>;
-  saveDashboardLayout(accountId: string, modules: DashboardModule[]): Promise<boolean>;
 
   // Alert log replay — re-publishes a previously recorded alert
   // envelope to `ui.notify.alert` with a fresh envelope id, so it

@@ -1,118 +1,6 @@
-import type {
-  AvailableFunction,
-  CommandSnapshot,
-  CommandType,
-  CreateCommandInput,
-  CreateWorkflowInput,
-  FieldOptionsDescriptor,
-  PingResponse,
-  Scene,
-  StorageConfig,
-  UpdateCommandInput,
-  UpdateWorkflowInput,
-  WorkflowDefinition,
-  WorkflowMutationResult,
-} from "@woofx3/api";
-import type {
-  ActionDefinition,
-  SceneCreatedEvent,
-  SceneDeletedEvent,
-  SceneUpdatedEvent,
-  TriggerDefinition,
-  WorkflowCreatedEvent,
-  WorkflowDeletedEvent,
-  WorkflowUpdatedEvent,
-} from "@woofx3/api/webhooks";
-import { EngineEventType } from "@woofx3/api/webhooks";
-import type { Action } from "@woofx3/db/module_action.pb";
-import type { Trigger } from "@woofx3/db/module_trigger.pb";
-import type * as command from "@woofx3/db/command.pb";
-import type * as scene from "@woofx3/db/scene.pb";
-import type * as treat from "@woofx3/db/treat.pb";
-import type * as user from "@woofx3/db/user.pb";
-import type * as workflow from "@woofx3/db/workflow.pb";
-import * as protoscript from "protoscript";
 import { ApiRouteHost } from "./context";
-import {
-  commandToSnapshot,
-  dbSceneToSnapshot,
-  dbSceneToWire,
-  readModuleCatalogFields,
-  rebuildWorkflowDefinition,
-  timestampFromDate,
-  timestampToIso,
-} from "./helpers";
-import type { UninstallModuleResponse, WorkflowItem } from "./types";
-import {
-  parseModuleActionDeregistered,
-  parseModuleActionRegistered,
-  parseModuleAssetDeregistered,
-  parseModuleAssetRegistered,
-  parseModuleFunctionDeregistered,
-  parseModuleFunctionRegistered,
-  parseModuleResourceInstanceCreated,
-  parseModuleResourceInstanceDeleted,
-  parseModuleTriggerDeregistered,
-  parseModuleTriggerRegistered,
-  parseModuleWidgetDeregistered,
-  parseModuleWidgetRegistered,
-} from "../module-event-handlers";
-import { parseWorkflowCreated, parseWorkflowDeleted, parseWorkflowUpdated } from "../workflow-event-handlers";
-import { parseSceneCreated, parseSceneDeleted, parseSceneUpdated } from "../scene-event-handlers";
-import { parseAlertCreated, parseAlertUpdated } from "../alert-log-handlers";
-import { validateWorkflowDefinition } from "../workflow/validate-definition";
 
 export const accountsRoutes = {
-  async getAccounts(teamId?: string): Promise<
-    Array<{
-      id: string;
-      name: string;
-      displayName: string;
-      slug: string;
-      platform: string;
-      teamId: string;
-      status: string;
-      createdAt: string;
-    }>
-  > {
-    const filtered = teamId ? this.accounts.filter((a) => a.teamId === teamId) : this.accounts;
-    return filtered.map((a) => ({ ...a }));
-  },
-
-  async getAccount(id: string): Promise<{
-    id: string;
-    name: string;
-    displayName: string;
-    slug: string;
-    platform: string;
-    teamId: string;
-    status: string;
-    createdAt: string;
-  } | null> {
-    const account = this.accounts.find((a) => a.id === id);
-    return account ? { ...account } : null;
-  },
-
-  async updateAccount(
-    id: string,
-    input: { name?: string; displayName?: string }
-  ): Promise<{
-    id: string;
-    name: string;
-    displayName: string;
-    slug: string;
-    platform: string;
-    teamId: string;
-    status: string;
-    createdAt: string;
-  } | null> {
-    const account = this.accounts.find((a) => a.id === id);
-    if (!account) return null;
-    if (input.name !== undefined) account.name = input.name;
-    if (input.displayName !== undefined) account.displayName = input.displayName;
-    return { ...account };
-  },
-
   /**
    * Resolve the broadcaster's live stream state by calling Twitch
    * Helix `GET /helix/streams` with the OAuth token stored in the
@@ -212,5 +100,5 @@ export const accountsRoutes = {
       gameName: typeof stream.game_name === "string" ? stream.game_name : undefined,
       twitchUserId: token.userId,
     };
-  }
+  },
 };
