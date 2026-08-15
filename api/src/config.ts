@@ -30,7 +30,7 @@ export interface ApiConfig {
   };
 }
 
-const apiEnvSchema = z
+export const ApiEnvSchema = z
   .object({
     woofx3ApiPort: z.union([z.number(), z.string()]).optional(),
     apiPort: z.union([z.number(), z.string()]).optional(),
@@ -71,7 +71,7 @@ function assertValidHttpUrl(label: string, value: string): void {
 }
 
 export function loadConfig(): ApiConfig {
-  const result = loadRuntimeEnv({ injectIntoProcess: true, schema: apiEnvSchema });
+  const result = loadRuntimeEnv({ injectIntoProcess: true, schema: ApiEnvSchema });
   const config = result.config;
 
   const port = Number(config.woofx3ApiPort ?? config.apiPort ?? 8080);

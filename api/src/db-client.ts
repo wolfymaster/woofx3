@@ -2,6 +2,7 @@ import * as alert from "@woofx3/db/alert.pb";
 import * as application from "@woofx3/db/application.pb";
 import * as clientPb from "@woofx3/db/client.pb";
 import * as command from "@woofx3/db/command.pb";
+import { Ping } from "@woofx3/db/common.pb";
 import type * as common from "@woofx3/db/common.pb";
 import * as group from "@woofx3/db/group.pb";
 import * as module from "@woofx3/db/module.pb";
@@ -61,6 +62,10 @@ export class DbClient {
         };
       },
     });
+  }
+
+  async ping(): Promise<void> {
+    await Ping({}, this.config);
   }
 
   async getCommand(req: command.GetCommandRequest): Promise<command.CommandResponse> {
