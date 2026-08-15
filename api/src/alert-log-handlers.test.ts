@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { EngineEventType } from "@woofx3/api/webhooks";
-import { parseAlertCreated, parseAlertUpdated } from "./alert-log-handlers";
+import { initAlertLogHandlers, parseAlertCreated, parseAlertUpdated } from "./alert-log-handlers";
 
 const APP_ID = "11111111-1111-1111-1111-111111111111";
 const ALERT_ID = "22222222-2222-2222-2222-222222222222";
@@ -137,5 +137,96 @@ describe("parseAlertUpdated", () => {
   it("returns null when id is missing", () => {
     const ce = snakeCe({ payload: "{}", status: "replayed" });
     expect(parseAlertUpdated(ce).event).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// initAlertLogHandlers — end-to-end subscribe -> parse -> webhook wiring,
+// same FakeNatsClient/FakeWebhookClient pattern as
+// overlay-token-handlers.test.ts.
+// ---------------------------------------------------------------------------
+
+const noopLogger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  child: () => noopLogger,
+  withContext: () => noopLogger,
+} as any;
+
+class FakeNatsClient {
+  private handlers: Map<string, (msg: { data: Uint8Array; subject: string }) => void | Promise<void>> = new Map();
+  async subscribe(
+    subject: string,
+    handler: (msg: { data: Uint8Array; subject: string }) => void | Promise<void>
+  ): Promise<void> {
+    this.handlers.set(subject, handler);
+  }
+  async publish(): Promise<void> {}
+  async request(): Promise<{ data: Uint8Array; subject: string }> {
+    return { data: new Uint8Array(), subject: "" };
+  }
+  async dispatch(subject: string, data: Record<string, unknown>): Promise<void> {
+    for (const [pattern, handler] of this.handlers) {
+      if (subjectMatchesPattern(pattern, subject)) {
+        await handler({ data: new TextEncoder().encode(JSON.stringify(data)), subject, json: () => data } as any);
+        return;
+      }
+    }
+    throw new Error(`No handler registered for subject: ${subject}`);
+  }
+}
+
+function subjectMatchesPattern(pattern: string, subject: string): boolean {
+  const patternParts = pattern.split(".");
+  const subjectParts = subject.split(".");
+  if (patternParts.length !== subjectParts.length) return false;
+  for (let i = 0; i < patternParts.length; i++) {
+    if (patternParts[i] !== "*" && patternParts[i] !== subjectParts[i]) return false;
+  }
+  return true;
+}
+
+class FakeWebhookClient {
+  public sentEvents: Array<{ type: string; [key: string]: unknown }> = [];
+  async send(event: { type: string; [key: string]: unknown }): Promise<void> {
+    this.sentEvents.push(event);
+  }
+  setApplicationId(): void {}
+  async refreshCallbackUrls(): Promise<void> {}
+}
+
+describe("initAlertLogHandlers", () => {
+  it("db.alert.created.* dispatches an ALERT_RECORDED webhook", async () => {
+    const nats = new FakeNatsClient();
+    const webhook = new FakeWebhookClient();
+    await initAlertLogHandlers(nats as any, webhook as any, noopLogger);
+
+    await nats.dispatch("db.alert.created.app-1", snakeCe({ id: ALERT_ID, payload: "{}", status: "sent" }));
+
+    expect(webhook.sentEvents).toHaveLength(1);
+    expect(webhook.sentEvents[0]?.type).toBe(EngineEventType.ALERT_RECORDED);
+  });
+
+  it("db.alert.updated.* with status=replayed dispatches an ALERT_REPLAYED webhook", async () => {
+    const nats = new FakeNatsClient();
+    const webhook = new FakeWebhookClient();
+    await initAlertLogHandlers(nats as any, webhook as any, noopLogger);
+
+    await nats.dispatch("db.alert.updated.app-1", snakeCe({ id: ALERT_ID, payload: "{}", status: "replayed" }));
+
+    expect(webhook.sentEvents).toHaveLength(1);
+    expect(webhook.sentEvents[0]?.type).toBe(EngineEventType.ALERT_REPLAYED);
+  });
+
+  it("db.alert.updated.* with status=playing does not dispatch a webhook", async () => {
+    const nats = new FakeNatsClient();
+    const webhook = new FakeWebhookClient();
+    await initAlertLogHandlers(nats as any, webhook as any, noopLogger);
+
+    await nats.dispatch("db.alert.updated.app-1", snakeCe({ id: ALERT_ID, payload: "{}", status: "playing" }));
+
+    expect(webhook.sentEvents).toHaveLength(0);
   });
 });

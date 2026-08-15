@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import {
+  initSceneHandlers,
   parseSceneCreated,
   parseSceneDeleted,
   parseSceneUpdated,
@@ -106,5 +107,98 @@ describe("parseSceneDeleted", () => {
     const ce = { application_id: APP_ID, client_id: "c" };
     const { event } = parseSceneDeleted(ce);
     expect(event).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// initSceneHandlers — end-to-end subscribe -> parse -> webhook wiring,
+// same FakeNatsClient/FakeWebhookClient pattern as
+// overlay-token-handlers.test.ts.
+// ---------------------------------------------------------------------------
+
+const noopLogger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  child: () => noopLogger,
+  withContext: () => noopLogger,
+} as any;
+
+class FakeNatsClient {
+  private handlers: Map<string, (msg: { data: Uint8Array; subject: string }) => void | Promise<void>> = new Map();
+  async subscribe(
+    subject: string,
+    handler: (msg: { data: Uint8Array; subject: string }) => void | Promise<void>
+  ): Promise<void> {
+    this.handlers.set(subject, handler);
+  }
+  async publish(): Promise<void> {}
+  async request(): Promise<{ data: Uint8Array; subject: string }> {
+    return { data: new Uint8Array(), subject: "" };
+  }
+  async dispatch(subject: string, data: Record<string, unknown>): Promise<void> {
+    for (const [pattern, handler] of this.handlers) {
+      if (subjectMatchesPattern(pattern, subject)) {
+        await handler({ data: new TextEncoder().encode(JSON.stringify(data)), subject, json: () => data } as any);
+        return;
+      }
+    }
+    throw new Error(`No handler registered for subject: ${subject}`);
+  }
+}
+
+function subjectMatchesPattern(pattern: string, subject: string): boolean {
+  const patternParts = pattern.split(".");
+  const subjectParts = subject.split(".");
+  if (patternParts.length !== subjectParts.length) return false;
+  for (let i = 0; i < patternParts.length; i++) {
+    if (patternParts[i] !== "*" && patternParts[i] !== subjectParts[i]) return false;
+  }
+  return true;
+}
+
+class FakeWebhookClient {
+  public sentEvents: Array<{ type: string; [key: string]: unknown }> = [];
+  async send(event: { type: string; [key: string]: unknown }): Promise<void> {
+    this.sentEvents.push(event);
+  }
+  setApplicationId(): void {}
+  async refreshCallbackUrls(): Promise<void> {}
+}
+
+describe("initSceneHandlers", () => {
+  it("db.scene.created.* dispatches a scene.created webhook", async () => {
+    const nats = new FakeNatsClient();
+    const webhook = new FakeWebhookClient();
+    await initSceneHandlers(nats as any, webhook as any, noopLogger);
+
+    await nats.dispatch("db.scene.created.app-1", {
+      data: { ID: SCENE_ID, ApplicationID: APP_ID, Name: "Main Scene" },
+    });
+
+    expect(webhook.sentEvents).toHaveLength(1);
+    expect(webhook.sentEvents[0]?.type).toBe(EngineEventType.SCENE_CREATED);
+  });
+
+  it("db.scene.deleted.* dispatches a scene.deleted webhook", async () => {
+    const nats = new FakeNatsClient();
+    const webhook = new FakeWebhookClient();
+    await initSceneHandlers(nats as any, webhook as any, noopLogger);
+
+    await nats.dispatch("db.scene.deleted.app-1", { data: { id: SCENE_ID } });
+
+    expect(webhook.sentEvents).toHaveLength(1);
+    expect(webhook.sentEvents[0]?.type).toBe(EngineEventType.SCENE_DELETED);
+  });
+
+  it("skips the webhook when the payload is missing a scene id", async () => {
+    const nats = new FakeNatsClient();
+    const webhook = new FakeWebhookClient();
+    await initSceneHandlers(nats as any, webhook as any, noopLogger);
+
+    await nats.dispatch("db.scene.created.app-1", { data: {} });
+
+    expect(webhook.sentEvents).toHaveLength(0);
   });
 });

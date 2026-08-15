@@ -5,6 +5,9 @@ import type {
   SceneUpdatedEvent,
 } from "@woofx3/api/webhooks";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import type { SharedLogger } from "@woofx3/common/logging";
+import type NATSClient from "@woofx3/nats/src/client";
+import type { WebhookClient } from "./webhook-client";
 
 // The db proxy publishes scene lifecycle events on
 // `db.scene.{created,updated,deleted}.{appId}`. The CloudEvent's `data`
@@ -149,4 +152,60 @@ export function parseSceneDeleted(
       sceneId,
     },
   };
+}
+
+/**
+ * Initialise NATS subscriptions for the scene CRUD outbox
+ * (`db.scene.{created,updated,deleted}.*`) and project each onto
+ * webhook callbacks, so Convex can sync its scene editor without
+ * polling.
+ */
+export async function initSceneHandlers(
+  nats: NATSClient,
+  webhookClient: WebhookClient,
+  logger: SharedLogger
+): Promise<void> {
+  await nats.subscribe("db.scene.created.*", async (msg) => {
+    try {
+      const ce = msg.json() as Record<string, unknown>;
+      const { clientId, event } = parseSceneCreated(ce);
+      if (!event) {
+        logger.warn("scene.created payload missing required fields, skipping");
+        return;
+      }
+      await webhookClient.send(event, clientId || undefined);
+    } catch (err) {
+      logger.error("Failed to handle scene.created NATS event", { err });
+    }
+  });
+
+  await nats.subscribe("db.scene.updated.*", async (msg) => {
+    try {
+      const ce = msg.json() as Record<string, unknown>;
+      const { clientId, event } = parseSceneUpdated(ce);
+      if (!event) {
+        logger.warn("scene.updated payload missing required fields, skipping");
+        return;
+      }
+      await webhookClient.send(event, clientId || undefined);
+    } catch (err) {
+      logger.error("Failed to handle scene.updated NATS event", { err });
+    }
+  });
+
+  await nats.subscribe("db.scene.deleted.*", async (msg) => {
+    try {
+      const ce = msg.json() as Record<string, unknown>;
+      const { clientId, event } = parseSceneDeleted(ce);
+      if (!event) {
+        logger.warn("scene.deleted payload missing scene id, skipping");
+        return;
+      }
+      await webhookClient.send(event, clientId || undefined);
+    } catch (err) {
+      logger.error("Failed to handle scene.deleted NATS event", { err });
+    }
+  });
+
+  logger.info("Scene event NATS handlers initialized");
 }

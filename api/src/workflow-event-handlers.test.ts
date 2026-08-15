@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  initWorkflowHandlers,
   parseWorkflowCreated,
   parseWorkflowDeleted,
   parseWorkflowUpdated,
@@ -256,5 +257,102 @@ describe("parseWorkflowDeleted", () => {
     const { event } = parseWorkflowDeleted(ce);
     expect(event).not.toBeNull();
     expect(event).not.toHaveProperty("projectionKey");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// initWorkflowHandlers — end-to-end subscribe -> parse -> webhook wiring,
+// same FakeNatsClient/FakeWebhookClient pattern as
+// overlay-token-handlers.test.ts.
+// ---------------------------------------------------------------------------
+
+const noopLogger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  child: () => noopLogger,
+  withContext: () => noopLogger,
+} as any;
+
+class FakeNatsClient {
+  private handlers: Map<string, (msg: { data: Uint8Array; subject: string }) => void | Promise<void>> = new Map();
+  async subscribe(
+    subject: string,
+    handler: (msg: { data: Uint8Array; subject: string }) => void | Promise<void>
+  ): Promise<void> {
+    this.handlers.set(subject, handler);
+  }
+  async publish(): Promise<void> {}
+  async request(): Promise<{ data: Uint8Array; subject: string }> {
+    return { data: new Uint8Array(), subject: "" };
+  }
+  async dispatch(subject: string, data: Record<string, unknown>): Promise<void> {
+    for (const [pattern, handler] of this.handlers) {
+      if (subjectMatchesPattern(pattern, subject)) {
+        await handler({ data: new TextEncoder().encode(JSON.stringify(data)), subject, json: () => data } as any);
+        return;
+      }
+    }
+    throw new Error(`No handler registered for subject: ${subject}`);
+  }
+}
+
+function subjectMatchesPattern(pattern: string, subject: string): boolean {
+  const patternParts = pattern.split(".");
+  const subjectParts = subject.split(".");
+  if (patternParts.length !== subjectParts.length) return false;
+  for (let i = 0; i < patternParts.length; i++) {
+    if (patternParts[i] !== "*" && patternParts[i] !== subjectParts[i]) return false;
+  }
+  return true;
+}
+
+class FakeWebhookClient {
+  public sentEvents: Array<{ type: string; [key: string]: unknown }> = [];
+  async send(event: { type: string; [key: string]: unknown }): Promise<void> {
+    this.sentEvents.push(event);
+  }
+  setApplicationId(): void {}
+  async refreshCallbackUrls(): Promise<void> {}
+}
+
+describe("initWorkflowHandlers", () => {
+  test("db.workflow.created.* dispatches a workflow.created webhook", async () => {
+    const nats = new FakeNatsClient();
+    const webhook = new FakeWebhookClient();
+    await initWorkflowHandlers(nats as any, webhook as any, noopLogger);
+
+    await nats.dispatch("db.workflow.created.app-1", {
+      application_id: "app-1",
+      data: { ID: "wf-1", ApplicationID: "app-1", Name: "My Workflow", Steps: sampleSteps, Trigger: sampleTrigger },
+    });
+
+    expect(webhook.sentEvents).toHaveLength(1);
+    expect(webhook.sentEvents[0]?.type).toBe("workflow.created");
+  });
+
+  test("db.workflow.deleted.* dispatches a workflow.deleted webhook", async () => {
+    const nats = new FakeNatsClient();
+    const webhook = new FakeWebhookClient();
+    await initWorkflowHandlers(nats as any, webhook as any, noopLogger);
+
+    await nats.dispatch("db.workflow.deleted.app-1", {
+      application_id: "app-1",
+      data: { id: "wf-1" },
+    });
+
+    expect(webhook.sentEvents).toHaveLength(1);
+    expect(webhook.sentEvents[0]?.type).toBe("workflow.deleted");
+  });
+
+  test("skips the webhook when the payload is missing required fields", async () => {
+    const nats = new FakeNatsClient();
+    const webhook = new FakeWebhookClient();
+    await initWorkflowHandlers(nats as any, webhook as any, noopLogger);
+
+    await nats.dispatch("db.workflow.created.app-1", { application_id: "app-1", data: {} });
+
+    expect(webhook.sentEvents).toHaveLength(0);
   });
 });

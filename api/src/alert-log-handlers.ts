@@ -8,6 +8,9 @@ import type {
   AlertTimedOutEvent,
 } from "@woofx3/api/webhooks";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import type { SharedLogger } from "@woofx3/common/logging";
+import type NATSClient from "@woofx3/nats/src/client";
+import type { WebhookClient } from "./webhook-client";
 
 /** Union of every webhook event projected from `db.alert.updated.*`. */
 export type AlertUpdatedEvent =
@@ -180,4 +183,48 @@ export function parseAlertUpdated(
       break;
   }
   return { applicationId, clientId, event };
+}
+
+/**
+ * Initialise NATS subscriptions for the alert log outbox
+ * (`db.alert.{created,updated}.*`) and project each onto webhook
+ * callbacks, so the Convex alert-log page sees new rows in real time
+ * without polling.
+ */
+export async function initAlertLogHandlers(
+  nats: NATSClient,
+  webhookClient: WebhookClient,
+  logger: SharedLogger
+): Promise<void> {
+  await nats.subscribe("db.alert.created.*", async (msg) => {
+    try {
+      const ce = msg.json() as Record<string, unknown>;
+      const { clientId, event } = parseAlertCreated(ce);
+      if (!event) {
+        logger.warn("alert.created payload missing required fields, skipping");
+        return;
+      }
+      await webhookClient.send(event, clientId || undefined);
+    } catch (err) {
+      logger.error("Failed to handle alert.created NATS event", { err });
+    }
+  });
+
+  await nats.subscribe("db.alert.updated.*", async (msg) => {
+    try {
+      const ce = msg.json() as Record<string, unknown>;
+      const { clientId, event } = parseAlertUpdated(ce);
+      if (!event) {
+        // Lifecycle transitions that don't have a webhook surface
+        // (today: "playing") intentionally drop here — see
+        // parseAlertUpdated for the projection map.
+        return;
+      }
+      await webhookClient.send(event, clientId || undefined);
+    } catch (err) {
+      logger.error("Failed to handle alert.updated NATS event", { err });
+    }
+  });
+
+  logger.info("Alert log NATS handlers initialized");
 }

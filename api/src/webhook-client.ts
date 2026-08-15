@@ -30,7 +30,11 @@ export type {
   ModuleTriggerDeregisteredEvent,
   ModuleTriggerRegisteredEvent,
   ModuleUsageRef,
+  ModuleWidgetDeregisteredEvent,
+  ModuleWidgetRegisteredEvent,
   TriggerDefinition,
+  WidgetDefinition,
+  WidgetSettingDefinition,
 } from "@woofx3/api/webhooks";
 export { EngineEventType, makeCallbackEnvelope } from "@woofx3/api/webhooks";
 

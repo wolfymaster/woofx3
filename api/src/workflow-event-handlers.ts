@@ -6,6 +6,9 @@ import type {
   WorkflowUpdatedEvent,
 } from "@woofx3/api/webhooks";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import type { SharedLogger } from "@woofx3/common/logging";
+import type NATSClient from "@woofx3/nats/src/client";
+import type { WebhookClient } from "./webhook-client";
 
 // The db proxy publishes workflow lifecycle events on
 // `db.workflow.{created,updated,deleted}.{appId}`. The CloudEvent's `data`
@@ -200,4 +203,62 @@ export function parseWorkflowDeleted(
     event.projectionKey = projectionKey;
   }
   return { applicationId, clientId, event };
+}
+
+/**
+ * Initialise NATS subscriptions for the workflow lifecycle outbox
+ * (`db.workflow.{created,updated,deleted}.*`) and project each onto
+ * webhook callbacks. Required so workflows created by side-channels
+ * other than the api's own createWorkflow RPC reach the UI — most
+ * notably workflows declared in a module manifest, which barkloader
+ * registers via Twirp directly against the db proxy.
+ */
+export async function initWorkflowHandlers(
+  nats: NATSClient,
+  webhookClient: WebhookClient,
+  logger: SharedLogger
+): Promise<void> {
+  await nats.subscribe("db.workflow.created.*", async (msg) => {
+    try {
+      const ce = msg.json() as Record<string, unknown>;
+      const { clientId, event } = parseWorkflowCreated(ce);
+      if (!event) {
+        logger.warn("workflow.created payload missing required fields, skipping");
+        return;
+      }
+      await webhookClient.send(event, clientId || undefined);
+    } catch (err) {
+      logger.error("Failed to handle workflow.created NATS event", { err });
+    }
+  });
+
+  await nats.subscribe("db.workflow.updated.*", async (msg) => {
+    try {
+      const ce = msg.json() as Record<string, unknown>;
+      const { clientId, event } = parseWorkflowUpdated(ce);
+      if (!event) {
+        logger.warn("workflow.updated payload missing required fields, skipping");
+        return;
+      }
+      await webhookClient.send(event, clientId || undefined);
+    } catch (err) {
+      logger.error("Failed to handle workflow.updated NATS event", { err });
+    }
+  });
+
+  await nats.subscribe("db.workflow.deleted.*", async (msg) => {
+    try {
+      const ce = msg.json() as Record<string, unknown>;
+      const { clientId, event } = parseWorkflowDeleted(ce);
+      if (!event) {
+        logger.warn("workflow.deleted payload missing workflow id, skipping");
+        return;
+      }
+      await webhookClient.send(event, clientId || undefined);
+    } catch (err) {
+      logger.error("Failed to handle workflow.deleted NATS event", { err });
+    }
+  });
+
+  logger.info("Workflow event NATS handlers initialized");
 }
