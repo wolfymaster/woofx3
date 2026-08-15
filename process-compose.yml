@@ -32,21 +32,10 @@ processes:
     description: communication message bus
     working_dir: services/nats
 
-  # streamlabs:
-  #   command: PORT=5175 bun run dev
-  #   description: slobs
-  #   working_dir: streamlabs
-  #   depends_on:
-  #     woofwoofwoof:
-  #       condition: process_started
-
-  streamware:
-    command: bun run scripts/dev.ts
+  sceneManager:
+    command: bun run dev
     description: Overlays & Stream software
-    working_dir: streamware
-
-  streamwareProxy:
-    command: cloudflared tunnel --url http://localhost:9101
+    working_dir: sceneManager
 
   twitch:
     command: bun run src/api.ts
