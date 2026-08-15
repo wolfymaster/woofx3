@@ -1,0 +1,23 @@
+{
+  "apiPort": "5050",
+  "barkloaderWsUrl": "ws://127.0.0.1:9653/ws",
+  "barkloaderUrl": "http://127.0.0.1:9653",
+  "barkloaderKey": "CHANGE_ME",
+  "badgerPath": "./data/badger",
+  "databaseProxyUrl": "http://127.0.0.1:5555",
+  "databaseProxyPort": "5555",
+  "databaseUrl": "sqlite://./data/woofx3.db",
+  "logLevel": "info",
+  "rootPath": ".",
+  "messagebusHost": "127.0.0.1",
+  "messagebusWebSocketPort": 4225,
+  "messagebusUrl": "ws://127.0.0.1:4225",
+  "messagebusJwt": "",
+  "messagebusNKey": "",
+  "sceneManagerHost": "127.0.0.1",
+  "sceneManagerTokenSecret": "CHANGE_ME",
+  "sceneManagerUrl": "",
+  "twitchChannelName": "",
+  "twitchClientId": "",
+  "twitchClientSecret": ""
+}

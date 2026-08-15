@@ -51,6 +51,23 @@ for service_json in "${RUST_SERVICES[@]}"; do
         log_error "Cargo.toml not found: $SERVICE_PATH/Cargo.toml"
         continue
     fi
+
+    # Workspace package name: prefer explicit output, else first [[bin]] / package name.
+    CARGO_PACKAGE="$SERVICE_OUTPUT"
+    if grep -q '^\[workspace\]' "$SERVICE_PATH/Cargo.toml"; then
+        if ! (cd "$SERVICE_PATH" && cargo metadata --no-deps --format-version 1 \
+            | jq -e --arg p "$CARGO_PACKAGE" '.packages[] | select(.name == $p)' >/dev/null); then
+            CARGO_PACKAGE=$(cd "$SERVICE_PATH" && cargo metadata --no-deps --format-version 1 \
+                | jq -r --arg out "$SERVICE_OUTPUT" \
+                '.packages[] | select(.targets[]?.kind[]? == "bin") | .name' \
+                | head -n1)
+            if [[ -z "$CARGO_PACKAGE" || "$CARGO_PACKAGE" == "null" ]]; then
+                log_error "Could not resolve cargo package for $SERVICE_NAME"
+                continue
+            fi
+            log_info "  using cargo package: $CARGO_PACKAGE"
+        fi
+    fi
     
     # Build for each target
     for target in "${TARGETS[@]}"; do
@@ -89,21 +106,24 @@ for service_json in "${RUST_SERVICES[@]}"; do
             else
                 unset RUSTFLAGS
             fi
-            cargo build --release --target="$RUST_TARGET"
+
+            if grep -q '^\[workspace\]' Cargo.toml; then
+                cargo build --release --target="$RUST_TARGET" -p "$CARGO_PACKAGE"
+            else
+                cargo build --release --target="$RUST_TARGET"
+            fi
             
             # Copy binary to output directory
             BUILT_BINARY="target/$RUST_TARGET/release/${SERVICE_OUTPUT}${BINARY_EXT}"
             if [[ -f "$BUILT_BINARY" ]]; then
                 cp "$BUILT_BINARY" "$DIST_PATH"
             else
-                # Try with different binary name (Cargo.toml name vs directory name)
-                CARGO_NAME=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].name')
-                BUILT_BINARY="target/$RUST_TARGET/release/${CARGO_NAME}${BINARY_EXT}"
+                BUILT_BINARY="target/$RUST_TARGET/release/${CARGO_PACKAGE}${BINARY_EXT}"
                 if [[ -f "$BUILT_BINARY" ]]; then
                     cp "$BUILT_BINARY" "$DIST_PATH"
                 else
                     log_error "Built binary not found in expected locations"
-                    continue
+                    exit 1
                 fi
             fi
         )

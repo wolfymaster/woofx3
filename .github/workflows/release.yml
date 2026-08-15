@@ -1,0 +1,186 @@
+name: Release
+
+# Builds and publishes production artifacts on version tags:
+#   - Docker image → ghcr.io/wolfymaster/woofx3:<tag> (+ :latest)
+#   - Linux binaries → woofx3-<tag>-linux-amd64.tar.gz (extracted from the image)
+#   - Windows binaries → woofx3-<tag>-windows-amd64.zip (cross-compile via build/main.sh)
+#   - GitHub Release with both archives attached
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/wolfymaster/woofx3
+  BUN_VERSION: "1.1.34"
+
+jobs:
+  docker:
+    name: Docker image + Linux archive
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set version
+        id: meta
+        run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.production
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+            ${{ env.IMAGE_NAME }}:latest
+          build-args: |
+            BUN_VERSION=${{ env.BUN_VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract Linux package from image
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.meta.outputs.version }}"
+          IMAGE="${{ env.IMAGE_NAME }}:${VERSION}"
+          CID="$(docker create "$IMAGE")"
+          mkdir -p linux-amd64
+          docker cp "${CID}:/app/." linux-amd64/
+          docker rm "$CID"
+          ARCHIVE="woofx3-${VERSION}-linux-amd64.tar.gz"
+          tar -czf "$ARCHIVE" linux-amd64
+          ls -lh "$ARCHIVE"
+
+      - name: Upload Linux archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-amd64
+          path: woofx3-${{ steps.meta.outputs.version }}-linux-amd64.tar.gz
+          if-no-files-found: error
+
+  windows:
+    name: Windows archive
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set version
+        id: meta
+        run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            curl \
+            git \
+            jq \
+            zip \
+            pkg-config \
+            protobuf-compiler \
+            libprotobuf-dev \
+            mingw-w64 \
+            gcc-mingw-w64-x86-64
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+
+      - name: Build Windows package
+        env:
+          PROTOC_INCLUDE: /usr/include
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
+        run: |
+          set -euo pipefail
+          cd build
+          chmod +x main.sh scripts/*.sh
+          ./main.sh --clean --target windows-amd64
+          test -f dist/services-windows-amd64.zip
+
+      - name: Rename archive
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          cp build/dist/services-windows-amd64.zip "woofx3-${VERSION}-windows-amd64.zip"
+          ls -lh "woofx3-${VERSION}-windows-amd64.zip"
+
+      - name: Upload Windows archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-amd64
+          path: woofx3-${{ steps.meta.outputs.version }}-windows-amd64.zip
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    needs: [docker, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Linux archive
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-amd64
+          path: artifacts
+
+      - name: Download Windows archive
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-amd64
+          path: artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.docker.outputs.version }}
+          name: ${{ needs.docker.outputs.version }}
+          generate_release_notes: true
+          body: |
+            ## Container image
+
+            ```
+            docker pull ghcr.io/wolfymaster/woofx3:${{ needs.docker.outputs.version }}
+            ```
+
+            Also tagged as `ghcr.io/wolfymaster/woofx3:latest`.
+
+            ## Binary packages
+
+            - `woofx3-${{ needs.docker.outputs.version }}-linux-amd64.tar.gz` — Linux binaries (matches the image `/app` layout)
+            - `woofx3-${{ needs.docker.outputs.version }}-windows-amd64.zip` — Windows executables
+
+            Extract and run `./start.sh` (Linux) or `start.bat` (Windows). Edit the packaged `.woofx3.json` template before production use.
+          files: |
+            artifacts/woofx3-${{ needs.docker.outputs.version }}-linux-amd64.tar.gz
+            artifacts/woofx3-${{ needs.docker.outputs.version }}-windows-amd64.zip

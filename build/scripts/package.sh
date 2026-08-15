@@ -19,6 +19,13 @@ log_error() {
 
 woofx3_set_output_dir "$CONFIG_FILE"
 
+TEMPLATE_CONFIG="$SCRIPT_DIR/../config/.woofx3.json"
+if [[ ! -f "$TEMPLATE_CONFIG" ]]; then
+    log_error "Missing packaging template: $TEMPLATE_CONFIG"
+    log_error "Add a non-secret build/config/.woofx3.json for release archives."
+    exit 1
+fi
+
 # Get enabled services for copying config
 readarray -t ENABLED_SERVICES < <(jq -c '.services[] | select(.enabled == true)' "$CONFIG_FILE")
 
@@ -43,8 +50,8 @@ for target in "${TARGETS[@]}"; do
     # Filter to only include enabled services
     jq '.services |= [.[] | select(.enabled == true)]' "$CONFIG_FILE" > "$TARGET_DIR/services.json"
 
-    # Copy .woofx3.json to the target directory for runtime use
-    cp "$SCRIPT_DIR/../config/.woofx3.json" "$TARGET_DIR/.woofx3.json"
+    # Copy non-secret template config for runtime use (operators replace secrets)
+    cp "$TEMPLATE_CONFIG" "$TARGET_DIR/.woofx3.json"
     
     # Create a simple startup script
     case "$target" in
@@ -55,6 +62,8 @@ set -e
 
 # Get the directory of this script
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$DIR"
+export WOOFX3_ROOT_PATH="${WOOFX3_ROOT_PATH:-$DIR}"
 
 # Start the orchestrator
 exec "$DIR/orchestrator"
@@ -65,6 +74,7 @@ EOF
             cat > "$TARGET_DIR/start.bat" << 'EOF'
 @echo off
 cd /d "%~dp0"
+if not defined WOOFX3_ROOT_PATH set WOOFX3_ROOT_PATH=%cd%
 orchestrator.exe
 EOF
             ;;
@@ -94,10 +104,16 @@ Or run the orchestrator directly:
 orchestrator.exe      # Windows
 ```
 
+Run from this directory (or set `WOOFX3_ROOT_PATH` to it). Services that
+ship static assets (e.g. sceneManager) expect `public/` next to their binary.
+
 ## Configuration
 
-The services are configured via environment variables. The orchestrator will
-start all enabled services defined in `services.json`.
+Edit `.woofx3.json` in this directory (or set `WOOFX3_*` environment
+variables). The packaged file is a template — replace `CHANGE_ME` secrets
+before production use.
+
+The orchestrator starts all enabled services defined in `services.json`.
 
 ## Services Included
 

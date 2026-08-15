@@ -5,6 +5,7 @@
     "": {
       "name": "@woofx3/scene-manager",
       "dependencies": {
+        "@woofx3/api": "file:../shared/clients/typescript/api",
         "@woofx3/common": "file:../shared/common/typescript",
         "@woofx3/db": "file:../shared/clients/typescript/db",
         "@woofx3/module-sdk": "file:../shared/clients/typescript/module-sdk",
@@ -176,6 +177,8 @@
 
     "@types/yargs-parser": ["@types/yargs-parser@21.0.3", "", {}, "sha512-I4q9QU9MQv4oEOz4tAHJtNz1cwuLxn2F3xcc2iV5WdqLPpUnj30aUuxt1mAxYTG+oe8CZMV/+6rU4S4gRDzqtQ=="],
 
+    "@woofx3/api": ["@woofx3/api@file:../shared/clients/typescript/api", { "dependencies": { "capnweb": "^0.4.0" } }],
+
     "@woofx3/common": ["@woofx3/common@file:../shared/common/typescript", { "dependencies": { "pino": "^9.5.0", "xstate": "^5.24.0" }, "devDependencies": { "@types/node": "^20.0.0", "zod": "^3.24.0" } }],
 
     "@woofx3/db": ["@woofx3/db@file:../shared/clients/typescript/db", { "peerDependencies": { "protoscript": "^0.0.23", "twirpscript": "^0.0.69" } }],
@@ -227,6 +230,8 @@
     "camelcase": ["camelcase@6.3.0", "", {}, "sha512-Gmy6FhYlCY7uOElZUSbxo2UCDH8owEk996gkbrpsgGtrJLM3J7jGxl9Ic7Qwwj4ivOE5AWZWRMecDdF7hqGjFA=="],
 
     "caniuse-lite": ["caniuse-lite@1.0.30001809", "", {}, "sha512-xxWVywk6a6Arlk+hymeycyn/VgqEfLDxupvhH/xiY5SJ/18kmi9o6MiO320DCUzypORHLtvh0I4i04tUhCNHNQ=="],
+
+    "capnweb": ["capnweb@0.4.0", "", {}, "sha512-OgqPQcxnrAIqjrkAuwI4N9MP/mzseM5w9oLWb/oU63KveBJl1c8p41etLSVQUlYFiAYZu+h6/LJxKaDJd93xFw=="],
 
     "chalk": ["chalk@4.1.2", "", { "dependencies": { "ansi-styles": "^4.1.0", "supports-color": "^7.1.0" } }, "sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA=="],
 

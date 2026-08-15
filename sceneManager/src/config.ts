@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
 
@@ -100,6 +102,18 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
   }
 }
 
+/**
+ * Source runs from `src/` → `../public`. Compiled release binaries live
+ * next to a copied `public/` directory in the deploy package → `./public`.
+ */
+export function resolvePublicDir(metaDir: string): string {
+  const nextToBinary = join(metaDir, "public");
+  if (existsSync(nextToBinary)) {
+    return nextToBinary;
+  }
+  return join(metaDir, "..", "public");
+}
+
 export function loadConfig(): SceneManagerRuntimeConfig {
   const result = loadRuntimeEnv({ injectIntoProcess: true, schema: SceneManagerEnvSchema });
   const c = result.config;
@@ -131,7 +145,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     publicUrl,
     tokenSecret,
     rootDir,
-    publicDir: `${import.meta.dir}/../public`,
+    publicDir: resolvePublicDir(import.meta.dir),
     databaseProxyUrl,
     barkloaderUrl,
     obs: {

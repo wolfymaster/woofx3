@@ -60,6 +60,7 @@ workflow/workflow
 
 # woofx3 configuration
 .woofx3.json
+!build/config/.woofx3.json
 
 # wolfy tmp cleanup
 boardModule/*

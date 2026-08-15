@@ -51,11 +51,20 @@ if [[ ${#shared_ts_roots[@]} -gt 0 ]]; then
         -print0)
 fi
 
+# sceneManager's build:client imports @woofx3/module-sdk from dist/. Rebuild
+# so Docker/CI are not dependent on a pre-built (and possibly stale) tree.
+MODULE_SDK="$REPO_ROOT/shared/clients/typescript/module-sdk"
+if [[ -f "$MODULE_SDK/package.json" ]] && jq -e '.scripts.build' "$MODULE_SDK/package.json" >/dev/null 2>&1; then
+    log_info "Building @woofx3/module-sdk"
+    (cd "$MODULE_SDK" && bun install && bun run build)
+fi
+
 for service_json in "${BUN_SERVICES[@]}"; do
     SERVICE_NAME=$(echo "$service_json" | jq -r '.name')
     SERVICE_PATH=$(echo "$service_json" | jq -r '.path')
     SERVICE_ENTRY=$(echo "$service_json" | jq -r '.entry // "src/index.ts"')
     SERVICE_OUTPUT=$(echo "$service_json" | jq -r '.output // .name')
+    SERVICE_ASSETS=$(echo "$service_json" | jq -r '.assets // empty')
     
     log_info "Building service: $SERVICE_NAME"
     
@@ -119,6 +128,14 @@ for service_json in "${BUN_SERVICES[@]}"; do
                     trap - EXIT
                 fi
             fi
+
+            # Optional browser/client asset build (e.g. sceneManager public/)
+            if [[ -n "$SERVICE_ASSETS" ]]; then
+                if jq -e '.scripts["build:client"]' package.json >/dev/null 2>&1; then
+                    log_info "  -> running build:client for $SERVICE_NAME"
+                    bun run build:client
+                fi
+            fi
             
             # Compile to executable
             bun build --compile --target="$BUN_TARGET" --outfile="$DIST_PATH" "$SERVICE_ENTRY"
@@ -128,6 +145,22 @@ for service_json in "${BUN_SERVICES[@]}"; do
             log_info "  ✓ Built successfully: $(basename "$OUTPUT_PATH")"
         else
             log_error "  ✗ Build failed: $(basename "$OUTPUT_PATH")"
+            continue
+        fi
+
+        # Copy declared static assets next to the binary for release layout.
+        # sceneManager resolves publicDir as `<exe-dir>/public` when present.
+        if [[ -n "$SERVICE_ASSETS" ]]; then
+            ASSET_SRC="$SERVICE_PATH/$SERVICE_ASSETS"
+            ASSET_DST="$TARGET_DIR/$SERVICE_ASSETS"
+            if [[ ! -d "$ASSET_SRC" ]]; then
+                log_error "  ✗ Assets directory not found: $ASSET_SRC"
+                continue
+            fi
+            log_info "  -> copying assets $SERVICE_ASSETS -> $ASSET_DST"
+            rm -rf "$ASSET_DST"
+            mkdir -p "$(dirname "$ASSET_DST")"
+            cp -a "$ASSET_SRC" "$ASSET_DST"
         fi
     done
 done

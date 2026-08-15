@@ -22,7 +22,6 @@ COPY process-compose.yml Caddyfile ./
 
 # Copy application directories
 COPY --chown=devbox:devbox barkloader/ ./barkloader/
-COPY --chown=devbox:devbox barkloader-rust/ ./barkloader-rust/
 COPY --chown=devbox:devbox buf/ ./buf/
 COPY --chown=devbox:devbox db/ ./db/
 COPY --chown=devbox:devbox permissions/ ./permissions/
@@ -30,9 +29,12 @@ COPY --chown=devbox:devbox shared/ ./shared/
 COPY --chown=devbox:devbox streamlabs/ ./streamlabs/
 COPY --chown=devbox:devbox treats/ ./treats/
 COPY --chown=devbox:devbox twitch/ ./twitch/
-COPY --chown=devbox:devbox wooflow/ ./wooflow/
+COPY --chown=devbox:devbox workflow/ ./workflow/
 COPY --chown=devbox:devbox woofwoofwoof/ ./woofwoofwoof/
-
+COPY --chown=devbox:devbox sceneManager/ ./sceneManager/
+COPY --chown=devbox:devbox api/ ./api/
+COPY --chown=devbox:devbox services/ ./services/
+COPY --chown=devbox:devbox build/ ./build/
 # Ensure the user owns the app directory
 RUN chown -R devbox:devbox /app
 

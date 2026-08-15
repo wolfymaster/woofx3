@@ -12,7 +12,7 @@
             "enabled": true,
             "name": "barkloader",
             "output": "barkloader",
-            "path": "../barkloader-rust",
+            "path": "../barkloader",
             "type": "rust"
         },
         {
@@ -28,6 +28,15 @@
             "path": "../services/nats",
             "enabled": true,
             "output": "messagebus"
+        },
+        {
+            "name": "sceneManager",
+            "type": "bun",
+            "path": "../sceneManager",
+            "enabled": true,
+            "entry": "src/server.ts",
+            "output": "sceneManager",
+            "assets": "public"
         },
         {
             "name": "twitch",

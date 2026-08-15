@@ -140,8 +140,13 @@ rustup target add x86_64-pc-windows-gnu
 ## Deployment
 
 1. Extract the appropriate archive on your target system
-2. Run `./start.sh` (Linux) or `start.bat` (Windows)
-3. The orchestrator will start and manage all enabled services
+2. Edit `.woofx3.json` (packaged template — replace `CHANGE_ME` secrets)
+3. Run `./start.sh` (Linux) or `start.bat` (Windows) from the package directory
+4. The orchestrator will start and manage all enabled services
+
+Services that ship static assets (e.g. `sceneManager`) expect a `public/`
+directory next to their binary; `start.sh` / `start.bat` set `WOOFX3_ROOT_PATH`
+to the package directory.
 
 The orchestrator provides:
 - Process supervision and restart on crash
@@ -149,11 +154,36 @@ The orchestrator provides:
 - Service lifecycle management
 - Environment variable inheritance
 
+## Releasing
+
+Tagged releases (`v*`) are built by [`.github/workflows/release.yml`](../.github/workflows/release.yml):
+
+1. Push a version tag: `git tag v1.2.3 && git push origin v1.2.3`
+2. CI builds and pushes:
+   - `ghcr.io/wolfymaster/woofx3:v1.2.3` and `:latest`
+3. CI attaches to a GitHub Release:
+   - `woofx3-v1.2.3-linux-amd64.tar.gz` (extracted from the image `/app` layout)
+   - `woofx3-v1.2.3-windows-amd64.zip` (cross-compiled via `./main.sh --target windows-amd64`)
+
+Pull the image:
+
+```bash
+docker pull ghcr.io/wolfymaster/woofx3:v1.2.3
+docker run --rm -v /path/to/.woofx3.json:/app/.woofx3.json:ro ghcr.io/wolfymaster/woofx3:v1.2.3
+```
+
+Local production image build (same as CI):
+
+```bash
+docker build -f Dockerfile.production -t woofx3:production .
+```
+
 ## Adding New Services
 
 1. Add service definition to `services.json`
 2. Ensure service directory has proper structure for its type
-3. Run build - no code changes required!
+3. Optional: set `"assets": "public"` for Bun services that need static files copied next to the binary
+4. Run build - no code changes required!
 
 ## Troubleshooting
 
@@ -171,3 +201,4 @@ The orchestrator provides:
 - Ensure cross-compilation targets are installed
 - For Rust static linking issues, check MUSL toolchain installation
 - For Windows builds on Linux, ensure MinGW-w64 is available
+
