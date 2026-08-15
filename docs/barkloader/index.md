@@ -45,11 +45,12 @@ Upload and registration are separate processes. Upload stores artifacts to the r
 
 ## Crate Structure
 
-The project is a Cargo workspace with three crates:
+The project is a Cargo workspace with four crates:
 
 | Crate | Path | Purpose |
 |-------|------|---------|
-| **app** | `barkloader/app/` | HTTP server, routes, file processing, module service |
+| **app** | `barkloader/app/` | HTTP server, routes, host wiring |
+| **lib_module** | `barkloader/lib_module/` | Module install/delete, manifests, db-proxy client |
 | **lib_sandbox** | `barkloader/lib_sandbox/` | Sandboxed execution engine, runtime adapters, module registry |
 | **lib_repository** | `barkloader/lib_repository/` | Storage abstraction (filesystem, S3) |
 

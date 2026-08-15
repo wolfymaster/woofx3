@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use tokio::runtime::Handle;
 
-use crate::services::module_service::db_proxy::{get_module_settings, set_module_setting};
+use lib_module::db_proxy::{get_module_settings, set_module_setting};
 
 pub struct HttpSettingsClient {
     db_proxy_url: String,

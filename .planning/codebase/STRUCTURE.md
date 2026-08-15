@@ -166,7 +166,8 @@ executes them inside `lib_sandbox`.
 
 ```
 barkloader/
-├── app/                       # Actix-web server, routes, module service
+├── app/                       # Actix-web server, routes, host wiring
+├── lib_module/                # Module install/delete, manifests, db-proxy client
 ├── lib_sandbox/               # Sandboxed execution (Lua, QuickJS adapters)
 │   └── tests/                 # Rust tests
 ├── lib_repository/            # Storage abstraction (filesystem, S3)

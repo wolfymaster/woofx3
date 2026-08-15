@@ -1949,7 +1949,7 @@ mod tests {
     fn spotify_sr_manifest_parses_and_round_trips() {
         // Regression coverage for the real shipped manifest, not just a
         // synthetic fixture — catches drift between it and this struct.
-        let j = include_str!("../../../../modules/spotify_sr/manifest.json");
+        let j = include_str!("../../modules/spotify_sr/manifest.json");
         let m: ModuleManifest = serde_json::from_str(j).expect("parse real spotify_sr manifest");
         assert_eq!(m.settings.len(), 2);
         assert_eq!(m.settings[0].id, "authorizeSpotify");

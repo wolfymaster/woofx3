@@ -1,20 +1,16 @@
 //! Production `ResourceClient` impl for sandbox runtimes. Bridges the
 //! synchronous trait surface that JS/Lua functions see (`ctx.resources.*`)
-//! to the async Twirp client functions in
-//! `services::module_service::db_proxy`.
+//! to the async Twirp client functions in `lib_module::db_proxy`.
 //!
 //! Like `GrpcStorageClient`, all calls block on the current Tokio runtime
 //! handle — barkloader runs under actix-web, which provides a multi-thread
 //! runtime, so this is safe even though the function executor itself runs
 //! synchronously.
 
+use lib_module::db_proxy::{self, RequestContext as DbRequestContext, ResourceInstanceJson};
 use lib_sandbox::host::{ResourceClient, ResourceInstance};
 use std::sync::Arc;
 use tokio::runtime::Handle;
-
-use crate::services::module_service::db_proxy::{
-    self, RequestContext as DbRequestContext, ResourceInstanceJson,
-};
 
 pub struct HttpResourceClient {
     db_proxy_url: String,

@@ -1439,7 +1439,6 @@ pub async fn register_assets(
 /// reconstruct it). Extra fields on the wire are ignored.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ResourceInstanceJson {
     pub id: String,
     pub module_id: String,
@@ -1451,13 +1450,11 @@ pub struct ResourceInstanceJson {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct ResourceInstanceResponseJson {
     instance: Option<ResourceInstanceJson>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct ListResourceInstancesResponseJson {
     #[serde(default)]
     instances: Vec<ResourceInstanceJson>,

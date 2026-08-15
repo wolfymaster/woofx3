@@ -1,3 +1,6 @@
+//! Module install/delete pipeline, manifest parsing, and db-proxy helpers
+//! for barkloader.
+
 pub mod canonical_id;
 pub mod db_proxy;
 pub mod db_proxy_client;
@@ -12,3 +15,4 @@ mod module_service;
 
 pub use module_file::ModuleFileKind;
 pub use module_service::{ModuleService, ModuleServiceConfig};
+pub use registry_loader::BackgroundTaskRegistrar;

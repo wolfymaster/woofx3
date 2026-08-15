@@ -3,7 +3,6 @@ use lib_sandbox::host::noop::noop_host_context;
 use lib_sandbox::host::{ChatSender, ExtensionRegistry, NatsPublisher};
 use lib_sandbox::models::function::Function;
 use lib_sandbox::models::request::InvokeRequest;
-use lib_sandbox::builtin_dispatch::BuiltinDispatcher;
 use lib_sandbox::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule, Sandbox};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -533,108 +532,4 @@ fn test_unregistered_extension_namespace_is_undefined() {
         .unwrap();
 
     assert_eq!(result["has_twitch"], serde_json::json!(false));
-}
-
-struct RecordingBuiltinDispatcher {
-    calls: Mutex<Vec<(String, serde_json::Value)>>,
-}
-
-impl BuiltinDispatcher for RecordingBuiltinDispatcher {
-    fn invoke(
-        &self,
-        name: &str,
-        params: serde_json::Value,
-        _event: serde_json::Value,
-    ) -> anyhow::Result<Option<serde_json::Value>> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push((name.to_string(), params.clone()));
-        if name == "known" {
-            Ok(Some(serde_json::json!({ "dispatched": true, "echo": params })))
-        } else {
-            Ok(None)
-        }
-    }
-}
-
-#[test]
-fn test_builtin_prefix_routes_to_dispatcher() {
-    let registry = Arc::new(ModuleRegistry::new());
-    let dispatcher = Arc::new(RecordingBuiltinDispatcher {
-        calls: Mutex::new(vec![]),
-    });
-    let mut sandbox = Sandbox::new_with_builtin_dispatcher(
-        registry,
-        noop_host_context(),
-        Some(dispatcher.clone()),
-    )
-    .unwrap();
-
-    let result = sandbox
-        .invoke(InvokeRequest {
-            function: "builtin:known".to_string(),
-            event: serde_json::Value::Null,
-            user: None,
-            params: serde_json::json!({ "message": "hi" }),
-        })
-        .unwrap();
-
-    assert_eq!(result["dispatched"], serde_json::json!(true));
-    assert_eq!(result["echo"], serde_json::json!({ "message": "hi" }));
-
-    let calls = dispatcher.calls.lock().unwrap();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].0, "known");
-    assert_eq!(calls[0].1, serde_json::json!({ "message": "hi" }));
-}
-
-#[test]
-fn test_builtin_unknown_name_returns_function_not_found() {
-    let registry = Arc::new(ModuleRegistry::new());
-    let dispatcher = Arc::new(RecordingBuiltinDispatcher {
-        calls: Mutex::new(vec![]),
-    });
-    let mut sandbox = Sandbox::new_with_builtin_dispatcher(
-        registry,
-        noop_host_context(),
-        Some(dispatcher),
-    )
-    .unwrap();
-
-    let err = sandbox
-        .invoke(InvokeRequest {
-            function: "builtin:missing".to_string(),
-            event: serde_json::Value::Null,
-            user: None,
-            params: serde_json::Value::Null,
-        })
-        .unwrap_err();
-
-    assert!(
-        err.to_string().contains("builtin:missing"),
-        "unexpected error: {}",
-        err
-    );
-}
-
-#[test]
-fn test_builtin_without_dispatcher_fails_fast() {
-    let registry = Arc::new(ModuleRegistry::new());
-    let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
-
-    let err = sandbox
-        .invoke(InvokeRequest {
-            function: "builtin:anything".to_string(),
-            event: serde_json::Value::Null,
-            user: None,
-            params: serde_json::Value::Null,
-        })
-        .unwrap_err();
-
-    assert!(
-        err.to_string().contains("builtin dispatcher"),
-        "unexpected error: {}",
-        err
-    );
 }

@@ -1,4 +1,5 @@
-use crate::services::module_service::module_manifest::ManifestBackgroundTask;
+use lib_module::module_manifest::ManifestBackgroundTask;
+use lib_module::BackgroundTaskRegistrar;
 use chrono::Utc;
 use lib_sandbox::models::request::InvokeRequest;
 use lib_sandbox::SandboxFactory;
@@ -156,5 +157,15 @@ impl BackgroundTaskScheduler {
                 count, module_key
             );
         }
+    }
+}
+
+impl BackgroundTaskRegistrar for BackgroundTaskScheduler {
+    fn register(&self, module_key: &str, task_defs: &[ManifestBackgroundTask]) {
+        BackgroundTaskScheduler::register(self, module_key, task_defs);
+    }
+
+    fn unregister(&self, module_key: &str) {
+        BackgroundTaskScheduler::unregister(self, module_key);
     }
 }

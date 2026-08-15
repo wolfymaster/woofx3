@@ -2,6 +2,7 @@
 members = [
     "lib_repository",
     "lib_sandbox",
+    "lib_module",
     "app",
 ]
 resolver = "3"

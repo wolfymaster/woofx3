@@ -1,23 +1,39 @@
 //! Hydrate the in-memory sandbox registry from db-proxy module rows and
 //! function source bytes from the configured repository (file or S3).
 
-use crate::services::background_scheduler::BackgroundTaskScheduler;
-use crate::services::module_service::db_proxy::{
+use crate::db_proxy::{
     fetch_module_by_name, list_background_tasks, list_modules, BackgroundTaskJson, ModuleRecord,
 };
-use crate::services::module_service::module_manifest::ManifestBackgroundTask;
+use crate::module_manifest::ManifestBackgroundTask;
 use lib_repository::Repository;
 use lib_sandbox::models::function::Function;
 use lib_sandbox::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule};
 use log::{error, info, warn};
 use std::collections::HashMap;
-use std::sync::Arc;
 
-pub async fn hydrate_registry_from_db<R: Repository>(
+/// Host-owned background task registration. Implemented by the barkloader
+/// app's `BackgroundTaskScheduler` so `lib_module` does not depend on Actix
+/// or the cron loop itself.
+pub trait BackgroundTaskRegistrar: Send + Sync {
+    fn register(&self, module_key: &str, task_defs: &[ManifestBackgroundTask]);
+    fn unregister(&self, module_key: &str);
+}
+
+impl<T: BackgroundTaskRegistrar + ?Sized> BackgroundTaskRegistrar for std::sync::Arc<T> {
+    fn register(&self, module_key: &str, task_defs: &[ManifestBackgroundTask]) {
+        (**self).register(module_key, task_defs);
+    }
+
+    fn unregister(&self, module_key: &str) {
+        (**self).unregister(module_key);
+    }
+}
+
+pub async fn hydrate_registry_from_db<R: Repository, S: BackgroundTaskRegistrar>(
     registry: &ModuleRegistry,
     db_proxy_url: &str,
     repository: &R,
-    scheduler: &Arc<BackgroundTaskScheduler>,
+    scheduler: &S,
 ) -> Result<(), String> {
     let modules = list_modules(db_proxy_url, Some("active"))
         .await
@@ -98,12 +114,12 @@ pub async fn hydrate_registry_from_db<R: Repository>(
 }
 
 /// Reload one module into the registry after install, register, or rollback.
-pub async fn refresh_module_in_registry<R: Repository>(
+pub async fn refresh_module_in_registry<R: Repository, S: BackgroundTaskRegistrar>(
     registry: &ModuleRegistry,
     db_proxy_url: &str,
     module_name: &str,
     repository: &R,
-    scheduler: &Arc<BackgroundTaskScheduler>,
+    scheduler: &S,
 ) -> Result<(), String> {
     let module = fetch_module_by_name(db_proxy_url, module_name)
         .await
@@ -236,7 +252,7 @@ async fn build_registered_module<R: Repository>(
     })
 }
 
-fn function_manifest_id(row: &crate::services::module_service::db_proxy::ModuleFunctionRecord) -> String {
+fn function_manifest_id(row: &crate::db_proxy::ModuleFunctionRecord) -> String {
     if !row.manifest_id.is_empty() {
         return row.manifest_id.clone();
     }
@@ -252,7 +268,7 @@ fn function_manifest_id(row: &crate::services::module_service::db_proxy::ModuleF
 async fn load_sandbox_function<R: Repository>(
     repository: &R,
     module_name: &str,
-    row: &crate::services::module_service::db_proxy::ModuleFunctionRecord,
+    row: &crate::db_proxy::ModuleFunctionRecord,
     function_id: &str,
 ) -> Result<Function, String> {
     if row.file_key.is_empty() {
@@ -296,6 +312,6 @@ fn registry_state_from_db(state: &str) -> ModuleState {
 
 /// Cancel all background tasks for a module. Call this when the module is
 /// uninstalled or deactivated so stale tasks don't keep firing.
-pub fn unregister_background_tasks(scheduler: &Arc<BackgroundTaskScheduler>, module_key: &str) {
+pub fn unregister_background_tasks<S: BackgroundTaskRegistrar>(scheduler: &S, module_key: &str) {
     scheduler.unregister(module_key);
 }

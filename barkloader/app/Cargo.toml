@@ -41,3 +41,6 @@ path = "../lib_repository"
 
 [dependencies.lib_sandbox]
 path = "../lib_sandbox"
+
+[dependencies.lib_module]
+path = "../lib_module"

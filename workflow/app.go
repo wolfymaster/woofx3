@@ -192,9 +192,8 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	// `tasks/registry.go`); the corresponding action declaration rows
 	// in db (canonical ids `builtin:action:{name}`) are upserted by
 	// `registerBuiltinActions` below so the UI can list them and
-	// workflow steps can $ref them. Same SYSTEM:builtin (created_by_type,
-	// created_by_ref) namespace barkloader uses for its own compile-time
-	// built-in actions — keeps every system-provided row in one bucket.
+	// workflow steps can $ref them. System-provided rows live under the
+	// SYSTEM:builtin (created_by_type, created_by_ref) namespace.
 	a.engine.RegisterAction("function", WithServices(appServices, NewBarkloaderAction()))
 	a.engine.RegisterAction("alert", WithServices(appServices, NewAlertAction()))
 	a.engine.RegisterAction("print", func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
@@ -226,12 +225,8 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 
 // builtinCreatedByType / builtinCreatedByRef are the namespace pair
 // used for every built-in trigger/action row written by the workflow
-// service. They match what barkloader's autoload uses for its
-// compile-time built-in actions (see
-// `barkloader/app/src/services/builtin_actions/autoload.rs`), so every
-// system-provided row lives under the same `(SYSTEM, builtin)` bucket
-// regardless of which service registered it. The `created_by_ref`
-// segment also becomes the moduleId of every canonical id —
+// service. The `created_by_ref` segment also becomes the moduleId of
+// every canonical id —
 // `builtin:action:alert`, `builtin:trigger:workflow.created`, etc.
 const (
 	builtinCreatedByType = "SYSTEM"

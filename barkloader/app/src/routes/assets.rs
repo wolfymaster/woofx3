@@ -7,12 +7,11 @@ use lib_repository::{Repository, RepositoryImpl};
 /// feature — allowlisting it now is inert (nothing writes under it, so
 /// it 404s the same as any other miss) but means adding that feature
 /// later isn't a breaking change to this route's accepted key shape.
-const ALLOWED_TOP_LEVEL_PREFIXES: &[&str] = &["modules/", "builtin/", "user/"];
+const ALLOWED_TOP_LEVEL_PREFIXES: &[&str] = &["modules/", "user/"];
 
 /// Serve module files straight from the repository (file/S3 agnostic).
 /// Keys mirror repository keys exactly, e.g.
-/// `GET /assets/modules/{module_key}/{version_dir}/widgets/{widget_id}/{entry}`,
-/// `GET /assets/builtin/widgets/{widget_id}/{entry}`.
+/// `GET /assets/modules/{module_key}/{version_dir}/widgets/{widget_id}/{entry}`.
 ///
 /// Every rejection — traversal attempt, bad prefix, missing file — is a
 /// uniform 404 with no detail, so callers cannot probe the key space.
@@ -34,9 +33,8 @@ async fn assets_handler(repository: Data<RepositoryImpl>, path: Path<String>) ->
 /// Only `modules/{module_key}/{version_dir}/...` keys are safe to cache
 /// as immutable: `version_dir` is a content hash, so the same key never
 /// serves different bytes over time (see `run_install`'s content-
-/// addressed write). `builtin/...` keys are NOT version-scoped — a
-/// `seed-builtin-widgets` re-run can replace bytes at the same key — so
-/// they get a short, revalidatable cache instead.
+/// addressed write). Other allowlisted prefixes (e.g. reserved `user/`)
+/// get a short, revalidatable cache instead.
 fn cache_control_for_key(key: &str) -> &'static str {
     if key.starts_with("modules/") {
         "public, max-age=31536000, immutable"
@@ -171,17 +169,13 @@ mod tests {
         assert_eq!(sanitize_asset_key("archives/m.zip"), None);
         assert_eq!(sanitize_asset_key("modules"), None);
         assert_eq!(sanitize_asset_key(""), None);
-        // Traversal rejection is prefix-agnostic — applies under builtin/ too.
+        // Former builtin/ prefix is no longer served from barkloader.
+        assert_eq!(sanitize_asset_key("builtin/widgets/media_alert/index.html"), None);
         assert_eq!(sanitize_asset_key("builtin/../etc/passwd"), None);
     }
 
     #[test]
-    fn sanitize_allows_builtin_and_reserved_user_prefixes() {
-        // builtin/ is a real, servable prefix (migrated builtin widgets).
-        assert_eq!(
-            sanitize_asset_key("builtin/widgets/media_alert/index.html").as_deref(),
-            Some("builtin/widgets/media_alert/index.html")
-        );
+    fn sanitize_allows_reserved_user_prefix() {
         // user/ is allowlisted (reserved for a future upload feature) even
         // though nothing writes there today — sanitization still passes it
         // through; the route 404s on the repository miss, same as any
@@ -215,10 +209,6 @@ mod tests {
         assert_eq!(
             cache_control_for_key("modules/m1/abc123/widgets/w1/index.html"),
             "public, max-age=31536000, immutable"
-        );
-        assert_eq!(
-            cache_control_for_key("builtin/widgets/media_alert/index.html"),
-            "public, max-age=60, must-revalidate"
         );
         assert_eq!(cache_control_for_key("user/whatever"), "public, max-age=60, must-revalidate");
     }
@@ -323,6 +313,7 @@ mod tests {
             "/assets/modules/%2e%2e%2f%2e%2e%2fetc/passwd",
             // Prefix enforcement: non-modules/ keys 404 even when present.
             "/assets/archives/m1.zip",
+            "/assets/builtin/widgets/media_alert/index.html",
             // Plain miss.
             "/assets/modules/m1/nope.js",
         ];
@@ -333,26 +324,6 @@ mod tests {
             let body = actix_test::read_body(resp).await;
             assert!(body.is_empty(), "404 body must not leak detail for {uri}");
         }
-    }
-
-    #[actix_web::test]
-    async fn get_serves_builtin_prefixed_keys() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let repo = file_backed_repo(dir.path()).await;
-        seed(&repo, "builtin/widgets/media_alert/index.html", b"<!doctype html>").await;
-
-        let app = actix_test::init_service(
-            App::new().app_data(Data::new(repo)).configure(configure),
-        )
-        .await;
-
-        let req = actix_test::TestRequest::get()
-            .uri("/assets/builtin/widgets/media_alert/index.html")
-            .to_request();
-        let resp = actix_test::call_service(&app, req).await;
-        assert_eq!(resp.status(), 200);
-        let body = actix_test::read_body(resp).await;
-        assert_eq!(&body[..], b"<!doctype html>");
     }
 
     #[actix_web::test]

@@ -4,8 +4,8 @@ use lib_repository::Repository;
 use log::warn;
 use serde::Serialize;
 
-use crate::services::module_service::db_proxy;
 use crate::types::AppContext;
+use lib_module::db_proxy;
 
 #[derive(Serialize)]
 struct FrameResponse {

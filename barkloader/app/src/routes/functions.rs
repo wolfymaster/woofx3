@@ -10,14 +10,14 @@ use std::io::Read as _;
 use std::path::PathBuf;
 use tokio::task;
 
-use crate::services::module_service::db_proxy::complete_module_install;
 use crate::services::file_service::FileService;
-use crate::services::module_service::module_delete::{
+use crate::types::{AppContext, SafeTempDir};
+use lib_module::db_proxy::{self, complete_module_install};
+use lib_module::module_delete::{
     notify_delete, resolve_module, run_delete_resolved, DeleteError,
 };
-use crate::services::module_service::registry_loader;
-use crate::services::module_service::{db_proxy, ModuleFileKind, ModuleService, ModuleServiceConfig};
-use crate::types::{AppContext, SafeTempDir};
+use lib_module::registry_loader;
+use lib_module::{ModuleFileKind, ModuleService, ModuleServiceConfig};
 
 #[derive(Serialize)]
 struct UploadResponse {
@@ -127,7 +127,7 @@ async fn upload_handler(
             info!("Notifying db proxy: module={}/{} status={}", module_name, version, status);
 
             // Try to resolve module_id from db proxy; use empty string if not found
-            let module_id = match super::super::services::module_service::db_proxy::get_module_by_name(url, module_name).await {
+            let module_id = match lib_module::db_proxy::get_module_by_name(url, module_name).await {
                 Ok(Some(resp)) => {
                     let v: serde_json::Value = serde_json::from_str(&resp).unwrap_or_default();
                     v.get("module").and_then(|m| m.get("id")).and_then(|v| v.as_str()).unwrap_or("").to_string()

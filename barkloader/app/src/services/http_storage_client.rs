@@ -1,19 +1,18 @@
 //! Production `StorageClient` impl for sandbox runtimes. Bridges the
 //! synchronous trait surface that JS/Lua functions see (`ctx.storage.*`)
-//! to the async Twirp client functions in
-//! `services::module_service::db_proxy`. Mirrors `HttpResourceClient`
-//! (`sandbox_resources.rs`) — same blocking-on-current-runtime approach,
-//! same reason it's safe under actix-web's multi-thread runtime.
+//! to the async Twirp client functions in `lib_module::db_proxy`. Mirrors
+//! `HttpResourceClient` (`sandbox_resources.rs`) — same blocking-on-current-
+//! runtime approach, same reason it's safe under actix-web's multi-thread
+//! runtime.
 //!
 //! `value` travels over the wire as a JSON-encoded string (the storage
 //! proto's `StorageItem.value` field is a plain `string`); this is where
 //! that encoding happens, symmetrically for get and set.
 
+use lib_module::db_proxy;
 use lib_sandbox::host::StorageClient;
 use serde_json::Value;
 use tokio::runtime::Handle;
-
-use crate::services::module_service::db_proxy;
 
 pub struct HttpStorageClient {
     db_proxy_url: String,

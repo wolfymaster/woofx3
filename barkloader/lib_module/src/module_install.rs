@@ -854,7 +854,7 @@ pub async fn run_install<R: Repository>(
 mod tests {
     use super::*;
     use super::super::db_proxy_client::FakeDbProxyClient;
-    use crate::services::module_service::module_file::{
+    use crate::module_file::{
         ModuleFile, ModuleFileKind, ModuleValidManifestKind, ModuleValidProgramKind,
     };
     use lib_repository::{FileRepository, FileRepositoryConfig, Repository};

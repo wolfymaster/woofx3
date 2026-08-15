@@ -14,7 +14,7 @@ use lib_sandbox::host::{ChatSender, ExtensionRegistry};
 use crate::services::env_reader::OsEnvReader;
 use crate::services::http_client::ReqwestHttpClient;
 use crate::services::http_storage_client::HttpStorageClient;
-use crate::services::module_service::db_proxy::RequestContext as DbRequestContext;
+use lib_module::db_proxy::RequestContext as DbRequestContext;
 use crate::services::sandbox_resources::HttpResourceClient;
 use lib_sandbox::{ModuleRegistry, SandboxFactory};
 use log::{info, warn};
@@ -23,7 +23,6 @@ use types::AppContext;
 
 mod errors;
 mod routes;
-mod seed_builtin_widgets;
 mod services;
 mod types;
 mod util;
@@ -110,19 +109,7 @@ async fn setup() -> Result<AppContext> {
         ctx
     };
 
-    let builtin_dispatcher: Arc<dyn lib_sandbox::BuiltinDispatcher> = {
-        let message_bus: Arc<dyn services::builtin_actions::MessageBusPublisher> = Arc::new(
-            services::builtin_actions::adapters::NatsMessageBusPublisher::new(host_ctx.nats.clone()),
-        );
-        let logger: Arc<dyn services::builtin_actions::Logger> =
-            Arc::new(services::builtin_actions::adapters::LogCrateLogger);
-        Arc::new(services::builtin_actions::bridge::BuiltinActionBridge::new(
-            message_bus, logger,
-        ))
-    };
-
-    let sandbox = SandboxFactory::new(registry.clone(), host_ctx)
-        .with_builtin_dispatcher(builtin_dispatcher);
+    let sandbox = SandboxFactory::new(registry.clone(), host_ctx);
 
     let scheduler = Arc::new(services::background_scheduler::BackgroundTaskScheduler::new(
         sandbox.clone(),
@@ -151,13 +138,6 @@ async fn setup() -> Result<AppContext> {
 
     boot_modules(&registry, &repository, &db_proxy_url, &scheduler).await?;
 
-    // Register compile-time built-in actions (see builtin_actions::REGISTRY).
-    if let Err(e) =
-        services::builtin_actions::autoload::register_builtin_actions(&db_proxy_url).await
-    {
-        warn!("Failed to register builtin actions: {:?}", e);
-    }
-
     // Spawn the generic field-options NATS responder when NATS is available.
     if let Some(raw_client) = nats_raw_client {
         tokio::spawn(services::field_options::run_field_options_responder(
@@ -184,7 +164,7 @@ async fn boot_modules(
     db_proxy_url: &str,
     scheduler: &Arc<services::background_scheduler::BackgroundTaskScheduler>,
 ) -> Result<()> {
-    crate::services::module_service::registry_loader::hydrate_registry_from_db(
+    lib_module::registry_loader::hydrate_registry_from_db(
         registry,
         db_proxy_url,
         repository,
@@ -198,14 +178,6 @@ async fn boot_modules(
 async fn main() -> std::io::Result<()> {
     // Initialize env_logger
     env_logger::init_from_env(Env::default().default_filter_or("info"));
-
-    // `cargo run --bin barkloader -- seed-builtin-widgets [--source-dir <path>]`
-    // uploads builtin widget files into repository storage. A one-off,
-    // manually-invoked deploy step — see seed_builtin_widgets for why.
-    let args: Vec<String> = std::env::args().collect();
-    if args.get(1).map(String::as_str) == Some("seed-builtin-widgets") {
-        return seed_builtin_widgets::run(&args[2..]).await;
-    }
 
     // Validate required config
     if let Err(e) = validate_required_config(&["WOOFX3_BARKLOADER_KEY"]) {
