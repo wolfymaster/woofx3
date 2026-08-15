@@ -13,6 +13,7 @@ use tokio::task;
 use crate::services::file_service::FileService;
 use crate::types::{AppContext, SafeTempDir};
 use lib_module::db_proxy::{self, complete_module_install};
+use lib_module::db_proxy_client::HttpDbProxyClient;
 use lib_module::module_delete::{
     notify_delete, resolve_module, run_delete_resolved, DeleteError,
 };
@@ -410,6 +411,7 @@ async fn delete_handler(
     let module_name_task = module_name.clone();
 
     tokio::spawn(async move {
+        let db_proxy = HttpDbProxyClient::new(db_proxy_url.clone());
         let mut request_context = db_proxy::RequestContext {
             client_id,
             application_id: String::new(),
@@ -424,7 +426,7 @@ async fn delete_handler(
         // If the module does not exist, treat the delete as already-done and
         // report success (idempotent delete — the end state is what the
         // caller wanted).
-        let resolved = match resolve_module(&db_proxy_url, &module_name_task).await {
+        let resolved = match resolve_module(&db_proxy, &module_name_task).await {
             Ok(Some(r)) => r,
             Ok(None) => {
                 // request_context.module_key was seeded with the caller's
@@ -435,7 +437,7 @@ async fn delete_handler(
                     module_name_task, request_context.module_key
                 );
                 notify_delete(
-                    &db_proxy_url,
+                    &db_proxy,
                     "",
                     &module_name_task,
                     "completed",
@@ -449,7 +451,7 @@ async fn delete_handler(
                 let msg = format!("failed to resolve module {}: {}", module_name_task, e);
                 error!("{}", msg);
                 notify_delete(
-                    &db_proxy_url,
+                    &db_proxy,
                     "",
                     &module_name_task,
                     "failed",
@@ -465,7 +467,7 @@ async fn delete_handler(
         match run_delete_resolved(
             &resolved,
             &module_name_task,
-            &db_proxy_url,
+            &db_proxy,
             "",
             &ctx_clone.repository,
             registry,
@@ -480,7 +482,7 @@ async fn delete_handler(
                     &resolved.manifest_id,
                 );
                 notify_delete(
-                    &db_proxy_url,
+                    &db_proxy,
                     &resolved.module_id,
                     &module_name_task,
                     "completed",
@@ -492,7 +494,7 @@ async fn delete_handler(
             Err(DeleteError::InUse(list)) => {
                 error!("Module {} cannot be deleted: {} resource(s) still in use", module_name_task, list.len());
                 notify_delete(
-                    &db_proxy_url,
+                    &db_proxy,
                     &resolved.module_id,
                     &module_name_task,
                     "failed",
@@ -505,7 +507,7 @@ async fn delete_handler(
                 let msg = e.to_string();
                 error!("Module {} delete failed: {}", module_name_task, msg);
                 notify_delete(
-                    &db_proxy_url,
+                    &db_proxy,
                     &resolved.module_id,
                     &module_name_task,
                     "failed",

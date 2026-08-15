@@ -3,6 +3,7 @@ use crate::host::InvocationContext;
 use serde_json::Value;
 
 pub mod echo;
+pub mod host_bindings;
 pub mod lua;
 pub mod quickjs;
 pub mod storage_event;

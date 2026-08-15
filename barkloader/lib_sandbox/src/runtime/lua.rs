@@ -62,14 +62,17 @@ impl RuntimeAdapter for LuaAdapter {
 }
 
 /// Stringifies a value for the `ctx.log.*` functions: Lua strings are
-/// logged verbatim, everything else is JSON-encoded so structured data is
-/// still readable in the host log line.
+/// logged verbatim (via `to_string_lossy`, so a non-UTF8 Lua string still
+/// logs something instead of erroring), everything else is JSON-encoded —
+/// the encoding rule itself lives in `host_bindings::format_log_value`,
+/// shared with the QuickJS adapter; only the Lua-native string fast path
+/// stays here; see that function's mlua-independent JSON-value contract.
 fn format_log_value(value: &LuaValue) -> String {
     if let LuaValue::String(s) = value {
         return s.to_string_lossy();
     }
     match serde_json::to_value(value) {
-        Ok(json) => json.to_string(),
+        Ok(json) => super::host_bindings::format_log_value(&json),
         Err(_) => format!("<unloggable value: {:?}>", value.type_name()),
     }
 }
@@ -114,16 +117,13 @@ fn build_lua_ctx(
         })?;
         storage.set("get", get_fn)?;
 
-        let store = invocation.host.storage.clone();
-        let nats = invocation.host.nats.clone();
+        let host = invocation.host.clone();
         let module_id = invocation.module_id.clone();
         let set_fn = lua.create_function(move |_, (key, value): (String, LuaValue)| {
             let json_val: Value = serde_json::to_value(&value)
                 .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-            store
-                .set(&key, json_val.clone())
+            super::host_bindings::storage_set(&host, &module_id, &key, json_val)
                 .map_err(mlua::Error::RuntimeError)?;
-            crate::runtime::storage_event::publish_storage_changed(&nats, &module_id, &key, &json_val);
             Ok(())
         })?;
         storage.set("set", set_fn)?;
@@ -163,17 +163,13 @@ fn build_lua_ctx(
     // `owning_module_name` is bound from `invocation.module_id`.
     let resources = lua.create_table()?;
     {
-        let client = invocation.host.resources.clone();
+        let host = invocation.host.clone();
         let module_name = invocation.module_id.clone();
         let create_fn = lua.create_function(
             move |lua, (kind, instance_id, display_name): (String, String, Option<String>)| {
                 let display = display_name.unwrap_or_default();
-                match client.create(&module_name, &kind, &instance_id, &display) {
-                    Ok(inst) => {
-                        let v = serde_json::to_value(&inst)
-                            .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-                        lua.to_value(&v)
-                    }
+                match super::host_bindings::resources_create(&host, &module_name, &kind, &instance_id, &display) {
+                    Ok(v) => lua.to_value(&v),
                     Err(e) => Err(mlua::Error::RuntimeError(e)),
                 }
             },
@@ -187,14 +183,12 @@ fn build_lua_ctx(
         })?;
         resources.set("delete", delete_fn)?;
 
-        let client = invocation.host.resources.clone();
-        let list_fn = lua.create_function(move |lua, kind: String| match client.list_by_kind(&kind) {
-            Ok(items) => {
-                let v = serde_json::to_value(&items)
-                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-                lua.to_value(&v)
+        let host = invocation.host.clone();
+        let list_fn = lua.create_function(move |lua, kind: String| {
+            match super::host_bindings::resources_list(&host, &kind) {
+                Ok(v) => lua.to_value(&v),
+                Err(e) => Err(mlua::Error::RuntimeError(e)),
             }
-            Err(e) => Err(mlua::Error::RuntimeError(e)),
         })?;
         resources.set("list", list_fn)?;
     }
@@ -216,7 +210,7 @@ fn build_lua_ctx(
         // `settings` needs to intercept access; the result is cached in
         // `settings_cache` after the first access so repeated reads within
         // this invocation only pay for one fetch.
-        let settings_client = invocation.host.settings.clone();
+        let host = invocation.host.clone();
         let module_id_for_settings = invocation.module_id.clone();
         let settings_cache: Rc<RefCell<Option<mlua::Table>>> = Rc::new(RefCell::new(None));
         let metatable = lua.create_table()?;
@@ -226,9 +220,7 @@ fn build_lua_ctx(
             }
             let mut cache = settings_cache.borrow_mut();
             if cache.is_none() {
-                let settings_map = settings_client
-                    .list_by_module(&module_id_for_settings)
-                    .unwrap_or_default();
+                let settings_map = super::host_bindings::module_settings_snapshot(&host, &module_id_for_settings);
                 let settings_tbl = lua.create_table()?;
                 for (k, v) in &settings_map {
                     let lua_val = lua.to_value(v)?;
@@ -279,12 +271,8 @@ fn build_lua_ctx(
     // distinguish a deliberate response from any other table a function
     // might return for its own purposes.
     let response_fn = lua.create_function(move |lua, (success, message): (bool, String)| {
-        let tbl = lua.create_table()?;
-        tbl.set("proto", "woofx3.response")?;
-        tbl.set("v", 1)?;
-        tbl.set("success", success)?;
-        tbl.set("message", message)?;
-        Ok(tbl)
+        let value = super::host_bindings::build_response_value(success, message);
+        lua.to_value(&value)
     })?;
     ctx.set("response", response_fn)?;
 

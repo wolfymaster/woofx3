@@ -15,16 +15,11 @@ use lib_sandbox::ModuleRegistry;
 use log::{info, warn};
 use std::sync::Arc;
 
-use super::db_proxy::{
-    self, complete_module_delete, delete_actions_by_module_id, delete_background_tasks_by_module_id,
-    delete_commands_by_module, delete_module, delete_module_resources, delete_triggers_by_module_id,
-    delete_widgets_by_module_id, delete_workflows_by_module,
-    check_module_resource_usage, get_module_by_name, list_resource_instances_by_module,
-    ResourceInstanceJson, ResourceUsage, UsageRef,
-};
+use super::db_proxy::{self, ResourceInstanceJson, ResourceUsage, UsageRef};
+use super::db_proxy_client::ModuleDbProxy;
 
 pub struct DeleteContext<'a, R: Repository> {
-    pub db_proxy_url: &'a str,
+    pub db_proxy: &'a dyn ModuleDbProxy,
     pub application_id: &'a str,
     pub module_id: &'a str,
     pub module_name: &'a str,
@@ -172,22 +167,22 @@ impl ModuleDeletePlan {
     ) -> Result<()> {
         match step {
             DeleteStep::Commands => {
-                delete_commands_by_module(ctx.db_proxy_url, ctx.manifest_id).await
+                ctx.db_proxy.delete_commands_by_module(ctx.manifest_id).await
             }
             DeleteStep::Workflows => {
-                delete_workflows_by_module(ctx.db_proxy_url, "", ctx.manifest_id).await
+                ctx.db_proxy.delete_workflows_by_module("", ctx.manifest_id).await
             }
             DeleteStep::Actions => {
-                delete_actions_by_module_id(ctx.db_proxy_url, ctx.manifest_id).await
+                ctx.db_proxy.delete_actions_by_module_id(ctx.manifest_id).await
             }
             DeleteStep::Triggers => {
-                delete_triggers_by_module_id(ctx.db_proxy_url, ctx.manifest_id).await
+                ctx.db_proxy.delete_triggers_by_module_id(ctx.manifest_id).await
             }
             DeleteStep::Widgets => {
-                delete_widgets_by_module_id(ctx.db_proxy_url, ctx.manifest_id).await
+                ctx.db_proxy.delete_widgets_by_module_id(ctx.manifest_id).await
             }
             DeleteStep::BackgroundTasks => {
-                delete_background_tasks_by_module_id(ctx.db_proxy_url, ctx.manifest_id).await
+                ctx.db_proxy.delete_background_tasks_by_module_id(ctx.manifest_id).await
             }
             DeleteStep::WidgetFiles => {
                 let prefix = format!("modules/{}/widgets/", ctx.module_key);
@@ -223,10 +218,10 @@ impl ModuleDeletePlan {
                     .map_err(|e| anyhow!("delete archive {}: {}", key, e))
             }
             DeleteStep::ModuleResourcesLedger => {
-                delete_module_resources(ctx.db_proxy_url, ctx.module_id).await
+                ctx.db_proxy.delete_module_resources(ctx.module_id).await
             }
             DeleteStep::ModuleRecord => {
-                delete_module(ctx.db_proxy_url, ctx.module_name).await
+                ctx.db_proxy.delete_module(ctx.module_name).await
             }
             DeleteStep::UnregisterSandbox => {
                 if let Err(e) = registry.unregister_module(ctx.module_name) {
@@ -274,10 +269,10 @@ fn manifest_id_from_module_key(module_key: &str) -> String {
 /// the plan — both of which can fail and still need the key in their
 /// webhook callback.
 pub async fn resolve_module(
-    db_proxy_url: &str,
+    db_proxy: &dyn ModuleDbProxy,
     module_name: &str,
 ) -> Result<Option<ResolvedModule>> {
-    let resolved = get_module_by_name(db_proxy_url, module_name).await?;
+    let resolved = db_proxy.get_module_by_name(module_name).await?;
     let Some(body) = resolved else {
         return Ok(None);
     };
@@ -313,7 +308,7 @@ pub async fn resolve_module(
 pub async fn run_delete_resolved<R: Repository>(
     resolved: &ResolvedModule,
     module_name: &str,
-    db_proxy_url: &str,
+    db_proxy: &dyn ModuleDbProxy,
     application_id: &str,
     repository: &R,
     registry: Arc<ModuleRegistry>,
@@ -324,15 +319,13 @@ pub async fn run_delete_resolved<R: Repository>(
     // "still in use" surface handles both cases; the synthetic
     // `resource_type` ("instance:<kind>") lets the UI render an
     // instance-specific affordance ("Delete this counter first").
-    let mut usage = check_module_resource_usage(
-        db_proxy_url,
-        &resolved.module_id,
-        application_id,
-    )
-    .await
-    .map_err(DeleteError::Other)?;
+    let mut usage = db_proxy
+        .check_module_resource_usage(&resolved.module_id, application_id)
+        .await
+        .map_err(DeleteError::Other)?;
 
-    let instances = list_resource_instances_by_module(db_proxy_url, &resolved.module_id)
+    let instances = db_proxy
+        .list_resource_instances_by_module(&resolved.module_id)
         .await
         .map_err(DeleteError::Other)?;
     if !instances.is_empty() {
@@ -351,7 +344,7 @@ pub async fn run_delete_resolved<R: Repository>(
     // 2) execute plan
     let plan = ModuleDeletePlan::new();
     let ctx = DeleteContext {
-        db_proxy_url,
+        db_proxy,
         application_id,
         module_id: &resolved.module_id,
         module_name,
@@ -386,7 +379,7 @@ fn instance_to_usage(inst: ResourceInstanceJson) -> ResourceUsage {
 /// Send the completion callback. Wraps `complete_module_delete` so routes do
 /// not need to know the Twirp details.
 pub async fn notify_delete(
-    db_proxy_url: &str,
+    db_proxy: &dyn ModuleDbProxy,
     module_id: &str,
     module_name: &str,
     status: &str,
@@ -394,20 +387,96 @@ pub async fn notify_delete(
     in_use: &[ResourceUsage],
     request_context: Option<&db_proxy::RequestContext>,
 ) {
-    if let Err(e) = complete_module_delete(
-        db_proxy_url,
-        module_id,
-        module_name,
-        status,
-        error,
-        in_use,
-        request_context,
-    )
-    .await
+    if let Err(e) = db_proxy
+        .complete_module_delete(module_id, module_name, status, error, in_use, request_context)
+        .await
     {
         warn!(
             "CompleteModuleDelete failed for {}/{}: {}",
             module_name, status, e
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::db_proxy_client::FakeDbProxyClient;
+    use lib_repository::{FileRepository, FileRepositoryConfig};
+    use lib_sandbox::ModuleRegistry;
+
+    fn resolved_module(id: &str) -> ResolvedModule {
+        ResolvedModule {
+            module_id: format!("{id}-record"),
+            module_key: format!("{id}:1.0.0:abc123"),
+            manifest_id: id.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn run_delete_resolved_runs_db_proxy_steps_in_priority_order() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+
+        let db_proxy = FakeDbProxyClient::new();
+        let resolved = resolved_module("del-mod-1");
+        let registry = Arc::new(ModuleRegistry::new());
+
+        run_delete_resolved(&resolved, "Del Mod 1", &db_proxy, "", &repo, registry)
+            .await
+            .expect("delete should succeed against a fake with no configured failures");
+
+        // check_module_resource_usage and list_resource_instances_by_module
+        // run first (the usage check), then the db-proxy-touching delete
+        // steps in `DeleteStep::priority()` order — commands, workflows,
+        // actions, triggers, widgets, background_tasks — then the ledger
+        // and module row last. File-repository deletes and sandbox
+        // unregistration aren't db-proxy calls, so they don't appear here.
+        assert_eq!(
+            db_proxy.calls(),
+            vec![
+                "check_module_resource_usage",
+                "list_resource_instances_by_module",
+                "delete_commands_by_module",
+                "delete_workflows_by_module",
+                "delete_actions_by_module_id",
+                "delete_triggers_by_module_id",
+                "delete_widgets_by_module_id",
+                "delete_background_tasks_by_module_id",
+                "delete_module_resources",
+                "delete_module",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn run_delete_resolved_stops_at_the_first_failing_step() {
+        // Deletion has no rollback contract (unlike install) — a failing
+        // step must simply stop the plan, leaving whatever ran before it
+        // done and nothing after it attempted.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+
+        let db_proxy = FakeDbProxyClient::failing_on(["delete_actions_by_module_id"]);
+        let resolved = resolved_module("del-mod-2");
+        let registry = Arc::new(ModuleRegistry::new());
+
+        let err = run_delete_resolved(&resolved, "Del Mod 2", &db_proxy, "", &repo, registry)
+            .await
+            .expect_err("delete should fail when delete_actions_by_module_id fails");
+        assert!(matches!(err, DeleteError::Other(_)));
+
+        let calls = db_proxy.calls();
+        assert_eq!(
+            calls,
+            vec![
+                "check_module_resource_usage",
+                "list_resource_instances_by_module",
+                "delete_commands_by_module",
+                "delete_workflows_by_module",
+                "delete_actions_by_module_id",
+            ],
+            "steps after the failing one must never run, and there is no compensating rollback to record"
         );
     }
 }

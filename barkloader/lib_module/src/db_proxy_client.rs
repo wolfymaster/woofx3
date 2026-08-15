@@ -1,20 +1,22 @@
 //! A narrow, injectable seam over the db-proxy calls the module install
-//! path makes, replacing direct calls into the 40-free-function
-//! `db_proxy` module with a small trait `run_install` (and friends) can
-//! depend on. `HttpDbProxyClient` delegates to the existing `db_proxy`
-//! functions unchanged; `FakeDbProxyClient` (test-only) lets install-saga
-//! tests fault-inject at any step without a live db-proxy.
+//! and delete paths make, replacing direct calls into the 40-free-function
+//! `db_proxy` module with a small trait `run_install`/`module_delete` (and
+//! friends) can depend on. `HttpDbProxyClient` delegates to the existing
+//! `db_proxy` functions unchanged; `FakeDbProxyClient` (test-only) lets
+//! install/delete tests fault-inject at any step without a live db-proxy.
 //!
-//! Scoped to the ~20 functions `module_install.rs` actually calls — not
-//! the full `db_proxy` surface (routes still call `db_proxy::` directly;
-//! widening this seam to cover that is a separate, larger change).
+//! Scoped to the calls `module_install.rs` and `module_delete.rs` actually
+//! make — not the full `db_proxy` surface (routes still call `db_proxy::`
+//! directly; widening this seam to cover that is a separate, larger
+//! change).
 
 use anyhow::Result;
 use async_trait::async_trait;
 
 use super::db_proxy::{
     self, ActionInputJson, AssetInputJson, BackgroundTaskInputJson, CreateModuleFunctionJson,
-    ResolvedActionRef, SettingInputJson, TriggerInputJson, WidgetInputJson,
+    RequestContext, ResolvedActionRef, ResourceInstanceJson, ResourceUsage, SettingInputJson,
+    TriggerInputJson, WidgetInputJson,
 };
 
 #[async_trait]
@@ -126,6 +128,20 @@ pub trait ModuleDbProxy: Send + Sync {
     // cross-module lookups
     async fn get_trigger_event_by_canonical_id(&self, canonical_id: &str) -> Result<String>;
     async fn get_action_ref_by_canonical_id(&self, canonical_id: &str) -> Result<ResolvedActionRef>;
+
+    // module deletion (module_delete.rs)
+    async fn delete_module_resources(&self, module_id: &str) -> Result<()>;
+    async fn check_module_resource_usage(&self, module_id: &str, application_id: &str) -> Result<Vec<ResourceUsage>>;
+    async fn list_resource_instances_by_module(&self, module_id: &str) -> Result<Vec<ResourceInstanceJson>>;
+    async fn complete_module_delete(
+        &self,
+        module_id: &str,
+        module_name: &str,
+        status: &str,
+        error_msg: &str,
+        in_use: &[ResourceUsage],
+        request_context: Option<&RequestContext>,
+    ) -> Result<()>;
 }
 
 /// Real adapter: delegates to the existing free functions in `db_proxy`,
@@ -328,6 +344,31 @@ impl ModuleDbProxy for HttpDbProxyClient {
 
     async fn get_action_ref_by_canonical_id(&self, canonical_id: &str) -> Result<ResolvedActionRef> {
         db_proxy::get_action_ref_by_canonical_id(&self.base_url, canonical_id).await
+    }
+
+    async fn delete_module_resources(&self, module_id: &str) -> Result<()> {
+        db_proxy::delete_module_resources(&self.base_url, module_id).await
+    }
+
+    async fn check_module_resource_usage(&self, module_id: &str, application_id: &str) -> Result<Vec<ResourceUsage>> {
+        db_proxy::check_module_resource_usage(&self.base_url, module_id, application_id).await
+    }
+
+    async fn list_resource_instances_by_module(&self, module_id: &str) -> Result<Vec<ResourceInstanceJson>> {
+        db_proxy::list_resource_instances_by_module(&self.base_url, module_id).await
+    }
+
+    async fn complete_module_delete(
+        &self,
+        module_id: &str,
+        module_name: &str,
+        status: &str,
+        error_msg: &str,
+        in_use: &[ResourceUsage],
+        request_context: Option<&RequestContext>,
+    ) -> Result<()> {
+        db_proxy::complete_module_delete(&self.base_url, module_id, module_name, status, error_msg, in_use, request_context)
+            .await
     }
 }
 
@@ -544,6 +585,32 @@ mod test_support {
                 action_type: "function".to_string(),
                 function_call: Some("fake:function:fake".to_string()),
             })
+        }
+
+        async fn delete_module_resources(&self, _module_id: &str) -> Result<()> {
+            self.record("delete_module_resources")
+        }
+
+        async fn check_module_resource_usage(&self, _module_id: &str, _application_id: &str) -> Result<Vec<ResourceUsage>> {
+            self.record("check_module_resource_usage")?;
+            Ok(Vec::new())
+        }
+
+        async fn list_resource_instances_by_module(&self, _module_id: &str) -> Result<Vec<ResourceInstanceJson>> {
+            self.record("list_resource_instances_by_module")?;
+            Ok(Vec::new())
+        }
+
+        async fn complete_module_delete(
+            &self,
+            _module_id: &str,
+            _module_name: &str,
+            _status: &str,
+            _error_msg: &str,
+            _in_use: &[ResourceUsage],
+            _request_context: Option<&RequestContext>,
+        ) -> Result<()> {
+            self.record("complete_module_delete")
         }
     }
 

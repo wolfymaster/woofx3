@@ -307,13 +307,11 @@ fn build_storage_namespace<'js>(
     }).map_err(map)?;
     storage.set("get", get_fn).map_err(map)?;
 
-    let store = invocation.host.storage.clone();
-    let nats = invocation.host.nats.clone();
+    let host = invocation.host.clone();
     let module_id = invocation.module_id.clone();
     let set_fn = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, key: String, value: JsValue<'_>| -> rquickjs::Result<()> {
         let json_val = js_to_json(&value).map_err(|e| host_err(e.to_string()))?;
-        store.set(&key, json_val.clone()).map_err(|e| host_err(e))?;
-        crate::runtime::storage_event::publish_storage_changed(&nats, &module_id, &key, &json_val);
+        super::host_bindings::storage_set(&host, &module_id, &key, json_val).map_err(host_err)?;
         Ok(())
     }).map_err(map)?;
     storage.set("set", set_fn).map_err(map)?;
@@ -385,18 +383,14 @@ fn build_resources_namespace<'js>(
     let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
     let resources = Object::new(ctx.clone()).map_err(map)?;
 
-    let client = invocation.host.resources.clone();
+    let host = invocation.host.clone();
     let module_name = invocation.module_id.clone();
     let create_fn = JsFunction::new(
         ctx.clone(),
         move |ctx, kind: String, instance_id: String, display_name: Option<String>| {
             let display = display_name.unwrap_or_default();
-            match client.create(&module_name, &kind, &instance_id, &display) {
-                Ok(inst) => {
-                    let v = serde_json::to_value(&inst)
-                        .map_err(|e| host_err(e.to_string()))?;
-                    json_to_js(&ctx, &v).map_err(|e| host_err(e.to_string()))
-                }
+            match super::host_bindings::resources_create(&host, &module_name, &kind, &instance_id, &display) {
+                Ok(v) => json_to_js(&ctx, &v).map_err(|e| host_err(e.to_string())),
                 Err(e) => Err(host_err(e)),
             }
         },
@@ -415,14 +409,10 @@ fn build_resources_namespace<'js>(
     .map_err(map)?;
     resources.set("delete", delete_fn).map_err(map)?;
 
-    let client = invocation.host.resources.clone();
+    let host = invocation.host.clone();
     let list_fn = JsFunction::new(ctx.clone(), move |ctx, kind: String| {
-        match client.list_by_kind(&kind) {
-            Ok(items) => {
-                let v = serde_json::to_value(&items)
-                    .map_err(|e| host_err(e.to_string()))?;
-                json_to_js(&ctx, &v).map_err(|e| host_err(e.to_string()))
-            }
+        match super::host_bindings::resources_list(&host, &kind) {
+            Ok(v) => json_to_js(&ctx, &v).map_err(|e| host_err(e.to_string())),
             Err(e) => Err(host_err(e)),
         }
     })
@@ -456,7 +446,7 @@ fn build_module_namespace<'js>(
     // trip (a Twirp call to db-proxy). The result is cached in `settings_cache`
     // after the first access so repeated reads within this invocation
     // (`ctx.module.settings.a`, then `.b`) only pay for one fetch.
-    let settings_client = invocation.host.settings.clone();
+    let host = invocation.host.clone();
     let module_id_for_settings = invocation.module_id.clone();
     let settings_cache: Rc<RefCell<Option<HashMap<String, Value>>>> = Rc::new(RefCell::new(None));
     module
@@ -465,11 +455,7 @@ fn build_module_namespace<'js>(
             Accessor::from(move |ctx| {
                 let mut cache = settings_cache.borrow_mut();
                 if cache.is_none() {
-                    *cache = Some(
-                        settings_client
-                            .list_by_module(&module_id_for_settings)
-                            .unwrap_or_default(),
-                    );
+                    *cache = Some(super::host_bindings::module_settings_snapshot(&host, &module_id_for_settings));
                 }
                 let settings_map = cache.as_ref().expect("populated above");
                 let settings_obj =
@@ -508,8 +494,9 @@ fn build_module_namespace<'js>(
 }
 
 /// Stringifies a value for the `ctx.log.*` functions: strings are logged
-/// verbatim, everything else is JSON-encoded so structured data is still
-/// readable in the host log line.
+/// verbatim, everything else is JSON-encoded — the encoding rule lives in
+/// `host_bindings::format_log_value`, shared with the Lua adapter; only
+/// the JS-native string fast path stays here.
 fn format_log_value(value: &JsValue<'_>) -> String {
     if value.is_string() {
         return value
@@ -519,7 +506,7 @@ fn format_log_value(value: &JsValue<'_>) -> String {
             .unwrap_or_else(|| "<unprintable string>".to_string());
     }
     match js_to_json(value) {
-        Ok(json) => json.to_string(),
+        Ok(json) => super::host_bindings::format_log_value(&json),
         Err(_) => format!("<unloggable value: {:?}>", value.type_of()),
     }
 }
@@ -576,12 +563,7 @@ fn build_log_namespace<'js>(
 fn build_response_fn<'js>(ctx: &Ctx<'js>, ctx_obj: &Object<'js>) -> Result<(), Error> {
     let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
     let response_fn = JsFunction::new(ctx.clone(), move |ctx, success: bool, message: String| {
-        let value = serde_json::json!({
-            "proto": "woofx3.response",
-            "v": 1,
-            "success": success,
-            "message": message,
-        });
+        let value = super::host_bindings::build_response_value(success, message);
         json_to_js(&ctx, &value).map_err(|e| host_err(e.to_string()))
     })
     .map_err(map)?;
