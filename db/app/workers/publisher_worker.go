@@ -167,7 +167,7 @@ func (w *PublisherWorker) publishEvent(event *models.WorkerEvent) error {
 	}
 
 	var payloadData interface{}
-	if err := json.Unmarshal(event.Payload, &payloadData); err != nil {
+	if err := json.Unmarshal([]byte(event.Payload), &payloadData); err != nil {
 		w.logger.Error("failed to unmarshal payload",
 			"event_id", event.ID,
 			"error", err)
@@ -330,7 +330,7 @@ func (w *PublisherWorker) retryEvent(cached *CachedEvent) error {
 	}
 
 	var payloadData interface{}
-	if err := json.Unmarshal(event.Payload, &payloadData); err != nil {
+	if err := json.Unmarshal([]byte(event.Payload), &payloadData); err != nil {
 		return fmt.Errorf("unmarshal payload: %w", err)
 	}
 	ce.SetData(cloudevents.ApplicationJSON, payloadData)

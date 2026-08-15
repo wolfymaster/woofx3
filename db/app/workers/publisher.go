@@ -76,7 +76,7 @@ func (p *EventPublisher) Publish(opts PublishOptions) error {
 		EntityType:      opts.EntityType,
 		EntityID:        opts.EntityID,
 		Operation:       opts.Operation,
-		Payload:         payloadBytes,
+		Payload:         string(payloadBytes),
 		Status:          models.WorkerEventStatusPending,
 		AutoAcknowledge: opts.AutoAcknowledge,
 		NATSSubject:     subject,

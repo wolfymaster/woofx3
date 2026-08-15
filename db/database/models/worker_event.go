@@ -26,7 +26,7 @@ type WorkerEvent struct {
 	EntityID      string `gorm:"type:varchar(36);not null;index"`
 	Operation     string `gorm:"type:varchar(50);not null"`
 
-	Payload []byte `gorm:"type:jsonb;not null"`
+	Payload string `gorm:"type:jsonb;not null"`
 
 	Status          WorkerEventStatus `gorm:"type:varchar(50);not null;default:'pending';index"`
 	AutoAcknowledge bool              `gorm:"not null;default:true"`

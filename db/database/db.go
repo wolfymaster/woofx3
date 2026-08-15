@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v3"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -21,15 +23,25 @@ func InitializeDB(dsn string, slogger *slog.Logger) (*gorm.DB, error) {
 		Colorful:                  false,
 	})
 
+	// The configured DSN may point at a PgBouncer-style transaction pooler
+	// (e.g. Neon's "-pooler" endpoint), which routes each statement to a
+	// possibly different backend connection. pgx's default exec mode names
+	// and caches prepared statements server-side, which don't survive that
+	// hand-off and cause "prepared statement ... already in use" errors
+	// under concurrent load. CacheDescribe avoids named statements (every
+	// prepare is anonymous) while still caching the parameter/result type
+	// info client-side, so repeat queries stay a single round trip. This
+	// service runs one instance per engine — hundreds of them share this
+	// one Postgres instance through the pooler, so the pooler itself isn't
+	// optional here; only the exec mode needed to change.
+	pgxConfig, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+	pgxConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheDescribe
+
 	db, err := gorm.Open(postgres.New(postgres.Config{
-		DSN: dsn,
-		// The configured DSN may point at a PgBouncer-style transaction pooler
-		// (e.g. Neon's "-pooler" endpoint), which routes each statement to a
-		// possibly different backend connection. The extended query protocol's
-		// named server-side prepared statements don't survive that, causing
-		// "prepared statement ... already in use" errors under concurrent load.
-		// Simple protocol avoids server-side prepare entirely.
-		PreferSimpleProtocol: true,
+		Conn: stdlib.OpenDB(*pgxConfig),
 	}), &gorm.Config{
 		Logger: slogAdapter,
 		NamingStrategy: schema.NamingStrategy{
@@ -47,9 +59,12 @@ func InitializeDB(dsn string, slogger *slog.Logger) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	// Set connection pool settings
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetMaxOpenConns(100)
+	// Kept small because this pool size is multiplied by every engine
+	// instance's db-proxy hitting the same pooler; the pooler's own
+	// client-connection ceiling, not this service, is the actual
+	// constraint on the far side.
+	sqlDB.SetMaxIdleConns(2)
+	sqlDB.SetMaxOpenConns(10)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	// Enable UUID extension if it's not already enabled
