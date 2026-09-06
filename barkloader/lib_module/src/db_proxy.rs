@@ -85,6 +85,10 @@ pub struct ActionInputJson {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterTriggersJson {
+    /// Version-free manifest id (`manifest.id`). This is what the db-proxy
+    /// stores as `created_by_ref`, so a module upgrade upserts its resources
+    /// in place rather than orphaning every reference to them.
+    pub module_id: String,
     pub module_key: String,
     pub module_name: String,
     pub version: String,
@@ -96,6 +100,10 @@ pub struct RegisterTriggersJson {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterActionsJson {
+    /// Version-free manifest id (`manifest.id`). This is what the db-proxy
+    /// stores as `created_by_ref`, so a module upgrade upserts its resources
+    /// in place rather than orphaning every reference to them.
+    pub module_id: String,
     pub module_key: String,
     pub module_name: String,
     pub version: String,
@@ -115,6 +123,10 @@ pub struct RegisterActionsJson {
 #[serde(rename_all = "camelCase")]
 pub struct DeleteByModuleIdJson {
     pub module_id: String,
+    /// Composite `{id}:{version}:{hash}`. Not used for row matching — carried
+    /// so the deregistration event can name the exact version being removed.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub module_key: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -144,6 +156,10 @@ pub struct AssetInputJson {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterAssetsJson {
+    /// Version-free manifest id (`manifest.id`). This is what the db-proxy
+    /// stores as `created_by_ref`, so a module upgrade upserts its resources
+    /// in place rather than orphaning every reference to them.
+    pub module_id: String,
     pub module_key: String,
     pub module_name: String,
     pub version: String,
@@ -173,6 +189,10 @@ pub struct WidgetInputJson {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterWidgetsJson {
+    /// Version-free manifest id (`manifest.id`). This is what the db-proxy
+    /// stores as `created_by_ref`, so a module upgrade upserts its resources
+    /// in place rather than orphaning every reference to them.
+    pub module_id: String,
     pub module_key: String,
     pub module_name: String,
     pub version: String,
@@ -198,6 +218,10 @@ pub struct BackgroundTaskInputJson {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterBackgroundTasksJson {
+    /// Version-free manifest id (`manifest.id`). This is what the db-proxy
+    /// stores as `created_by_ref`, so a module upgrade upserts its resources
+    /// in place rather than orphaning every reference to them.
+    pub module_id: String,
     pub module_key: String,
     pub module_name: String,
     pub version: String,
@@ -228,6 +252,7 @@ struct ListBackgroundTasksResponseJson {
 /// Twirp JSON for `module.ModuleService/RegisterTriggers`.
 pub async fn register_triggers(
     db_proxy_url: &str,
+    module_id: &str,
     module_key: &str,
     module_name: &str,
     version: &str,
@@ -236,6 +261,7 @@ pub async fn register_triggers(
 ) -> Result<()> {
     let url = format!("{}/twirp/module.ModuleService/RegisterTriggers", db_proxy_url);
     let body = RegisterTriggersJson {
+        module_id: module_id.to_string(),
         module_key: module_key.to_string(),
         module_name: module_name.to_string(),
         version: version.to_string(),
@@ -262,6 +288,7 @@ pub async fn register_triggers(
 /// Twirp JSON for `module.ModuleService/RegisterActions`.
 pub async fn register_actions(
     db_proxy_url: &str,
+    module_id: &str,
     module_key: &str,
     module_name: &str,
     version: &str,
@@ -270,6 +297,7 @@ pub async fn register_actions(
 ) -> Result<()> {
     register_actions_with(
         db_proxy_url,
+        module_id,
         module_key,
         module_name,
         version,
@@ -287,6 +315,7 @@ pub async fn register_actions(
 /// pairing — behaviorally identical to the non-`_with` variant.
 pub async fn register_actions_with(
     db_proxy_url: &str,
+    module_id: &str,
     module_key: &str,
     module_name: &str,
     version: &str,
@@ -297,6 +326,7 @@ pub async fn register_actions_with(
 ) -> Result<()> {
     let url = format!("{}/twirp/module.ModuleService/RegisterActions", db_proxy_url);
     let body = RegisterActionsJson {
+        module_id: module_id.to_string(),
         module_key: module_key.to_string(),
         module_name: module_name.to_string(),
         version: version.to_string(),
@@ -327,9 +357,13 @@ pub async fn register_actions_with(
 pub async fn delete_triggers_by_module_id(
     db_proxy_url: &str,
     module_id: &str,
+    module_key: &str,
 ) -> Result<()> {
     let url = format!("{}/twirp/module.ModuleService/DeleteTriggersByModuleId", db_proxy_url);
-    let body = DeleteByModuleIdJson { module_id: module_id.to_string() };
+    let body = DeleteByModuleIdJson {
+        module_id: module_id.to_string(),
+        module_key: module_key.to_string(),
+    };
     let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
@@ -351,9 +385,13 @@ pub async fn delete_triggers_by_module_id(
 pub async fn delete_actions_by_module_id(
     db_proxy_url: &str,
     module_id: &str,
+    module_key: &str,
 ) -> Result<()> {
     let url = format!("{}/twirp/module.ModuleService/DeleteActionsByModuleId", db_proxy_url);
-    let body = DeleteByModuleIdJson { module_id: module_id.to_string() };
+    let body = DeleteByModuleIdJson {
+        module_id: module_id.to_string(),
+        module_key: module_key.to_string(),
+    };
     let client = HTTP_CLIENT.clone();
     let response = client
         .post(&url)
@@ -1331,6 +1369,7 @@ pub async fn list_modules(
 /// (created_by_type, created_by_ref, manifest_id) in the `widgets` table.
 pub async fn register_widgets(
     db_proxy_url: &str,
+    module_id: &str,
     module_key: &str,
     module_name: &str,
     version: &str,
@@ -1339,6 +1378,7 @@ pub async fn register_widgets(
 ) -> Result<()> {
     let url = format!("{}/twirp/module.ModuleService/RegisterWidgets", db_proxy_url);
     let body = RegisterWidgetsJson {
+        module_id: module_id.to_string(),
         module_key: module_key.to_string(),
         module_name: module_name.to_string(),
         version: version.to_string(),
@@ -1365,10 +1405,11 @@ pub async fn register_widgets(
 }
 
 /// Twirp JSON for `module.ModuleService/DeleteWidgetsByModuleId`.
-pub async fn delete_widgets_by_module_id(db_proxy_url: &str, module_id: &str) -> Result<()> {
+pub async fn delete_widgets_by_module_id(db_proxy_url: &str, module_id: &str, module_key: &str) -> Result<()> {
     let url = format!("{}/twirp/module.ModuleService/DeleteWidgetsByModuleId", db_proxy_url);
     let body = DeleteByModuleIdJson {
         module_id: module_id.to_string(),
+        module_key: module_key.to_string(),
     };
     let client = HTTP_CLIENT.clone();
     let response = client
@@ -1392,6 +1433,7 @@ pub async fn delete_widgets_by_module_id(db_proxy_url: &str, module_id: &str) ->
 /// (created_by_type, created_by_ref, manifest_id) on the server side.
 pub async fn register_assets(
     db_proxy_url: &str,
+    module_id: &str,
     module_key: &str,
     module_name: &str,
     version: &str,
@@ -1399,6 +1441,7 @@ pub async fn register_assets(
 ) -> Result<()> {
     let url = format!("{}/twirp/module.ModuleService/RegisterAssets", db_proxy_url);
     let body = RegisterAssetsJson {
+        module_id: module_id.to_string(),
         module_key: module_key.to_string(),
         module_name: module_name.to_string(),
         version: version.to_string(),
@@ -1700,6 +1743,7 @@ pub async fn storage_set(
 
 pub async fn register_background_tasks(
     db_proxy_url: &str,
+    module_id: &str,
     module_key: &str,
     module_name: &str,
     version: &str,
@@ -1708,6 +1752,7 @@ pub async fn register_background_tasks(
 ) -> Result<()> {
     let url = format!("{}/twirp/module.ModuleService/RegisterBackgroundTasks", db_proxy_url);
     let body = RegisterBackgroundTasksJson {
+        module_id: module_id.to_string(),
         module_key: module_key.to_string(),
         module_name: module_name.to_string(),
         version: version.to_string(),
@@ -1755,10 +1800,11 @@ pub async fn list_background_tasks(
     Ok(parsed.tasks)
 }
 
-pub async fn delete_background_tasks_by_module_id(db_proxy_url: &str, module_id: &str) -> Result<()> {
+pub async fn delete_background_tasks_by_module_id(db_proxy_url: &str, module_id: &str, module_key: &str) -> Result<()> {
     let url = format!("{}/twirp/module.ModuleService/DeleteBackgroundTasksByModuleId", db_proxy_url);
     let body = DeleteByModuleIdJson {
         module_id: module_id.to_string(),
+        module_key: module_key.to_string(),
     };
     let client = HTTP_CLIENT.clone();
     let response = client

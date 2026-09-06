@@ -48,10 +48,18 @@ where
         if manifests.is_empty() {
             return Err(anyhow!("No manifest found"));
         }
+        // Real modules ship `manifest.*` (see the woofx3-modules repo); `module.*`
+        // is kept, lower-ranked, for the legacy convention this list originally
+        // targeted. Before this ordering existed neither name was matched, so an
+        // archive shipping either one fell through to the non-deterministic
+        // `manifests[0]` fallback below.
         let preferred_suffixes: &[(&str, u8)] = &[
-            ("module.json", 0),
-            ("module.yaml", 1),
-            ("module.yml", 2),
+            ("manifest.json", 0),
+            ("manifest.yaml", 1),
+            ("manifest.yml", 2),
+            ("module.json", 3),
+            ("module.yaml", 4),
+            ("module.yml", 5),
         ];
         let mut best: Option<(&ModuleFile, u8)> = None;
         for f in &manifests {
@@ -138,5 +146,44 @@ where
 
     pub fn module_version(&self) -> Option<&str> {
         self.module_version.as_deref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::module_file::{ModuleFileKind, ModuleValidManifestKind};
+    use lib_repository::{FileRepository, FileRepositoryConfig};
+
+    fn service_with(files: &[(&str, &[u8])]) -> ModuleService<FileRepository> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        let mut service = ModuleService::new(ModuleServiceConfig { repository: repo });
+        for (name, contents) in files {
+            service.add_file(ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON), *name, contents.to_vec());
+        }
+        service
+    }
+
+    #[test]
+    fn create_plan_prefers_manifest_json_over_module_json() {
+        // manifest.json is what every real example module ships; module.json
+        // is a legacy/unused convention that should still work but lose the
+        // tie when both are present in one archive.
+        let mut service = service_with(&[
+            ("module.json", br#"{"id":"legacy_id","name":"Legacy","version":"0.1.0"}"#),
+            ("manifest.json", br#"{"id":"real_id","name":"Real","version":"1.0.0"}"#),
+        ]);
+        service.create_plan().expect("create_plan should pick a manifest");
+        assert_eq!(service.module_id(), Some("real_id"));
+    }
+
+    #[test]
+    fn create_plan_still_accepts_module_json_alone() {
+        let mut service = service_with(&[
+            ("module.json", br#"{"id":"legacy_id","name":"Legacy","version":"0.1.0"}"#),
+        ]);
+        service.create_plan().expect("create_plan should still pick module.json when it's the only manifest");
+        assert_eq!(service.module_id(), Some("legacy_id"));
     }
 }

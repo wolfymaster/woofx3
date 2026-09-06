@@ -173,16 +173,16 @@ impl ModuleDeletePlan {
                 ctx.db_proxy.delete_workflows_by_module("", ctx.manifest_id).await
             }
             DeleteStep::Actions => {
-                ctx.db_proxy.delete_actions_by_module_id(ctx.manifest_id).await
+                ctx.db_proxy.delete_actions_by_module_id(ctx.manifest_id, ctx.module_key).await
             }
             DeleteStep::Triggers => {
-                ctx.db_proxy.delete_triggers_by_module_id(ctx.manifest_id).await
+                ctx.db_proxy.delete_triggers_by_module_id(ctx.manifest_id, ctx.module_key).await
             }
             DeleteStep::Widgets => {
-                ctx.db_proxy.delete_widgets_by_module_id(ctx.manifest_id).await
+                ctx.db_proxy.delete_widgets_by_module_id(ctx.manifest_id, ctx.module_key).await
             }
             DeleteStep::BackgroundTasks => {
-                ctx.db_proxy.delete_background_tasks_by_module_id(ctx.manifest_id).await
+                ctx.db_proxy.delete_background_tasks_by_module_id(ctx.manifest_id, ctx.module_key).await
             }
             DeleteStep::WidgetFiles => {
                 let prefix = format!("modules/{}/widgets/", ctx.module_key);

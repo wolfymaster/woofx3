@@ -11,8 +11,14 @@ use super::manifest_validate::{self, InstallStep, ResolvedActionImpl, ResolvedMa
 use super::module_file::ModuleFile;
 use super::module_manifest::{ModuleManifest, ResolvedWorkflowStep, ResolvedWorkflowTrigger};
 
+/// `module_name` is the version-free manifest id — the value stored as
+/// `created_by_ref`, and what every delete-by-module-id call matches on.
+/// `module_key` is the composite `{id}:{version}:{hash}` being replaced;
+/// it never participates in matching and is carried only so the
+/// deregistration events name the exact version that went away.
 pub async fn cleanup_old_version(
     module_name: &str,
+    module_key: &str,
     db_proxy: Option<&dyn ModuleDbProxy>,
     application_id: &str,
 ) -> Result<()> {
@@ -21,10 +27,10 @@ pub async fn cleanup_old_version(
         None => return Ok(()),
     };
 
-    proxy.delete_triggers_by_module_id(module_name).await?;
-    proxy.delete_actions_by_module_id(module_name).await?;
-    proxy.delete_widgets_by_module_id(module_name).await?;
-    proxy.delete_background_tasks_by_module_id(module_name).await?;
+    proxy.delete_triggers_by_module_id(module_name, module_key).await?;
+    proxy.delete_actions_by_module_id(module_name, module_key).await?;
+    proxy.delete_widgets_by_module_id(module_name, module_key).await?;
+    proxy.delete_background_tasks_by_module_id(module_name, module_key).await?;
     info!("Deleted triggers, actions, widgets, and background tasks for module {}", module_name);
 
     proxy.delete_workflows_by_module("", module_name).await?;
@@ -44,11 +50,12 @@ pub async fn cleanup_old_version(
 async fn rollback_db_install(
     db_proxy: &dyn ModuleDbProxy,
     manifest_module_key: &str,
+    composite_module_key: &str,
     module_name: &str,
     application_id: &str,
 ) {
     if let Err(e) =
-        cleanup_old_version(manifest_module_key, Some(db_proxy), application_id).await
+        cleanup_old_version(manifest_module_key, composite_module_key, Some(db_proxy), application_id).await
     {
         warn!(
             "rollback: cleanup_old_version({}) failed: {}",
@@ -371,7 +378,10 @@ impl<'a, R: Repository> SagaState<'a, R> {
             .as_deref()
             .expect("CreateModule runs before RegisterTriggers");
 
-        // Register triggers as a single bulk call keyed by the composite module_key.
+        // Register triggers as a single bulk call. Rows are keyed on the
+        // version-free `module_key` (stored as created_by_ref) so an upgrade
+        // upserts in place; the composite key rides along so the outbox event
+        // can name the exact installed version.
         // The trigger row's `event` field is the actual NATS subject
         // the trigger fires on (publishers emit on this subject;
         // workflows subscribe to it). The trigger's *canonical id*
@@ -386,7 +396,7 @@ impl<'a, R: Repository> SagaState<'a, R> {
             self.composite_module_key
         );
         db_proxy
-            .register_triggers(self.module_key, &self.manifest.name, &self.manifest.version, trigger_inputs, "")
+            .register_triggers(self.module_key, self.composite_module_key, &self.manifest.name, &self.manifest.version, trigger_inputs, "")
             .await?;
 
         // Ledger rows record one resource per trigger, keyed by canonical id.
@@ -408,7 +418,8 @@ impl<'a, R: Repository> SagaState<'a, R> {
             .as_deref()
             .expect("CreateModule runs before RegisterActions");
 
-        // Register actions as a single bulk call keyed by the composite module_key.
+        // Register actions as a single bulk call. Same keying as triggers:
+        // version-free id for the row, composite key for the event.
         // The action's `call` field is the resolved canonical function
         // id of the action's resolved implementation.
         let action_inputs: Vec<_> = self
@@ -430,7 +441,7 @@ impl<'a, R: Repository> SagaState<'a, R> {
             self.composite_module_key
         );
         db_proxy
-            .register_actions(self.module_key, &self.manifest.name, &self.manifest.version, action_inputs, "")
+            .register_actions(self.module_key, self.composite_module_key, &self.manifest.name, &self.manifest.version, action_inputs, "")
             .await?;
 
         for (i, a) in self.manifest.actions.iter().enumerate() {
@@ -456,6 +467,7 @@ impl<'a, R: Repository> SagaState<'a, R> {
         db_proxy
             .register_widgets(
                 self.module_key,
+                self.composite_module_key,
                 &self.manifest.name,
                 &self.manifest.version,
                 widget_inputs,
@@ -487,6 +499,7 @@ impl<'a, R: Repository> SagaState<'a, R> {
         db_proxy
             .register_background_tasks(
                 self.module_key,
+                self.composite_module_key,
                 &self.manifest.name,
                 &self.manifest.version,
                 task_inputs,
@@ -541,7 +554,7 @@ impl<'a, R: Repository> SagaState<'a, R> {
             self.composite_module_key
         );
         db_proxy
-            .register_assets(self.module_key, &self.manifest.name, &self.manifest.version, asset_inputs)
+            .register_assets(self.module_key, self.composite_module_key, &self.manifest.name, &self.manifest.version, asset_inputs)
             .await?;
 
         for (i, a) in self.manifest.assets.iter().enumerate() {
@@ -668,7 +681,7 @@ impl<'a, R: Repository> SagaState<'a, R> {
             });
         }
 
-        wf.register(self.module_key, db_proxy.base_url(), &resolved_trigger_ctx, &resolved_steps_ctx, &self.asset_repo_keys)
+        wf.register(self.module_key, db_proxy, &resolved_trigger_ctx, &resolved_steps_ctx, &self.asset_repo_keys)
             .await?;
         let canonical = resolved_wf.canonical_id.to_string();
         if let Err(e) = db_proxy
@@ -694,7 +707,7 @@ impl<'a, R: Repository> SagaState<'a, R> {
         let cmd = &self.manifest.commands[i];
         let resolved_cmd = &self.resolved.commands[i];
         let resolved_workflow = resolved_cmd.workflow.as_ref().map(|c| c.to_string());
-        cmd.register(self.module_key, db_proxy.base_url(), resolved_workflow.as_deref()).await?;
+        cmd.register(self.module_key, db_proxy, resolved_workflow.as_deref()).await?;
 
         // Resolved lazily and cached: today's code looks this up once,
         // unconditionally, before the (possibly empty) commands loop;
@@ -812,7 +825,7 @@ pub async fn run_install<R: Repository>(
         let plan = plan.expect("plan was built above whenever db_proxy is Some");
 
         if cleanup_old {
-            cleanup_old_version(module_key, Some(proxy), application_id).await?;
+            cleanup_old_version(module_key, composite_module_key, Some(proxy), application_id).await?;
         }
 
         // Saga-style install: every step after `CreateModule` must be
@@ -832,7 +845,7 @@ pub async fn run_install<R: Repository>(
                 "install failed for module {} ({}): rolling back db state: {}",
                 manifest.name, composite_module_key, e
             );
-            rollback_db_install(proxy, module_key, &manifest.name, application_id).await;
+            rollback_db_install(proxy, module_key, composite_module_key, &manifest.name, application_id).await;
             return Err(e);
         }
     } else {
@@ -864,10 +877,10 @@ mod tests {
     // this whole refactor exists to close — the saga's partial-failure
     // rollback path had zero direct tests before this (the only prior
     // integration-style tests passed `db_proxy_url: None`, skipping the
-    // entire branch). Manifests here deliberately have no
-    // workflows/commands: `RegisterWorkflow`/`RegisterCommand` aren't
-    // part of the `ModuleDbProxy` seam (see its `base_url` doc comment)
-    // and would attempt a real network call.
+    // entire branch). `RegisterWorkflow`/`RegisterCommand` are part of
+    // the `ModuleDbProxy` seam too (`register_workflow`/`register_command`),
+    // so a manifest with a workflow and a command exercises the whole
+    // plan through the fake with no live network call.
     // ---------------------------------------------------------------
 
     fn fault_test_manifest(id: &str) -> (ModuleManifest, Vec<u8>) {
@@ -914,6 +927,94 @@ mod tests {
         let idx = |name: &str| calls.iter().position(|c| c == name).unwrap_or_else(|| panic!("{name} not called: {calls:?}"));
         assert!(idx("create_module") < idx("register_triggers"));
         assert!(idx("register_triggers") < idx("register_actions"));
+    }
+
+    fn fault_test_manifest_with_workflow(id: &str) -> (ModuleManifest, Vec<u8>) {
+        let manifest_json = format!(
+            r#"{{
+                "id": "{id}",
+                "name": "Test Mod",
+                "version": "1.0.0",
+                "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus" }}],
+                "functions": [{{ "id": "f1", "name": "F1", "runtime": "lua", "path": "functions/f1.lua" }}],
+                "actions": [{{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }}],
+                "workflows": [{{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [{{ "action": "a1" }}] }}],
+                "commands": [{{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix", "workflow": "w1" }}]
+            }}"#
+        )
+        .into_bytes();
+        let manifest: ModuleManifest = serde_json::from_slice(&manifest_json).expect("manifest");
+        (manifest, manifest_json)
+    }
+
+    #[tokio::test]
+    async fn install_with_db_proxy_registers_workflow_then_command_last() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = fault_test_manifest_with_workflow("fault-mod-wf");
+        let files = vec![
+            ModuleFile::new("module.json".into(), ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON), manifest_json.clone()),
+            ModuleFile::new("functions/f1.lua".into(), ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA), b"return 1".to_vec()),
+        ];
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        let db_proxy = FakeDbProxyClient::new();
+        run_install(
+            &manifest, &files, &repo, "archives/fault-mod-wf.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy), "", false, &mid, "",
+        )
+        .await
+        .expect("install should succeed against a fake with no configured failures");
+
+        let calls = db_proxy.calls();
+        let idx = |name: &str| calls.iter().position(|c| c == name).unwrap_or_else(|| panic!("{name} not called: {calls:?}"));
+        assert!(idx("register_actions") < idx("register_workflow"));
+        assert!(idx("register_workflow") < idx("register_command"));
+    }
+
+    #[tokio::test]
+    async fn install_failure_registering_workflow_triggers_full_rollback() {
+        // Proves RegisterWorkflow is genuinely part of the seam now: a
+        // failure inside it (not just in its cross-module lookups) still
+        // triggers the same compensating rollback as every other step.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = fault_test_manifest_with_workflow("fault-mod-wf-2");
+        let files = vec![
+            ModuleFile::new("module.json".into(), ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON), manifest_json.clone()),
+            ModuleFile::new("functions/f1.lua".into(), ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA), b"return 1".to_vec()),
+        ];
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        let db_proxy = FakeDbProxyClient::failing_on(["register_workflow"]);
+        let err = run_install(
+            &manifest, &files, &repo, "archives/fault-mod-wf-2.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy), "", false, &mid, "",
+        )
+        .await
+        .expect_err("install should fail when register_workflow fails");
+        assert!(err.to_string().contains("Failed to create workflow"), "got: {err}");
+
+        let calls = db_proxy.calls();
+        let rollback_start = calls.iter().position(|c| c == "register_workflow").expect("register_workflow was attempted") + 1;
+        assert_eq!(
+            &calls[rollback_start..],
+            &[
+                "delete_triggers_by_module_id",
+                "delete_actions_by_module_id",
+                "delete_widgets_by_module_id",
+                "delete_background_tasks_by_module_id",
+                "delete_workflows_by_module",
+                "delete_commands_by_module",
+                "delete_module",
+            ]
+        );
+        // register_command must never run — the plan aborts before it.
+        assert!(!calls.contains(&"register_command".to_string()));
     }
 
     #[tokio::test]

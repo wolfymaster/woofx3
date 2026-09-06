@@ -970,7 +970,7 @@ impl ManifestCommand {
     pub async fn register(
         &self,
         module_name: &str,
-        db_proxy_url: &str,
+        db_proxy: &dyn super::db_proxy_client::ModuleDbProxy,
         resolved_workflow: Option<&str>,
     ) -> Result<()> {
         let command_name = self
@@ -990,15 +990,9 @@ impl ManifestCommand {
             format!("Module command: {} ({}). Configure a workflow to handle this command.", self.name, self.pattern)
         };
 
-        super::db_proxy::create_command(
-            db_proxy_url,
-            "",
-            command_name,
-            command_type,
-            &type_value,
-            module_name,
-        )
-        .await?;
+        db_proxy
+            .register_command("", command_name, command_type, &type_value, module_name)
+            .await?;
 
         info!(
             "Registered command: {} [{}] (pattern={}, type={}, workflow={:?})",
@@ -1194,7 +1188,7 @@ impl ManifestWorkflow {
     pub async fn register(
         &self,
         module_name: &str,
-        db_proxy_url: &str,
+        db_proxy: &dyn super::db_proxy_client::ModuleDbProxy,
         resolved_trigger: &ResolvedWorkflowTrigger,
         resolved_steps: &[ResolvedWorkflowStep],
         asset_repo_keys: &HashMap<String, String>,
@@ -1277,8 +1271,7 @@ impl ManifestWorkflow {
             taxonomy: self.taxonomy.clone(),
         };
 
-        let client = woofx3_twirp::WorkflowServiceClient::new(db_proxy_url);
-        let response = client.create_workflow(request).await.map_err(|e| {
+        db_proxy.register_workflow(request).await.map_err(|e| {
             anyhow!(
                 "Failed to create workflow {}: {} (trigger={})",
                 self.id,
@@ -1286,16 +1279,6 @@ impl ManifestWorkflow {
                 self.trigger
             )
         })?;
-
-        if let Some(status) = response.status {
-            if status.code != 0 {
-                return Err(anyhow!(
-                    "CreateWorkflow failed for {}: {}",
-                    self.id,
-                    status.message
-                ));
-            }
-        }
 
         info!(
             "Registered workflow: {} [{}] (trigger={}, steps={})",

@@ -1,37 +1,30 @@
-//! A narrow, injectable seam over the db-proxy calls the module install
-//! and delete paths make, replacing direct calls into the 40-free-function
-//! `db_proxy` module with a small trait `run_install`/`module_delete` (and
-//! friends) can depend on. `HttpDbProxyClient` delegates to the existing
+//! A narrow, injectable seam over the db-proxy calls the module install,
+//! delete, and HTTP-facing route paths make, replacing direct calls into
+//! the free-function `db_proxy` module with a small trait those callers
+//! depend on instead. `HttpDbProxyClient` delegates to the existing
 //! `db_proxy` functions unchanged; `FakeDbProxyClient` (test-only) lets
 //! install/delete tests fault-inject at any step without a live db-proxy.
 //!
-//! Scoped to the calls `module_install.rs` and `module_delete.rs` actually
-//! make — not the full `db_proxy` surface (routes still call `db_proxy::`
-//! directly; widening this seam to cover that is a separate, larger
-//! change).
+//! Scoped to the calls `module_install.rs`, `module_delete.rs`, and the
+//! `barkloader` app's `routes/functions.rs` / `routes/widgets.rs` actually
+//! make — not the full `db_proxy` surface. A handful of internal-service
+//! callers (`main.rs`, `sandbox_resources.rs`, `module_settings_client.rs`,
+//! `http_storage_client.rs`, `registry_loader.rs`) still call `db_proxy::`
+//! directly; widening this seam to cover those too is a separate, lower-
+//! urgency change (they aren't HTTP-facing, so a wire-format bug there
+//! doesn't reach a caller directly).
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 
 use super::db_proxy::{
     self, ActionInputJson, AssetInputJson, BackgroundTaskInputJson, CreateModuleFunctionJson,
-    RequestContext, ResolvedActionRef, ResourceInstanceJson, ResourceUsage, SettingInputJson,
-    TriggerInputJson, WidgetInputJson,
+    ModuleRecord, RequestContext, ResolvedActionRef, ResourceInstanceJson, ResourceUsage,
+    SettingInputJson, TriggerInputJson, WidgetInputJson,
 };
 
 #[async_trait]
 pub trait ModuleDbProxy: Send + Sync {
-    /// The db-proxy base URL this client talks to. Exists because two
-    /// calls in the install path — `ManifestWorkflow::register` and
-    /// `ManifestCommand::register` — go through their own clients
-    /// (`woofx3_twirp::WorkflowServiceClient`, and `db_proxy::create_command`
-    /// respectively) rather than through this trait's methods, and still
-    /// need the raw URL. Widening the seam to cover those is a separate,
-    /// larger change; this getter is the minimal way to avoid `run_install`
-    /// needing a second, separate `db_proxy_url` parameter alongside this
-    /// trait object.
-    fn base_url(&self) -> &str;
-
     // module lifecycle
     async fn create_module(
         &self,
@@ -51,6 +44,7 @@ pub trait ModuleDbProxy: Send + Sync {
     // bulk registration (one call per kind, matching today's batching)
     async fn register_triggers(
         &self,
+        module_id: &str,
         module_key: &str,
         module_name: &str,
         version: &str,
@@ -59,6 +53,7 @@ pub trait ModuleDbProxy: Send + Sync {
     ) -> Result<()>;
     async fn register_actions(
         &self,
+        module_id: &str,
         module_key: &str,
         module_name: &str,
         version: &str,
@@ -67,6 +62,7 @@ pub trait ModuleDbProxy: Send + Sync {
     ) -> Result<()>;
     async fn register_widgets(
         &self,
+        module_id: &str,
         module_key: &str,
         module_name: &str,
         version: &str,
@@ -75,6 +71,7 @@ pub trait ModuleDbProxy: Send + Sync {
     ) -> Result<()>;
     async fn register_background_tasks(
         &self,
+        module_id: &str,
         module_key: &str,
         module_name: &str,
         version: &str,
@@ -88,6 +85,7 @@ pub trait ModuleDbProxy: Send + Sync {
     ) -> Result<()>;
     async fn register_assets(
         &self,
+        module_id: &str,
         module_key: &str,
         module_name: &str,
         version: &str,
@@ -95,10 +93,10 @@ pub trait ModuleDbProxy: Send + Sync {
     ) -> Result<()>;
 
     // cleanup / delete-by-module-id (used by cleanup_old_version and rollback)
-    async fn delete_triggers_by_module_id(&self, module_id: &str) -> Result<()>;
-    async fn delete_actions_by_module_id(&self, module_id: &str) -> Result<()>;
-    async fn delete_widgets_by_module_id(&self, module_id: &str) -> Result<()>;
-    async fn delete_background_tasks_by_module_id(&self, module_id: &str) -> Result<()>;
+    async fn delete_triggers_by_module_id(&self, module_id: &str, module_key: &str) -> Result<()>;
+    async fn delete_actions_by_module_id(&self, module_id: &str, module_key: &str) -> Result<()>;
+    async fn delete_widgets_by_module_id(&self, module_id: &str, module_key: &str) -> Result<()>;
+    async fn delete_background_tasks_by_module_id(&self, module_id: &str, module_key: &str) -> Result<()>;
     async fn delete_workflows_by_module(&self, application_id: &str, module_name: &str) -> Result<()>;
     async fn delete_commands_by_module(&self, module_name: &str) -> Result<()>;
 
@@ -142,6 +140,37 @@ pub trait ModuleDbProxy: Send + Sync {
         in_use: &[ResourceUsage],
         request_context: Option<&RequestContext>,
     ) -> Result<()>;
+
+    // bundled workflow / command registration (module_manifest.rs's
+    // ManifestWorkflow::register / ManifestCommand::register). Callers
+    // build the wire-shaped request the same way they build every other
+    // *InputJson here; this method owns the actual client call plus
+    // status-code check, matching every other method's contract of
+    // "returns Err for both transport and application failures."
+    async fn register_workflow(&self, request: woofx3::db::workflow::CreateWorkflowRequest) -> Result<()>;
+    async fn register_command(
+        &self,
+        application_id: &str,
+        command: &str,
+        command_type: &str,
+        type_value: &str,
+        module_name: &str,
+    ) -> Result<()>;
+
+    // install-status notification + read queries the HTTP routes need
+    // (routes/functions.rs, routes/widgets.rs)
+    async fn complete_module_install(
+        &self,
+        module_id: &str,
+        module_name: &str,
+        version: &str,
+        status: &str,
+        error_msg: &str,
+        request_context: Option<&RequestContext>,
+    ) -> Result<()>;
+    async fn fetch_module_by_name(&self, name: &str) -> Result<Option<ModuleRecord>>;
+    async fn get_widget_entry(&self, module_id: &str, manifest_id: &str) -> Result<Option<String>>;
+    async fn resolve_module_version_dir(&self, module_id: &str) -> Result<Option<String>>;
 }
 
 /// Real adapter: delegates to the existing free functions in `db_proxy`,
@@ -161,10 +190,6 @@ impl HttpDbProxyClient {
 
 #[async_trait]
 impl ModuleDbProxy for HttpDbProxyClient {
-    fn base_url(&self) -> &str {
-        &self.base_url
-    }
-
     async fn create_module(
         &self,
         display_name: &str,
@@ -204,42 +229,46 @@ impl ModuleDbProxy for HttpDbProxyClient {
 
     async fn register_triggers(
         &self,
+        module_id: &str,
         module_key: &str,
         module_name: &str,
         version: &str,
         triggers: Vec<TriggerInputJson>,
         application_id: &str,
     ) -> Result<()> {
-        db_proxy::register_triggers(&self.base_url, module_key, module_name, version, triggers, application_id)
+        db_proxy::register_triggers(&self.base_url, module_id, module_key, module_name, version, triggers, application_id)
             .await
     }
 
     async fn register_actions(
         &self,
+        module_id: &str,
         module_key: &str,
         module_name: &str,
         version: &str,
         actions: Vec<ActionInputJson>,
         application_id: &str,
     ) -> Result<()> {
-        db_proxy::register_actions(&self.base_url, module_key, module_name, version, actions, application_id)
+        db_proxy::register_actions(&self.base_url, module_id, module_key, module_name, version, actions, application_id)
             .await
     }
 
     async fn register_widgets(
         &self,
+        module_id: &str,
         module_key: &str,
         module_name: &str,
         version: &str,
         widgets: Vec<WidgetInputJson>,
         application_id: &str,
     ) -> Result<()> {
-        db_proxy::register_widgets(&self.base_url, module_key, module_name, version, widgets, application_id)
+        db_proxy::register_widgets(&self.base_url, module_id, module_key, module_name, version, widgets, application_id)
             .await
     }
 
     async fn register_background_tasks(
         &self,
+        module_id: &str,
         module_key: &str,
         module_name: &str,
         version: &str,
@@ -248,6 +277,7 @@ impl ModuleDbProxy for HttpDbProxyClient {
     ) -> Result<()> {
         db_proxy::register_background_tasks(
             &self.base_url,
+            module_id,
             module_key,
             module_name,
             version,
@@ -267,28 +297,29 @@ impl ModuleDbProxy for HttpDbProxyClient {
 
     async fn register_assets(
         &self,
+        module_id: &str,
         module_key: &str,
         module_name: &str,
         version: &str,
         assets: Vec<AssetInputJson>,
     ) -> Result<()> {
-        db_proxy::register_assets(&self.base_url, module_key, module_name, version, assets).await
+        db_proxy::register_assets(&self.base_url, module_id, module_key, module_name, version, assets).await
     }
 
-    async fn delete_triggers_by_module_id(&self, module_id: &str) -> Result<()> {
-        db_proxy::delete_triggers_by_module_id(&self.base_url, module_id).await
+    async fn delete_triggers_by_module_id(&self, module_id: &str, module_key: &str) -> Result<()> {
+        db_proxy::delete_triggers_by_module_id(&self.base_url, module_id, module_key).await
     }
 
-    async fn delete_actions_by_module_id(&self, module_id: &str) -> Result<()> {
-        db_proxy::delete_actions_by_module_id(&self.base_url, module_id).await
+    async fn delete_actions_by_module_id(&self, module_id: &str, module_key: &str) -> Result<()> {
+        db_proxy::delete_actions_by_module_id(&self.base_url, module_id, module_key).await
     }
 
-    async fn delete_widgets_by_module_id(&self, module_id: &str) -> Result<()> {
-        db_proxy::delete_widgets_by_module_id(&self.base_url, module_id).await
+    async fn delete_widgets_by_module_id(&self, module_id: &str, module_key: &str) -> Result<()> {
+        db_proxy::delete_widgets_by_module_id(&self.base_url, module_id, module_key).await
     }
 
-    async fn delete_background_tasks_by_module_id(&self, module_id: &str) -> Result<()> {
-        db_proxy::delete_background_tasks_by_module_id(&self.base_url, module_id).await
+    async fn delete_background_tasks_by_module_id(&self, module_id: &str, module_key: &str) -> Result<()> {
+        db_proxy::delete_background_tasks_by_module_id(&self.base_url, module_id, module_key).await
     }
 
     async fn delete_workflows_by_module(&self, application_id: &str, module_name: &str) -> Result<()> {
@@ -370,6 +401,56 @@ impl ModuleDbProxy for HttpDbProxyClient {
         db_proxy::complete_module_delete(&self.base_url, module_id, module_name, status, error_msg, in_use, request_context)
             .await
     }
+
+    async fn register_workflow(&self, request: woofx3::db::workflow::CreateWorkflowRequest) -> Result<()> {
+        let client = woofx3_twirp::WorkflowServiceClient::new(&self.base_url);
+        let response = client
+            .create_workflow(request)
+            .await
+            .map_err(|e| anyhow!("CreateWorkflow request failed: {}", e))?;
+        if let Some(status) = response.status {
+            if status.code != 0 {
+                return Err(anyhow!("CreateWorkflow failed: {}", status.message));
+            }
+        }
+        Ok(())
+    }
+
+    async fn register_command(
+        &self,
+        application_id: &str,
+        command: &str,
+        command_type: &str,
+        type_value: &str,
+        module_name: &str,
+    ) -> Result<()> {
+        db_proxy::create_command(&self.base_url, application_id, command, command_type, type_value, module_name).await
+    }
+
+    async fn complete_module_install(
+        &self,
+        module_id: &str,
+        module_name: &str,
+        version: &str,
+        status: &str,
+        error_msg: &str,
+        request_context: Option<&RequestContext>,
+    ) -> Result<()> {
+        db_proxy::complete_module_install(&self.base_url, module_id, module_name, version, status, error_msg, request_context)
+            .await
+    }
+
+    async fn fetch_module_by_name(&self, name: &str) -> Result<Option<ModuleRecord>> {
+        db_proxy::fetch_module_by_name(&self.base_url, name).await
+    }
+
+    async fn get_widget_entry(&self, module_id: &str, manifest_id: &str) -> Result<Option<String>> {
+        db_proxy::get_widget_entry(&self.base_url, module_id, manifest_id).await
+    }
+
+    async fn resolve_module_version_dir(&self, module_id: &str) -> Result<Option<String>> {
+        db_proxy::resolve_module_version_dir(&self.base_url, module_id).await
+    }
 }
 
 #[cfg(test)]
@@ -419,16 +500,6 @@ mod test_support {
 
     #[async_trait]
     impl ModuleDbProxy for FakeDbProxyClient {
-        fn base_url(&self) -> &str {
-            // Deliberately unroutable: `ManifestWorkflow::register` /
-            // `ManifestCommand::register` aren't part of this seam (see
-            // `ModuleDbProxy::base_url`'s doc comment), so a test whose
-            // plan reaches a `RegisterWorkflow`/`RegisterCommand` step
-            // will fail fast here with a clear connection error rather
-            // than silently dialing a real host.
-            "http://fake-db-proxy.invalid"
-        }
-
         async fn create_module(
             &self,
             _display_name: &str,
@@ -460,6 +531,7 @@ mod test_support {
 
         async fn register_triggers(
             &self,
+            _module_id: &str,
             _module_key: &str,
             _module_name: &str,
             _version: &str,
@@ -471,6 +543,7 @@ mod test_support {
 
         async fn register_actions(
             &self,
+            _module_id: &str,
             _module_key: &str,
             _module_name: &str,
             _version: &str,
@@ -482,6 +555,7 @@ mod test_support {
 
         async fn register_widgets(
             &self,
+            _module_id: &str,
             _module_key: &str,
             _module_name: &str,
             _version: &str,
@@ -493,6 +567,7 @@ mod test_support {
 
         async fn register_background_tasks(
             &self,
+            _module_id: &str,
             _module_key: &str,
             _module_name: &str,
             _version: &str,
@@ -512,6 +587,7 @@ mod test_support {
 
         async fn register_assets(
             &self,
+            _module_id: &str,
             _module_key: &str,
             _module_name: &str,
             _version: &str,
@@ -520,19 +596,19 @@ mod test_support {
             self.record("register_assets")
         }
 
-        async fn delete_triggers_by_module_id(&self, _module_id: &str) -> Result<()> {
+        async fn delete_triggers_by_module_id(&self, _module_id: &str, _module_key: &str) -> Result<()> {
             self.record("delete_triggers_by_module_id")
         }
 
-        async fn delete_actions_by_module_id(&self, _module_id: &str) -> Result<()> {
+        async fn delete_actions_by_module_id(&self, _module_id: &str, _module_key: &str) -> Result<()> {
             self.record("delete_actions_by_module_id")
         }
 
-        async fn delete_widgets_by_module_id(&self, _module_id: &str) -> Result<()> {
+        async fn delete_widgets_by_module_id(&self, _module_id: &str, _module_key: &str) -> Result<()> {
             self.record("delete_widgets_by_module_id")
         }
 
-        async fn delete_background_tasks_by_module_id(&self, _module_id: &str) -> Result<()> {
+        async fn delete_background_tasks_by_module_id(&self, _module_id: &str, _module_key: &str) -> Result<()> {
             self.record("delete_background_tasks_by_module_id")
         }
 
@@ -612,6 +688,48 @@ mod test_support {
         ) -> Result<()> {
             self.record("complete_module_delete")
         }
+
+        async fn register_workflow(&self, _request: woofx3::db::workflow::CreateWorkflowRequest) -> Result<()> {
+            self.record("register_workflow")
+        }
+
+        async fn register_command(
+            &self,
+            _application_id: &str,
+            _command: &str,
+            _command_type: &str,
+            _type_value: &str,
+            _module_name: &str,
+        ) -> Result<()> {
+            self.record("register_command")
+        }
+
+        async fn complete_module_install(
+            &self,
+            _module_id: &str,
+            _module_name: &str,
+            _version: &str,
+            _status: &str,
+            _error_msg: &str,
+            _request_context: Option<&RequestContext>,
+        ) -> Result<()> {
+            self.record("complete_module_install")
+        }
+
+        async fn fetch_module_by_name(&self, _name: &str) -> Result<Option<ModuleRecord>> {
+            self.record("fetch_module_by_name")?;
+            Ok(None)
+        }
+
+        async fn get_widget_entry(&self, _module_id: &str, _manifest_id: &str) -> Result<Option<String>> {
+            self.record("get_widget_entry")?;
+            Ok(None)
+        }
+
+        async fn resolve_module_version_dir(&self, _module_id: &str) -> Result<Option<String>> {
+            self.record("resolve_module_version_dir")?;
+            Ok(None)
+        }
     }
 
     #[tokio::test]
@@ -621,7 +739,7 @@ mod test_support {
             .create_module("", "mod", "1.0.0", "{}", "archives/mod.zip", &[], "mod:1.0.0:abc", "")
             .await
             .expect("create_module");
-        client.register_triggers("mod", "Mod", "1.0.0", vec![], "").await.expect("register_triggers");
+        client.register_triggers("mod", "mod:1.0.0:abc", "Mod", "1.0.0", vec![], "").await.expect("register_triggers");
 
         assert_eq!(client.calls(), vec!["create_module", "register_triggers"]);
     }
@@ -629,9 +747,9 @@ mod test_support {
     #[tokio::test]
     async fn fails_only_the_configured_call() {
         let client = FakeDbProxyClient::failing_on(["register_actions"]);
-        client.register_triggers("mod", "Mod", "1.0.0", vec![], "").await.expect("register_triggers should succeed");
+        client.register_triggers("mod", "mod:1.0.0:abc", "Mod", "1.0.0", vec![], "").await.expect("register_triggers should succeed");
         let err = client
-            .register_actions("mod", "Mod", "1.0.0", vec![], "")
+            .register_actions("mod", "mod:1.0.0:abc", "Mod", "1.0.0", vec![], "")
             .await
             .expect_err("register_actions should fail");
         assert!(err.to_string().contains("register_actions"));
