@@ -5,7 +5,7 @@ use log::warn;
 use serde::Serialize;
 
 use crate::types::AppContext;
-use lib_module::db_proxy;
+use lib_module::db_proxy_client::{HttpDbProxyClient, ModuleDbProxy};
 
 #[derive(Serialize)]
 struct FrameResponse {
@@ -28,8 +28,9 @@ async fn widget_frame_handler(ctx: Data<AppContext>, path: Path<(String, String)
         warn!("widget_frame: db_proxy_url not configured; refusing {}:{}", module_key, manifest_id);
         return HttpResponse::ServiceUnavailable().finish();
     };
+    let db_proxy = HttpDbProxyClient::new(db_proxy_url.clone());
 
-    let entry = match db_proxy::get_widget_entry(db_proxy_url, &module_key, &manifest_id).await {
+    let entry = match db_proxy.get_widget_entry(&module_key, &manifest_id).await {
         Ok(Some(entry)) => entry,
         Ok(None) => {
             warn!("widget_frame: no widget registered for {}:{}", module_key, manifest_id);
@@ -45,7 +46,7 @@ async fn widget_frame_handler(ctx: Data<AppContext>, path: Path<(String, String)
         return HttpResponse::NotFound().finish();
     };
 
-    let version_dir = match db_proxy::resolve_module_version_dir(db_proxy_url, &module_key).await {
+    let version_dir = match db_proxy.resolve_module_version_dir(&module_key).await {
         Ok(Some(dir)) => dir,
         Ok(None) => {
             warn!("widget_frame: module {} has no resolvable installed version", module_key);
@@ -58,7 +59,7 @@ async fn widget_frame_handler(ctx: Data<AppContext>, path: Path<(String, String)
     };
 
     let repo_key = format!("modules/{module_key}/{version_dir}/widgets/{manifest_id}/{entry}");
-    let entry_html = match ctx.repository.read_file(&repo_key).await {
+    let entry_html = match ctx.repository.current().read_file(&repo_key).await {
         Ok(bytes) => match String::from_utf8(bytes) {
             Ok(text) => text,
             Err(e) => {

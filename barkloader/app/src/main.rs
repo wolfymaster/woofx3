@@ -19,7 +19,7 @@ use crate::services::sandbox_resources::HttpResourceClient;
 use lib_sandbox::{ModuleRegistry, SandboxFactory};
 use log::{info, warn};
 use std::sync::Arc;
-use types::AppContext;
+use types::{AppContext, SharedRepository};
 
 mod errors;
 mod routes;
@@ -115,11 +115,16 @@ async fn setup() -> Result<AppContext> {
         sandbox.clone(),
     ));
 
-    // db-proxy is required: sandbox registry metadata comes from module_functions rows.
+    // db-proxy is required: sandbox registry metadata comes from module_functions
+    // rows, and the storage provider is resolved from the engine's settings table.
+    // Establish the connection before reading either -- everything below this point
+    // treats db-proxy as available, the same contract the Go and TypeScript runtimes
+    // give their applications by gating init behind the registered `db` service.
     let db_proxy_url = get_woofx3_json_value("databaseProxyUrl", "");
     if db_proxy_url.is_empty() {
         anyhow::bail!("databaseProxyUrl in .woofx3.json is required for barkloader");
     }
+    crate::services::storage_settings::wait_for_db_proxy(&db_proxy_url).await;
 
     let repository_config = crate::services::storage_settings::resolve_repository_config(
         Some(db_proxy_url.as_str()),
@@ -129,6 +134,10 @@ async fn setup() -> Result<AppContext> {
 
     let repository = RepositoryFactory::new(&repository_config).await?;
     repository.setup()?;
+    // Wrapped so `routes::storage` can swap the backend when an operator
+    // edits storage settings in the UI. Boot resolves the first value; it
+    // is not necessarily the last.
+    let repository = SharedRepository::new(repository);
 
     let default_public_url = get_woofx3_json_value("barkloaderUrl", "");
     let public_url_resolver = Arc::new(services::public_url::PublicUrlResolver::new(
@@ -136,7 +145,7 @@ async fn setup() -> Result<AppContext> {
         default_public_url,
     ));
 
-    boot_modules(&registry, &repository, &db_proxy_url, &scheduler).await?;
+    boot_modules(&registry, &repository.current(), &db_proxy_url, &scheduler).await?;
 
     // Spawn the generic field-options NATS responder when NATS is available.
     if let Some(raw_client) = nats_raw_client {
@@ -202,10 +211,13 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(Data::new(ctx.clone()))
             // The assets route depends only on the repository, not the
-            // full AppContext, so it gets its own Data registration.
+            // full AppContext, so it gets its own Data registration. It
+            // shares the same swappable handle, so a storage reload takes
+            // effect here too rather than pinning a stale backend.
             .app_data(Data::new(ctx.repository.clone()))
             .wrap(Logger::default()) // Use default format
             .configure(routes::assets::configure)
+            .configure(routes::storage::configure)
             .configure(routes::echo::configure)
             .configure(routes::websocket::configure)
             .configure(routes::functions::configure)

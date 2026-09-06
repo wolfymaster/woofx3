@@ -12,8 +12,8 @@ use tokio::task;
 
 use crate::services::file_service::FileService;
 use crate::types::{AppContext, SafeTempDir};
-use lib_module::db_proxy::{self, complete_module_install};
-use lib_module::db_proxy_client::HttpDbProxyClient;
+use lib_module::db_proxy;
+use lib_module::db_proxy_client::{HttpDbProxyClient, ModuleDbProxy};
 use lib_module::module_delete::{
     notify_delete, resolve_module, run_delete_resolved, DeleteError,
 };
@@ -91,6 +91,9 @@ async fn upload_handler(
     };
 
     task::spawn(async move {
+        let db_proxy_client = ctx.db_proxy_url.as_deref().map(HttpDbProxyClient::new);
+        let db_proxy_ref = db_proxy_client.as_ref().map(|c| c as &dyn ModuleDbProxy);
+
         // SafeTempDir with automatic cleanup on drop
         let _upload_cleanup = SafeTempDir::new(PathBuf::from(&metadata.temp_dir_path), PathBuf::from("./uploads"));
 
@@ -113,14 +116,14 @@ async fn upload_handler(
 
         // Helper: send install status notification to db proxy via outbox
         async fn notify_install(
-            db_proxy_url: Option<&str>,
+            db_proxy: Option<&dyn ModuleDbProxy>,
             module_name: &str,
             version: &str,
             status: &str,
             error_msg: &str,
             request_context: Option<&db_proxy::RequestContext>,
         ) {
-            let Some(url) = db_proxy_url else {
+            let Some(db_proxy) = db_proxy else {
                 warn!("DB_PROXY_URL not set, skipping install notification for {}/{}", module_name, version);
                 return;
             };
@@ -128,7 +131,7 @@ async fn upload_handler(
             info!("Notifying db proxy: module={}/{} status={}", module_name, version, status);
 
             // Try to resolve module_id from db proxy; use empty string if not found
-            let module_id = match lib_module::db_proxy::get_module_by_name(url, module_name).await {
+            let module_id = match db_proxy.get_module_by_name(module_name).await {
                 Ok(Some(resp)) => {
                     let v: serde_json::Value = serde_json::from_str(&resp).unwrap_or_default();
                     v.get("module").and_then(|m| m.get("id")).and_then(|v| v.as_str()).unwrap_or("").to_string()
@@ -137,7 +140,7 @@ async fn upload_handler(
             };
 
             info!("Sending CompleteModuleInstall: module_id={} name={} version={} status={}", module_id, module_name, version, status);
-            match complete_module_install(url, &module_id, module_name, version, status, error_msg, request_context).await {
+            match db_proxy.complete_module_install(&module_id, module_name, version, status, error_msg, request_context).await {
                 Ok(_) => info!("CompleteModuleInstall succeeded for {}/{} (status={})", module_name, version, status),
                 Err(e) => error!("CompleteModuleInstall failed for {}/{}: {}", module_name, version, e),
             }
@@ -148,7 +151,7 @@ async fn upload_handler(
         if metadatas.is_err() {
             let err_msg = format!("{}", metadatas.err().unwrap());
             error!("Failed to process uploaded file: {}", err_msg);
-            notify_install(ctx.db_proxy_url.as_deref(), "unknown", "unknown", "failed", &err_msg, request_context.as_ref()).await;
+            notify_install(db_proxy_ref,"unknown", "unknown", "failed", &err_msg, request_context.as_ref()).await;
             return;
         }
 
@@ -156,7 +159,7 @@ async fn upload_handler(
         let file_metadata = metadatas.ok().unwrap();
 
         let module_config = ModuleServiceConfig {
-            repository: ctx.repository.clone(),
+            repository: (*ctx.repository.current()).clone(),
         };
         let mut module = ModuleService::new(module_config);
 
@@ -215,7 +218,7 @@ async fn upload_handler(
             Err(err) => {
                 let err_msg = err.to_string();
                 error!("Failed to create module plan: {}", err_msg);
-                notify_install(ctx.db_proxy_url.as_deref(), "unknown", "unknown", "failed", &err_msg, request_context.as_ref()).await;
+                notify_install(db_proxy_ref,"unknown", "unknown", "failed", &err_msg, request_context.as_ref()).await;
                 return;
             }
         };
@@ -225,7 +228,7 @@ async fn upload_handler(
             _ => {
                 let err_msg = "module identity missing after create_plan";
                 error!("{}", err_msg);
-                notify_install(ctx.db_proxy_url.as_deref(), "unknown", "unknown", "failed", err_msg, request_context.as_ref()).await;
+                notify_install(db_proxy_ref,"unknown", "unknown", "failed", err_msg, request_context.as_ref()).await;
                 return;
             }
         };
@@ -248,7 +251,7 @@ async fn upload_handler(
             if let Some(ref mut rc) = request_context {
                 rc.module_key = expected_module_key.clone();
             }
-            notify_install(ctx.db_proxy_url.as_deref(), module_name, module_version, "failed", &err_msg, request_context.as_ref()).await;
+            notify_install(db_proxy_ref,module_name, module_version, "failed", &err_msg, request_context.as_ref()).await;
             return;
         }
 
@@ -260,13 +263,13 @@ async fn upload_handler(
         let archive_key = format!("archives/{}.zip", computed_module_key);
 
         if !force {
-            if ctx.repository.exists(&archive_key).await.unwrap_or(false) {
+            if ctx.repository.current().exists(&archive_key).await.unwrap_or(false) {
                 let err_msg = format!(
                     "Module '{}' version '{}' already exists. Use force=true to overwrite.",
                     module_name, module_version
                 );
                 error!("{}", err_msg);
-                notify_install(ctx.db_proxy_url.as_deref(), module_name, module_version, "failed", &err_msg, request_context.as_ref()).await;
+                notify_install(db_proxy_ref,module_name, module_version, "failed", &err_msg, request_context.as_ref()).await;
                 return;
             }
         }
@@ -293,7 +296,7 @@ async fn upload_handler(
         {
             let err_msg = e.to_string();
             error!("Module install failed: {}", err_msg);
-            notify_install(ctx.db_proxy_url.as_deref(), module_name, module_version, "failed", &err_msg, request_context.as_ref()).await;
+            notify_install(db_proxy_ref,module_name, module_version, "failed", &err_msg, request_context.as_ref()).await;
             return;
         }
 
@@ -302,7 +305,7 @@ async fn upload_handler(
                 &ctx.registry,
                 db_proxy_url,
                 module_name,
-                &ctx.repository,
+                &*ctx.repository.current(),
                 &ctx.scheduler,
             )
             .await
@@ -324,7 +327,7 @@ async fn upload_handler(
                     file_name: archive_key.clone(),
                 };
                 let mut failed: Vec<String> = Vec::new();
-                match ctx.repository.create([req], &mut failed).await {
+                match ctx.repository.current().create([req], &mut failed).await {
                     Ok(_) if failed.is_empty() => {
                         info!("Archived module zip to {}", archive_key);
                     }
@@ -339,7 +342,7 @@ async fn upload_handler(
                 warn!("Original zip not found at {}, skipping archive", original_zip_path.display());
             }
 
-            notify_install(ctx.db_proxy_url.as_deref(), name, version, "completed", "", request_context.as_ref()).await;
+            notify_install(db_proxy_ref,name, version, "completed", "", request_context.as_ref()).await;
         }
     });
 
@@ -361,7 +364,7 @@ async fn register_handler(
         &ctx.registry,
         db_proxy_url,
         &module_name,
-        &ctx.repository,
+        &*ctx.repository.current(),
         &ctx.scheduler,
     )
     .await
@@ -469,7 +472,7 @@ async fn delete_handler(
             &module_name_task,
             &db_proxy,
             "",
-            &ctx_clone.repository,
+            &*ctx_clone.repository.current(),
             registry,
         ).await {
             Ok(_) => {
@@ -591,8 +594,9 @@ async fn get_handler(
 /// key, same convention as `state_handler`/`get_handler`) to the stable
 /// manifest module id, via the same `GetModuleByName` lookup
 /// `refresh_module_in_registry` already uses internally.
-async fn resolve_module_id(db_proxy_url: &str, module_name: &str) -> Result<String, Error> {
-    let record = db_proxy::fetch_module_by_name(db_proxy_url, module_name)
+async fn resolve_module_id(db_proxy: &dyn ModuleDbProxy, module_name: &str) -> Result<String, Error> {
+    let record = db_proxy
+        .fetch_module_by_name(module_name)
         .await
         .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?
         .ok_or_else(|| actix_web::error::ErrorNotFound(format!("Module '{}' not found", module_name)))?;
@@ -620,10 +624,11 @@ async fn versions_handler(
     let db_proxy_url = ctx.db_proxy_url.as_deref().ok_or_else(|| {
         actix_web::error::ErrorInternalServerError("databaseProxyUrl is not configured in .woofx3.json")
     })?;
-    let module_id = resolve_module_id(db_proxy_url, &module_name).await?;
+    let db_proxy = HttpDbProxyClient::new(db_proxy_url);
+    let module_id = resolve_module_id(&db_proxy, &module_name).await?;
 
     let prefix = format!("archives/{}:", module_id);
-    let archive_keys = ctx.repository.list_prefix(&prefix).await
+    let archive_keys = ctx.repository.current().list_prefix(&prefix).await
         .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
 
     // Each key is `archives/{module_id}:{version}:{hash}.zip` — the
@@ -667,10 +672,11 @@ async fn rollback_handler(
     let db_proxy_url = ctx.db_proxy_url.as_deref().ok_or_else(|| {
         actix_web::error::ErrorInternalServerError("databaseProxyUrl is not configured in .woofx3.json")
     })?;
-    let module_id = resolve_module_id(db_proxy_url, &module_name).await?;
+    let db_proxy = HttpDbProxyClient::new(db_proxy_url);
+    let module_id = resolve_module_id(&db_proxy, &module_name).await?;
 
     let prefix = format!("archives/{}:{}:", module_id, version);
-    let mut matches = ctx.repository.list_prefix(&prefix).await
+    let mut matches = ctx.repository.current().list_prefix(&prefix).await
         .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
     matches.sort();
     let archive_key = matches.into_iter().next().ok_or_else(|| {
@@ -680,7 +686,7 @@ async fn rollback_handler(
         ))
     })?;
 
-    let zip_bytes = ctx.repository.read_file(&archive_key).await
+    let zip_bytes = ctx.repository.current().read_file(&archive_key).await
         .map_err(|e| actix_web::error::ErrorInternalServerError(
             format!("Failed to read archive {}: {}", archive_key, e)
         ))?;
@@ -694,7 +700,7 @@ async fn rollback_handler(
     let mut archive = zip::ZipArchive::new(cursor)
         .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
 
-    let module_config = ModuleServiceConfig { repository: ctx.repository.clone() };
+    let module_config = ModuleServiceConfig { repository: (*ctx.repository.current()).clone() };
     let mut module = ModuleService::new(module_config);
 
     for i in 0..archive.len() {
@@ -753,7 +759,7 @@ async fn rollback_handler(
         &ctx.registry,
         db_proxy_url,
         &resolved_name,
-        &ctx.repository,
+        &*ctx.repository.current(),
         &ctx.scheduler,
     )
     .await

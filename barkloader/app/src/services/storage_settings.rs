@@ -3,6 +3,7 @@ use lib_repository::{FileRepositoryConfig, RepositoryConfig, S3RepositoryConfig}
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::time::Duration;
 
 /// Settings keys read from the engine's `settings` table to compose
 /// the active repository. All keys are application-scoped to the
@@ -92,6 +93,93 @@ pub async fn get_setting(db_proxy_url: &str, key: &str) -> Result<Option<String>
         .filter(|s| !s.is_empty()))
 }
 
+/// Readiness probe against db-proxy's public `Ping` RPC. That route is
+/// deliberately exempt from authorization and touches no database (see
+/// `db/app/routes/ping.go`), so a successful response means the process
+/// is up and serving Twirp -- the same signal the Go and TypeScript
+/// runtimes check through their registered `db` service.
+pub async fn ping(db_proxy_url: &str) -> Result<()> {
+    let url = format!("{}/twirp/common.CommonService/Ping", db_proxy_url);
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .map_err(|e| anyhow!("Ping request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("Ping failed {}: {}", status, text));
+    }
+    Ok(())
+}
+
+/// Retry delay schedule: 1s doubling to a 60s ceiling, then back to the
+/// minimum. Mirrors `shared/common/golang/runtime/backoff.go` and the
+/// TypeScript `calculateNextBackoffDelay` so every service in the repo
+/// waits on db-proxy along the same curve.
+struct Backoff {
+    current: Duration,
+}
+
+impl Backoff {
+    const MIN: Duration = Duration::from_secs(1);
+    const MAX: Duration = Duration::from_secs(60);
+    const FACTOR: u32 = 2;
+
+    fn new() -> Self {
+        Self { current: Self::MIN }
+    }
+
+    fn next(&mut self) -> Duration {
+        let next = self.current * Self::FACTOR;
+        if next > Self::MAX {
+            self.current = Self::MIN;
+            return Self::MIN;
+        }
+        self.current = next;
+        next
+    }
+}
+
+/// Block until db-proxy answers `Ping`.
+///
+/// Application configuration lives in the engine's `settings` table, so
+/// nothing that reads it -- the storage provider above all -- may run
+/// before the connection is established. A db-proxy that is merely slow
+/// to bind would otherwise resolve every setting to whatever the
+/// environment defaults happen to be, silently seating the process on
+/// the wrong storage backend for its entire lifetime.
+///
+/// Retries indefinitely rather than giving up: barkloader can do no
+/// useful work without db-proxy, and the Go and TypeScript runtimes
+/// hold their application init exactly the same way.
+pub async fn wait_for_db_proxy(db_proxy_url: &str) {
+    let mut backoff = Backoff::new();
+    let mut attempt: u32 = 1;
+
+    loop {
+        match ping(db_proxy_url).await {
+            Ok(()) => {
+                info!("db-proxy ready at {} (attempt {})", db_proxy_url, attempt);
+                return;
+            }
+            Err(e) => {
+                let delay = backoff.next();
+                warn!(
+                    "db-proxy not ready at {} (attempt {}): {}; retrying in {:?}",
+                    db_proxy_url, attempt, e, delay
+                );
+                tokio::time::sleep(delay).await;
+                attempt += 1;
+            }
+        }
+    }
+}
+
 fn env_or_setting(setting: Option<String>, env_var: &str) -> Option<String> {
     setting.or_else(|| std::env::var(env_var).ok().filter(|s| !s.is_empty()))
 }
@@ -105,14 +193,15 @@ pub async fn resolve_repository_config(
     db_proxy_url: Option<&str>,
     default_modules_dir: &str,
 ) -> Result<RepositoryConfig> {
+    // A transport error here is fatal, not a cue to fall back: callers
+    // establish the db-proxy connection first (see `wait_for_db_proxy`),
+    // so a failure now means db-proxy went away mid-startup rather than
+    // that the setting is absent. `get_setting` already reports a truly
+    // unset key as `Ok(None)`, which is what the env fallback is for.
     let provider = if let Some(url) = db_proxy_url {
-        match get_setting(url, "storage.provider").await {
-            Ok(value) => value,
-            Err(e) => {
-                warn!("Failed to fetch storage.provider from db-proxy: {}; falling back to env", e);
-                None
-            }
-        }
+        get_setting(url, "storage.provider")
+            .await
+            .map_err(|e| anyhow!("Failed to read storage.provider from db-proxy: {}", e))?
     } else {
         None
     };
@@ -122,7 +211,7 @@ pub async fn resolve_repository_config(
     match provider.as_str() {
         "file" => {
             let destination_str = if let Some(url) = db_proxy_url {
-                get_setting(url, "storage.file.destination").await.ok().flatten()
+                get_setting(url, "storage.file.destination").await?
             } else {
                 None
             };
@@ -149,28 +238,28 @@ pub async fn resolve_repository_config(
 }
 
 async fn resolve_s3_config(db_proxy_url: Option<&str>) -> Result<S3RepositoryConfig> {
-    async fn lookup(db_proxy_url: Option<&str>, key: &str) -> Option<String> {
+    async fn lookup(db_proxy_url: Option<&str>, key: &str) -> Result<Option<String>> {
         if let Some(url) = db_proxy_url {
-            return get_setting(url, key).await.ok().flatten();
+            return get_setting(url, key).await;
         }
-        None
+        Ok(None)
     }
 
-    let bucket = env_or_setting(lookup(db_proxy_url, "storage.s3.bucket").await, "S3_BUCKET")
+    let bucket = env_or_setting(lookup(db_proxy_url, "storage.s3.bucket").await?, "S3_BUCKET")
         .ok_or_else(|| anyhow!("S3 storage requires 'storage.s3.bucket' setting or S3_BUCKET env"))?;
-    let prefix = env_or_setting(lookup(db_proxy_url, "storage.s3.prefix").await, "S3_PREFIX");
-    let region = env_or_setting(lookup(db_proxy_url, "storage.s3.region").await, "S3_REGION");
-    let endpoint = env_or_setting(lookup(db_proxy_url, "storage.s3.endpoint").await, "S3_ENDPOINT");
+    let prefix = env_or_setting(lookup(db_proxy_url, "storage.s3.prefix").await?, "S3_PREFIX");
+    let region = env_or_setting(lookup(db_proxy_url, "storage.s3.region").await?, "S3_REGION");
+    let endpoint = env_or_setting(lookup(db_proxy_url, "storage.s3.endpoint").await?, "S3_ENDPOINT");
     let access_key = env_or_setting(
-        lookup(db_proxy_url, "storage.s3.access_key").await,
+        lookup(db_proxy_url, "storage.s3.access_key").await?,
         "S3_ACCESS_KEY",
     );
     let secret_key = env_or_setting(
-        lookup(db_proxy_url, "storage.s3.secret_key").await,
+        lookup(db_proxy_url, "storage.s3.secret_key").await?,
         "S3_SECRET_KEY",
     );
     let force_path_style = env_or_setting(
-        lookup(db_proxy_url, "storage.s3.force_path_style").await,
+        lookup(db_proxy_url, "storage.s3.force_path_style").await?,
         "S3_FORCE_PATH_STYLE",
     )
     .map(|v| v == "true" || v == "1" || v == "yes")
@@ -206,6 +295,25 @@ mod tests {
         let body = r#"{"setting":null}"#;
         let parsed: GetSettingResponse = serde_json::from_str(body).unwrap();
         assert_eq!(parsed.setting.and_then(|s| s.value), None);
+    }
+
+    // Matches `Backoff.Next()` in shared/common/golang/runtime/backoff.go:
+    // the first delay is already doubled (min * factor), the ceiling is
+    // exclusive-on-exceed, and overflow wraps to min instead of pinning
+    // at max -- so a long outage keeps producing a fast first retry.
+    #[test]
+    fn backoff_matches_shared_runtime_curve() {
+        let mut backoff = Backoff::new();
+        let delays: Vec<u64> = (0..8).map(|_| backoff.next().as_secs()).collect();
+        assert_eq!(delays, vec![2, 4, 8, 16, 32, 1, 2, 4]);
+    }
+
+    #[test]
+    fn backoff_never_exceeds_max() {
+        let mut backoff = Backoff::new();
+        for _ in 0..100 {
+            assert!(backoff.next() <= Backoff::MAX);
+        }
     }
 
     #[test]

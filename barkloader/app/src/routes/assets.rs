@@ -1,6 +1,8 @@
 use actix_web::web::{Data, Path, ServiceConfig};
 use actix_web::{HttpResponse, get};
-use lib_repository::{Repository, RepositoryImpl};
+use lib_repository::Repository;
+
+use crate::types::SharedRepository;
 
 /// Top-level repository key prefixes this route will ever serve.
 /// `user/` is reserved for a not-yet-implemented user-asset upload
@@ -16,12 +18,12 @@ const ALLOWED_TOP_LEVEL_PREFIXES: &[&str] = &["modules/", "user/"];
 /// Every rejection — traversal attempt, bad prefix, missing file — is a
 /// uniform 404 with no detail, so callers cannot probe the key space.
 #[get("/assets/{key:.*}")]
-async fn assets_handler(repository: Data<RepositoryImpl>, path: Path<String>) -> HttpResponse {
+async fn assets_handler(repository: Data<SharedRepository>, path: Path<String>) -> HttpResponse {
     let raw = path.into_inner();
     let Some(key) = sanitize_asset_key(&raw) else {
         return not_found();
     };
-    match repository.read_file(&key).await {
+    match repository.current().read_file(&key).await {
         Ok(bytes) => HttpResponse::Ok()
             .content_type(content_type_for_key(&key))
             .insert_header(("Cache-Control", cache_control_for_key(&key)))
@@ -141,7 +143,7 @@ mod tests {
     // for the sync tests below.
     use actix_web::App;
     use actix_web::test as actix_test;
-    use lib_repository::{CreateFileRequest, FileRepository, FileRepositoryConfig};
+    use lib_repository::{CreateFileRequest, FileRepository, FileRepositoryConfig, RepositoryImpl};
 
     #[test]
     fn sanitize_rejects_traversal_and_bad_prefixes() {
@@ -274,7 +276,9 @@ mod tests {
         seed(&repo, "modules/m1/widgets/w1/index.html", b"<!doctype html>").await;
 
         let app = actix_test::init_service(
-            App::new().app_data(Data::new(repo)).configure(configure),
+            App::new()
+                .app_data(Data::new(SharedRepository::new(repo)))
+                .configure(configure),
         )
         .await;
 
@@ -301,7 +305,9 @@ mod tests {
         seed(&repo, "archives/m1.zip", b"zipbytes").await;
 
         let app = actix_test::init_service(
-            App::new().app_data(Data::new(repo)).configure(configure),
+            App::new()
+                .app_data(Data::new(SharedRepository::new(repo)))
+                .configure(configure),
         )
         .await;
 
@@ -332,7 +338,9 @@ mod tests {
         let repo = file_backed_repo(dir.path()).await;
 
         let app = actix_test::init_service(
-            App::new().app_data(Data::new(repo)).configure(configure),
+            App::new()
+                .app_data(Data::new(SharedRepository::new(repo)))
+                .configure(configure),
         )
         .await;
 
@@ -353,7 +361,9 @@ mod tests {
         seed(&repo, "modules/m1/blob.dat", b"\x00\x01").await;
 
         let app = actix_test::init_service(
-            App::new().app_data(Data::new(repo)).configure(configure),
+            App::new()
+                .app_data(Data::new(SharedRepository::new(repo)))
+                .configure(configure),
         )
         .await;
 
