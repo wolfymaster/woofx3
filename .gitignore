@@ -38,6 +38,9 @@ build/dist
 # DB Badger files
 db/badger
 
+# DB migration binary
+db/migrate
+
 # docs
 docs/.vitepress
 docs/superpowers

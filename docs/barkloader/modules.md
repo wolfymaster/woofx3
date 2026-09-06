@@ -1,12 +1,12 @@
 # Module Format
 
-A module is a ZIP archive whose root contains a **`module.json`** or **`module.yaml`** manifest. The canonical JSON field names and semantics match **`module-improvements-spec.md`** in the **woofx3-ui** repository. The archive also includes function sources, widget HTML/assets, overlay entry files, and any other paths referenced by the manifest.
+A module is a ZIP archive whose root contains a **`manifest.json`** or **`manifest.yaml`** manifest. The canonical JSON field names and semantics match **`module-improvements-spec.md`** in the **woofx3-ui** repository. The archive also includes function sources, widget HTML/assets, overlay entry files, and any other paths referenced by the manifest.
 
 ## Structure (example)
 
 ```
 my-module.zip
-  |-- module.json
+  |-- manifest.json
   |-- functions/
   |     +-- handler.lua
   |-- widgets/
@@ -19,15 +19,15 @@ my-module.zip
               +-- index.html
 ```
 
-The manifest is **required**. If no `module.json` / `module.yaml` is found (after extraction), processing fails.
+The manifest is **required**. If no manifest file is found (after extraction), processing fails.
 
-**Manifest selection:** if multiple JSON/YAML files exist, barkloader prefers `module.json`, then `module.yaml` / `module.yml` (including under subpaths), then falls back to the first manifest-looking file.
+**Manifest selection:** if multiple JSON/YAML files exist, barkloader ranks them `manifest.json`, `manifest.yaml`, `manifest.yml`, then the legacy `module.json`, `module.yaml`, `module.yml` (including under subpaths), and finally falls back to the first manifest-looking file.
 
 ## Manifest (canonical shape)
 
 The manifest uses **camelCase** JSON keys. All top-level sections are optional **except** `id` and `name`, which must be present for a valid module record.
 
-### Example `module.json`
+### Example `manifest.json`
 
 ```json
 {
@@ -326,7 +326,7 @@ Two source kinds are supported today:
 
 The worker's reply data is whatever it returns — strings or `{value, label, ...}` objects. The default UI transform (`use-field-options.ts:defaultTransform`) coerces strings to `{value: s, label: s}` and passes through `{value, label}` objects verbatim; consumers that need richer shapes can pass a custom `transform`. Implementing a new `internal` source is just adding a new command branch to a worker that already subscribes to a NATS subject — no engine, manifest schema, or UI code changes.
 
-A worked example lives at `barkloader/modules/twitch_platform/manifest.json` (the `redeem.channelpoints.twitch` trigger) and `twitch/src/lib/twitch.ts` `listChannelPointRewards()`.
+A worked example lives at `modules/platform/twitch/manifest.json` in the **woofx3-modules** repository (the `redeem.channelpoints.twitch` trigger) and `twitch/src/lib/twitch.ts` `listChannelPointRewards()`.
 
 #### Helping users map fields to event payloads
 
@@ -460,7 +460,7 @@ ctx.event.parameters = { /* deviceId, etc. */ } // workflow-step-authored config
 `variables` comes from a command's `argument_pattern` (a UI/admin-configured field
 on the DB `commands` row — e.g. `"{songTitle}"` — not currently declarable from the
 manifest's `commands[]` entry above). Dotted variable names (`"{user.name}"`) build
-nested objects. See `barkloader/modules/spotify_sr/functions/song_request.js` for a
+nested objects. See `modules/platform/spotify/functions/song_request.js` (**woofx3-modules**) for a
 worked example.
 
 To reply to the chat command, `return ctx.response(success, message)` instead of
@@ -551,7 +551,7 @@ Declaring a kind is necessary but not sufficient — the module must also expose
 - A `deleteX` action with a `target: resource_ref(kind=...)` parameter that calls `ctx.resources.delete(target)`.
 - One or more mutation actions (e.g. `increment`, `decrement`) whose `target` is a `resource_ref(kind=...)`.
 
-See `barkloader/modules/counter/manifest.json` for the canonical example.
+See `modules/utility/counter/manifest.json` in the **woofx3-modules** repository for the canonical example.
 
 ### Module-level settings (`settings[]`)
 
@@ -573,7 +573,7 @@ JSON blob scoped to one widget placement and surfaced to browser-side widget cod
 | `required` | boolean | no | Defaults to `false`. Descriptive only today — **not enforced** anywhere in the install or read path; a module function reading an unset required setting just sees the type's zero value. |
 | `default` | string | no | Stored as a string regardless of `type`. If omitted, the effective default is `"0"` for `type: "number"`, `"false"` for `type: "boolean"`, and `""` otherwise. |
 
-Example — `barkloader/modules/spotify_sr/manifest.json`:
+Example — `modules/platform/spotify/manifest.json` (**woofx3-modules** repository):
 
 ```json
 "settings": [
@@ -630,7 +630,7 @@ ctx.module = {
 Values are stored as `TEXT` in the database and coerced to a native `string` /
 `number` / `boolean` at read time based on the setting's declared `type`
 (`HttpSettingsClient::coerce_value` in barkloader). Example, from
-`barkloader/modules/spotify_sr/functions/poll_current_track.js`:
+`modules/platform/spotify/functions/poll_current_track.js` (**woofx3-modules**):
 
 ```js
 var clientId = ctx.module.settings.clientId;
@@ -678,7 +678,7 @@ now-playing poll is the canonical example).
 | `schedule` | string | yes | A 6-field, seconds-first cron expression (parsed with the `cron` crate), e.g. `"*/30 * * * * *"` for every 30 seconds. An invalid expression is logged and that task is skipped — it does not fail the install. |
 | `description` | string | no | Defaults to `""`. |
 
-Example — `barkloader/modules/spotify_sr/manifest.json`:
+Example — `modules/platform/spotify/manifest.json` (**woofx3-modules** repository):
 
 ```json
 "backgroundTasks": [
@@ -771,7 +771,7 @@ The api/ service forwards both to the registered Convex webhook as `ModuleResour
 |-----------|------------------|--------|
 | `.js` | Program (QuickJS) | Sandbox function source. |
 | `.lua` | Program (Lua) | Sandbox function source. |
-| `.json` | Manifest | Prefer `module.json` at ZIP root. |
+| `.json` | Manifest | Prefer `manifest.json` at ZIP root. |
 | `.yaml`, `.yml` | Manifest | |
 | *other* | Asset | Stored as-is (HTML, CSS, images, fonts, etc.); used for widgets/overlays and any referenced path. |
 

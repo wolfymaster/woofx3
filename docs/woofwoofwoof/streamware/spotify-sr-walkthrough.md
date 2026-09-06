@@ -8,7 +8,7 @@ using the `spotify_sr` module's `now_playing` widget as a concrete example.
 Barkloader receives the `spotify_sr` ZIP archive and processes its manifest. The
 manifest declares a `now_playing` widget with a polling background task:
 
-This is a simplified excerpt — see `barkloader/modules/spotify_sr/manifest.json` for
+This is a simplified excerpt — see `modules/platform/spotify/manifest.json` in the **woofx3-modules** repository for
 the full manifest:
 
 ```json
