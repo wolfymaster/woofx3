@@ -187,6 +187,7 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
     // shouldn't block the bot from starting.
     try {
       await db.registerTriggers({
+        moduleId: "chat_commands",
         moduleKey: "",
         moduleName: "chat-commands-builtin",
         version: "builtin",
