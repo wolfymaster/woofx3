@@ -62,11 +62,11 @@ func parseTaxonomy(raw string) []string {
 	return taxonomy
 }
 
-// canonicalIDFromCreatedByRef extracts the manifest id (the moduleId
-// segment of a canonical id) from a row's `created_by_ref` field, which
-// stores the composite module_key (`{moduleId}:{version}:{hash}`).
-// Falls back to the whole ref when it isn't colon-delimited (legacy rows
-// written before the composite format).
+// moduleIDFromCreatedByRef extracts the manifest id (the moduleId segment
+// of a canonical id) from a row's `created_by_ref` field. That column
+// stores the version-free manifest id, so the common case returns it
+// unchanged; the split exists only to tolerate rows written with a
+// composite `{moduleId}:{version}:{hash}` ref.
 func moduleIDFromCreatedByRef(createdByRef string) string {
 	if i := strings.IndexByte(createdByRef, ':'); i > 0 {
 		return createdByRef[:i]
@@ -82,16 +82,15 @@ func canonicalIDFor(moduleID, kind, resourceID string) string {
 }
 
 // projectionKeyFor builds the UI-projection identity for a MODULE-owned
-// resource: `{moduleKey}:{kind}:{manifestId}` where `moduleKey` is the
-// composite `{moduleId}:{version}:{hash}` stored as `created_by_ref` on
-// trigger / action rows. Returns "" when the row isn't module-owned or
-// is missing required fields, so callers can omit the JSON field rather
-// than emit a malformed key downstream.
+// resource: `{createdByRef}:{kind}:{manifestId}`. Returns "" when the row
+// isn't module-owned or is missing required fields, so callers can omit
+// the JSON field rather than emit a malformed key downstream.
 //
-// Distinct from canonicalId (which omits version): projectionKey is
-// version-pinned so the UI projects v1 and v2 of the same module as
-// distinct rows, while staying stable across engine instances that
-// installed the same zip (the zip hash is deterministic).
+// Deliberately NOT version-pinned. `created_by_ref` holds the version-free
+// manifest id, so a module upgrade upserts these rows in place and every
+// existing reference to a trigger / action / widget / asset keeps
+// resolving. Functions are the documented exception — see
+// buildFunctionRegisteredData.
 func projectionKeyFor(createdByType, createdByRef, kind, manifestID string) string {
 	if createdByType != "MODULE" || createdByRef == "" || manifestID == "" {
 		return ""
@@ -99,7 +98,7 @@ func projectionKeyFor(createdByType, createdByRef, kind, manifestID string) stri
 	return createdByRef + ":" + kind + ":" + manifestID
 }
 
-func buildTriggerRegisteredData(moduleKey, moduleName, version string, triggers []*models.Trigger) map[string]any {
+func buildTriggerRegisteredData(modulePrefix, moduleKey, moduleName, version string, triggers []*models.Trigger) map[string]any {
 	rows := make([]map[string]any, 0, len(triggers))
 	for _, t := range triggers {
 		row := map[string]any{
@@ -119,14 +118,15 @@ func buildTriggerRegisteredData(moduleKey, moduleName, version string, triggers 
 		rows = append(rows, row)
 	}
 	return map[string]any{
-		"module_key":  moduleKey,
-		"module_name": moduleName,
-		"version":     version,
-		"triggers":    rows,
+		"module_prefix": modulePrefix,
+		"module_key":    moduleKey,
+		"module_name":   moduleName,
+		"version":       version,
+		"triggers":      rows,
 	}
 }
 
-func buildActionRegisteredData(moduleKey, moduleName, version string, actions []*models.Action) map[string]any {
+func buildActionRegisteredData(modulePrefix, moduleKey, moduleName, version string, actions []*models.Action) map[string]any {
 	rows := make([]map[string]any, 0, len(actions))
 	for _, a := range actions {
 		row := map[string]any{
@@ -146,10 +146,11 @@ func buildActionRegisteredData(moduleKey, moduleName, version string, actions []
 		rows = append(rows, row)
 	}
 	return map[string]any{
-		"module_key":  moduleKey,
-		"module_name": moduleName,
-		"version":     version,
-		"actions":     rows,
+		"module_prefix": modulePrefix,
+		"module_key":    moduleKey,
+		"module_name":   moduleName,
+		"version":       version,
+		"actions":       rows,
 	}
 }
 
@@ -159,14 +160,14 @@ func buildActionRegisteredData(moduleKey, moduleName, version string, actions []
 // service has just persisted. `canonical_id` is derived from the parent
 // module key + the function row's `manifest_id` — symmetric with the
 // trigger / action registered events.
-func buildFunctionRegisteredData(moduleID, moduleKey, moduleName, version string, functions []models.ModuleFunction) map[string]any {
-	moduleSegment := moduleIDFromCreatedByRef(moduleKey)
+func buildFunctionRegisteredData(moduleRecordID, modulePrefix, moduleKey, moduleName, version string, functions []models.ModuleFunction) map[string]any {
+	moduleSegment := modulePrefix
 	rows := make([]map[string]any, 0, len(functions))
 	for _, f := range functions {
 		row := map[string]any{
 			"id":           f.ID.String(),
 			"canonical_id": canonicalIDFor(moduleSegment, "function", f.ManifestID),
-			"module_id":    moduleID,
+			"module_id":    moduleRecordID,
 			"manifest_id":  f.ManifestID,
 			"name":         f.Name,
 			"file_name":    f.FileName,
@@ -183,10 +184,11 @@ func buildFunctionRegisteredData(moduleID, moduleKey, moduleName, version string
 		rows = append(rows, row)
 	}
 	return map[string]any{
-		"module_key":  moduleKey,
-		"module_name": moduleName,
-		"version":     version,
-		"functions":   rows,
+		"module_prefix": modulePrefix,
+		"module_key":    moduleKey,
+		"module_name":   moduleName,
+		"version":       version,
+		"functions":     rows,
 	}
 }
 
@@ -195,7 +197,7 @@ func buildFunctionRegisteredData(moduleID, moduleKey, moduleName, version string
 // caches) can drop their per-trigger state symmetrically with the
 // `module.trigger.registered` event. Canonical id = `{moduleId}:trigger:{manifest_id}`,
 // where moduleId is the first segment of `created_by_ref`.
-func buildTriggerDeregisteredData(modulePrefix string, triggers []*models.Trigger) map[string]any {
+func buildTriggerDeregisteredData(modulePrefix, moduleKey string, triggers []*models.Trigger) map[string]any {
 	rows := make([]map[string]any, 0, len(triggers))
 	for _, t := range triggers {
 		moduleID := moduleIDFromCreatedByRef(t.CreatedByRef)
@@ -218,6 +220,7 @@ func buildTriggerDeregisteredData(modulePrefix string, triggers []*models.Trigge
 	}
 	return map[string]any{
 		"module_prefix": modulePrefix,
+		"module_key":    moduleKey,
 		"triggers":      rows,
 	}
 }
@@ -225,7 +228,7 @@ func buildTriggerDeregisteredData(modulePrefix string, triggers []*models.Trigge
 // buildActionDeregisteredData mirrors buildTriggerDeregisteredData for
 // actions. Canonical id is derived from `created_by_ref` (the moduleId
 // segment) and the row's `manifest_id` column.
-func buildActionDeregisteredData(modulePrefix string, actions []*models.Action) map[string]any {
+func buildActionDeregisteredData(modulePrefix, moduleKey string, actions []*models.Action) map[string]any {
 	rows := make([]map[string]any, 0, len(actions))
 	for _, a := range actions {
 		moduleID := moduleIDFromCreatedByRef(a.CreatedByRef)
@@ -247,6 +250,7 @@ func buildActionDeregisteredData(modulePrefix string, actions []*models.Action) 
 	}
 	return map[string]any{
 		"module_prefix": modulePrefix,
+		"module_key":    moduleKey,
 		"actions":       rows,
 	}
 }
@@ -256,7 +260,7 @@ func buildActionDeregisteredData(modulePrefix string, actions []*models.Action) 
 // `repository_key` — the path the deployer's URL pipeline turns into
 // a fetchable URL. The engine deliberately does not carry a public
 // URL here; that's the deployer's concern.
-func buildAssetRegisteredData(moduleKey, moduleName, version string, assets []*models.Asset) map[string]any {
+func buildAssetRegisteredData(modulePrefix, moduleKey, moduleName, version string, assets []*models.Asset) map[string]any {
 	rows := make([]map[string]any, 0, len(assets))
 	for _, a := range assets {
 		moduleID := moduleIDFromCreatedByRef(a.CreatedByRef)
@@ -279,14 +283,15 @@ func buildAssetRegisteredData(moduleKey, moduleName, version string, assets []*m
 		rows = append(rows, row)
 	}
 	return map[string]any{
-		"module_key":  moduleKey,
-		"module_name": moduleName,
-		"version":     version,
-		"assets":      rows,
+		"module_prefix": modulePrefix,
+		"module_key":    moduleKey,
+		"module_name":   moduleName,
+		"version":       version,
+		"assets":        rows,
 	}
 }
 
-func buildAssetDeregisteredData(modulePrefix string, assets []*models.Asset) map[string]any {
+func buildAssetDeregisteredData(modulePrefix, moduleKey string, assets []*models.Asset) map[string]any {
 	rows := make([]map[string]any, 0, len(assets))
 	for _, a := range assets {
 		moduleID := moduleIDFromCreatedByRef(a.CreatedByRef)
@@ -309,6 +314,7 @@ func buildAssetDeregisteredData(modulePrefix string, assets []*models.Asset) map
 	}
 	return map[string]any{
 		"module_prefix": modulePrefix,
+		"module_key":    moduleKey,
 		"assets":        rows,
 	}
 }
@@ -345,7 +351,7 @@ func buildWorkflowChangeData(wf *models.WorkflowDefinition) map[string]any {
 // Functions live under a parent Module row; canonical id is derived from
 // the parent module's `module_key` (first segment) plus the function
 // row's `manifest_id`.
-func buildWidgetRegisteredData(moduleKey, moduleName, version string, widgets []*models.Widget) map[string]any {
+func buildWidgetRegisteredData(modulePrefix, moduleKey, moduleName, version string, widgets []*models.Widget) map[string]any {
 	rows := make([]map[string]any, 0, len(widgets))
 	for _, w := range widgets {
 		var alertTypes []string
@@ -376,14 +382,15 @@ func buildWidgetRegisteredData(moduleKey, moduleName, version string, widgets []
 		rows = append(rows, row)
 	}
 	return map[string]any{
-		"module_key":  moduleKey,
-		"module_name": moduleName,
-		"version":     version,
-		"widgets":     rows,
+		"module_prefix": modulePrefix,
+		"module_key":    moduleKey,
+		"module_name":   moduleName,
+		"version":       version,
+		"widgets":       rows,
 	}
 }
 
-func buildWidgetDeregisteredData(modulePrefix string, widgets []*models.Widget) map[string]any {
+func buildWidgetDeregisteredData(modulePrefix, moduleKey string, widgets []*models.Widget) map[string]any {
 	rows := make([]map[string]any, 0, len(widgets))
 	for _, w := range widgets {
 		moduleID := moduleIDFromCreatedByRef(w.CreatedByRef)
@@ -414,11 +421,12 @@ func buildWidgetDeregisteredData(modulePrefix string, widgets []*models.Widget) 
 	}
 	return map[string]any{
 		"module_prefix": modulePrefix,
+		"module_key":    moduleKey,
 		"widgets":       rows,
 	}
 }
 
-func buildBackgroundTaskRegisteredData(moduleKey, moduleName, version string, tasks []*models.BackgroundTask) map[string]any {
+func buildBackgroundTaskRegisteredData(modulePrefix, moduleKey, moduleName, version string, tasks []*models.BackgroundTask) map[string]any {
 	moduleID := moduleIDFromCreatedByRef(moduleKey)
 	rows := make([]map[string]any, 0, len(tasks))
 	for _, t := range tasks {
@@ -434,14 +442,15 @@ func buildBackgroundTaskRegisteredData(moduleKey, moduleName, version string, ta
 		})
 	}
 	return map[string]any{
-		"module_key":  moduleKey,
-		"module_name": moduleName,
-		"version":     version,
-		"tasks":       rows,
+		"module_prefix": modulePrefix,
+		"module_key":    moduleKey,
+		"module_name":   moduleName,
+		"version":       version,
+		"tasks":         rows,
 	}
 }
 
-func buildBackgroundTaskDeregisteredData(modulePrefix string, tasks []*models.BackgroundTask) map[string]any {
+func buildBackgroundTaskDeregisteredData(modulePrefix, moduleKey string, tasks []*models.BackgroundTask) map[string]any {
 	rows := make([]map[string]any, 0, len(tasks))
 	for _, t := range tasks {
 		rows = append(rows, map[string]any{
@@ -454,11 +463,12 @@ func buildBackgroundTaskDeregisteredData(modulePrefix string, tasks []*models.Ba
 	}
 	return map[string]any{
 		"module_prefix": modulePrefix,
+		"module_key":    moduleKey,
 		"tasks":         rows,
 	}
 }
 
-func buildFunctionDeregisteredData(moduleKey, moduleName, version string, functions []models.ModuleFunction) map[string]any {
+func buildFunctionDeregisteredData(modulePrefix, moduleKey, moduleName, version string, functions []models.ModuleFunction) map[string]any {
 	moduleID := moduleIDFromCreatedByRef(moduleKey)
 	rows := make([]map[string]any, 0, len(functions))
 	for _, f := range functions {
@@ -477,9 +487,10 @@ func buildFunctionDeregisteredData(moduleKey, moduleName, version string, functi
 		rows = append(rows, row)
 	}
 	return map[string]any{
-		"module_key":  moduleKey,
-		"module_name": moduleName,
-		"version":     version,
-		"functions":   rows,
+		"module_prefix": modulePrefix,
+		"module_key":    moduleKey,
+		"module_name":   moduleName,
+		"version":       version,
+		"functions":     rows,
 	}
 }

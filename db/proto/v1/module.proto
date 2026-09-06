@@ -225,7 +225,13 @@ message CompleteModuleDeleteRequest {
 }
 
 message DeleteByModuleIdRequest {
-  string module_id = 1;  // == manifest.id; server does `created_by_ref LIKE '{module_id}:%'`
+  // == manifest.id. Matched with equality against created_by_ref, which
+  // stores the version-free manifest id so module upgrades upsert in place.
+  string module_id = 1;
+  // Composite "{id}:{version}:{hash}" of the module being removed. Not used
+  // for row matching — carried so the deregistration outbox event can name
+  // the exact installed version alongside module_prefix.
+  string module_key = 2;
 }
 
 // Lookup by canonical id (`{moduleId}:{kind}:{manifest_id}`). Used by

@@ -19,11 +19,14 @@ func TestBuildTriggerRegisteredData(t *testing.T) {
 		ConfigSchema:  "[]",
 		AllowVariants: false,
 		CreatedByType: "MODULE",
-		CreatedByRef:  "twitch:1.0.0:abcdef1",
+		CreatedByRef:  "twitch",
 	}}
 
-	data := buildTriggerRegisteredData("twitch:1.0.0:abcdef1", "Twitch", "1.0.0", triggers)
+	data := buildTriggerRegisteredData("twitch", "twitch:1.0.0:abcdef1", "Twitch", "1.0.0", triggers)
 
+	if got := data["module_prefix"]; got != "twitch" {
+		t.Errorf("module_prefix = %v", got)
+	}
 	if got := data["module_key"]; got != "twitch:1.0.0:abcdef1" {
 		t.Errorf("module_key = %v", got)
 	}
@@ -48,7 +51,7 @@ func TestBuildTriggerRegisteredData(t *testing.T) {
 	if got, want := row["taxonomy"], []string{"platform.twitch", "function.chat"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("taxonomy = %v, want %v", got, want)
 	}
-	if row["created_by_ref"] != "twitch:1.0.0:abcdef1" {
+	if row["created_by_ref"] != "twitch" {
 		t.Errorf("created_by_ref = %v", row["created_by_ref"])
 	}
 	if row["allow_variants"] != false {
@@ -57,7 +60,7 @@ func TestBuildTriggerRegisteredData(t *testing.T) {
 }
 
 func TestBuildTriggerRegisteredDataEmpty(t *testing.T) {
-	data := buildTriggerRegisteredData("k", "n", "v", nil)
+	data := buildTriggerRegisteredData("p", "k", "n", "v", nil)
 	list, ok := data["triggers"].([]map[string]any)
 	if !ok || len(list) != 0 {
 		t.Fatalf("expected empty triggers slice, got %v (%T)", data["triggers"], data["triggers"])
@@ -74,10 +77,10 @@ func TestBuildActionRegisteredData(t *testing.T) {
 		ParamsSchema:  "{}",
 		Taxonomy:      `["platform.govee","function.lighting"]`,
 		CreatedByType: "MODULE",
-		CreatedByRef:  "twitch:1.0.0:abcdef1",
+		CreatedByRef:  "twitch",
 	}}
 
-	data := buildActionRegisteredData("twitch:1.0.0:abcdef1", "Twitch", "1.0.0", actions)
+	data := buildActionRegisteredData("twitch", "twitch:1.0.0:abcdef1", "Twitch", "1.0.0", actions)
 
 	list, ok := data["actions"].([]map[string]any)
 	if !ok || len(list) != 1 {
@@ -100,7 +103,7 @@ func TestBuildActionRegisteredData(t *testing.T) {
 
 func TestBuildActionRegisteredDataDefaultsEmptyTaxonomy(t *testing.T) {
 	actions := []*models.Action{{ID: uuid.New(), Name: "send"}}
-	data := buildActionRegisteredData("k", "n", "v", actions)
+	data := buildActionRegisteredData("p", "k", "n", "v", actions)
 	row := data["actions"].([]map[string]any)[0]
 	if got, want := row["taxonomy"], []string{}; !reflect.DeepEqual(got, want) {
 		t.Errorf("taxonomy = %v, want %v", got, want)
@@ -227,4 +230,73 @@ func TestModuleCatalogFields(t *testing.T) {
 			}
 		}
 	})
+}
+
+// Every module event must carry both identities: the version-free
+// `module_prefix` that rows are keyed on, and the composite `module_key`
+// naming the exact installed version. A consumer that indexes modules by
+// what `module.installed` gave it (the composite key) could not otherwise
+// match a definition event addressed only by the bare id.
+func TestModuleEventsCarryBothIdentifiers(t *testing.T) {
+	const (
+		prefix = "twitch_platform"
+		key    = "twitch_platform:1.0.0:075ab4d"
+	)
+	trigger := &models.Trigger{ID: uuid.New(), Name: "follow", CreatedByType: "MODULE", CreatedByRef: prefix, ManifestID: "follow.channel.twitch"}
+	action := &models.Action{ID: uuid.New(), Name: "send", CreatedByType: "MODULE", CreatedByRef: prefix, ManifestID: "twitch.chat.send"}
+	widget := &models.Widget{ID: uuid.New(), Name: "alerts", CreatedByType: "MODULE", CreatedByRef: prefix, ManifestID: "alertBox"}
+	asset := &models.Asset{ID: uuid.New(), Name: "bell", CreatedByType: "MODULE", CreatedByRef: prefix, ManifestID: "bell"}
+	task := &models.BackgroundTask{ID: uuid.New(), Name: "poll", CreatedByRef: prefix, ManifestID: "poll"}
+	fn := models.ModuleFunction{ID: uuid.New(), Name: "sendChatMessage", ManifestID: "sendChatMessage"}
+
+	cases := map[string]map[string]any{
+		"trigger.registered":           buildTriggerRegisteredData(prefix, key, "Twitch Platform", "1.0.0", []*models.Trigger{trigger}),
+		"trigger.deregistered":         buildTriggerDeregisteredData(prefix, key, []*models.Trigger{trigger}),
+		"action.registered":            buildActionRegisteredData(prefix, key, "Twitch Platform", "1.0.0", []*models.Action{action}),
+		"action.deregistered":          buildActionDeregisteredData(prefix, key, []*models.Action{action}),
+		"widget.registered":            buildWidgetRegisteredData(prefix, key, "Twitch Platform", "1.0.0", []*models.Widget{widget}),
+		"widget.deregistered":          buildWidgetDeregisteredData(prefix, key, []*models.Widget{widget}),
+		"asset.registered":             buildAssetRegisteredData(prefix, key, "Twitch Platform", "1.0.0", []*models.Asset{asset}),
+		"asset.deregistered":           buildAssetDeregisteredData(prefix, key, []*models.Asset{asset}),
+		"background_task.registered":   buildBackgroundTaskRegisteredData(prefix, key, "Twitch Platform", "1.0.0", []*models.BackgroundTask{task}),
+		"background_task.deregistered": buildBackgroundTaskDeregisteredData(prefix, key, []*models.BackgroundTask{task}),
+		"function.registered":          buildFunctionRegisteredData(uuid.New().String(), prefix, key, "Twitch Platform", "1.0.0", []models.ModuleFunction{fn}),
+		"function.deregistered":        buildFunctionDeregisteredData(prefix, key, "Twitch Platform", "1.0.0", []models.ModuleFunction{fn}),
+	}
+
+	for name, data := range cases {
+		if got := data["module_prefix"]; got != prefix {
+			t.Errorf("%s: module_prefix = %v, want %q", name, got, prefix)
+		}
+		if got := data["module_key"]; got != key {
+			t.Errorf("%s: module_key = %v, want %q", name, got, key)
+		}
+	}
+}
+
+// References must survive a module upgrade, so a trigger / action / widget /
+// asset projects under a version-free key. A function's source can change
+// without its name changing, so it stays version-pinned.
+func TestProjectionKeyVersionPinningIsFunctionsOnly(t *testing.T) {
+	const (
+		prefix = "twitch_platform"
+		key    = "twitch_platform:1.0.0:075ab4d"
+	)
+
+	trigger := &models.Trigger{ID: uuid.New(), CreatedByType: "MODULE", CreatedByRef: prefix, ManifestID: "follow.channel.twitch"}
+	data := buildTriggerRegisteredData(prefix, key, "Twitch Platform", "1.0.0", []*models.Trigger{trigger})
+	row := data["triggers"].([]map[string]any)[0]
+	if got, want := row["projection_key"], "twitch_platform:trigger:follow.channel.twitch"; got != want {
+		t.Errorf("trigger projection_key = %v, want %q (version-free so upgrades keep references resolving)", got, want)
+	}
+
+	fn := models.ModuleFunction{ID: uuid.New(), ManifestID: "sendChatMessage"}
+	fnData := buildFunctionRegisteredData(uuid.New().String(), prefix, key, "Twitch Platform", "1.0.0", []models.ModuleFunction{fn})
+	fnRow := fnData["functions"].([]map[string]any)[0]
+	if got, want := fnRow["projection_key"], "twitch_platform:1.0.0:075ab4d:function:sendChatMessage"; got != want {
+		t.Errorf("function projection_key = %v, want %q (version-pinned: source changes under a stable name)", got, want)
+	}
+	if got, want := fnRow["canonical_id"], "twitch_platform:function:sendChatMessage"; got != want {
+		t.Errorf("function canonical_id = %v, want %q (never version-pinned)", got, want)
+	}
 }

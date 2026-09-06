@@ -131,7 +131,7 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 					ApplicationID:   "",
 					EntityType:      "module.function",
 					Operation:       "registered",
-					Data:            buildFunctionRegisteredData(existing.ID.String(), existing.ModuleKey, existing.Name, existing.Version, functions),
+					Data:            buildFunctionRegisteredData(existing.ID.String(), existing.ModuleID, existing.ModuleKey, existing.Name, existing.Version, functions),
 					AutoAcknowledge: true,
 				})
 			}
@@ -179,7 +179,7 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 			ApplicationID:   "",
 			EntityType:      "module.function",
 			Operation:       "registered",
-			Data:            buildFunctionRegisteredData(m.ID.String(), m.ModuleKey, m.Name, m.Version, m.Functions),
+			Data:            buildFunctionRegisteredData(m.ID.String(), m.ModuleID, m.ModuleKey, m.Name, m.Version, m.Functions),
 			AutoAcknowledge: true,
 		})
 	}
@@ -244,7 +244,7 @@ func (s *moduleService) UpdateModule(ctx context.Context, req *client.UpdateModu
 			ApplicationID:   "",
 			EntityType:      "module.function",
 			Operation:       "registered",
-			Data:            buildFunctionRegisteredData(m.ID.String(), m.ModuleKey, m.Name, m.Version, m.Functions),
+			Data:            buildFunctionRegisteredData(m.ID.String(), m.ModuleID, m.ModuleKey, m.Name, m.Version, m.Functions),
 			AutoAcknowledge: true,
 		})
 	}
@@ -279,7 +279,7 @@ func (s *moduleService) DeleteModule(ctx context.Context, req *client.DeleteModu
 			ApplicationID:   "",
 			EntityType:      "module.function",
 			Operation:       "deregistered",
-			Data:            buildFunctionDeregisteredData(m.ModuleKey, m.Name, m.Version, functions),
+			Data:            buildFunctionDeregisteredData(m.ModuleID, m.ModuleKey, m.Name, m.Version, functions),
 			AutoAcknowledge: true,
 		})
 	}
@@ -424,7 +424,7 @@ func (s *moduleService) RegisterTriggers(ctx context.Context, req *client.Regist
 	// non-module registrars (SYSTEM services, integrations) upsert into the
 	// shared triggers table under their own (type, ref) namespace.
 	createdByType := "MODULE"
-	createdByRef := req.ModuleKey
+	createdByRef := moduleRegistrationRef(req.ModuleId, req.ModuleKey)
 	if req.CreatedByType != "" && req.CreatedByRef != "" {
 		createdByType = req.CreatedByType
 		createdByRef = req.CreatedByRef
@@ -461,7 +461,7 @@ func (s *moduleService) RegisterTriggers(ctx context.Context, req *client.Regist
 			ApplicationID:   "",
 			EntityType:      "module.trigger",
 			Operation:       "registered",
-			Data:            buildTriggerRegisteredData(req.ModuleKey, req.ModuleName, req.Version, saved),
+			Data:            buildTriggerRegisteredData(createdByRef, req.ModuleKey, req.ModuleName, req.Version, saved),
 			AutoAcknowledge: true,
 		})
 	}
@@ -545,7 +545,7 @@ func (s *moduleService) DeleteTriggersByModuleId(ctx context.Context, req *clien
 			ApplicationID:   "",
 			EntityType:      "module.trigger",
 			Operation:       "deregistered",
-			Data:            buildTriggerDeregisteredData(req.ModuleId, triggers),
+			Data:            buildTriggerDeregisteredData(req.ModuleId, req.ModuleKey, triggers),
 			AutoAcknowledge: true,
 		})
 	}
@@ -582,7 +582,7 @@ func (s *moduleService) RegisterActions(ctx context.Context, req *client.Registe
 	// non-module registrars (SYSTEM services, integrations) upsert into the
 	// shared actions table under their own (type, ref) namespace.
 	createdByType := "MODULE"
-	createdByRef := req.ModuleKey
+	createdByRef := moduleRegistrationRef(req.ModuleId, req.ModuleKey)
 	if req.CreatedByType != "" && req.CreatedByRef != "" {
 		createdByType = req.CreatedByType
 		createdByRef = req.CreatedByRef
@@ -620,7 +620,7 @@ func (s *moduleService) RegisterActions(ctx context.Context, req *client.Registe
 			ApplicationID:   "",
 			EntityType:      "module.action",
 			Operation:       "registered",
-			Data:            buildActionRegisteredData(req.ModuleKey, req.ModuleName, req.Version, saved),
+			Data:            buildActionRegisteredData(createdByRef, req.ModuleKey, req.ModuleName, req.Version, saved),
 			AutoAcknowledge: true,
 		})
 	}
@@ -715,7 +715,7 @@ func (s *moduleService) DeleteActionsByModuleId(ctx context.Context, req *client
 			ApplicationID:   "",
 			EntityType:      "module.action",
 			Operation:       "deregistered",
-			Data:            buildActionDeregisteredData(req.ModuleId, actions),
+			Data:            buildActionDeregisteredData(req.ModuleId, req.ModuleKey, actions),
 			AutoAcknowledge: true,
 		})
 	}
@@ -751,6 +751,24 @@ func actionToProto(a *models.Action) *client.Action {
 // resolveManifestModuleID returns the manifest-local module id (e.g.
 // twitch_platform) from the install request, falling back to the first
 // segment of module_key when omitted (legacy callers).
+// moduleRegistrationRef picks the value stored as `created_by_ref` on a
+// module's trigger / action / widget / asset / background-task rows.
+//
+// It is deliberately the version-free manifest id: registration upserts on
+// (created_by_type, created_by_ref, name), so keying on the bare id lets a
+// module upgrade update its rows in place instead of orphaning every
+// workflow reference that points at them.
+//
+// The fallback exists for callers predating the `module_id` field, which
+// put the bare id in `module_key`. Once every registrar sets `module_id`
+// it can be dropped.
+func moduleRegistrationRef(moduleID, moduleKey string) string {
+	if moduleID != "" {
+		return moduleID
+	}
+	return moduleKey
+}
+
 func resolveManifestModuleID(req *client.CreateModuleRequest) string {
 	if req.ModuleId != "" {
 		return req.ModuleId
@@ -996,10 +1014,15 @@ func (s *moduleService) CompleteModuleInstall(ctx context.Context, req *client.C
 	// moduleCatalogFields in place rather than blocking the event.
 	author, description := "Unknown", ""
 	taxonomy := []string{}
+	modulePrefix := ""
 	if moduleID, err := uuid.Parse(req.ModuleId); err == nil {
 		if m, err := s.repo.GetByID(moduleID); err == nil && m != nil {
 			author, taxonomy, description = moduleCatalogFields(m.Manifest)
+			modulePrefix = m.ModuleID
 		}
+	}
+	if modulePrefix == "" {
+		modulePrefix = moduleIDFromCreatedByRef(moduleKey)
 	}
 
 	if s.publisher != nil {
@@ -1010,15 +1033,16 @@ func (s *moduleService) CompleteModuleInstall(ctx context.Context, req *client.C
 			EntityID:      req.ModuleId,
 			Operation:     operation,
 			Data: map[string]interface{}{
-				"module_id":   req.ModuleId,
-				"module_name": req.ModuleName,
-				"module_key":  moduleKey,
-				"version":     req.Version,
-				"status":      req.Status,
-				"error":       req.Error,
-				"author":      author,
-				"taxonomy":    taxonomy,
-				"description": description,
+				"module_id":     req.ModuleId,
+				"module_prefix": modulePrefix,
+				"module_name":   req.ModuleName,
+				"module_key":    moduleKey,
+				"version":       req.Version,
+				"status":        req.Status,
+				"error":         req.Error,
+				"author":        author,
+				"taxonomy":      taxonomy,
+				"description":   description,
 			},
 			AutoAcknowledge: true,
 		})
@@ -1180,6 +1204,10 @@ func (s *moduleService) CompleteModuleDelete(ctx context.Context, req *client.Co
 		moduleKey = req.RequestContext.ModuleKey
 	}
 
+	// The module row is already gone by the time delete completes, so the
+	// version-free id comes from the composite key's leading segment.
+	modulePrefix := moduleIDFromCreatedByRef(moduleKey)
+
 	inUsePayload := make([]map[string]interface{}, 0, len(req.InUseResources))
 	for _, r := range req.InUseResources {
 		usedBy := make([]map[string]string, 0, len(r.UsedBy))
@@ -1209,6 +1237,7 @@ func (s *moduleService) CompleteModuleDelete(ctx context.Context, req *client.Co
 			Operation:     operation,
 			Data: map[string]interface{}{
 				"module_id":        req.ModuleId,
+				"module_prefix":    modulePrefix,
 				"module_name":      req.ModuleName,
 				"module_key":       moduleKey,
 				"status":           req.Status,
@@ -1257,7 +1286,7 @@ func moduleResourceToProto(r *models.ModuleResource) *client.ModuleResource {
 
 func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.RegisterWidgetsRequest) (*client.ListWidgetsResponse, error) {
 	createdByType := "MODULE"
-	createdByRef := req.ModuleKey
+	createdByRef := moduleRegistrationRef(req.ModuleId, req.ModuleKey)
 	if req.CreatedByType != "" && req.CreatedByRef != "" {
 		createdByType = req.CreatedByType
 		createdByRef = req.CreatedByRef
@@ -1295,7 +1324,7 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 			ApplicationID:   "",
 			EntityType:      "module.widget",
 			Operation:       "registered",
-			Data:            buildWidgetRegisteredData(req.ModuleKey, req.ModuleName, req.Version, saved),
+			Data:            buildWidgetRegisteredData(createdByRef, req.ModuleKey, req.ModuleName, req.Version, saved),
 			AutoAcknowledge: true,
 		})
 	}
@@ -1368,7 +1397,7 @@ func (s *moduleService) DeleteWidgetsByModuleId(ctx context.Context, req *client
 			ApplicationID:   "",
 			EntityType:      "module.widget",
 			Operation:       "deregistered",
-			Data:            buildWidgetDeregisteredData(req.ModuleId, widgets),
+			Data:            buildWidgetDeregisteredData(req.ModuleId, req.ModuleKey, widgets),
 			AutoAcknowledge: true,
 		})
 	}
@@ -1380,7 +1409,7 @@ func (s *moduleService) DeleteWidgetsByModuleId(ctx context.Context, req *client
 
 func (s *moduleService) RegisterBackgroundTasks(ctx context.Context, req *client.RegisterBackgroundTasksRequest) (*client.ListBackgroundTasksResponse, error) {
 	createdByType := "MODULE"
-	createdByRef := req.ModuleKey
+	createdByRef := moduleRegistrationRef(req.ModuleId, req.ModuleKey)
 	saved := make([]*models.BackgroundTask, 0, len(req.Tasks))
 	for _, in := range req.Tasks {
 		t := &models.BackgroundTask{
@@ -1405,7 +1434,7 @@ func (s *moduleService) RegisterBackgroundTasks(ctx context.Context, req *client
 			ApplicationID:   "",
 			EntityType:      "module.background_task",
 			Operation:       "registered",
-			Data:            buildBackgroundTaskRegisteredData(req.ModuleKey, req.ModuleName, req.Version, saved),
+			Data:            buildBackgroundTaskRegisteredData(createdByRef, req.ModuleKey, req.ModuleName, req.Version, saved),
 			AutoAcknowledge: true,
 		})
 	}
@@ -1451,7 +1480,7 @@ func (s *moduleService) DeleteBackgroundTasksByModuleId(ctx context.Context, req
 			ApplicationID:   "",
 			EntityType:      "module.background_task",
 			Operation:       "deregistered",
-			Data:            buildBackgroundTaskDeregisteredData(req.ModuleId, tasks),
+			Data:            buildBackgroundTaskDeregisteredData(req.ModuleId, req.ModuleKey, tasks),
 			AutoAcknowledge: true,
 		})
 	}
@@ -1511,7 +1540,7 @@ func widgetToProto(w *models.Widget) *client.Widget {
 
 func (s *moduleService) RegisterAssets(ctx context.Context, req *client.RegisterAssetsRequest) (*client.ListAssetsResponse, error) {
 	createdByType := "MODULE"
-	createdByRef := req.ModuleKey
+	createdByRef := moduleRegistrationRef(req.ModuleId, req.ModuleKey)
 	if req.CreatedByType != "" && req.CreatedByRef != "" {
 		createdByType = req.CreatedByType
 		createdByRef = req.CreatedByRef
@@ -1541,7 +1570,7 @@ func (s *moduleService) RegisterAssets(ctx context.Context, req *client.Register
 			ApplicationID:   "",
 			EntityType:      "module.asset",
 			Operation:       "registered",
-			Data:            buildAssetRegisteredData(req.ModuleKey, req.ModuleName, req.Version, saved),
+			Data:            buildAssetRegisteredData(createdByRef, req.ModuleKey, req.ModuleName, req.Version, saved),
 			AutoAcknowledge: true,
 		})
 	}
@@ -1592,7 +1621,7 @@ func (s *moduleService) DeleteAssetsByModuleId(ctx context.Context, req *client.
 			ApplicationID:   "",
 			EntityType:      "module.asset",
 			Operation:       "deregistered",
-			Data:            buildAssetDeregisteredData(req.ModuleId, assets),
+			Data:            buildAssetDeregisteredData(req.ModuleId, req.ModuleKey, assets),
 			AutoAcknowledge: true,
 		})
 	}
