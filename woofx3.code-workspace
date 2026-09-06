@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "../woofx3-marketplace-api"
+		},
+		{
+			"path": "../woofx3-modules"
 		}
 	],
 	"settings": {
