@@ -270,6 +270,7 @@ func (a *WorkflowApp) registerBuiltinActions(ctx context.Context) error {
 		// ModuleKey/ModuleName/Version are unused when (CreatedByType,
 		// CreatedByRef) override the default MODULE namespace; pass empty
 		// to make that explicit (mirrors barkloader's autoload).
+		ModuleId:      builtinCreatedByRef,
 		ModuleKey:     "",
 		ModuleName:    "workflow-builtin",
 		Version:       "builtin",
@@ -341,6 +342,7 @@ func (a *WorkflowApp) registerBuiltinTriggers(ctx context.Context) error {
 	}
 
 	resp, err := a.moduleDbClient.RegisterTriggers(ctx, &dbv1.RegisterTriggersRequest{
+		ModuleId:      builtinCreatedByRef,
 		ModuleKey:     "",
 		ModuleName:    "workflow-builtin",
 		Version:       "builtin",
