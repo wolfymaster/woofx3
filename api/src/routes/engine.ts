@@ -198,7 +198,9 @@ export const engineRoutes = {
    * the operator can edit endpoint/bucket/region without re-typing
    * credentials every time.
    */
-  async setStorageConfig(config: StorageConfig): Promise<{ success: boolean }> {
+  async setStorageConfig(
+    config: StorageConfig,
+  ): Promise<{ success: boolean; reloaded?: boolean; message?: string }> {
     const applicationId = "";
     if (config.provider !== "file" && config.provider !== "s3") {
       throw new Error(`Unknown provider: ${config.provider}`);
@@ -225,7 +227,24 @@ export const engineRoutes = {
         return { success: false };
       }
     }
-    return { success: true };
+
+    // Deliberately after the whole loop, not per key: each setting lands
+    // in its own write, so an engine reacting to individual writes would
+    // read torn configuration -- provider already flipped to "s3" while
+    // the bucket is still unwritten.
+    //
+    // The engine validates the new backend before adopting it, so a
+    // rejection here means the settings are saved but unusable. Report
+    // that rather than swallowing it; the operator needs to know the
+    // running engine is still on the old backend.
+    try {
+      await this.barkloaderRequest("/storage/reload", { method: "POST" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn("Storage settings saved but engine reload failed", { error: message });
+      return { success: true, reloaded: false, message };
+    }
+    return { success: true, reloaded: true };
   },
 
   async deleteClient(clientId: string): Promise<{ success: boolean; message: string }> {
