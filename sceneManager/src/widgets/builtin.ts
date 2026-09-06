@@ -39,15 +39,23 @@ const BUILTIN_WIDGET_SPECS: BuiltinWidgetSpec[] = [
       "subscription, redeem, etc.).",
     directory: "builtin/media_alert",
     alertTypes: ["stream_online", "stream_offline", "raid", "follow", "subscription", "subscription_gift", "redeem"],
+    // These must match the `event` values the engine actually puts on
+    // `ui.notify.alert` as `event.type` — that is what
+    // `fanOutToConnectedScenes` compares against, and a value matching
+    // nothing means the alert is dropped with no log anywhere. They are
+    // the `triggers.event` column for the `twitch_platform` module; the
+    // previous `builtin:trigger:*.channel.twitch` ids matched no
+    // registered trigger and no emitted event, so every alert was
+    // silently discarded. NOTE: no `raid` trigger is registered today,
+    // so raids cannot reach this widget until one exists.
     acceptedEvents: [
-      "builtin:trigger:follow.channel.twitch",
-      "builtin:trigger:cheer.channel.twitch",
-      "builtin:trigger:subscribe.channel.twitch",
-      "builtin:trigger:subscriptionGift.channel.twitch",
-      "builtin:trigger:raid.channel.twitch",
-      "builtin:trigger:redeem.channelpoints.twitch",
-      "builtin:trigger:online.channel.twitch",
-      "builtin:trigger:offline.channel.twitch",
+      "follow.user.twitch",
+      "cheer.user.twitch",
+      "subscribe.user.twitch",
+      "subscription.gift.twitch",
+      "redeem.channelpoints.twitch",
+      "online.user.twitch",
+      "twitch.stream.offline",
     ],
     settings: [
       { key: "textTemplate", fieldType: "text", label: "Alert text template", defaultValue: "" },
@@ -133,6 +141,7 @@ export async function initBuiltinWidgets(
   if (db) {
     try {
       const response = await db.registerWidgets({
+        moduleId: "builtin",
         moduleKey: "builtin",
         moduleName: "Built-in",
         version: "1.0.0",

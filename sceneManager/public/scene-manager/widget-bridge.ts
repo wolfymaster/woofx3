@@ -293,3 +293,27 @@ export class WidgetBridge {
 function isEventQueueConfig(value: unknown): value is EventQueueConfig {
   return typeof value === "object" && value !== null;
 }
+
+/**
+ * `load` handler for a widget iframe. The FIRST `load` fires once the
+ * initial document (and its subresources) finish — by which point the
+ * shim has already sent `hello` and the handshake is complete, since
+ * the shim is a classic script that runs during parsing. Resetting on
+ * that first fire therefore wipes a live handshake, and the widget
+ * never re-sends `hello`, so every later message (`events.subscribe`,
+ * `event.complete`, `status.report`) is dropped by the `initialized`
+ * gate and the widget silently receives nothing forever.
+ *
+ * Only a SUBSEQUENT `load` means an in-frame navigation, where a fresh
+ * handshake really is coming. Ported from streamware's WidgetFrame.tsx,
+ * whose `loadCount > 1` guard this restores.
+ */
+export function createFrameLoadHandler(bridge: Pick<WidgetBridge, "onFrameLoad">): () => void {
+  let loadCount = 0;
+  return () => {
+    loadCount += 1;
+    if (loadCount > 1) {
+      bridge.onFrameLoad();
+    }
+  };
+}

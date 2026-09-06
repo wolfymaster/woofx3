@@ -2,6 +2,13 @@ import type { HttpDeps } from "../http";
 import { readSessionCookie } from "../scene/session-cookie";
 import { handleStatusReport } from "../events/handlers";
 
+/**
+ * SSE comment-frame heartbeat interval. Must stay comfortably below
+ * both `idleTimeout` in http.ts and any proxy's idle timeout on the
+ * path, so the stream is never the thing that goes quiet first.
+ */
+const SSE_HEARTBEAT_MS = 20_000;
+
 function unauthorized(): Response {
   return new Response(JSON.stringify({ error: "invalid_session" }), {
     status: 401,
@@ -20,7 +27,7 @@ async function verifySession(req: Request, sceneId: string, deps: HttpDeps): Pro
  * *is* "the frontend registers to start receiving events" (see
  * DeliveryStore.subscribe, which replays every open delivery
  * immediately). Held open for the lifetime of the page; sceneManager
- * relies on the browser's own reconnect/backoff (event-source.ts) to
+ * relies on the client's own reconnect/backoff (event-source.ts) to
  * re-establish it after a drop.
  */
 export function handleEventsStreamRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
@@ -30,14 +37,41 @@ export function handleEventsStreamRoute(req: Request, sceneId: string, deps: Htt
     }
 
     let unsubscribe: (() => void) | null = null;
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+    const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         unsubscribe = deps.deliveryStore.subscribe(sceneId, controller);
-        // Comment frame: nudges the connection open immediately in
-        // browsers/proxies that buffer until the first byte.
-        controller.enqueue(new TextEncoder().encode(": connected\n\n"));
+        // Opening frame: nudges the connection open immediately in
+        // browsers/proxies that buffer until the first byte, and
+        // carries this process's boot identity so a reconnecting
+        // overlay can detect that it came back to a *restarted*
+        // sceneManager rather than resuming against the same one.
+        controller.enqueue(encoder.encode(`event: hello\ndata: ${JSON.stringify({ bootId: deps.bootId })}\n\n`));
+        // A scene can sit idle far longer than any idle timeout on the
+        // path: Bun.serve reaps a silent connection (see `idleTimeout`
+        // in http.ts), and reverse proxies do the same. Without this
+        // the stream is torn down and rebuilt every few seconds, which
+        // flashes the Disconnected banner and re-runs the open-delivery
+        // replay on every cycle. The client parses comment frames as
+        // no-ops (parseSseChunk), so a heartbeat costs nothing there.
+        heartbeat = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(": keepalive\n\n"));
+          } catch {
+            // Already closed from the other end — stop pumping.
+            if (heartbeat !== null) {
+              clearInterval(heartbeat);
+              heartbeat = null;
+            }
+          }
+        }, SSE_HEARTBEAT_MS);
       },
       cancel() {
+        if (heartbeat !== null) {
+          clearInterval(heartbeat);
+          heartbeat = null;
+        }
         unsubscribe?.();
       },
     });

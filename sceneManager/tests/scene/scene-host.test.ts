@@ -94,6 +94,6 @@ describe("OverlayHost — frameUrl", () => {
     const state = await host.loadScene("ovl_token");
     expect(state?.instances[0]?.frameUrl).toBe("/scene/scene-1/widget/inst-1");
     // Built-in placements with no stored acceptedEvents fall back to the spec's list.
-    expect(state?.instances[0]?.acceptedEvents).toContain("builtin:trigger:follow.channel.twitch");
+    expect(state?.instances[0]?.acceptedEvents).toContain("follow.user.twitch");
   });
 });

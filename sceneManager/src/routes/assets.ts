@@ -17,7 +17,7 @@ export async function handleStaticAssetRoute(req: Request, url: URL, publicDir: 
     return new Response(null, { status: 404 });
   }
   const root = normalize(publicDir);
-  const rel = url.pathname.slice("/assets/".length);
+  const rel = builtinWidgetDiskPath(url.pathname.slice("/assets/".length));
   const safe = normalize(join(root, rel));
   if (safe !== root && !safe.startsWith(root + "/")) {
     return new Response("Forbidden", { status: 403 });
@@ -27,4 +27,21 @@ export async function handleStaticAssetRoute(req: Request, url: URL, publicDir: 
     return new Response("Not Found", { status: 404 });
   }
   return new Response(file, { headers: { "Cache-Control": "public, max-age=60, must-revalidate" } });
+}
+
+/**
+ * Built-in widget URLs keep streamware's `builtin/widgets/{manifestId}/`
+ * shape (it is what `FrameAssembler` emits as the frame's <base href>,
+ * so widget-relative refs like media_alert's `lottie.min.js` resolve
+ * through it), but on disk they live under `widgets/builtin/{manifestId}/`
+ * — the layout `FrameAssembler.loadBuiltinFrameInfo` reads from.
+ * streamware translated between the two in its asset route; this is that
+ * translation. Every other `/assets/` path maps to `publicDir` verbatim.
+ */
+function builtinWidgetDiskPath(rel: string): string {
+  const parts = rel.split("/");
+  if (parts[0] === "builtin" && parts[1] === "widgets" && parts.length >= 3) {
+    return join("widgets", "builtin", ...parts.slice(2));
+  }
+  return rel;
 }

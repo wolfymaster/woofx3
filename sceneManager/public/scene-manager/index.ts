@@ -5,10 +5,12 @@
 // queue, and drives the Disconnected banner from the SSE connection
 // state.
 
-import type { WidgetEvent } from "@woofx3/module-sdk";
-import { WidgetBridge, type WidgetBridgeCallbacks, type WidgetStatusReportPayload } from "./widget-bridge";
-import { EventQueueManager } from "./event-queue";
+import { createFrameLoadHandler, WidgetBridge, type WidgetBridgeCallbacks, type WidgetStatusReportPayload } from "./widget-bridge";
+import { EventQueueManager, toWidgetEvent } from "./event-queue";
+import { AckBatcher } from "./ack-batcher";
 import { SceneEventSource, type DeliveryFrame } from "./event-source";
+import { ConnectionStatus } from "./connection-status";
+import { createReconnectCoordinator } from "./reconnect-coordinator";
 
 interface WidgetInstanceConfig {
   id: string;
@@ -35,9 +37,6 @@ declare global {
 }
 
 const REFRESH_INTERVAL_MS = 50_000;
-// Batches delivered/completed acks so a burst of events doesn't mean
-// a burst of single-item HTTP calls (see delivery-store.ts's design note).
-const ACK_BATCH_WINDOW_MS = 250;
 
 function generateNonce(): string {
   const bytes = new Uint8Array(16);
@@ -45,56 +44,19 @@ function generateNonce(): string {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function setConnectedSignal(connected: boolean): void {
+function renderConnected(connected: boolean): void {
   const banner = document.getElementById("disconnected-banner");
   banner?.classList.toggle("visible", !connected);
   // Best-effort data-star integration: patch the page's reactive
   // signal store so any `data-show`/`data-class` binding also reacts.
   // Based on the `datastar-signal-patch` event name the vendored
-  // bundle itself defines — verify against the live data-star docs on
+  // bundle itself defines -- verify against the live data-star docs on
   // first real end-to-end run; the DOM class toggle above is the
   // source of truth regardless and doesn't depend on this succeeding.
   try {
     document.dispatchEvent(new CustomEvent("datastar-signal-patch", { detail: { connected } }));
   } catch {
-    // data-star not loaded / signal not declared — the manual class toggle above still works.
-  }
-}
-
-/** Batches instanceIds per eventId within a short window before POSTing. */
-class AckBatcher {
-  private readonly pending = new Map<string, Set<string>>();
-  private timer: ReturnType<typeof setTimeout> | null = null;
-
-  constructor(private readonly endpoint: (eventId: string) => string) {}
-
-  add(eventId: string, instanceId: string): void {
-    let set = this.pending.get(eventId);
-    if (!set) {
-      set = new Set();
-      this.pending.set(eventId, set);
-    }
-    set.add(instanceId);
-    if (this.timer === null) {
-      this.timer = setTimeout(() => this.flush(), ACK_BATCH_WINDOW_MS);
-    }
-  }
-
-  private flush(): void {
-    this.timer = null;
-    const batch = this.pending;
-    this.pending.clear();
-    for (const [eventId, instanceIds] of batch) {
-      fetch(this.endpoint(eventId), {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instanceIds: [...instanceIds] }),
-      }).catch(() => {
-        // Best-effort — a dropped ack surfaces as a server-side
-        // redelivery/timeout instead, not a client-visible error.
-      });
-    }
+    // data-star not loaded / signal not declared -- the manual class toggle above still works.
   }
 }
 
@@ -186,7 +148,7 @@ function main(): void {
     };
 
     const bridge = new WidgetBridge(instance.id, nonce, callbacks);
-    iframe.addEventListener("load", () => bridge.onFrameLoad());
+    iframe.addEventListener("load", createFrameLoadHandler(bridge));
     iframe.src = `${instance.frameUrl}?nonce=${encodeURIComponent(nonce)}`;
 
     bridgesByInstance.set(instance.id, bridge);
@@ -200,44 +162,75 @@ function main(): void {
     }
   });
 
-  function toWidgetEvent(item: { eventId: string; type: string; key: string; value: unknown }): WidgetEvent {
-    return {
-      type: item.type,
-      source: "scene-manager",
-      time: new Date().toISOString(),
-      data: item.value,
-      eventId: item.eventId,
-    };
-  }
+  // One owner for the banner. Both reachability signals below report
+  // into it rather than toggling the DOM themselves, so they can no
+  // longer overwrite each other's verdict.
+  const status = new ConnectionStatus(renderConnected);
 
-  const eventSource = new SceneEventSource({ url: new URL(`${sceneBase}/events`, location.href).toString() });
+  // Identity of the sceneManager process behind the current stream.
+  // A different value on a later stream means the server restarted
+  // while we were away, so the scene config baked into this document
+  // (window.__WOOFX3_SCENE__ -- widget set, positions, settings, and
+  // the frame URLs derived from them) may be stale. Reconnecting the
+  // stream alone would leave us rendering the old scene against a new
+  // server, so reload and let the shell be re-rendered.
+  let serverBootId: string | null = null;
+
+  const coordinator = createReconnectCoordinator();
+
+  // Reloading is how this page recovers from anything a live stream
+  // can't fix: the shell re-renders the current scene config and
+  // re-mints the session cookie from the ?token= still in the URL.
+  // Siblings are told first -- once we start reloading, this page is
+  // gone and can't relay anything.
+  function reloadOverlay(): void {
+    coordinator.requestPeerReload();
+    location.reload();
+  }
+  coordinator.onPeerReload(() => {
+    // A sibling detected the restart. Reload without rebroadcasting.
+    location.reload();
+  });
+
+  const eventSource = new SceneEventSource({
+    url: new URL(`${sceneBase}/events`, location.href).toString(),
+    coordinator,
+  });
   eventSource.start({
     onFrame: (frame: DeliveryFrame) => {
       deliveredBatcher.add(frame.eventId, frame.instanceId);
       queueManager.enqueue(frame.instanceId, { eventId: frame.eventId, type: frame.type, key: frame.key, value: frame.value });
     },
-    onConnectionChange: (connected) => setConnectedSignal(connected),
+    onConnectionChange: (connected) => status.set("stream", connected),
+    onHello: (bootId) => {
+      if (serverBootId !== null && serverBootId !== bootId) {
+        reloadOverlay();
+        return;
+      }
+      serverBootId = bootId;
+    },
+    onSessionExpired: () => {
+      // Our 60s session JWT lapsed while the server was away, so every
+      // reconnect would 401 forever and we'd never see the hello frame
+      // that reveals a restart. Only a page load mints a new session.
+      reloadOverlay();
+    },
   });
 
-  let refreshFailing = false;
   setInterval(() => {
     fetch(`${sceneBase}/session/refresh`, { method: "POST", credentials: "same-origin" })
       .then((resp) => {
         if (!resp.ok) {
           throw new Error(`refresh failed: ${resp.status}`);
         }
-        if (refreshFailing) {
-          refreshFailing = false;
-          setConnectedSignal(true);
-        }
+        status.set("session", true);
       })
       .catch(() => {
-        // Pre-emptive refresh failed — surface the same disconnected
+        // Pre-emptive refresh failed -- surface the same disconnected
         // state the SSE loss path uses until a refresh finally
         // succeeds (design: "an overlay should be shown displaying
         // the error until it is able to succeed").
-        refreshFailing = true;
-        setConnectedSignal(false);
+        status.set("session", false);
       });
   }, REFRESH_INTERVAL_MS);
 }

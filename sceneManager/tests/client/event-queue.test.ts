@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { EventQueueManager } from "../../public/scene-manager/event-queue";
+import { EventQueueManager, toWidgetEvent } from "../../public/scene-manager/event-queue";
 
 function item(eventId: string, value: unknown = null) {
   return { eventId, type: "widget.event", key: "count", value };
@@ -253,5 +253,36 @@ describe("EventQueueManager — routing and lifecycle", () => {
     mgr.enqueue("inst-1", item("evt-2"));
     // Both attempted immediately since a failed deliver() never occupies a slot.
     expect(attempts).toEqual(["evt-1", "evt-2"]);
+  });
+});
+
+
+describe("toWidgetEvent", () => {
+  const frame = { eventId: "e1", type: "follow.user.twitch", key: "follow.user.twitch" };
+
+  it("lifts parameters to the top level where the SDK and widgets read them", () => {
+    // media_alert reads event.parameters for text/media/audio/duration;
+    // leaving them nested under data renders a blank alert.
+    const event = toWidgetEvent({ ...frame, value: { userName: "someone", parameters: { text: "hi", duration: 3 } } });
+    expect(event.parameters).toEqual({ text: "hi", duration: 3 });
+    expect(event.data).toEqual({ userName: "someone" });
+    expect(event.type).toBe("follow.user.twitch");
+    expect(event.eventId).toBe("e1");
+  });
+
+  it("omits parameters entirely when the delivery carries none", () => {
+    const event = toWidgetEvent({ ...frame, value: { userName: "someone" } });
+    expect(event.parameters).toBeUndefined();
+    expect(event.data).toEqual({ userName: "someone" });
+  });
+
+  it("ignores a non-object parameters value rather than forwarding junk", () => {
+    const event = toWidgetEvent({ ...frame, value: { userName: "someone", parameters: "nope" } });
+    expect(event.parameters).toBeUndefined();
+  });
+
+  it("passes a non-object value through as data untouched", () => {
+    expect(toWidgetEvent({ ...frame, value: 42 }).data).toBe(42);
+    expect(toWidgetEvent({ ...frame, value: null }).data).toBeNull();
   });
 });

@@ -155,7 +155,9 @@ async function fanOutToConnectedScenes(
   deps: { host: OverlayHost; deliveryStore: DeliveryStore; logger: Logger }
 ): Promise<void> {
   const { host, deliveryStore, logger } = deps;
-  for (const sceneId of deliveryStore.connectedSceneIds()) {
+  const connectedSceneIds = deliveryStore.connectedSceneIds();
+  let recorded = 0;
+  for (const sceneId of connectedSceneIds) {
     const state = await host.loadSceneById(sceneId);
     if (!state || state.applicationId !== event.applicationId) {
       continue;
@@ -176,6 +178,22 @@ async function fanOutToConnectedScenes(
     });
     if (!eventId) {
       logger.warn("fanOutToConnectedScenes: recordEvent failed", { sceneId, type: event.type });
+      continue;
     }
+    recorded += 1;
+  }
+
+  // An event that matches nothing is the single easiest failure to miss
+  // here: it looks identical to "no event was ever published" from the
+  // browser, and every step before this one succeeded. Say so once,
+  // with the vocabulary needed to spot a type mismatch (the engine's
+  // `event.type` vs each instance's `acceptedEvents`). Alert volume is
+  // low enough that one line per undelivered event is not spam.
+  if (recorded === 0) {
+    logger.warn("alert matched no connected scene instance; nothing delivered", {
+      type: event.type,
+      applicationId: event.applicationId,
+      connectedScenes: connectedSceneIds.length,
+    });
   }
 }

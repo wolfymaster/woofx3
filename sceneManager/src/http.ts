@@ -23,6 +23,11 @@ export interface HttpDeps {
   frameAssembler: FrameAssembler;
   sessionTokens: SessionTokenService;
   deliveryStore: DeliveryStore;
+  /** Identity of this sceneManager process, minted once at startup and
+   *  announced on every SSE stream. Lets a reconnecting overlay tell a
+   *  resumed stream from one that came back against a restarted server
+   *  (whose scene config it may no longer match). */
+  bootId: string;
 }
 
 // CORS for iframe-embedded widgets and cross-origin OBS browser
@@ -54,6 +59,12 @@ export function createHttpServer(deps: HttpDeps) {
   return Bun.serve({
     port: ctx.runtimeConfig.port,
     hostname: ctx.runtimeConfig.bindHost,
+    // Bun's 10s default reaps the SSE stream between events, so the
+    // scene reconnects every few seconds all day. Long enough to
+    // outlast the stream's own 20s heartbeat (see SSE_HEARTBEAT_MS in
+    // routes/events.ts) with room to spare, but still finite so a
+    // genuinely dead socket gets reclaimed rather than leaked.
+    idleTimeout: 120,
     fetch: async (req) => {
       const url = new URL(req.url);
 

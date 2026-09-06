@@ -43,6 +43,12 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { connectObs } = await import("./obs/manager");
     const { initBuiltinWidgets } = await import("./widgets/builtin");
     const { initSubscriptions } = await import("./nats-subscriptions");
+    const { refreshOverlayBrowserSources } = await import("./obs/refresh-overlays");
+
+    // Identity of this process, announced on every SSE stream so a
+    // reconnecting overlay can tell a resumed stream from one that came
+    // back against a restarted sceneManager (see routes/events.ts).
+    const bootId = crypto.randomUUID();
 
     const db = ctx.services.db.client;
     const resolver = new OverlayTokenResolver(db, ctx.logger);
@@ -88,11 +94,20 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     await initBuiltinWidgets(ctx.logger, db, nats);
     await initSubscriptions({ nats, obs, db, host, deliveryStore, resolver, logger: ctx.logger });
 
-    this.server = createHttpServer({ ctx, host, frameAssembler, sessionTokens, deliveryStore });
+    this.server = createHttpServer({ ctx, host, frameAssembler, sessionTokens, deliveryStore, bootId });
     ctx.logger.info("sceneManager listening", {
       port: ctx.runtimeConfig.port,
       bindHost: ctx.runtimeConfig.bindHost,
+      bootId,
     });
+
+    // Strictly after the server is listening: a refresh that lands
+    // before we can serve /scene would just bounce the overlay into the
+    // same disconnected state it was already in. Not awaited for
+    // correctness -- overlays recover on their own regardless -- but
+    // awaited here so a failure is logged before we block for the
+    // process lifetime.
+    await refreshOverlayBrowserSources(obs, ctx.runtimeConfig.port, ctx.logger);
     // Block for the process lifetime — Bun.serve doesn't return a
     // promise that resolves on its own; hold the runtime here until
     // terminate() stops the server.

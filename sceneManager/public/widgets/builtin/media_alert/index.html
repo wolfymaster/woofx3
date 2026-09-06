@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>media_alert</title>
+  <script src="lottie.min.js"></script>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+      font-family: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: white;
+    }
+
+    #alert-box {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 16px;
+      opacity: 0;
+      transition: opacity 200ms ease-in-out;
+    }
+
+    #alert-box.visible {
+      opacity: 1;
+    }
+
+    /* Media layer: all items overlap, filling the box */
+    #media-container {
+      position: relative;
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .media-item {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .media-item img,
+    .media-item video {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .media-item img.transparentBlack,
+    .media-item video.transparentBlack {
+      mix-blend-mode: screen;
+    }
+
+    .media-item img.transparentWhite,
+    .media-item video.transparentWhite {
+      mix-blend-mode: multiply;
+    }
+
+    .media-item .lottie-container {
+      width: 100%;
+      height: 100%;
+    }
+
+    #alert-text {
+      font-weight: bold;
+      font-size: 48px;
+      color: white;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+      text-align: center;
+      word-break: break-word;
+    }
+
+    .primary {
+      color: #EC6758;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="alert-box">
+    <div id="media-container"></div>
+    <div id="alert-text"></div>
+  </div>
+  <audio id="alert-audio" preload="auto"></audio>
+
+  <script type="module">
+    // -------------------------------------------------------------------------
+    // Boot
+    // -------------------------------------------------------------------------
+
+    function awaitHost(timeoutMs = 5000) {
+      return new Promise((resolve) => {
+        if (window.widgetHost) { resolve(window.widgetHost); return; }
+        let waited = 0;
+        const poll = setInterval(() => {
+          if (window.widgetHost) { clearInterval(poll); resolve(window.widgetHost); return; }
+          waited += 50;
+          if (waited >= timeoutMs) { clearInterval(poll); console.warn("[media_alert] widgetHost timeout"); resolve(null); }
+        }, 50);
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // Template resolution
+    // -------------------------------------------------------------------------
+
+    function deepGet(obj, path) {
+      const parts = path.split(".");
+      let cur = obj;
+      for (const part of parts) {
+        if (cur == null || typeof cur !== "object") return undefined;
+        cur = cur[part];
+      }
+      return cur;
+    }
+
+    // Resolves {path.to.value} expressions against ctx. Output is HTML-safe
+    // only when used for innerHTML — URL fields use resolveTemplate instead.
+    function formatText(template, ctx) {
+      if (!template || typeof template !== "string") return "";
+      let out = template.replace(/\{primary\}(.*?)\{primary\}/gs, '<span class="primary">$1</span>');
+      out = out.replace(/\{([^{}]+)\}/g, (_, expr) => {
+        const val = deepGet(ctx, expr.trim());
+        return val == null ? "" : String(val);
+      });
+      return out;
+    }
+
+    // Plain string resolver for URL and animation value fields.
+    // Supports both {path} and ${path} syntaxes.
+    function resolveTemplate(template, ctx) {
+      if (!template || typeof template !== "string") return "";
+      return template
+        .replace(/\$\{([^{}]+)\}/g, (_, expr) => { const v = deepGet(ctx, expr.trim()); return v == null ? "" : String(v); })
+        .replace(/\{([^{}]+)\}/g, (_, expr) => { const v = deepGet(ctx, expr.trim()); return v == null ? "" : String(v); });
+    }
+
+    // -------------------------------------------------------------------------
+    // Media type detection
+    // -------------------------------------------------------------------------
+
+    const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "avif", "svg"]);
+    const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "ogg"]);
+
+    function mediaTypeOf(url) {
+      try {
+        const path = new URL(url, location.href).pathname;
+        const ext = path.split(".").pop()?.toLowerCase() ?? "";
+        if (IMAGE_EXTS.has(ext)) return "image";
+        if (VIDEO_EXTS.has(ext)) return "video";
+        if (ext === "json") return "lottie";
+      } catch { /* ignore */ }
+      return "unknown";
+    }
+
+    // -------------------------------------------------------------------------
+    // Lottie path patching
+    //
+    // options[i].animation = { path: [...], value: "{event.data.amount} BITS" }
+    // Walk `path` into the loaded Lottie JSON and overwrite the leaf value
+    // before handing the JSON to lottie.loadAnimation.
+    // -------------------------------------------------------------------------
+
+    function applyLottieAnimation(json, animation, ctx) {
+      if (!animation || !Array.isArray(animation.path) || animation.value == null) return;
+      const resolved = resolveTemplate(String(animation.value), ctx);
+      let node = json;
+      const path = animation.path;
+      for (let i = 0; i < path.length - 1; i++) {
+        if (node == null || typeof node !== "object") return;
+        node = node[path[i]];
+      }
+      if (node != null && typeof node === "object") {
+        node[path[path.length - 1]] = resolved;
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // DOM helpers
+    // -------------------------------------------------------------------------
+
+    const alertBox      = document.getElementById("alert-box");
+    const mediaContainer = document.getElementById("media-container");
+    const textEl        = document.getElementById("alert-text");
+    const audioEl       = document.getElementById("alert-audio");
+
+    // Active lottie instances — destroyed on reset to free memory.
+    let activeLotties = [];
+
+    function resetDisplay() {
+      // Destroy active Lottie animations.
+      for (const anim of activeLotties) {
+        try { anim.destroy(); } catch { /* ignore */ }
+      }
+      activeLotties = [];
+
+      mediaContainer.innerHTML = "";
+      textEl.innerHTML = "";
+      alertBox.className = "";
+      audioEl.pause();
+      audioEl.removeAttribute("src");
+      audioEl.load();
+    }
+
+    // -------------------------------------------------------------------------
+    // Per-item media renderer
+    //
+    // Renders one media item into a positioned layer inside #media-container.
+    // For lottie: fetches the JSON, patches the animation field if present,
+    // then hands the data object to lottie.loadAnimation (no second network
+    // request needed).
+    // -------------------------------------------------------------------------
+
+    async function renderMediaItem(url, itemOptions, ctx) {
+      const kind = mediaTypeOf(url);
+      const wrap = document.createElement("div");
+      wrap.className = "media-item";
+
+      const transpBlack = !!itemOptions?.media?.transparentBlack;
+      const transpWhite = !!itemOptions?.media?.transparentWhite;
+
+      if (kind === "image") {
+        const img = document.createElement("img");
+        img.alt = "";
+        if (transpBlack) img.classList.add("transparentBlack");
+        if (transpWhite) img.classList.add("transparentWhite");
+        img.src = url;
+        wrap.appendChild(img);
+        mediaContainer.appendChild(wrap);
+
+      } else if (kind === "video") {
+        const vid = document.createElement("video");
+        vid.autoplay = true;
+        vid.loop = true;
+        vid.playsInline = true;
+        if (transpBlack) vid.classList.add("transparentBlack");
+        if (transpWhite) vid.classList.add("transparentWhite");
+        vid.src = url;
+        vid.play().catch((e) => console.warn("[media_alert] video play failed", e));
+        wrap.appendChild(vid);
+        mediaContainer.appendChild(wrap);
+
+      } else if (kind === "lottie") {
+        const container = document.createElement("div");
+        container.className = "lottie-container";
+        wrap.appendChild(container);
+        mediaContainer.appendChild(wrap);
+
+        try {
+          const res = await fetch(url);
+          const animationData = await res.json();
+          if (itemOptions?.animation) {
+            applyLottieAnimation(animationData, itemOptions.animation, ctx);
+          }
+          const anim = lottie.loadAnimation({
+            container,
+            renderer: "svg",
+            loop: true,
+            autoplay: true,
+            animationData,
+          });
+          activeLotties.push(anim);
+        } catch (err) {
+          console.warn("[media_alert] lottie load failed", { url, err });
+        }
+      }
+      // "unknown" type: skip silently.
+    }
+
+    // -------------------------------------------------------------------------
+    // Alert queue
+    // -------------------------------------------------------------------------
+
+    const queue = { events: [], running: false };
+
+    function advance(host) {
+      queue.running = false;
+      resetDisplay();
+      if (queue.events.length > 0) {
+        renderAlert(host, queue.events.shift());
+      }
+    }
+
+    async function renderAlert(host, event) {
+      queue.running = true;
+
+      const settings   = host.settings ?? {};
+      const parameters = event.parameters ?? {};
+      const cfg = Object.assign({}, settings, parameters);
+
+      // Substitution context: event.data fields are accessible as event.data.x,
+      // and also flattened one level via the legacy trigger.data alias.
+      const ctx = Object.assign({ event, parameters, trigger: { data: event.data ?? {} } }, cfg);
+
+      const rawText  = cfg.text ?? cfg.textTemplate ?? "";
+      const rawMedia = cfg.mediaUrl ?? cfg.mediaUrlTemplate ?? "";
+      const rawAudio = cfg.audioUrl ?? cfg.audioUrlTemplate ?? "";
+      const rawDuration = cfg.duration;
+
+      const text = Array.isArray(rawText)
+        ? rawText.map((t) => formatText(t, ctx)).join(" ")
+        : formatText(rawText, ctx);
+
+      // Normalise mediaUrl to an array and resolve each URL template.
+      const mediaUrls = Array.isArray(rawMedia)
+        ? rawMedia.map((u) => resolveTemplate(u, ctx)).filter(Boolean)
+        : rawMedia ? [resolveTemplate(rawMedia, ctx)].filter(Boolean) : [];
+
+      // Normalise options to an array aligned with mediaUrls by index.
+      // Supports both the legacy array form and a single-object form.
+      const optionsArr = Array.isArray(cfg.options)
+        ? cfg.options
+        : (cfg.options && typeof cfg.options === "object" ? [cfg.options] : []);
+
+      const audioUrl = Array.isArray(rawAudio)
+        ? resolveTemplate(rawAudio[0] ?? "", ctx)
+        : resolveTemplate(rawAudio, ctx);
+
+      const duration = typeof rawDuration === "number" && rawDuration > 0 ? rawDuration : null;
+
+      const alertId = (typeof event.data === "object" && event.data && typeof event.data.id === "string")
+        ? event.data.id
+        : crypto.randomUUID();
+
+      console.log("[media_alert] render", { alertId, text: text.slice(0, 80), mediaCount: mediaUrls.length, audioUrl, duration });
+
+      // Render text.
+      textEl.innerHTML = text;
+
+      // Render all media items simultaneously.
+      await Promise.all(
+        mediaUrls.map((url, i) => renderMediaItem(url, optionsArr[i], ctx))
+      );
+
+      // Fade in after all DOM is ready.
+      requestAnimationFrame(() => { alertBox.classList.add("visible"); });
+
+      // ── Lifetime ───────────────────────────────────────────────────────────
+      let finished = false;
+      let durationTimer = null;
+      let safetyTimer = null;
+
+      function finish() {
+        if (finished) return;
+        finished = true;
+        clearTimeout(durationTimer);
+        clearTimeout(safetyTimer);
+        audioEl.removeEventListener("ended", onAudioEnded);
+        alertBox.classList.remove("visible");
+        setTimeout(() => { host.reportStatus("alert.done", { alertId }); advance(host); }, 220);
+      }
+
+      function onAudioEnded() {
+        console.log("[media_alert] audio ended", { alertId });
+        finish();
+      }
+
+      if (duration !== null) {
+        durationTimer = setTimeout(() => {
+          console.log("[media_alert] duration elapsed", { alertId, duration });
+          finish();
+        }, duration * 1000);
+      }
+
+      if (audioUrl) {
+        audioEl.src = audioUrl;
+        audioEl.addEventListener("ended", onAudioEnded, { once: true });
+        audioEl.play().catch((err) => console.warn("[media_alert] audio play failed", { alertId, err }));
+        if (duration === null) {
+          safetyTimer = setTimeout(() => { console.warn("[media_alert] audio safety timer", { alertId }); finish(); }, 60_000);
+        }
+      } else if (duration === null) {
+        durationTimer = setTimeout(() => { console.log("[media_alert] fallback timer", { alertId }); finish(); }, 5_000);
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // Dedup ring
+    // -------------------------------------------------------------------------
+
+    const SEEN_LIMIT = 64;
+    const seenIds = new Set();
+    const seenOrder = [];
+
+    function isDuplicate(id) {
+      if (!id) return false;
+      if (seenIds.has(id)) return true;
+      seenIds.add(id);
+      seenOrder.push(id);
+      if (seenOrder.length > SEEN_LIMIT) seenIds.delete(seenOrder.shift());
+      return false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Entry
+    // -------------------------------------------------------------------------
+
+    (async function main() {
+      console.log("[media_alert] starting");
+      const host = await awaitHost();
+      if (!host) return;
+      console.log("[media_alert] host ready", { moduleId: host.moduleId, instanceId: host.instanceId });
+
+      host.onEvent((event) => {
+        console.log("[media_alert] event received", { type: event.type, hasParameters: !!event.parameters });
+        const eventId = (typeof event.data === "object" && event.data && typeof event.data.id === "string")
+          ? event.data.id : null;
+        if (eventId && isDuplicate(eventId)) { console.log("[media_alert] dedup", { eventId }); return; }
+        queue.events.push(event);
+        if (!queue.running) renderAlert(host, queue.events.shift());
+      });
+    })();
+  </script>
+</body>
+
+</html>

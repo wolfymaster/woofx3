@@ -14,7 +14,7 @@
 // only needs `retryTimeoutMs` (how long to wait for that completion
 // before giving up and advancing) and `maxInFlight`.
 
-import type { EventQueueConfig } from "@woofx3/module-sdk";
+import type { EventQueueConfig, WidgetEvent } from "@woofx3/module-sdk";
 import { evaluateExpression } from "./resolver";
 
 export interface QueuedEvent {
@@ -160,4 +160,35 @@ export class EventQueueManager {
     }
     this.queues.get(instanceId)?.complete(eventId);
   }
+}
+
+/**
+ * Map a queued delivery onto the SDK's `WidgetEvent` shape.
+ *
+ * `parameters` must surface as a TOP-LEVEL field: that is where the
+ * SDK documents it ("widgets that consume alert-style configuration
+ * read it from here") and where streamware's broadcast put it, so it
+ * is what existing widgets like builtin/media_alert read. The delivery
+ * pipeline carries it nested instead — `nats-subscriptions.ts` packs
+ * `{ ...event.data, parameters }` into the frame's single opaque
+ * `value` so the persisted scene_event needs no extra column — so this
+ * is the matching unpack. Without it every alert reaches the widget
+ * with `parameters === undefined` and renders blank: no text, no
+ * media, no audio, no duration.
+ */
+export function toWidgetEvent(item: QueuedEvent): WidgetEvent {
+  const value = item.value;
+  const isPlainObject = typeof value === "object" && value !== null && !Array.isArray(value);
+  const { parameters, ...data } = isPlainObject ? (value as Record<string, unknown>) : {};
+  const event: WidgetEvent = {
+    type: item.type,
+    source: "scene-manager",
+    time: new Date().toISOString(),
+    data: isPlainObject ? data : value,
+    eventId: item.eventId,
+  };
+  if (parameters && typeof parameters === "object" && !Array.isArray(parameters)) {
+    event.parameters = parameters as Record<string, unknown>;
+  }
+  return event;
 }

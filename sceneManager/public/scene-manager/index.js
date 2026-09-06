@@ -234,6 +234,15 @@ class WidgetBridge {
 function isEventQueueConfig(value) {
   return typeof value === "object" && value !== null;
 }
+function createFrameLoadHandler(bridge) {
+  let loadCount = 0;
+  return () => {
+    loadCount += 1;
+    if (loadCount > 1) {
+      bridge.onFrameLoad();
+    }
+  };
+}
 
 // public/scene-manager/resolver.ts
 function tokenize(src) {
@@ -630,11 +639,214 @@ class EventQueueManager {
     this.queues.get(instanceId)?.complete(eventId);
   }
 }
+function toWidgetEvent(item) {
+  const value = item.value;
+  const isPlainObject = typeof value === "object" && value !== null && !Array.isArray(value);
+  const { parameters, ...data } = isPlainObject ? value : {};
+  const event = {
+    type: item.type,
+    source: "scene-manager",
+    time: new Date().toISOString(),
+    data: isPlainObject ? data : value,
+    eventId: item.eventId
+  };
+  if (parameters && typeof parameters === "object" && !Array.isArray(parameters)) {
+    event.parameters = parameters;
+  }
+  return event;
+}
+
+// public/scene-manager/ack-batcher.ts
+var ACK_BATCH_WINDOW_MS = 250;
+
+class AckBatcher {
+  endpoint;
+  pending = new Map;
+  timer = null;
+  windowMs;
+  fetchFn;
+  constructor(endpoint, options = {}) {
+    this.endpoint = endpoint;
+    this.windowMs = options.windowMs ?? ACK_BATCH_WINDOW_MS;
+    this.fetchFn = options.fetchFn ?? globalThis.fetch.bind(globalThis);
+  }
+  add(eventId, instanceId) {
+    let set = this.pending.get(eventId);
+    if (!set) {
+      set = new Set;
+      this.pending.set(eventId, set);
+    }
+    set.add(instanceId);
+    if (this.timer === null) {
+      this.timer = setTimeout(() => this.flush(), this.windowMs);
+    }
+  }
+  flush() {
+    this.timer = null;
+    const batch = [...this.pending];
+    this.pending.clear();
+    for (const [eventId, instanceIds] of batch) {
+      this.fetchFn(this.endpoint(eventId), {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instanceIds: [...instanceIds] })
+      }).catch(() => {});
+    }
+  }
+}
+
+// public/scene-manager/reconnect-coordinator.ts
+var ALWAYS_PROBE = {
+  shouldProbe: () => true,
+  onDisconnected: () => {},
+  onConnected: () => {},
+  onPeerConnected: () => {},
+  requestPeerReload: () => {},
+  onPeerReload: () => {},
+  stop: () => {}
+};
+var HEARTBEAT_MS = 2000;
+var PEER_TTL_MS = 5500;
+var CHANNEL_NAME = "woofx3-scene-manager-reconnect";
+function randomPeerId() {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+class BroadcastReconnectCoordinator {
+  channel;
+  peerId;
+  now;
+  heartbeatMs;
+  peerTtlMs;
+  peersLastSeen = new Map;
+  heartbeatTimer = null;
+  peerConnectedHandler = null;
+  peerReloadHandler = null;
+  stopped = false;
+  constructor(options) {
+    this.channel = options.channel;
+    this.peerId = options.peerId ?? randomPeerId();
+    this.now = options.now ?? (() => Date.now());
+    this.heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS;
+    this.peerTtlMs = options.peerTtlMs ?? PEER_TTL_MS;
+    this.channel.onmessage = (event) => {
+      this.handleMessage(event.data);
+    };
+  }
+  handleMessage(data) {
+    const message = data;
+    if (!message || typeof message !== "object") {
+      return;
+    }
+    if (message.t === "alive" && typeof message.id === "string") {
+      this.peersLastSeen.set(message.id, this.now());
+      return;
+    }
+    if (message.t === "up") {
+      this.peerConnectedHandler?.();
+      return;
+    }
+    if (message.t === "reload") {
+      this.peerReloadHandler?.();
+    }
+  }
+  shouldProbe() {
+    if (this.stopped) {
+      return false;
+    }
+    const cutoff = this.now() - this.peerTtlMs;
+    for (const [id, lastSeen] of this.peersLastSeen) {
+      if (lastSeen < cutoff) {
+        this.peersLastSeen.delete(id);
+      }
+    }
+    for (const id of this.peersLastSeen.keys()) {
+      if (id < this.peerId) {
+        return false;
+      }
+    }
+    return true;
+  }
+  onDisconnected() {
+    if (this.stopped || this.heartbeatTimer !== null) {
+      return;
+    }
+    this.announceAlive();
+    this.heartbeatTimer = setInterval(() => {
+      this.announceAlive();
+    }, this.heartbeatMs);
+  }
+  onConnected() {
+    this.stopHeartbeat();
+    this.post({ t: "up" });
+  }
+  onPeerConnected(handler) {
+    this.peerConnectedHandler = handler;
+  }
+  requestPeerReload() {
+    this.post({ t: "reload" });
+  }
+  onPeerReload(handler) {
+    this.peerReloadHandler = handler;
+  }
+  stop() {
+    this.stopped = true;
+    this.stopHeartbeat();
+    this.peerConnectedHandler = null;
+    this.peerReloadHandler = null;
+    this.channel.onmessage = null;
+    this.channel.close();
+  }
+  announceAlive() {
+    this.post({ t: "alive", id: this.peerId });
+  }
+  stopHeartbeat() {
+    if (this.heartbeatTimer !== null) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+  post(message) {
+    try {
+      this.channel.postMessage(message);
+    } catch {}
+  }
+}
+function adaptBroadcastChannel(channel) {
+  let handler = null;
+  return {
+    postMessage: (message) => channel.postMessage(message),
+    close: () => channel.close(),
+    get onmessage() {
+      return handler;
+    },
+    set onmessage(next) {
+      handler = next;
+      channel.onmessage = next ? (event) => next({ data: event.data }) : null;
+    }
+  };
+}
+function createReconnectCoordinator() {
+  if (typeof BroadcastChannel === "undefined") {
+    return ALWAYS_PROBE;
+  }
+  try {
+    return new BroadcastReconnectCoordinator({ channel: adaptBroadcastChannel(new BroadcastChannel(CHANNEL_NAME)) });
+  } catch {
+    return ALWAYS_PROBE;
+  }
+}
 
 // public/scene-manager/event-source.ts
+var SESSION_REJECTED_STATUSES = new Set([401, 403]);
 function parseSseChunk(rawEvent) {
-  const dataLine = rawEvent.split(`
-`).find((line) => line.startsWith("data:"));
+  const lines = rawEvent.split(`
+`);
+  const eventLine = lines.find((line) => line.startsWith("event:"));
+  const dataLine = lines.find((line) => line.startsWith("data:"));
   if (!dataLine) {
     return null;
   }
@@ -642,12 +854,31 @@ function parseSseChunk(rawEvent) {
   if (!json) {
     return null;
   }
+  const eventName = eventLine ? eventLine.slice("event:".length).trim() : "";
+  let parsed;
   try {
-    const parsed = JSON.parse(json);
-    if (typeof parsed.eventId === "string" && typeof parsed.instanceId === "string" && typeof parsed.type === "string" && typeof parsed.key === "string") {
-      return { eventId: parsed.eventId, instanceId: parsed.instanceId, type: parsed.type, key: parsed.key, value: parsed.value };
-    }
-  } catch {}
+    parsed = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return null;
+  }
+  if (eventName === "hello") {
+    return typeof parsed.bootId === "string" && parsed.bootId.length > 0 ? { kind: "hello", bootId: parsed.bootId } : null;
+  }
+  if (typeof parsed.eventId === "string" && typeof parsed.instanceId === "string" && typeof parsed.type === "string" && typeof parsed.key === "string") {
+    return {
+      kind: "delivery",
+      frame: {
+        eventId: parsed.eventId,
+        instanceId: parsed.instanceId,
+        type: parsed.type,
+        key: parsed.key,
+        value: parsed.value
+      }
+    };
+  }
   return null;
 }
 
@@ -656,31 +887,45 @@ class SceneEventSource {
   fetchFn;
   reconnectBaseMs;
   reconnectMaxMs;
+  coordinator;
+  random;
   sink = null;
   stopped = true;
+  everConnected = false;
   reconnectAttempt = 0;
   reconnectTimer = null;
   abortController = null;
   constructor(options) {
     this.url = options.url;
-    this.fetchFn = options.fetchFn ?? fetch;
+    this.fetchFn = options.fetchFn ?? globalThis.fetch.bind(globalThis);
     this.reconnectBaseMs = options.reconnectBaseMs ?? 500;
-    this.reconnectMaxMs = options.reconnectMaxMs ?? 1e4;
+    this.reconnectMaxMs = options.reconnectMaxMs ?? 5000;
+    this.coordinator = options.coordinator ?? ALWAYS_PROBE;
+    this.random = options.random ?? Math.random;
   }
   start(sink) {
     this.sink = sink;
     this.stopped = false;
     this.reconnectAttempt = 0;
+    this.coordinator.onPeerConnected(() => {
+      this.wakeNow();
+    });
     this.connect();
   }
   stop() {
     this.stopped = true;
-    if (this.reconnectTimer !== null) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
+    this.clearTimer();
     this.abortController?.abort();
     this.abortController = null;
+    this.coordinator.stop();
+  }
+  wakeNow() {
+    if (this.stopped || this.reconnectTimer === null) {
+      return;
+    }
+    this.clearTimer();
+    this.reconnectAttempt = 0;
+    this.connect();
   }
   async connect() {
     if (this.stopped) {
@@ -695,7 +940,7 @@ class SceneEventSource {
         headers: { Accept: "text/event-stream" },
         signal: controller.signal
       });
-    } catch (err) {
+    } catch {
       if (!this.stopped) {
         this.onDisconnected();
         this.scheduleReconnect();
@@ -703,11 +948,18 @@ class SceneEventSource {
       return;
     }
     if (!response.ok || !response.body) {
+      if (SESSION_REJECTED_STATUSES.has(response.status) && this.everConnected) {
+        this.onDisconnected();
+        this.sink?.onSessionExpired?.();
+        return;
+      }
       this.onDisconnected();
       this.scheduleReconnect();
       return;
     }
+    this.everConnected = true;
     this.reconnectAttempt = 0;
+    this.coordinator.onConnected();
     this.sink?.onConnectionChange(true);
     const reader = response.body.getReader();
     const decoder = new TextDecoder;
@@ -725,9 +977,14 @@ class SceneEventSource {
 `)) !== -1) {
           const rawEvent = buffer.slice(0, sep);
           buffer = buffer.slice(sep + 2);
-          const frame = parseSseChunk(rawEvent);
-          if (frame) {
-            this.sink?.onFrame(frame);
+          const parsed = parseSseChunk(rawEvent);
+          if (!parsed) {
+            continue;
+          }
+          if (parsed.kind === "hello") {
+            this.sink?.onHello?.(parsed.bootId);
+          } else {
+            this.sink?.onFrame(parsed.frame);
           }
         }
       }
@@ -739,69 +996,75 @@ class SceneEventSource {
     this.scheduleReconnect();
   }
   onDisconnected() {
+    this.coordinator.onDisconnected();
     this.sink?.onConnectionChange(false);
+  }
+  clearTimer() {
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+  nextDelayMs() {
+    const capped = Math.min(this.reconnectBaseMs * 2 ** this.reconnectAttempt, this.reconnectMaxMs);
+    return capped / 2 + this.random() * (capped / 2);
   }
   scheduleReconnect() {
     if (this.stopped) {
       return;
     }
-    const attempt = this.reconnectAttempt;
+    const delay = this.nextDelayMs();
     this.reconnectAttempt += 1;
-    const delay = Math.min(this.reconnectBaseMs * 2 ** attempt, this.reconnectMaxMs);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
+      if (!this.coordinator.shouldProbe()) {
+        this.scheduleReconnect();
+        return;
+      }
       this.connect();
     }, delay);
   }
 }
 
+// public/scene-manager/connection-status.ts
+class ConnectionStatus {
+  render;
+  unhealthy = new Set(["stream"]);
+  lastRendered = null;
+  constructor(render) {
+    this.render = render;
+  }
+  set(input, healthy) {
+    if (healthy) {
+      this.unhealthy.delete(input);
+    } else {
+      this.unhealthy.add(input);
+    }
+    const connected = this.unhealthy.size === 0;
+    if (connected === this.lastRendered) {
+      return;
+    }
+    this.lastRendered = connected;
+    this.render(connected);
+  }
+  get connected() {
+    return this.unhealthy.size === 0;
+  }
+}
+
 // public/scene-manager/index.ts
 var REFRESH_INTERVAL_MS = 50000;
-var ACK_BATCH_WINDOW_MS = 250;
 function generateNonce() {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
-function setConnectedSignal(connected) {
+function renderConnected(connected) {
   const banner = document.getElementById("disconnected-banner");
   banner?.classList.toggle("visible", !connected);
   try {
     document.dispatchEvent(new CustomEvent("datastar-signal-patch", { detail: { connected } }));
   } catch {}
-}
-
-class AckBatcher {
-  endpoint;
-  pending = new Map;
-  timer = null;
-  constructor(endpoint) {
-    this.endpoint = endpoint;
-  }
-  add(eventId, instanceId) {
-    let set = this.pending.get(eventId);
-    if (!set) {
-      set = new Set;
-      this.pending.set(eventId, set);
-    }
-    set.add(instanceId);
-    if (this.timer === null) {
-      this.timer = setTimeout(() => this.flush(), ACK_BATCH_WINDOW_MS);
-    }
-  }
-  flush() {
-    this.timer = null;
-    const batch = this.pending;
-    this.pending.clear();
-    for (const [eventId, instanceIds] of batch) {
-      fetch(this.endpoint(eventId), {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instanceIds: [...instanceIds] })
-      }).catch(() => {});
-    }
-  }
 }
 function main() {
   const sceneData = window.__WOOFX3_SCENE__?.scene;
@@ -866,7 +1129,7 @@ function main() {
       }
     };
     const bridge = new WidgetBridge(instance.id, nonce, callbacks);
-    iframe.addEventListener("load", () => bridge.onFrameLoad());
+    iframe.addEventListener("load", createFrameLoadHandler(bridge));
     iframe.src = `${instance.frameUrl}?nonce=${encodeURIComponent(nonce)}`;
     bridgesByInstance.set(instance.id, bridge);
     container.appendChild(iframe);
@@ -877,36 +1140,45 @@ function main() {
       bridge.handleMessage(event);
     }
   });
-  function toWidgetEvent(item) {
-    return {
-      type: item.type,
-      source: "scene-manager",
-      time: new Date().toISOString(),
-      data: item.value,
-      eventId: item.eventId
-    };
+  const status = new ConnectionStatus(renderConnected);
+  let serverBootId = null;
+  const coordinator = createReconnectCoordinator();
+  function reloadOverlay() {
+    coordinator.requestPeerReload();
+    location.reload();
   }
-  const eventSource = new SceneEventSource({ url: new URL(`${sceneBase}/events`, location.href).toString() });
+  coordinator.onPeerReload(() => {
+    location.reload();
+  });
+  const eventSource = new SceneEventSource({
+    url: new URL(`${sceneBase}/events`, location.href).toString(),
+    coordinator
+  });
   eventSource.start({
     onFrame: (frame) => {
       deliveredBatcher.add(frame.eventId, frame.instanceId);
       queueManager.enqueue(frame.instanceId, { eventId: frame.eventId, type: frame.type, key: frame.key, value: frame.value });
     },
-    onConnectionChange: (connected) => setConnectedSignal(connected)
+    onConnectionChange: (connected) => status.set("stream", connected),
+    onHello: (bootId) => {
+      if (serverBootId !== null && serverBootId !== bootId) {
+        reloadOverlay();
+        return;
+      }
+      serverBootId = bootId;
+    },
+    onSessionExpired: () => {
+      reloadOverlay();
+    }
   });
-  let refreshFailing = false;
   setInterval(() => {
     fetch(`${sceneBase}/session/refresh`, { method: "POST", credentials: "same-origin" }).then((resp) => {
       if (!resp.ok) {
         throw new Error(`refresh failed: ${resp.status}`);
       }
-      if (refreshFailing) {
-        refreshFailing = false;
-        setConnectedSignal(true);
-      }
+      status.set("session", true);
     }).catch(() => {
-      refreshFailing = true;
-      setConnectedSignal(false);
+      status.set("session", false);
     });
   }, REFRESH_INTERVAL_MS);
 }
