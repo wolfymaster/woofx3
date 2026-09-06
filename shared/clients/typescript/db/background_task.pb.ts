@@ -50,6 +50,13 @@ export interface RegisterBackgroundTasksRequest {
   version: string;
   tasks: BackgroundTaskInput[];
   applicationId: string;
+  /**
+   * Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
+   * so a module upgrade upserts its resources in place instead of orphaning
+   * every reference. Stored as created_by_ref when created_by_type/ref are
+   * empty, and emitted on the outbox event as `module_prefix`.
+   */
+  moduleId: string;
 }
 
 export interface ListBackgroundTasksRequest {
@@ -335,6 +342,7 @@ export const RegisterBackgroundTasksRequest = {
       version: "",
       tasks: [],
       applicationId: "",
+      moduleId: "",
       ...msg,
     };
   },
@@ -364,6 +372,9 @@ export const RegisterBackgroundTasksRequest = {
     }
     if (msg.applicationId) {
       writer.writeString(5, msg.applicationId);
+    }
+    if (msg.moduleId) {
+      writer.writeString(6, msg.moduleId);
     }
     return writer;
   },
@@ -398,6 +409,10 @@ export const RegisterBackgroundTasksRequest = {
         }
         case 5: {
           msg.applicationId = reader.readString();
+          break;
+        }
+        case 6: {
+          msg.moduleId = reader.readString();
           break;
         }
         default: {
@@ -815,6 +830,7 @@ export const RegisterBackgroundTasksRequestJSON = {
       version: "",
       tasks: [],
       applicationId: "",
+      moduleId: "",
       ...msg,
     };
   },
@@ -840,6 +856,9 @@ export const RegisterBackgroundTasksRequestJSON = {
     }
     if (msg.applicationId) {
       json["applicationId"] = msg.applicationId;
+    }
+    if (msg.moduleId) {
+      json["moduleId"] = msg.moduleId;
     }
     return json;
   },
@@ -874,6 +893,10 @@ export const RegisterBackgroundTasksRequestJSON = {
     const _applicationId_ = json["applicationId"] ?? json["application_id"];
     if (_applicationId_) {
       msg.applicationId = _applicationId_;
+    }
+    const _moduleId_ = json["moduleId"] ?? json["module_id"];
+    if (_moduleId_) {
+      msg.moduleId = _moduleId_;
     }
     return msg;
   },

@@ -41,6 +41,7 @@ pub struct BackgroundTaskInput {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterBackgroundTasksRequest {
+    /// composite "{id}:{version}:{hash}" — carried to the outbox event so consumers can resolve the exact installed version
     #[prost(string, tag="1")]
     pub module_key: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
@@ -51,6 +52,12 @@ pub struct RegisterBackgroundTasksRequest {
     pub tasks: ::prost::alloc::vec::Vec<BackgroundTaskInput>,
     #[prost(string, tag="5")]
     pub application_id: ::prost::alloc::string::String,
+    /// Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
+    /// so a module upgrade upserts its resources in place instead of orphaning
+    /// every reference. Stored as created_by_ref when created_by_type/ref are
+    /// empty, and emitted on the outbox event as `module_prefix`.
+    #[prost(string, tag="6")]
+    pub module_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListBackgroundTasksRequest {
@@ -117,7 +124,7 @@ pub struct TriggerInput {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterTriggersRequest {
-    /// composite "{id}:{version}:{hash}" — stored as created_by_ref when created_by_type/ref are empty
+    /// composite "{id}:{version}:{hash}" — carried to the outbox event so consumers can resolve the exact installed version
     #[prost(string, tag="1")]
     pub module_key: ::prost::alloc::string::String,
     /// manifest.name — carried to event for display
@@ -129,7 +136,7 @@ pub struct RegisterTriggersRequest {
     #[prost(message, repeated, tag="4")]
     pub triggers: ::prost::alloc::vec::Vec<TriggerInput>,
     /// Optional explicit registration identity. When both are set they override
-    /// the default (MODULE, module_key) pairing, letting non-module registrars
+    /// the default (MODULE, module_id) pairing, letting non-module registrars
     /// (e.g. SYSTEM services) upsert into the same table under their own
     /// namespace. The upsert key is (created_by_type, created_by_ref, name).
     #[prost(string, tag="5")]
@@ -140,6 +147,12 @@ pub struct RegisterTriggersRequest {
     /// dependency checks are tenant-isolated.
     #[prost(string, tag="7")]
     pub application_id: ::prost::alloc::string::String,
+    /// Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
+    /// so a module upgrade upserts its resources in place instead of orphaning
+    /// every reference. Stored as created_by_ref when created_by_type/ref are
+    /// empty, and emitted on the outbox event as `module_prefix`.
+    #[prost(string, tag="8")]
+    pub module_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListTriggersRequest {
@@ -222,7 +235,7 @@ pub struct ActionInput {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterActionsRequest {
-    /// composite "{id}:{version}:{hash}" — stored as created_by_ref when created_by_type/ref are empty
+    /// composite "{id}:{version}:{hash}" — carried to the outbox event so consumers can resolve the exact installed version
     #[prost(string, tag="1")]
     pub module_key: ::prost::alloc::string::String,
     /// manifest.name — carried to event for display
@@ -234,7 +247,7 @@ pub struct RegisterActionsRequest {
     #[prost(message, repeated, tag="4")]
     pub actions: ::prost::alloc::vec::Vec<ActionInput>,
     /// Optional explicit registration identity. When both are set they override
-    /// the default (MODULE, module_key) pairing, letting non-module registrars
+    /// the default (MODULE, module_id) pairing, letting non-module registrars
     /// (e.g. SYSTEM services) upsert into the same table under their own
     /// namespace. The upsert key is (created_by_type, created_by_ref, name).
     #[prost(string, tag="5")]
@@ -245,6 +258,12 @@ pub struct RegisterActionsRequest {
     /// dependency checks are tenant-isolated.
     #[prost(string, tag="7")]
     pub application_id: ::prost::alloc::string::String,
+    /// Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
+    /// so a module upgrade upserts its resources in place instead of orphaning
+    /// every reference. Stored as created_by_ref when created_by_type/ref are
+    /// empty, and emitted on the outbox event as `module_prefix`.
+    #[prost(string, tag="8")]
+    pub module_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListActionsRequest {
@@ -639,7 +658,7 @@ pub struct WidgetInput {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterWidgetsRequest {
-    /// composite "{id}:{version}:{hash}"
+    /// composite "{id}:{version}:{hash}" — carried to the outbox event so consumers can resolve the exact installed version
     #[prost(string, tag="1")]
     pub module_key: ::prost::alloc::string::String,
     /// manifest.name — carried to event for display
@@ -652,7 +671,7 @@ pub struct RegisterWidgetsRequest {
     pub widgets: ::prost::alloc::vec::Vec<WidgetInput>,
     /// Optional explicit registration identity. Mirrors the
     /// RegisterTriggersRequest fields. When both are set they override the
-    /// default (MODULE, module_key) pairing.
+    /// default (MODULE, module_id) pairing.
     #[prost(string, tag="5")]
     pub created_by_type: ::prost::alloc::string::String,
     #[prost(string, tag="6")]
@@ -661,6 +680,12 @@ pub struct RegisterWidgetsRequest {
     /// rows keep the default '' (instance-global), same as triggers/actions.
     #[prost(string, tag="7")]
     pub application_id: ::prost::alloc::string::String,
+    /// Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
+    /// so a module upgrade upserts its resources in place instead of orphaning
+    /// every reference. Stored as created_by_ref when created_by_type/ref are
+    /// empty, and emitted on the outbox event as `module_prefix`.
+    #[prost(string, tag="8")]
+    pub module_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListWidgetsRequest {
@@ -752,7 +777,7 @@ pub struct AssetInput {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterAssetsRequest {
-    /// composite "{id}:{version}:{hash}"
+    /// composite "{id}:{version}:{hash}" — carried to the outbox event so consumers can resolve the exact installed version
     #[prost(string, tag="1")]
     pub module_key: ::prost::alloc::string::String,
     /// manifest.name — carried to event for display
@@ -765,11 +790,17 @@ pub struct RegisterAssetsRequest {
     pub assets: ::prost::alloc::vec::Vec<AssetInput>,
     /// Optional explicit registration identity. Mirrors the
     /// RegisterTriggersRequest fields. When both are set they override the
-    /// default (MODULE, module_key) pairing.
+    /// default (MODULE, module_id) pairing.
     #[prost(string, tag="5")]
     pub created_by_type: ::prost::alloc::string::String,
     #[prost(string, tag="6")]
     pub created_by_ref: ::prost::alloc::string::String,
+    /// Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
+    /// so a module upgrade upserts its resources in place instead of orphaning
+    /// every reference. Stored as created_by_ref when created_by_type/ref are
+    /// empty, and emitted on the outbox event as `module_prefix`.
+    #[prost(string, tag="7")]
+    pub module_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListAssetsRequest {
@@ -1040,9 +1071,15 @@ pub struct CompleteModuleDeleteRequest {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeleteByModuleIdRequest {
-    /// == manifest.id; server does `created_by_ref LIKE '{module_id}:%'`
+    /// == manifest.id. Matched with equality against created_by_ref, which
+    /// stores the version-free manifest id so module upgrades upsert in place.
     #[prost(string, tag="1")]
     pub module_id: ::prost::alloc::string::String,
+    /// Composite "{id}:{version}:{hash}" of the module being removed. Not used
+    /// for row matching — carried so the deregistration outbox event can name
+    /// the exact installed version alongside module_prefix.
+    #[prost(string, tag="2")]
+    pub module_key: ::prost::alloc::string::String,
 }
 /// Lookup by canonical id (`{moduleId}:{kind}:{manifest_id}`). Used by
 /// barkloader's install path to resolve cross-module references before

@@ -53,7 +53,7 @@ export interface RegisterTriggersRequest {
   triggers: TriggerInput[];
   /**
    * Optional explicit registration identity. When both are set they override
-   * the default (MODULE, module_key) pairing, letting non-module registrars
+   * the default (MODULE, module_id) pairing, letting non-module registrars
    * (e.g. SYSTEM services) upsert into the same table under their own
    * namespace. The upsert key is (created_by_type, created_by_ref, name).
    */
@@ -64,6 +64,13 @@ export interface RegisterTriggersRequest {
    * dependency checks are tenant-isolated.
    */
   applicationId: string;
+  /**
+   * Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
+   * so a module upgrade upserts its resources in place instead of orphaning
+   * every reference. Stored as created_by_ref when created_by_type/ref are
+   * empty, and emitted on the outbox event as `module_prefix`.
+   */
+  moduleId: string;
 }
 
 export interface ListTriggersRequest {
@@ -371,6 +378,7 @@ export const RegisterTriggersRequest = {
       createdByType: "",
       createdByRef: "",
       applicationId: "",
+      moduleId: "",
       ...msg,
     };
   },
@@ -406,6 +414,9 @@ export const RegisterTriggersRequest = {
     }
     if (msg.applicationId) {
       writer.writeString(7, msg.applicationId);
+    }
+    if (msg.moduleId) {
+      writer.writeString(8, msg.moduleId);
     }
     return writer;
   },
@@ -448,6 +459,10 @@ export const RegisterTriggersRequest = {
         }
         case 7: {
           msg.applicationId = reader.readString();
+          break;
+        }
+        case 8: {
+          msg.moduleId = reader.readString();
           break;
         }
         default: {
@@ -879,6 +894,7 @@ export const RegisterTriggersRequestJSON = {
       createdByType: "",
       createdByRef: "",
       applicationId: "",
+      moduleId: "",
       ...msg,
     };
   },
@@ -910,6 +926,9 @@ export const RegisterTriggersRequestJSON = {
     }
     if (msg.applicationId) {
       json["applicationId"] = msg.applicationId;
+    }
+    if (msg.moduleId) {
+      json["moduleId"] = msg.moduleId;
     }
     return json;
   },
@@ -952,6 +971,10 @@ export const RegisterTriggersRequestJSON = {
     const _applicationId_ = json["applicationId"] ?? json["application_id"];
     if (_applicationId_) {
       msg.applicationId = _applicationId_;
+    }
+    const _moduleId_ = json["moduleId"] ?? json["module_id"];
+    if (_moduleId_) {
+      msg.moduleId = _moduleId_;
     }
     return msg;
   },

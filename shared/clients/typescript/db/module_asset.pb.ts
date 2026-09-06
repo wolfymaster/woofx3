@@ -70,10 +70,17 @@ export interface RegisterAssetsRequest {
   /**
    * Optional explicit registration identity. Mirrors the
    * RegisterTriggersRequest fields. When both are set they override the
-   * default (MODULE, module_key) pairing.
+   * default (MODULE, module_id) pairing.
    */
   createdByType: string;
   createdByRef: string;
+  /**
+   * Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
+   * so a module upgrade upserts its resources in place instead of orphaning
+   * every reference. Stored as created_by_ref when created_by_type/ref are
+   * empty, and emitted on the outbox event as `module_prefix`.
+   */
+  moduleId: string;
 }
 
 export interface ListAssetsRequest {
@@ -390,6 +397,7 @@ export const RegisterAssetsRequest = {
       assets: [],
       createdByType: "",
       createdByRef: "",
+      moduleId: "",
       ...msg,
     };
   },
@@ -422,6 +430,9 @@ export const RegisterAssetsRequest = {
     }
     if (msg.createdByRef) {
       writer.writeString(6, msg.createdByRef);
+    }
+    if (msg.moduleId) {
+      writer.writeString(7, msg.moduleId);
     }
     return writer;
   },
@@ -460,6 +471,10 @@ export const RegisterAssetsRequest = {
         }
         case 6: {
           msg.createdByRef = reader.readString();
+          break;
+        }
+        case 7: {
+          msg.moduleId = reader.readString();
           break;
         }
         default: {
@@ -966,6 +981,7 @@ export const RegisterAssetsRequestJSON = {
       assets: [],
       createdByType: "",
       createdByRef: "",
+      moduleId: "",
       ...msg,
     };
   },
@@ -994,6 +1010,9 @@ export const RegisterAssetsRequestJSON = {
     }
     if (msg.createdByRef) {
       json["createdByRef"] = msg.createdByRef;
+    }
+    if (msg.moduleId) {
+      json["moduleId"] = msg.moduleId;
     }
     return json;
   },
@@ -1032,6 +1051,10 @@ export const RegisterAssetsRequestJSON = {
     const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
     if (_createdByRef_) {
       msg.createdByRef = _createdByRef_;
+    }
+    const _moduleId_ = json["moduleId"] ?? json["module_id"];
+    if (_moduleId_) {
+      msg.moduleId = _moduleId_;
     }
     return msg;
   },

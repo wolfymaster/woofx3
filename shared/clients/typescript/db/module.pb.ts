@@ -202,7 +202,17 @@ export interface CompleteModuleDeleteRequest {
 }
 
 export interface DeleteByModuleIdRequest {
+  /**
+   * == manifest.id. Matched with equality against created_by_ref, which
+   * stores the version-free manifest id so module upgrades upsert in place.
+   */
   moduleId: string;
+  /**
+   * Composite "{id}:{version}:{hash}" of the module being removed. Not used
+   * for row matching — carried so the deregistration outbox event can name
+   * the exact installed version alongside module_prefix.
+   */
+  moduleKey: string;
 }
 
 /**
@@ -3951,6 +3961,7 @@ export const DeleteByModuleIdRequest = {
   ): DeleteByModuleIdRequest {
     return {
       moduleId: "",
+      moduleKey: "",
       ...msg,
     };
   },
@@ -3964,6 +3975,9 @@ export const DeleteByModuleIdRequest = {
   ): protoscript.BinaryWriter {
     if (msg.moduleId) {
       writer.writeString(1, msg.moduleId);
+    }
+    if (msg.moduleKey) {
+      writer.writeString(2, msg.moduleKey);
     }
     return writer;
   },
@@ -3980,6 +3994,10 @@ export const DeleteByModuleIdRequest = {
       switch (field) {
         case 1: {
           msg.moduleId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.moduleKey = reader.readString();
           break;
         }
         default: {
@@ -5908,6 +5926,7 @@ export const DeleteByModuleIdRequestJSON = {
   ): DeleteByModuleIdRequest {
     return {
       moduleId: "",
+      moduleKey: "",
       ...msg,
     };
   },
@@ -5922,6 +5941,9 @@ export const DeleteByModuleIdRequestJSON = {
     if (msg.moduleId) {
       json["moduleId"] = msg.moduleId;
     }
+    if (msg.moduleKey) {
+      json["moduleKey"] = msg.moduleKey;
+    }
     return json;
   },
 
@@ -5935,6 +5957,10 @@ export const DeleteByModuleIdRequestJSON = {
     const _moduleId_ = json["moduleId"] ?? json["module_id"];
     if (_moduleId_) {
       msg.moduleId = _moduleId_;
+    }
+    const _moduleKey_ = json["moduleKey"] ?? json["module_key"];
+    if (_moduleKey_) {
+      msg.moduleKey = _moduleKey_;
     }
     return msg;
   },
