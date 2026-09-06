@@ -43,5 +43,6 @@ func All() []*gormigrate.Migration {
 		AddArchivedAtColumns(),
 		CreateSceneEventsTables(),
 		RenameOverlayPublicUrlSetting(),
+		CreateResourcesTable(),
 	}
 }
