@@ -363,6 +363,16 @@ export interface GroupSnapshot {
   name: string;
   description: string;
   createdAt: string;
+  /**
+   * Built-in groups are seeded with every application and mirror Twitch's
+   * badge model: `everyone`, `subscriber`, `vip`, `moderator`, `broadcaster`.
+   * They cannot be renamed or deleted - the engine refuses both, so a UI
+   * should render those affordances as disabled rather than relying on the
+   * call failing. Membership of the four Twitch-derived ones is owned by the
+   * Twitch state sync and will be overwritten if edited by hand;
+   * `everyone` has no membership at all and matches every user implicitly.
+   */
+  isBuiltIn: boolean;
 }
 
 export interface CreateGroupInput {
@@ -377,6 +387,34 @@ export interface UpdateGroupInput {
   description?: string;
   /** Echoed back on the `group.updated` webhook. */
   correlationKey?: string;
+}
+
+/**
+ * One stored Casbin rule, as returned by `listPermissions()`. `ptype` selects
+ * the rule family - "p" is a policy (v0=subject, v1=object, v2=action,
+ * v3=effect) and "g"/"g2" are grouping rules (v0=subject, v1=group). This is
+ * a diagnostic/read-only view of the derived policy cache; the source of
+ * truth is groups, group membership, and command grants.
+ */
+export interface PermissionRule {
+  id: number;
+  applicationId: string;
+  ptype: string;
+  v0: string;
+  v1: string;
+  v2: string;
+  v3: string;
+  v4: string;
+  v5: string;
+}
+
+export interface ListPermissionsQuery {
+  /** Exact rule family, e.g. "p" or "g". Takes precedence over `ptypePrefix`. */
+  ptype?: string;
+  /** Rule-family prefix, e.g. "g" to match both "g" and "g2". */
+  ptypePrefix?: string;
+  /** Restrict to rules whose subject (v0) matches exactly. */
+  subject?: string;
 }
 
 // ==================== Assets ====================
@@ -896,6 +934,13 @@ export interface Woofx3EngineApi {
   listGroupMembers(groupId: string): Promise<string[]>;
   addUserToGroup(groupId: string, username: string): Promise<{ ok: true }>;
   removeUserFromGroup(groupId: string, username: string): Promise<{ ok: true }>;
+  /** Every group the user belongs to, for rendering a user's effective access. */
+  listGroupsForUser(username: string): Promise<GroupSnapshot[]>;
+
+  // Permissions — read-only view of the derived Casbin policy rows. Useful
+  // for a debugging/inspection panel; day-to-day management goes through the
+  // group and command APIs above, which own these rows.
+  listPermissions(query?: ListPermissionsQuery): Promise<PermissionRule[]>;
 
   // Twitch token persistence — bridges the UI's OAuth callback to the
   // engine's bootstrap, which reads `twitch_token` from db settings.

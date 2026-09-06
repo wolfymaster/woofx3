@@ -12,6 +12,7 @@ import * as module_setting from "@woofx3/db/module_setting.pb";
 import type * as module_trigger from "@woofx3/db/module_trigger.pb";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
 import * as overlay_token from "@woofx3/db/overlay_token.pb";
+import * as permission from "@woofx3/db/permission.pb";
 import * as scene from "@woofx3/db/scene.pb";
 import * as setting from "@woofx3/db/setting.pb";
 import * as treat from "@woofx3/db/treat.pb";
@@ -118,6 +119,14 @@ export class DbClient {
 
   async listGroupMembers(req: group.ListGroupMembersRequest): Promise<group.ListGroupMembersResponse> {
     return group.ListGroupMembers(req, this.config);
+  }
+
+  async listUserGroupsForUser(req: group.ListUserGroupsForUserRequest): Promise<group.ListGroupsResponse> {
+    return group.ListUserGroupsForUser(req, this.config);
+  }
+
+  async listPermissions(req: permission.ListPermissionsRequest): Promise<permission.ListPermissionsResponse> {
+    return permission.ListPermissions(req, this.config);
   }
 
   async getWorkflow(req: workflow.GetWorkflowRequest): Promise<workflow.WorkflowResponse> {
