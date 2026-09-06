@@ -37,6 +37,41 @@ export interface UserResourceRoleRequest {
   role: string;
 }
 
+/**
+ * Permission is one stored Casbin rule. ptype selects the rule family
+ * ("p" policy, "g"/"g2" grouping); v0..v5 are Casbin's positional slots,
+ * whose meaning depends on ptype - for "p" they are subject/object/action/
+ * effect, for "g" they are subject/group.
+ */
+export interface Permission {
+  id: bigint;
+  applicationId: string;
+  ptype: string;
+  v0: string;
+  v1: string;
+  v2: string;
+  v3: string;
+  v4: string;
+  v5: string;
+}
+
+/**
+ * All filters are optional and AND-ed together. An empty ptype/subject
+ * means "any"; ptype_prefix matches rule families (e.g. "g" matches both
+ * "g" and "g2") and is ignored when ptype is set.
+ */
+export interface ListPermissionsRequest {
+  applicationId: string;
+  ptype: string;
+  ptypePrefix: string;
+  subject: string;
+}
+
+export interface ListPermissionsResponse {
+  status: common.ResponseStatus;
+  permissions: Permission[];
+}
+
 //========================================//
 //   PermissionService Protobuf Client    //
 //========================================//
@@ -161,6 +196,18 @@ export async function RemoveUserFromGroup(
   return common.ResponseStatus.decode(response);
 }
 
+export async function RemoveUserFromRole(
+  userResourceRoleRequest: UserResourceRoleRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/permission.PermissionService/RemoveUserFromRole",
+    UserResourceRoleRequest.encode(userResourceRoleRequest),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
+}
+
 export async function RemoveRoleFromGroup(
   userResourceRoleRequest: UserResourceRoleRequest,
   config?: ClientConfiguration,
@@ -183,6 +230,23 @@ export async function RemoveGroupFromResource(
     config,
   );
   return common.ResponseStatus.decode(response);
+}
+
+/**
+ * Read side. Casbin itself is write-through-only here; these RPCs let a
+ * management UI render the stored rules without reaching into the
+ * permissions table directly.
+ */
+export async function ListPermissions(
+  listPermissionsRequest: ListPermissionsRequest,
+  config?: ClientConfiguration,
+): Promise<ListPermissionsResponse> {
+  const response = await PBrequest(
+    "/permission.PermissionService/ListPermissions",
+    ListPermissionsRequest.encode(listPermissionsRequest),
+    config,
+  );
+  return ListPermissionsResponse.decode(response);
 }
 
 //========================================//
@@ -309,6 +373,18 @@ export async function RemoveUserFromGroupJSON(
   return common.ResponseStatusJSON.decode(response);
 }
 
+export async function RemoveUserFromRoleJSON(
+  userResourceRoleRequest: UserResourceRoleRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/permission.PermissionService/RemoveUserFromRole",
+    UserResourceRoleRequestJSON.encode(userResourceRoleRequest),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
 export async function RemoveRoleFromGroupJSON(
   userResourceRoleRequest: UserResourceRoleRequest,
   config?: ClientConfiguration,
@@ -331,6 +407,23 @@ export async function RemoveGroupFromResourceJSON(
     config,
   );
   return common.ResponseStatusJSON.decode(response);
+}
+
+/**
+ * Read side. Casbin itself is write-through-only here; these RPCs let a
+ * management UI render the stored rules without reaching into the
+ * permissions table directly.
+ */
+export async function ListPermissionsJSON(
+  listPermissionsRequest: ListPermissionsRequest,
+  config?: ClientConfiguration,
+): Promise<ListPermissionsResponse> {
+  const response = await JSONrequest(
+    "/permission.PermissionService/ListPermissions",
+    ListPermissionsRequestJSON.encode(listPermissionsRequest),
+    config,
+  );
+  return ListPermissionsResponseJSON.decode(response);
 }
 
 //========================================//
@@ -378,6 +471,10 @@ export interface PermissionService<Context = unknown> {
     userResourceRoleRequest: UserResourceRoleRequest,
     context: Context,
   ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  RemoveUserFromRole: (
+    userResourceRoleRequest: UserResourceRoleRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
   RemoveRoleFromGroup: (
     userResourceRoleRequest: UserResourceRoleRequest,
     context: Context,
@@ -386,6 +483,15 @@ export interface PermissionService<Context = unknown> {
     userResourceRoleRequest: UserResourceRoleRequest,
     context: Context,
   ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  /**
+   * Read side. Casbin itself is write-through-only here; these RPCs let a
+   * management UI render the stored rules without reaching into the
+   * permissions table directly.
+   */
+  ListPermissions: (
+    listPermissionsRequest: ListPermissionsRequest,
+    context: Context,
+  ) => Promise<ListPermissionsResponse> | ListPermissionsResponse;
 }
 
 export function createPermissionService<Context>(
@@ -508,6 +614,18 @@ export function createPermissionService<Context>(
           json: common.ResponseStatusJSON,
         },
       },
+      RemoveUserFromRole: {
+        name: "RemoveUserFromRole",
+        handler: service.RemoveUserFromRole,
+        input: {
+          protobuf: UserResourceRoleRequest,
+          json: UserResourceRoleRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
+      },
       RemoveRoleFromGroup: {
         name: "RemoveRoleFromGroup",
         handler: service.RemoveRoleFromGroup,
@@ -530,6 +648,18 @@ export function createPermissionService<Context>(
         output: {
           protobuf: common.ResponseStatus,
           json: common.ResponseStatusJSON,
+        },
+      },
+      ListPermissions: {
+        name: "ListPermissions",
+        handler: service.ListPermissions,
+        input: {
+          protobuf: ListPermissionsRequest,
+          json: ListPermissionsRequestJSON,
+        },
+        output: {
+          protobuf: ListPermissionsResponse,
+          json: ListPermissionsResponseJSON,
         },
       },
     },
@@ -820,6 +950,316 @@ export const UserResourceRoleRequest = {
   },
 };
 
+export const Permission = {
+  /**
+   * Serializes Permission to protobuf.
+   */
+  encode: function (msg: PartialDeep<Permission>): Uint8Array {
+    return Permission._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes Permission from protobuf.
+   */
+  decode: function (bytes: ByteSource): Permission {
+    return Permission._readMessage(
+      Permission.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes Permission with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<Permission>): Permission {
+    return {
+      id: 0n,
+      applicationId: "",
+      ptype: "",
+      v0: "",
+      v1: "",
+      v2: "",
+      v3: "",
+      v4: "",
+      v5: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<Permission>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.id) {
+      writer.writeInt64String(1, msg.id.toString() as any);
+    }
+    if (msg.applicationId) {
+      writer.writeString(2, msg.applicationId);
+    }
+    if (msg.ptype) {
+      writer.writeString(3, msg.ptype);
+    }
+    if (msg.v0) {
+      writer.writeString(4, msg.v0);
+    }
+    if (msg.v1) {
+      writer.writeString(5, msg.v1);
+    }
+    if (msg.v2) {
+      writer.writeString(6, msg.v2);
+    }
+    if (msg.v3) {
+      writer.writeString(7, msg.v3);
+    }
+    if (msg.v4) {
+      writer.writeString(8, msg.v4);
+    }
+    if (msg.v5) {
+      writer.writeString(9, msg.v5);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: Permission,
+    reader: protoscript.BinaryReader,
+  ): Permission {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.id = BigInt(reader.readInt64String());
+          break;
+        }
+        case 2: {
+          msg.applicationId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.ptype = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.v0 = reader.readString();
+          break;
+        }
+        case 5: {
+          msg.v1 = reader.readString();
+          break;
+        }
+        case 6: {
+          msg.v2 = reader.readString();
+          break;
+        }
+        case 7: {
+          msg.v3 = reader.readString();
+          break;
+        }
+        case 8: {
+          msg.v4 = reader.readString();
+          break;
+        }
+        case 9: {
+          msg.v5 = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ListPermissionsRequest = {
+  /**
+   * Serializes ListPermissionsRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<ListPermissionsRequest>): Uint8Array {
+    return ListPermissionsRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ListPermissionsRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): ListPermissionsRequest {
+    return ListPermissionsRequest._readMessage(
+      ListPermissionsRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ListPermissionsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListPermissionsRequest>,
+  ): ListPermissionsRequest {
+    return {
+      applicationId: "",
+      ptype: "",
+      ptypePrefix: "",
+      subject: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListPermissionsRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.applicationId) {
+      writer.writeString(1, msg.applicationId);
+    }
+    if (msg.ptype) {
+      writer.writeString(2, msg.ptype);
+    }
+    if (msg.ptypePrefix) {
+      writer.writeString(3, msg.ptypePrefix);
+    }
+    if (msg.subject) {
+      writer.writeString(4, msg.subject);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListPermissionsRequest,
+    reader: protoscript.BinaryReader,
+  ): ListPermissionsRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.applicationId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.ptype = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.ptypePrefix = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.subject = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ListPermissionsResponse = {
+  /**
+   * Serializes ListPermissionsResponse to protobuf.
+   */
+  encode: function (msg: PartialDeep<ListPermissionsResponse>): Uint8Array {
+    return ListPermissionsResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ListPermissionsResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): ListPermissionsResponse {
+    return ListPermissionsResponse._readMessage(
+      ListPermissionsResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ListPermissionsResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListPermissionsResponse>,
+  ): ListPermissionsResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      permissions: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListPermissionsResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.permissions?.length) {
+      writer.writeRepeatedMessage(
+        2,
+        msg.permissions as any,
+        Permission._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListPermissionsResponse,
+    reader: protoscript.BinaryReader,
+  ): ListPermissionsResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          const m = Permission.initialize();
+          reader.readMessage(m, Permission._readMessage);
+          msg.permissions.push(m);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -1063,6 +1503,278 @@ export const UserResourceRoleRequestJSON = {
     const _role_ = json["role"];
     if (_role_) {
       msg.role = _role_;
+    }
+    return msg;
+  },
+};
+
+export const PermissionJSON = {
+  /**
+   * Serializes Permission to JSON.
+   */
+  encode: function (msg: PartialDeep<Permission>): string {
+    return JSON.stringify(PermissionJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes Permission from JSON.
+   */
+  decode: function (json: string): Permission {
+    return PermissionJSON._readMessage(
+      PermissionJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes Permission with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<Permission>): Permission {
+    return {
+      id: 0n,
+      applicationId: "",
+      ptype: "",
+      v0: "",
+      v1: "",
+      v2: "",
+      v3: "",
+      v4: "",
+      v5: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<Permission>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.id) {
+      json["id"] = String(msg.id);
+    }
+    if (msg.applicationId) {
+      json["applicationId"] = msg.applicationId;
+    }
+    if (msg.ptype) {
+      json["ptype"] = msg.ptype;
+    }
+    if (msg.v0) {
+      json["v0"] = msg.v0;
+    }
+    if (msg.v1) {
+      json["v1"] = msg.v1;
+    }
+    if (msg.v2) {
+      json["v2"] = msg.v2;
+    }
+    if (msg.v3) {
+      json["v3"] = msg.v3;
+    }
+    if (msg.v4) {
+      json["v4"] = msg.v4;
+    }
+    if (msg.v5) {
+      json["v5"] = msg.v5;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (msg: Permission, json: any): Permission {
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = BigInt(_id_);
+    }
+    const _applicationId_ = json["applicationId"] ?? json["application_id"];
+    if (_applicationId_) {
+      msg.applicationId = _applicationId_;
+    }
+    const _ptype_ = json["ptype"];
+    if (_ptype_) {
+      msg.ptype = _ptype_;
+    }
+    const _v0_ = json["v0"];
+    if (_v0_) {
+      msg.v0 = _v0_;
+    }
+    const _v1_ = json["v1"];
+    if (_v1_) {
+      msg.v1 = _v1_;
+    }
+    const _v2_ = json["v2"];
+    if (_v2_) {
+      msg.v2 = _v2_;
+    }
+    const _v3_ = json["v3"];
+    if (_v3_) {
+      msg.v3 = _v3_;
+    }
+    const _v4_ = json["v4"];
+    if (_v4_) {
+      msg.v4 = _v4_;
+    }
+    const _v5_ = json["v5"];
+    if (_v5_) {
+      msg.v5 = _v5_;
+    }
+    return msg;
+  },
+};
+
+export const ListPermissionsRequestJSON = {
+  /**
+   * Serializes ListPermissionsRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<ListPermissionsRequest>): string {
+    return JSON.stringify(ListPermissionsRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ListPermissionsRequest from JSON.
+   */
+  decode: function (json: string): ListPermissionsRequest {
+    return ListPermissionsRequestJSON._readMessage(
+      ListPermissionsRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ListPermissionsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListPermissionsRequest>,
+  ): ListPermissionsRequest {
+    return {
+      applicationId: "",
+      ptype: "",
+      ptypePrefix: "",
+      subject: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListPermissionsRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.applicationId) {
+      json["applicationId"] = msg.applicationId;
+    }
+    if (msg.ptype) {
+      json["ptype"] = msg.ptype;
+    }
+    if (msg.ptypePrefix) {
+      json["ptypePrefix"] = msg.ptypePrefix;
+    }
+    if (msg.subject) {
+      json["subject"] = msg.subject;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListPermissionsRequest,
+    json: any,
+  ): ListPermissionsRequest {
+    const _applicationId_ = json["applicationId"] ?? json["application_id"];
+    if (_applicationId_) {
+      msg.applicationId = _applicationId_;
+    }
+    const _ptype_ = json["ptype"];
+    if (_ptype_) {
+      msg.ptype = _ptype_;
+    }
+    const _ptypePrefix_ = json["ptypePrefix"] ?? json["ptype_prefix"];
+    if (_ptypePrefix_) {
+      msg.ptypePrefix = _ptypePrefix_;
+    }
+    const _subject_ = json["subject"];
+    if (_subject_) {
+      msg.subject = _subject_;
+    }
+    return msg;
+  },
+};
+
+export const ListPermissionsResponseJSON = {
+  /**
+   * Serializes ListPermissionsResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<ListPermissionsResponse>): string {
+    return JSON.stringify(ListPermissionsResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ListPermissionsResponse from JSON.
+   */
+  decode: function (json: string): ListPermissionsResponse {
+    return ListPermissionsResponseJSON._readMessage(
+      ListPermissionsResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ListPermissionsResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListPermissionsResponse>,
+  ): ListPermissionsResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      permissions: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListPermissionsResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.permissions?.length) {
+      json["permissions"] = msg.permissions.map(PermissionJSON._writeMessage);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListPermissionsResponse,
+    json: any,
+  ): ListPermissionsResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _permissions_ = json["permissions"];
+    if (_permissions_) {
+      for (const item of _permissions_) {
+        const m = PermissionJSON.initialize();
+        PermissionJSON._readMessage(m, item);
+        msg.permissions.push(m);
+      }
     }
     return msg;
   },

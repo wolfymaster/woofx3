@@ -225,6 +225,241 @@ func (x *UserResourceRoleRequest) GetRole() string {
 	return ""
 }
 
+// Permission is one stored Casbin rule. ptype selects the rule family
+// ("p" policy, "g"/"g2" grouping); v0..v5 are Casbin's positional slots,
+// whose meaning depends on ptype - for "p" they are subject/object/action/
+// effect, for "g" they are subject/group.
+type Permission struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	Ptype         string                 `protobuf:"bytes,3,opt,name=ptype,proto3" json:"ptype,omitempty"`
+	V0            string                 `protobuf:"bytes,4,opt,name=v0,proto3" json:"v0,omitempty"`
+	V1            string                 `protobuf:"bytes,5,opt,name=v1,proto3" json:"v1,omitempty"`
+	V2            string                 `protobuf:"bytes,6,opt,name=v2,proto3" json:"v2,omitempty"`
+	V3            string                 `protobuf:"bytes,7,opt,name=v3,proto3" json:"v3,omitempty"`
+	V4            string                 `protobuf:"bytes,8,opt,name=v4,proto3" json:"v4,omitempty"`
+	V5            string                 `protobuf:"bytes,9,opt,name=v5,proto3" json:"v5,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Permission) Reset() {
+	*x = Permission{}
+	mi := &file_permission_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Permission) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Permission) ProtoMessage() {}
+
+func (x *Permission) ProtoReflect() protoreflect.Message {
+	mi := &file_permission_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Permission.ProtoReflect.Descriptor instead.
+func (*Permission) Descriptor() ([]byte, []int) {
+	return file_permission_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Permission) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *Permission) GetApplicationId() string {
+	if x != nil {
+		return x.ApplicationId
+	}
+	return ""
+}
+
+func (x *Permission) GetPtype() string {
+	if x != nil {
+		return x.Ptype
+	}
+	return ""
+}
+
+func (x *Permission) GetV0() string {
+	if x != nil {
+		return x.V0
+	}
+	return ""
+}
+
+func (x *Permission) GetV1() string {
+	if x != nil {
+		return x.V1
+	}
+	return ""
+}
+
+func (x *Permission) GetV2() string {
+	if x != nil {
+		return x.V2
+	}
+	return ""
+}
+
+func (x *Permission) GetV3() string {
+	if x != nil {
+		return x.V3
+	}
+	return ""
+}
+
+func (x *Permission) GetV4() string {
+	if x != nil {
+		return x.V4
+	}
+	return ""
+}
+
+func (x *Permission) GetV5() string {
+	if x != nil {
+		return x.V5
+	}
+	return ""
+}
+
+// All filters are optional and AND-ed together. An empty ptype/subject
+// means "any"; ptype_prefix matches rule families (e.g. "g" matches both
+// "g" and "g2") and is ignored when ptype is set.
+type ListPermissionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	Ptype         string                 `protobuf:"bytes,2,opt,name=ptype,proto3" json:"ptype,omitempty"`
+	PtypePrefix   string                 `protobuf:"bytes,3,opt,name=ptype_prefix,json=ptypePrefix,proto3" json:"ptype_prefix,omitempty"`
+	Subject       string                 `protobuf:"bytes,4,opt,name=subject,proto3" json:"subject,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPermissionsRequest) Reset() {
+	*x = ListPermissionsRequest{}
+	mi := &file_permission_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPermissionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPermissionsRequest) ProtoMessage() {}
+
+func (x *ListPermissionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_permission_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPermissionsRequest.ProtoReflect.Descriptor instead.
+func (*ListPermissionsRequest) Descriptor() ([]byte, []int) {
+	return file_permission_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ListPermissionsRequest) GetApplicationId() string {
+	if x != nil {
+		return x.ApplicationId
+	}
+	return ""
+}
+
+func (x *ListPermissionsRequest) GetPtype() string {
+	if x != nil {
+		return x.Ptype
+	}
+	return ""
+}
+
+func (x *ListPermissionsRequest) GetPtypePrefix() string {
+	if x != nil {
+		return x.PtypePrefix
+	}
+	return ""
+}
+
+func (x *ListPermissionsRequest) GetSubject() string {
+	if x != nil {
+		return x.Subject
+	}
+	return ""
+}
+
+type ListPermissionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Permissions   []*Permission          `protobuf:"bytes,2,rep,name=permissions,proto3" json:"permissions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPermissionsResponse) Reset() {
+	*x = ListPermissionsResponse{}
+	mi := &file_permission_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPermissionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPermissionsResponse) ProtoMessage() {}
+
+func (x *ListPermissionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_permission_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPermissionsResponse.ProtoReflect.Descriptor instead.
+func (*ListPermissionsResponse) Descriptor() ([]byte, []int) {
+	return file_permission_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ListPermissionsResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *ListPermissionsResponse) GetPermissions() []*Permission {
+	if x != nil {
+		return x.Permissions
+	}
+	return nil
+}
+
 var File_permission_proto protoreflect.FileDescriptor
 
 const file_permission_proto_rawDesc = "" +
@@ -247,7 +482,26 @@ const file_permission_proto_rawDesc = "" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12\x1a\n" +
 	"\bresource\x18\x03 \x01(\tR\bresource\x12\x12\n" +
-	"\x04role\x18\x04 \x01(\tR\x04role2\xd9\a\n" +
+	"\x04role\x18\x04 \x01(\tR\x04role\"\xb9\x01\n" +
+	"\n" +
+	"Permission\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12%\n" +
+	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x14\n" +
+	"\x05ptype\x18\x03 \x01(\tR\x05ptype\x12\x0e\n" +
+	"\x02v0\x18\x04 \x01(\tR\x02v0\x12\x0e\n" +
+	"\x02v1\x18\x05 \x01(\tR\x02v1\x12\x0e\n" +
+	"\x02v2\x18\x06 \x01(\tR\x02v2\x12\x0e\n" +
+	"\x02v3\x18\a \x01(\tR\x02v3\x12\x0e\n" +
+	"\x02v4\x18\b \x01(\tR\x02v4\x12\x0e\n" +
+	"\x02v5\x18\t \x01(\tR\x02v5\"\x92\x01\n" +
+	"\x16ListPermissionsRequest\x12%\n" +
+	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x14\n" +
+	"\x05ptype\x18\x02 \x01(\tR\x05ptype\x12!\n" +
+	"\fptype_prefix\x18\x03 \x01(\tR\vptypePrefix\x12\x18\n" +
+	"\asubject\x18\x04 \x01(\tR\asubject\"\x83\x01\n" +
+	"\x17ListPermissionsResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x128\n" +
+	"\vpermissions\x18\x02 \x03(\v2\x16.permission.PermissionR\vpermissions2\x88\t\n" +
 	"\x11PermissionService\x12I\n" +
 	"\rHasPermission\x12 .permission.HasPermissionRequest\x1a\x16.common.ResponseStatus\x12F\n" +
 	"\rAddPermission\x12\x1d.permission.PermissionRequest\x1a\x16.common.ResponseStatus\x12P\n" +
@@ -258,9 +512,11 @@ const file_permission_proto_rawDesc = "" +
 	"\x12AddGroupToResource\x12#.permission.UserResourceRoleRequest\x1a\x16.common.ResponseStatus\x12I\n" +
 	"\x10RemovePermission\x12\x1d.permission.PermissionRequest\x1a\x16.common.ResponseStatus\x12U\n" +
 	"\x16RemoveUserFromResource\x12#.permission.UserResourceRoleRequest\x1a\x16.common.ResponseStatus\x12R\n" +
-	"\x13RemoveUserFromGroup\x12#.permission.UserResourceRoleRequest\x1a\x16.common.ResponseStatus\x12R\n" +
+	"\x13RemoveUserFromGroup\x12#.permission.UserResourceRoleRequest\x1a\x16.common.ResponseStatus\x12Q\n" +
+	"\x12RemoveUserFromRole\x12#.permission.UserResourceRoleRequest\x1a\x16.common.ResponseStatus\x12R\n" +
 	"\x13RemoveRoleFromGroup\x12#.permission.UserResourceRoleRequest\x1a\x16.common.ResponseStatus\x12V\n" +
-	"\x17RemoveGroupFromResource\x12#.permission.UserResourceRoleRequest\x1a\x16.common.ResponseStatusB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"\x17RemoveGroupFromResource\x12#.permission.UserResourceRoleRequest\x1a\x16.common.ResponseStatus\x12Z\n" +
+	"\x0fListPermissions\x12\".permission.ListPermissionsRequest\x1a#.permission.ListPermissionsResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_permission_proto_rawDescOnce sync.Once
@@ -274,43 +530,52 @@ func file_permission_proto_rawDescGZIP() []byte {
 	return file_permission_proto_rawDescData
 }
 
-var file_permission_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_permission_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_permission_proto_goTypes = []any{
 	(*HasPermissionRequest)(nil),    // 0: permission.HasPermissionRequest
 	(*PermissionRequest)(nil),       // 1: permission.PermissionRequest
 	(*UserResourceRoleRequest)(nil), // 2: permission.UserResourceRoleRequest
-	(*ResponseStatus)(nil),          // 3: common.ResponseStatus
+	(*Permission)(nil),              // 3: permission.Permission
+	(*ListPermissionsRequest)(nil),  // 4: permission.ListPermissionsRequest
+	(*ListPermissionsResponse)(nil), // 5: permission.ListPermissionsResponse
+	(*ResponseStatus)(nil),          // 6: common.ResponseStatus
 }
 var file_permission_proto_depIdxs = []int32{
-	0,  // 0: permission.PermissionService.HasPermission:input_type -> permission.HasPermissionRequest
-	1,  // 1: permission.PermissionService.AddPermission:input_type -> permission.PermissionRequest
-	2,  // 2: permission.PermissionService.AddUserToResource:input_type -> permission.UserResourceRoleRequest
-	2,  // 3: permission.PermissionService.AddUserToGroup:input_type -> permission.UserResourceRoleRequest
-	2,  // 4: permission.PermissionService.AddUserToRole:input_type -> permission.UserResourceRoleRequest
-	2,  // 5: permission.PermissionService.AddRoleToGroup:input_type -> permission.UserResourceRoleRequest
-	2,  // 6: permission.PermissionService.AddGroupToResource:input_type -> permission.UserResourceRoleRequest
-	1,  // 7: permission.PermissionService.RemovePermission:input_type -> permission.PermissionRequest
-	2,  // 8: permission.PermissionService.RemoveUserFromResource:input_type -> permission.UserResourceRoleRequest
-	2,  // 9: permission.PermissionService.RemoveUserFromGroup:input_type -> permission.UserResourceRoleRequest
-	2,  // 10: permission.PermissionService.RemoveRoleFromGroup:input_type -> permission.UserResourceRoleRequest
-	2,  // 11: permission.PermissionService.RemoveGroupFromResource:input_type -> permission.UserResourceRoleRequest
-	3,  // 12: permission.PermissionService.HasPermission:output_type -> common.ResponseStatus
-	3,  // 13: permission.PermissionService.AddPermission:output_type -> common.ResponseStatus
-	3,  // 14: permission.PermissionService.AddUserToResource:output_type -> common.ResponseStatus
-	3,  // 15: permission.PermissionService.AddUserToGroup:output_type -> common.ResponseStatus
-	3,  // 16: permission.PermissionService.AddUserToRole:output_type -> common.ResponseStatus
-	3,  // 17: permission.PermissionService.AddRoleToGroup:output_type -> common.ResponseStatus
-	3,  // 18: permission.PermissionService.AddGroupToResource:output_type -> common.ResponseStatus
-	3,  // 19: permission.PermissionService.RemovePermission:output_type -> common.ResponseStatus
-	3,  // 20: permission.PermissionService.RemoveUserFromResource:output_type -> common.ResponseStatus
-	3,  // 21: permission.PermissionService.RemoveUserFromGroup:output_type -> common.ResponseStatus
-	3,  // 22: permission.PermissionService.RemoveRoleFromGroup:output_type -> common.ResponseStatus
-	3,  // 23: permission.PermissionService.RemoveGroupFromResource:output_type -> common.ResponseStatus
-	12, // [12:24] is the sub-list for method output_type
-	0,  // [0:12] is the sub-list for method input_type
-	0,  // [0:0] is the sub-list for extension type_name
-	0,  // [0:0] is the sub-list for extension extendee
-	0,  // [0:0] is the sub-list for field type_name
+	6,  // 0: permission.ListPermissionsResponse.status:type_name -> common.ResponseStatus
+	3,  // 1: permission.ListPermissionsResponse.permissions:type_name -> permission.Permission
+	0,  // 2: permission.PermissionService.HasPermission:input_type -> permission.HasPermissionRequest
+	1,  // 3: permission.PermissionService.AddPermission:input_type -> permission.PermissionRequest
+	2,  // 4: permission.PermissionService.AddUserToResource:input_type -> permission.UserResourceRoleRequest
+	2,  // 5: permission.PermissionService.AddUserToGroup:input_type -> permission.UserResourceRoleRequest
+	2,  // 6: permission.PermissionService.AddUserToRole:input_type -> permission.UserResourceRoleRequest
+	2,  // 7: permission.PermissionService.AddRoleToGroup:input_type -> permission.UserResourceRoleRequest
+	2,  // 8: permission.PermissionService.AddGroupToResource:input_type -> permission.UserResourceRoleRequest
+	1,  // 9: permission.PermissionService.RemovePermission:input_type -> permission.PermissionRequest
+	2,  // 10: permission.PermissionService.RemoveUserFromResource:input_type -> permission.UserResourceRoleRequest
+	2,  // 11: permission.PermissionService.RemoveUserFromGroup:input_type -> permission.UserResourceRoleRequest
+	2,  // 12: permission.PermissionService.RemoveUserFromRole:input_type -> permission.UserResourceRoleRequest
+	2,  // 13: permission.PermissionService.RemoveRoleFromGroup:input_type -> permission.UserResourceRoleRequest
+	2,  // 14: permission.PermissionService.RemoveGroupFromResource:input_type -> permission.UserResourceRoleRequest
+	4,  // 15: permission.PermissionService.ListPermissions:input_type -> permission.ListPermissionsRequest
+	6,  // 16: permission.PermissionService.HasPermission:output_type -> common.ResponseStatus
+	6,  // 17: permission.PermissionService.AddPermission:output_type -> common.ResponseStatus
+	6,  // 18: permission.PermissionService.AddUserToResource:output_type -> common.ResponseStatus
+	6,  // 19: permission.PermissionService.AddUserToGroup:output_type -> common.ResponseStatus
+	6,  // 20: permission.PermissionService.AddUserToRole:output_type -> common.ResponseStatus
+	6,  // 21: permission.PermissionService.AddRoleToGroup:output_type -> common.ResponseStatus
+	6,  // 22: permission.PermissionService.AddGroupToResource:output_type -> common.ResponseStatus
+	6,  // 23: permission.PermissionService.RemovePermission:output_type -> common.ResponseStatus
+	6,  // 24: permission.PermissionService.RemoveUserFromResource:output_type -> common.ResponseStatus
+	6,  // 25: permission.PermissionService.RemoveUserFromGroup:output_type -> common.ResponseStatus
+	6,  // 26: permission.PermissionService.RemoveUserFromRole:output_type -> common.ResponseStatus
+	6,  // 27: permission.PermissionService.RemoveRoleFromGroup:output_type -> common.ResponseStatus
+	6,  // 28: permission.PermissionService.RemoveGroupFromResource:output_type -> common.ResponseStatus
+	5,  // 29: permission.PermissionService.ListPermissions:output_type -> permission.ListPermissionsResponse
+	16, // [16:30] is the sub-list for method output_type
+	2,  // [2:16] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_permission_proto_init() }
@@ -325,7 +590,7 @@ func file_permission_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_permission_proto_rawDesc), len(file_permission_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

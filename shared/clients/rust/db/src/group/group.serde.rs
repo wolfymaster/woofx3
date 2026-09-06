@@ -330,6 +330,9 @@ impl serde::Serialize for Group {
         if self.created_at.is_some() {
             len += 1;
         }
+        if self.is_built_in {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("group.Group", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -345,6 +348,9 @@ impl serde::Serialize for Group {
         }
         if let Some(v) = self.created_at.as_ref() {
             struct_ser.serialize_field("createdAt", v)?;
+        }
+        if self.is_built_in {
+            struct_ser.serialize_field("isBuiltIn", &self.is_built_in)?;
         }
         struct_ser.end()
     }
@@ -363,6 +369,8 @@ impl<'de> serde::Deserialize<'de> for Group {
             "description",
             "created_at",
             "createdAt",
+            "is_built_in",
+            "isBuiltIn",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -372,6 +380,7 @@ impl<'de> serde::Deserialize<'de> for Group {
             Name,
             Description,
             CreatedAt,
+            IsBuiltIn,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -398,6 +407,7 @@ impl<'de> serde::Deserialize<'de> for Group {
                             "name" => Ok(GeneratedField::Name),
                             "description" => Ok(GeneratedField::Description),
                             "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
+                            "isBuiltIn" | "is_built_in" => Ok(GeneratedField::IsBuiltIn),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -422,6 +432,7 @@ impl<'de> serde::Deserialize<'de> for Group {
                 let mut name__ = None;
                 let mut description__ = None;
                 let mut created_at__ = None;
+                let mut is_built_in__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -454,6 +465,12 @@ impl<'de> serde::Deserialize<'de> for Group {
                             }
                             created_at__ = map_.next_value()?;
                         }
+                        GeneratedField::IsBuiltIn => {
+                            if is_built_in__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("isBuiltIn"));
+                            }
+                            is_built_in__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Group {
@@ -462,6 +479,7 @@ impl<'de> serde::Deserialize<'de> for Group {
                     name: name__.unwrap_or_default(),
                     description: description__.unwrap_or_default(),
                     created_at: created_at__,
+                    is_built_in: is_built_in__.unwrap_or_default(),
                 })
             }
         }

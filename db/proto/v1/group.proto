@@ -29,6 +29,11 @@ message Group {
     string name = 3;
     string description = 4;
     google.protobuf.Timestamp created_at = 5;
+    // Built-in groups are seeded with every application and mirror Twitch's
+    // badge model (everyone/subscriber/vip/moderator/broadcaster). They may
+    // not be renamed or deleted, and their membership for the Twitch-derived
+    // ones is owned by the Twitch state sync rather than by hand.
+    bool is_built_in = 6;
 }
 
 message CreateGroupRequest {

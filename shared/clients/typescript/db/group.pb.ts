@@ -22,6 +22,13 @@ export interface Group {
   name: string;
   description: string;
   createdAt: protoscript.Timestamp;
+  /**
+   * Built-in groups are seeded with every application and mirror Twitch's
+   * badge model (everyone/subscriber/vip/moderator/broadcaster). They may
+   * not be renamed or deleted, and their membership for the Twitch-derived
+   * ones is owned by the Twitch state sync rather than by hand.
+   */
+  isBuiltIn: boolean;
 }
 
 export interface CreateGroupRequest {
@@ -478,6 +485,7 @@ export const Group = {
       name: "",
       description: "",
       createdAt: protoscript.Timestamp.initialize(),
+      isBuiltIn: false,
       ...msg,
     };
   },
@@ -508,6 +516,9 @@ export const Group = {
         protoscript.Timestamp._writeMessage,
       );
     }
+    if (msg.isBuiltIn) {
+      writer.writeBool(6, msg.isBuiltIn);
+    }
     return writer;
   },
 
@@ -536,6 +547,10 @@ export const Group = {
         }
         case 5: {
           reader.readMessage(msg.createdAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 6: {
+          msg.isBuiltIn = reader.readBool();
           break;
         }
         default: {
@@ -1417,6 +1432,7 @@ export const GroupJSON = {
       name: "",
       description: "",
       createdAt: protoscript.TimestampJSON.initialize(),
+      isBuiltIn: false,
       ...msg,
     };
   },
@@ -1440,6 +1456,9 @@ export const GroupJSON = {
     }
     if (msg.createdAt && (msg.createdAt.seconds || msg.createdAt.nanos)) {
       json["createdAt"] = protoscript.serializeTimestamp(msg.createdAt);
+    }
+    if (msg.isBuiltIn) {
+      json["isBuiltIn"] = msg.isBuiltIn;
     }
     return json;
   },
@@ -1467,6 +1486,10 @@ export const GroupJSON = {
     const _createdAt_ = json["createdAt"] ?? json["created_at"];
     if (_createdAt_) {
       msg.createdAt = protoscript.parseTimestamp(_createdAt_);
+    }
+    const _isBuiltIn_ = json["isBuiltIn"] ?? json["is_built_in"];
+    if (_isBuiltIn_) {
+      msg.isBuiltIn = _isBuiltIn_;
     }
     return msg;
   },

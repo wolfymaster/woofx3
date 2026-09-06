@@ -21,9 +21,15 @@ service PermissionService {
 
     rpc RemoveUserFromResource(UserResourceRoleRequest) returns (common.ResponseStatus);
     rpc RemoveUserFromGroup(UserResourceRoleRequest) returns (common.ResponseStatus);
+    rpc RemoveUserFromRole(UserResourceRoleRequest) returns (common.ResponseStatus);
     
     rpc RemoveRoleFromGroup(UserResourceRoleRequest) returns (common.ResponseStatus);
     rpc RemoveGroupFromResource(UserResourceRoleRequest) returns (common.ResponseStatus);
+
+    // Read side. Casbin itself is write-through-only here; these RPCs let a
+    // management UI render the stored rules without reaching into the
+    // permissions table directly.
+    rpc ListPermissions(ListPermissionsRequest) returns (ListPermissionsResponse);
 }
 
 message HasPermissionRequest {
@@ -45,4 +51,35 @@ message UserResourceRoleRequest {
     string username = 2;
     string resource = 3;
     string role = 4;
+}
+
+// Permission is one stored Casbin rule. ptype selects the rule family
+// ("p" policy, "g"/"g2" grouping); v0..v5 are Casbin's positional slots,
+// whose meaning depends on ptype - for "p" they are subject/object/action/
+// effect, for "g" they are subject/group.
+message Permission {
+    int64 id = 1;
+    string application_id = 2;
+    string ptype = 3;
+    string v0 = 4;
+    string v1 = 5;
+    string v2 = 6;
+    string v3 = 7;
+    string v4 = 8;
+    string v5 = 9;
+}
+
+// All filters are optional and AND-ed together. An empty ptype/subject
+// means "any"; ptype_prefix matches rule families (e.g. "g" matches both
+// "g" and "g2") and is ignored when ptype is set.
+message ListPermissionsRequest {
+    string application_id = 1;
+    string ptype = 2;
+    string ptype_prefix = 3;
+    string subject = 4;
+}
+
+message ListPermissionsResponse {
+    common.ResponseStatus status = 1;
+    repeated Permission permissions = 2;
 }

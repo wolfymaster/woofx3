@@ -12,6 +12,12 @@ pub struct Group {
     pub description: ::prost::alloc::string::String,
     #[prost(message, optional, tag="5")]
     pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Built-in groups are seeded with every application and mirror Twitch's
+    /// badge model (everyone/subscriber/vip/moderator/broadcaster). They may
+    /// not be renamed or deleted, and their membership for the Twitch-derived
+    /// ones is owned by the Twitch state sync rather than by hand.
+    #[prost(bool, tag="6")]
+    pub is_built_in: bool,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateGroupRequest {
