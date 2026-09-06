@@ -1,5 +1,4 @@
 import { EngineEventType } from "@woofx3/api/webhooks";
-import { ApiRouteHost } from "./context";
 import { parseModuleTriggerDeregistered, parseModuleTriggerRegistered } from "../module-event-handlers";
 
 /**

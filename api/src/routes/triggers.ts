@@ -1,5 +1,4 @@
 import type { ActionDefinition, TriggerDefinition } from "@woofx3/api/webhooks";
-import { ApiRouteHost } from "./context";
 
 export const triggersRoutes = {
   async getTriggers(createdByType?: string, createdByRef?: string): Promise<TriggerDefinition[]> {

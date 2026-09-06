@@ -2,7 +2,6 @@ import type { AvailableFunction, CommandSnapshot, CreateCommandInput, UpdateComm
 import { EngineEventType } from "@woofx3/api/webhooks";
 import { invalidCommandVariableNames } from "@woofx3/common/templates/command-variables";
 import type * as command from "@woofx3/db/command.pb";
-import { ApiRouteHost } from "./context";
 import { commandToSnapshot } from "./helpers";
 
 export const commandsRoutes = {
