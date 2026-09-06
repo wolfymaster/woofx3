@@ -20,6 +20,7 @@ import type DatabaseService from "./services/database";
 import type MessageBusService from "./services/messageBus";
 import type TwitchChatClientService from "./services/twitchChat";
 import Spotify from "./spotify";
+import { TwitchGroupSync } from "./twitchGroupSync";
 import { canUse, parseTime } from "./util";
 
 type Context = ApplicationContext<WoofWoofWoofContext, WoofWoofWoofServices>;
@@ -97,9 +98,19 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       }
     });
 
+    // Keeps the built-in subscriber/vip/moderator/broadcaster groups in step
+    // with the badges Twitch stamps on each message. applicationId is left
+    // empty so db-proxy resolves the default, matching every other call here.
+    const twitchGroupSync = new TwitchGroupSync(db, "", ctx.logger);
+
     // subscribe to chat message events
     ctx.services.messageBus.client.subscribe(EventType.ChatMessage, async (msg: Msg) => {
       const payload = msg.json<ChatMessageMessage>();
+      // Reconcile before dispatching so a freshly-granted badge is already
+      // reflected when the command's permission check runs.
+      if (payload.data.badges) {
+        await twitchGroupSync.reconcile(payload.data.chatterName, payload.data.badges);
+      }
       const [message, matched] = await commander.process(payload.data.message, payload.data.chatterName);
       if (matched && message) {
         await commander.send(message);
