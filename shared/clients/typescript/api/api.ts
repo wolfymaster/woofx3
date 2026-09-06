@@ -698,11 +698,19 @@ export interface Woofx3EngineApi {
   getStorageConfig(): Promise<StorageConfig>;
 
   /**
-   * Persist storage backend configuration to engine settings. The
-   * engine reads these on next startup to construct its Repository —
-   * restart required after changing the provider.
+   * Persist storage backend configuration to engine settings, then ask
+   * the engine to swap its live Repository. No restart required.
+   *
+   * `reloaded` reports whether the running engine picked the change up.
+   * `success: true, reloaded: false` means the settings are saved but
+   * the engine is still serving the previous backend — it was
+   * unreachable, or rejected the new configuration as unusable (bad
+   * credentials, wrong endpoint, missing bucket). `message` carries the
+   * reason.
    */
-  setStorageConfig(config: StorageConfig): Promise<{ success: boolean }>;
+  setStorageConfig(
+    config: StorageConfig,
+  ): Promise<{ success: boolean; reloaded?: boolean; message?: string }>;
 
   // Client Management
   deleteClient(clientId: string): Promise<{ success: boolean; message: string }>;

@@ -77,13 +77,14 @@ export interface TriggerDefinition {
    * deregistration events; eventually on registration events too. */
   canonicalId?: string;
   /**
-   * Composite UI-projection identity: `{moduleKey}:trigger:{manifestId}`.
-   * Stable across engine instances (the moduleKey hash is SHA-256 of the
-   * zip, so identical installs produce identical keys), and version-pinned
-   * (v1 and v2 of the same module produce distinct projectionKeys). The
-   * UI uses this — not `id` (a per-engine UUID) and not `canonicalId`
-   * (which omits version) — to dedupe definitions across multiple engine
-   * instances projected into the same UI.
+   * UI-projection identity: `{modulePrefix}:trigger:{manifestId}`. The UI
+   * uses this — not `id`, a per-engine UUID — to dedupe definitions across
+   * multiple engine instances projected into the same UI.
+   *
+   * Deliberately NOT version-pinned: an upgrade upserts the trigger row in
+   * place, so a workflow referencing it keeps resolving. Use the event's
+   * `moduleKey` when you need to know which version is installed.
+   * (FunctionDefinition.projectionKey is the one exception — see there.)
    *
    * Optional because non-MODULE triggers (SYSTEM built-ins, future
    * integrations) and legacy event deliveries don't carry one.
@@ -112,9 +113,10 @@ export interface ActionDefinition {
    * builder in db/app/services/module_event_payload.go for context. */
   canonicalId?: string;
   /**
-   * Composite UI-projection identity: `{moduleKey}:action:{manifestId}`.
-   * See TriggerDefinition.projectionKey for the rationale. Optional for
-   * the same reasons (non-MODULE registrations, legacy events).
+   * UI-projection identity: `{modulePrefix}:action:{manifestId}`. See
+   * TriggerDefinition.projectionKey for the rationale — likewise not
+   * version-pinned. Optional for the same reasons (non-MODULE
+   * registrations, legacy events).
    */
   projectionKey?: string;
   /** See TriggerDefinition.taxonomy. */
@@ -165,6 +167,12 @@ export interface ModuleResourceUsage {
 
 export interface ModuleTriggerRegisteredEvent {
   type: typeof EngineEventType.MODULE_TRIGGER_REGISTERED;
+  /**
+   * Version-free manifest id (e.g. `"twitch_platform"`). This is what the
+   * engine keys the underlying rows on, so it stays stable across module
+   * upgrades — pair it with `moduleKey` when you need the exact version.
+   */
+  modulePrefix: string;
   moduleKey: string;
   moduleName: string;
   version: string;
@@ -173,6 +181,12 @@ export interface ModuleTriggerRegisteredEvent {
 
 export interface ModuleActionRegisteredEvent {
   type: typeof EngineEventType.MODULE_ACTION_REGISTERED;
+  /**
+   * Version-free manifest id (e.g. `"twitch_platform"`). This is what the
+   * engine keys the underlying rows on, so it stays stable across module
+   * upgrades — pair it with `moduleKey` when you need the exact version.
+   */
+  modulePrefix: string;
   moduleKey: string;
   moduleName: string;
   version: string;
@@ -190,10 +204,13 @@ export interface FunctionDefinition {
    * deregistration events; eventually on registration events too. */
   canonicalId?: string;
   /**
-   * Composite UI-projection identity: `{moduleKey}:function:{manifestId}`.
-   * See TriggerDefinition.projectionKey. Functions are always
-   * MODULE-owned today, so this is populated on every event from
-   * sources that have the moduleKey context.
+   * UI-projection identity: `{moduleKey}:function:{manifestId}`.
+   *
+   * Unlike every other surface this one IS version-pinned, deliberately: a
+   * function's source can change while its manifest id stays the same, so
+   * v1 and v2 of the same function must project as distinct rows.
+   * Functions are always MODULE-owned today, so this is populated on every
+   * event from sources that have the moduleKey context.
    */
   projectionKey?: string;
   moduleId: string;
@@ -210,6 +227,12 @@ export interface FunctionDefinition {
 
 export interface ModuleFunctionRegisteredEvent {
   type: typeof EngineEventType.MODULE_FUNCTION_REGISTERED;
+  /**
+   * Version-free manifest id (e.g. `"twitch_platform"`). This is what the
+   * engine keys the underlying rows on, so it stays stable across module
+   * upgrades — pair it with `moduleKey` when you need the exact version.
+   */
+  modulePrefix: string;
   moduleKey: string;
   moduleName: string;
   version: string;
@@ -302,6 +325,12 @@ export interface WidgetDefinition {
 
 export interface ModuleWidgetRegisteredEvent {
   type: typeof EngineEventType.MODULE_WIDGET_REGISTERED;
+  /**
+   * Version-free manifest id (e.g. `"twitch_platform"`). This is what the
+   * engine keys the underlying rows on, so it stays stable across module
+   * upgrades — pair it with `moduleKey` when you need the exact version.
+   */
+  modulePrefix: string;
   moduleKey: string;
   moduleName: string;
   version: string;
@@ -318,6 +347,12 @@ export interface ModuleWidgetRegisteredEvent {
 export interface ModuleTriggerDeregisteredEvent {
   type: typeof EngineEventType.MODULE_TRIGGER_DEREGISTERED;
   modulePrefix: string;
+  /**
+   * Composite `{moduleId}:{version}:{hash}` of the module the rows belong
+   * to — the same identity `module.installed` / `module.deleted` carry, so
+   * a consumer that indexes modules by those events can match this one.
+   */
+  moduleKey: string;
   triggers: TriggerDefinition[];
 }
 
@@ -325,6 +360,12 @@ export interface ModuleTriggerDeregisteredEvent {
 export interface ModuleActionDeregisteredEvent {
   type: typeof EngineEventType.MODULE_ACTION_DEREGISTERED;
   modulePrefix: string;
+  /**
+   * Composite `{moduleId}:{version}:{hash}` of the module the rows belong
+   * to — the same identity `module.installed` / `module.deleted` carry, so
+   * a consumer that indexes modules by those events can match this one.
+   */
+  moduleKey: string;
   actions: ActionDefinition[];
 }
 
@@ -335,6 +376,12 @@ export interface ModuleActionDeregisteredEvent {
  */
 export interface ModuleFunctionDeregisteredEvent {
   type: typeof EngineEventType.MODULE_FUNCTION_DEREGISTERED;
+  /**
+   * Version-free manifest id (e.g. `"twitch_platform"`). This is what the
+   * engine keys the underlying rows on, so it stays stable across module
+   * upgrades — pair it with `moduleKey` when you need the exact version.
+   */
+  modulePrefix: string;
   moduleKey: string;
   moduleName: string;
   version: string;
@@ -350,9 +397,13 @@ export interface ModuleFunctionDeregisteredEvent {
  */
 export interface ModuleWidgetDeregisteredEvent {
   type: typeof EngineEventType.MODULE_WIDGET_DEREGISTERED;
+  modulePrefix: string;
+  /**
+   * Composite `{moduleId}:{version}:{hash}` of the module the rows belong
+   * to — the same identity `module.installed` / `module.deleted` carry, so
+   * a consumer that indexes modules by those events can match this one.
+   */
   moduleKey: string;
-  moduleName: string;
-  version: string;
   widgets: WidgetDefinition[];
 }
 
@@ -411,6 +462,12 @@ export interface AssetDefinition {
  */
 export interface ModuleAssetRegisteredEvent {
   type: typeof EngineEventType.MODULE_ASSET_REGISTERED;
+  /**
+   * Version-free manifest id (e.g. `"twitch_platform"`). This is what the
+   * engine keys the underlying rows on, so it stays stable across module
+   * upgrades — pair it with `moduleKey` when you need the exact version.
+   */
+  modulePrefix: string;
   moduleKey: string;
   moduleName: string;
   version: string;
@@ -424,9 +481,13 @@ export interface ModuleAssetRegisteredEvent {
  */
 export interface ModuleAssetDeregisteredEvent {
   type: typeof EngineEventType.MODULE_ASSET_DEREGISTERED;
+  modulePrefix: string;
+  /**
+   * Composite `{moduleId}:{version}:{hash}` of the module the rows belong
+   * to — the same identity `module.installed` / `module.deleted` carry, so
+   * a consumer that indexes modules by those events can match this one.
+   */
   moduleKey: string;
-  moduleName: string;
-  version: string;
   assets: AssetDefinition[];
 }
 
@@ -520,6 +581,12 @@ export interface EngineResponseReceivedEvent {
 
 export interface ModuleInstalledEvent {
   type: typeof EngineEventType.MODULE_INSTALLED;
+  /**
+   * Version-free manifest id (e.g. `"twitch_platform"`). Matches the
+   * `modulePrefix` on this module's definition events, so a consumer can
+   * tie them together without parsing the composite key.
+   */
+  modulePrefix: string;
   moduleName: string;
   version: string;
   moduleKey: string;
@@ -541,6 +608,12 @@ export interface ModuleInstalledEvent {
 
 export interface ModuleInstallFailedEvent {
   type: typeof EngineEventType.MODULE_INSTALL_FAILED;
+  /**
+   * Version-free manifest id (e.g. `"twitch_platform"`). Matches the
+   * `modulePrefix` on this module's definition events, so a consumer can
+   * tie them together without parsing the composite key.
+   */
+  modulePrefix: string;
   moduleName: string;
   version: string;
   moduleKey: string;
@@ -549,12 +622,24 @@ export interface ModuleInstallFailedEvent {
 
 export interface ModuleDeletedEvent {
   type: typeof EngineEventType.MODULE_DELETED;
+  /**
+   * Version-free manifest id (e.g. `"twitch_platform"`). Matches the
+   * `modulePrefix` on this module's definition events, so a consumer can
+   * tie them together without parsing the composite key.
+   */
+  modulePrefix: string;
   moduleName: string;
   moduleKey: string;
 }
 
 export interface ModuleDeleteFailedEvent {
   type: typeof EngineEventType.MODULE_DELETE_FAILED;
+  /**
+   * Version-free manifest id (e.g. `"twitch_platform"`). Matches the
+   * `modulePrefix` on this module's definition events, so a consumer can
+   * tie them together without parsing the composite key.
+   */
+  modulePrefix: string;
   moduleName: string;
   moduleKey: string;
   error: string;
