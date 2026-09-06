@@ -3,29 +3,52 @@ import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import type { TwitchApiContext } from "./application";
 
+let stubCounter = 0;
+
 function subscriptionStub(): EventSubSubscription {
+  stubCounter += 1;
   return {
+    id: `sub-${stubCounter}`,
     start: mock(() => {}),
     stop: mock(() => {}),
   } as unknown as EventSubSubscription;
 }
 
+/**
+ * Mirrors Twitch confirming each subscription as it is created, so
+ * `TwitchEventBus.start()` settles immediately instead of waiting out its
+ * full timeout. `TwitchEventBus` binds the outcome handlers before it
+ * registers anything, so emitting synchronously here is safe.
+ */
 function createMockListener() {
+  const successHandlers: ((sub: EventSubSubscription) => void)[] = [];
+  const confirmed = () => {
+    const sub = subscriptionStub();
+    for (const handler of successHandlers) {
+      handler(sub);
+    }
+    return sub;
+  };
   return {
     start: mock(() => {}),
     stop: mock(() => {}),
-    onChannelBan: mock(() => subscriptionStub()),
-    onChannelChatMessage: mock(() => subscriptionStub()),
-    onChannelChatNotification: mock(() => subscriptionStub()),
-    onChannelCheer: mock(() => subscriptionStub()),
-    onChannelFollow: mock(() => subscriptionStub()),
-    onChannelHypeTrainBegin: mock(() => subscriptionStub()),
-    onChannelRaidTo: mock(() => subscriptionStub()),
-    onChannelRedemptionAdd: mock(() => subscriptionStub()),
-    onChannelSubscription: mock(() => subscriptionStub()),
-    onChannelSubscriptionGift: mock(() => subscriptionStub()),
-    onStreamOnline: mock(() => subscriptionStub()),
-    onStreamOffline: mock(() => subscriptionStub()),
+    onSubscriptionCreateSuccess: mock((h: (sub: EventSubSubscription) => void) => {
+      successHandlers.push(h);
+      return { unbind: mock(() => {}) };
+    }),
+    onSubscriptionCreateFailure: mock(() => ({ unbind: mock(() => {}) })),
+    onChannelBan: mock(() => confirmed()),
+    onChannelChatMessage: mock(() => confirmed()),
+    onChannelChatNotification: mock(() => confirmed()),
+    onChannelCheer: mock(() => confirmed()),
+    onChannelFollow: mock(() => confirmed()),
+    onChannelHypeTrainBegin: mock(() => confirmed()),
+    onChannelRaidTo: mock(() => confirmed()),
+    onChannelRedemptionAdd: mock(() => confirmed()),
+    onChannelSubscription: mock(() => confirmed()),
+    onChannelSubscriptionGift: mock(() => confirmed()),
+    onStreamOnline: mock(() => confirmed()),
+    onStreamOffline: mock(() => confirmed()),
   };
 }
 

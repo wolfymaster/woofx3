@@ -81,7 +81,19 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       events: new EventFactory({ source: "twitch" }),
     };
     const twitchEventBus = new TwitchEventBus(eventBusCtx, listener);
-    twitchEventBus.start();
+    await twitchEventBus.start();
+    if (!twitchEventBus.isReady()) {
+      // Deliberately not fatal: the `twitchapi` request/reply surface is
+      // still worth serving, and Twurple keeps retrying refused
+      // subscriptions. But the service must not claim to be healthy while
+      // it is receiving no Twitch events — see `isEventBusReady`, which
+      // feeds the heartbeat's `ready` flag.
+      ctx.logger.error("Twitch EventSub subscriptions incomplete; service is NOT ready", {
+        established: twitchEventBus.establishedCount(),
+        expected: TwitchEventBus.expectedSubscriptionCount,
+        failures: twitchEventBus.failedSubscriptions(),
+      });
+    }
 
     ctx.broadcaster = broadcaster;
     ctx.twitchApi = new TwitchApiClientImpl(apiClient, broadcaster);
@@ -90,6 +102,16 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     await ctx.services.messageBus.client.subscribe("twitchapi", (msg: Msg) => {
       void this.handleTwitchApiRequest(ctx, msg);
     });
+  }
+
+  /**
+   * Readiness reported on the heartbeat. False until Twitch has confirmed
+   * every EventSub subscription: an unsubscribed listener is silent, not
+   * merely degraded, so reporting ready would hide a total outage of the
+   * Twitch integration.
+   */
+  isEventBusReady(): boolean {
+    return this.context.twitchEventBus?.isReady() ?? false;
   }
 
   async run(ctx: TwitchApiContext) {

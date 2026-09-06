@@ -1,5 +1,5 @@
 import type { Service } from "@woofx3/common/runtime";
-import type TwitchEventBus from "src/lib/twitchEventBus";
+import TwitchEventBus from "src/lib/twitchEventBus";
 
 export default class TwitchEventBusService implements Service<TwitchEventBus> {
   healthcheck: boolean;
@@ -16,11 +16,26 @@ export default class TwitchEventBusService implements Service<TwitchEventBus> {
     this.connected = false;
   }
 
+  /**
+   * Starting the socket is not the same as being usable: Twitch can accept
+   * the connection and refuse every subscription on it. Registered as a
+   * required service, throwing here stops the runtime from reaching ready
+   * rather than letting a silent listener pass for a working one.
+   */
   async connect(): Promise<void> {
     if (this.connected) {
       return;
     }
-    this.client.start();
+    await this.client.start();
+    if (!this.client.isReady()) {
+      this.healthcheck = false;
+      throw new Error(
+        `Twitch EventSub subscriptions incomplete (${this.client.establishedCount()}/${
+          TwitchEventBus.expectedSubscriptionCount
+        } established): ${this.client.failedSubscriptions().map((f) => f.reason).join("; ")}`
+      );
+    }
+    this.healthcheck = true;
     this.connected = true;
   }
 
@@ -30,5 +45,6 @@ export default class TwitchEventBusService implements Service<TwitchEventBus> {
     }
     this.client.disconnect();
     this.connected = false;
+    this.healthcheck = false;
   }
 }

@@ -23,8 +23,10 @@ const logger = createServiceLogger({
   logDir: path.join((loadedConfig.getConfig("woofx3RootPath") as string | undefined) ?? process.cwd(), "logs"),
 });
 
+const application = new Application();
+
 const runtime = createRuntime({
-  application: createApplication(new Application()),
+  application: createApplication(application),
   envSchema: TwitchEnvSchema,
   logger,
   runtimeEnv: () => loadedConfig,
@@ -32,6 +34,11 @@ const runtime = createRuntime({
     natsClient: bus,
     applicationName: "twitchapi",
     requiredServices: ["messageBus", "dbProxy"],
+    // Without this the monitor defaults `ready` to false forever; with it
+    // the heartbeat tells the rest of the system whether Twitch events are
+    // actually flowing, and flips to true on its own if Twurple's retries
+    // establish the subscriptions later.
+    heartbeatReady: () => application.isEventBusReady(),
   }),
   heartbeatInterval: 250_000,
   livenessInterval: 300_000,
