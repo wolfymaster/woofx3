@@ -17,10 +17,14 @@ import (
 
 type applicationService struct {
 	repo *repository.ApplicationRepository
+	// groupRepo seeds the built-in group catalog for each new application.
+	// Optional so existing callers/tests that do not care about groups can
+	// pass nil; seeding is skipped when it is absent.
+	groupRepo *repository.GroupRepository
 }
 
-func NewApplicationService(repo *repository.ApplicationRepository) *applicationService {
-	return &applicationService{repo: repo}
+func NewApplicationService(repo *repository.ApplicationRepository, groupRepo *repository.GroupRepository) *applicationService {
+	return &applicationService{repo: repo, groupRepo: groupRepo}
 }
 
 func (s *applicationService) CreateApplication(ctx context.Context, req *client.CreateApplicationRequest) (*client.ApplicationResponse, error) {
@@ -54,7 +58,22 @@ func (s *applicationService) CreateApplication(ctx context.Context, req *client.
 		}
 		return nil, err
 	}
+
+	// Seed after the row exists so the groups' FK to applications resolves.
+	// A seeding failure fails the create: an application without its built-in
+	// groups would let commands be bound to groups that do not exist.
+	if err := s.seedBuiltInGroups(app.ID); err != nil {
+		return nil, err
+	}
+
 	return applicationModelToResponse(app), nil
+}
+
+func (s *applicationService) seedBuiltInGroups(appID uuid.UUID) error {
+	if s.groupRepo == nil {
+		return nil
+	}
+	return SeedBuiltInGroups(s.groupRepo, appID)
 }
 
 func (s *applicationService) GetApplication(ctx context.Context, req *client.GetApplicationRequest) (*client.ApplicationResponse, error) {

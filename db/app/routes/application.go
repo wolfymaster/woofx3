@@ -11,7 +11,8 @@ import (
 
 func ApplicationRoutes(mux *http.ServeMux, app *types.App) {
 	applicationRepository := repository.NewApplicationRepository(app.Db)
-	applicationService := services.NewApplicationService(applicationRepository)
+	groupRepository := repository.NewGroupRepository(app.Db)
+	applicationService := services.NewApplicationService(applicationRepository, groupRepository)
 	applicationHandler := client.NewApplicationServiceServer(applicationService)
 	mux.Handle(applicationHandler.PathPrefix(), applicationHandler)
 }

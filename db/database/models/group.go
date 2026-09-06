@@ -15,7 +15,12 @@ type Group struct {
 	ApplicationID uuid.UUID `gorm:"column:application_id;type:uuid;not null;index:idx_groups_application_id;constraint:OnDelete:CASCADE"`
 	Name          string    `gorm:"column:name;type:varchar(100);not null"`
 	Description   string    `gorm:"column:description;type:varchar(500);default:''"`
-	CreatedAt     time.Time `gorm:"column:created_at;default:CURRENT_TIMESTAMP;not null"`
+	// IsBuiltIn marks the groups seeded with every application
+	// (everyone/subscriber/vip/moderator/broadcaster). They are part of the
+	// system contract: undeletable and non-renamable, so a command bound to
+	// one can never be orphaned by a UI edit.
+	IsBuiltIn bool      `gorm:"column:is_built_in;not null;default:false"`
+	CreatedAt time.Time `gorm:"column:created_at;default:CURRENT_TIMESTAMP;not null"`
 	UpdatedAt     time.Time `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;not null"`
 }
 

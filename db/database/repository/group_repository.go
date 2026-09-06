@@ -75,3 +75,21 @@ func (r *GroupRepository) ListGroupsForUser(appID uuid.UUID, username string) ([
 		Find(&groups).Error
 	return groups, err
 }
+
+// GetByIDs returns the groups matching ids, in no particular order. Used to
+// resolve a command's grants to their names/built-in flags in one round trip.
+func (r *GroupRepository) GetByIDs(ids []uuid.UUID) ([]models.Group, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var groups []models.Group
+	err := r.db.Where("id IN ?", ids).Find(&groups).Error
+	return groups, err
+}
+
+// GetByName looks up one group by its application-scoped unique name.
+func (r *GroupRepository) GetByName(appID uuid.UUID, name string) (*models.Group, error) {
+	var group models.Group
+	err := r.db.Where("application_id = ? AND name = ?", appID, name).First(&group).Error
+	return &group, err
+}

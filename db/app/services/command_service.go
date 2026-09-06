@@ -25,6 +25,7 @@ type commandService struct {
 	refRepo    *repo.ResourceReferenceRepository
 	permRepo   *repo.CommandPermissionRepository
 	casbinRepo *repo.PermissionRepository
+	groupRepo  *repo.GroupRepository
 	enforcer   *casbin.Enforcer
 }
 
@@ -33,6 +34,7 @@ func NewCommandService(
 	refRepo *repo.ResourceReferenceRepository,
 	permRepo *repo.CommandPermissionRepository,
 	casbinRepo *repo.PermissionRepository,
+	groupRepo *repo.GroupRepository,
 	enforcer *casbin.Enforcer,
 ) *commandService {
 	return &commandService{
@@ -40,6 +42,7 @@ func NewCommandService(
 		refRepo:    refRepo,
 		permRepo:   permRepo,
 		casbinRepo: casbinRepo,
+		groupRepo:  groupRepo,
 		enforcer:   enforcer,
 	}
 }
@@ -71,8 +74,30 @@ func (s *commandService) syncCommandPermissions(appID uuid.UUID, cmd *models.Com
 		return err
 	}
 	if cmd.Visibility == commandVisibilityRestricted {
+		// No group and no user grant means no restriction was configured, not
+		// "deny everyone". Say so positively in the policy data with the
+		// wildcard subject so every enforcement path agrees; leaving the object
+		// with zero rules would deny it everywhere instead.
+		if len(groupIDs) == 0 && len(usernames) == 0 {
+			if err := s.casbinRepo.AddPType(appID, models.WildcardSubject, object, "read", "allow"); err != nil {
+				return err
+			}
+			return s.enforcer.LoadPolicy()
+		}
+
+		everyoneIDs, err := s.everyoneGroupIDs(groupIDs)
+		if err != nil {
+			return err
+		}
 		for _, groupID := range groupIDs {
-			if err := s.casbinRepo.AddPType(appID, groupSubject(groupID), object, "read", "allow"); err != nil {
+			subject := groupSubject(groupID)
+			if everyoneIDs[groupID] {
+				// The built-in "everyone" group has no membership rows by
+				// design, so a group: subject would never match. Collapse it to
+				// the wildcard the matcher understands.
+				subject = models.WildcardSubject
+			}
+			if err := s.casbinRepo.AddPType(appID, subject, object, "read", "allow"); err != nil {
 				return err
 			}
 		}
@@ -84,6 +109,26 @@ func (s *commandService) syncCommandPermissions(appID uuid.UUID, cmd *models.Com
 	}
 
 	return s.enforcer.LoadPolicy()
+}
+
+// everyoneGroupIDs reports which of the given ids are the built-in "everyone"
+// group. Returns an empty set when no group repository is wired, so callers
+// degrade to plain group subjects rather than failing.
+func (s *commandService) everyoneGroupIDs(groupIDs []uuid.UUID) (map[uuid.UUID]bool, error) {
+	out := make(map[uuid.UUID]bool)
+	if s.groupRepo == nil || len(groupIDs) == 0 {
+		return out, nil
+	}
+	groups, err := s.groupRepo.GetByIDs(groupIDs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range groups {
+		if groups[i].IsBuiltIn && groups[i].Name == models.GroupEveryone {
+			out[groups[i].ID] = true
+		}
+	}
+	return out, nil
 }
 
 func (s *commandService) syncCommandEdges(cmd *models.Command, cmdType, typeValue, createdByType, createdByRef string) {
@@ -159,7 +204,11 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 		visibility = commandVisibilityRestricted
 	}
 
+	// Assign the id here rather than leaning on the column default: that
+	// default is Postgres-only (uuid_generate_v4()), so on the SQLite backend
+	// every command would otherwise be inserted with the zero UUID and collide.
 	m := models.Command{
+		ID:              uuid.New(),
 		ApplicationID:   applicationID,
 		Command:         cmd.Command,
 		Type:            cmd.Type,
@@ -355,8 +404,16 @@ func (s *commandService) DeleteCommand(ctx context.Context, req *client.DeleteCo
 func (s *commandService) HasPermission(ctx context.Context, enforcer *casbin.Enforcer, method string, request any) (bool, error) {
 	switch method {
 	case "GetCommand":
+		// The Casbin middleware hands us the raw body as []byte for protobuf
+		// callers and a decoded map for JSON ones. Assert rather than panic on
+		// the map case - an unexpected shape must fail closed, not crash the
+		// whole db-proxy.
+		body, ok := request.([]byte)
+		if !ok {
+			return false, fmt.Errorf("GetCommand permission check requires a protobuf request body, got %T", request)
+		}
 		var req client.GetCommandRequest
-		if err := proto.Unmarshal(request.([]byte), &req); err != nil {
+		if err := proto.Unmarshal(body, &req); err != nil {
 			return false, err
 		}
 

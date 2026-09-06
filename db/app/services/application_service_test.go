@@ -14,7 +14,7 @@ func newAppSvc(t *testing.T) (*applicationService, *repository.ApplicationReposi
 	t.Helper()
 	db := newTestDB(t)
 	repo := repository.NewApplicationRepository(db)
-	return NewApplicationService(repo), repo
+	return NewApplicationService(repo, repository.NewGroupRepository(db)), repo
 }
 
 func TestApplicationService_GetDefault_NotFound(t *testing.T) {
