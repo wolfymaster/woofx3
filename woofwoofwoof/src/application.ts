@@ -8,6 +8,7 @@ import {
   type CommandUpdatedMessage,
 } from "@woofx3/common/cloudevents/Command";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
+import { SpanKind, withSpan } from "@woofx3/common/logging";
 import { type ChatMessageMessage, EventType } from "@woofx3/common/cloudevents/Twitch";
 import type { ApplicationContext } from "@woofx3/common/runtime";
 import type { Application, IApplication } from "@woofx3/common/runtime/application";
@@ -99,22 +100,34 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
 
     // subscribe to chat message events
     ctx.services.messageBus.client.subscribe(EventType.ChatMessage, async (msg: Msg) => {
-      const payload = msg.json<ChatMessageMessage>();
-      const [message, matched] = await commander.process(payload.data.message, payload.data.chatterName);
-      if (matched && message) {
-        await commander.send(message);
-      }
+      await withSpan(
+        "woofwoofwoof.chat.message",
+        async () => {
+          const payload = msg.json<ChatMessageMessage>();
+          const [message, matched] = await commander.process(payload.data.message, payload.data.chatterName);
+          if (matched && message) {
+            await commander.send(message);
+          }
+        },
+        { attributes: { "messaging.system": "nats" }, kind: SpanKind.CONSUMER }
+      );
     });
 
     // subscribe to outbound send-chat-message events from sandbox functions
     // payload.data.platform discriminates target platform (twitch only today)
     ctx.services.messageBus.client.subscribe(ChatEventType.SendMessage, async (msg: Msg) => {
-      const payload = msg.json<SendMessageMessage>();
-      const text = payload?.data?.message;
-      if (!text || !ctx.commander) {
-        return;
-      }
-      await ctx.commander.send(text);
+      await withSpan(
+        "woofwoofwoof.chat.send-message",
+        async () => {
+          const payload = msg.json<SendMessageMessage>();
+          const text = payload?.data?.message;
+          if (!text || !ctx.commander) {
+            return;
+          }
+          await ctx.commander.send(text);
+        },
+        { attributes: { "messaging.system": "nats" }, kind: SpanKind.CONSUMER }
+      );
     });
 
     // Reload the Twitch chat client when the engine reports that an
@@ -123,19 +136,25 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
     // in-memory RefreshingAuthProvider keeps using the pre-reconnect
     // token (and pre-reconnect scopes) until woofwoofwoof restarts.
     ctx.services.messageBus.client.subscribe("setting.integration.token.updated", async (msg: Msg) => {
-      const payload = msg.json<{ data?: { integration?: string } }>();
-      const integration = payload?.data?.integration;
-      if (integration !== "twitch") {
-        return;
-      }
-      ctx.logger.info("setting.integration.token.updated received — reloading twitch chat", {
-        integration,
-      });
-      try {
-        await ctx.services.twitchChat.reload();
-      } catch (err) {
-        ctx.logger.error("twitch chat reload failed", { err });
-      }
+      await withSpan(
+        "woofwoofwoof.setting.integration.token.updated",
+        async () => {
+          const payload = msg.json<{ data?: { integration?: string } }>();
+          const integration = payload?.data?.integration;
+          if (integration !== "twitch") {
+            return;
+          }
+          ctx.logger.info("setting.integration.token.updated received — reloading twitch chat", {
+            integration,
+          });
+          try {
+            await ctx.services.twitchChat.reload();
+          } catch (err) {
+            ctx.logger.error("twitch chat reload failed", { err });
+          }
+        },
+        { attributes: { "messaging.system": "nats" }, kind: SpanKind.CONSUMER }
+      );
     });
 
     // Hot-reload of chat commands: the engine emits these from Api.create/
@@ -143,36 +162,54 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
     // restarting woofwoofwoof. The events carry CommandSnapshot (created/
     // updated) or just the engine id (deleted).
     ctx.services.messageBus.client.subscribe(CommandEventType.Created, async (msg: Msg) => {
-      const payload = msg.json<CommandCreatedMessage>();
-      const snapshot = payload?.data?.command;
-      if (!snapshot) {
-        return;
-      }
-      this.applyCommand(ctx, snapshotToCommand(snapshot));
+      await withSpan(
+        "woofwoofwoof.command.created",
+        async () => {
+          const payload = msg.json<CommandCreatedMessage>();
+          const snapshot = payload?.data?.command;
+          if (!snapshot) {
+            return;
+          }
+          this.applyCommand(ctx, snapshotToCommand(snapshot));
+        },
+        { attributes: { "messaging.system": "nats" }, kind: SpanKind.CONSUMER }
+      );
     });
 
     ctx.services.messageBus.client.subscribe(CommandEventType.Updated, async (msg: Msg) => {
-      const payload = msg.json<CommandUpdatedMessage>();
-      const snapshot = payload?.data?.command;
-      if (!snapshot) {
-        return;
-      }
-      // If the command name changed, drop the old entry from the commander
-      // first so we don't leave a phantom matcher behind.
-      const previous = this.commandsByEngineId.get(snapshot.id);
-      if (previous && previous.command !== snapshot.command && ctx.commander) {
-        ctx.commander.remove(previous.command);
-      }
-      this.applyCommand(ctx, snapshotToCommand(snapshot));
+      await withSpan(
+        "woofwoofwoof.command.updated",
+        async () => {
+          const payload = msg.json<CommandUpdatedMessage>();
+          const snapshot = payload?.data?.command;
+          if (!snapshot) {
+            return;
+          }
+          // If the command name changed, drop the old entry from the commander
+          // first so we don't leave a phantom matcher behind.
+          const previous = this.commandsByEngineId.get(snapshot.id);
+          if (previous && previous.command !== snapshot.command && ctx.commander) {
+            ctx.commander.remove(previous.command);
+          }
+          this.applyCommand(ctx, snapshotToCommand(snapshot));
+        },
+        { attributes: { "messaging.system": "nats" }, kind: SpanKind.CONSUMER }
+      );
     });
 
     ctx.services.messageBus.client.subscribe(CommandEventType.Deleted, async (msg: Msg) => {
-      const payload = msg.json<CommandDeletedMessage>();
-      const id = payload?.data?.id;
-      if (!id) {
-        return;
-      }
-      this.removeCommandById(ctx, id);
+      await withSpan(
+        "woofwoofwoof.command.deleted",
+        async () => {
+          const payload = msg.json<CommandDeletedMessage>();
+          const id = payload?.data?.id;
+          if (!id) {
+            return;
+          }
+          this.removeCommandById(ctx, id);
+        },
+        { attributes: { "messaging.system": "nats" }, kind: SpanKind.CONSUMER }
+      );
     });
 
     ctx.commander = commander;
@@ -471,7 +508,7 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       cooldownSeconds: command.cooldown,
       variables,
     };
-    
+
     if (command.type === "function") {
       // typeValue is the function name to invoke in barkloader. Fall back
       // to the command name for legacy rows where typeValue is empty.

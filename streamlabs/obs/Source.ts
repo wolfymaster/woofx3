@@ -1,6 +1,7 @@
 import { OBSRequestTypes } from 'obs-websocket-js';
 import Manager from './Manager';
 import Scene from './Scene';
+import { logger } from '../logger';
 import { animate } from './helper';
 import { SetAnimatedFilterOptions } from './types';
 
@@ -54,7 +55,7 @@ export default class Source {
                 filterSettings: settings
             });
         } catch (error) {
-            console.error('Error setting filter value:', error);
+            logger.error('failed to set filter value', { error, filterName, filterSetting, source: this.name });
         }
     }
 
@@ -87,7 +88,7 @@ export default class Source {
             // Run animation
             await animate(updateFunction, currentValue, targetValue, options);
         } catch (error) {
-            console.error('Error animating OBS filter:', error);
+            logger.error('failed to animate filter', { error, filterName, filterSetting, source: this.name });
         }
     }
 

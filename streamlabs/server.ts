@@ -7,6 +7,7 @@ import NatsClient, { natsMessageHandler } from './nats';
 import { SlobsRequestMessage } from './types';
 import { init, id, type InstantAdminDatabase, type InstantUnknownSchema } from "@instantdb/admin";
 import Manager from 'obs/Manager';
+import { contextLogger, logger } from './logger';
 import OBSWebSocket from 'obs-websocket-js';
 import './wsShim';
 
@@ -36,9 +37,7 @@ const port = process.env.PORT || 3000;
 
 // make context
 const ctx: Context = {
-  logger: (msg: string) => {
-    console.log(msg);
-  }
+  logger: contextLogger(),
 }
 
 // TODO: Prolly want a timeout on the socket connection. Will hang if 
@@ -89,7 +88,7 @@ const build = viteDevServer
 
 // sls stats
 app.post('/sls/stat', (req, res) => {
-  console.log('SLS STATS: ', req.body)
+  logger.info('streamlabs stat received', { body: req.body });
   return res.sendStatus(200);
 })
 
@@ -104,12 +103,12 @@ app.all(
 
 // Start server
 app.listen(port, () => {
-  console.log(`Express server listening on port ${port}`);
+  logger.info('express server listening', { port });
 });
 
 
 async function slobsMessageHander(command: string, args: Record<string, string>) {
-  console.log('received command: ', command);
+  logger.info('received command', { command });
 
   if (command === 'alert_message') {
     await db.transact(
@@ -137,11 +136,11 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
     })
 
     if (!query) {
-      console.error('Did not find count with id: ', countId);
+      logger.error('count not found', { countId });
       return;
     }
 
-    console.log(countId, query.counts[0]);
+    logger.info('count loaded', { count: query.counts[0], countId });
 
     let newCount = query.counts[0].count;
 
@@ -173,13 +172,13 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
 
   if (command == 'source_change') {
     const { sourceName, value } = args;
-    console.log('changing source', sourceName, value);
+    logger.info('changing source', { sourceName, value });
 
     const currentScene = await manager.getActiveScene();
     const camScene = manager.findScene('[NS] Main Cam');
 
     if (!currentScene) {
-      console.error('there is no current scene found');
+      logger.error('no current scene found');
       return;
     }
 
@@ -193,7 +192,7 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
     const sourceObj = sourceMap[sourceName];
 
     if (!sourceObj) {
-      console.error('there is no sourceobj found');
+      logger.error('no source mapping found', { sourceName });
       return;
     }
 
@@ -202,7 +201,7 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
     const src = scene.findSource(source);
 
     if (!src) {
-      console.error('there is no source found');
+      logger.error('no source found', { source });
       return;
     }
 
@@ -271,7 +270,7 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
 
     now.setTime(now.getTime() + (valueInSeconds * 1000));
 
-    console.log('updating timer to ', timerId,  now.toISOString())
+    logger.info('updating timer', { expiration: now.toISOString(), timerId });
     try {
       await db.transact(
         db.tx.timers[timerId].update({
@@ -279,8 +278,7 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
         })
       );
     } catch(err) {
-      console.error(err);
-      console.error(JSON.stringify(err.body));
+      logger.error('failed to set timer', { body: err.body, err, timerId });
     }   
   }
 
@@ -298,7 +296,7 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
     })
 
     if (!query) {
-      console.error('Did not find count with id: ', timerId);
+      logger.error('timer not found', { timerId });
       return;
     }
 
@@ -308,7 +306,7 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
 
     newDate.setTime(newDate.getTime() + (valueInSeconds * 1000));
 
-    console.log('updating timer to ', timerId,  newDate.toISOString())
+    logger.info('updating timer', { expiration: newDate.toISOString(), timerId });
     try {
       await db.transact(
         db.tx.timers[timerId].update({
@@ -316,8 +314,7 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
         })
       );
     } catch(err) {
-      console.error(err);
-      console.error(JSON.stringify(err.body));
+      logger.error('failed to update timer', { body: err.body, err, timerId });
     }    
   }
 }

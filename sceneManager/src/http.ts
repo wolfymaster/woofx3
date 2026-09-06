@@ -1,3 +1,4 @@
+import { SpanKind, withSpan } from "@woofx3/common/logging";
 import type { ApplicationContext } from "@woofx3/common/runtime";
 import type { SceneManagerContext, SceneManagerServices } from "./application";
 import type { DeliveryStore } from "./events/delivery-store";
@@ -72,57 +73,66 @@ export function createHttpServer(deps: HttpDeps) {
         return new Response(null, { status: 204, headers: CORS_HEADERS });
       }
 
-      if (url.pathname === "/health") {
-        return withCors(Response.json({ status: "ok" }));
-      }
+      return withSpan(
+        `scene-manager ${req.method}`,
+        async (): Promise<Response> => {
+          if (url.pathname === "/health") {
+            return withCors(Response.json({ status: "ok" }));
+          }
 
-      if (url.pathname.startsWith("/assets/")) {
-        return withCors(await handleStaticAssetRoute(req, url, ctx.runtimeConfig.publicDir));
-      }
+          if (url.pathname.startsWith("/assets/")) {
+            return withCors(await handleStaticAssetRoute(req, url, ctx.runtimeConfig.publicDir));
+          }
 
-      // GET /scene/{sceneId} — shell + JWT mint.
-      const sceneMatch = /^\/scene\/([^/]+)$/.exec(url.pathname);
-      if (sceneMatch && req.method === "GET") {
-        return withCors(await handleSceneRoute(req, url, sceneMatch[1]!, deps));
-      }
+          // GET /scene/{sceneId} — shell + JWT mint.
+          const sceneMatch = /^\/scene\/([^/]+)$/.exec(url.pathname);
+          if (sceneMatch && req.method === "GET") {
+            return withCors(await handleSceneRoute(req, url, sceneMatch[1]!, deps));
+          }
 
-      // POST /scene/{sceneId}/session/refresh
-      const refreshMatch = /^\/scene\/([^/]+)\/session\/refresh$/.exec(url.pathname);
-      if (refreshMatch && req.method === "POST") {
-        return withCors(await handleSessionRefreshRoute(req, refreshMatch[1]!, deps));
-      }
+          // POST /scene/{sceneId}/session/refresh
+          const refreshMatch = /^\/scene\/([^/]+)\/session\/refresh$/.exec(url.pathname);
+          if (refreshMatch && req.method === "POST") {
+            return withCors(await handleSessionRefreshRoute(req, refreshMatch[1]!, deps));
+          }
 
-      // GET /scene/{sceneId}/widget/{instanceId}
-      const widgetMatch = /^\/scene\/([^/]+)\/widget\/([^/]+)$/.exec(url.pathname);
-      if (widgetMatch && req.method === "GET") {
-        return withCors(await handleWidgetFrameRoute(req, widgetMatch[1]!, widgetMatch[2]!, deps));
-      }
+          // GET /scene/{sceneId}/widget/{instanceId}
+          const widgetMatch = /^\/scene\/([^/]+)\/widget\/([^/]+)$/.exec(url.pathname);
+          if (widgetMatch && req.method === "GET") {
+            return withCors(await handleWidgetFrameRoute(req, widgetMatch[1]!, widgetMatch[2]!, deps));
+          }
 
-      // POST /scene/{sceneId}/widget/{instanceId}/status
-      const statusMatch = /^\/scene\/([^/]+)\/widget\/([^/]+)\/status$/.exec(url.pathname);
-      if (statusMatch && req.method === "POST") {
-        return withCors(await handleWidgetStatusRoute(req, statusMatch[1]!, statusMatch[2]!, deps));
-      }
+          // POST /scene/{sceneId}/widget/{instanceId}/status
+          const statusMatch = /^\/scene\/([^/]+)\/widget\/([^/]+)\/status$/.exec(url.pathname);
+          if (statusMatch && req.method === "POST") {
+            return withCors(await handleWidgetStatusRoute(req, statusMatch[1]!, statusMatch[2]!, deps));
+          }
 
-      // GET /scene/{sceneId}/events — SSE.
-      const eventsMatch = /^\/scene\/([^/]+)\/events$/.exec(url.pathname);
-      if (eventsMatch && req.method === "GET") {
-        return withCors(await handleEventsStreamRoute(req, eventsMatch[1]!, deps));
-      }
+          // GET /scene/{sceneId}/events — SSE.
+          const eventsMatch = /^\/scene\/([^/]+)\/events$/.exec(url.pathname);
+          if (eventsMatch && req.method === "GET") {
+            return withCors(await handleEventsStreamRoute(req, eventsMatch[1]!, deps));
+          }
 
-      // POST /scene/{sceneId}/events/{eventId}/delivered
-      const deliveredMatch = /^\/scene\/([^/]+)\/events\/([^/]+)\/delivered$/.exec(url.pathname);
-      if (deliveredMatch && req.method === "POST") {
-        return withCors(await handleEventDeliveredRoute(req, deliveredMatch[1]!, deliveredMatch[2]!, deps));
-      }
+          // POST /scene/{sceneId}/events/{eventId}/delivered
+          const deliveredMatch = /^\/scene\/([^/]+)\/events\/([^/]+)\/delivered$/.exec(url.pathname);
+          if (deliveredMatch && req.method === "POST") {
+            return withCors(await handleEventDeliveredRoute(req, deliveredMatch[1]!, deliveredMatch[2]!, deps));
+          }
 
-      // POST /scene/{sceneId}/events/{eventId}/completed
-      const completedMatch = /^\/scene\/([^/]+)\/events\/([^/]+)\/completed$/.exec(url.pathname);
-      if (completedMatch && req.method === "POST") {
-        return withCors(await handleEventCompletedRoute(req, completedMatch[1]!, completedMatch[2]!, deps));
-      }
+          // POST /scene/{sceneId}/events/{eventId}/completed
+          const completedMatch = /^\/scene\/([^/]+)\/events\/([^/]+)\/completed$/.exec(url.pathname);
+          if (completedMatch && req.method === "POST") {
+            return withCors(await handleEventCompletedRoute(req, completedMatch[1]!, completedMatch[2]!, deps));
+          }
 
-      return withCors(new Response("Not Found", { status: 404 }));
+          return withCors(new Response("Not Found", { status: 404 }));
+        },
+        {
+          attributes: { "http.request.method": req.method, "url.path": url.pathname },
+          kind: SpanKind.SERVER,
+        }
+      );
     },
   });
 }

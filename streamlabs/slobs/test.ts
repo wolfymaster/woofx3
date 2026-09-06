@@ -4,6 +4,7 @@ import SockJS from "sockjs-client";
 import Manager from "./Manager";
 import Queue from "queue";
 import { Context } from "./types";
+import { contextLogger, logger } from "../logger";
 
 dotenv.config({
     path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../../', '.env')],
@@ -30,9 +31,7 @@ function makeSockJSClient(sockJsURL: string): Promise<WebSocket> {
 
 // make context
 const ctx: Context = {
-    logger: (msg) => {
-        console.log(msg);
-    }
+    logger: contextLogger(),
   }
 
 
@@ -45,7 +44,7 @@ const manager = await Manager.New(ctx, client, slobsToken);
 
 await manager.init();
 
-console.log('scenes', manager.scenes);
+logger.info('slobs scenes', { scenes: manager.scenes });
 
 
 

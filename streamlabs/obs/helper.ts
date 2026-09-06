@@ -1,3 +1,4 @@
+import { logger } from "../logger";
 import { SetAnimatedFilterOptions } from "./types";
 
 function createValueGenerator(
@@ -81,7 +82,7 @@ export async function animate(
         try {
             await updateFn(value);
         } catch (error) {
-            console.error('Error in animation update function:', error);
+            logger.error('animation update failed', { error });
             break;
         }
 
@@ -94,7 +95,7 @@ export async function animate(
         try {
             await updateFn(targetValue);
         } catch (error) {
-            console.error('Error in final animation update:', error);
+            logger.error('final animation update failed', { error });
         }
     }
 }

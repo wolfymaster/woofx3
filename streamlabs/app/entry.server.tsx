@@ -12,6 +12,8 @@ import { RemixServer } from "@remix-run/react";
 import { isbot } from "isbot";
 import { renderToPipeableStream } from "react-dom/server";
 
+import { logger } from "../logger";
+
 const ABORT_DELAY = 5_000;
 
 export default function handleRequest(
@@ -79,7 +81,7 @@ function handleBotRequest(
           // errors encountered during initial shell rendering since they'll
           // reject and get logged in handleDocumentRequest.
           if (shellRendered) {
-            console.error(error);
+            logger.error("SSR streaming render failed", { error });
           }
         },
       }
@@ -129,7 +131,7 @@ function handleBrowserRequest(
           // errors encountered during initial shell rendering since they'll
           // reject and get logged in handleDocumentRequest.
           if (shellRendered) {
-            console.error(error);
+            logger.error("SSR streaming render failed", { error });
           }
         },
       }
