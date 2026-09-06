@@ -1,6 +1,7 @@
 pub mod chat;
 pub mod platform_alerts;
 pub mod platform_chat;
+mod subject_extension;
 pub mod twitch;
 
 pub use chat::ChatExtension;

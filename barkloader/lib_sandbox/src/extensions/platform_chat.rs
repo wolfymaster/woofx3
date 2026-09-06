@@ -1,30 +1,24 @@
+use super::subject_extension::{CommandEntry, SubjectExtension};
 use crate::host::{HostExtension, HostFunction, NatsPublisher};
-use serde_json::{json, Value};
 use std::sync::Arc;
 
 const SUBJECT: &str = "woofwoofwoof";
+const COMMANDS: &[CommandEntry] = &[("register", "register", true)];
 
-pub struct PlatformChatExtension {
-    functions: Vec<HostFunction>,
-}
+pub struct PlatformChatExtension(SubjectExtension);
 
 impl PlatformChatExtension {
     pub fn new(nats: Arc<dyn NatsPublisher>) -> Self {
-        let functions = vec![HostFunction::new("register", move |args: Value| {
-            let payload = json!({ "command": "register", "args": args });
-            nats.publish(SUBJECT, payload)?;
-            Ok(Value::Null)
-        })];
-        Self { functions }
+        Self(SubjectExtension::new("platform.chat", SUBJECT, COMMANDS, nats))
     }
 }
 
 impl HostExtension for PlatformChatExtension {
     fn namespace(&self) -> &str {
-        "platform.chat"
+        self.0.namespace()
     }
 
     fn functions(&self) -> &[HostFunction] {
-        &self.functions
+        self.0.functions()
     }
 }

@@ -1,41 +1,27 @@
+use super::subject_extension::{CommandEntry, SubjectExtension};
 use crate::host::{HostExtension, HostFunction, NatsPublisher};
-use serde_json::{json, Value};
 use std::sync::Arc;
 
 const SUBJECT: &str = "slobs";
+const COMMANDS: &[CommandEntry] = &[
+    ("alert", "alert_message", true),
+    ("setTimer", "setTime", true),
+];
 
-pub struct PlatformAlertsExtension {
-    functions: Vec<HostFunction>,
-}
+pub struct PlatformAlertsExtension(SubjectExtension);
 
 impl PlatformAlertsExtension {
     pub fn new(nats: Arc<dyn NatsPublisher>) -> Self {
-        let functions = vec![
-            command_fn("alert", "alert_message", nats.clone()),
-            command_fn("setTimer", "setTime", nats.clone()),
-        ];
-        Self { functions }
+        Self(SubjectExtension::new("platform.alerts", SUBJECT, COMMANDS, nats))
     }
 }
 
 impl HostExtension for PlatformAlertsExtension {
     fn namespace(&self) -> &str {
-        "platform.alerts"
+        self.0.namespace()
     }
 
     fn functions(&self) -> &[HostFunction] {
-        &self.functions
+        self.0.functions()
     }
-}
-
-fn command_fn(
-    js_name: &'static str,
-    wire_command: &'static str,
-    nats: Arc<dyn NatsPublisher>,
-) -> HostFunction {
-    HostFunction::new(js_name, move |args: Value| {
-        let payload = json!({ "command": wire_command, "args": args });
-        nats.publish(SUBJECT, payload)?;
-        Ok(Value::Null)
-    })
 }
