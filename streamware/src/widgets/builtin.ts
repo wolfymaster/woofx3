@@ -139,6 +139,7 @@ export async function initBuiltinWidgets(
   if (db) {
     try {
       const response = await db.registerWidgets({
+        moduleId: "builtin",
         moduleKey: "builtin",
         moduleName: "Built-in",
         version: "1.0.0",
