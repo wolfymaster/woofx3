@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use lib_repository::Repository;
-use log::{info, warn};
+use tracing::{info, warn};
 use std::collections::HashMap;
 use std::path::Path;
 

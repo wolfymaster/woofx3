@@ -8,7 +8,7 @@ use crate::module_manifest::ManifestBackgroundTask;
 use lib_repository::Repository;
 use lib_sandbox::models::function::Function;
 use lib_sandbox::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule};
-use log::{error, info, warn};
+use tracing::{error, info, warn};
 use std::collections::HashMap;
 
 /// Host-owned background task registration. Implemented by the barkloader

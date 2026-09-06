@@ -1,7 +1,7 @@
 use actix_web::web::{Data, ServiceConfig};
 use actix_web::{Error, HttpResponse, post};
 use lib_repository::{Repository, RepositoryConfig, RepositoryFactory, RepositoryImpl};
-use log::{error, info, warn};
+use tracing::{error, info, warn};
 use std::collections::BTreeSet;
 
 use crate::services::storage_settings::resolve_repository_config;
@@ -25,6 +25,7 @@ const MODULES_PREFIX: &str = "modules";
 /// request and leaves the running process on its working backend,
 /// rather than surfacing later as every asset returning 500.
 #[post("/storage/reload")]
+#[tracing::instrument(name = "POST /storage/reload", skip_all)]
 async fn reload_storage_handler(ctx: Data<AppContext>) -> Result<HttpResponse, Error> {
     let db_proxy_url = ctx.db_proxy_url.as_deref().ok_or_else(|| {
         actix_web::error::ErrorInternalServerError("databaseProxyUrl is not configured in .woofx3.json")

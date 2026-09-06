@@ -1,7 +1,7 @@
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
-use log::warn;
+use tracing::warn;
 
 use super::storage_settings::get_setting;
 

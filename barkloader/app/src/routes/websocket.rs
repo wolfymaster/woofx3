@@ -29,6 +29,7 @@ fn extract_token(req: &HttpRequest, query: &WsQueryParams) -> Option<String> {
 }
 
 #[get("/ws")]
+#[tracing::instrument(name = "GET /ws", skip_all)]
 async fn websocket_handler(
     ctx: Data<AppContext>,
     req: HttpRequest,
@@ -37,7 +38,7 @@ async fn websocket_handler(
 ) -> Result<HttpResponse, Error> {
     let expected_key = get_env_or_default("WOOFX3_BARKLOADER_KEY", "");
     if expected_key.is_empty() {
-        log::warn!("WOOFX3_BARKLOADER_KEY not configured - rejecting WebSocket connection");
+        tracing::warn!("WOOFX3_BARKLOADER_KEY not configured - rejecting WebSocket connection");
         return Ok(HttpResponse::Unauthorized()
             .body("Server not configured with authentication key"));
     }
@@ -51,7 +52,7 @@ async fn websocket_handler(
     };
 
     if !validate_token(&token, &expected_key) {
-        log::warn!("Invalid WebSocket authentication token");
+        tracing::warn!("Invalid WebSocket authentication token");
         return Ok(HttpResponse::Unauthorized()
             .body("Invalid authentication token"));
     }

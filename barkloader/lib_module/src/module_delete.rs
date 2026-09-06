@@ -12,7 +12,7 @@
 use anyhow::{anyhow, Result};
 use lib_repository::Repository;
 use lib_sandbox::ModuleRegistry;
-use log::{info, warn};
+use tracing::{info, warn};
 use std::sync::Arc;
 
 use super::db_proxy::{self, ResourceInstanceJson, ResourceUsage, UsageRef};

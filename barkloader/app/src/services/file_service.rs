@@ -2,7 +2,7 @@ use actix_multipart::{Field, Multipart};
 use actix_web::Error;
 use anyhow::Result;
 use futures::{StreamExt, TryStreamExt};
-use log::{error, info};
+use tracing::{error, info};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -117,10 +117,10 @@ impl FileService {
                             let p = entry.path();
                             let name = format!("{}{}", prefix, entry.file_name().to_string_lossy());
                             if p.is_dir() {
-                                log::info!("  [dir]  {}/", name);
+                                tracing::info!("  [dir]  {}/", name);
                                 walk_dir(&p, &format!("{}/", name));
                             } else {
-                                log::info!("  [file] {} ({} bytes)", name, p.metadata().map(|m| m.len()).unwrap_or(0));
+                                tracing::info!("  [file] {} ({} bytes)", name, p.metadata().map(|m| m.len()).unwrap_or(0));
                             }
                         }
                     }

@@ -2,7 +2,7 @@ use actix_multipart::Multipart;
 use actix_web::web::Data;
 use actix_web::{Error, HttpResponse, patch, post, web::ServiceConfig};
 use lib_repository::{CreateFileRequest, Repository};
-use log::{error, info, warn};
+use tracing::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -50,6 +50,7 @@ struct DeleteQuery {
 }
 
 #[post("/functions")]
+#[tracing::instrument(name = "POST /functions", skip_all, fields(force = query.force.unwrap_or(false)))]
 async fn upload_handler(
     _req: actix_web::HttpRequest,
     ctx: Data<AppContext>,
@@ -164,16 +165,16 @@ async fn upload_handler(
         let mut module = ModuleService::new(module_config);
 
         // DEBUG: log all extracted files
-        log::info!("=== ZIP CONTENTS ({} entries) ===", file_metadata.len());
+        tracing::info!("=== ZIP CONTENTS ({} entries) ===", file_metadata.len());
         for data in &file_metadata {
-            log::info!(
+            tracing::info!(
                 "  file: {:?}  ext: {:?}  dir: {:?}",
                 data.file_name,
                 data.file_extension,
                 data.temp_dir_path,
             );
         }
-        log::info!("=== END ZIP CONTENTS ===");
+        tracing::info!("=== END ZIP CONTENTS ===");
 
         // loop the file meta and add files to module
         // skip the original zip folder in the directory
@@ -206,11 +207,11 @@ async fn upload_handler(
         }
 
         // DEBUG: log what files were added to the module service
-        log::info!("=== FILES ADDED TO MODULE SERVICE ===");
+        tracing::info!("=== FILES ADDED TO MODULE SERVICE ===");
         for f in module.files() {
-            log::info!("  name: {:?}  kind: {:?}", f.name, f.kind);
+            tracing::info!("  name: {:?}  kind: {:?}", f.name, f.kind);
         }
-        log::info!("=== END FILES ADDED ===");
+        tracing::info!("=== END FILES ADDED ===");
 
         // run workflow to create module and upload files to repository
         let module_plan = match module.create_plan() {
@@ -350,6 +351,7 @@ async fn upload_handler(
 }
 
 #[post("/functions/{name}/register")]
+#[tracing::instrument(name = "POST /functions/{name}/register", skip_all, fields(module = %path.as_str()))]
 async fn register_handler(
     ctx: Data<AppContext>,
     path: actix_web::web::Path<String>,
@@ -378,6 +380,7 @@ async fn register_handler(
 }
 
 #[actix_web::delete("/functions/{name}")]
+#[tracing::instrument(name = "DELETE /functions/{name}", skip_all, fields(module = %path.as_str()))]
 async fn delete_handler(
     ctx: Data<AppContext>,
     path: actix_web::web::Path<String>,
@@ -526,6 +529,7 @@ async fn delete_handler(
 }
 
 #[patch("/functions/{name}/state")]
+#[tracing::instrument(name = "PATCH /functions/{name}/state", skip_all, fields(module = %path.as_str()))]
 async fn state_handler(
     ctx: Data<AppContext>,
     path: actix_web::web::Path<String>,
@@ -551,6 +555,7 @@ async fn state_handler(
 }
 
 #[patch("/functions/reload")]
+#[tracing::instrument(name = "PATCH /functions/reload", skip_all)]
 async fn reload_handler(_ctx: Data<AppContext>) -> Result<HttpResponse, Error> {
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "success": true,
@@ -559,6 +564,7 @@ async fn reload_handler(_ctx: Data<AppContext>) -> Result<HttpResponse, Error> {
 }
 
 #[actix_web::get("/functions")]
+#[tracing::instrument(name = "GET /functions", skip_all)]
 async fn list_handler(ctx: Data<AppContext>) -> Result<HttpResponse, Error> {
     let modules = ctx.registry.list_registered_modules();
     Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -571,6 +577,7 @@ async fn list_handler(ctx: Data<AppContext>) -> Result<HttpResponse, Error> {
 }
 
 #[actix_web::get("/functions/{name}")]
+#[tracing::instrument(name = "GET /functions/{name}", skip_all, fields(module = %path.as_str()))]
 async fn get_handler(
     ctx: Data<AppContext>,
     path: actix_web::web::Path<String>,
@@ -615,6 +622,7 @@ async fn resolve_module_id(db_proxy: &dyn ModuleDbProxy, module_name: &str) -> R
 /// history needs no separate ledger: it's recovered by listing that
 /// prefix.
 #[actix_web::get("/functions/{name}/versions")]
+#[tracing::instrument(name = "GET /functions/{name}/versions", skip_all, fields(module = %path.as_str()))]
 async fn versions_handler(
     ctx: Data<AppContext>,
     path: actix_web::web::Path<String>,
@@ -661,6 +669,11 @@ async fn versions_handler(
 /// overwrite), so re-uploading them is a no-op via the `exists()`
 /// short-circuit in `upload_content_addressed`.
 #[post("/functions/{name}/rollback")]
+#[tracing::instrument(
+    name = "POST /functions/{name}/rollback",
+    skip_all,
+    fields(module = %path.as_str(), version = %query.version)
+)]
 async fn rollback_handler(
     ctx: Data<AppContext>,
     path: actix_web::web::Path<String>,

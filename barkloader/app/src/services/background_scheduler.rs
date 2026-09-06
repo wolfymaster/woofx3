@@ -3,7 +3,7 @@ use lib_module::BackgroundTaskRegistrar;
 use chrono::Utc;
 use lib_sandbox::models::request::InvokeRequest;
 use lib_sandbox::SandboxFactory;
-use log::{error, info, warn};
+use tracing::{error, info, warn};
 use serde_json::json;
 use std::collections::HashMap;
 use std::str::FromStr;

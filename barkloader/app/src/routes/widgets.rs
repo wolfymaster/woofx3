@@ -1,7 +1,7 @@
 use actix_web::web::{Data, Path, ServiceConfig};
 use actix_web::{HttpResponse, get};
 use lib_repository::Repository;
-use log::warn;
+use tracing::warn;
 use serde::Serialize;
 
 use crate::types::AppContext;
@@ -22,6 +22,11 @@ struct FrameResponse {
 /// out of scope here — the caller (sceneManager) serves those from its
 /// own local disk, same as streamware does today.
 #[get("/widgets/{module_key}/{manifest_id}/frame")]
+#[tracing::instrument(
+    name = "GET /widgets/{module_key}/{manifest_id}/frame",
+    skip_all,
+    fields(module_key = %path.0, manifest_id = %path.1)
+)]
 async fn widget_frame_handler(ctx: Data<AppContext>, path: Path<(String, String)>) -> HttpResponse {
     let (module_key, manifest_id) = path.into_inner();
     let Some(db_proxy_url) = ctx.db_proxy_url.as_ref() else {

@@ -4,7 +4,6 @@ use crate::util::{
 };
 use actix_web::{App, HttpServer, middleware::Logger, web::Data};
 use anyhow::Result;
-use env_logger::Env;
 use lib_repository::{Repository, RepositoryFactory, RepositoryImpl};
 use lib_sandbox::extensions::{
     ChatExtension, PlatformAlertsExtension, PlatformChatExtension, TwitchExtension,
@@ -17,7 +16,7 @@ use crate::services::http_storage_client::HttpStorageClient;
 use lib_module::db_proxy::RequestContext as DbRequestContext;
 use crate::services::sandbox_resources::HttpResourceClient;
 use lib_sandbox::{ModuleRegistry, SandboxFactory};
-use log::{info, warn};
+use tracing::{info, warn};
 use std::sync::Arc;
 use types::{AppContext, SharedRepository};
 
@@ -28,6 +27,7 @@ mod types;
 mod util;
 mod websocket;
 const DEFAULT_MODULE_DIR: &str = "modules";
+const SERVICE_NAME: &str = "barkloader";
 
 async fn setup() -> Result<AppContext> {
     let registry = Arc::new(ModuleRegistry::new());
@@ -185,16 +185,26 @@ async fn boot_modules(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // Initialize env_logger
-    env_logger::init_from_env(Env::default().default_filter_or("info"));
+    // Console + file logging always; OpenTelemetry export only when configured.
+    // The guard flushes the file writer and the OTel providers when main returns.
+    let logging = match woofx3_logging::init(SERVICE_NAME) {
+        Ok(guard) => guard,
+        Err(e) => {
+            eprintln!("failed to initialize logging: {}", e);
+            std::process::exit(1);
+        }
+    };
 
-    // Validate required config
+    // Validate required config. Each fatal path drops the guard first so the
+    // file and OpenTelemetry sinks flush before the process goes away.
     if let Err(e) = validate_required_config(&["WOOFX3_BARKLOADER_KEY"]) {
-        log::error!("{}", e);
+        tracing::error!("{}", e);
+        drop(logging);
         std::process::exit(1);
     }
     if let Err(e) = validate_required_woofx3_json_keys(&["databaseProxyUrl"]) {
-        log::error!("{}", e);
+        tracing::error!("{}", e);
+        drop(logging);
         std::process::exit(1);
     }
 

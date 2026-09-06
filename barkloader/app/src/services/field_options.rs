@@ -2,7 +2,7 @@ use async_nats::Client;
 use futures::stream::StreamExt;
 use lib_sandbox::models::request::InvokeRequest;
 use lib_sandbox::SandboxFactory;
-use log::{error, info, warn};
+use tracing::{error, info, warn};
 use serde::Deserialize;
 use serde_json::json;
 

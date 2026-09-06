@@ -41,7 +41,7 @@ pub fn publish_storage_changed(
         },
     });
     if let Err(err) = nats.publish(&subject, envelope) {
-        log::warn!(
+        tracing::warn!(
             "module.storage.changed publish failed (continuing): module={} key={} err={}",
             module_id,
             key,

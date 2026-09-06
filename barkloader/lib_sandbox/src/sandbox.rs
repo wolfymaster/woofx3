@@ -3,7 +3,7 @@ use crate::function_executor::FunctionExecutor;
 use crate::host::{HostContext, InvocationContext};
 use crate::models::request::InvokeRequest;
 use crate::module_registry::ModuleRegistry;
-use log::{error, info, warn};
+use tracing::{error, info, warn};
 use serde_json::Value;
 use std::sync::Arc;
 
