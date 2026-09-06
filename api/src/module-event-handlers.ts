@@ -96,6 +96,7 @@ interface RawWidget {
 }
 
 interface RawModuleRegistered {
+  module_prefix?: unknown;
   module_key?: unknown;
   module_name?: unknown;
   version?: unknown;
@@ -324,6 +325,7 @@ export function parseModuleTriggerRegistered(ce: Record<string, unknown>): {
     clientId: asString(ce.client_id),
     event: {
       type: "module.trigger.registered",
+      modulePrefix: asString(payload.module_prefix),
       moduleKey: asString(payload.module_key),
       moduleName: asString(payload.module_name),
       version: asString(payload.version),
@@ -342,6 +344,7 @@ export function parseModuleActionRegistered(ce: Record<string, unknown>): {
     clientId: asString(ce.client_id),
     event: {
       type: "module.action.registered",
+      modulePrefix: asString(payload.module_prefix),
       moduleKey: asString(payload.module_key),
       moduleName: asString(payload.module_name),
       version: asString(payload.version),
@@ -360,6 +363,7 @@ export function parseModuleFunctionRegistered(ce: Record<string, unknown>): {
     clientId: asString(ce.client_id),
     event: {
       type: "module.function.registered",
+      modulePrefix: asString(payload.module_prefix),
       moduleKey: asString(payload.module_key),
       moduleName: asString(payload.module_name),
       version: asString(payload.version),
@@ -379,6 +383,7 @@ export function parseModuleTriggerDeregistered(ce: Record<string, unknown>): {
     event: {
       type: "module.trigger.deregistered",
       modulePrefix: asString(payload.module_prefix),
+      moduleKey: asString(payload.module_key),
       triggers: rawTriggers.map((t) => mapTrigger(t as RawTrigger)),
     },
   };
@@ -395,6 +400,7 @@ export function parseModuleActionDeregistered(ce: Record<string, unknown>): {
     event: {
       type: "module.action.deregistered",
       modulePrefix: asString(payload.module_prefix),
+      moduleKey: asString(payload.module_key),
       actions: rawActions.map((a) => mapAction(a as RawAction)),
     },
   };
@@ -410,6 +416,7 @@ export function parseModuleFunctionDeregistered(ce: Record<string, unknown>): {
     clientId: asString(ce.client_id),
     event: {
       type: "module.function.deregistered",
+      modulePrefix: asString(payload.module_prefix),
       moduleKey: asString(payload.module_key),
       moduleName: asString(payload.module_name),
       version: asString(payload.version),
@@ -428,6 +435,7 @@ export function parseModuleWidgetRegistered(ce: Record<string, unknown>): {
     clientId: asString(ce.client_id),
     event: {
       type: "module.widget.registered",
+      modulePrefix: asString(payload.module_prefix),
       moduleKey: asString(payload.module_key),
       moduleName: asString(payload.module_name),
       version: asString(payload.version),
@@ -446,6 +454,7 @@ export function parseModuleWidgetDeregistered(ce: Record<string, unknown>): {
     clientId: asString(ce.client_id),
     event: {
       type: "module.widget.deregistered",
+      modulePrefix: asString(payload.module_prefix),
       moduleKey: asString(payload.module_key),
       moduleName: asString(payload.module_name),
       version: asString(payload.version),
@@ -464,6 +473,7 @@ export function parseModuleAssetRegistered(ce: Record<string, unknown>): {
     clientId: asString(ce.client_id),
     event: {
       type: EngineEventType.MODULE_ASSET_REGISTERED,
+      modulePrefix: asString(payload.module_prefix),
       moduleKey: asString(payload.module_key),
       moduleName: asString(payload.module_name),
       version: asString(payload.version),
@@ -482,6 +492,7 @@ export function parseModuleAssetDeregistered(ce: Record<string, unknown>): {
     clientId: asString(ce.client_id),
     event: {
       type: EngineEventType.MODULE_ASSET_DEREGISTERED,
+      modulePrefix: asString(payload.module_prefix),
       moduleKey: asString(payload.module_key),
       moduleName: asString(payload.module_name),
       version: asString(payload.version),
@@ -506,6 +517,7 @@ interface RawResourceInstance {
   instance_id?: unknown;
   display_name?: unknown;
   canonical_id?: unknown;
+  module_prefix?: unknown;
   module_key?: unknown;
 }
 
@@ -559,6 +571,7 @@ export function parseModuleResourceInstanceDeleted(ce: Record<string, unknown>):
 
 interface RawModuleInstalled {
   module_name?: unknown;
+  module_prefix?: unknown;
   module_key?: unknown;
   version?: unknown;
   author?: unknown;
@@ -568,6 +581,7 @@ interface RawModuleInstalled {
 
 interface RawModuleDeleted {
   module_name?: unknown;
+  module_prefix?: unknown;
   module_key?: unknown;
 }
 
@@ -588,6 +602,7 @@ interface RawModuleResourceUsage {
 
 interface RawModuleDeleteFailed {
   module_name?: unknown;
+  module_prefix?: unknown;
   module_key?: unknown;
   error?: unknown;
   in_use_resources?: unknown;
@@ -595,6 +610,7 @@ interface RawModuleDeleteFailed {
 
 interface RawModuleInstallFailed {
   module_name?: unknown;
+  module_prefix?: unknown;
   module_key?: unknown;
   version?: unknown;
   error?: unknown;
@@ -636,6 +652,7 @@ export function parseModuleInstalled(ce: Record<string, unknown>): {
       type: EngineEventType.MODULE_INSTALLED,
       moduleName: asString(payload.module_name),
       version: asString(payload.version),
+      modulePrefix: asString(payload.module_prefix),
       moduleKey: asString(payload.module_key),
       author: asString(payload.author),
       taxonomy: Array.isArray(taxonomyRaw) ? taxonomyRaw.filter((x): x is string => typeof x === "string") : [],
@@ -654,6 +671,7 @@ export function parseModuleDeleted(ce: Record<string, unknown>): {
     event: {
       type: EngineEventType.MODULE_DELETED,
       moduleName: asString(payload.module_name),
+      modulePrefix: asString(payload.module_prefix),
       moduleKey: asString(payload.module_key),
     },
   };
@@ -670,6 +688,7 @@ export function parseModuleDeleteFailed(ce: Record<string, unknown>): {
     event: {
       type: EngineEventType.MODULE_DELETE_FAILED,
       moduleName: asString(payload.module_name),
+      modulePrefix: asString(payload.module_prefix),
       moduleKey: asString(payload.module_key),
       error: asString(payload.error) || "Unknown error",
       inUseResources: inUseRaw.map((r) => mapModuleResourceUsage(r as RawModuleResourceUsage)),
@@ -688,6 +707,7 @@ export function parseModuleInstallFailed(ce: Record<string, unknown>): {
       type: EngineEventType.MODULE_INSTALL_FAILED,
       moduleName: asString(payload.module_name),
       version: asString(payload.version),
+      modulePrefix: asString(payload.module_prefix),
       moduleKey: asString(payload.module_key),
       error: asString(payload.error) || "Unknown error",
     },

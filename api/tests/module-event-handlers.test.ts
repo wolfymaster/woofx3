@@ -9,12 +9,16 @@ import {
   parseModuleActionRegistered,
   parseModuleWidgetRegistered,
   parseModuleWidgetDeregistered,
+  parseModuleFunctionRegistered,
+  parseModuleTriggerDeregistered,
+  parseModuleActionDeregistered,
 } from "../src/module-event-handlers";
 
 describe("parseModuleTriggerRegistered", () => {
   test("maps snake_case NATS payload to camelCase webhook shape", () => {
     const ce = {
       data: {
+        module_prefix: "twitch",
         module_key: "twitch:1.0.0:abcdef1",
         module_name: "Twitch",
         version: "1.0.0",
@@ -28,7 +32,7 @@ describe("parseModuleTriggerRegistered", () => {
             config_schema: "[]",
             allow_variants: false,
             created_by_type: "MODULE",
-            created_by_ref: "twitch:1.0.0:abcdef1",
+            created_by_ref: "twitch",
           },
         ],
       },
@@ -41,6 +45,7 @@ describe("parseModuleTriggerRegistered", () => {
       clientId: "client-a",
       event: {
         type: "module.trigger.registered",
+        modulePrefix: "twitch",
         moduleKey: "twitch:1.0.0:abcdef1",
         moduleName: "Twitch",
         version: "1.0.0",
@@ -54,7 +59,7 @@ describe("parseModuleTriggerRegistered", () => {
             configSchema: "[]",
             allowVariants: false,
             createdByType: "MODULE",
-            createdByRef: "twitch:1.0.0:abcdef1",
+            createdByRef: "twitch",
           },
         ],
       },
@@ -86,6 +91,7 @@ describe("parseModuleTriggerRegistered", () => {
   test("passes projection_key through as projectionKey on each trigger", () => {
     const ce = {
       data: {
+        module_prefix: "twitch",
         module_key: "twitch:1.0.0:abcdef1",
         module_name: "Twitch",
         version: "1.0.0",
@@ -99,7 +105,7 @@ describe("parseModuleTriggerRegistered", () => {
             config_schema: "[]",
             allow_variants: false,
             created_by_type: "MODULE",
-            created_by_ref: "twitch:1.0.0:abcdef1",
+            created_by_ref: "twitch",
             projection_key: "twitch:1.0.0:abcdef1:trigger:channel.follow",
           },
         ],
@@ -127,6 +133,7 @@ describe("parseModuleActionRegistered", () => {
   test("maps snake_case NATS payload to camelCase webhook shape", () => {
     const ce = {
       data: {
+        module_prefix: "twitch",
         module_key: "twitch:1.0.0:abcdef1",
         module_name: "Twitch",
         version: "1.0.0",
@@ -140,7 +147,7 @@ describe("parseModuleActionRegistered", () => {
             output_schema: "[]",
             taxonomy: ["platform.govee", "function.lighting"],
             created_by_type: "MODULE",
-            created_by_ref: "twitch:1.0.0:abcdef1",
+            created_by_ref: "twitch",
           },
         ],
       },
@@ -153,6 +160,7 @@ describe("parseModuleActionRegistered", () => {
       clientId: "client-b",
       event: {
         type: "module.action.registered",
+        modulePrefix: "twitch",
         moduleKey: "twitch:1.0.0:abcdef1",
         moduleName: "Twitch",
         version: "1.0.0",
@@ -166,7 +174,7 @@ describe("parseModuleActionRegistered", () => {
             outputSchema: "[]",
             taxonomy: ["platform.govee", "function.lighting"],
             createdByType: "MODULE",
-            createdByRef: "twitch:1.0.0:abcdef1",
+            createdByRef: "twitch",
           },
         ],
       },
@@ -204,7 +212,7 @@ describe("parseModuleActionRegistered", () => {
             id: "uuid-a",
             name: "send",
             created_by_type: "MODULE",
-            created_by_ref: "twitch:1.0.0:abcdef1",
+            created_by_ref: "twitch",
             projection_key: "twitch:1.0.0:abcdef1:action:send",
           },
         ],
@@ -232,6 +240,7 @@ describe("parseModuleWidgetRegistered", () => {
   test("maps snake_case NATS payload to camelCase webhook shape", () => {
     const ce = {
       data: {
+        module_prefix: "scene_widgets",
         module_key: "scene_widgets:1.0.0:abc",
         module_name: "Scene Widgets",
         version: "1.0.0",
@@ -264,7 +273,7 @@ describe("parseModuleWidgetRegistered", () => {
               },
             ],
             created_by_type: "MODULE",
-            created_by_ref: "scene_widgets:1.0.0:abc",
+            created_by_ref: "scene_widgets",
           },
         ],
       },
@@ -277,6 +286,7 @@ describe("parseModuleWidgetRegistered", () => {
       clientId: "client-x",
       event: {
         type: "module.widget.registered",
+        modulePrefix: "scene_widgets",
         moduleKey: "scene_widgets:1.0.0:abc",
         moduleName: "Scene Widgets",
         version: "1.0.0",
@@ -309,7 +319,7 @@ describe("parseModuleWidgetRegistered", () => {
               },
             ],
             createdByType: "MODULE",
-            createdByRef: "scene_widgets:1.0.0:abc",
+            createdByRef: "scene_widgets",
           },
         ],
       },
@@ -401,6 +411,7 @@ describe("parseModuleWidgetDeregistered", () => {
   test("maps full-module-delete payload (carries module_key + name + version)", () => {
     const ce = {
       data: {
+        module_prefix: "scene_widgets",
         module_key: "scene_widgets:1.0.0:abc",
         module_name: "Scene Widgets",
         version: "1.0.0",
@@ -415,7 +426,7 @@ describe("parseModuleWidgetDeregistered", () => {
             alert_types: ["raid"],
             settings: [],
             created_by_type: "MODULE",
-            created_by_ref: "scene_widgets:1.0.0:abc",
+            created_by_ref: "scene_widgets",
           },
         ],
       },
@@ -661,5 +672,56 @@ describe("initModuleHandlers", () => {
 
     expect(webhook.sentEvents).toHaveLength(1);
     expect(webhook.sentEvents[0]?.type).toBe("module.resource.instance.created");
+  });
+});
+
+describe("module event addressing", () => {
+  // Definition events used to identify the module only by its bare manifest
+  // id, while module.installed / module.deleted used the composite key. A
+  // consumer keying modules off the lifecycle events could not match the
+  // definitions, so installs showed no triggers and uninstalls left them
+  // behind. Every module event must now carry both.
+  const prefix = "twitch_platform";
+  const key = "twitch_platform:1.0.0:075ab4d";
+
+  test("registration events carry both modulePrefix and moduleKey", () => {
+    const base = { module_prefix: prefix, module_key: key, module_name: "Twitch Platform", version: "1.0.0" };
+    const cases = [
+      parseModuleTriggerRegistered({ data: { ...base, triggers: [] } }),
+      parseModuleActionRegistered({ data: { ...base, actions: [] } }),
+      parseModuleFunctionRegistered({ data: { ...base, functions: [] } }),
+      parseModuleWidgetRegistered({ data: { ...base, widgets: [] } }),
+    ];
+    for (const { event } of cases) {
+      expect(event.modulePrefix).toBe(prefix);
+      expect(event.moduleKey).toBe(key);
+    }
+  });
+
+  test("deregistration events carry both modulePrefix and moduleKey", () => {
+    const base = { module_prefix: prefix, module_key: key };
+    const cases = [
+      parseModuleTriggerDeregistered({ data: { ...base, triggers: [] } }),
+      parseModuleActionDeregistered({ data: { ...base, actions: [] } }),
+      parseModuleWidgetDeregistered({ data: { ...base, widgets: [] } }),
+    ];
+    for (const { event } of cases) {
+      expect(event.modulePrefix).toBe(prefix);
+      expect(event.moduleKey).toBe(key);
+    }
+  });
+
+  test("lifecycle events expose the same modulePrefix as the definition events", () => {
+    const { event: installed } = parseModuleInstalled({
+      data: { module_prefix: prefix, module_key: key, module_name: "Twitch Platform", version: "1.0.0", status: "completed" },
+    });
+    expect(installed.modulePrefix).toBe(prefix);
+    expect(installed.moduleKey).toBe(key);
+
+    const { event: deleted } = parseModuleDeleted({
+      data: { module_prefix: prefix, module_key: key, module_name: "Twitch Platform" },
+    });
+    expect(deleted.modulePrefix).toBe(prefix);
+    expect(deleted.moduleKey).toBe(key);
   });
 });
