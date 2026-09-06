@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -11,31 +11,45 @@ import (
 	"sort"
 	"syscall"
 	"time"
+
+	"github.com/wolfymaster/woofx3/common/logging"
 )
 
 func main() {
-	log.Println("Starting orchestrator...")
-
 	execPath, err := os.Executable()
 	if err != nil {
-		log.Fatalf("Failed to get executable path: %v", err)
+		fmt.Fprintf(os.Stderr, "Failed to get executable path: %v\n", err)
+		os.Exit(1)
 	}
 	baseDir := filepath.Dir(execPath)
+
+	sharedLogger, err := logging.New(logging.Config{
+		ServiceName:  "orchestrator",
+		LogDirectory: filepath.Join(baseDir, "logs"),
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer sharedLogger.Close()
+	logger := sharedLogger.Slog()
+
+	logger.Info("Starting orchestrator", "baseDir", baseDir)
 
 	configPath := filepath.Join(baseDir, "services.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		configPath = findConfigFile(baseDir)
 		if configPath == "" {
-			log.Fatal("services.json not found")
+			fatalExit(sharedLogger, "services.json not found")
 		}
 	}
 
 	config, err := loadConfig(configPath)
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		fatalExit(sharedLogger, "Failed to load configuration", "error", err)
 	}
 
-	supervisor := NewSupervisor(baseDir)
+	supervisor := NewSupervisor(baseDir, logger)
 
 	for _, service := range config.Services {
 		if service.Enabled {
@@ -44,26 +58,34 @@ func main() {
 	}
 
 	if len(supervisor.services) == 0 {
-		log.Println("No enabled services found, exiting...")
+		logger.Info("No enabled services found, exiting")
 		return
 	}
 
 	orderedServices, err := supervisor.GetStartupOrder()
 	if err != nil {
-		log.Fatalf("Failed to resolve service dependencies: %v", err)
+		fatalExit(sharedLogger, "Failed to resolve service dependencies", "error", err)
 	}
 
-	log.Printf("Starting %d services in dependency order...", len(orderedServices))
+	logger.Info("Starting services in dependency order", "count", len(orderedServices))
 	supervisor.StartInOrder(orderedServices)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	<-sigChan
-	log.Println("Shutdown signal received, stopping services...")
+	logger.Info("Shutdown signal received, stopping services")
 
 	supervisor.StopAll()
-	log.Println("All services stopped, exiting...")
+	logger.Info("All services stopped, exiting")
+}
+
+// fatalExit reports a startup failure and terminates. os.Exit skips deferred
+// closers, so the logger is flushed here before the process goes away.
+func fatalExit(logger *logging.Logger, message string, args ...any) {
+	logger.Error(message, args...)
+	logger.Close()
+	os.Exit(1)
 }
 
 func findConfigFile(startDir string) string {
@@ -128,26 +150,28 @@ const (
 )
 
 type ServiceProcess struct {
-	Service     Service
-	Cmd         *os.Process
-	Stop        chan bool
-	Restart     chan bool
-	Status      ServiceStatus
-	LastHealth  time.Time
-	CanStart    chan bool
+	Service    Service
+	Cmd        *os.Process
+	Stop       chan bool
+	Restart    chan bool
+	Status     ServiceStatus
+	LastHealth time.Time
+	CanStart   chan bool
 }
 
 type Supervisor struct {
 	baseDir  string
 	services map[string]*ServiceProcess
 	stopping bool
+	logger   *slog.Logger
 }
 
-func NewSupervisor(baseDir string) *Supervisor {
+func NewSupervisor(baseDir string, logger *slog.Logger) *Supervisor {
 	return &Supervisor{
 		baseDir:  baseDir,
 		services: make(map[string]*ServiceProcess),
 		stopping: false,
+		logger:   logger,
 	}
 }
 
@@ -213,7 +237,7 @@ func (s *Supervisor) GetStartupOrder() ([]string, error) {
 func (s *Supervisor) StartInOrder(orderedServices []string) {
 	for _, name := range orderedServices {
 		serviceProcess := s.services[name]
-		log.Printf("Starting service: %s", name)
+		s.logger.Info("Starting service", "service", name)
 		go s.manageService(serviceProcess)
 
 		if len(serviceProcess.Service.Dependencies) == 0 {
@@ -267,7 +291,7 @@ func (s *Supervisor) monitorDependencies(serviceProcess *ServiceProcess) {
 func (s *Supervisor) StopAll() {
 	s.stopping = true
 	for name, serviceProcess := range s.services {
-		log.Printf("Stopping service: %s", name)
+		s.logger.Info("Stopping service", "service", name)
 		select {
 		case serviceProcess.Stop <- true:
 		default:
@@ -286,18 +310,18 @@ func (s *Supervisor) StopAll() {
 func (s *Supervisor) manageService(serviceProcess *ServiceProcess) {
 	service := serviceProcess.Service
 	binaryName := service.Output
-	
+
 	if isWindows() {
 		binaryName += ".exe"
 	}
-	
+
 	binaryPath := filepath.Join(s.baseDir, binaryName)
 
 	for {
 		select {
 		case <-serviceProcess.Stop:
 			if serviceProcess.Cmd != nil {
-				log.Printf("Gracefully stopping service: %s", service.Name)
+				s.logger.Info("Gracefully stopping service", "service", service.Name)
 				serviceProcess.Cmd.Signal(syscall.SIGTERM)
 				time.Sleep(5 * time.Second)
 				serviceProcess.Cmd.Kill()
@@ -305,7 +329,7 @@ func (s *Supervisor) manageService(serviceProcess *ServiceProcess) {
 			return
 		case <-serviceProcess.Restart:
 			if serviceProcess.Cmd != nil {
-				log.Printf("Restarting service: %s", service.Name)
+				s.logger.Info("Restarting service", "service", service.Name)
 				serviceProcess.Cmd.Kill()
 				serviceProcess.Cmd = nil
 			}
@@ -313,7 +337,7 @@ func (s *Supervisor) manageService(serviceProcess *ServiceProcess) {
 		case <-serviceProcess.CanStart:
 			if serviceProcess.Cmd == nil && !s.stopping && serviceProcess.Status == StatusStopped {
 				if err := s.startServiceProcess(serviceProcess, binaryPath); err != nil {
-					log.Printf("Failed to start service %s: %v", service.Name, err)
+					s.logger.Error("Failed to start service", "service", service.Name, "error", err)
 					time.Sleep(5 * time.Second)
 				}
 			}
@@ -323,19 +347,19 @@ func (s *Supervisor) manageService(serviceProcess *ServiceProcess) {
 					if s.checkHealth(service.HealthEndpoint) {
 						serviceProcess.Status = StatusHealthy
 						serviceProcess.LastHealth = time.Now()
-						log.Printf("Service %s is healthy", service.Name)
+						s.logger.Info("Service is healthy", "service", service.Name)
 					} else if time.Since(serviceProcess.LastHealth) > 30*time.Second {
 						serviceProcess.Status = StatusUnhealthy
-						log.Printf("Service %s health check timeout", service.Name)
+						s.logger.Warn("Service health check timeout", "service", service.Name)
 					}
 				} else {
 					serviceProcess.Status = StatusHealthy
-					log.Printf("Service %s started (no health check)", service.Name)
+					s.logger.Info("Service started (no health check)", "service", service.Name)
 				}
 			} else if serviceProcess.Cmd != nil && serviceProcess.Status == StatusHealthy && service.HealthEndpoint != "" {
 				if !s.checkHealth(service.HealthEndpoint) {
 					serviceProcess.Status = StatusUnhealthy
-					log.Printf("Service %s became unhealthy", service.Name)
+					s.logger.Warn("Service became unhealthy", "service", service.Name)
 				} else {
 					serviceProcess.LastHealth = time.Now()
 				}
@@ -347,7 +371,7 @@ func (s *Supervisor) manageService(serviceProcess *ServiceProcess) {
 
 func (s *Supervisor) startServiceProcess(serviceProcess *ServiceProcess, binaryPath string) error {
 	service := serviceProcess.Service
-	
+
 	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
 		return fmt.Errorf("binary not found: %s", binaryPath)
 	}
@@ -365,14 +389,14 @@ func (s *Supervisor) startServiceProcess(serviceProcess *ServiceProcess, binaryP
 	serviceProcess.Cmd = process
 	serviceProcess.Status = StatusStarting
 	serviceProcess.LastHealth = time.Now()
-	log.Printf("Started service: %s (PID: %d)", service.Name, process.Pid)
+	s.logger.Info("Started service", "service", service.Name, "pid", process.Pid)
 
 	go func() {
 		state, err := process.Wait()
 		if err != nil {
-			log.Printf("Service %s process error: %v", service.Name, err)
+			s.logger.Error("Service process error", "service", service.Name, "error", err)
 		} else {
-			log.Printf("Service %s exited: %s", service.Name, state.String())
+			s.logger.Info("Service exited", "service", service.Name, "state", state.String())
 		}
 		serviceProcess.Cmd = nil
 		serviceProcess.Status = StatusStopped
@@ -389,17 +413,17 @@ func (s *Supervisor) checkHealth(endpoint string) bool {
 	client := &http.Client{
 		Timeout: 5 * time.Second,
 	}
-	
+
 	resp, err := client.Get(endpoint)
 	if err != nil {
 		return false
 	}
 	defer resp.Body.Close()
-	
+
 	return resp.StatusCode == 200
 }
 
 func isWindows() bool {
-	return os.Getenv("OS") == "Windows_NT" || 
-		   filepath.Ext(os.Args[0]) == ".exe"
+	return os.Getenv("OS") == "Windows_NT" ||
+		filepath.Ext(os.Args[0]) == ".exe"
 }

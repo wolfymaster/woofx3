@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/wolfymaster/woofx3/common/logging"
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/db/app/middleware"
 	"github.com/wolfymaster/woofx3/db/app/types"
@@ -44,9 +47,12 @@ func (s *HTTPServerService) Connect(ctx context.Context, appCtx *runtime.Applica
 	s.mux = http.NewServeMux()
 	s.routesInitialized = false
 
-	// Wrap handler with lazy initialization and logging middleware
+	// Wrap handler with lazy initialization, logging, and tracing middleware.
+	// Tracing sits outermost so the request span is already on the context by
+	// the time the logging middleware and the Twirp handlers run.
 	var handler http.Handler = http.HandlerFunc(s.lazyInitHandler)
 	handler = s.loggingMiddleware(handler)
+	handler = s.tracingMiddleware(handler)
 
 	s.server = &http.Server{
 		Addr:    ":" + s.httpPort,
@@ -115,7 +121,7 @@ func (s *HTTPServerService) loggingMiddleware(next http.Handler) http.Handler {
 		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
 		// Log the incoming request
-		s.logger.Info("HTTP request",
+		s.logger.InfoContext(r.Context(), "HTTP request",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"remote_addr", r.RemoteAddr,
@@ -127,12 +133,30 @@ func (s *HTTPServerService) loggingMiddleware(next http.Handler) http.Handler {
 
 		// Log the response
 		duration := time.Since(start)
-		s.logger.Info("HTTP response",
+		s.logger.InfoContext(r.Context(), "HTTP response",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", wrapped.statusCode,
 			"duration_ms", duration.Milliseconds(),
 		)
+	})
+}
+
+// tracingMiddleware opens one span per inbound request. Every Twirp RPC is
+// served through this mux, so this is the single top-level entry point for the
+// db proxy.
+func (s *HTTPServerService) tracingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, span := logging.StartSpan(r.Context(), r.Method+" "+r.URL.Path,
+			attribute.String("http.request.method", r.Method),
+			attribute.String("url.path", r.URL.Path),
+		)
+		defer span.End()
+
+		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(wrapped, r.WithContext(ctx))
+
+		span.SetAttributes(attribute.Int("http.response.status_code", wrapped.statusCode))
 	})
 }
 

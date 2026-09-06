@@ -36,6 +36,15 @@ func NewWithTransports(config Config, transports []Transport) (*Logger, error) {
 		return nil, err
 	}
 
+	tracingCloser, err := startTracing(resolved)
+	if err != nil {
+		closeAll(closers)
+		return nil, err
+	}
+	if tracingCloser != nil {
+		closers = append(closers, tracingCloser)
+	}
+
 	handler := &fanoutHandler{handlers: handlers}
 	baseSlog := slog.New(handler)
 
@@ -112,6 +121,14 @@ func (l *Logger) Close() error {
 		return nil
 	}
 	return fmt.Errorf("close logger resources: %v", errs)
+}
+
+// closeAll is best-effort cleanup on a construction failure path, where the
+// original error is the one worth reporting.
+func closeAll(closers []io.Closer) {
+	for _, closer := range closers {
+		_ = closer.Close()
+	}
 }
 
 func fieldsToArgs(fields map[string]any) []any {

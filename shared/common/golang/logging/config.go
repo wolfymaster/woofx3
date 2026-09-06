@@ -10,6 +10,11 @@ import (
 
 const (
 	defaultLogDirectory = "logs"
+
+	envOTelEnabled          = "WOOFX3_OTEL_ENABLED"
+	envOTelExporterEndpoint = "WOOFX3_OTEL_EXPORTER_ENDPOINT"
+	envOTelTracingEnabled   = "WOOFX3_OTEL_TRACING_ENABLED"
+	envOTelLocalFileEnabled = "WOOFX3_OTEL_LOCAL_FILE_ENABLED"
 )
 
 type Fields map[string]any
@@ -23,6 +28,13 @@ type Config struct {
 	AddSource               bool
 	AllowRuntimeLevelChange bool
 	RedactKeys              []string
+
+	// OTel switches are tri-state: nil defers to the matching WOOFX3_OTEL_*
+	// environment variable, a non-nil value overrides it.
+	OTelEnabled          *bool
+	OTelExporterEndpoint string
+	OTelTracingEnabled   *bool
+	OTelLocalFileEnabled *bool
 }
 
 type resolvedConfig struct {
@@ -34,6 +46,11 @@ type resolvedConfig struct {
 	AddSource               bool
 	AllowRuntimeLevelChange bool
 	RedactKeys              map[string]struct{}
+
+	OTelEnabled          bool
+	OTelExporterEndpoint string
+	OTelTracingEnabled   bool
+	OTelLocalFileEnabled bool
 }
 
 func resolveConfig(cfg Config) (resolvedConfig, error) {
@@ -94,6 +111,28 @@ func resolveConfig(cfg Config) (resolvedConfig, error) {
 		}
 	}
 
+	otelExporterEndpoint := strings.TrimSpace(cfg.OTelExporterEndpoint)
+	if otelExporterEndpoint == "" {
+		otelExporterEndpoint = strings.TrimSpace(os.Getenv(envOTelExporterEndpoint))
+	}
+
+	// Without a collector there is nothing to export to, so OTel stays off
+	// unless a caller or operator asks for it explicitly.
+	otelEnabled, err := resolveBool(cfg.OTelEnabled, envOTelEnabled, otelExporterEndpoint != "")
+	if err != nil {
+		return resolvedConfig{}, err
+	}
+
+	otelTracingEnabled, err := resolveBool(cfg.OTelTracingEnabled, envOTelTracingEnabled, otelEnabled)
+	if err != nil {
+		return resolvedConfig{}, err
+	}
+
+	otelLocalFileEnabled, err := resolveBool(cfg.OTelLocalFileEnabled, envOTelLocalFileEnabled, true)
+	if err != nil {
+		return resolvedConfig{}, err
+	}
+
 	return resolvedConfig{
 		ServiceName:             serviceName,
 		Level:                   level,
@@ -103,7 +142,28 @@ func resolveConfig(cfg Config) (resolvedConfig, error) {
 		AddSource:               cfg.AddSource,
 		AllowRuntimeLevelChange: allowRuntimeLevelChange,
 		RedactKeys:              redactKeys,
+		OTelEnabled:             otelEnabled,
+		OTelExporterEndpoint:    otelExporterEndpoint,
+		OTelTracingEnabled:      otelTracingEnabled,
+		OTelLocalFileEnabled:    otelLocalFileEnabled,
 	}, nil
+}
+
+// resolveBool applies the package precedence of explicit field over
+// environment variable over default.
+func resolveBool(explicit *bool, envKey string, fallback bool) (bool, error) {
+	if explicit != nil {
+		return *explicit, nil
+	}
+	raw := strings.TrimSpace(os.Getenv(envKey))
+	if raw == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("invalid %s: %w", envKey, err)
+	}
+	return parsed, nil
 }
 
 func defaultRedactKeys() map[string]struct{} {
