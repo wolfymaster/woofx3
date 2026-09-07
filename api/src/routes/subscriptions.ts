@@ -101,14 +101,9 @@ export const subscriptionsRoutes = routeModule({
             error: err instanceof Error ? err.message : String(err),
           });
         }
-        let applicationId = this.applicationId;
+        const applicationId = await this.tryEnsureApplicationId("stream.online");
         if (!applicationId) {
-          try {
-            applicationId = await this.ensureApplicationId();
-          } catch {
-            this.logger.warn("stream.online: no applicationId yet; skipping webhook");
-            return;
-          }
+          return;
         }
         await this.webhookClient.send({
           type: EngineEventType.STREAM_ONLINE,
@@ -139,14 +134,9 @@ export const subscriptionsRoutes = routeModule({
         if (!this.webhookClient) {
           return;
         }
-        let applicationId = this.applicationId;
+        const applicationId = await this.tryEnsureApplicationId("stream.offline");
         if (!applicationId) {
-          try {
-            applicationId = await this.ensureApplicationId();
-          } catch {
-            this.logger.warn("stream.offline: no applicationId yet; skipping webhook");
-            return;
-          }
+          return;
         }
         await this.webhookClient.send({
           type: EngineEventType.STREAM_OFFLINE,

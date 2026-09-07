@@ -49,8 +49,6 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     // userId at the RPC boundary maps to users.woofx3_ui_user_id on the engine side.
     const user = await this.db.findOrCreateByWoofx3UIUserId(userId);
 
-    console.log("user", user);
-
     let app = await this.db.getDefaultApplication();
     if (!app) {
       app = await this.db.createApplication({ name: "default", ownerId: user.id, isDefault: true });
@@ -69,9 +67,14 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
       throw new Error("Failed to create client");
     }
 
-    // api.setApplicationId cascades into the shared webhookClient; we only
-    // need to explicitly refresh callback URLs when a new callback was registered.
-    this.api.setApplicationId(app.id);
+    // Registration always resolves the default application, so after the
+    // first client this writes the same id it already holds. Setting it only
+    // on a change keeps the cascade into the webhook client -- and the
+    // callback-url refresh behind it -- to the case that actually needs it:
+    // the first registration, which is what creates the application.
+    if (this.api.applicationIdOrNull() !== app.id) {
+      this.api.setApplicationId(app.id);
+    }
     if (this.webhookClient && callbackUrl) {
       await this.webhookClient.refreshCallbackUrls();
     }

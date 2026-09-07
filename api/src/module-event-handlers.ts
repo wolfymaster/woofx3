@@ -25,6 +25,8 @@ import type {
   WidgetDefinition,
   WidgetSettingDefinition,
 } from "./webhook-client";
+import { asString } from "./outbox";
+import { subscribeProjections } from "./projection";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
@@ -139,7 +141,6 @@ interface RawModuleResourceDeregistered {
   assets?: unknown;
 }
 
-const asString = (v: unknown): string => (typeof v === "string" ? v : "");
 const asBool = (v: unknown): boolean => v === true;
 const asStringArray = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
@@ -728,155 +729,118 @@ export async function initModuleHandlers(
   webhookClient: WebhookClient,
   logger: SharedLogger
 ): Promise<void> {
-  await nats.subscribe("db.module.action.registered.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseModuleActionRegistered(ce);
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle module.action.registered NATS event", { err });
-    }
-  });
-
-  await nats.subscribe("db.module.function.registered.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseModuleFunctionRegistered(ce);
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle module.function.registered NATS event", { err });
-    }
-  });
-
-  await nats.subscribe("db.module.action.deregistered.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseModuleActionDeregistered(ce);
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle module.action.deregistered NATS event", { err });
-    }
-  });
-
-  await nats.subscribe("db.module.function.deregistered.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseModuleFunctionDeregistered(ce);
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle module.function.deregistered NATS event", { err });
-    }
-  });
-
-  await nats.subscribe("db.module.widget.registered.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseModuleWidgetRegistered(ce);
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle module.widget.registered NATS event", { err });
-    }
-  });
-
-  await nats.subscribe("db.module.widget.deregistered.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseModuleWidgetDeregistered(ce);
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle module.widget.deregistered NATS event", { err });
-    }
-  });
-
-  // Module asset registration / deregistration outbox. Mirror of the
-  // widget rails: db proxy publishes after RegisterAssets /
-  // DeleteAssetsByModuleId; api forwards to the registered callback so
-  // the editor can refresh its asset picker.
-  await nats.subscribe("db.module.asset.registered.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseModuleAssetRegistered(ce);
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle module.asset.registered NATS event", { err });
-    }
-  });
-
-  await nats.subscribe("db.module.asset.deregistered.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseModuleAssetDeregistered(ce);
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle module.asset.deregistered NATS event", { err });
-    }
-  });
-
-  // Module resource instance lifecycle — fired by db-proxy after each
-  // CreateResourceInstance / DeleteResourceInstance RPC. Forwarded to
-  // the registered Convex webhook so UI pickers backed by
-  // `resource_ref(kind=...)` ConfigFields refresh live.
-  await nats.subscribe("db.module.resource.instance.created.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseModuleResourceInstanceCreated(ce);
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle module.resource.instance.created NATS event", { err });
-    }
-  });
-
-  await nats.subscribe("db.module.resource.instance.deleted.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseModuleResourceInstanceDeleted(ce);
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle module.resource.instance.deleted NATS event", { err });
-    }
-  });
-
-  await nats.subscribe("db.module.installed.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseModuleInstalled(ce);
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle module installed NATS event", { err });
-    }
-  });
-
-  await nats.subscribe("db.module.deleted.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseModuleDeleted(ce);
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle module deleted NATS event", { err });
-    }
-  });
-
-  await nats.subscribe("db.module.delete_failed.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseModuleDeleteFailed(ce);
-      logger.info("Module delete failed", { moduleKey: event.moduleKey, error: event.error, clientId });
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle module delete_failed NATS event", { err });
-    }
-  });
-
-  await nats.subscribe("db.module.install_failed.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseModuleInstallFailed(ce);
-      logger.error("Module install failed", { moduleKey: event.moduleKey, error: event.error, clientId });
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle module install_failed NATS event", { err });
-    }
-  });
-
-  logger.info("Module event NATS handlers initialized");
+  await subscribeProjections({ nats, webhookClient, logger }, [
+    {
+      subject: "db.module.action.registered.*",
+      name: "db.module.action.registered",
+      parse: (ce) => {
+        const { clientId, event } = parseModuleActionRegistered(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.module.function.registered.*",
+      name: "db.module.function.registered",
+      parse: (ce) => {
+        const { clientId, event } = parseModuleFunctionRegistered(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.module.action.deregistered.*",
+      name: "db.module.action.deregistered",
+      parse: (ce) => {
+        const { clientId, event } = parseModuleActionDeregistered(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.module.function.deregistered.*",
+      name: "db.module.function.deregistered",
+      parse: (ce) => {
+        const { clientId, event } = parseModuleFunctionDeregistered(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.module.widget.registered.*",
+      name: "db.module.widget.registered",
+      parse: (ce) => {
+        const { clientId, event } = parseModuleWidgetRegistered(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.module.widget.deregistered.*",
+      name: "db.module.widget.deregistered",
+      parse: (ce) => {
+        const { clientId, event } = parseModuleWidgetDeregistered(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.module.asset.registered.*",
+      name: "db.module.asset.registered",
+      parse: (ce) => {
+        const { clientId, event } = parseModuleAssetRegistered(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.module.asset.deregistered.*",
+      name: "db.module.asset.deregistered",
+      parse: (ce) => {
+        const { clientId, event } = parseModuleAssetDeregistered(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.module.resource.instance.created.*",
+      name: "db.module.resource.instance.created",
+      parse: (ce) => {
+        const { clientId, event } = parseModuleResourceInstanceCreated(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.module.resource.instance.deleted.*",
+      name: "db.module.resource.instance.deleted",
+      parse: (ce) => {
+        const { clientId, event } = parseModuleResourceInstanceDeleted(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.module.installed.*",
+      name: "db.module.installed",
+      parse: (ce) => {
+        const { clientId, event } = parseModuleInstalled(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.module.deleted.*",
+      name: "db.module.deleted",
+      parse: (ce) => {
+        const { clientId, event } = parseModuleDeleted(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.module.delete_failed.*",
+      name: "db.module.delete_failed",
+      parse: (ce) => {
+        const { clientId, event } = parseModuleDeleteFailed(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.module.install_failed.*",
+      name: "db.module.install_failed",
+      parse: (ce) => {
+        const { clientId, event } = parseModuleInstallFailed(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+  ]);
 }

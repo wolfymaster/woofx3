@@ -76,7 +76,6 @@ export interface Workflow {
 }
 
 export interface WorkflowsQuery {
-  accountId?: string;
   enabled?: boolean;
   page?: number;
   pageSize?: number;
@@ -94,7 +93,6 @@ export interface PaginatedWorkflows {
  * mints the `id` server-side, so callers pass the definition without it.
  */
 export interface CreateWorkflowInput {
-  accountId: string;
   definition: Omit<WorkflowDefinition, "id">;
   correlationKey?: string;
 }
@@ -138,7 +136,6 @@ export interface WorkflowRun {
 
 export interface WorkflowRunsQuery {
   workflowId?: string;
-  accountId?: string;
   limit?: number;
 }
 
@@ -460,7 +457,6 @@ export interface Scene {
 }
 
 export interface ScenesQuery {
-  accountId?: string;
   page?: number;
   pageSize?: number;
 }
@@ -1002,7 +998,6 @@ export interface Woofx3EngineApi {
 
   createScene(data: {
     name: string;
-    accountId: string;
     description?: string;
     widgetsJson?: string;
     layoutJson?: string;
@@ -1038,7 +1033,10 @@ export interface Woofx3EngineApi {
   deleteScene(id: string, correlationKey?: string): Promise<{ success: boolean }>;
 
   // Stream status
-  getStreamStatus(accountId: string): Promise<StreamStatus>;
+  /** The broadcaster's live state. Single-broadcaster per deployment, so
+   *  this takes no scope -- the parameter it used to accept was documented
+   *  as unused and ignored. */
+  getStreamStatus(): Promise<StreamStatus>;
 
   /**
    * Publish a CloudEvent on the engine's NATS bus. The `eventType` becomes
@@ -1079,14 +1077,14 @@ export interface Woofx3EngineApi {
    * advance the queue to the next pending envelope. No-op when
    * nothing is in flight. Returns whether an alert was skipped.
    */
-  skipCurrentAlert(applicationId?: string): Promise<{ skipped: boolean }>;
+  skipCurrentAlert(): Promise<{ skipped: boolean }>;
 
   /**
    * Mark every pending (not-yet-dispatched) alert as `skipped`.
    * Does not touch the in-flight lease; pair with `skipCurrentAlert`
    * for a full clear. Returns the number of pending alerts dropped.
    */
-  clearAlertQueue(applicationId?: string): Promise<{ cleared: number }>;
+  clearAlertQueue(): Promise<{ cleared: number }>;
 
   // Overlay Tokens
   //

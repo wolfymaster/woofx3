@@ -8,7 +8,7 @@ import type { WorkflowItem } from "./types";
 import { validateWorkflowDefinition } from "../workflow/validate-definition";
 
 export const workflowsRoutes = routeModule({
-  async getWorkflows(query?: { accountId?: string; enabled?: boolean; page?: number; pageSize?: number }): Promise<{
+  async getWorkflows(query?: { enabled?: boolean; page?: number; pageSize?: number }): Promise<{
     workflows: WorkflowItem[];
     total: number;
     page: number;
@@ -16,10 +16,7 @@ export const workflowsRoutes = routeModule({
   }> {
     const page = query?.page ?? 1;
     const pageSize = query?.pageSize ?? 20;
-    const applicationId =
-      query?.accountId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(query.accountId)
-        ? query.accountId
-        : await this.ensureApplicationId();
+    const applicationId = await this.ensureApplicationId();
     const response = await this.db.listWorkflows({
       applicationId,
       includeDisabled: query?.enabled === undefined ? true : !query.enabled,
@@ -61,7 +58,7 @@ export const workflowsRoutes = routeModule({
     }
 
     this.logger.info("Creating workflow", { name: data.definition.name });
-    const applicationId = data.accountId || (await this.ensureApplicationId());
+    const applicationId = await this.ensureApplicationId();
 
     // Steps and trigger are persisted as raw JSON; the engine reads
     // them directly off the workflow row. The definition's `id` is
@@ -232,7 +229,7 @@ export const workflowsRoutes = routeModule({
     return { id, isEnabled };
   },
 
-  async getWorkflowRuns(query?: { workflowId?: string; accountId?: string; limit?: number }): Promise<
+  async getWorkflowRuns(query?: { workflowId?: string; limit?: number }): Promise<
     Array<{
       id: string;
       workflowId: string;

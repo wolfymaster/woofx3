@@ -99,9 +99,10 @@ export const modulesRoutes = routeModule({
     if (moduleKey) {
       formData.append("module_key", moduleKey);
     }
-    if (this.applicationId) {
-      formData.append("application_id", this.applicationId);
-    }
+    // Resolved rather than read: omitting the field installed the module
+    // with no application scope at all, which is worse than refusing to
+    // install before onboarding has produced one.
+    formData.append("application_id", await this.ensureApplicationId());
 
     const response = await this.barkloaderRequest("/functions", {
       method: "POST",
@@ -214,9 +215,10 @@ export const modulesRoutes = routeModule({
     );
     formData.append("client_id", clientId);
     formData.append("module_key", moduleKey);
-    if (this.applicationId) {
-      formData.append("application_id", this.applicationId);
-    }
+    // Resolved rather than read: omitting the field installed the module
+    // with no application scope at all, which is worse than refusing to
+    // install before onboarding has produced one.
+    formData.append("application_id", await this.ensureApplicationId());
 
     const response = await this.barkloaderRequest("/functions", {
       method: "POST",
@@ -358,11 +360,12 @@ export const modulesRoutes = routeModule({
     if (!moduleKey) {
       throw new Error("checkModuleResourceUsage: moduleKey is required");
     }
+    const applicationId = await this.ensureApplicationId();
     const found = await this.db.getModuleByModuleKey(moduleKey);
     if (!found) {
       throw new Error(`checkModuleResourceUsage: no module found for moduleKey "${moduleKey}"`);
     }
-    return this.db.checkModuleResourceUsage(found.id, this.applicationId ?? "");
+    return this.db.checkModuleResourceUsage(found.id, applicationId);
   },
 
   /**
@@ -432,6 +435,7 @@ export const modulesRoutes = routeModule({
     displayName: string,
     context: { clientId: string }
   ): Promise<ResourceInstanceDefinition> {
+    const applicationId = await this.ensureApplicationId();
     const result = await this.db.createResourceInstance({
       moduleId: "",
       moduleName,
@@ -440,7 +444,7 @@ export const modulesRoutes = routeModule({
       displayName,
       connectionKind: "",
       connectionConfig: "",
-      requestContext: { clientId: context.clientId, applicationId: this.applicationId ?? "", moduleKey: "" },
+      requestContext: { clientId: context.clientId, applicationId, moduleKey: "" },
     });
     return {
       id: result.instance.id,
@@ -460,9 +464,10 @@ export const modulesRoutes = routeModule({
    * automatically by the authenticated ApiSession.
    */
   async deleteResourceInstance(canonicalId: string, context: { clientId: string }): Promise<void> {
+    const applicationId = await this.ensureApplicationId();
     await this.db.deleteResourceInstance({
       canonicalId,
-      requestContext: { clientId: context.clientId, applicationId: this.applicationId ?? "", moduleKey: "" },
+      requestContext: { clientId: context.clientId, applicationId, moduleKey: "" },
     });
   },
 

@@ -8,6 +8,8 @@ import type {
 import { EngineEventType } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
+import { asString, pickFirst, readRow } from "./outbox";
+import { subscribeProjections } from "./projection";
 import type { WebhookClient } from "./webhook-client";
 
 // The db proxy publishes workflow lifecycle events on
@@ -40,18 +42,6 @@ interface RawWorkflowRow {
   taxonomy?: unknown;
 }
 
-const asString = (v: unknown): string => (typeof v === "string" ? v : "");
-
-function pickFirst(...values: unknown[]): string {
-  for (const v of values) {
-    const s = asString(v);
-    if (s !== "") {
-      return s;
-    }
-  }
-  return "";
-}
-
 // Taxonomy arrives either as a real array (the snake_case map built by
 // db/app/services/module_event_payload.go `buildWorkflowChangeData`) or as
 // a JSON-encoded string (the raw GORM model's `Taxonomy` column, when the
@@ -72,14 +62,6 @@ function asTaxonomy(...values: unknown[]): string[] {
   return [];
 }
 
-function readRow(ce: Record<string, unknown>): RawWorkflowRow {
-  const data = ce.data;
-  if (data && typeof data === "object") {
-    return data as RawWorkflowRow;
-  }
-  return ce as RawWorkflowRow;
-}
-
 function parseJson<T>(raw: string, fallback: T): T {
   if (!raw) {
     return fallback;
@@ -92,7 +74,7 @@ function parseJson<T>(raw: string, fallback: T): T {
 }
 
 function buildSnapshot(ce: Record<string, unknown>): WorkflowSnapshot | null {
-  const row = readRow(ce);
+  const row = readRow<RawWorkflowRow>(ce);
   const id = pickFirst(row.ID, row.id);
   if (id === "") {
     return null;
@@ -188,7 +170,7 @@ export function parseWorkflowDeleted(
   // `projection_key` for module-installed workflows); fall back to the
   // CloudEvent `entity_id` extension if for any reason the data payload
   // is missing the id.
-  const row = readRow(ce);
+  const row = readRow<RawWorkflowRow>(ce);
   const workflowId = pickFirst(row.ID, row.id, ce.entity_id);
   if (!workflowId) {
     return { applicationId, clientId, event: null };
@@ -218,47 +200,30 @@ export async function initWorkflowHandlers(
   webhookClient: WebhookClient,
   logger: SharedLogger
 ): Promise<void> {
-  await nats.subscribe("db.workflow.created.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseWorkflowCreated(ce);
-      if (!event) {
-        logger.warn("workflow.created payload missing required fields, skipping");
-        return;
-      }
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle workflow.created NATS event", { err });
-    }
-  });
-
-  await nats.subscribe("db.workflow.updated.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseWorkflowUpdated(ce);
-      if (!event) {
-        logger.warn("workflow.updated payload missing required fields, skipping");
-        return;
-      }
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle workflow.updated NATS event", { err });
-    }
-  });
-
-  await nats.subscribe("db.workflow.deleted.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseWorkflowDeleted(ce);
-      if (!event) {
-        logger.warn("workflow.deleted payload missing workflow id, skipping");
-        return;
-      }
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle workflow.deleted NATS event", { err });
-    }
-  });
-
-  logger.info("Workflow event NATS handlers initialized");
+  await subscribeProjections({ nats, webhookClient, logger }, [
+    {
+      subject: "db.workflow.created.*",
+      name: "db.workflow.created",
+      parse: (ce) => {
+        const { clientId, event } = parseWorkflowCreated(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.workflow.updated.*",
+      name: "db.workflow.updated",
+      parse: (ce) => {
+        const { clientId, event } = parseWorkflowUpdated(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.workflow.deleted.*",
+      name: "db.workflow.deleted",
+      parse: (ce) => {
+        const { clientId, event } = parseWorkflowDeleted(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+  ]);
 }
