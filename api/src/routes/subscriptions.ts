@@ -1,3 +1,5 @@
+import { getStreamStatus, type StreamStatus } from "../twitch-stream-status";
+import { routeModule } from "./context";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import { parseModuleTriggerDeregistered, parseModuleTriggerRegistered } from "../module-event-handlers";
 
@@ -21,7 +23,7 @@ import { parseModuleTriggerDeregistered, parseModuleTriggerRegistered } from "..
  *     function would just mean passing the same `Api` instance in
  *     under a different name — no real decoupling, more indirection.
  */
-export const subscriptionsRoutes = {
+export const subscriptionsRoutes = routeModule({
   async initSubscriptions(): Promise<void> {
     if (!this.nats) {
       this.logger.warn("NATS client not available, skipping subscriptions");
@@ -91,9 +93,9 @@ export const subscriptionsRoutes = {
         // can render title / game / viewer count on the same event.
         // Failures degrade silently — the minimal payload is still
         // useful (the UI polls every minute as backup).
-        let enrichment: Awaited<ReturnType<typeof this.getStreamStatus>> | null = null;
+        let enrichment: StreamStatus | null = null;
         try {
-          enrichment = await this.getStreamStatus("");
+          enrichment = await getStreamStatus(this.db, this.logger);
         } catch (err) {
           this.logger.warn("stream.online enrichment failed", {
             error: err instanceof Error ? err.message : String(err),
@@ -160,4 +162,4 @@ export const subscriptionsRoutes = {
 
     this.logger.info("NATS subscriptions initialized for module events");
   }
-};
+});

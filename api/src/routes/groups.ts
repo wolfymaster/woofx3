@@ -1,3 +1,4 @@
+import { routeModule } from "./context";
 import type {
   CreateGroupInput,
   GroupSnapshot,
@@ -33,7 +34,7 @@ function groupToSnapshot(g: {
  * Users are added to groups; commands are granted to groups (or specific
  * users, or left "public") via CreateCommandInput/UpdateCommandInput.
  */
-export const groupsRoutes = {
+export const groupsRoutes = routeModule({
   async listGroups(): Promise<GroupSnapshot[]> {
     const applicationId = await this.ensureApplicationId();
     const response = await this.db.listGroups({ applicationId });
@@ -167,4 +168,4 @@ export const groupsRoutes = {
     });
     return { ok: true };
   },
-};
+});

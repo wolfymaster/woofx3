@@ -1,3 +1,4 @@
+import { routeModule } from "./context";
 import { resolveOverlayPublicUrl, timestampToIso } from "./helpers";
 
 /**
@@ -48,7 +49,7 @@ function toMintedResult(overlayPublicUrl: string, row: OverlayTokenRow) {
   };
 }
 
-export const overlayTokenRoutes = {
+export const overlayTokenRoutes = routeModule({
   async mintOverlayToken(input: { sceneId: string; label?: string }) {
     const [result, overlayPublicUrl] = await Promise.all([
       this.db.mintOverlayToken({
@@ -93,4 +94,4 @@ export const overlayTokenRoutes = {
       url: buildOverlayUrl(overlayPublicUrl, row.sceneId, row.token),
     }));
   },
-};
+});

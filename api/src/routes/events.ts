@@ -1,4 +1,5 @@
-export const eventsRoutes = {
+import { routeModule } from "./context";
+export const eventsRoutes = routeModule({
   async simulateTwitchEvent(
     eventType: string,
     eventData: Record<string, unknown>
@@ -35,4 +36,4 @@ export const eventsRoutes = {
       message: `Published event: ${eventType}`,
     };
   }
-};
+});

@@ -1,8 +1,9 @@
+import { routeModule } from "./context";
 import type { Scene } from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import { dbSceneToSnapshot, dbSceneToWire } from "./helpers";
 
-export const scenesRoutes = {
+export const scenesRoutes = routeModule({
   async getScenes(query?: { accountId?: string; page?: number; pageSize?: number }): Promise<{
     scenes: Scene[];
     total: number;
@@ -161,4 +162,4 @@ export const scenesRoutes = {
     }
     return { success };
   }
-};
+});

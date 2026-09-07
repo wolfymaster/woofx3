@@ -1,14 +1,57 @@
+import type { SharedLogger } from "@woofx3/common/logging";
 import type {
   ModuleSetting,
   ModuleSettingsResponse,
   ModuleResourceUsage,
   ResourceInstanceDefinition,
 } from "@woofx3/api";
-import { ApiRouteHost } from "./context";
+import { type EngineModule, listEngineModules } from "../engine-modules";
+import { routeModule } from "./context";
+
+/**
+ * Limits on fetching a module archive from a marketplace URL. Module-level
+ * rather than on the host: only this module reads them, and reaching them
+ * through the class meant reaching past `protected`.
+ */
+const MARKETPLACE_FETCH_TIMEOUT_MS = 30_000;
+const MARKETPLACE_MAX_BYTES = 50 * 1024 * 1024;
+
+/**
+ * Ask barkloader to uninstall a module.
+ *
+ * A function rather than only a route method because `uninstallModule` calls
+ * it too. Route methods run with `this` typed as the host, so a route module
+ * cannot call its own siblings through `this`; shared behaviour has to be a
+ * function both can reach.
+ */
+async function requestEngineModuleUninstall(
+  barkloaderRequest: (path: string, init?: RequestInit) => Promise<Response>,
+  logger: SharedLogger,
+  name: string,
+  context?: { clientId?: string; moduleKey?: string }
+): Promise<UninstallModuleResponse> {
+  const clientId = context?.clientId;
+  const moduleKey = context?.moduleKey;
+  logger.info("Requesting engine module uninstall", { name, clientId, moduleKey });
+  const params = new URLSearchParams();
+  if (clientId) {
+    params.set("client_id", clientId);
+  }
+  if (moduleKey) {
+    params.set("module_key", moduleKey);
+  }
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  await barkloaderRequest(`/functions/${encodeURIComponent(name)}${qs}`, { method: "DELETE" });
+  logger.info("Engine module uninstall request acknowledged", { name, clientId, moduleKey });
+  // Success/failure is delivered asynchronously via webhook
+  // (module.deleted or module.delete_failed), both carrying moduleKey.
+  return { requested: true };
+}
+
 import { readModuleCatalogFields } from "./helpers";
 import type { UninstallModuleResponse } from "./types";
 
-export const modulesRoutes = {
+export const modulesRoutes = routeModule({
   async installModuleZip(
     fileName: string,
     zipBase64: string,
@@ -36,6 +79,7 @@ export const modulesRoutes = {
           await this.webhookClient.send(
             {
               type: "module.installed",
+              modulePrefix: existing.moduleId,
               moduleName: existing.name,
               version: existing.version,
               moduleKey,
@@ -108,6 +152,7 @@ export const modulesRoutes = {
         await this.webhookClient.send(
           {
             type: "module.installed",
+            modulePrefix: existing.moduleId,
             moduleName: existing.name,
             version: existing.version,
             moduleKey,
@@ -120,7 +165,7 @@ export const modulesRoutes = {
     }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), ApiRouteHost.MARKETPLACE_FETCH_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), MARKETPLACE_FETCH_TIMEOUT_MS);
     let archiveBytes: Uint8Array;
     try {
       const res = await fetch(downloadUrl, { signal: controller.signal });
@@ -128,15 +173,15 @@ export const modulesRoutes = {
         throw new Error(`Marketplace fetch failed: ${res.status} ${res.statusText}`);
       }
       const contentLength = Number(res.headers.get("content-length") ?? "0");
-      if (contentLength > ApiRouteHost.MARKETPLACE_MAX_BYTES) {
+      if (contentLength > MARKETPLACE_MAX_BYTES) {
         throw new Error(
-          `Marketplace archive exceeds size cap (${contentLength} > ${ApiRouteHost.MARKETPLACE_MAX_BYTES})`,
+          `Marketplace archive exceeds size cap (${contentLength} > ${MARKETPLACE_MAX_BYTES})`,
         );
       }
       const buf = new Uint8Array((await res.arrayBuffer()) as ArrayBuffer);
-      if (buf.byteLength > ApiRouteHost.MARKETPLACE_MAX_BYTES) {
+      if (buf.byteLength > MARKETPLACE_MAX_BYTES) {
         throw new Error(
-          `Marketplace archive exceeds size cap (${buf.byteLength} > ${ApiRouteHost.MARKETPLACE_MAX_BYTES})`,
+          `Marketplace archive exceeds size cap (${buf.byteLength} > ${MARKETPLACE_MAX_BYTES})`,
         );
       }
       archiveBytes = buf;
@@ -147,6 +192,7 @@ export const modulesRoutes = {
         await this.webhookClient.send(
           {
             type: "module.install_failed",
+            modulePrefix: moduleKey.split(":")[0] ?? "",
             moduleName: name,
             version,
             moduleKey,
@@ -186,36 +232,20 @@ export const modulesRoutes = {
     return { success: true, message: json.message ?? "Module uploaded" };
   },
 
-  async listEngineModules(): Promise<Array<{ name: string; version: string; state: string }>> {
-    this.logger.info("Listing engine modules");
-    const modules = await this.db.listModules();
-    const result = modules
-      .filter((m) => !!m.name)
-      .map((m) => ({
-        name: m.name,
-        version: m.version ?? "",
-        state: m.state ?? "active",
-      }));
-    this.logger.info("Listed engine modules", { count: result.length });
-    return result;
+  async listEngineModules(): Promise<EngineModule[]> {
+    return listEngineModules(this.db, this.logger);
   },
 
   async uninstallEngineModule(
     name: string,
     context?: { clientId?: string; moduleKey?: string }
   ): Promise<UninstallModuleResponse> {
-    const clientId = context?.clientId;
-    const moduleKey = context?.moduleKey;
-    this.logger.info("Requesting engine module uninstall", { name, clientId, moduleKey });
-    const params = new URLSearchParams();
-    if (clientId) params.set("client_id", clientId);
-    if (moduleKey) params.set("module_key", moduleKey);
-    const qs = params.toString() ? `?${params.toString()}` : "";
-    await this.barkloaderRequest(`/functions/${encodeURIComponent(name)}${qs}`, { method: "DELETE" });
-    this.logger.info("Engine module uninstall request acknowledged", { name, clientId, moduleKey });
-    // Success/failure is delivered asynchronously via webhook
-    // (module.deleted or module.delete_failed), both carrying moduleKey.
-    return { requested: true };
+    return requestEngineModuleUninstall(
+      (path, init) => this.barkloaderRequest(path, init),
+      this.logger,
+      name,
+      context
+    );
   },
 
   async getModules(query?: {
@@ -313,7 +343,7 @@ export const modulesRoutes = {
     if (!found) {
       throw new Error(`uninstallModule: no module found for moduleKey "${moduleKey}"`);
     }
-    return this.uninstallEngineModule(found.name, {
+    return requestEngineModuleUninstall((path, init) => this.barkloaderRequest(path, init), this.logger, found.name, {
       ...(context ?? {}),
       moduleKey,
     });
@@ -503,4 +533,4 @@ export const modulesRoutes = {
       moduleKey: instance.moduleKey || resolvedKey,
     }));
   },
-};
+});

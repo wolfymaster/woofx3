@@ -1,6 +1,7 @@
+import { routeModule } from "./context";
 import type { ActionDefinition, TriggerDefinition } from "@woofx3/api/webhooks";
 
-export const triggersRoutes = {
+export const triggersRoutes = routeModule({
   async getTriggers(createdByType?: string, createdByRef?: string): Promise<TriggerDefinition[]> {
     // Proto Trigger and TriggerDefinition are structurally identical
     // (camelCase field names introduced by twirpscript), so the conversion
@@ -14,4 +15,4 @@ export const triggersRoutes = {
     const rows = await this.db.listActions(createdByType, createdByRef);
     return rows;
   },
-};
+});

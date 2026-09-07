@@ -1,4 +1,6 @@
-export const dashboardStatsRoutes = {
+import { listEngineModules } from "../engine-modules";
+import { routeModule } from "./context";
+export const dashboardStatsRoutes = routeModule({
   async getDashboardStats(): Promise<{
     activeWorkflows: number;
     totalWorkflows: number;
@@ -7,7 +9,7 @@ export const dashboardStatsRoutes = {
     activeAccounts: number;
     recentEvents: number;
   }> {
-    const engineModules = await this.listEngineModules().catch(() => []);
+    const engineModules = await listEngineModules(this.db, this.logger).catch(() => []);
     const applicationId = await this.ensureApplicationId();
     const workflowsResponse = await this.db.listWorkflows({
       applicationId,
@@ -27,4 +29,4 @@ export const dashboardStatsRoutes = {
       recentEvents: 147,
     };
   }
-};
+});

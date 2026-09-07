@@ -1,3 +1,4 @@
+import { routeModule } from "./context";
 import type * as resource from "@woofx3/db/resource.pb";
 import { timestampToIso } from "./helpers";
 
@@ -108,7 +109,7 @@ export function resourceToItem(overlayPublicUrl: string, row: resource.Resource)
   };
 }
 
-export const resourcesRoutes = {
+export const resourcesRoutes = routeModule({
 
   /**
    * Reserve a row and hand back a grant to upload straight to storage.
@@ -414,4 +415,4 @@ export const resourcesRoutes = {
     } as resource.UpdateResourceRequest);
     this.logger.info("Recorded generated thumbnail", { resourceId });
   },
-};
+});
