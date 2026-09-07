@@ -3,32 +3,17 @@ import type { AvailableFunction, CommandSnapshot, CreateCommandInput, UpdateComm
 import { EngineEventType } from "@woofx3/api/webhooks";
 import { invalidCommandVariableNames } from "@woofx3/common/templates/command-variables";
 import type * as command from "@woofx3/db/command.pb";
+import { isPermissionDenied } from "../db-client";
 import { commandToSnapshot } from "./helpers";
-
-/**
- * db-proxy's Casbin hook rejects an unauthorized GetCommand with a Twirp
- * `unauthenticated` error, which `DbClient` normalizes into a plain Error
- * carrying the code in its message. Distinguish that from a genuine transport
- * or lookup failure so a denial reads as a denial rather than an outage.
- */
-function isPermissionDenied(err: unknown): boolean {
-  if (!(err instanceof Error)) {
-    return false;
-  }
-  return err.message.includes("unauthenticated") || err.message.includes("permission_denied");
-}
 
 export const commandsRoutes = routeModule({
   async listCommands(): Promise<CommandSnapshot[]> {
     const applicationId = await this.ensureApplicationId();
-    const response = await this.db.listCommands({
+    const commands = await this.db.listCommands({
       applicationId,
       includeDisabled: true,
     });
-    if (response.status?.code !== "OK") {
-      throw new Error(response.status?.message || "Failed to list commands");
-    }
-    return (response.commands ?? []).map((c) => commandToSnapshot(c));
+    return commands.map((c) => commandToSnapshot(c));
   },
 
   async getAvailableCommands(_username?: string): Promise<{
@@ -46,13 +31,10 @@ export const commandsRoutes = routeModule({
       applicationId,
       includeDisabled: false,
     };
-    const response = await this.db.listCommands(req);
-    if (response.status?.code !== "OK") {
-      throw new Error(response.status?.message || "Failed to get commands");
-    }
+    const commands = await this.db.listCommands(req);
 
     return {
-      commands: (response.commands || []).map((cmd) => ({
+      commands: commands.map((cmd) => ({
         id: cmd.id,
         name: cmd.command,
         type: cmd.type,
@@ -88,9 +70,9 @@ export const commandsRoutes = routeModule({
       username,
     };
 
-    let cmdResponse: command.CommandResponse;
+    let cmd: command.Command;
     try {
-      cmdResponse = await this.db.getCommand(cmdReq);
+      cmd = await this.db.getCommand(cmdReq);
     } catch (err) {
       if (isPermissionDenied(err)) {
         this.logger.info("Command execution denied", { commandName, username });
@@ -99,11 +81,7 @@ export const commandsRoutes = routeModule({
       throw err;
     }
 
-    if (cmdResponse.status?.code !== "OK" || !cmdResponse.command) {
-      throw new Error("Command not found");
-    }
-
-    if (!cmdResponse.command.enabled) {
+    if (!cmd.enabled) {
       throw new Error("Command is disabled");
     }
 
@@ -141,7 +119,7 @@ export const commandsRoutes = routeModule({
 
     const applicationId = await this.ensureApplicationId();
 
-    const response = await this.db.createCommand({
+    const created = await this.db.createCommand({
       applicationId,
       command: input.command,
       enabled: input.enabled,
@@ -156,11 +134,7 @@ export const commandsRoutes = routeModule({
       usernames: input.usernames ?? [],
       argumentPattern,
     });
-    if (response.status?.code !== "OK" || !response.command) {
-      throw new Error(response.status?.message || "Failed to create command");
-    }
-
-    const snapshot = commandToSnapshot(response.command);
+    const snapshot = commandToSnapshot(created);
     await this.publishEvent("command.created", { command: snapshot });
     void this.emitCommandWebhook({
       type: EngineEventType.COMMAND_CREATED,
@@ -187,7 +161,7 @@ export const commandsRoutes = routeModule({
       );
     }
 
-    const response = await this.db.updateCommand({
+    const updated = await this.db.updateCommand({
       id,
       command: input.command,
       enabled: input.enabled,
@@ -200,11 +174,7 @@ export const commandsRoutes = routeModule({
       usernames: input.usernames ?? [],
       argumentPattern,
     });
-    if (response.status?.code !== "OK" || !response.command) {
-      throw new Error(response.status?.message || "Failed to update command");
-    }
-
-    const snapshot = commandToSnapshot(response.command);
+    const snapshot = commandToSnapshot(updated);
     await this.publishEvent("command.updated", { command: snapshot });
     void this.emitCommandWebhook({
       type: EngineEventType.COMMAND_UPDATED,
@@ -249,11 +219,7 @@ export const commandsRoutes = routeModule({
       const engineUser = await this.db.findOrCreateByWoofx3UIUserId(convexUserId);
       engineUserId = engineUser.id;
     }
-
-    const response = await this.db.setSetting("twitch_token", JSON.stringify(token), "", engineUserId);
-    if (response.status?.code !== "OK") {
-      throw new Error(response.status?.message || "Failed to set twitch_token");
-    }
+    await this.db.setSetting("twitch_token", JSON.stringify(token), "", engineUserId);
     this.logger.info("Twitch token written to settings", {
       twitchUserId: token.userId,
       engineUserId: engineUserId ?? "(unscoped)",
@@ -282,10 +248,7 @@ export const commandsRoutes = routeModule({
    * cleanly without needing to handle a missing row.
    */
   async deleteTwitchToken(): Promise<{ ok: true }> {
-    const response = await this.db.setSetting("twitch_token", "", "");
-    if (response.status?.code !== "OK") {
-      throw new Error(response.status?.message || "Failed to clear twitch_token");
-    }
+    await this.db.setSetting("twitch_token", "", "");
     this.logger.info("Twitch token cleared from settings");
 
     // Same notification as setTwitchToken — the row changed, downstream
@@ -340,10 +303,7 @@ export const commandsRoutes = routeModule({
    */
   async deleteCommand(id: string, correlationKey?: string): Promise<{ deleted: boolean }> {
     const applicationId = await this.ensureApplicationId();
-    const status = await this.db.deleteCommand({ id });
-    if (status.code !== "OK") {
-      throw new Error(status.message || "Failed to delete command");
-    }
+    await this.db.deleteCommand({ id });
 
     await this.publishEvent("command.deleted", { id });
     void this.emitCommandWebhook({

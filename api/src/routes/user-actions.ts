@@ -18,10 +18,7 @@ export const userActionsRoutes = routeModule({
     const userReq: user.GetUserRequest = {
       id: userId,
     };
-    const userResponse = await this.db.getUser(userReq);
-    if (userResponse.status?.code !== "OK" || !userResponse.user) {
-      throw new Error("User not found");
-    }
+    const user = await this.db.getUser(userReq);
 
     // Get treats summary (last 30 days)
     const applicationId = await this.ensureApplicationId();
@@ -37,8 +34,8 @@ export const userActionsRoutes = routeModule({
     const treatsSummary = treatsResponse.summary;
 
     return {
-      id: userResponse.user.id,
-      username: userResponse.user.username,
+      id: user.id,
+      username: user.username,
       treats: {
         total: treatsSummary?.totalTreats || 0,
         points: treatsSummary?.totalPoints || 0,
@@ -79,10 +76,7 @@ export const userActionsRoutes = routeModule({
       metadata: {},
       expiresAt,
     };
-    const response = await this.db.awardTreat(req);
-    if (response.status?.code !== "OK") {
-      throw new Error(response.status?.message || "Failed to award treat");
-    }
+    await this.db.awardTreat(req);
 
     return {
       success: true,

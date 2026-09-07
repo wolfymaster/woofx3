@@ -95,7 +95,6 @@ describe("listResources", () => {
     const api = host({
       db: {
         listResources: mock(async (_req: any) => ({
-          status: { code: "OK" },
           resources: rows,
           total: 2,
           page: 1,
@@ -114,7 +113,7 @@ describe("listResources", () => {
   });
 
   test("scopes to a folder when one is given", async () => {
-    const listResources = mock(async (_req: any) => ({ status: { code: "OK" }, resources: [], total: 0, page: 1, pageSize: 50 }));
+    const listResources = mock(async (_req: any) => ({ resources: [], total: 0, page: 1, pageSize: 50 }));
     const api = host({ db: { listResources } });
 
     await api.listResources({ folderId: "folder-9", kind: "image" });
@@ -127,14 +126,8 @@ describe("listResources", () => {
 
 describe("requestUploadUrl", () => {
   test("reserves a row, then asks barkloader for a grant keyed on its id", async () => {
-    const createResource = mock(async (_req: any) => ({
-      status: { code: "OK" },
-      resource: readyRow({ status: "pending", repositoryKey: "" }),
-    }));
-    const updateResource = mock(async (_req: any) => ({
-      status: { code: "OK" },
-      resource: readyRow({ status: "pending" }),
-    }));
+    const createResource = mock(async (_req: any) => readyRow({ status: "pending", repositoryKey: "" }));
+    const updateResource = mock(async (_req: any) => readyRow({ status: "pending" }));
     const barkloaderRequest = mock(
       async (_path: string, _init?: RequestInit) =>
         new Response(
@@ -147,7 +140,7 @@ describe("requestUploadUrl", () => {
           }),
         ),
     );
-    const api = host({ db: { createResource, updateResource }, barkloaderRequest });
+    const api = host({ db: { createResource, tryUpdateResource: updateResource }, barkloaderRequest });
 
     const grant = await api.requestUploadUrl({ name: "clip.png", contentType: "image/png" });
 
@@ -170,12 +163,9 @@ describe("requestUploadUrl", () => {
   });
 
   test("classifies kind from the content type", async () => {
-    const createResource = mock(async (_req: any) => ({
-      status: { code: "OK" },
-      resource: readyRow({ status: "pending", repositoryKey: "" }),
-    }));
+    const createResource = mock(async (_req: any) => readyRow({ status: "pending", repositoryKey: "" }));
     const api = host({
-      db: { createResource, updateResource: mock(async (_req: any) => ({ status: { code: "OK" }, resource: readyRow() })) },
+      db: { createResource, tryUpdateResource: mock(async (_req: any) => readyRow()) },
       barkloaderRequest: mock(
         async () => new Response(JSON.stringify({ repositoryKey: "k", uploadUrl: "u", method: "PUT", headers: [], expiresAt: 0 })),
       ),
@@ -190,7 +180,7 @@ describe("requestUploadUrl", () => {
   });
 
   test("rejects a nameless upload before reserving anything", async () => {
-    const createResource = mock(async (_req: any) => ({ status: { code: "OK" }, resource: readyRow() }));
+    const createResource = mock(async (_req: any) => (readyRow()));
     const api = host({ db: { createResource } });
 
     await expect(api.requestUploadUrl({ name: "", contentType: "image/png" })).rejects.toThrow("name is required");
@@ -200,10 +190,7 @@ describe("requestUploadUrl", () => {
 
 describe("folders", () => {
   test("createFolder passes the parent through", async () => {
-    const createResourceFolder = mock(async (_req: any) => ({
-      status: { code: "OK" },
-      resource: readyRow({ isFolder: true, kind: "folder", name: "clips", repositoryKey: "" }),
-    }));
+    const createResourceFolder = mock(async (_req: any) => readyRow({ isFolder: true, kind: "folder", name: "clips", repositoryKey: "" }));
     const api = host({ db: { createResourceFolder } });
 
     const folder = await api.createFolder("clips", "parent-1");
@@ -215,7 +202,7 @@ describe("folders", () => {
   });
 
   test("moving to the root sends an empty parent rather than omitting it", async () => {
-    const updateResource = mock(async (_req: any) => ({ status: { code: "OK" }, resource: readyRow() }));
+    const updateResource = mock(async (_req: any) => (readyRow()));
     const api = host({ db: { updateResource } });
 
     await api.updateResource("res-1", { parentId: null });
@@ -225,7 +212,7 @@ describe("folders", () => {
   });
 
   test("a rename leaves the parent untouched", async () => {
-    const updateResource = mock(async (_req: any) => ({ status: { code: "OK" }, resource: readyRow() }));
+    const updateResource = mock(async (_req: any) => (readyRow()));
     const api = host({ db: { updateResource } });
 
     await api.updateResource("res-1", { name: "renamed.png" });
@@ -238,14 +225,11 @@ describe("folders", () => {
 
 describe("deleteResource", () => {
   test("purges the stored objects db-proxy reports", async () => {
-    const deleteResource = mock(async (_req: any) => ({
-      status: { code: "OK" },
-      repositoryKeys: [
+    const deleteResource = mock(async (_req: any) => ([
         "user/app-1/res-1/clip.png",
         "user/app-1/res-1/thumbnail.png",
         "user/app-1/res-2/other.png",
-      ],
-    }));
+    ]));
     const barkloaderRequest = mock(async (_path: string, _init?: RequestInit) => new Response(null, { status: 204 }));
     const api = host({ db: { deleteResource }, barkloaderRequest });
 
@@ -260,7 +244,7 @@ describe("deleteResource", () => {
   test("a storage purge failure does not fail the delete", async () => {
     const api = host({
       db: {
-        deleteResource: mock(async (_req: any) => ({ status: { code: "OK" }, repositoryKeys: ["user/app-1/res-1/clip.png"] })),
+        deleteResource: mock(async (_req: any) => (["user/app-1/res-1/clip.png"])),
       },
       barkloaderRequest: mock(async (_path: string, _init?: RequestInit) => {
         throw new Error("storage unreachable");
@@ -277,7 +261,7 @@ describe("processing", () => {
   test("requestProcessing hands barkloader a callback and the row to echo back", async () => {
     const barkloaderRequest = mock(async (_path: string, _init?: RequestInit) => new Response("{}"));
     const api = host({
-      db: { getResource: mock(async (_req: any) => ({ status: { code: "OK" }, resource: readyRow() })) },
+      db: { getResource: mock(async (_req: any) => (readyRow())) },
       barkloaderRequest,
     });
 
@@ -301,14 +285,14 @@ describe("processing", () => {
   test("refuses a resource with no stored object", async () => {
     const api = host({
       db: {
-        getResource: mock(async (_req: any) => ({ status: { code: "OK" }, resource: readyRow({ repositoryKey: "" }) })),
+        getResource: mock(async (_req: any) => (readyRow({ repositoryKey: "" }))),
       },
     });
     await expect(api.requestProcessing("res-1")).rejects.toThrow("no stored object");
   });
 
   test("a completed job records the thumbnail key", async () => {
-    const updateResource = mock(async (_req: any) => ({ status: { code: "OK" }, resource: readyRow() }));
+    const updateResource = mock(async (_req: any) => (readyRow()));
     const api = host({ db: { updateResource } });
 
     await api.handleProcessingCallback({
@@ -325,7 +309,7 @@ describe("processing", () => {
   });
 
   test("not_applicable is a success that writes nothing", async () => {
-    const updateResource = mock(async (_req: any) => ({ status: { code: "OK" }, resource: readyRow() }));
+    const updateResource = mock(async (_req: any) => (readyRow()));
     const api = host({ db: { updateResource } });
 
     // Audio has no frame to render. Recording a failure here would put a
@@ -342,7 +326,7 @@ describe("processing", () => {
   });
 
   test("a failed job leaves the row untouched", async () => {
-    const updateResource = mock(async (_req: any) => ({ status: { code: "OK" }, resource: readyRow() }));
+    const updateResource = mock(async (_req: any) => (readyRow()));
     const api = host({ db: { updateResource } });
 
     await api.handleProcessingCallback({
@@ -356,7 +340,7 @@ describe("processing", () => {
   });
 
   test("a callback with no resource id is dropped rather than throwing", async () => {
-    const updateResource = mock(async (_req: any) => ({ status: { code: "OK" }, resource: readyRow() }));
+    const updateResource = mock(async (_req: any) => (readyRow()));
     const api = host({ db: { updateResource } });
 
     await api.handleProcessingCallback({ status: "completed", thumbnail_repository_key: "k" });

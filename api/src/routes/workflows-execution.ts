@@ -27,20 +27,13 @@ export const workflowsExecutionRoutes = routeModule({
       sortDesc: false,
     };
     const response = await this.db.listWorkflows(req);
-    if (response.status?.code !== "OK") {
-      this.logger.error("Failed to get workflows", {
-        error: response.status?.message,
-        code: response.status?.code,
-      });
-      throw new Error(response.status?.message || "Failed to get workflows");
-    }
     this.logger.info("Retrieved available workflows", {
-      count: response.workflows?.length || 0,
+      count: response.workflows.length,
     });
 
     // Get recent executions for each workflow
     const workflowsWithStatus = await Promise.all(
-      (response.workflows || []).map(async (wf) => {
+      response.workflows.map(async (wf) => {
         const execReq: workflow.ListWorkflowExecutionsRequest = {
           workflowId: wf.id,
           applicationId,
@@ -108,11 +101,7 @@ export const workflowsExecutionRoutes = routeModule({
       sortDesc: false,
     };
     const workflowsResponse = await this.db.listWorkflows(workflowsReq);
-    if (workflowsResponse.status?.code !== "OK") {
-      throw new Error("Failed to find workflows");
-    }
-
-    const foundWorkflow = workflowsResponse.workflows?.find(
+    const foundWorkflow = workflowsResponse.workflows.find(
       (wf) => wf.name.toLowerCase() === workflowName.toLowerCase()
     );
     if (!foundWorkflow) {
@@ -132,15 +121,19 @@ export const workflowsExecutionRoutes = routeModule({
       async: true,
       correlationId,
     };
-    const execResponse = await this.db.executeWorkflow(execReq);
-    if (execResponse.status?.code !== "OK") {
+    let execResponse: { executionId: string; async: boolean };
+    try {
+      execResponse = await this.db.executeWorkflow(execReq);
+    } catch (err) {
+      // Caught only to attach the workflow this was for; db-proxy's reason
+      // travels on unchanged.
       this.logger.error("Failed to execute workflow", {
         workflowId: foundWorkflow.id,
         workflowName,
-        error: execResponse.status?.message,
+        error: err instanceof Error ? err.message : String(err),
         correlationId,
       });
-      throw new Error(execResponse.status?.message || "Failed to trigger workflow");
+      throw err;
     }
 
     this.logger.info("Workflow triggered successfully", {
@@ -181,30 +174,17 @@ export const workflowsExecutionRoutes = routeModule({
     const req: workflow.GetWorkflowExecutionRequest = {
       id: executionId,
     };
-    const response = await this.db.getWorkflowExecution(req);
-    if (response.status?.code !== "OK") {
-      this.logger.error("Failed to get workflow execution", {
-        executionId,
-        error: response.status?.message,
-      });
-      throw new Error(response.status?.message || "Failed to get workflow status");
-    }
-    if (!response.execution) {
-      this.logger.warn("Workflow execution not found", { executionId });
-      throw new Error("Workflow execution not found");
-    }
-
-    const exec = response.execution;
+    const exec = await this.db.getWorkflowExecution(req);
 
     // Get workflow name
     const workflowReq: workflow.GetWorkflowRequest = {
       id: exec.workflowId,
     };
-    const workflowResponse = await this.db.getWorkflow(workflowReq);
-    const workflowName = workflowResponse.workflow?.name || "Unknown";
+    const workflowRow = await this.db.findWorkflow(workflowReq);
+    const workflowName = workflowRow?.name || "Unknown";
 
     // Calculate progress based on steps
-    const steps = exec.steps || [];
+    const steps: workflow.ExecutionStep[] = exec.steps ?? [];
     const completedSteps = steps.filter((s) => s.status === "completed").length;
     const progress = steps.length > 0 ? (completedSteps / steps.length) * 100 : 0;
 
@@ -264,7 +244,7 @@ export const workflowsExecutionRoutes = routeModule({
         sortDesc: false,
       };
       const workflowsResponse = await this.db.listWorkflows(workflowsReq);
-      const foundWorkflow = workflowsResponse.workflows?.find(
+      const foundWorkflow = workflowsResponse.workflows.find(
         (wf) => wf.name.toLowerCase() === options.workflowName?.toLowerCase()
       );
       workflowId = foundWorkflow?.id;
@@ -283,18 +263,15 @@ export const workflowsExecutionRoutes = routeModule({
       sortDesc: true,
     };
     const response = await this.db.listWorkflowExecutions(req);
-    if (response.status?.code !== "OK") {
-      throw new Error(response.status?.message || "Failed to get workflow history");
-    }
 
     // Get workflow names for each execution
     const executionsWithNames = await Promise.all(
-      (response.executions || []).map(async (exec) => {
+      response.executions.map(async (exec) => {
         const workflowReq: workflow.GetWorkflowRequest = {
           id: exec.workflowId,
         };
-        const workflowResponse = await this.db.getWorkflow(workflowReq);
-        const workflowName = workflowResponse.workflow?.name || "Unknown";
+        const workflowRow = await this.db.findWorkflow(workflowReq);
+        const workflowName = workflowRow?.name || "Unknown";
 
         return {
           id: exec.id,
@@ -323,14 +300,7 @@ export const workflowsExecutionRoutes = routeModule({
       id: executionId,
       reason: reason || "Cancelled by user",
     };
-    const response = await this.db.cancelWorkflowExecution(req);
-    if (response.code !== "OK") {
-      this.logger.error("Failed to cancel workflow", {
-        executionId,
-        error: response.message,
-      });
-      throw new Error(response.message || "Failed to cancel workflow");
-    }
+    await this.db.cancelWorkflowExecution(req);
     this.logger.info("Workflow cancelled successfully", { executionId });
   }
 });

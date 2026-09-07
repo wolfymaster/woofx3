@@ -22,23 +22,93 @@ import * as widget_status from "@woofx3/db/widget_status.pb";
 import * as workflow from "@woofx3/db/workflow.pb";
 import type { ClientConfiguration } from "twirpscript";
 
-// twirpscript's TwirpError is a plain class that does NOT extend Error, so
-// anything thrown from a Twirp call fails capnweb serialization (typeForRpc
-// rejects objects whose prototype is not Object.prototype and that are not
-// `instanceof Error`). Normalize at the db-proxy boundary so every caller
-// upstream sees a real Error carrying the Twirp code and message.
+/**
+ * A failure from db-proxy, carrying the reason as data.
+ *
+ * Two problems meet here. twirpscript's TwirpError does not extend Error, so
+ * anything thrown from a Twirp call fails capnweb serialization; and the
+ * response envelope reports failure in a `status.code` rather than by
+ * throwing. Both become a DbError, so a caller has one thing to catch and one
+ * place to read the reason from.
+ *
+ * `code` is the part that matters. It used to be flattened into the message,
+ * which left callers matching on substrings -- `err.message.includes(
+ * "unauthenticated")` -- and a test asserting an exact message template. The
+ * message stays human-facing; decisions read `code`.
+ */
+export class DbError extends Error {
+  /** Twirp code ("unauthenticated", "not_found", ...) or an envelope status code. */
+  readonly code: string;
+  /** The DbClient method that failed, e.g. "getCommand". */
+  readonly op: string;
+
+  constructor(op: string, code: string, message: string) {
+    super(message.length > 0 ? message : `db.${op} failed (${code})`);
+    this.name = "DbError";
+    this.code = code;
+    this.op = op;
+  }
+}
+
+/** True when the failure is db-proxy refusing the caller, not a transport fault. */
+export function isPermissionDenied(err: unknown): boolean {
+  return err instanceof DbError && (err.code === "unauthenticated" || err.code === "permission_denied");
+}
+
 function toError(err: unknown, op: string): Error {
-  if (err instanceof Error) {
+  if (err instanceof DbError) {
     return err;
   }
   if (err !== null && typeof err === "object") {
     const e = err as { code?: unknown; msg?: unknown };
-    const code = typeof e.code === "string" ? e.code : undefined;
-    const msg = typeof e.msg === "string" ? e.msg : undefined;
-    const detail = [code, msg].filter((part) => part && part.length > 0).join(": ");
-    return new Error(`${op}: ${detail.length > 0 ? detail : String(err)}`);
+    const code = typeof e.code === "string" ? e.code : "";
+    const msg = typeof e.msg === "string" ? e.msg : "";
+    if (code.length > 0 || msg.length > 0) {
+      return new DbError(op, code || "unknown", msg);
+    }
   }
-  return new Error(`${op}: ${String(err)}`);
+  if (err instanceof Error) {
+    return err;
+  }
+  return new DbError(op, "unknown", String(err));
+}
+
+/**
+ * Read the payload out of a db-proxy response envelope, or throw.
+ *
+ * Every enveloped call used to hand the whole response back and let the
+ * caller decide what a non-OK status meant. They decided it 48 times, in four
+ * different ways. Deciding it here means a route method receives what it
+ * asked for or does not run.
+ */
+function unwrap<T>(op: string, response: { status?: { code?: string; message?: string } }, payload: T | undefined): T {
+  const code = response.status?.code;
+  if (code !== "OK") {
+    throw new DbError(op, code ?? "unknown", response.status?.message ?? "");
+  }
+  if (payload === undefined || payload === null) {
+    throw new DbError(op, "not_found", `db.${op} returned no payload`);
+  }
+  return payload;
+}
+
+/**
+ * Same check for the calls that return a bare ResponseStatus rather than
+ * wrapping one. db-proxy uses both shapes; callers should not have to know
+ * which they are dealing with.
+ */
+function unwrapStatus(op: string, status: { code?: string; message?: string }): void {
+  if (status.code !== "OK") {
+    throw new DbError(op, status.code ?? "unknown", status.message ?? "");
+  }
+}
+
+/** Envelope check for calls whose success carries no payload. */
+function unwrapVoid(op: string, response: { status?: { code?: string; message?: string } }): void {
+  const code = response.status?.code;
+  if (code !== "OK") {
+    throw new DbError(op, code ?? "unknown", response.status?.message ?? "");
+  }
 }
 
 export class DbClient {
@@ -59,7 +129,7 @@ export class DbClient {
           try {
             return await method.apply(this, args);
           } catch (err) {
-            throw toError(err, `db.${String(prop)}`);
+            throw toError(err, String(prop));
           }
         };
       },
@@ -70,68 +140,105 @@ export class DbClient {
     await Ping({}, this.config);
   }
 
-  async getCommand(req: command.GetCommandRequest): Promise<command.CommandResponse> {
-    return command.GetCommand(req, this.config);
+  async getCommand(req: command.GetCommandRequest): Promise<command.Command> {
+    const response = await command.GetCommand(req, this.config);
+    return unwrap("getCommand", response, response.command);
   }
 
-  async listCommands(req: command.ListCommandsRequest): Promise<command.ListCommandsResponse> {
-    return command.ListCommands(req, this.config);
+  async listCommands(req: command.ListCommandsRequest): Promise<command.Command[]> {
+    const response = await command.ListCommands(req, this.config);
+    return unwrap("listCommands", response, response.commands ?? []);
   }
 
-  async createCommand(req: command.CreateCommandRequest): Promise<command.CommandResponse> {
-    return command.CreateCommand(req, this.config);
+  async createCommand(req: command.CreateCommandRequest): Promise<command.Command> {
+    const response = await command.CreateCommand(req, this.config);
+    return unwrap("createCommand", response, response.command);
   }
 
-  async updateCommand(req: command.UpdateCommandRequest): Promise<command.CommandResponse> {
-    return command.UpdateCommand(req, this.config);
+  async updateCommand(req: command.UpdateCommandRequest): Promise<command.Command> {
+    const response = await command.UpdateCommand(req, this.config);
+    return unwrap("updateCommand", response, response.command);
   }
 
-  async deleteCommand(req: command.DeleteCommandRequest): Promise<common.ResponseStatus> {
-    return command.DeleteCommand(req, this.config);
+  async deleteCommand(req: command.DeleteCommandRequest): Promise<void> {
+    unwrapStatus("deleteCommand", await command.DeleteCommand(req, this.config));
   }
 
-  async createResource(req: resource.CreateResourceRequest): Promise<resource.ResourceResponse> {
-    return resource.CreateResource(req, this.config);
+  async createResource(req: resource.CreateResourceRequest): Promise<resource.Resource> {
+    const response = await resource.CreateResource(req, this.config);
+    return unwrap("createResource", response, response.resource);
   }
 
-  async createResourceFolder(req: resource.CreateFolderRequest): Promise<resource.ResourceResponse> {
-    return resource.CreateFolder(req, this.config);
+  async createResourceFolder(req: resource.CreateFolderRequest): Promise<resource.Resource> {
+    const response = await resource.CreateFolder(req, this.config);
+    return unwrap("createResourceFolder", response, response.resource);
   }
 
-  async getResource(req: resource.GetResourceRequest): Promise<resource.ResourceResponse> {
-    return resource.GetResource(req, this.config);
+  async getResource(req: resource.GetResourceRequest): Promise<resource.Resource> {
+    const response = await resource.GetResource(req, this.config);
+    return unwrap("getResource", response, response.resource);
   }
 
-  async listResources(req: resource.ListResourcesRequest): Promise<resource.ListResourcesResponse> {
-    return resource.ListResources(req, this.config);
+  async listResources(
+    req: resource.ListResourcesRequest
+  ): Promise<{ resources: resource.Resource[]; total: number; page: number; pageSize: number }> {
+    const response = await resource.ListResources(req, this.config);
+    unwrapVoid("listResources", response);
+    return {
+      resources: response.resources ?? [],
+      total: response.total ?? 0,
+      page: response.page ?? 0,
+      pageSize: response.pageSize ?? 0,
+    };
   }
 
-  async updateResource(req: resource.UpdateResourceRequest): Promise<resource.ResourceResponse> {
-    return resource.UpdateResource(req, this.config);
+  async updateResource(req: resource.UpdateResourceRequest): Promise<resource.Resource> {
+    const response = await resource.UpdateResource(req, this.config);
+    return unwrap("updateResource", response, response.resource);
   }
 
-  async deleteResource(req: resource.DeleteResourceRequest): Promise<resource.DeleteResourceResponse> {
-    return resource.DeleteResource(req, this.config);
+  /**
+   * Update, or null when it did not happen. Used where a caller has a
+   * reasonable answer without the update -- recording the repository key on a
+   * freshly created row, which can fall back to the row it just made.
+   */
+  async tryUpdateResource(req: resource.UpdateResourceRequest): Promise<resource.Resource | null> {
+    const response = await resource.UpdateResource(req, this.config);
+    if (response.status?.code !== "OK" || !response.resource) {
+      return null;
+    }
+    return response.resource;
   }
 
-  async createGroup(req: group.CreateGroupRequest): Promise<group.GroupResponse> {
-    return group.CreateGroup(req, this.config);
+  /** Returns the repository keys of everything removed, for the caller to purge. */
+  async deleteResource(req: resource.DeleteResourceRequest): Promise<string[]> {
+    const response = await resource.DeleteResource(req, this.config);
+    unwrapVoid("deleteResource", response);
+    return response.repositoryKeys ?? [];
   }
 
-  async getGroup(req: group.GetGroupRequest): Promise<group.GroupResponse> {
-    return group.GetGroup(req, this.config);
+  async createGroup(req: group.CreateGroupRequest): Promise<group.Group> {
+    const response = await group.CreateGroup(req, this.config);
+    return unwrap("createGroup", response, response.group);
   }
 
-  async listGroups(req: group.ListGroupsRequest): Promise<group.ListGroupsResponse> {
-    return group.ListGroups(req, this.config);
+  async getGroup(req: group.GetGroupRequest): Promise<group.Group> {
+    const response = await group.GetGroup(req, this.config);
+    return unwrap("getGroup", response, response.group);
   }
 
-  async updateGroup(req: group.UpdateGroupRequest): Promise<group.GroupResponse> {
-    return group.UpdateGroup(req, this.config);
+  async listGroups(req: group.ListGroupsRequest): Promise<group.Group[]> {
+    const response = await group.ListGroups(req, this.config);
+    return unwrap("listGroups", response, response.groups ?? []);
   }
 
-  async deleteGroup(req: group.DeleteGroupRequest): Promise<common.ResponseStatus> {
-    return group.DeleteGroup(req, this.config);
+  async updateGroup(req: group.UpdateGroupRequest): Promise<group.Group> {
+    const response = await group.UpdateGroup(req, this.config);
+    return unwrap("updateGroup", response, response.group);
+  }
+
+  async deleteGroup(req: group.DeleteGroupRequest): Promise<void> {
+    unwrapStatus("deleteGroup", await group.DeleteGroup(req, this.config));
   }
 
   async addUserToGroup(req: group.GroupMembershipRequest): Promise<common.ResponseStatus> {
@@ -142,77 +249,193 @@ export class DbClient {
     return group.RemoveUserFromGroup(req, this.config);
   }
 
-  async listGroupMembers(req: group.ListGroupMembersRequest): Promise<group.ListGroupMembersResponse> {
-    return group.ListGroupMembers(req, this.config);
+  async listGroupMembers(req: group.ListGroupMembersRequest): Promise<string[]> {
+    const response = await group.ListGroupMembers(req, this.config);
+    return unwrap("listGroupMembers", response, response.usernames ?? []);
   }
 
-  async listUserGroupsForUser(req: group.ListUserGroupsForUserRequest): Promise<group.ListGroupsResponse> {
-    return group.ListUserGroupsForUser(req, this.config);
+  async listUserGroupsForUser(req: group.ListUserGroupsForUserRequest): Promise<group.Group[]> {
+    const response = await group.ListUserGroupsForUser(req, this.config);
+    return unwrap("listUserGroupsForUser", response, response.groups ?? []);
   }
 
-  async listPermissions(req: permission.ListPermissionsRequest): Promise<permission.ListPermissionsResponse> {
-    return permission.ListPermissions(req, this.config);
+  async listPermissions(req: permission.ListPermissionsRequest): Promise<permission.Permission[]> {
+    const response = await permission.ListPermissions(req, this.config);
+    return unwrap("listPermissions", response, response.permissions ?? []);
   }
 
-  async getWorkflow(req: workflow.GetWorkflowRequest): Promise<workflow.WorkflowResponse> {
-    return workflow.GetWorkflow(req, this.config);
+  async getWorkflow(req: workflow.GetWorkflowRequest): Promise<workflow.Workflow> {
+    const response = await workflow.GetWorkflow(req, this.config);
+    return unwrap("getWorkflow", response, response.workflow);
   }
 
-  async listWorkflows(req: workflow.ListWorkflowsRequest): Promise<workflow.ListWorkflowsResponse> {
-    return workflow.ListWorkflows(req, this.config);
+  /** The workflow, or null when it does not exist. See findScene. */
+  async findWorkflow(req: workflow.GetWorkflowRequest): Promise<workflow.Workflow | null> {
+    const response = await workflow.GetWorkflow(req, this.config);
+    if (response.status?.code !== "OK" || !response.workflow) {
+      return null;
+    }
+    return response.workflow;
   }
 
-  async createWorkflow(req: workflow.CreateWorkflowRequest): Promise<workflow.WorkflowResponse> {
-    return workflow.CreateWorkflow(req, this.config);
+  async listWorkflows(
+    req: workflow.ListWorkflowsRequest
+  ): Promise<{ workflows: workflow.Workflow[]; totalCount: number; page: number; pageSize: number }> {
+    const response = await workflow.ListWorkflows(req, this.config);
+    unwrapVoid("listWorkflows", response);
+    return {
+      workflows: response.workflows ?? [],
+      totalCount: response.totalCount ?? 0,
+      page: response.page ?? 0,
+      pageSize: response.pageSize ?? 0,
+    };
   }
 
-  async updateWorkflow(req: workflow.UpdateWorkflowRequest): Promise<workflow.WorkflowResponse> {
-    return workflow.UpdateWorkflow(req, this.config);
+  async createWorkflow(req: workflow.CreateWorkflowRequest): Promise<workflow.Workflow> {
+    const response = await workflow.CreateWorkflow(req, this.config);
+    return unwrap("createWorkflow", response, response.workflow);
   }
 
-  async deleteWorkflow(req: workflow.DeleteWorkflowRequest): Promise<common.ResponseStatus> {
-    return workflow.DeleteWorkflow(req, this.config);
+  async updateWorkflow(req: workflow.UpdateWorkflowRequest): Promise<workflow.Workflow> {
+    const response = await workflow.UpdateWorkflow(req, this.config);
+    return unwrap("updateWorkflow", response, response.workflow);
+  }
+
+  /** Update, or null when it did not happen. See tryUpdateScene. */
+  async tryUpdateWorkflow(req: workflow.UpdateWorkflowRequest): Promise<workflow.Workflow | null> {
+    const response = await workflow.UpdateWorkflow(req, this.config);
+    if (response.status?.code !== "OK" || !response.workflow) {
+      return null;
+    }
+    return response.workflow;
+  }
+
+  /** Delete, reporting whether it happened. See tryDeleteScene. */
+  async tryDeleteWorkflow(req: workflow.DeleteWorkflowRequest): Promise<boolean> {
+    const status = await workflow.DeleteWorkflow(req, this.config);
+    return status.code === "OK";
+  }
+
+  async deleteWorkflow(req: workflow.DeleteWorkflowRequest): Promise<void> {
+    unwrapStatus("deleteWorkflow", await workflow.DeleteWorkflow(req, this.config));
   }
 
   // SceneService — per-application widget arrangement persistence.
   // The engine treats widgets_json / layout_json as opaque strings,
   // mirroring the workflow steps_json / trigger_json pattern.
-  async getScene(req: scene.GetSceneRequest): Promise<scene.SceneResponse> {
-    return scene.GetScene(req, this.config);
+  async getScene(req: scene.GetSceneRequest): Promise<scene.Scene> {
+    const response = await scene.GetScene(req, this.config);
+    return unwrap("getScene", response, response.scene);
   }
 
-  async listScenes(req: scene.ListScenesRequest): Promise<scene.ListScenesResponse> {
-    return scene.ListScenes(req, this.config);
+  /**
+   * The scene, or null when it does not exist. Distinct from `getScene`,
+   * which treats absence as a failure: a lookup that legitimately tolerates
+   * a miss says so at the call site rather than by catching.
+   */
+  async findScene(req: scene.GetSceneRequest): Promise<scene.Scene | null> {
+    const response = await scene.GetScene(req, this.config);
+    if (response.status?.code !== "OK" || !response.scene) {
+      return null;
+    }
+    return response.scene;
   }
 
-  async createScene(req: scene.CreateSceneRequest): Promise<scene.SceneResponse> {
-    return scene.CreateScene(req, this.config);
+  /**
+   * Paginated, so this returns the page rather than a bare array: the counts
+   * are part of the answer, and dropping them would push a second call onto
+   * every caller that renders a pager.
+   */
+  async listScenes(
+    req: scene.ListScenesRequest
+  ): Promise<{ scenes: scene.Scene[]; totalCount: number; page: number; pageSize: number }> {
+    const response = await scene.ListScenes(req, this.config);
+    unwrapVoid("listScenes", response);
+    return {
+      scenes: response.scenes ?? [],
+      totalCount: response.totalCount ?? 0,
+      page: response.page ?? 0,
+      pageSize: response.pageSize ?? 0,
+    };
   }
 
-  async updateScene(req: scene.UpdateSceneRequest): Promise<scene.SceneResponse> {
-    return scene.UpdateScene(req, this.config);
+  async createScene(req: scene.CreateSceneRequest): Promise<scene.Scene> {
+    const response = await scene.CreateScene(req, this.config);
+    return unwrap("createScene", response, response.scene);
   }
 
-  async deleteScene(req: scene.DeleteSceneRequest): Promise<common.ResponseStatus> {
-    return scene.DeleteScene(req, this.config);
+  async updateScene(req: scene.UpdateSceneRequest): Promise<scene.Scene> {
+    const response = await scene.UpdateScene(req, this.config);
+    return unwrap("updateScene", response, response.scene);
   }
 
-  async executeWorkflow(req: workflow.ExecuteWorkflowRequest): Promise<workflow.ExecuteWorkflowResponse> {
-    return workflow.ExecuteWorkflow(req, this.config);
+  async deleteScene(req: scene.DeleteSceneRequest): Promise<void> {
+    unwrapStatus("deleteScene", await scene.DeleteScene(req, this.config));
   }
 
-  async getWorkflowExecution(req: workflow.GetWorkflowExecutionRequest): Promise<workflow.WorkflowExecutionResponse> {
-    return workflow.GetWorkflowExecution(req, this.config);
+  /**
+   * Update, or null when db-proxy refuses. For callers that report an
+   * outcome rather than fail -- scene edits surface as `{ success: false }`
+   * in the UI, and turning that into a thrown error would change what the
+   * client sees.
+   */
+  async tryUpdateScene(req: scene.UpdateSceneRequest): Promise<scene.Scene | null> {
+    const response = await scene.UpdateScene(req, this.config);
+    if (response.status?.code !== "OK" || !response.scene) {
+      return null;
+    }
+    return response.scene;
+  }
+
+  /** Delete, reporting whether it happened. Same reasoning as tryUpdateScene. */
+  async tryDeleteScene(req: scene.DeleteSceneRequest): Promise<boolean> {
+    const status = await scene.DeleteScene(req, this.config);
+    return status.code === "OK";
+  }
+
+  async executeWorkflow(
+    req: workflow.ExecuteWorkflowRequest
+  ): Promise<{ executionId: string; async: boolean }> {
+    const response = await workflow.ExecuteWorkflow(req, this.config);
+    unwrapVoid("executeWorkflow", response);
+    return { executionId: response.executionId ?? "", async: response.async ?? false };
+  }
+
+  async getWorkflowExecution(req: workflow.GetWorkflowExecutionRequest): Promise<workflow.WorkflowExecution> {
+    const response = await workflow.GetWorkflowExecution(req, this.config);
+    return unwrap("getWorkflowExecution", response, response.execution);
   }
 
   async listWorkflowExecutions(
     req: workflow.ListWorkflowExecutionsRequest
-  ): Promise<workflow.ListWorkflowExecutionsResponse> {
-    return workflow.ListWorkflowExecutions(req, this.config);
+  ): Promise<{ executions: workflow.WorkflowExecution[]; totalCount: number; page: number; pageSize: number }> {
+    const response = await workflow.ListWorkflowExecutions(req, this.config);
+    unwrapVoid("listWorkflowExecutions", response);
+    return {
+      executions: response.executions ?? [],
+      totalCount: response.totalCount ?? 0,
+      page: response.page ?? 0,
+      pageSize: response.pageSize ?? 0,
+    };
   }
 
-  async cancelWorkflowExecution(req: workflow.CancelWorkflowExecutionRequest): Promise<common.ResponseStatus> {
-    return workflow.CancelWorkflowExecution(req, this.config);
+  /**
+   * Executions, or an empty list when the lookup fails. For callers rendering
+   * a "recent runs" strip, where an empty strip is a better answer than an
+   * error page.
+   */
+  async tryListWorkflowExecutions(
+    req: workflow.ListWorkflowExecutionsRequest
+  ): Promise<workflow.WorkflowExecution[]> {
+    const response = await workflow.ListWorkflowExecutions(req, this.config);
+    if (response.status?.code !== "OK") {
+      return [];
+    }
+    return response.executions ?? [];
+  }
+
+  async cancelWorkflowExecution(req: workflow.CancelWorkflowExecutionRequest): Promise<void> {
+    unwrapStatus("cancelWorkflowExecution", await workflow.CancelWorkflowExecution(req, this.config));
   }
 
   async createAlert(req: alert.CreateAlertRequest): Promise<alert.AlertResponse> {
@@ -271,16 +494,17 @@ async listWidgetStatus(
     return widget_status.DeleteWidgetStatus(req, this.config);
   }
 
-  async getUser(req: user.GetUserRequest): Promise<user.UserResponse> {
-    return user.GetUser(req, this.config);
+  async getUser(req: user.GetUserRequest): Promise<user.User> {
+    const response = await user.GetUser(req, this.config);
+    return unwrap("getUser", response, response.user);
   }
 
   async getUserTreatsSummary(req: treat.GetUserTreatsSummaryRequest): Promise<treat.TreatsSummaryResponse> {
     return treat.GetUserTreatsSummary(req, this.config);
   }
 
-  async awardTreat(req: treat.AwardTreatRequest): Promise<treat.TreatResponse> {
-    return treat.AwardTreat(req, this.config);
+  async awardTreat(req: treat.AwardTreatRequest): Promise<void> {
+    unwrapVoid("awardTreat", await treat.AwardTreat(req, this.config));
   }
 
   async listModules(stateFilter?: string): Promise<module.Module[]> {
@@ -394,7 +618,20 @@ async listWidgetStatus(
     return { id: resp.user.id };
   }
 
-  async setSetting(
+  async setSetting(key: string, value: string, applicationId: string, userId?: string): Promise<void> {
+    unwrapVoid("setSetting", await this.writeSetting(key, value, applicationId, userId));
+  }
+
+  /**
+   * Write a setting, reporting whether it landed. For the settings screens,
+   * which surface a failed save as `{ success: false }` rather than throwing.
+   */
+  async trySetSetting(key: string, value: string, applicationId: string, userId?: string): Promise<boolean> {
+    const response = await this.writeSetting(key, value, applicationId, userId);
+    return response.status?.code === "OK";
+  }
+
+  private async writeSetting(
     key: string,
     value: string,
     applicationId: string,

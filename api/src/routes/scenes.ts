@@ -20,23 +20,17 @@ export const scenesRoutes = routeModule({
       sortBy: "updated_at",
       sortDesc: true,
     });
-    if (response.status?.code !== "OK") {
-      throw new Error(response.status?.message || "Failed to list scenes");
-    }
     return {
-      scenes: (response.scenes ?? []).map((s) => dbSceneToWire(s)),
-      total: response.totalCount ?? 0,
-      page: response.page ?? page,
-      pageSize: response.pageSize ?? pageSize,
+      scenes: response.scenes.map((s) => dbSceneToWire(s)),
+      total: response.totalCount,
+      page: response.page || page,
+      pageSize: response.pageSize || pageSize,
     };
   },
 
   async getScene(id: string): Promise<Scene | null> {
-    const response = await this.db.getScene({ id });
-    if (response.status?.code !== "OK" || !response.scene) {
-      return null;
-    }
-    return dbSceneToWire(response.scene);
+    const found = await this.db.findScene({ id });
+    return found ? dbSceneToWire(found) : null;
   },
 
   async getAvailableWidgets(): Promise<{
@@ -89,10 +83,7 @@ export const scenesRoutes = routeModule({
       createdByType: "USER",
       createdByRef: "",
     });
-    if (response.status?.code !== "OK" || !response.scene) {
-      throw new Error(response.status?.message || "Failed to create scene");
-    }
-    const created = response.scene;
+    const created = response;
     this.logger.info("Created scene", { id: created.id, name: created.name });
 
     void this.emitSceneWebhook({
@@ -121,17 +112,16 @@ export const scenesRoutes = routeModule({
     // clear a field set it to empty string; today that's only
     // `description`. `widgetsJson` / `layoutJson` of `""` would be
     // invalid JSON, so empty here always means "leave unchanged".
-    const response = await this.db.updateScene({
+    const updated = await this.db.tryUpdateScene({
       id,
       name: data.name ?? "",
       description: data.description ?? "",
       widgetsJson: data.widgetsJson ?? "",
       layoutJson: data.layoutJson ?? "",
     });
-    if (response.status?.code !== "OK" || !response.scene) {
+    if (!updated) {
       return { success: false };
     }
-    const updated = response.scene;
     this.logger.info("Updated scene", { id, name: updated.name });
 
     void this.emitSceneWebhook({
@@ -147,11 +137,10 @@ export const scenesRoutes = routeModule({
     this.logger.info("Deleting scene", { id });
     // Fetch first so we know the applicationId for the webhook —
     // the delete RPC just returns ResponseStatus.
-    const existing = await this.db.getScene({ id });
-    const applicationId = existing.status?.code === "OK" && existing.scene ? (existing.scene.applicationId ?? "") : "";
+    const existing = await this.db.findScene({ id });
+    const applicationId = existing?.applicationId ?? "";
 
-    const response = await this.db.deleteScene({ id });
-    const success = response.code === "OK";
+    const success = await this.db.tryDeleteScene({ id });
     if (success) {
       void this.emitSceneWebhook({
         type: EngineEventType.SCENE_DELETED,
