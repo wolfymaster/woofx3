@@ -5,7 +5,8 @@
   "scripts": {
     "start": "bun run src/server.ts",
     "dev": "bun run --watch src/server.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "typecheck": "tsc --noEmit --noUnusedLocals --noUnusedParameters"
   },
   "dependencies": {
     "zod": "^3.24.0",
@@ -14,6 +15,8 @@
     "protoscript": "^0.0.23"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/node": "^26.4.1",
+    "typescript": "5.9.3"
   }
 }

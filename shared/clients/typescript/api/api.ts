@@ -3,56 +3,6 @@
 import type { ActionDefinition, ModuleResourceUsage, ResourceInstanceDefinition, TriggerDefinition } from "./webhooks";
 import type { WorkflowDefinition } from "./workflow-definition";
 
-// ==================== User & Auth ====================
-
-export interface User {
-  id: string;
-  email: string;
-  displayName: string;
-  role: string;
-  teamIds: string[];
-  accountIds: string[];
-}
-
-// ==================== Teams ====================
-
-export interface Team {
-  id: string;
-  name: string;
-  slug: string;
-  ownerId: string;
-  createdAt: string;
-}
-
-/**
- * role / status are `string` at the wire level (engine uses free-form
- * strings today). Well-known values are documented below so UI callers
- * can narrow with `switch` or discriminated unions as needed.
- *
- * Known roles: "owner" | "admin" | "member"
- * Known statuses: "active" | "invited" | "inactive"
- */
-export interface TeamMember {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  status: string;
-  joinedAt: string;
-  avatarUrl: string;
-}
-
-// ==================== Accounts ====================
-
-export interface Account {
-  id: string;
-  name: string;
-  platform: string;
-  teamId: string;
-  status: string;
-  createdAt: string;
-}
-
 // ==================== Modules ====================
 
 /**

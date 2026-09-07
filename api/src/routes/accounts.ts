@@ -1,5 +1,3 @@
-import { ApiRouteHost } from "./context";
-
 export const accountsRoutes = {
   /**
    * Resolve the broadcaster's live stream state by calling Twitch
