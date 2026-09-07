@@ -17,6 +17,7 @@ import { dashboardStatsRoutes } from "./dashboard-stats";
 import { triggersRoutes } from "./triggers";
 import { alertsRoutes } from "./alerts";
 import { overlayTokenRoutes } from "./overlay-tokens";
+import { resourcesRoutes } from "./resources";
 import type { ApiRouteHost } from "./context";
 
 export type RegisteredApiRoutes = typeof engineRoutes &
@@ -36,7 +37,8 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof dashboardStatsRoutes &
   typeof triggersRoutes &
   typeof alertsRoutes &
-  typeof overlayTokenRoutes;
+  typeof overlayTokenRoutes &
+  typeof resourcesRoutes;
 
 type RouteMethod = (this: ApiRouteHost, ...args: unknown[]) => unknown;
 
@@ -84,6 +86,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(dashboardStatsRoutes),
     instrumentRoutes(triggersRoutes),
     instrumentRoutes(alertsRoutes),
-    instrumentRoutes(overlayTokenRoutes)
+    instrumentRoutes(overlayTokenRoutes),
+    instrumentRoutes(resourcesRoutes)
   );
 }

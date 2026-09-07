@@ -1,4 +1,4 @@
-use crate::repository::{CreateFileRequest, Repository};
+use crate::repository::{CreateFileRequest, Repository, UploadEndpoint, UploadRequest};
 use anyhow::Result;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
@@ -132,5 +132,13 @@ impl Repository for FileRepository {
         }
 
         Ok(())
+    }
+
+    /// Local disk has nothing to sign against. Reporting that honestly
+    /// lets `routes::assets` fall back to its own signed-token upload
+    /// endpoint, which presents the caller with the same contract an
+    /// S3 presigned PUT does.
+    async fn presign_upload(&self, _req: UploadRequest<'_>) -> Result<UploadEndpoint> {
+        Ok(UploadEndpoint::Unsupported)
     }
 }

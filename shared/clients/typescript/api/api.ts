@@ -369,29 +369,75 @@ export interface ListPermissionsQuery {
 
 // ==================== Assets ====================
 
-export interface Asset {
+/**
+ * One stored user asset, or a folder holding others.
+ *
+ * `url` and `thumbnailUrl` are derived rather than stored: the engine
+ * keeps repository keys, and the public URL they map to depends on where
+ * the overlay gateway is reachable. Both are null for a folder and for a
+ * resource whose bytes have not landed yet.
+ *
+ * A thumbnail never appears as a resource of its own -- it is a field on
+ * the resource it was derived from.
+ */
+export interface Resource {
   id: string;
   name: string;
-  type: string;
-  url: string;
-  accountId: string;
+  /** Containing folder, or null at the root of the tree. */
+  parentId: string | null;
+  isFolder: boolean;
+  /** "image" | "video" | "audio" | "other" | "folder". */
+  kind: string;
+  /** Empty for folders. */
+  contentType: string;
   size: number;
+  /** "pending" | "ready" | "failed". Folders are always "ready". */
+  status: string;
+  url: string | null;
+  thumbnailUrl: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
-export interface AssetsQuery {
-  accountId?: string;
-  type?: string;
+export interface ResourcesQuery {
+  /** Unset lists the root; set lists that folder's direct children. */
+  folderId?: string | null;
+  kind?: string;
   search?: string;
   page?: number;
   pageSize?: number;
 }
 
-export interface PaginatedAssets {
-  assets: Asset[];
+export interface PaginatedResources {
+  resources: Resource[];
   total: number;
   page: number;
   pageSize: number;
+}
+
+/**
+ * Permission to upload one object straight to storage.
+ *
+ * Identical whichever storage backend is configured: on S3 `uploadUrl`
+ * is a presigned PUT at the bucket, on local disk it points back at the
+ * engine's own token-guarded endpoint. Callers perform one PUT with
+ * exactly `headers` and never branch on the provider.
+ */
+export interface UploadGrant {
+  resource: Resource;
+  uploadUrl: string;
+  method: string;
+  headers: Array<{ name: string; value: string }>;
+  /** Unix seconds, absolute so callers need not reason about clock skew. */
+  expiresAt: number;
+}
+
+export interface RequestUploadUrlInput {
+  name: string;
+  contentType: string;
+  parentId?: string | null;
+  size?: number;
+  ttlSeconds?: number;
 }
 
 // ==================== Scenes ====================
@@ -891,6 +937,20 @@ export interface Woofx3EngineApi {
   // for a debugging/inspection panel; day-to-day management goes through the
   // group and command APIs above, which own these rows.
   listPermissions(query?: ListPermissionsQuery): Promise<PermissionRule[]>;
+
+  // Generic user assets. Bytes never pass through the engine: callers
+  // ask for a grant, PUT straight to storage, then report completion.
+  requestUploadUrl(input: RequestUploadUrlInput): Promise<UploadGrant>;
+  completeUpload(resourceId: string, size?: number): Promise<Resource>;
+  createFolder(name: string, parentId?: string | null): Promise<Resource>;
+  getResource(id: string): Promise<Resource>;
+  listResources(query?: ResourcesQuery): Promise<PaginatedResources>;
+  updateResource(id: string, changes: { name?: string; parentId?: string | null }): Promise<Resource>;
+  deleteResource(id: string): Promise<{ deleted: boolean }>;
+  // Asynchronous. Completion lands on the resource as `thumbnailUrl`;
+  // a resource the utility cannot apply to (audio has no frame to
+  // render) simply keeps a null thumbnail rather than failing.
+  requestProcessing(resourceId: string, utility?: string): Promise<{ accepted: boolean }>;
 
   // Twitch token persistence — bridges the UI's OAuth callback to the
   // engine's bootstrap, which reads `twitch_token` from db settings.

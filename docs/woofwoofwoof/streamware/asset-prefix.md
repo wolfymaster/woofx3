@@ -15,8 +15,16 @@ Every asset kind — module widgets, generic module assets, and builtin
 {overlayPublicUrl}/overlay/assets/modules/{moduleId}/widgets/{widgetManifestId}/{relPath}
 {overlayPublicUrl}/overlay/assets/modules/{moduleId}/assets/{relPath}
 {overlayPublicUrl}/overlay/assets/builtin/widgets/{widgetManifestId}/{relPath}
-{overlayPublicUrl}/overlay/assets/user/...   (reserved — not yet implemented)
+{overlayPublicUrl}/overlay/assets/user/{applicationId}/{resourceId}/{fileName}
 ```
+
+The `user/` prefix holds generic user uploads — photos, video, audio a
+streamer stores through the control plane — rather than anything owned by
+a module. Each resource occupies its own directory, so a derived
+thumbnail (`.../{resourceId}/thumbnail.png`) sits beside the upload it
+came from and is removed with it. Unlike the module prefixes below, these
+paths carry no version indirection: a user resource has exactly one
+version, and replacing it means uploading a new resource.
 
 These public-facing paths never change across a module upgrade — they
 deliberately carry no version information, since a widget's own HTML

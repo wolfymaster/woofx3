@@ -20,6 +20,7 @@ use tracing::{info, warn};
 use std::sync::Arc;
 use types::{AppContext, SharedRepository};
 
+mod callback;
 mod errors;
 mod routes;
 mod services;
@@ -227,6 +228,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(Data::new(ctx.repository.clone()))
             .wrap(Logger::default()) // Use default format
             .configure(routes::assets::configure)
+            .configure(routes::resources::configure)
             .configure(routes::storage::configure)
             .configure(routes::echo::configure)
             .configure(routes::websocket::configure)

@@ -5,10 +5,10 @@ use lib_repository::Repository;
 use crate::types::SharedRepository;
 
 /// Top-level repository key prefixes this route will ever serve.
-/// `user/` is reserved for a not-yet-implemented user-asset upload
-/// feature — allowlisting it now is inert (nothing writes under it, so
-/// it 404s the same as any other miss) but means adding that feature
-/// later isn't a breaking change to this route's accepted key shape.
+/// `modules/` holds files unpacked from an installed module bundle;
+/// `user/` holds generic user uploads written through
+/// `routes::resources` (`user/{application_id}/{resource_id}/...`),
+/// including the thumbnails derived from them.
 const ALLOWED_TOP_LEVEL_PREFIXES: &[&str] = &["modules/", "user/"];
 
 /// Serve module files straight from the repository (file/S3 agnostic).
@@ -36,8 +36,9 @@ async fn assets_handler(repository: Data<SharedRepository>, path: Path<String>) 
 /// Only `modules/{module_key}/{version_dir}/...` keys are safe to cache
 /// as immutable: `version_dir` is a content hash, so the same key never
 /// serves different bytes over time (see `run_install`'s content-
-/// addressed write). Other allowlisted prefixes (e.g. reserved `user/`)
-/// get a short, revalidatable cache instead.
+/// addressed write). `user/` keys are not content-addressed — a
+/// resource can be re-uploaded, and a thumbnail is written after the
+/// original — so they get a short, revalidatable cache instead.
 fn cache_control_for_key(key: &str) -> &'static str {
     if key.starts_with("modules/") {
         "public, max-age=31536000, immutable"
@@ -178,15 +179,21 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_allows_reserved_user_prefix() {
-        // user/ is allowlisted (reserved for a future upload feature) even
-        // though nothing writes there today — sanitization still passes it
-        // through; the route 404s on the repository miss, same as any
-        // other absent key, not on the prefix check.
+    fn sanitize_allows_user_uploads_and_their_thumbnails() {
+        // `user/` is live: routes::resources writes uploads under
+        // user/{application_id}/{resource_id}/{filename} and their
+        // thumbnails beside them. Both shapes must sanitize through.
         assert_eq!(
-            sanitize_asset_key("user/whatever").as_deref(),
-            Some("user/whatever")
+            sanitize_asset_key("user/app-1/res-1/photo.png").as_deref(),
+            Some("user/app-1/res-1/photo.png")
         );
+        assert_eq!(
+            sanitize_asset_key("user/app-1/res-1/thumbnail.png").as_deref(),
+            Some("user/app-1/res-1/thumbnail.png")
+        );
+        // Traversal is rejected under user/ exactly as under modules/.
+        assert_eq!(sanitize_asset_key("user/app-1/../../etc/passwd"), None);
+        assert_eq!(sanitize_asset_key("user/%2e%2e/secret"), None);
     }
 
     #[test]
@@ -213,7 +220,10 @@ mod tests {
             cache_control_for_key("modules/m1/abc123/widgets/w1/index.html"),
             "public, max-age=31536000, immutable"
         );
-        assert_eq!(cache_control_for_key("user/whatever"), "public, max-age=60, must-revalidate");
+        assert_eq!(
+            cache_control_for_key("user/app-1/res-1/photo.png"),
+            "public, max-age=60, must-revalidate"
+        );
     }
 
     #[test]
@@ -334,7 +344,39 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn get_reserved_user_prefix_404s_cleanly() {
+    async fn get_serves_user_uploads_and_their_thumbnails() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = file_backed_repo(dir.path()).await;
+        seed(&repo, "user/app-1/res-1/photo.png", b"\x89PNG-original").await;
+        seed(&repo, "user/app-1/res-1/thumbnail.png", b"\x89PNG-thumb").await;
+
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(Data::new(SharedRepository::new(repo)))
+                .configure(configure),
+        )
+        .await;
+
+        for (uri, expected) in [
+            ("/assets/user/app-1/res-1/photo.png", &b"\x89PNG-original"[..]),
+            ("/assets/user/app-1/res-1/thumbnail.png", &b"\x89PNG-thumb"[..]),
+        ] {
+            let req = actix_test::TestRequest::get().uri(uri).to_request();
+            let resp = actix_test::call_service(&app, req).await;
+            assert_eq!(resp.status(), 200, "expected {uri} to be served");
+            assert_eq!(resp.headers().get("content-type").unwrap(), "image/png");
+            // User content is mutable, so it must never be marked immutable.
+            assert_eq!(
+                resp.headers().get("cache-control").unwrap(),
+                "public, max-age=60, must-revalidate"
+            );
+            let body = actix_test::read_body(resp).await;
+            assert_eq!(&body[..], expected);
+        }
+    }
+
+    #[actix_web::test]
+    async fn get_absent_user_key_404s_cleanly() {
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = file_backed_repo(dir.path()).await;
 
@@ -346,7 +388,7 @@ mod tests {
         .await;
 
         let req = actix_test::TestRequest::get()
-            .uri("/assets/user/anything")
+            .uri("/assets/user/app-1/res-1/missing.png")
             .to_request();
         let resp = actix_test::call_service(&app, req).await;
         assert_eq!(resp.status(), 404);

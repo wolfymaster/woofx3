@@ -33,6 +33,13 @@ sha2 = "0.10"
 async-nats = { version = "0.42", features = ["websockets"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 cron = "0.12"
+hmac = "0.12"
+base64 = "0.22"
+# Only the formats the thumbnailer actually decodes/encodes. Default
+# features drag in AVIF (rav1e/ravif), which roughly triples build
+# time for a format nothing here reads.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
+rand = "0.8"
 
 [dependencies.lib_repository]
 path = "../lib_repository"

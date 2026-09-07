@@ -44,5 +44,6 @@ func All() []*gormigrate.Migration {
 		CreateSceneEventsTables(),
 		RenameOverlayPublicUrlSetting(),
 		AddBuiltInGroups(),
+		CreateResourcesTable(),
 	}
 }

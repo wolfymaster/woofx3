@@ -26,4 +26,5 @@ func SetupAllRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middle
 	AlertRoutes(mux, app, casbinMiddleware)
 	WidgetStatusRoutes(mux, app, casbinMiddleware)
 	SceneEventRoutes(mux, app, casbinMiddleware)
+	ResourceRoutes(mux, app, casbinMiddleware)
 }

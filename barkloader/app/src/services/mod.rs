@@ -10,3 +10,5 @@ pub mod sandbox_resources;
 pub mod storage_settings;
 pub mod module_settings_client;
 pub mod public_url;
+pub mod thumbnail;
+pub mod upload_token;

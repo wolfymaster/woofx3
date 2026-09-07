@@ -6,4 +6,5 @@ pub use repositories::s3::{S3Repository, S3RepositoryConfig};
 
 pub use repository::{
     CreateFileRequest, Repository, RepositoryConfig, RepositoryFactory, RepositoryImpl,
+    UploadEndpoint, UploadRequest,
 };

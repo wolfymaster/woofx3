@@ -1,0 +1,178 @@
+syntax = "proto3";
+
+package resource;
+
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// User-uploaded assets ("resources") and the folders that organize
+// them. Deliberately distinct from `module_asset.proto`'s `Asset`
+// (static files bundled inside an installed module, scoped by
+// `module_id`) and from `module_resource.proto`'s `ModuleResource`
+// (installed-module bookkeeping). Neither of those is user-owned
+// content; this one is.
+//
+// Storage layout: bytes live in barkloader's repository under
+// `user/{application_id}/{resource_id}/{filename}`, mirroring the
+// `modules/` convention. `repository_key` holds that key verbatim;
+// resolving it to a public URL is the api gateway's concern (it
+// composes `{overlayPublicUrl}/overlay/assets/{repository_key}`), so
+// no URL is persisted on the row.
+//
+// Folders are rows in this same table with `is_folder = true`, an
+// empty `repository_key`, and `kind = "folder"`. See the migration's
+// design note for why a single table rather than two.
+//
+// Derived artifacts (thumbnails) are NEVER their own row. A thumbnail
+// is a nullable `thumbnail_repository_key` on the resource it belongs
+// to, so listing resources can never surface one as a peer of the
+// upload that produced it.
+service ResourceService {
+  // Record a resource row. Called by the api gateway when it issues an
+  // upload URL, before any bytes exist -- the row starts in
+  // `status = "pending"` and moves to "ready" once the upload is
+  // confirmed.
+  rpc CreateResource(CreateResourceRequest) returns (ResourceResponse);
+
+  // Create a folder row (`is_folder = true`).
+  rpc CreateFolder(CreateFolderRequest) returns (ResourceResponse);
+
+  rpc GetResource(GetResourceRequest) returns (ResourceResponse);
+
+  // List the direct children of one folder (or of the root when
+  // `parent_id` is unset). Never returns thumbnails -- they are not
+  // rows.
+  rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse);
+
+  // Partial update: rename (`name`), move (`parent_id`), confirm an
+  // upload (`status`, `size`, `content_type`), or attach a generated
+  // thumbnail (`thumbnail_repository_key`). Only the fields present
+  // are written.
+  rpc UpdateResource(UpdateResourceRequest) returns (ResourceResponse);
+
+  // Delete a resource, or a folder and everything beneath it. Returns
+  // the repository keys that the caller must now delete from storage
+  // -- db-proxy never talks to the object store itself.
+  rpc DeleteResource(DeleteResourceRequest) returns (DeleteResourceResponse);
+}
+
+// Lifecycle of a resource row.
+//   "pending" -- row exists, an upload URL was issued, bytes may not
+//                have landed yet. Not servable.
+//   "ready"   -- bytes confirmed present at `repository_key`.
+//   "failed"  -- the upload or a processing step failed terminally.
+// Folders are always "ready".
+message Resource {
+  string id = 1;
+  string application_id = 2;
+
+  // Parent folder. Unset means the resource sits at the root of the
+  // application's tree. Self-referencing; a folder's children carry
+  // its id here.
+  optional string parent_id = 3;
+
+  bool is_folder = 4;
+  string name = 5;
+
+  // "image" | "video" | "audio" | "other" | "folder". Derived from
+  // `content_type` at create time by the api gateway, stored so
+  // listing can filter without re-parsing MIME types.
+  string kind = 6;
+
+  // Empty for folders.
+  string content_type = 7;
+  string repository_key = 8;
+
+  // Set once a thumbnail has been generated and the completion
+  // webhook has been processed. Empty means "no thumbnail" -- which
+  // covers both "not generated yet" and "not applicable" (audio).
+  string thumbnail_repository_key = 9;
+
+  // Bytes. 0 for folders and for resources still in "pending".
+  int64 size = 10;
+
+  string status = 11;
+
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+message CreateResourceRequest {
+  string application_id = 1;
+  optional string parent_id = 2;
+  string name = 3;
+  string kind = 4;
+  string content_type = 5;
+  string repository_key = 6;
+  int64 size = 7;
+  // Defaults to "pending" when empty.
+  string status = 8;
+}
+
+message CreateFolderRequest {
+  string application_id = 1;
+  optional string parent_id = 2;
+  string name = 3;
+}
+
+message GetResourceRequest {
+  string id = 1;
+  string application_id = 2;
+}
+
+message ListResourcesRequest {
+  string application_id = 1;
+
+  // Unset lists the root. Set lists that folder's direct children.
+  optional string parent_id = 2;
+
+  // Optional filters. Empty means "no filter".
+  string kind = 3;
+  // Case-insensitive substring match against `name`.
+  string search = 4;
+
+  // Zero means "server default" (see resource_service.go).
+  int32 page = 5;
+  int32 page_size = 6;
+}
+
+message ListResourcesResponse {
+  common.ResponseStatus status = 1;
+  repeated Resource resources = 2;
+  int32 total = 3;
+  int32 page = 4;
+  int32 page_size = 5;
+}
+
+// Every field but `id`/`application_id` is optional; absent fields are
+// left untouched. `parent_id` present-but-empty moves the resource to
+// the root.
+message UpdateResourceRequest {
+  string id = 1;
+  string application_id = 2;
+  optional string name = 3;
+  optional string parent_id = 4;
+  optional string status = 5;
+  optional string content_type = 6;
+  optional int64 size = 7;
+  optional string thumbnail_repository_key = 8;
+}
+
+message DeleteResourceRequest {
+  string id = 1;
+  string application_id = 2;
+}
+
+message DeleteResourceResponse {
+  common.ResponseStatus status = 1;
+  // Repository keys (uploads and thumbnails) belonging to the deleted
+  // subtree. The caller deletes these from object storage.
+  repeated string repository_keys = 2;
+}
+
+message ResourceResponse {
+  common.ResponseStatus status = 1;
+  Resource resource = 2;
+}
