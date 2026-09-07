@@ -1,7 +1,8 @@
+import { routeModule } from "./context";
 import type { PingResponse, StorageConfig } from "@woofx3/api";
 import { resolveOverlayPublicUrl } from "./helpers";
 
-export const engineRoutes = {
+export const engineRoutes = routeModule({
   async ping(): Promise<PingResponse> {
     return { status: "ok", instanceId: this.applicationId ?? "pending" };
   },
@@ -201,4 +202,4 @@ export const engineRoutes = {
     this.logger.info("Client deleted", { clientId });
     return { success: true, message: "Client deleted" };
   }
-};
+});

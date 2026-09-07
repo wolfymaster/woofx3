@@ -1,7 +1,8 @@
+import { routeModule } from "./context";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import * as protoscript from "protoscript";
 
-export const dashboardRoutes = {
+export const dashboardRoutes = routeModule({
   async getDashboard(): Promise<{
     workflows: {
       total: number;
@@ -52,4 +53,4 @@ export const dashboardRoutes = {
       recentActivity: [], // Could be populated from event history
     };
   }
-};
+});

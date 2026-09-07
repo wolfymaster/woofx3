@@ -35,8 +35,6 @@ export interface ApiOptions {
  * Shared host state and internal helpers for route modules.
  */
 export class ApiRouteHost extends RpcTarget {
-  protected static readonly MARKETPLACE_FETCH_TIMEOUT_MS = 30_000;
-  protected static readonly MARKETPLACE_MAX_BYTES = 50 * 1024 * 1024;
 
   protected triggerSubscribers = new Set<{
     onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
@@ -224,4 +222,34 @@ export class ApiRouteHost extends RpcTarget {
     this.overlayPublicUrl = opts.overlayPublicUrl ?? "http://127.0.0.1:9100";
     this.logger = opts.logger;
   }
+}
+
+/**
+ * Declare a route module.
+ *
+ * Route modules are plain object literals whose methods are copied onto the
+ * Api prototype by `registerAllRoutes`, so at runtime `this` is an
+ * `ApiRouteHost`. Nothing said so at compile time: TypeScript types `this`
+ * inside an object literal as the literal itself, so every `this.db` resolved
+ * against a bag of sibling methods and failed. Wrapping the literal supplies
+ * the contextual `ThisType` that makes `this` mean what it means at runtime.
+ *
+ * The identity function is the whole implementation; `T` is inferred from the
+ * literal so the module's own shape is preserved exactly and
+ * `RegisteredApiRoutes` still derives from it.
+ *
+ * `ThisType<ApiRouteHost>` is deliberately not an intersection. Two
+ * constraints force that:
+ *
+ *   - `ThisType<ApiRouteHost & RegisteredApiRoutes>` is circular, since
+ *     `RegisteredApiRoutes` is itself derived from `typeof` these modules.
+ *   - Any intersection at all, even with an empty interface, makes the host's
+ *     `protected` members inaccessible.
+ *
+ * So a route module can reach the host and its own methods, and nothing else.
+ * Behaviour shared between route modules belongs in a module both import, not
+ * on `this`.
+ */
+export function routeModule<T>(routes: T & ThisType<ApiRouteHost>): T {
+  return routes;
 }

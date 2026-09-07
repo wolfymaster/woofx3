@@ -1,3 +1,4 @@
+import { routeModule } from "./context";
 import type { AvailableFunction, CommandSnapshot, CreateCommandInput, UpdateCommandInput } from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import { invalidCommandVariableNames } from "@woofx3/common/templates/command-variables";
@@ -17,7 +18,7 @@ function isPermissionDenied(err: unknown): boolean {
   return err.message.includes("unauthenticated") || err.message.includes("permission_denied");
 }
 
-export const commandsRoutes = {
+export const commandsRoutes = routeModule({
   async listCommands(): Promise<CommandSnapshot[]> {
     const applicationId = await this.ensureApplicationId();
     const response = await this.db.listCommands({
@@ -148,7 +149,6 @@ export const commandsRoutes = {
       type: input.type,
       typeValue: input.typeValue,
       priority: input.priority ?? 0,
-      createdBy: "",
       createdByType: "USER",
       createdByRef: "",
       visibility: input.visibility,
@@ -355,4 +355,4 @@ export const commandsRoutes = {
     this.logger.info("Command deleted", { id });
     return { deleted: true };
   }
-};
+});

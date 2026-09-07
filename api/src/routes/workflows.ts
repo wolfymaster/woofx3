@@ -1,3 +1,4 @@
+import { routeModule } from "./context";
 import type { CreateWorkflowInput, UpdateWorkflowInput, WorkflowDefinition, WorkflowMutationResult } from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import type * as workflow from "@woofx3/db/workflow.pb";
@@ -6,7 +7,7 @@ import { rebuildWorkflowDefinition, timestampToIso } from "./helpers";
 import type { WorkflowItem } from "./types";
 import { validateWorkflowDefinition } from "../workflow/validate-definition";
 
-export const workflowsRoutes = {
+export const workflowsRoutes = routeModule({
   async getWorkflows(query?: { accountId?: string; enabled?: boolean; page?: number; pageSize?: number }): Promise<{
     workflows: WorkflowItem[];
     total: number;
@@ -73,7 +74,6 @@ export const workflowsRoutes = {
       name: data.definition.name,
       description: data.definition.description ?? "",
       applicationId,
-      createdBy: "",
       enabled: false,
       stepsJson: JSON.stringify(data.definition.tasks ?? []),
       triggerJson: JSON.stringify(data.definition.trigger),
@@ -84,6 +84,11 @@ export const workflowsRoutes = {
       timeoutSeconds: 0,
       createdByType: "USER",
       createdByRef: "",
+      // Empty for USER-authored workflows; both are MODULE-owned identity
+      // fields. protoscript defaults them to these values at the wire, so
+      // stating them changes nothing but lets the request typecheck.
+      manifestId: "",
+      taxonomy: [],
     });
     if (response.status?.code !== "OK" || !response.workflow) {
       throw new Error(response.status?.message || "Failed to create workflow");
@@ -316,4 +321,4 @@ export const workflowsRoutes = {
 
     return runs;
   }
-};
+});

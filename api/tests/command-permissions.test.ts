@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { Api } from "../src/api";
+import { Api, type ApiOptions } from "../src/api";
 
 function fakeLogger() {
   return {
@@ -30,7 +30,9 @@ function makeApi(db: any) {
   const nats = recordingNats();
   const api = new Api({
     db,
-    nats: nats.client,
+    // The fake only implements `publish`, which is all executeCommand
+    // reaches for; standing up a real NATSClient would test the client.
+    nats: nats.client as unknown as ApiOptions["nats"],
     barkloaderUrl: "http://barkloader.local",
     logger: fakeLogger(),
   });
@@ -61,7 +63,7 @@ describe("executeCommand permission enforcement", () => {
   // The no-regression case: a command with no group restriction must execute
   // for any user exactly as it did before group binding existed.
   it("executes a command that has no group restriction", async () => {
-    const getCommand = mock(async () => ({
+    const getCommand = mock(async (_req: any) => ({
       status: { code: "OK" },
       command: commandRow({ groupIds: [] }),
     }));
@@ -184,7 +186,7 @@ describe("group routes", () => {
   });
 
   it("lists the groups a user belongs to", async () => {
-    const listUserGroupsForUser = mock(async () => ({
+    const listUserGroupsForUser = mock(async (_req: any) => ({
       status: { code: "OK" },
       groups: [
         {

@@ -1,7 +1,8 @@
+import { routeModule } from "./context";
 import type { FieldOptionsDescriptor } from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
 
-export const fieldOptionsRoutes = {
+export const fieldOptionsRoutes = routeModule({
   async dispatchFieldOptionsRequest(
     descriptor: FieldOptionsDescriptor,
     correlationKey: string
@@ -133,4 +134,4 @@ export const fieldOptionsRoutes = {
 
     return { dispatched: true };
   }
-};
+});

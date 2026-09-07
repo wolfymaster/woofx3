@@ -398,6 +398,8 @@ export interface ModuleFunctionDeregisteredEvent {
 export interface ModuleWidgetDeregisteredEvent {
   type: typeof EngineEventType.MODULE_WIDGET_DEREGISTERED;
   modulePrefix: string;
+  moduleName: string;
+  version: string;
   /**
    * Composite `{moduleId}:{version}:{hash}` of the module the rows belong
    * to — the same identity `module.installed` / `module.deleted` carry, so
@@ -488,6 +490,8 @@ export interface ModuleAssetDeregisteredEvent {
    * a consumer that indexes modules by those events can match this one.
    */
   moduleKey: string;
+  moduleName: string;
+  version: string;
   assets: AssetDefinition[];
 }
 

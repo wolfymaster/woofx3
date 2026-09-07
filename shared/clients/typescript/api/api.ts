@@ -1151,14 +1151,6 @@ export interface Woofx3EngineApi {
       url: string;
     }>
   >;
-
-  /** Forward a widget status report from a scene manager operating in
-   *  parent-frame mode (`?eventSource=parent`). Takes `tokenId` — not the
-   *  plaintext token — scoped to the caller's applicationId. */
-  reportWidgetEvent(input: {
-    tokenId: string;
-    event: { type: string; [key: string]: unknown };
-  }): Promise<{ ok: true }>;
 }
 
 // ==================== Widgets ====================

@@ -1,7 +1,8 @@
+import { routeModule } from "./context";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import * as protoscript from "protoscript";
 
-export const workflowsExecutionRoutes = {
+export const workflowsExecutionRoutes = routeModule({
   async getAvailableWorkflows(): Promise<{
     workflows: Array<{
       id: string;
@@ -332,4 +333,4 @@ export const workflowsExecutionRoutes = {
     }
     this.logger.info("Workflow cancelled successfully", { executionId });
   }
-};
+});

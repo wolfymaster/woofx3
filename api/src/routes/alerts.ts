@@ -1,4 +1,5 @@
-export const alertsRoutes = {
+import { routeModule } from "./context";
+export const alertsRoutes = routeModule({
   async replayAlert(id: string): Promise<boolean> {
     if (!this.nats) {
       throw new Error("NATS client not available");
@@ -60,4 +61,4 @@ export const alertsRoutes = {
     this.logger.info("clearAlertQueue", { applicationId: appId, cleared: result.cleared });
     return result;
   }
-};
+});
