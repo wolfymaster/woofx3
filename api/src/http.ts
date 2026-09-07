@@ -303,13 +303,10 @@ export function createHttpServer(deps: HttpDeps) {
           wsAdapters.delete(ws);
         }
       },
-      error(ws, error) {
-        logger.error("WebSocket error", { error: error.message, stack: error.stack });
-        const adapter = wsAdapters.get(ws);
-        if (adapter) {
-          adapter.dispatchError(error);
-        }
-      },
+      // Bun's WebSocketHandler has no `error` hook -- only open, message,
+      // close, drain, ping and pong. An `error` handler lived here and was
+      // never called, so socket failures reach the adapter through `close`
+      // alone. Removed rather than left as reassuring dead code.
     },
   });
 }
