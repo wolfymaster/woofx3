@@ -1,0 +1,65 @@
+name: api checks
+
+# Type-checks and tests the api service.
+#
+# publish-api.yml already type-checks shared/clients/typescript/api, but that
+# is the SDK contract, not the engine that implements it. Nothing checked
+# api/ itself, which is how it accumulated 400+ type errors unnoticed --
+# including a webhook event missing a required field, a request object
+# carrying a field the proto does not have, and a dead WebSocket error
+# handler Bun never calls.
+#
+# The api package resolves several workspace packages by relative path, so
+# their dependencies have to be installed too or every `.pb` import fails to
+# resolve `protoscript` and the run reports hundreds of phantom errors.
+
+on:
+  push:
+    branches: [main, master, release]
+    paths:
+      - "api/**"
+      - "shared/clients/typescript/**"
+      - "shared/common/typescript/**"
+      - ".github/workflows/api-checks.yml"
+  pull_request:
+    paths:
+      - "api/**"
+      - "shared/clients/typescript/**"
+      - "shared/common/typescript/**"
+      - ".github/workflows/api-checks.yml"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install workspace dependencies
+        run: |
+          for dir in \
+            shared/common/typescript \
+            shared/clients/typescript/db \
+            shared/clients/typescript/nats \
+            shared/clients/typescript/api \
+            api
+          do
+            echo "::group::bun install ($dir)"
+            (cd "$dir" && bun install --frozen-lockfile)
+            echo "::endgroup::"
+          done
+
+      - name: Type check
+        working-directory: api
+        run: bun run typecheck
+
+      - name: Test
+        working-directory: api
+        run: bun test
