@@ -1,4 +1,5 @@
 import { RpcTarget } from "capnweb";
+import type { Woofx3EngineApi } from "@woofx3/api";
 import { Api } from "./api";
 
 /**
@@ -74,17 +75,134 @@ export class ApiSession extends RpcTarget {
   }
 }
 
-// Delegate all Api prototype methods onto ApiSession prototype so capnweb
-// can discover them as class methods (not instance properties).
-for (const key of Object.getOwnPropertyNames(Api.prototype)) {
-  if (
-    key === "constructor" ||
-    typeof (Api.prototype as any)[key] !== "function" ||
-    key in ApiSession.prototype
-  ) {
+/**
+ * The methods a client may call.
+ *
+ * Delegation used to copy every function it found on `Api.prototype`, which
+ * published whatever happened to be there: 88 methods against a 72-method
+ * contract, including `setApplicationId` (rewrites the process-wide
+ * application id), `initSubscriptions` (re-subscribes NATS subjects, and
+ * duplicates them on a second call) and `handleProcessingCallback` (which
+ * `http.ts` deliberately keeps off the capnweb surface). Nothing declared the
+ * boundary, so nothing could hold it.
+ *
+ * This list is that boundary. The assertion below fails to compile if it
+ * drifts from the contract in either direction, so a new route method is
+ * unreachable until it is declared -- and a method removed from the contract
+ * stops being served. Internal wiring is simply absent from the list and
+ * therefore never delegated.
+ */
+export const RPC_METHODS = [
+  "ping",
+  "getEngineInfo",
+  "setOverlayPublicUrl",
+  "getStorageConfig",
+  "setStorageConfig",
+  "deleteClient",
+  "getModules",
+  "getModule",
+  "installModuleZip",
+  "installModuleFromUrl",
+  "listEngineModules",
+  "uninstallModule",
+  "uninstallEngineModule",
+  "checkModuleResourceUsage",
+  "getModuleSettings",
+  "updateModuleSetting",
+  "getModuleManifest",
+  "createResourceInstance",
+  "deleteResourceInstance",
+  "listAllResourceInstances",
+  "listResourceInstancesForModule",
+  "getTriggers",
+  "getActions",
+  "getWorkflows",
+  "getWorkflow",
+  "createWorkflow",
+  "updateWorkflow",
+  "deleteWorkflow",
+  "setWorkflowEnabled",
+  "getWorkflowRuns",
+  "createCommand",
+  "updateCommand",
+  "deleteCommand",
+  "listCommands",
+  "listAvailableFunctions",
+  "listGroups",
+  "createGroup",
+  "updateGroup",
+  "deleteGroup",
+  "listGroupMembers",
+  "addUserToGroup",
+  "removeUserFromGroup",
+  "listGroupsForUser",
+  "listPermissions",
+  "requestUploadUrl",
+  "completeUpload",
+  "createFolder",
+  "getResource",
+  "listResources",
+  "updateResource",
+  "deleteResource",
+  "requestProcessing",
+  "setTwitchToken",
+  "deleteTwitchToken",
+  "dispatchFieldOptionsRequest",
+  "getScenes",
+  "getScene",
+  "getAvailableWidgets",
+  "createScene",
+  "updateScene",
+  "deleteScene",
+  "getStreamStatus",
+  "triggerEvent",
+  "triggerWorkflowByName",
+  "getDashboardStats",
+  "replayAlert",
+  "skipCurrentAlert",
+  "clearAlertQueue",
+  "mintOverlayToken",
+  "revokeOverlayToken",
+  "rotateOverlayToken",
+  "listOverlayTokens",
+  "executeCommand",
+  "getAvailableCommands",
+  "getDashboard",
+  "getAvailableWorkflows",
+  "getWorkflowStatus",
+  "getWorkflowHistory",
+  "cancelWorkflow",
+  "subscribeTriggerChanges",
+  "getUserProfile",
+  "awardTreatsToUser",
+  "simulateTwitchEvent",
+] as const;
+
+/** True only when A and B are the same type, invariantly. */
+type Equals<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+type Assert<T extends true> = T;
+
+// Diverge from `Woofx3EngineApi` and this stops compiling. The error names
+// the offending key, so the fix is to declare it or drop it -- not to widen
+// the list.
+export type _SurfaceMatchesContract = Assert<Equals<(typeof RPC_METHODS)[number], keyof Woofx3EngineApi>>;
+
+// Every delegated name must exist on Api, so a contract entry with no
+// implementation is a compile error rather than a runtime "not a function".
+export type _ContractIsImplemented = Assert<Equals<Exclude<keyof Woofx3EngineApi, keyof Api>, never>>;
+
+// capnweb only exposes methods found on the prototype chain, so these are
+// installed on the prototype rather than per instance.
+for (const key of RPC_METHODS) {
+  if (key in ApiSession.prototype) {
+    // Hand-written above to inject the session's clientId.
     continue;
   }
-  (ApiSession.prototype as any)[key] = function (this: ApiSession, ...args: any[]) {
-    return ((this as any).api as any)[key](...args);
+  (ApiSession.prototype as unknown as Record<string, unknown>)[key] = function (this: ApiSession, ...args: unknown[]) {
+    // Reaching `api` past `private` deliberately: the delegation is
+    // installed from outside the class body, and widening the field to
+    // public would put the whole Api object on a session a client holds.
+    const target = (this as unknown as { api: Record<string, (...a: unknown[]) => unknown> }).api;
+    return target[key](...args);
   };
 }
