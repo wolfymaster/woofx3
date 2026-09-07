@@ -65,42 +65,50 @@ function kindForContentType(contentType: string): string {
   return "other";
 }
 
-export const resourcesRoutes = {
-  /**
-   * Compose the public URL a repository key is served at. Kept beside the
-   * routes rather than in helpers because it encodes this service's own
-   * asset-proxy path, not a general-purpose conversion.
-   */
-  resourcePublicUrl(repositoryKey: string): string | null {
-    if (repositoryKey.length === 0) {
-      return null;
-    }
-    const base = this.overlayPublicUrl.replace(/\/+$/, "");
-    return `${base}/overlay/assets/${repositoryKey}`;
-  },
+/**
+ * Compose the public URL a repository key is served at. Encodes this
+ * service's own asset-proxy path, so it lives here rather than in the
+ * shared helpers.
+ *
+ * Deliberately a module-private function rather than a member of
+ * `resourcesRoutes`: everything on that object is registered onto the
+ * Api prototype, which both exposes it as a callable RPC method and runs
+ * it through the span wrapper -- and that wrapper returns a Promise,
+ * which would turn this string into a Promise.
+ */
+export function resourcePublicUrl(overlayPublicUrl: string, repositoryKey: string): string | null {
+  if (repositoryKey.length === 0) {
+    return null;
+  }
+  const base = overlayPublicUrl.replace(/\/+$/, "");
+  return `${base}/overlay/assets/${repositoryKey}`;
+}
 
-  resourceToItem(row: resource.Resource): ResourceItem {
-    const repositoryKey = row.repositoryKey ?? "";
-    const thumbnailKey = row.thumbnailRepositoryKey ?? "";
-    const isFolder = row.isFolder ?? false;
-    // A pending row has no bytes at its key yet, so publishing a URL for
-    // it would hand out a link that 404s until the upload lands.
-    const servable = !isFolder && row.status === "ready";
-    return {
-      id: row.id ?? "",
-      name: row.name ?? "",
-      parentId: row.parentId && row.parentId.length > 0 ? row.parentId : null,
-      isFolder,
-      kind: row.kind ?? "other",
-      contentType: row.contentType ?? "",
-      size: Number(row.size ?? 0),
-      status: row.status ?? "",
-      url: servable ? this.resourcePublicUrl(repositoryKey) : null,
-      thumbnailUrl: servable ? this.resourcePublicUrl(thumbnailKey) : null,
-      createdAt: timestampToIso(row.createdAt),
-      updatedAt: timestampToIso(row.updatedAt),
-    };
-  },
+/** Map a stored row onto its wire shape. Module-private, for the same reason. */
+export function resourceToItem(overlayPublicUrl: string, row: resource.Resource): ResourceItem {
+  const repositoryKey = row.repositoryKey ?? "";
+  const thumbnailKey = row.thumbnailRepositoryKey ?? "";
+  const isFolder = row.isFolder ?? false;
+  // A pending row has no bytes at its key yet, so publishing a URL for
+  // it would hand out a link that 404s until the upload lands.
+  const servable = !isFolder && row.status === "ready";
+  return {
+    id: row.id ?? "",
+    name: row.name ?? "",
+    parentId: row.parentId && row.parentId.length > 0 ? row.parentId : null,
+    isFolder,
+    kind: row.kind ?? "other",
+    contentType: row.contentType ?? "",
+    size: Number(row.size ?? 0),
+    status: row.status ?? "",
+    url: servable ? resourcePublicUrl(overlayPublicUrl, repositoryKey) : null,
+    thumbnailUrl: servable ? resourcePublicUrl(overlayPublicUrl, thumbnailKey) : null,
+    createdAt: timestampToIso(row.createdAt),
+    updatedAt: timestampToIso(row.updatedAt),
+  };
+}
+
+export const resourcesRoutes = {
 
   /**
    * Reserve a row and hand back a grant to upload straight to storage.
@@ -171,7 +179,7 @@ export const resourcesRoutes = {
 
     this.logger.info("Issued upload grant", { resourceId, name: input.name });
     return {
-      resource: this.resourceToItem(row),
+      resource: resourceToItem(this.overlayPublicUrl, row),
       uploadUrl: grant.uploadUrl,
       method: grant.method,
       headers: grant.headers,
@@ -194,7 +202,7 @@ export const resourcesRoutes = {
     if (response.status?.code !== "OK" || !response.resource) {
       throw new Error("Resource not found");
     }
-    return this.resourceToItem(response.resource);
+    return resourceToItem(this.overlayPublicUrl, response.resource);
   },
 
   async createFolder(name: string, parentId?: string | null): Promise<ResourceItem> {
@@ -210,7 +218,7 @@ export const resourcesRoutes = {
     if (response.status?.code !== "OK" || !response.resource) {
       throw new Error("Failed to create folder");
     }
-    return this.resourceToItem(response.resource);
+    return resourceToItem(this.overlayPublicUrl, response.resource);
   },
 
   async getResource(id: string): Promise<ResourceItem> {
@@ -219,7 +227,7 @@ export const resourcesRoutes = {
     if (response.status?.code !== "OK" || !response.resource) {
       throw new Error("Resource not found");
     }
-    return this.resourceToItem(response.resource);
+    return resourceToItem(this.overlayPublicUrl, response.resource);
   },
 
   /**
@@ -248,7 +256,7 @@ export const resourcesRoutes = {
       throw new Error("Failed to list resources");
     }
     return {
-      resources: (response.resources ?? []).map((row) => this.resourceToItem(row)),
+      resources: (response.resources ?? []).map((row) => resourceToItem(this.overlayPublicUrl, row)),
       total: response.total ?? 0,
       page: response.page ?? 0,
       pageSize: response.pageSize ?? 0,
@@ -273,7 +281,7 @@ export const resourcesRoutes = {
     if (response.status?.code !== "OK" || !response.resource) {
       throw new Error("Resource not found");
     }
-    return this.resourceToItem(response.resource);
+    return resourceToItem(this.overlayPublicUrl, response.resource);
   },
 
   /**

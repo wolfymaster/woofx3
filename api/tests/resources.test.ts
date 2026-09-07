@@ -1,7 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
-import { resourcesRoutes } from "../src/routes/resources";
+import { resourcePublicUrl, resourceToItem, resourcesRoutes } from "../src/routes/resources";
+import { registerAllRoutes } from "../src/routes/index";
 
 const APPLICATION_ID = "app-1";
+const BASE_URL = "http://127.0.0.1:9100";
 
 function timestamp(seconds: number) {
   return { seconds: BigInt(seconds), nanos: 0 };
@@ -47,7 +49,7 @@ function host(overrides: Record<string, unknown> = {}) {
 describe("resource wire mapping", () => {
   test("derives public urls from repository keys", () => {
     const api = host();
-    const item = api.resourceToItem(readyRow({ thumbnailRepositoryKey: "user/app-1/res-1/thumbnail.png" }) as never);
+    const item = resourceToItem(BASE_URL, readyRow({ thumbnailRepositoryKey: "user/app-1/res-1/thumbnail.png" }) as never);
 
     expect(item.url).toBe("http://127.0.0.1:9100/overlay/assets/user/app-1/res-1/clip.png");
     expect(item.thumbnailUrl).toBe("http://127.0.0.1:9100/overlay/assets/user/app-1/res-1/thumbnail.png");
@@ -57,7 +59,7 @@ describe("resource wire mapping", () => {
 
   test("a resource without a generated thumbnail reports none", () => {
     const api = host();
-    const item = api.resourceToItem(readyRow() as never);
+    const item = resourceToItem(BASE_URL, readyRow() as never);
 
     expect(item.url).not.toBeNull();
     expect(item.thumbnailUrl).toBeNull();
@@ -65,7 +67,7 @@ describe("resource wire mapping", () => {
 
   test("a pending resource serves no url until its bytes land", () => {
     const api = host();
-    const item = api.resourceToItem(readyRow({ status: "pending", repositoryKey: "user/app-1/res-1/clip.png" }) as never);
+    const item = resourceToItem(BASE_URL, readyRow({ status: "pending", repositoryKey: "user/app-1/res-1/clip.png" }) as never);
 
     expect(item.status).toBe("pending");
     expect(item.url).toBeNull();
@@ -73,7 +75,7 @@ describe("resource wire mapping", () => {
 
   test("folders carry no url", () => {
     const api = host();
-    const item = api.resourceToItem(
+    const item = resourceToItem(BASE_URL, 
       readyRow({ isFolder: true, kind: "folder", repositoryKey: "", contentType: "" }) as never,
     );
 
@@ -82,8 +84,9 @@ describe("resource wire mapping", () => {
   });
 
   test("a trailing slash on the public base does not double up", () => {
-    const api = host({ overlayPublicUrl: "http://example.test/" });
-    expect(api.resourcePublicUrl("user/a/b/c.png")).toBe("http://example.test/overlay/assets/user/a/b/c.png");
+    expect(resourcePublicUrl("http://example.test/", "user/a/b/c.png")).toBe(
+      "http://example.test/overlay/assets/user/a/b/c.png",
+    );
   });
 });
 
@@ -363,5 +366,39 @@ describe("processing", () => {
     await api.handleProcessingCallback({ status: "completed", thumbnail_repository_key: "k" });
 
     expect(updateResource).not.toHaveBeenCalled();
+  });
+});
+
+describe("registered route surface", () => {
+  // The other suites assign the raw module onto a stub, which skips the
+  // span wrapper that registerAllRoutes applies. That wrapper returns a
+  // Promise from every function it wraps, so a synchronous helper left on
+  // the routes object would silently start returning a Promise -- and the
+  // mapped url would reach the UI as "[object Promise]". Go through real
+  // registration so that cannot regress unnoticed.
+  test("the mappers are not registered as RPC methods", () => {
+    const registered: Record<string, unknown> = {
+      overlayPublicUrl: BASE_URL,
+      logger: { info: mock(() => undefined), error: mock(() => undefined) },
+    };
+    registerAllRoutes(registered as never);
+
+    expect(registered.resourceToItem).toBeUndefined();
+    expect(registered.resourcePublicUrl).toBeUndefined();
+  });
+
+  test("every registered resource route is async, so the span wrapper cannot change its shape", () => {
+    for (const [name, value] of Object.entries(resourcesRoutes)) {
+      if (typeof value !== "function") {
+        continue;
+      }
+      expect(`${name}:${value.constructor.name}`).toBe(`${name}:AsyncFunction`);
+    }
+  });
+
+  test("a mapped resource carries plain string urls, not promises", () => {
+    const item = resourceToItem(BASE_URL, readyRow() as never);
+    expect(typeof item.url).toBe("string");
+    expect(item.url).not.toContain("[object Promise]");
   });
 });
