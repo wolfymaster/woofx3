@@ -2,6 +2,8 @@ import type { OverlayTokenMintedEvent, OverlayTokenRevokedEvent } from "@woofx3/
 import { EngineEventType } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
+import { asString, pickFirst, readRow } from "./outbox";
+import { subscribeProjections } from "./projection";
 import type { WebhookClient } from "./webhook-client";
 
 // The db proxy publishes overlay token lifecycle events on
@@ -27,26 +29,6 @@ interface RawOverlayTokenRow {
   status?: unknown;
 }
 
-const asString = (v: unknown): string => (typeof v === "string" ? v : "");
-
-function pickFirst(...values: unknown[]): string {
-  for (const v of values) {
-    const s = asString(v);
-    if (s !== "") {
-      return s;
-    }
-  }
-  return "";
-}
-
-function readRow(ce: Record<string, unknown>): RawOverlayTokenRow {
-  const data = ce.data;
-  if (data && typeof data === "object") {
-    return data as RawOverlayTokenRow;
-  }
-  return ce as RawOverlayTokenRow;
-}
-
 /**
  * Derive a non-secret token prefix for operator display ("ovl_abcd").
  * The prefix is the first 8 characters of the token value — never the
@@ -69,88 +51,81 @@ function buildTokenPrefix(token: string): string {
  * Only `tokenId`, `tokenPrefix`, `sceneId`, `applicationId`, and
  * `label` are forwarded.
  */
+/**
+ * Fields shared by both overlay-token projections.
+ *
+ * Extracted from the two subscription bodies, which had grown their own
+ * inline copies -- this module was the one that had drifted furthest, right
+ * down to decoding its payload by hand instead of through `msg.json()`.
+ */
+function readTokenFields(ce: Record<string, unknown>) {
+  const row = readRow<RawOverlayTokenRow>(ce);
+  return {
+    tokenId: pickFirst(row.ID, row.id),
+    token: pickFirst(row.Token, row.token),
+    sceneId: pickFirst(row.SceneID, row.scene_id, row.sceneId),
+    applicationId: pickFirst(row.ApplicationID, row.application_id, row.applicationId),
+    label: pickFirst(row.Label, row.label),
+    status: pickFirst(row.Status, row.status),
+  };
+}
+
+export function parseOverlayTokenMinted(ce: Record<string, unknown>): OverlayTokenMintedEvent | null {
+  const { tokenId, token, sceneId, applicationId, label } = readTokenFields(ce);
+  if (!tokenId) {
+    return null;
+  }
+  return {
+    type: EngineEventType.OVERLAY_TOKEN_MINTED,
+    tokenId,
+    sceneId,
+    applicationId,
+    label,
+    // Non-secret prefix only -- never the full plaintext token.
+    tokenPrefix: buildTokenPrefix(token),
+  };
+}
+
+export function parseOverlayTokenRevoked(ce: Record<string, unknown>): OverlayTokenRevokedEvent | null {
+  const { tokenId, token, sceneId, applicationId, label } = readTokenFields(ce);
+  if (!tokenId) {
+    return null;
+  }
+  return {
+    type: EngineEventType.OVERLAY_TOKEN_REVOKED,
+    tokenId,
+    sceneId,
+    applicationId,
+    label,
+    tokenPrefix: buildTokenPrefix(token),
+  };
+}
+
 export async function initOverlayTokenHandlers(
   nats: NATSClient,
   webhookClient: WebhookClient,
   logger: SharedLogger
 ): Promise<void> {
-  await nats.subscribe("db.overlay_token.created.*", async (msg) => {
-    try {
-      const ce = JSON.parse(new TextDecoder().decode(msg.data)) as Record<string, unknown>;
-      const row = readRow(ce);
-
-      const tokenId = pickFirst(row.ID, row.id);
-      const token = pickFirst(row.Token, row.token);
-      const sceneId = pickFirst(row.SceneID, row.scene_id, row.sceneId);
-      const applicationId = pickFirst(row.ApplicationID, row.application_id, row.applicationId);
-      const label = pickFirst(row.Label, row.label);
-
-      if (!tokenId) {
-        logger.warn("overlay_token.created: missing id, skipping webhook", { subject: msg.subject });
-        return;
-      }
-
-      const event: OverlayTokenMintedEvent = {
-        type: EngineEventType.OVERLAY_TOKEN_MINTED,
-        tokenId,
-        sceneId,
-        applicationId,
-        label,
-        // Non-secret prefix only — never the full plaintext token.
-        tokenPrefix: buildTokenPrefix(token),
-      };
-
-      logger.debug("Emitting OVERLAY_TOKEN_MINTED webhook", { tokenId, sceneId, applicationId });
-      await webhookClient.send(event);
-    } catch (err) {
-      logger.error("overlay_token.created handler error", {
-        error: err instanceof Error ? err.message : String(err),
-        subject: msg.subject,
-      });
-    }
-  });
-
-  await nats.subscribe("db.overlay_token.updated.*", async (msg) => {
-    try {
-      const ce = JSON.parse(new TextDecoder().decode(msg.data)) as Record<string, unknown>;
-      const row = readRow(ce);
-
-      const status = pickFirst(row.Status, row.status);
-      if (status !== "revoked") {
-        // Only project revocations; other updates (e.g. lastUsedAt refreshes) are silent.
-        return;
-      }
-
-      const tokenId = pickFirst(row.ID, row.id);
-      const token = pickFirst(row.Token, row.token);
-      const sceneId = pickFirst(row.SceneID, row.scene_id, row.sceneId);
-      const applicationId = pickFirst(row.ApplicationID, row.application_id, row.applicationId);
-      const label = pickFirst(row.Label, row.label);
-
-      if (!tokenId) {
-        logger.warn("overlay_token.updated: missing id, skipping webhook", { subject: msg.subject });
-        return;
-      }
-
-      const event: OverlayTokenRevokedEvent = {
-        type: EngineEventType.OVERLAY_TOKEN_REVOKED,
-        tokenId,
-        sceneId,
-        applicationId,
-        label,
-        // Non-secret prefix only — never the full plaintext token.
-        tokenPrefix: buildTokenPrefix(token),
-      };
-
-      logger.debug("Emitting OVERLAY_TOKEN_REVOKED webhook", { tokenId, sceneId, applicationId });
-      await webhookClient.send(event);
-    } catch (err) {
-      logger.error("overlay_token.updated handler error", {
-        error: err instanceof Error ? err.message : String(err),
-        subject: msg.subject,
-      });
-    }
-  });
-
-  logger.info("Overlay token NATS handlers initialized");
+  await subscribeProjections({ nats, webhookClient, logger }, [
+    {
+      subject: "db.overlay_token.created.*",
+      name: "db.overlay_token.created",
+      parse: (ce) => {
+        const event = parseOverlayTokenMinted(ce);
+        return event ? { event } : null;
+      },
+      context: (event) => ({ tokenId: (event as OverlayTokenMintedEvent).tokenId }),
+    },
+    {
+      subject: "db.overlay_token.updated.*",
+      name: "db.overlay_token.updated",
+      // Updates fire on lastUsedAt refreshes too; only revocations project.
+      interested: (ce) => readTokenFields(ce).status === "revoked",
+      parse: (ce) => {
+        const event = parseOverlayTokenRevoked(ce);
+        return event ? { event } : null;
+      },
+      context: (event) => ({ tokenId: (event as OverlayTokenRevokedEvent).tokenId }),
+    },
+  ]);
 }

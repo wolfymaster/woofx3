@@ -18,20 +18,27 @@ const noopLogger = {
  * A minimal fake NATSClient that stores registered handlers so tests can
  * fire them directly without a real NATS connection.
  */
+/** What the projections actually read off a NATS message. */
+interface FakeMsg {
+  data: Uint8Array;
+  subject: string;
+  json(): unknown;
+}
+
 class FakeNatsClient {
-  private handlers: Map<string, ((msg: { data: Uint8Array; subject: string }) => void | Promise<void>)> = new Map();
+  private handlers: Map<string, (msg: FakeMsg) => void | Promise<void>> = new Map();
 
   async subscribe(
     subject: string,
-    handler: (msg: { data: Uint8Array; subject: string }) => void | Promise<void>
+    handler: (msg: FakeMsg) => void | Promise<void>
   ): Promise<void> {
     this.handlers.set(subject, handler);
   }
 
   async publish(_subject: string, _data: Uint8Array): Promise<void> {}
 
-  async request(_subject: string, _data: Uint8Array): Promise<{ data: Uint8Array; subject: string }> {
-    return { data: new Uint8Array(), subject: "" };
+  async request(_subject: string, _data: Uint8Array): Promise<FakeMsg> {
+    return { data: new Uint8Array(), subject: "", json: () => ({}) };
   }
 
   /** Fire a message on a registered subscription for testing. */
@@ -39,7 +46,11 @@ class FakeNatsClient {
     // Find the best-matching handler (wildcard support for *.suffix).
     for (const [pattern, handler] of this.handlers) {
       if (subjectMatchesPattern(pattern, subject)) {
-        await handler({ data: new TextEncoder().encode(JSON.stringify(data)), subject });
+        await handler({
+          data: new TextEncoder().encode(JSON.stringify(data)),
+          subject,
+          json: () => data,
+        });
         return;
       }
     }

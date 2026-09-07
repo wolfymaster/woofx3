@@ -10,6 +10,8 @@ import type {
 import { EngineEventType } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
+import { asString, pickFirst, readRow } from "./outbox";
+import { subscribeProjections } from "./projection";
 import type { WebhookClient } from "./webhook-client";
 
 /** Union of every webhook event projected from `db.alert.updated.*`. */
@@ -62,28 +64,8 @@ interface RawAlertRow {
   updated_at?: unknown;
 }
 
-const asString = (v: unknown): string => (typeof v === "string" ? v : "");
-
-function pickFirst(...values: unknown[]): string {
-  for (const v of values) {
-    const s = asString(v);
-    if (s !== "") {
-      return s;
-    }
-  }
-  return "";
-}
-
-function readRow(ce: Record<string, unknown>): RawAlertRow {
-  const data = ce.data;
-  if (data && typeof data === "object") {
-    return data as RawAlertRow;
-  }
-  return ce as RawAlertRow;
-}
-
 function buildSnapshot(ce: Record<string, unknown>): AlertSnapshot | null {
-  const row = readRow(ce);
+  const row = readRow<RawAlertRow>(ce);
   const id = pickFirst(row.ID, row.id);
   if (id === "") {
     return null;
@@ -196,35 +178,25 @@ export async function initAlertLogHandlers(
   webhookClient: WebhookClient,
   logger: SharedLogger
 ): Promise<void> {
-  await nats.subscribe("db.alert.created.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseAlertCreated(ce);
-      if (!event) {
-        logger.warn("alert.created payload missing required fields, skipping");
-        return;
-      }
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle alert.created NATS event", { err });
-    }
-  });
-
-  await nats.subscribe("db.alert.updated.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseAlertUpdated(ce);
-      if (!event) {
-        // Lifecycle transitions that don't have a webhook surface
-        // (today: "playing") intentionally drop here — see
-        // parseAlertUpdated for the projection map.
-        return;
-      }
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle alert.updated NATS event", { err });
-    }
-  });
-
-  logger.info("Alert log NATS handlers initialized");
+  await subscribeProjections({ nats, webhookClient, logger }, [
+    {
+      subject: "db.alert.created.*",
+      name: "db.alert.created",
+      parse: (ce) => {
+        const { clientId, event } = parseAlertCreated(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.alert.updated.*",
+      name: "db.alert.updated",
+      // Lifecycle transitions with no webhook surface (today: "playing")
+      // parse to null on purpose -- see parseAlertUpdated's projection map.
+      quietDrop: true,
+      parse: (ce) => {
+        const { clientId, event } = parseAlertUpdated(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+  ]);
 }

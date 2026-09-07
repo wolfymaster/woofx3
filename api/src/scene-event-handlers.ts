@@ -7,6 +7,8 @@ import type {
 import { EngineEventType } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
+import { asString, pickFirst, readRow } from "./outbox";
+import { subscribeProjections } from "./projection";
 import type { WebhookClient } from "./webhook-client";
 
 // The db proxy publishes scene lifecycle events on
@@ -36,28 +38,8 @@ interface RawSceneRow {
   created_by_ref?: unknown;
 }
 
-const asString = (v: unknown): string => (typeof v === "string" ? v : "");
-
-function pickFirst(...values: unknown[]): string {
-  for (const v of values) {
-    const s = asString(v);
-    if (s !== "") {
-      return s;
-    }
-  }
-  return "";
-}
-
-function readRow(ce: Record<string, unknown>): RawSceneRow {
-  const data = ce.data;
-  if (data && typeof data === "object") {
-    return data as RawSceneRow;
-  }
-  return ce as RawSceneRow;
-}
-
 function buildSnapshot(ce: Record<string, unknown>): SceneSnapshot | null {
-  const row = readRow(ce);
+  const row = readRow<RawSceneRow>(ce);
   const id = pickFirst(row.ID, row.id);
   if (id === "") {
     return null;
@@ -92,7 +74,7 @@ export interface ParsedSceneChange<T> {
 export function parseSceneCreated(
   ce: Record<string, unknown>
 ): ParsedSceneChange<SceneCreatedEvent> {
-  const row = readRow(ce);
+  const row = readRow<RawSceneRow>(ce);
   const applicationId = pickFirst(row.ApplicationID, row.application_id);
   const clientId = asString(ce.client_id);
   const snapshot = buildSnapshot(ce);
@@ -112,7 +94,7 @@ export function parseSceneCreated(
 export function parseSceneUpdated(
   ce: Record<string, unknown>
 ): ParsedSceneChange<SceneUpdatedEvent> {
-  const row = readRow(ce);
+  const row = readRow<RawSceneRow>(ce);
   const applicationId = pickFirst(row.ApplicationID, row.application_id);
   const clientId = asString(ce.client_id);
   const snapshot = buildSnapshot(ce);
@@ -132,7 +114,7 @@ export function parseSceneUpdated(
 export function parseSceneDeleted(
   ce: Record<string, unknown>
 ): ParsedSceneChange<SceneDeletedEvent> {
-  const row = readRow(ce);
+  const row = readRow<RawSceneRow>(ce);
   const applicationId = pickFirst(row.ApplicationID, row.application_id);
   const clientId = asString(ce.client_id);
   // scene_service.DeleteScene publishes the full row (its
@@ -165,47 +147,30 @@ export async function initSceneHandlers(
   webhookClient: WebhookClient,
   logger: SharedLogger
 ): Promise<void> {
-  await nats.subscribe("db.scene.created.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseSceneCreated(ce);
-      if (!event) {
-        logger.warn("scene.created payload missing required fields, skipping");
-        return;
-      }
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle scene.created NATS event", { err });
-    }
-  });
-
-  await nats.subscribe("db.scene.updated.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseSceneUpdated(ce);
-      if (!event) {
-        logger.warn("scene.updated payload missing required fields, skipping");
-        return;
-      }
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle scene.updated NATS event", { err });
-    }
-  });
-
-  await nats.subscribe("db.scene.deleted.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const { clientId, event } = parseSceneDeleted(ce);
-      if (!event) {
-        logger.warn("scene.deleted payload missing scene id, skipping");
-        return;
-      }
-      await webhookClient.send(event, clientId || undefined);
-    } catch (err) {
-      logger.error("Failed to handle scene.deleted NATS event", { err });
-    }
-  });
-
-  logger.info("Scene event NATS handlers initialized");
+  await subscribeProjections({ nats, webhookClient, logger }, [
+    {
+      subject: "db.scene.created.*",
+      name: "db.scene.created",
+      parse: (ce) => {
+        const { clientId, event } = parseSceneCreated(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.scene.updated.*",
+      name: "db.scene.updated",
+      parse: (ce) => {
+        const { clientId, event } = parseSceneUpdated(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.scene.deleted.*",
+      name: "db.scene.deleted",
+      parse: (ce) => {
+        const { clientId, event } = parseSceneDeleted(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+  ]);
 }

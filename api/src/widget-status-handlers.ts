@@ -2,6 +2,8 @@ import type { WidgetStatusChangedEvent } from "@woofx3/api/webhooks";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
+import { pickFirst, readRow } from "./outbox";
+import { subscribeProjections } from "./projection";
 import type { WebhookClient } from "./webhook-client";
 
 // db.widget_status.updated.{appId} — db proxy outbox event fired by
@@ -27,26 +29,6 @@ interface RawWidgetStatusRow {
   application_id?: unknown;
 }
 
-const asString = (v: unknown): string => (typeof v === "string" ? v : "");
-
-function pickFirst(...values: unknown[]): string {
-  for (const v of values) {
-    const s = asString(v);
-    if (s !== "") {
-      return s;
-    }
-  }
-  return "";
-}
-
-function readRow(ce: Record<string, unknown>): RawWidgetStatusRow {
-  const data = ce.data;
-  if (data && typeof data === "object") {
-    return data as RawWidgetStatusRow;
-  }
-  return ce as RawWidgetStatusRow;
-}
-
 /**
  * The db proxy serialises `value` as a JSONB-stringified form.
  * Round-trip parse so the webhook payload carries the typed shape
@@ -65,7 +47,7 @@ function parseValue(raw: unknown): unknown {
 }
 
 export function parseWidgetStatusUpdated(ce: Record<string, unknown>): WidgetStatusChangedEvent | null {
-  const row = readRow(ce);
+  const row = readRow<RawWidgetStatusRow>(ce);
   const moduleId = pickFirst(row.module_id, row.ModuleID);
   const instanceId = pickFirst(row.instance_id, row.InstanceID);
   const key = pickFirst(row.key, row.Key);
@@ -105,27 +87,23 @@ export async function initWidgetStatusHandlers(
   webhookClient: WebhookClient,
   logger: SharedLogger
 ): Promise<void> {
-  await nats.subscribe("db.widget_status.updated.*", async (msg) => {
-    try {
-      const ce = msg.json() as Record<string, unknown>;
-      const event = parseWidgetStatusUpdated(ce);
-      if (!event) {
-        logger.warn("db.widget_status.updated: missing required fields; dropping");
-        return;
-      }
-      await webhookClient.send(event);
-      logger.info("widget status webhook dispatched", {
-        applicationId: event.applicationId,
-        moduleId: event.moduleId,
-        instanceId: event.instanceId,
-        key: event.key,
-      });
-    } catch (err) {
-      logger.error("db.widget_status.updated: handler failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  });
-
-  logger.info("Widget status NATS handler initialized");
+  await subscribeProjections({ nats, webhookClient, logger }, [
+    {
+      subject: "db.widget_status.updated.*",
+      name: "db.widget_status.updated",
+      parse: (ce) => {
+        const event = parseWidgetStatusUpdated(ce);
+        return event ? { event } : null;
+      },
+      context: (event) => {
+        const status = event as WidgetStatusChangedEvent;
+        return {
+          applicationId: status.applicationId,
+          moduleId: status.moduleId,
+          instanceId: status.instanceId,
+          key: status.key,
+        };
+      },
+    },
+  ]);
 }
