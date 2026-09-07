@@ -1151,6 +1151,116 @@ export interface Woofx3EngineApi {
       url: string;
     }>
   >;
+  // ==================== Engine-side operations ====================
+  //
+  // These are implemented by the engine and reachable over capnweb, but were
+  // never declared here. Declaring them makes this contract describe what the
+  // engine actually offers -- `api-session.ts` now derives the exposed surface
+  // from these keys, so an undeclared method is no longer callable.
+
+  /** Run a chat command as `username`. Authorization is enforced by db-proxy
+   *  when it resolves the command, so a caller without permission is refused
+   *  rather than silently ignored. */
+  executeCommand(
+    commandName: string,
+    username: string,
+    args?: Record<string, string>
+  ): Promise<{ success: boolean; message: string }>;
+
+  /** Commands a caller may run. The username parameter is accepted but not
+   *  yet used to filter the list. */
+  getAvailableCommands(username?: string): Promise<{
+    commands: Array<{
+      id: string;
+      name: string;
+      type: string;
+      cooldown: number;
+      enabled: boolean;
+    }>;
+  }>;
+
+  /** Workflow counts and a recent-activity feed, for a dashboard landing view. */
+  getDashboard(): Promise<{
+    workflows: { total: number; enabled: number; running: number };
+    recentActivity: Array<{ type: string; message: string; timestamp: string }>;
+  }>;
+
+  getAvailableWorkflows(): Promise<{
+    workflows: Array<{
+      id: string;
+      name: string;
+      description: string;
+      enabled: boolean;
+      lastExecution?: { id: string; status: string; startedAt: string };
+    }>;
+  }>;
+
+  getWorkflowStatus(executionId: string): Promise<{
+    id: string;
+    workflowId: string;
+    workflowName: string;
+    status: string;
+    /** 0-100. */
+    progress: number;
+    startedAt: string;
+    completedAt?: string;
+    error?: string;
+    steps: Array<{
+      name: string;
+      status: string;
+      startedAt?: string;
+      completedAt?: string;
+    }>;
+  }>;
+
+  getWorkflowHistory(options: {
+    workflowName?: string;
+    userId?: string;
+    status?: string;
+    limit?: number;
+  }): Promise<{
+    executions: Array<{
+      id: string;
+      workflowName: string;
+      status: string;
+      startedAt: string;
+      completedAt?: string;
+      startedBy: string;
+    }>;
+  }>;
+
+  cancelWorkflow(executionId: string, reason?: string): Promise<void>;
+
+  /** Push trigger-catalog changes to the caller. The callback is a capnweb
+   *  stub, so it stays live for the duration of the session. */
+  subscribeTriggerChanges(callback: {
+    onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
+  }): Promise<void>;
+
+  getUserProfile(userId: string): Promise<{
+    id: string;
+    username: string;
+    treats: { total: number; points: number };
+    stats?: Record<string, unknown>;
+  }>;
+
+  awardTreatsToUser(
+    userId: string,
+    treatType: string,
+    title: string,
+    description: string,
+    points: number,
+    awardedBy: string,
+    imageUrl?: string,
+    expiresInDays?: number
+  ): Promise<{ success: boolean; message: string }>;
+
+  /** Inject a synthetic Twitch event onto the bus. Intended for development
+   *  and for exercising alert overlays without a live stream. */
+  simulateTwitchEvent(
+    eventType: string,
+    eventData: Record<string, unknown>
+  ): Promise<{ success: boolean; message: string }>;
 }
 
 // ==================== Widgets ====================
