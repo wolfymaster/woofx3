@@ -39,6 +39,47 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE groups (
+			id TEXT PRIMARY KEY,
+			application_id TEXT NOT NULL,
+			name VARCHAR(100) NOT NULL,
+			description VARCHAR(500) DEFAULT '',
+			is_built_in BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			CONSTRAINT uq_group_application_name UNIQUE (application_id, name)
+		)`,
+		`CREATE TABLE user_groups (
+			username VARCHAR(50) NOT NULL,
+			group_id TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (username, group_id)
+		)`,
+		`CREATE TABLE commands (
+			id TEXT PRIMARY KEY,
+			application_id TEXT NOT NULL,
+			command VARCHAR(255) NOT NULL,
+			type VARCHAR(50) NOT NULL,
+			type_value VARCHAR(500) DEFAULT '',
+			cooldown INTEGER DEFAULT 0,
+			priority INTEGER DEFAULT 0,
+			enabled BOOLEAN DEFAULT 1,
+			created_by_type TEXT NOT NULL DEFAULT 'USER',
+			created_by_ref TEXT NOT NULL DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			visibility VARCHAR(20) NOT NULL DEFAULT 'restricted',
+			argument_pattern VARCHAR(255) NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE command_groups (
+			command_id TEXT NOT NULL,
+			group_id TEXT NOT NULL,
+			PRIMARY KEY (command_id, group_id)
+		)`,
+		`CREATE TABLE command_users (
+			command_id TEXT NOT NULL,
+			username VARCHAR(50) NOT NULL,
+			PRIMARY KEY (command_id, username)
+		)`,
 	}
 	for _, s := range stmts {
 		if err := db.Exec(s).Error; err != nil {

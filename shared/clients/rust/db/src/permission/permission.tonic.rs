@@ -90,7 +90,6 @@ pub mod permission_service_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        ///
         pub async fn has_permission(
             &mut self,
             request: impl tonic::IntoRequest<super::HasPermissionRequest>,
@@ -117,7 +116,6 @@ pub mod permission_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        ///
         pub async fn add_permission(
             &mut self,
             request: impl tonic::IntoRequest<super::PermissionRequest>,
@@ -144,7 +142,6 @@ pub mod permission_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        ///
         pub async fn add_user_to_resource(
             &mut self,
             request: impl tonic::IntoRequest<super::UserResourceRoleRequest>,
@@ -171,7 +168,6 @@ pub mod permission_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        ///
         pub async fn add_user_to_group(
             &mut self,
             request: impl tonic::IntoRequest<super::UserResourceRoleRequest>,
@@ -198,7 +194,6 @@ pub mod permission_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        ///
         pub async fn add_user_to_role(
             &mut self,
             request: impl tonic::IntoRequest<super::UserResourceRoleRequest>,
@@ -225,7 +220,6 @@ pub mod permission_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        ///
         pub async fn add_role_to_group(
             &mut self,
             request: impl tonic::IntoRequest<super::UserResourceRoleRequest>,
@@ -252,7 +246,6 @@ pub mod permission_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        ///
         pub async fn add_group_to_resource(
             &mut self,
             request: impl tonic::IntoRequest<super::UserResourceRoleRequest>,
@@ -279,7 +272,6 @@ pub mod permission_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        ///
         pub async fn remove_permission(
             &mut self,
             request: impl tonic::IntoRequest<super::PermissionRequest>,
@@ -306,7 +298,6 @@ pub mod permission_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        ///
         pub async fn remove_user_from_resource(
             &mut self,
             request: impl tonic::IntoRequest<super::UserResourceRoleRequest>,
@@ -336,7 +327,6 @@ pub mod permission_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        ///
         pub async fn remove_user_from_group(
             &mut self,
             request: impl tonic::IntoRequest<super::UserResourceRoleRequest>,
@@ -366,7 +356,32 @@ pub mod permission_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        ///
+        pub async fn remove_user_from_role(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UserResourceRoleRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/permission.PermissionService/RemoveUserFromRole",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("permission.PermissionService", "RemoveUserFromRole"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn remove_role_from_group(
             &mut self,
             request: impl tonic::IntoRequest<super::UserResourceRoleRequest>,
@@ -396,7 +411,6 @@ pub mod permission_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        ///
         pub async fn remove_group_from_resource(
             &mut self,
             request: impl tonic::IntoRequest<super::UserResourceRoleRequest>,
@@ -426,6 +440,32 @@ pub mod permission_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn list_permissions(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListPermissionsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListPermissionsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/permission.PermissionService/ListPermissions",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("permission.PermissionService", "ListPermissions"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -441,7 +481,6 @@ pub mod permission_service_server {
     /// Generated trait containing gRPC methods that should be implemented for use with PermissionServiceServer.
     #[async_trait]
     pub trait PermissionService: std::marker::Send + std::marker::Sync + 'static {
-        ///
         async fn has_permission(
             &self,
             request: tonic::Request<super::HasPermissionRequest>,
@@ -449,7 +488,6 @@ pub mod permission_service_server {
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
-        ///
         async fn add_permission(
             &self,
             request: tonic::Request<super::PermissionRequest>,
@@ -457,7 +495,6 @@ pub mod permission_service_server {
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
-        ///
         async fn add_user_to_resource(
             &self,
             request: tonic::Request<super::UserResourceRoleRequest>,
@@ -465,7 +502,6 @@ pub mod permission_service_server {
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
-        ///
         async fn add_user_to_group(
             &self,
             request: tonic::Request<super::UserResourceRoleRequest>,
@@ -473,7 +509,6 @@ pub mod permission_service_server {
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
-        ///
         async fn add_user_to_role(
             &self,
             request: tonic::Request<super::UserResourceRoleRequest>,
@@ -481,7 +516,6 @@ pub mod permission_service_server {
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
-        ///
         async fn add_role_to_group(
             &self,
             request: tonic::Request<super::UserResourceRoleRequest>,
@@ -489,7 +523,6 @@ pub mod permission_service_server {
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
-        ///
         async fn add_group_to_resource(
             &self,
             request: tonic::Request<super::UserResourceRoleRequest>,
@@ -497,7 +530,6 @@ pub mod permission_service_server {
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
-        ///
         async fn remove_permission(
             &self,
             request: tonic::Request<super::PermissionRequest>,
@@ -505,7 +537,6 @@ pub mod permission_service_server {
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
-        ///
         async fn remove_user_from_resource(
             &self,
             request: tonic::Request<super::UserResourceRoleRequest>,
@@ -513,7 +544,6 @@ pub mod permission_service_server {
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
-        ///
         async fn remove_user_from_group(
             &self,
             request: tonic::Request<super::UserResourceRoleRequest>,
@@ -521,7 +551,13 @@ pub mod permission_service_server {
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
-        ///
+        async fn remove_user_from_role(
+            &self,
+            request: tonic::Request<super::UserResourceRoleRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        >;
         async fn remove_role_from_group(
             &self,
             request: tonic::Request<super::UserResourceRoleRequest>,
@@ -529,12 +565,18 @@ pub mod permission_service_server {
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
-        ///
         async fn remove_group_from_resource(
             &self,
             request: tonic::Request<super::UserResourceRoleRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        >;
+        async fn list_permissions(
+            &self,
+            request: tonic::Request<super::ListPermissionsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListPermissionsResponse>,
             tonic::Status,
         >;
     }
@@ -1086,6 +1128,55 @@ pub mod permission_service_server {
                     };
                     Box::pin(fut)
                 }
+                "/permission.PermissionService/RemoveUserFromRole" => {
+                    #[allow(non_camel_case_types)]
+                    struct RemoveUserFromRoleSvc<T: PermissionService>(pub Arc<T>);
+                    impl<
+                        T: PermissionService,
+                    > tonic::server::UnaryService<super::UserResourceRoleRequest>
+                    for RemoveUserFromRoleSvc<T> {
+                        type Response = super::super::common::ResponseStatus;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::UserResourceRoleRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PermissionService>::remove_user_from_role(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RemoveUserFromRoleSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/permission.PermissionService/RemoveRoleFromGroup" => {
                     #[allow(non_camel_case_types)]
                     struct RemoveRoleFromGroupSvc<T: PermissionService>(pub Arc<T>);
@@ -1169,6 +1260,52 @@ pub mod permission_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = RemoveGroupFromResourceSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/permission.PermissionService/ListPermissions" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListPermissionsSvc<T: PermissionService>(pub Arc<T>);
+                    impl<
+                        T: PermissionService,
+                    > tonic::server::UnaryService<super::ListPermissionsRequest>
+                    for ListPermissionsSvc<T> {
+                        type Response = super::ListPermissionsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListPermissionsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PermissionService>::list_permissions(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListPermissionsSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -1,12 +1,26 @@
-import type { CreateGroupInput, GroupSnapshot, UpdateGroupInput } from "@woofx3/api";
+import type {
+  CreateGroupInput,
+  GroupSnapshot,
+  ListPermissionsQuery,
+  PermissionRule,
+  UpdateGroupInput,
+} from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
 
-function groupToSnapshot(g: { id: string; applicationId: string; name: string; description: string; createdAt: unknown }): GroupSnapshot {
+function groupToSnapshot(g: {
+  id: string;
+  applicationId: string;
+  name: string;
+  description: string;
+  createdAt: unknown;
+  isBuiltIn?: boolean;
+}): GroupSnapshot {
   return {
     id: g.id,
     applicationId: g.applicationId,
     name: g.name,
     description: g.description,
+    isBuiltIn: g.isBuiltIn ?? false,
     createdAt:
       g.createdAt && typeof g.createdAt === "object" && "seconds" in (g.createdAt as Record<string, unknown>)
         ? new Date(Number((g.createdAt as { seconds: bigint | number }).seconds) * 1000).toISOString()
@@ -104,6 +118,39 @@ export const groupsRoutes = {
       username,
     });
     return { ok: true };
+  },
+
+  async listGroupsForUser(username: string): Promise<GroupSnapshot[]> {
+    const applicationId = await this.ensureApplicationId();
+    const response = await this.db.listUserGroupsForUser({ applicationId, username });
+    if (response.status?.code !== "OK") {
+      throw new Error(response.status?.message || "Failed to list groups for user");
+    }
+    return (response.groups ?? []).map(groupToSnapshot);
+  },
+
+  async listPermissions(query: ListPermissionsQuery = {}): Promise<PermissionRule[]> {
+    const applicationId = await this.ensureApplicationId();
+    const response = await this.db.listPermissions({
+      applicationId,
+      ptype: query.ptype ?? "",
+      ptypePrefix: query.ptypePrefix ?? "",
+      subject: query.subject ?? "",
+    });
+    if (response.status?.code !== "OK") {
+      throw new Error(response.status?.message || "Failed to list permissions");
+    }
+    return (response.permissions ?? []).map((p) => ({
+      id: Number(p.id),
+      applicationId: p.applicationId,
+      ptype: p.ptype,
+      v0: p.v0,
+      v1: p.v1,
+      v2: p.v2,
+      v3: p.v3,
+      v4: p.v4,
+      v5: p.v5,
+    }));
   },
 
   async removeUserFromGroup(groupId: string, username: string): Promise<{ ok: true }> {

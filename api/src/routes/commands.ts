@@ -4,6 +4,19 @@ import { invalidCommandVariableNames } from "@woofx3/common/templates/command-va
 import type * as command from "@woofx3/db/command.pb";
 import { commandToSnapshot } from "./helpers";
 
+/**
+ * db-proxy's Casbin hook rejects an unauthorized GetCommand with a Twirp
+ * `unauthenticated` error, which `DbClient` normalizes into a plain Error
+ * carrying the code in its message. Distinguish that from a genuine transport
+ * or lookup failure so a denial reads as a denial rather than an outage.
+ */
+function isPermissionDenied(err: unknown): boolean {
+  if (!(err instanceof Error)) {
+    return false;
+  }
+  return err.message.includes("unauthenticated") || err.message.includes("permission_denied");
+}
+
 export const commandsRoutes = {
   async listCommands(): Promise<CommandSnapshot[]> {
     const applicationId = await this.ensureApplicationId();
@@ -62,13 +75,29 @@ export const commandsRoutes = {
   }> {
     this.logger.info("Executing command", { commandName, username, args: Object.keys(args) });
     const applicationId = await this.ensureApplicationId();
-    // Get the command
+    // Get the command. This doubles as the authorization gate: db-proxy runs
+    // the command's group/user grants through Casbin inside GetCommand and
+    // rejects the call outright when `username` is not permitted, so a denial
+    // can never reach the publish below. Enforcement deliberately lives there
+    // rather than here - woofwoofwoof's chat path checks the same policy rows,
+    // and duplicating the decision in this service would let the two drift.
     const cmdReq: command.GetCommandRequest = {
       command: commandName,
       applicationId,
       username,
     };
-    const cmdResponse = await this.db.getCommand(cmdReq);
+
+    let cmdResponse: command.CommandResponse;
+    try {
+      cmdResponse = await this.db.getCommand(cmdReq);
+    } catch (err) {
+      if (isPermissionDenied(err)) {
+        this.logger.info("Command execution denied", { commandName, username });
+        throw new Error(`You do not have permission to use "${commandName}"`);
+      }
+      throw err;
+    }
+
     if (cmdResponse.status?.code !== "OK" || !cmdResponse.command) {
       throw new Error("Command not found");
     }

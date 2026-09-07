@@ -29,6 +29,11 @@ type Group struct {
 	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// Built-in groups are seeded with every application and mirror Twitch's
+	// badge model (everyone/subscriber/vip/moderator/broadcaster). They may
+	// not be renamed or deleted, and their membership for the Twitch-derived
+	// ones is owned by the Twitch state sync rather than by hand.
+	IsBuiltIn     bool `protobuf:"varint,6,opt,name=is_built_in,json=isBuiltIn,proto3" json:"is_built_in,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -96,6 +101,13 @@ func (x *Group) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *Group) GetIsBuiltIn() bool {
+	if x != nil {
+		return x.IsBuiltIn
+	}
+	return false
 }
 
 type CreateGroupRequest struct {
@@ -670,14 +682,15 @@ var File_group_proto protoreflect.FileDescriptor
 
 const file_group_proto_rawDesc = "" +
 	"\n" +
-	"\vgroup.proto\x12\x05group\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xaf\x01\n" +
+	"\vgroup.proto\x12\x05group\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcf\x01\n" +
 	"\x05Group\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"q\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1e\n" +
+	"\vis_built_in\x18\x06 \x01(\bR\tisBuiltIn\"q\n" +
 	"\x12CreateGroupRequest\x12%\n" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +

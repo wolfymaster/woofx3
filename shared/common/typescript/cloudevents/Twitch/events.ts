@@ -25,6 +25,18 @@ export enum EventType {
     SharedAnnouncement = 'sharedAnnouncement.channel.twitch',
 }
 
+// Badge-derived chatter state, carried on every chat message. Twitch reports
+// these as badges on the message itself rather than as a queryable roster, so
+// this is the only continuous signal for whether a chatter is currently a
+// moderator/VIP/subscriber. Consumers use it to keep the built-in
+// subscriber/vip/moderator/broadcaster groups in sync.
+export interface ChatterBadges {
+    isBroadcaster: boolean;
+    isModerator: boolean;
+    isSubscriber: boolean;
+    isVip: boolean;
+}
+
 export interface ChatMessage {
     amount: number;
     isPaid: boolean;
@@ -33,6 +45,7 @@ export interface ChatMessage {
     chatterId: string;
     chatterName: string;
     message: string;
+    badges: ChatterBadges;
 }
 
 export interface Cheer {

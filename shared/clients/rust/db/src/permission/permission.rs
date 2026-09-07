@@ -33,6 +33,52 @@ pub struct UserResourceRoleRequest {
     #[prost(string, tag="4")]
     pub role: ::prost::alloc::string::String,
 }
+/// Permission is one stored Casbin rule. ptype selects the rule family
+/// ("p" policy, "g"/"g2" grouping); v0..v5 are Casbin's positional slots,
+/// whose meaning depends on ptype - for "p" they are subject/object/action/
+/// effect, for "g" they are subject/group.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Permission {
+    #[prost(int64, tag="1")]
+    pub id: i64,
+    #[prost(string, tag="2")]
+    pub application_id: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub ptype: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub v0: ::prost::alloc::string::String,
+    #[prost(string, tag="5")]
+    pub v1: ::prost::alloc::string::String,
+    #[prost(string, tag="6")]
+    pub v2: ::prost::alloc::string::String,
+    #[prost(string, tag="7")]
+    pub v3: ::prost::alloc::string::String,
+    #[prost(string, tag="8")]
+    pub v4: ::prost::alloc::string::String,
+    #[prost(string, tag="9")]
+    pub v5: ::prost::alloc::string::String,
+}
+/// All filters are optional and AND-ed together. An empty ptype/subject
+/// means "any"; ptype_prefix matches rule families (e.g. "g" matches both
+/// "g" and "g2") and is ignored when ptype is set.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListPermissionsRequest {
+    #[prost(string, tag="1")]
+    pub application_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub ptype: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub ptype_prefix: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub subject: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListPermissionsResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, repeated, tag="2")]
+    pub permissions: ::prost::alloc::vec::Vec<Permission>,
+}
 include!("permission.serde.rs");
 include!("permission.tonic.rs");
 // @@protoc_insertion_point(module)

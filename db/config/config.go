@@ -18,6 +18,15 @@ type DatabaseEnvConfig struct {
 // gate access to the api service's HTTP endpoints - that has its own
 // token-based auth. g(user, group) is Casbin's built-in RBAC role resolution;
 // keyMatch2 keeps "command/*"-style wildcard grants working.
+//
+// The p.sub == "*" clause is how "every user" is expressed. Two cases need it,
+// and neither can be represented with g() rows: the built-in "everyone" group
+// (materialising one membership row per chatter would be unbounded and would
+// go stale constantly), and a restricted command with no group or user grant
+// configured, which means "no restriction" rather than "deny all". Putting it
+// in the matcher keeps both enforcement paths - db-proxy's GetCommand hook and
+// woofwoofwoof's canUse -> HasPermission - agreeing without either of them
+// special-casing it in application code.
 func GetCasbinModelString() (string, error) {
 	return `
 [request_definition]
@@ -33,6 +42,6 @@ g = _, _
 e = some(where (p.eft == allow)) && !some(where (p.eft == deny))
 
 [matchers]
-m = (g(r.sub, p.sub) || r.sub == p.sub) && keyMatch2(r.obj, p.obj) && r.act == p.act
+m = (p.sub == "*" || g(r.sub, p.sub) || r.sub == p.sub) && keyMatch2(r.obj, p.obj) && r.act == p.act
 `, nil
 }

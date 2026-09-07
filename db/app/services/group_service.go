@@ -2,10 +2,12 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/google/uuid"
+	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -40,6 +42,7 @@ func toProtoGroup(g *models.Group) *client.Group {
 		Name:          g.Name,
 		Description:   g.Description,
 		CreatedAt:     timestamppb.New(g.CreatedAt),
+		IsBuiltIn:     g.IsBuiltIn,
 	}
 }
 
@@ -53,7 +56,11 @@ func (s *groupService) CreateGroup(ctx context.Context, req *client.CreateGroupR
 		return nil, err
 	}
 
+	// Assign the id here rather than leaning on the column default: that
+	// default is Postgres-only (uuid_generate_v4()), so on the SQLite backend
+	// every group would otherwise be inserted with the zero UUID and collide.
 	m := models.Group{
+		ID:            uuid.New(),
 		ApplicationID: appID,
 		Name:          strings.TrimSpace(req.Name),
 		Description:   req.Description,
@@ -117,7 +124,14 @@ func (s *groupService) UpdateGroup(ctx context.Context, req *client.UpdateGroupR
 	if err != nil {
 		return nil, err
 	}
-	m.Name = strings.TrimSpace(req.Name)
+	name := strings.TrimSpace(req.Name)
+	if m.IsBuiltIn && name != "" && name != m.Name {
+		return nil, twirp.InvalidArgumentError("name",
+			fmt.Sprintf("built-in group %q cannot be renamed", m.Name))
+	}
+	if !m.IsBuiltIn {
+		m.Name = name
+	}
 	m.Description = req.Description
 	if err := s.repo.Update(m); err != nil {
 		return nil, err
@@ -136,6 +150,10 @@ func (s *groupService) DeleteGroup(ctx context.Context, req *client.DeleteGroupR
 	m, err := s.repo.GetByID(id)
 	if err != nil {
 		return nil, err
+	}
+	if m.IsBuiltIn {
+		return nil, twirp.NewError(twirp.PermissionDenied,
+			fmt.Sprintf("built-in group %q cannot be deleted", m.Name))
 	}
 	if err := s.repo.Delete(m); err != nil {
 		return nil, err

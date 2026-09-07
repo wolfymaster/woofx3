@@ -2,6 +2,14 @@ import type { Service } from "@woofx3/common/runtime";
 import { ListCommands, type ListCommandsRequest, type ListCommandsResponse } from "@woofx3/db/command.pb";
 import type { ResponseStatus } from "@woofx3/db/common.pb";
 import { Ping } from "@woofx3/db/common.pb";
+import {
+  AddUserToGroup,
+  type GroupMembershipRequest,
+  ListGroups,
+  type ListGroupsRequest,
+  type ListGroupsResponse,
+  RemoveUserFromGroup,
+} from "@woofx3/db/group.pb";
 import { RegisterTriggers } from "@woofx3/db/module.pb";
 import type { ListTriggersResponse, RegisterTriggersRequest } from "@woofx3/db/module_trigger.pb";
 import {
@@ -53,6 +61,18 @@ export class DatabaseClient {
 
   async removeUserFromResource(req: UserResourceRoleRequest): Promise<ResponseStatus> {
     return RemoveUserFromResource(req, this.config);
+  }
+
+  async listGroups(req: ListGroupsRequest): Promise<ListGroupsResponse> {
+    return ListGroups(req, this.config);
+  }
+
+  async addUserToGroup(req: GroupMembershipRequest): Promise<ResponseStatus> {
+    return AddUserToGroup(req, this.config);
+  }
+
+  async removeUserFromGroup(req: GroupMembershipRequest): Promise<ResponseStatus> {
+    return RemoveUserFromGroup(req, this.config);
   }
 
   async registerTriggers(req: RegisterTriggersRequest): Promise<ListTriggersResponse> {

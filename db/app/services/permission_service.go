@@ -8,6 +8,7 @@ import (
 
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/types"
+	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 )
 
@@ -102,6 +103,50 @@ func (s *permissionService) RemoveRoleFromGroup(ctx context.Context, req *client
 
 func (s *permissionService) RemoveGroupFromResource(ctx context.Context, req *client.UserResourceRoleRequest) (*client.ResponseStatus, error) {
 	return s.handleRemoveUserResourceRoleRequest(ctx, req)
+}
+
+func (s *permissionService) ListPermissions(ctx context.Context, req *client.ListPermissionsRequest) (*client.ListPermissionsResponse, error) {
+	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	appID, err := uuid.Parse(appIDStr)
+	if err != nil {
+		return nil, err
+	}
+
+	rules, err := s.repo.List(appID, repo.ListQuery{
+		Ptype:       req.Ptype,
+		PtypePrefix: req.PtypePrefix,
+		Subject:     req.Subject,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]*client.Permission, 0, len(rules))
+	for i := range rules {
+		out = append(out, toProtoPermission(&rules[i]))
+	}
+
+	return &client.ListPermissionsResponse{
+		Status:      &client.ResponseStatus{Code: client.ResponseStatus_OK, Message: "Permissions retrieved successfully"},
+		Permissions: out,
+	}, nil
+}
+
+func toProtoPermission(m *models.Permission) *client.Permission {
+	return &client.Permission{
+		Id:            int64(m.ID),
+		ApplicationId: m.ApplicationID.String(),
+		Ptype:         m.Ptype,
+		V0:            m.V0,
+		V1:            m.V1,
+		V2:            m.V2,
+		V3:            m.V3,
+		V4:            m.V4,
+		V5:            m.V5,
+	}
 }
 
 /*

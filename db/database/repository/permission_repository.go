@@ -154,93 +154,32 @@ func (r *PermissionRepository) RemoveG2Type(appID uuid.UUID, resource string, gr
 		appID, resource, group).Delete(&models.Permission{}).Error
 }
 
-// func (r *PermissionRepository) GetPermissionByID(db *gorm.DB, id int) (*Permission, error) {
-// 	var rule Permission
-// 	err := db.First(&rule, id).Error
-// 	return &rule, err
-// }
+// ListQuery narrows a permission listing. Zero values mean "no filter"; the
+// filters are AND-ed. PtypePrefix matches a rule family (e.g. "g" matches both
+// "g" and "g2") and is ignored when Ptype is set.
+type ListQuery struct {
+	Ptype       string
+	PtypePrefix string
+	Subject     string
+}
 
-// func (r *PermissionRepository) GetPermissionsByApplicationID(db *gorm.DB, appID uuid.UUID) ([]Permission, error) {
-// 	var rules []Permission
-// 	err := db.Where("application_id = ?", appID).Find(&rules).Error
-// 	return rules, err
-// }
+// List returns the stored Casbin rules for an application. This is a read path
+// for management UIs only - the enforcer itself loads policy through the gorm
+// adapter, never through this method.
+func (r *PermissionRepository) List(appID uuid.UUID, q ListQuery) ([]models.Permission, error) {
+	var rules []models.Permission
 
-// func (r *PermissionRepository) GetPermissionsByPtype(db *gorm.DB, appID uuid.UUID, ptype string) ([]Permission, error) {
-// 	var rules []Permission
-// 	err := db.Where("application_id = ? AND ptype = ?", appID, ptype).Find(&rules).Error
-// 	return rules, err
-// }
+	tx := r.db.Where("application_id = ?", appID)
+	switch {
+	case q.Ptype != "":
+		tx = tx.Where("ptype = ?", q.Ptype)
+	case q.PtypePrefix != "":
+		tx = tx.Where("ptype LIKE ?", q.PtypePrefix+"%")
+	}
+	if q.Subject != "" {
+		tx = tx.Where("v0 = ?", q.Subject)
+	}
 
-// // Get policy rules (p, p2, etc.)
-// func (r *PermissionRepository) GetPolicyRules(db *gorm.DB, appID uuid.UUID) ([]Permission, error) {
-// 	var rules []Permission
-// 	err := db.Where("application_id = ? AND ptype LIKE 'p%'", appID).Find(&rules).Error
-// 	return rules, err
-// }
-
-// // Get grouping policy rules (g, g2, etc.)
-// func (r *PermissionRepository) GetGroupingRules(db *gorm.DB, appID uuid.UUID) ([]Permission, error) {
-// 	var rules []Permission
-// 	err := db.Where("application_id = ? AND ptype LIKE 'g%'", appID).Find(&rules).Error
-// 	return rules, err
-// }
-
-// // Get rules for a specific subject
-// func (r *PermissionRepository) GetRulesForSubject(db *gorm.DB, appID uuid.UUID, subject string) ([]Permission, error) {
-// 	var rules []Permission
-// 	err := db.Where("application_id = ? AND v0 = ?", appID, subject).Find(&rules).Error
-// 	return rules, err
-// }
-
-// // Get rules for a specific role
-// func (r *PermissionRepository) GetRulesForRole(db *gorm.DB, appID uuid.UUID, role string) ([]Permission, error) {
-// 	var rules []Permission
-// 	err := db.Where("application_id = ? AND ptype LIKE 'p%' AND v0 = ?", appID, role).Find(&rules).Error
-// 	return rules, err
-// }
-
-// // Get role assignments for a user
-// func (r *PermissionRepository) GetUserRoles(db *gorm.DB, appID uuid.UUID, user string) ([]Permission, error) {
-// 	var rules []Permission
-// 	err := db.Where("application_id = ? AND ptype = 'g' AND v0 = ?", appID, user).Find(&rules).Error
-// 	return rules, err
-// }
-
-// // Check if a specific policy exists
-// func (r *PermissionRepository) PolicyExists(db *gorm.DB, appID uuid.UUID, ptype, v0, v1, v2 string) (bool, error) {
-// 	var count int64
-// 	err := db.Model(&Permission{}).
-// 		Where("application_id = ? AND ptype = ? AND v0 = ? AND v1 = ? AND v2 = ?", appID, ptype, v0, v1, v2).
-// 		Count(&count).Error
-// 	return count > 0, err
-// }
-
-// // Bulk operations for better performance
-// func (r *PermissionRepository) CreatePermissions(db *gorm.DB, rules []Permission) error {
-// 	return db.CreateInBatches(rules, 100).Error
-// }
-
-// func (r *PermissionRepository) DeletePermissionsByApplicationID(db *gorm.DB, appID uuid.UUID) error {
-// 	return db.Where("application_id = ?", appID).Delete(&Permission{}).Error
-// }
-
-// func (r *PermissionRepository) AddRoleForUser(db *gorm.DB, appID uuid.UUID, user, role string) error {
-// 	rule := Permission{
-// 		ApplicationID: appID,
-// 		Ptype:         "g",
-// 		V0:            user,
-// 		V1:            role,
-// 	}
-// 	return rule.Create(db)
-// }
-
-// func (r *PermissionRepository) RemovePolicy(db *gorm.DB, appID uuid.UUID, subject, object, action string) error {
-// 	return db.Where("application_id = ? AND ptype = 'p' AND v0 = ? AND v1 = ? AND v2 = ?",
-// 		appID, subject, object, action).Delete(&Permission{}).Error
-// }
-
-// func (r *PermissionRepository) RemoveRoleForUser(db *gorm.DB, appID uuid.UUID, user, role string) error {
-// 	return db.Where("application_id = ? AND ptype = 'g' AND v0 = ? AND v1 = ?",
-// 		appID, user, role).Delete(&Permission{}).Error
-// }
+	err := tx.Order("ptype ASC, v0 ASC, v1 ASC, v2 ASC").Find(&rules).Error
+	return rules, err
+}
