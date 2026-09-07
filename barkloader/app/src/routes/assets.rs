@@ -18,6 +18,7 @@ const ALLOWED_TOP_LEVEL_PREFIXES: &[&str] = &["modules/", "user/"];
 /// Every rejection — traversal attempt, bad prefix, missing file — is a
 /// uniform 404 with no detail, so callers cannot probe the key space.
 #[get("/assets/{key:.*}")]
+#[tracing::instrument(name = "GET /assets/{key}", skip_all, fields(asset_key = %path.as_str()))]
 async fn assets_handler(repository: Data<SharedRepository>, path: Path<String>) -> HttpResponse {
     let raw = path.into_inner();
     let Some(key) = sanitize_asset_key(&raw) else {

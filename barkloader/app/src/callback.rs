@@ -1,5 +1,5 @@
 use serde::Serialize;
-use log::{error, info};
+use tracing::{error, info};
 
 #[derive(Serialize)]
 pub struct InstallCallback {

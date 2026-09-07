@@ -4,6 +4,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+mod otel;
+
+pub use otel::{
+    OtelConfig, OTEL_ENABLED_KEY, OTEL_EXPORTER_ENDPOINT_KEY, OTEL_LOCAL_FILE_ENABLED_KEY,
+    OTEL_TRACING_ENABLED_KEY,
+};
+
 const PROJECT_ROOT_MARKERS: &[&str] = &[".woofx3.json", ".woofx3.config"];
 const ENV_PREFIX: &str = "WOOFX3_";
 
@@ -15,6 +22,8 @@ pub enum ConfigError {
     IoError(#[from] std::io::Error),
     #[error("failed to parse config file: {0}")]
     ParseError(#[from] serde_json::Error),
+    #[error("config key `{key}` is not a boolean: `{value}`")]
+    InvalidBool { key: String, value: String },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -55,6 +64,44 @@ impl Config {
         self.get(key)
             .filter(|v| !v.is_empty())
             .ok_or_else(|| ConfigError::ConfigNotFound)
+    }
+
+    /// Resolve a key as a boolean. An absent or blank value yields `None` so the
+    /// caller can apply its own default; anything else that is not a recognised
+    /// boolean literal is a configuration error rather than a silent fallback.
+    pub fn get_bool(&self, key: &str) -> Result<Option<bool>, ConfigError> {
+        let raw = match self.get(key) {
+            Some(raw) => raw,
+            None => {
+                return Ok(None);
+            }
+        };
+
+        let normalized = raw.trim().to_ascii_lowercase();
+        if normalized.is_empty() {
+            return Ok(None);
+        }
+
+        match normalized.as_str() {
+            "1" | "true" | "yes" | "on" => Ok(Some(true)),
+            "0" | "false" | "no" | "off" => Ok(Some(false)),
+            _ => Err(ConfigError::InvalidBool {
+                key: key.to_string(),
+                value: raw,
+            }),
+        }
+    }
+
+    /// Resolve a key as a non-empty trimmed string, treating blank as absent.
+    pub fn get_non_empty(&self, key: &str) -> Option<String> {
+        self.get(key)
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    }
+
+    /// Resolve the shared OpenTelemetry settings used by every woofx3 service.
+    pub fn otel(&self) -> Result<OtelConfig, ConfigError> {
+        OtelConfig::from_config(self)
     }
 }
 

@@ -526,21 +526,21 @@ fn build_log_namespace<'js>(
 
     let module_id = invocation.module_id.clone();
     let info_fn = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, value: JsValue<'_>| -> rquickjs::Result<()> {
-        log::info!("[module:{}] {}", module_id, format_log_value(&value));
+        tracing::info!("[module:{}] {}", module_id, format_log_value(&value));
         Ok(())
     }).map_err(map)?;
     log.set("info", info_fn).map_err(map)?;
 
     let module_id = invocation.module_id.clone();
     let warn_fn = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, value: JsValue<'_>| -> rquickjs::Result<()> {
-        log::warn!("[module:{}] {}", module_id, format_log_value(&value));
+        tracing::warn!("[module:{}] {}", module_id, format_log_value(&value));
         Ok(())
     }).map_err(map)?;
     log.set("warn", warn_fn).map_err(map)?;
 
     let module_id = invocation.module_id.clone();
     let error_fn = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, value: JsValue<'_>| -> rquickjs::Result<()> {
-        log::error!("[module:{}] {}", module_id, format_log_value(&value));
+        tracing::error!("[module:{}] {}", module_id, format_log_value(&value));
         Ok(())
     }).map_err(map)?;
     log.set("error", error_fn).map_err(map)?;

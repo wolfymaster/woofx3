@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use lib_repository::{FileRepositoryConfig, RepositoryConfig, S3RepositoryConfig};
-use log::{info, warn};
+use tracing::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;

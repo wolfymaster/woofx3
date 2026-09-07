@@ -1,7 +1,7 @@
 use actix_ws::{AggregatedMessage, AggregatedMessageStream};
 use futures_util::StreamExt as _;
 use lib_sandbox::SandboxFactory;
-use log::{error, info};
+use tracing::{error, info};
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 struct WsMessage {

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_nats::Client;
 use lib_sandbox::host::NatsPublisher;
-use log::{debug, warn};
+use tracing::{debug, warn};
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::runtime::Handle;

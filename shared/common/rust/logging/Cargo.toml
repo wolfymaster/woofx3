@@ -1,0 +1,38 @@
+[package]
+name = "woofx3-logging"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+woofx3-runtime = { path = "../runtime" }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "std",
+    "fmt",
+    "ansi",
+    "registry",
+    "env-filter",
+    "tracing-log",
+] }
+tracing-opentelemetry = { version = "0.33", default-features = false, features = ["tracing-log"] }
+opentelemetry = { version = "0.32", default-features = false, features = ["trace", "logs"] }
+opentelemetry_sdk = { version = "0.32", default-features = false, features = [
+    "trace",
+    "logs",
+    "internal-logs",
+] }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = [
+    "trace",
+    "logs",
+    "http-proto",
+    "reqwest-blocking-client",
+    "reqwest-rustls",
+] }
+opentelemetry-appender-tracing = { version = "0.32", default-features = false }
+
+[dev-dependencies]
+tempfile = "3"
