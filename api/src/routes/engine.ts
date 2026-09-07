@@ -70,8 +70,7 @@ export const engineRoutes = routeModule({
    */
   async setOverlayPublicUrl(value: string): Promise<{ success: boolean }> {
     const normalized = value.trim().replace(/\/+$/, "");
-    const response = await this.db.setSetting("scene.publicUrl", normalized, "");
-    return { success: response.status?.code === "OK" };
+    return { success: await this.db.trySetSetting("scene.publicUrl", normalized, "") };
   },
 
   /**
@@ -161,8 +160,7 @@ export const engineRoutes = routeModule({
       updates.push(["storage.s3.force_path_style", config.forcePathStyle ? "true" : "false"]);
     }
     for (const [key, value] of updates) {
-      const response = await this.db.setSetting(key, value, applicationId);
-      if (response.status?.code !== "OK") {
+      if (!(await this.db.trySetSetting(key, value, applicationId))) {
         return { success: false };
       }
     }

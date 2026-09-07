@@ -259,8 +259,9 @@ export class DbClient {
     return unwrap("listUserGroupsForUser", response, response.groups ?? []);
   }
 
-  async listPermissions(req: permission.ListPermissionsRequest): Promise<permission.ListPermissionsResponse> {
-    return permission.ListPermissions(req, this.config);
+  async listPermissions(req: permission.ListPermissionsRequest): Promise<permission.Permission[]> {
+    const response = await permission.ListPermissions(req, this.config);
+    return unwrap("listPermissions", response, response.permissions ?? []);
   }
 
   async getWorkflow(req: workflow.GetWorkflowRequest): Promise<workflow.WorkflowResponse> {
@@ -430,16 +431,17 @@ async listWidgetStatus(
     return widget_status.DeleteWidgetStatus(req, this.config);
   }
 
-  async getUser(req: user.GetUserRequest): Promise<user.UserResponse> {
-    return user.GetUser(req, this.config);
+  async getUser(req: user.GetUserRequest): Promise<user.User> {
+    const response = await user.GetUser(req, this.config);
+    return unwrap("getUser", response, response.user);
   }
 
   async getUserTreatsSummary(req: treat.GetUserTreatsSummaryRequest): Promise<treat.TreatsSummaryResponse> {
     return treat.GetUserTreatsSummary(req, this.config);
   }
 
-  async awardTreat(req: treat.AwardTreatRequest): Promise<treat.TreatResponse> {
-    return treat.AwardTreat(req, this.config);
+  async awardTreat(req: treat.AwardTreatRequest): Promise<void> {
+    unwrapVoid("awardTreat", await treat.AwardTreat(req, this.config));
   }
 
   async listModules(stateFilter?: string): Promise<module.Module[]> {
@@ -553,7 +555,20 @@ async listWidgetStatus(
     return { id: resp.user.id };
   }
 
-  async setSetting(
+  async setSetting(key: string, value: string, applicationId: string, userId?: string): Promise<void> {
+    unwrapVoid("setSetting", await this.writeSetting(key, value, applicationId, userId));
+  }
+
+  /**
+   * Write a setting, reporting whether it landed. For the settings screens,
+   * which surface a failed save as `{ success: false }` rather than throwing.
+   */
+  async trySetSetting(key: string, value: string, applicationId: string, userId?: string): Promise<boolean> {
+    const response = await this.writeSetting(key, value, applicationId, userId);
+    return response.status?.code === "OK";
+  }
+
+  private async writeSetting(
     key: string,
     value: string,
     applicationId: string,

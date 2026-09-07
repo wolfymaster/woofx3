@@ -219,11 +219,7 @@ export const commandsRoutes = routeModule({
       const engineUser = await this.db.findOrCreateByWoofx3UIUserId(convexUserId);
       engineUserId = engineUser.id;
     }
-
-    const response = await this.db.setSetting("twitch_token", JSON.stringify(token), "", engineUserId);
-    if (response.status?.code !== "OK") {
-      throw new Error(response.status?.message || "Failed to set twitch_token");
-    }
+    await this.db.setSetting("twitch_token", JSON.stringify(token), "", engineUserId);
     this.logger.info("Twitch token written to settings", {
       twitchUserId: token.userId,
       engineUserId: engineUserId ?? "(unscoped)",
@@ -252,10 +248,7 @@ export const commandsRoutes = routeModule({
    * cleanly without needing to handle a missing row.
    */
   async deleteTwitchToken(): Promise<{ ok: true }> {
-    const response = await this.db.setSetting("twitch_token", "", "");
-    if (response.status?.code !== "OK") {
-      throw new Error(response.status?.message || "Failed to clear twitch_token");
-    }
+    await this.db.setSetting("twitch_token", "", "");
     this.logger.info("Twitch token cleared from settings");
 
     // Same notification as setTwitchToken — the row changed, downstream

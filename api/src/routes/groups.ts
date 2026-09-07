@@ -119,10 +119,7 @@ export const groupsRoutes = routeModule({
       ptypePrefix: query.ptypePrefix ?? "",
       subject: query.subject ?? "",
     });
-    if (response.status?.code !== "OK") {
-      throw new Error(response.status?.message || "Failed to list permissions");
-    }
-    return (response.permissions ?? []).map((p) => ({
+    return response.map((p) => ({
       id: Number(p.id),
       applicationId: p.applicationId,
       ptype: p.ptype,
