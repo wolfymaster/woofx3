@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { Api, type ApiOptions } from "../src/api";
+import { DbError } from "../src/db-client";
 
 function fakeLogger() {
   return {
@@ -104,7 +105,9 @@ describe("executeCommand permission enforcement", () => {
     const { api, nats } = makeApi({
       getDefaultApplication: mock(async () => APPLICATION),
       getCommand: mock(async () => {
-        throw new Error("db.getCommand: unauthenticated: unauthorized");
+        // The denial is data now, not a message template a test has to
+        // match character for character.
+        throw new DbError("getCommand", "unauthenticated", "unauthorized");
       }),
     });
 
@@ -178,7 +181,7 @@ describe("group routes", () => {
     const { api } = makeApi({
       getDefaultApplication: mock(async () => APPLICATION),
       deleteGroup: mock(async () => {
-        throw new Error('db.deleteGroup: permission_denied: built-in group "moderator" cannot be deleted');
+        throw new DbError("deleteGroup", "permission_denied", 'built-in group "moderator" cannot be deleted');
       }),
     });
 

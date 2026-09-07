@@ -22,23 +22,82 @@ import * as widget_status from "@woofx3/db/widget_status.pb";
 import * as workflow from "@woofx3/db/workflow.pb";
 import type { ClientConfiguration } from "twirpscript";
 
-// twirpscript's TwirpError is a plain class that does NOT extend Error, so
-// anything thrown from a Twirp call fails capnweb serialization (typeForRpc
-// rejects objects whose prototype is not Object.prototype and that are not
-// `instanceof Error`). Normalize at the db-proxy boundary so every caller
-// upstream sees a real Error carrying the Twirp code and message.
+/**
+ * A failure from db-proxy, carrying the reason as data.
+ *
+ * Two problems meet here. twirpscript's TwirpError does not extend Error, so
+ * anything thrown from a Twirp call fails capnweb serialization; and the
+ * response envelope reports failure in a `status.code` rather than by
+ * throwing. Both become a DbError, so a caller has one thing to catch and one
+ * place to read the reason from.
+ *
+ * `code` is the part that matters. It used to be flattened into the message,
+ * which left callers matching on substrings -- `err.message.includes(
+ * "unauthenticated")` -- and a test asserting an exact message template. The
+ * message stays human-facing; decisions read `code`.
+ */
+export class DbError extends Error {
+  /** Twirp code ("unauthenticated", "not_found", ...) or an envelope status code. */
+  readonly code: string;
+  /** The DbClient method that failed, e.g. "getCommand". */
+  readonly op: string;
+
+  constructor(op: string, code: string, message: string) {
+    super(message.length > 0 ? message : `db.${op} failed (${code})`);
+    this.name = "DbError";
+    this.code = code;
+    this.op = op;
+  }
+}
+
+/** True when the failure is db-proxy refusing the caller, not a transport fault. */
+export function isPermissionDenied(err: unknown): boolean {
+  return err instanceof DbError && (err.code === "unauthenticated" || err.code === "permission_denied");
+}
+
 function toError(err: unknown, op: string): Error {
-  if (err instanceof Error) {
+  if (err instanceof DbError) {
     return err;
   }
   if (err !== null && typeof err === "object") {
     const e = err as { code?: unknown; msg?: unknown };
-    const code = typeof e.code === "string" ? e.code : undefined;
-    const msg = typeof e.msg === "string" ? e.msg : undefined;
-    const detail = [code, msg].filter((part) => part && part.length > 0).join(": ");
-    return new Error(`${op}: ${detail.length > 0 ? detail : String(err)}`);
+    const code = typeof e.code === "string" ? e.code : "";
+    const msg = typeof e.msg === "string" ? e.msg : "";
+    if (code.length > 0 || msg.length > 0) {
+      return new DbError(op, code || "unknown", msg);
+    }
   }
-  return new Error(`${op}: ${String(err)}`);
+  if (err instanceof Error) {
+    return err;
+  }
+  return new DbError(op, "unknown", String(err));
+}
+
+/**
+ * Read the payload out of a db-proxy response envelope, or throw.
+ *
+ * Every enveloped call used to hand the whole response back and let the
+ * caller decide what a non-OK status meant. They decided it 48 times, in four
+ * different ways. Deciding it here means a route method receives what it
+ * asked for or does not run.
+ */
+function unwrap<T>(op: string, response: { status?: { code?: string; message?: string } }, payload: T | undefined): T {
+  const code = response.status?.code;
+  if (code !== "OK") {
+    throw new DbError(op, code ?? "unknown", response.status?.message ?? "");
+  }
+  if (payload === undefined || payload === null) {
+    throw new DbError(op, "not_found", `db.${op} returned no payload`);
+  }
+  return payload;
+}
+
+/** Envelope check for calls whose success carries no payload. */
+function unwrapVoid(op: string, response: { status?: { code?: string; message?: string } }): void {
+  const code = response.status?.code;
+  if (code !== "OK") {
+    throw new DbError(op, code ?? "unknown", response.status?.message ?? "");
+  }
 }
 
 export class DbClient {
@@ -59,7 +118,7 @@ export class DbClient {
           try {
             return await method.apply(this, args);
           } catch (err) {
-            throw toError(err, `db.${String(prop)}`);
+            throw toError(err, String(prop));
           }
         };
       },

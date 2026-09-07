@@ -3,20 +3,8 @@ import type { AvailableFunction, CommandSnapshot, CreateCommandInput, UpdateComm
 import { EngineEventType } from "@woofx3/api/webhooks";
 import { invalidCommandVariableNames } from "@woofx3/common/templates/command-variables";
 import type * as command from "@woofx3/db/command.pb";
+import { isPermissionDenied } from "../db-client";
 import { commandToSnapshot } from "./helpers";
-
-/**
- * db-proxy's Casbin hook rejects an unauthorized GetCommand with a Twirp
- * `unauthenticated` error, which `DbClient` normalizes into a plain Error
- * carrying the code in its message. Distinguish that from a genuine transport
- * or lookup failure so a denial reads as a denial rather than an outage.
- */
-function isPermissionDenied(err: unknown): boolean {
-  if (!(err instanceof Error)) {
-    return false;
-  }
-  return err.message.includes("unauthenticated") || err.message.includes("permission_denied");
-}
 
 export const commandsRoutes = routeModule({
   async listCommands(): Promise<CommandSnapshot[]> {
