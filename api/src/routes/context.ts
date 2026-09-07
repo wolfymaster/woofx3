@@ -159,6 +159,22 @@ export class ApiRouteHost extends RpcTarget {
     return app.id;
   }
 
+  /**
+   * The application id, or null when none has been onboarded yet.
+   *
+   * For NATS handlers, which must not throw: an exception there kills the
+   * subscription and stops delivery of everything after it. Route methods
+   * should use `ensureApplicationId`, which fails loudly instead.
+   */
+  protected async tryEnsureApplicationId(context: string): Promise<string | null> {
+    try {
+      return await this.ensureApplicationId();
+    } catch {
+      this.logger.warn(`${context}: no applicationId yet; skipping`);
+      return null;
+    }
+  }
+
   protected async notifyTriggerChange(moduleName: string): Promise<void> {
     type Subscriber = { onTriggerChange(event: { type: string; moduleName: string }): Promise<void> };
     const dead: Subscriber[] = [];

@@ -29,11 +29,11 @@ export const alertsRoutes = routeModule({
    * `db.alert.updated.*` outbox event drives the ALERT_SKIPPED
    * webhook from the api boundary.
    */
-  async skipCurrentAlert(applicationId?: string): Promise<{ skipped: boolean }> {
+  async skipCurrentAlert(): Promise<{ skipped: boolean }> {
     if (!this.nats) {
       throw new Error("NATS client not available");
     }
-    const appId = applicationId || (await this.ensureApplicationId());
+    const appId = await this.ensureApplicationId();
     const reply = await this.nats.request(
       "widget.queue.skip",
       new TextEncoder().encode(JSON.stringify({ applicationId: appId }))
@@ -48,11 +48,11 @@ export const alertsRoutes = routeModule({
    * marks every pending alert `skipped` (without touching the
    * in-flight lease) and returns the count.
    */
-  async clearAlertQueue(applicationId?: string): Promise<{ cleared: number }> {
+  async clearAlertQueue(): Promise<{ cleared: number }> {
     if (!this.nats) {
       throw new Error("NATS client not available");
     }
-    const appId = applicationId || (await this.ensureApplicationId());
+    const appId = await this.ensureApplicationId();
     const reply = await this.nats.request(
       "widget.queue.clear",
       new TextEncoder().encode(JSON.stringify({ applicationId: appId }))

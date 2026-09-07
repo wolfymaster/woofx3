@@ -2,7 +2,7 @@ import type { OverlayTokenMintedEvent, OverlayTokenRevokedEvent } from "@woofx3/
 import { EngineEventType } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
-import { asString, pickFirst, readRow } from "./outbox";
+import { pickFirst, readRow } from "./outbox";
 import { subscribeProjections } from "./projection";
 import type { WebhookClient } from "./webhook-client";
 

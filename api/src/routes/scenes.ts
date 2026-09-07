@@ -4,13 +4,13 @@ import { EngineEventType } from "@woofx3/api/webhooks";
 import { dbSceneToSnapshot, dbSceneToWire } from "./helpers";
 
 export const scenesRoutes = routeModule({
-  async getScenes(query?: { accountId?: string; page?: number; pageSize?: number }): Promise<{
+  async getScenes(query?: { page?: number; pageSize?: number }): Promise<{
     scenes: Scene[];
     total: number;
     page: number;
     pageSize: number;
   }> {
-    const applicationId = query?.accountId || (await this.ensureApplicationId());
+    const applicationId = await this.ensureApplicationId();
     const page = query?.page || 1;
     const pageSize = query?.pageSize || 10;
     const response = await this.db.listScenes({
@@ -66,13 +66,12 @@ export const scenesRoutes = routeModule({
 
   async createScene(data: {
     name: string;
-    accountId: string;
     description?: string;
     widgetsJson?: string;
     layoutJson?: string;
     correlationKey?: string;
   }): Promise<{ id: string }> {
-    const applicationId = data.accountId || (await this.ensureApplicationId());
+    const applicationId = await this.ensureApplicationId();
     this.logger.info("Creating scene", { name: data.name, applicationId });
     const response = await this.db.createScene({
       applicationId,

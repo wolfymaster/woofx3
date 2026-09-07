@@ -51,10 +51,11 @@ function toMintedResult(overlayPublicUrl: string, row: OverlayTokenRow) {
 
 export const overlayTokenRoutes = routeModule({
   async mintOverlayToken(input: { sceneId: string; label?: string }) {
+    const applicationId = await this.ensureApplicationId();
     const [result, overlayPublicUrl] = await Promise.all([
       this.db.mintOverlayToken({
         sceneId: input.sceneId,
-        applicationId: this.applicationId ?? "",
+        applicationId,
         label: input.label ?? "",
       }),
       resolveOverlayPublicUrl(this.db, this.overlayPublicUrl),
@@ -76,10 +77,11 @@ export const overlayTokenRoutes = routeModule({
   },
 
   async listOverlayTokens(input?: { sceneId?: string; page?: number; pageSize?: number }) {
+    const applicationId = await this.ensureApplicationId();
     const [result, overlayPublicUrl] = await Promise.all([
       this.db.listOverlayTokens({
         sceneId: input?.sceneId ?? "",
-        applicationId: this.applicationId ?? "",
+        applicationId,
         includeRevoked: false,
       }),
       resolveOverlayPublicUrl(this.db, this.overlayPublicUrl),

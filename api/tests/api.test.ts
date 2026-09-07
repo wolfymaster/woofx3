@@ -13,6 +13,9 @@ function fakeLogger() {
 function fakeWebhookClient() {
   return {
     send: mock(async (_event: unknown, _clientId?: string) => {}),
+    // ensureApplicationId cascades the resolved id into the webhook client.
+    setApplicationId: mock((_applicationId: string) => {}),
+    refreshCallbackUrls: mock(async () => {}),
   } as any;
 }
 
@@ -30,7 +33,13 @@ const MARKETPLACE_CTX = {
 
 function makeApi(opts: { db: any; webhookClient?: any }) {
   const logger = fakeLogger();
-  const api = new Api({ db: opts.db, nats: null, barkloaderUrl: BARKLOADER_URL, logger });
+  // Installing scopes the module to an application, so the stub has to be
+  // able to resolve one -- as any real deployment can, post-onboarding.
+  const db = {
+    getDefaultApplication: async () => ({ id: "app-1" }),
+    ...opts.db,
+  };
+  const api = new Api({ db, nats: null, barkloaderUrl: BARKLOADER_URL, logger });
   if (opts.webhookClient) {
     api.setWebhookClient(opts.webhookClient);
   }

@@ -95,6 +95,7 @@ describe("the RPC surface a client sees", () => {
     // it just silently fails to appear. This catches that direction, so the
     // choice is deliberate either way -- declare it, or name it here.
     const INTERNAL = [
+      "applicationIdOrNull",
       "setApplicationId",
       "setWebhookClient",
       "setAuthInvalidate",

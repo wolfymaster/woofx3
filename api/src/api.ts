@@ -53,6 +53,11 @@ export class Api extends ApiRouteHost {
     this.authInvalidate = fn;
   }
 
+  /** The cached application id, or null before anything has resolved one. */
+  applicationIdOrNull(): string | null {
+    return this.applicationId ?? null;
+  }
+
   setApplicationId(applicationId: string): void {
     this.applicationId = applicationId;
     if (this.webhookClient) {
