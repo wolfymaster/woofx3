@@ -12,6 +12,7 @@ import * as module_setting from "@woofx3/db/module_setting.pb";
 import type * as module_trigger from "@woofx3/db/module_trigger.pb";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
 import * as overlay_token from "@woofx3/db/overlay_token.pb";
+import * as resource from "@woofx3/db/resource.pb";
 import * as scene from "@woofx3/db/scene.pb";
 import * as setting from "@woofx3/db/setting.pb";
 import * as treat from "@woofx3/db/treat.pb";
@@ -86,6 +87,30 @@ export class DbClient {
 
   async deleteCommand(req: command.DeleteCommandRequest): Promise<common.ResponseStatus> {
     return command.DeleteCommand(req, this.config);
+  }
+
+  async createResource(req: resource.CreateResourceRequest): Promise<resource.ResourceResponse> {
+    return resource.CreateResource(req, this.config);
+  }
+
+  async createResourceFolder(req: resource.CreateFolderRequest): Promise<resource.ResourceResponse> {
+    return resource.CreateFolder(req, this.config);
+  }
+
+  async getResource(req: resource.GetResourceRequest): Promise<resource.ResourceResponse> {
+    return resource.GetResource(req, this.config);
+  }
+
+  async listResources(req: resource.ListResourcesRequest): Promise<resource.ListResourcesResponse> {
+    return resource.ListResources(req, this.config);
+  }
+
+  async updateResource(req: resource.UpdateResourceRequest): Promise<resource.ResourceResponse> {
+    return resource.UpdateResource(req, this.config);
+  }
+
+  async deleteResource(req: resource.DeleteResourceRequest): Promise<resource.DeleteResourceResponse> {
+    return resource.DeleteResource(req, this.config);
   }
 
   async createGroup(req: group.CreateGroupRequest): Promise<group.GroupResponse> {

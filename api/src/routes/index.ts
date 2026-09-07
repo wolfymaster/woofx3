@@ -16,6 +16,7 @@ import { dashboardStatsRoutes } from "./dashboard-stats";
 import { triggersRoutes } from "./triggers";
 import { alertsRoutes } from "./alerts";
 import { overlayTokenRoutes } from "./overlay-tokens";
+import { resourcesRoutes } from "./resources";
 import type { ApiRouteHost } from "./context";
 
 export type RegisteredApiRoutes = typeof engineRoutes &
@@ -35,8 +36,9 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof dashboardStatsRoutes &
   typeof triggersRoutes &
   typeof alertsRoutes &
-  typeof overlayTokenRoutes;
+  typeof overlayTokenRoutes &
+  typeof resourcesRoutes;
 
 export function registerAllRoutes(host: ApiRouteHost): void {
-  Object.assign(host, engineRoutes, subscriptionsRoutes, triggerSubscriptionRoutes, workflowsExecutionRoutes, commandsRoutes, groupsRoutes, fieldOptionsRoutes, userActionsRoutes, eventsRoutes, dashboardRoutes, accountsRoutes, modulesRoutes, workflowsRoutes, scenesRoutes, dashboardStatsRoutes, triggersRoutes, alertsRoutes, overlayTokenRoutes);
+  Object.assign(host, engineRoutes, subscriptionsRoutes, triggerSubscriptionRoutes, workflowsExecutionRoutes, commandsRoutes, groupsRoutes, fieldOptionsRoutes, userActionsRoutes, eventsRoutes, dashboardRoutes, accountsRoutes, modulesRoutes, workflowsRoutes, scenesRoutes, dashboardStatsRoutes, triggersRoutes, alertsRoutes, overlayTokenRoutes, resourcesRoutes);
 }

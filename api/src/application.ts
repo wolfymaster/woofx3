@@ -163,7 +163,12 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     const gateway = new ApiGateway(api, auth, db, logger);
     gateway.setWebhookClient(webhookClient);
 
-    this.server = createHttpServer({ port: config.port, logger, gateway });
+    this.server = createHttpServer({
+      port: config.port,
+      logger,
+      gateway,
+      onProcessingCallback: (body) => api.handleProcessingCallback(body as never),
+    });
 
     logger.info("API server started", {
       port: config.port,

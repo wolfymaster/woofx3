@@ -7,6 +7,12 @@ export interface HttpDeps {
   port: number;
   logger: SharedLogger;
   gateway: ApiGateway;
+  /**
+   * Records the outcome of an async barkloader job. Passed in rather
+   * than reached through the gateway so the transport keeps depending
+   * only on what it is handed.
+   */
+  onProcessingCallback: (body: unknown) => Promise<void>;
 }
 
 /**
@@ -130,7 +136,7 @@ class BunWebSocketAdapter {
  * ambiently, matching `sceneManager/src/http.ts`'s `createHttpServer`.
  */
 export function createHttpServer(deps: HttpDeps) {
-  const { port, logger, gateway } = deps;
+  const { port, logger, gateway, onProcessingCallback } = deps;
 
   // Map to track WebSocket adapters by their Bun WebSocket (capnweb path)
   const wsAdapters = new WeakMap<ServerWebSocket<unknown>, BunWebSocketAdapter>();
@@ -222,6 +228,27 @@ export function createHttpServer(deps: HttpDeps) {
             }
           );
         }
+      }
+
+      // Completion callback for asynchronous barkloader work. Kept off
+      // the capnweb surface because barkloader is a peer service posting
+      // plain JSON, not an authenticated control-plane session.
+      if (url.pathname === "/webhooks/barkloader/processing") {
+        if (req.method !== "POST") {
+          return new Response("Method Not Allowed", { status: 405 });
+        }
+        try {
+          const body = await req.json();
+          await onProcessingCallback(body);
+        } catch (err) {
+          // Answer 204 regardless. barkloader treats a non-2xx as a
+          // delivery failure worth logging, and there is nothing it can
+          // usefully retry: the job already ran.
+          logger.error("Failed to record processing callback", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        return new Response(null, { status: 204 });
       }
 
       // Health check endpoint

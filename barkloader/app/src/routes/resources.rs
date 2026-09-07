@@ -6,6 +6,8 @@
 //!   `POST /assets/upload-url`     ask for permission to upload
 //!   `PUT  /assets/upload/{token}` send the bytes (file backend only)
 //!   `POST /assets/process`        derive a thumbnail, asynchronously
+//!   `DELETE /assets/resource/{application_id}/{resource_id}`
+//!                                 purge one resource's stored bytes
 //!
 //! The upload-url response is deliberately identical whichever storage
 //! backend is live. On S3 the `uploadUrl` is a genuine presigned PUT
@@ -17,7 +19,7 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use actix_web::web::{Bytes, Data, Json, Path, ServiceConfig};
-use actix_web::{HttpResponse, post, put};
+use actix_web::{HttpResponse, delete, post, put};
 use lib_repository::{CreateFileRequest, Repository, UploadEndpoint, UploadRequest};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -398,10 +400,53 @@ fn error_body(message: &str) -> serde_json::Value {
     serde_json::json!({ "success": false, "error": message })
 }
 
+/// Purge every object stored for one resource.
+///
+/// Addressed by id segments rather than a raw key so there is no
+/// caller-supplied path to sanitize: the prefix is rebuilt here from
+/// two validated segments and can only ever name a directory under
+/// `user/`. Deleting the whole directory takes the upload and any
+/// derived thumbnail together, which is what callers always want and
+/// removes the chance of leaving a thumbnail orphaned behind its
+/// source.
+///
+/// Idempotent: a prefix that stores nothing is a success, so a retried
+/// delete does not fail.
+#[delete("/assets/resource/{application_id}/{resource_id}")]
+async fn delete_resource_handler(
+    ctx: Data<AppContext>,
+    path: Path<(String, String)>,
+) -> HttpResponse {
+    let (application_id, resource_id) = path.into_inner();
+    if !is_safe_segment(&application_id) {
+        return HttpResponse::BadRequest()
+            .json(error_body("application_id must be a plain path segment"));
+    }
+    if !is_safe_segment(&resource_id) {
+        return HttpResponse::BadRequest()
+            .json(error_body("resource_id must be a plain path segment"));
+    }
+
+    let prefix = format!("user/{}/{}/", application_id, resource_id);
+    let repository = ctx.repository.current();
+    match repository.delete_prefix(&prefix).await {
+        Ok(()) => {
+            info!("Deleted stored objects under {}", prefix);
+            HttpResponse::NoContent().finish()
+        }
+        Err(err) => {
+            error!("Failed to delete stored objects under {}: {}", prefix, err);
+            HttpResponse::InternalServerError()
+                .json(error_body("failed to delete stored objects"))
+        }
+    }
+}
+
 pub fn configure(cfg: &mut ServiceConfig) {
     cfg.service(upload_url_handler);
     cfg.service(upload_handler);
     cfg.service(process_handler);
+    cfg.service(delete_resource_handler);
 }
 
 #[cfg(test)]
