@@ -92,6 +92,17 @@ function unwrap<T>(op: string, response: { status?: { code?: string; message?: s
   return payload;
 }
 
+/**
+ * Same check for the calls that return a bare ResponseStatus rather than
+ * wrapping one. db-proxy uses both shapes; callers should not have to know
+ * which they are dealing with.
+ */
+function unwrapStatus(op: string, status: { code?: string; message?: string }): void {
+  if (status.code !== "OK") {
+    throw new DbError(op, status.code ?? "unknown", status.message ?? "");
+  }
+}
+
 /** Envelope check for calls whose success carries no payload. */
 function unwrapVoid(op: string, response: { status?: { code?: string; message?: string } }): void {
   const code = response.status?.code;
@@ -129,24 +140,28 @@ export class DbClient {
     await Ping({}, this.config);
   }
 
-  async getCommand(req: command.GetCommandRequest): Promise<command.CommandResponse> {
-    return command.GetCommand(req, this.config);
+  async getCommand(req: command.GetCommandRequest): Promise<command.Command> {
+    const response = await command.GetCommand(req, this.config);
+    return unwrap("getCommand", response, response.command);
   }
 
-  async listCommands(req: command.ListCommandsRequest): Promise<command.ListCommandsResponse> {
-    return command.ListCommands(req, this.config);
+  async listCommands(req: command.ListCommandsRequest): Promise<command.Command[]> {
+    const response = await command.ListCommands(req, this.config);
+    return unwrap("listCommands", response, response.commands ?? []);
   }
 
-  async createCommand(req: command.CreateCommandRequest): Promise<command.CommandResponse> {
-    return command.CreateCommand(req, this.config);
+  async createCommand(req: command.CreateCommandRequest): Promise<command.Command> {
+    const response = await command.CreateCommand(req, this.config);
+    return unwrap("createCommand", response, response.command);
   }
 
-  async updateCommand(req: command.UpdateCommandRequest): Promise<command.CommandResponse> {
-    return command.UpdateCommand(req, this.config);
+  async updateCommand(req: command.UpdateCommandRequest): Promise<command.Command> {
+    const response = await command.UpdateCommand(req, this.config);
+    return unwrap("updateCommand", response, response.command);
   }
 
-  async deleteCommand(req: command.DeleteCommandRequest): Promise<common.ResponseStatus> {
-    return command.DeleteCommand(req, this.config);
+  async deleteCommand(req: command.DeleteCommandRequest): Promise<void> {
+    unwrapStatus("deleteCommand", await command.DeleteCommand(req, this.config));
   }
 
   async createResource(req: resource.CreateResourceRequest): Promise<resource.ResourceResponse> {

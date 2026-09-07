@@ -64,10 +64,7 @@ describe("executeCommand permission enforcement", () => {
   // The no-regression case: a command with no group restriction must execute
   // for any user exactly as it did before group binding existed.
   it("executes a command that has no group restriction", async () => {
-    const getCommand = mock(async (_req: any) => ({
-      status: { code: "OK" },
-      command: commandRow({ groupIds: [] }),
-    }));
+    const getCommand = mock(async (_req: any) => commandRow({ groupIds: [] }));
     const { api, nats } = makeApi({
       getDefaultApplication: mock(async () => APPLICATION),
       getCommand,
@@ -89,10 +86,7 @@ describe("executeCommand permission enforcement", () => {
       getDefaultApplication: mock(async () => APPLICATION),
       // db-proxy already enforced the grant and returned the command, which is
       // exactly what an authorized call looks like from this side.
-      getCommand: mock(async () => ({
-        status: { code: "OK" },
-        command: commandRow({ command: "vanish", groupIds: ["group-mods"] }),
-      })),
+      getCommand: mock(async () => commandRow({ command: "vanish", groupIds: ["group-mods"] })),
     });
 
     const result = await api.executeCommand("vanish", "trustedmod");
@@ -132,10 +126,7 @@ describe("executeCommand permission enforcement", () => {
   it("does not publish for a disabled command", async () => {
     const { api, nats } = makeApi({
       getDefaultApplication: mock(async () => APPLICATION),
-      getCommand: mock(async () => ({
-        status: { code: "OK" },
-        command: commandRow({ enabled: false }),
-      })),
+      getCommand: mock(async () => commandRow({ enabled: false })),
     });
 
     await expect(api.executeCommand("song", "randomchatter")).rejects.toThrow(/disabled/i);
