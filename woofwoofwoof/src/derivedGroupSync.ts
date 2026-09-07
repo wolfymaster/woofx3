@@ -1,25 +1,25 @@
-import type { ChatterBadges } from "@woofx3/common/cloudevents/Twitch/events";
+import type { ChatterMembership } from "@woofx3/common/cloudevents/Chat/events";
 import type { DatabaseClient } from "./services/database";
 
 /**
- * The built-in groups whose membership is derived from Twitch state. These
- * names mirror db/database/models/builtin_groups.go - the seeded catalog is the
- * contract between the two services.
+ * The built-in groups whose membership is derived from the platform rather
+ * than managed by hand. These names mirror db/database/models/builtin_groups.go
+ * - the seeded catalog is the contract between the two services.
  *
  * "everyone" is deliberately absent: it matches every user implicitly through
  * the Casbin wildcard subject and has no membership rows to maintain.
  */
-export const TWITCH_DERIVED_GROUPS = ["subscriber", "vip", "moderator", "broadcaster"] as const;
+export const DERIVED_GROUPS = ["subscriber", "vip", "moderator", "broadcaster"] as const;
 
-export type TwitchDerivedGroup = (typeof TWITCH_DERIVED_GROUPS)[number];
+export type DerivedGroup = (typeof DERIVED_GROUPS)[number];
 
-/** Which badge decides membership of each Twitch-derived group. */
-function badgeGroups(badges: ChatterBadges): Record<TwitchDerivedGroup, boolean> {
+/** Which membership flag decides each derived group. */
+function membershipGroups(membership: ChatterMembership): Record<DerivedGroup, boolean> {
   return {
-    subscriber: badges.isSubscriber,
-    vip: badges.isVip,
-    moderator: badges.isModerator,
-    broadcaster: badges.isBroadcaster,
+    subscriber: membership.isSubscriber,
+    vip: membership.isVip,
+    moderator: membership.isModerator,
+    broadcaster: membership.isBroadcaster,
   };
 }
 
@@ -29,28 +29,29 @@ interface Logger {
 }
 
 /**
- * Keeps the built-in Twitch-derived groups in step with the badges Twitch puts
- * on each chat message.
+ * Keeps the built-in derived groups in step with the membership reported on
+ * each chat message.
  *
- * Twitch offers no roster to poll and no "sub lapsed" event we subscribe to, so
- * the badges on a message are the authoritative, continuously-refreshed signal.
- * The trade-off is volume: badges arrive on every message, and writing
- * membership per message would mean several db round trips per chat line.
+ * The platform is not required to offer a queryable roster, and may report no
+ * "membership lapsed" event at all, so the membership carried on a message is
+ * the authoritative, continuously-refreshed signal. The trade-off is volume:
+ * it arrives on every message, and writing membership per message would mean
+ * several db round trips per chat line.
  *
- * So this holds the last badge set seen per user and only writes when it
+ * So this holds the last membership seen per user and only writes when it
  * changes. A chatter's first message of a session costs one write per group
  * they belong to; every subsequent message costs nothing until their status
  * actually changes. State is per-process and intentionally not persisted - on
  * restart the first message from each chatter re-reconciles them, which is
  * cheap and self-healing.
  */
-export class TwitchGroupSync {
+export class DerivedGroupSync {
   private readonly db: DatabaseClient;
   private readonly logger: Logger;
   private readonly applicationId: string;
 
-  /** username -> the badge-derived membership last written for them. */
-  private readonly lastSeen = new Map<string, Record<TwitchDerivedGroup, boolean>>();
+  /** username -> the derived membership last written for them. */
+  private readonly lastSeen = new Map<string, Record<DerivedGroup, boolean>>();
 
   /** group name -> group id, resolved once from the seeded catalog. */
   private groupIds: Map<string, string> | null = null;
@@ -62,26 +63,26 @@ export class TwitchGroupSync {
   }
 
   /**
-   * Reconcile one chatter against the badges on their message. Never throws:
+   * Reconcile one chatter against the membership on their message. Never throws:
    * a group-sync failure must not take down message handling, since the chat
    * pipeline's job is to answer the user, not to maintain permissions.
    */
-  async reconcile(username: string, badges: ChatterBadges): Promise<void> {
+  async reconcile(username: string, membership: ChatterMembership): Promise<void> {
     const user = username.trim().toLowerCase();
     if (user.length === 0) {
       return;
     }
 
-    const desired = badgeGroups(badges);
+    const desired = membershipGroups(membership);
     const previous = this.lastSeen.get(user);
-    if (previous && TWITCH_DERIVED_GROUPS.every((group) => previous[group] === desired[group])) {
+    if (previous && DERIVED_GROUPS.every((group) => previous[group] === desired[group])) {
       return;
     }
 
     try {
       const ids = await this.resolveGroupIds();
 
-      for (const group of TWITCH_DERIVED_GROUPS) {
+      for (const group of DERIVED_GROUPS) {
         if (previous && previous[group] === desired[group]) {
           continue;
         }
@@ -104,7 +105,7 @@ export class TwitchGroupSync {
       // Drop the cache entry so the next message retries rather than treating
       // a failed write as applied.
       this.lastSeen.delete(user);
-      this.logger.error("failed to sync twitch-derived groups", { username: user, err });
+      this.logger.error("failed to sync derived groups", { username: user, err });
     }
   }
 

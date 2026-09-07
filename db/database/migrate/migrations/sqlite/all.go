@@ -39,5 +39,6 @@ func All() []*gormigrate.Migration {
 		RenameOverlayPublicUrlSetting(),
 		AddBuiltInGroups(),
 		CreateResourcesTable(),
+		RefreshBuiltInGroupDescriptions(),
 	}
 }

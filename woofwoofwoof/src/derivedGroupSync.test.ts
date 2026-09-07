@@ -1,9 +1,9 @@
 import { describe, expect, it, mock } from "bun:test";
-import type { ChatterBadges } from "@woofx3/common/cloudevents/Twitch/events";
+import type { ChatterMembership } from "@woofx3/common/cloudevents/Chat/events";
 import type { DatabaseClient } from "./services/database";
-import { TwitchGroupSync } from "./twitchGroupSync";
+import { DerivedGroupSync } from "./derivedGroupSync";
 
-function badges(overrides: Partial<ChatterBadges> = {}): ChatterBadges {
+function membership(overrides: Partial<ChatterMembership> = {}): ChatterMembership {
   return {
     isBroadcaster: false,
     isModerator: false,
@@ -48,14 +48,14 @@ function fakeLogger() {
 }
 
 function newSync(db: DatabaseClient) {
-  return new TwitchGroupSync(db, "", fakeLogger());
+  return new DerivedGroupSync(db, "", fakeLogger());
 }
 
-describe("TwitchGroupSync", () => {
+describe("DerivedGroupSync", () => {
   it("adds the groups a chatter's badges grant and removes the rest", async () => {
     const { db, added, removed } = fakeDb();
 
-    await newSync(db).reconcile("TrustedMod", badges({ isModerator: true, isSubscriber: true }));
+    await newSync(db).reconcile("TrustedMod", membership({ isModerator: true, isSubscriber: true }));
 
     expect(added.map((a) => a.groupId).sort()).toEqual(["g-moderator", "g-subscriber"]);
     expect(removed.map((r) => r.groupId).sort()).toEqual(["g-broadcaster", "g-vip"]);
@@ -64,7 +64,7 @@ describe("TwitchGroupSync", () => {
   it("normalizes the username to lowercase", async () => {
     const { db, added } = fakeDb();
 
-    await newSync(db).reconcile("  TrustedMod  ", badges({ isModerator: true }));
+    await newSync(db).reconcile("  TrustedMod  ", membership({ isModerator: true }));
 
     expect(added[0].username).toBe("trustedmod");
   });
@@ -75,11 +75,11 @@ describe("TwitchGroupSync", () => {
     const { db, added, removed, raw } = fakeDb();
     const sync = newSync(db);
 
-    await sync.reconcile("trustedmod", badges({ isModerator: true }));
+    await sync.reconcile("trustedmod", membership({ isModerator: true }));
     const writesAfterFirst = added.length + removed.length;
 
-    await sync.reconcile("trustedmod", badges({ isModerator: true }));
-    await sync.reconcile("trustedmod", badges({ isModerator: true }));
+    await sync.reconcile("trustedmod", membership({ isModerator: true }));
+    await sync.reconcile("trustedmod", membership({ isModerator: true }));
 
     expect(added.length + removed.length).toBe(writesAfterFirst);
     // The group catalog is resolved once, not per message.
@@ -90,12 +90,12 @@ describe("TwitchGroupSync", () => {
     const { db, added, removed } = fakeDb();
     const sync = newSync(db);
 
-    await sync.reconcile("chatter", badges({ isSubscriber: true }));
+    await sync.reconcile("chatter", membership({ isSubscriber: true }));
     added.length = 0;
     removed.length = 0;
 
     // Gains VIP, keeps the subscription.
-    await sync.reconcile("chatter", badges({ isSubscriber: true, isVip: true }));
+    await sync.reconcile("chatter", membership({ isSubscriber: true, isVip: true }));
 
     expect(added).toEqual([{ groupId: "g-vip", username: "chatter" }]);
     expect(removed).toEqual([]);
@@ -105,11 +105,11 @@ describe("TwitchGroupSync", () => {
     const { db, added, removed } = fakeDb();
     const sync = newSync(db);
 
-    await sync.reconcile("chatter", badges({ isSubscriber: true }));
+    await sync.reconcile("chatter", membership({ isSubscriber: true }));
     added.length = 0;
     removed.length = 0;
 
-    await sync.reconcile("chatter", badges({ isSubscriber: false }));
+    await sync.reconcile("chatter", membership({ isSubscriber: false }));
 
     expect(removed).toEqual([{ groupId: "g-subscriber", username: "chatter" }]);
   });
@@ -117,7 +117,7 @@ describe("TwitchGroupSync", () => {
   it("never syncs the everyone group, which has no membership rows", async () => {
     const { db, added, removed } = fakeDb();
 
-    await newSync(db).reconcile("chatter", badges({ isBroadcaster: true }));
+    await newSync(db).reconcile("chatter", membership({ isBroadcaster: true }));
 
     const touched = [...added, ...removed].map((x) => x.groupId);
     expect(touched).not.toContain("g-everyone");
@@ -126,7 +126,7 @@ describe("TwitchGroupSync", () => {
   it("ignores non-built-in groups that happen to share a name", async () => {
     const { db, added, removed } = fakeDb();
 
-    await newSync(db).reconcile("chatter", badges({ isModerator: true }));
+    await newSync(db).reconcile("chatter", membership({ isModerator: true }));
 
     const touched = [...added, ...removed].map((x) => x.groupId);
     expect(touched).not.toContain("g-regulars");
@@ -146,8 +146,8 @@ describe("TwitchGroupSync", () => {
     });
     const sync = newSync(db);
 
-    await sync.reconcile("chatter", badges({ isModerator: true }));
-    await sync.reconcile("chatter", badges({ isModerator: true }));
+    await sync.reconcile("chatter", membership({ isModerator: true }));
+    await sync.reconcile("chatter", membership({ isModerator: true }));
 
     expect(raw.addUserToGroup).toHaveBeenCalledTimes(2);
   });

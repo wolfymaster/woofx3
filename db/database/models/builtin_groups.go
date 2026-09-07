@@ -1,8 +1,9 @@
 package models
 
-// Built-in group names. These mirror Twitch's badge model and are seeded for
-// every application, so a command can be bound to "subscriber" or "moderator"
-// without the operator first having to create the group by hand.
+// Built-in group names. These are seeded for every application, so a command
+// can be bound to "subscriber" or "moderator" without the operator first
+// having to create the group by hand. The names describe roles a chat platform
+// may report; nothing here is specific to one platform.
 //
 // GroupEveryone is special: it stands for "any user at all". It has no
 // membership rows - materialising one row per chatter would be unbounded and
@@ -27,50 +28,50 @@ const WildcardSubject = "*"
 type BuiltInGroup struct {
 	Name        string
 	Description string
-	// TwitchDerived marks groups whose membership is owned by the Twitch
-	// state sync rather than by manual add/remove. Operators can still read
-	// the roster, but writing it by hand would just be overwritten on the
-	// chatter's next message.
-	TwitchDerived bool
+	// PlatformDerived marks groups whose membership is owned by the chat
+	// platform sync rather than by manual add/remove. Operators can still
+	// read the roster, but writing it by hand would just be overwritten on
+	// the chatter's next message.
+	PlatformDerived bool
 }
 
 // BuiltInGroups is the canonical catalog, in display order. Seeding, the
-// backfill migration, and the Twitch sync all read this one list so they can
-// never disagree about which groups exist or what they mean.
+// backfill migration, and the platform membership sync all read this one list
+// so they can never disagree about which groups exist or what they mean.
 var BuiltInGroups = []BuiltInGroup{
 	{
-		Name:          GroupEveryone,
-		Description:   "Everyone. Every user belongs to this group implicitly.",
-		TwitchDerived: false,
+		Name:            GroupEveryone,
+		Description:     "Everyone. Every user belongs to this group implicitly.",
+		PlatformDerived: false,
 	},
 	{
-		Name:          GroupSubscriber,
-		Description:   "Users with an active Twitch subscription to the channel.",
-		TwitchDerived: true,
+		Name:            GroupSubscriber,
+		Description:     "Users with an active paid subscription to the channel.",
+		PlatformDerived: true,
 	},
 	{
-		Name:          GroupVIP,
-		Description:   "Users with the Twitch VIP badge in the channel.",
-		TwitchDerived: true,
+		Name:            GroupVIP,
+		Description:     "Users the channel has granted VIP status.",
+		PlatformDerived: true,
 	},
 	{
-		Name:          GroupModerator,
-		Description:   "Users with the Twitch moderator badge in the channel.",
-		TwitchDerived: true,
+		Name:            GroupModerator,
+		Description:     "Users who moderate the channel.",
+		PlatformDerived: true,
 	},
 	{
-		Name:          GroupBroadcaster,
-		Description:   "The channel broadcaster.",
-		TwitchDerived: true,
+		Name:            GroupBroadcaster,
+		Description:     "The channel broadcaster.",
+		PlatformDerived: true,
 	},
 }
 
-// TwitchDerivedGroupNames returns the built-in groups whose membership the
-// Twitch state sync owns.
-func TwitchDerivedGroupNames() []string {
+// PlatformDerivedGroupNames returns the built-in groups whose membership the
+// platform membership sync owns.
+func PlatformDerivedGroupNames() []string {
 	names := make([]string, 0, len(BuiltInGroups))
 	for _, g := range BuiltInGroups {
-		if g.TwitchDerived {
+		if g.PlatformDerived {
 			names = append(names, g.Name)
 		}
 	}

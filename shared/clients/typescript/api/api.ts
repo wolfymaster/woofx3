@@ -314,13 +314,15 @@ export interface GroupSnapshot {
   description: string;
   createdAt: string;
   /**
-   * Built-in groups are seeded with every application and mirror Twitch's
-   * badge model: `everyone`, `subscriber`, `vip`, `moderator`, `broadcaster`.
-   * They cannot be renamed or deleted - the engine refuses both, so a UI
-   * should render those affordances as disabled rather than relying on the
-   * call failing. Membership of the four Twitch-derived ones is owned by the
-   * Twitch state sync and will be overwritten if edited by hand;
-   * `everyone` has no membership at all and matches every user implicitly.
+   * Built-in groups are seeded with every application: `everyone`,
+   * `subscriber`, `vip`, `moderator`, `broadcaster`. They cannot be renamed
+   * or deleted - the engine refuses both, so a UI should render those
+   * affordances as disabled rather than relying on the call failing.
+   *
+   * Membership of all but `everyone` is owned by the platform membership sync
+   * and will be overwritten if edited by hand, so member management should be
+   * disabled for built-ins too. `everyone` has no membership at all and
+   * matches every user implicitly.
    */
   isBuiltIn: boolean;
 }
