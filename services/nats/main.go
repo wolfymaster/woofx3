@@ -2,34 +2,52 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/nats-io/nats-server/v2/server"
+	"github.com/wolfymaster/woofx3/common/logging"
 )
 
 func main() {
 	confPath := readFlags()
 	cfg, err := loadConfiguration(confPath)
 	if err != nil {
-		fatalExit("Failed to load configuration", "error", err)
+		// The logger needs the configured root path, so a config failure can
+		// only be reported on stderr.
+		fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
+		os.Exit(1)
 	}
 
-	level := parseLogLevel(cfg.LogLevel)
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	sharedLogger, err := logging.New(logging.Config{
+		ServiceName:  "nats",
+		Level:        parseLogLevel(cfg.LogLevel),
+		LogDirectory: strings.TrimSpace(cfg.RootPath) + "/logs",
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer sharedLogger.Close()
+	logger := sharedLogger.Slog()
+
+	// The embedded NATS server and any library code reaching for the stdlib
+	// default logger route through the shared transports as well.
 	slog.SetDefault(logger)
 
 	host, wsPort, err := findPort(cfg)
 	if err != nil {
-		fatalExit("Failed to resolve ports", "error", err)
+		fatalExit(sharedLogger, "Failed to resolve ports", "error", err)
 	}
 
-	ns, err := createServer(cfg, host, wsPort)
+	ns, err := createServer(cfg, logger, host, wsPort)
 	if err != nil {
-		fatalExit("Failed to create server", "error", err)
+		fatalExit(sharedLogger, "Failed to create server", "error", err)
 	}
 
 	sigCh := make(chan os.Signal, 1)
@@ -98,7 +116,7 @@ func findPort(cfg *Configuration) (host string, wsPort int, err error) {
 	return host, wsPort, nil
 }
 
-func createServer(cfg *Configuration, host string, wsPort int) (*server.Server, error) {
+func createServer(cfg *Configuration, logger *slog.Logger, host string, wsPort int) (*server.Server, error) {
 	opts := &server.Options{
 		NoLog:  cfg.NoLog,
 		NoSigs: cfg.NoSigs,
@@ -116,7 +134,7 @@ func createServer(cfg *Configuration, host string, wsPort int) (*server.Server, 
 	if !ns.ReadyForConnections(5 * time.Second) {
 		return nil, &configError{msg: "NATS server not ready within timeout"}
 	}
-	slog.Info("NATS server started", "host", opts.Host, "websocket_port", opts.Websocket.Port)
+	logger.Info("NATS server started", "host", opts.Host, "websocket_port", opts.Websocket.Port)
 	return ns, nil
 }
 

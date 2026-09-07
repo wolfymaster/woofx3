@@ -73,7 +73,7 @@ tmp/*
 .claude/
 
 # logs
-logs/*
+logs/
 
 # git worktrees
 .worktrees

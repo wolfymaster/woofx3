@@ -7,10 +7,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/wolfymaster/woofx3/common/logging"
 	"github.com/wolfymaster/woofx3/workflow/internal/eventmatch"
 	"github.com/wolfymaster/woofx3/workflow/internal/expression"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type EventPublisher interface {
@@ -338,6 +341,15 @@ func (e *Engine[TServices]) evaluateTrigger(wf *types.WorkflowDefinition, event 
 func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event *types.Event) {
 	executionID := uuid.New().String()
 
+	// Top-level entry point for the engine: a trigger fired and a workflow
+	// run begins here. Task-level child spans need the context threaded
+	// through executeTasksFromIndex, which is tracked separately.
+	_, span := logging.StartSpan(context.Background(), "workflow.execute",
+		attribute.String("workflow.id", wf.ID),
+		attribute.String("workflow.execution_id", executionID),
+	)
+	defer span.End()
+
 	execution := &types.WorkflowExecution{
 		ID:           executionID,
 		WorkflowID:   wf.ID,
@@ -363,6 +375,8 @@ func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event 
 		e.logger.Error("Failed to build dependency graph", "workflow", wf.ID, "execution", executionID, "error", err)
 		now := time.Now()
 		execution.CompletedAt = &now
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "build dependency graph")
 		return
 	}
 
@@ -373,6 +387,8 @@ func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event 
 		e.logger.Error("Failed to resolve execution order", "workflow", wf.ID, "execution", executionID, "error", err)
 		now := time.Now()
 		execution.CompletedAt = &now
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "resolve execution order")
 		return
 	}
 

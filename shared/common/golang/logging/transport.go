@@ -15,6 +15,7 @@ func buildDefaultTransports() []Transport {
 	return []Transport{
 		NewTerminalJSONTransport(),
 		NewFileLineTransport(),
+		NewOTLPTransport(),
 	}
 }
 

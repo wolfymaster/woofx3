@@ -38,7 +38,7 @@ func (h *canonicalHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= h.level.Level()
 }
 
-func (h *canonicalHandler) Handle(_ context.Context, record slog.Record) error {
+func (h *canonicalHandler) Handle(ctx context.Context, record slog.Record) error {
 	metadata := map[string]any{}
 	for _, attr := range h.attrs {
 		h.addToMetadata(metadata, attr, h.groups)
@@ -70,6 +70,8 @@ func (h *canonicalHandler) Handle(_ context.Context, record slog.Record) error {
 			delete(metadata, key)
 		}
 	}
+
+	applyTraceContext(ctx, topLevel)
 
 	topLevel["metadata"] = redactAny(metadata, h.redactKeys)
 

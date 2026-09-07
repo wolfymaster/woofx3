@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/wolfymaster/woofx3/common/logging"
 )
 
 func findAvailablePort(host string, preferred []int) (int, error) {
@@ -71,7 +73,10 @@ func parseLogLevel(lvl string) slog.Level {
 	}
 }
 
-func fatalExit(msg string, args ...any) {
-	slog.Error(msg, args...)
+// fatalExit reports a startup failure and terminates. os.Exit skips deferred
+// closers, so the logger is flushed here before the process goes away.
+func fatalExit(logger *logging.Logger, msg string, args ...any) {
+	logger.Error(msg, args...)
+	logger.Close()
 	os.Exit(1)
 }
