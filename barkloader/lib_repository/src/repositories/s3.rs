@@ -6,13 +6,14 @@ use async_trait::async_trait;
 use aws_config::{meta::region::RegionProviderChain, BehaviorVersion, Region};
 use aws_sdk_s3::{
     config::Credentials,
+    presigning::PresigningConfig,
     primitives::ByteStream,
     Client,
 };
 use mime_guess::MimeGuess;
 use tracing::{info, warn};
 
-use crate::repository::{CreateFileRequest, Repository};
+use crate::repository::{CreateFileRequest, Repository, UploadEndpoint, UploadRequest};
 
 /// Configuration for S3-compatible object storage.
 ///
@@ -314,5 +315,42 @@ impl Repository for S3Repository {
             }
         }
         Ok(())
+    }
+
+    /// A genuine presigned PUT. The signature covers the bucket, the
+    /// key, the expiry, and -- when supplied -- the Content-Type, so a
+    /// grant issued for one object cannot be replayed against another.
+    /// The client must send back exactly the headers returned here.
+    async fn presign_upload(&self, req: UploadRequest<'_>) -> Result<UploadEndpoint> {
+        let full_key = self.full_key(req.key);
+        let presigning = PresigningConfig::expires_in(req.ttl)
+            .map_err(|e| anyhow!("invalid presign TTL for {}: {}", full_key, e))?;
+
+        let mut put = self
+            .client
+            .put_object()
+            .bucket(&self.config.bucket)
+            .key(&full_key);
+        if let Some(content_type) = req.content_type {
+            put = put.content_type(content_type);
+        }
+
+        let presigned = put
+            .presigned(presigning)
+            .await
+            .map_err(|e| anyhow!("S3 presign put_object {} failed: {}", full_key, e))?;
+
+        // Echo back only what the signature actually covers. Handing the
+        // client a header the signature does not include would make the
+        // upload fail in a way that looks like a client bug.
+        let mut headers = Vec::new();
+        if let Some(content_type) = req.content_type {
+            headers.push(("Content-Type".to_string(), content_type.to_string()));
+        }
+
+        Ok(UploadEndpoint::Presigned {
+            url: presigned.uri().to_string(),
+            headers,
+        })
     }
 }

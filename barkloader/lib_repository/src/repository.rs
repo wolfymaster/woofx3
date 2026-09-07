@@ -4,6 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use enum_dispatch::enum_dispatch;
 use std::path::Path;
+use std::time::Duration;
 
 /// Storage backend configuration. Selected at startup from engine
 /// settings (with environment-variable fallback). Adding a new
@@ -25,6 +26,42 @@ pub struct CreateFileRequest {
     pub content: Option<Vec<u8>>,
     pub file_name: String,
     pub extension: Option<String>,
+}
+
+/// How a backend lets a client send bytes straight at storage, without
+/// proxying them through barkloader.
+///
+/// The two variants are an implementation detail of the backend, never
+/// of the caller-facing contract: `routes::assets` turns both into the
+/// same `{uploadUrl, method, headers, expiresAt}` response, so the UI
+/// performs one identical `PUT` regardless of which provider is active.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UploadEndpoint {
+    /// The backend signed a URL itself. The client PUTs the bytes to
+    /// `url`, sending exactly `headers` -- anything more or less
+    /// invalidates the signature.
+    Presigned {
+        url: String,
+        headers: Vec<(String, String)>,
+    },
+    /// The backend has no signing concept (local disk). The caller must
+    /// accept the upload itself and write it through `create`.
+    Unsupported,
+}
+
+/// One request for permission to upload a single object.
+#[derive(Debug, Clone)]
+pub struct UploadRequest<'a> {
+    /// Repository key the bytes will land at, e.g.
+    /// `user/{application_id}/{resource_id}/{filename}`.
+    pub key: &'a str,
+    /// Content-Type the client will send. Bound into the signature when
+    /// the backend supports it, so a grant for an image cannot be
+    /// replayed to store something else.
+    pub content_type: Option<&'a str>,
+    /// How long the grant stays valid. Kept short -- this is a
+    /// capability to write into the store.
+    pub ttl: Duration,
 }
 
 #[allow(dead_code)]
@@ -52,6 +89,13 @@ pub trait Repository {
         req: I,
         failed: &mut Vec<String>,
     ) -> Result<()>;
+
+    /// Ask the backend for a direct-upload grant for one key. Returning
+    /// `UploadEndpoint::Unsupported` is a normal answer, not a failure:
+    /// it means "I cannot sign, you accept the bytes". Errors are
+    /// reserved for a backend that should have been able to sign and
+    /// could not.
+    async fn presign_upload(&self, req: UploadRequest<'_>) -> Result<UploadEndpoint>;
 }
 
 #[enum_dispatch]
