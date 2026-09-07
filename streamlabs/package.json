@@ -18,6 +18,7 @@
     "@remix-run/node": "^2.16.0",
     "@remix-run/react": "^2.16.0",
     "@types/express": "^5.0.0",
+    "@woofx3/common": "file:../shared/common/typescript",
     "express": "^4.21.2",
     "isbot": "^4.1.0",
     "nats": "^2.29.3",

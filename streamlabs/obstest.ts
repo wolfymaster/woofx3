@@ -4,15 +4,14 @@ import './wsShim';
 import OBSWebSocket, { EventSubscription } from 'obs-websocket-js';
 import Manager from 'obs/Manager';
 import { Context } from 'slobs/types';
+import { contextLogger, logger } from './logger';
 
 dotenv.config({
     path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../', '.env')],
 });
 
 const ctx: Context = {
-    logger: (msg: string) => {
-        console.log(msg);
-    }
+    logger: contextLogger(),
 }
 
 const obs = new OBSWebSocket();
@@ -35,16 +34,16 @@ try {
     //     await manager.switchScene(chatScene.name);
     // }
 
-    console.log(currentScene);
+    logger.info('active scene', { scene: currentScene?.name });
 
     const maincam =  currentScene?.findSource('[NS] Main Cam');
 
-    console.log('maincam', maincam);
+    logger.info('main cam source', { source: maincam?.name });
 
     maincam?.setAnimatedFilterValue('Composite Blur', 'radius', 0, {
         durationMs: 5000,
     });
 } catch (err) {
-    console.error(err.code, err.message);
+    logger.error('obstest failed', { code: err.code, message: err.message });
 }
 

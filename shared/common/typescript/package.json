@@ -5,15 +5,28 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/api-logs": "^0.222.0",
+    "@opentelemetry/core": "^2.11.0",
+    "@opentelemetry/exporter-logs-otlp-http": "^0.222.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-logs": "^0.222.0",
+    "@opentelemetry/sdk-trace-base": "^2.11.0",
+    "@opentelemetry/sdk-trace-node": "^2.11.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
     "pino": "^9.5.0",
     "xstate": "^5.24.0"
   },
   "devDependencies": {
+    "@types/bun": "^1.4.1",
     "@types/node": "^20.0.0",
+    "typescript": "^5",
     "zod": "^3.24.0"
   },
   "scripts": {
-    "test": "bun test runtime/"
+    "test": "bun test runtime/ logging/",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "keywords": []
 }

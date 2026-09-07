@@ -1,6 +1,6 @@
 import type { HelixUser } from "@twurple/api";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
-import type { SharedLogger } from "@woofx3/common/logging";
+import { type Span, type SharedLogger, SpanKind, withSpan } from "@woofx3/common/logging";
 import type { Application, IApplication } from "@woofx3/common/runtime";
 import { GetSetting, SetSetting } from "@woofx3/db/setting.pb";
 import type { Msg } from "@woofx3/nats/src/types";
@@ -57,10 +57,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
         return response.setting.value.stringValue ?? undefined;
       },
       setSetting: async (key, value) => {
-        await SetSetting(
-          { applicationId: "", key, value: { stringValue: value }, userId: "" },
-          { baseURL: dbBaseURL }
-        );
+        await SetSetting({ applicationId: "", key, value: { stringValue: value }, userId: "" }, { baseURL: dbBaseURL });
       },
     });
 
@@ -100,7 +97,12 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     ctx.twitchEventBus = twitchEventBus;
 
     await ctx.services.messageBus.client.subscribe("twitchapi", (msg: Msg) => {
-      void this.handleTwitchApiRequest(ctx, msg);
+      void withSpan("twitchapi.request", (span) => this.handleTwitchApiRequest(ctx, msg, span), {
+        attributes: { "messaging.destination.name": "twitchapi", "messaging.system": "nats" },
+        kind: SpanKind.CONSUMER,
+      }).catch((err) => {
+        ctx.logger.error("twitchapi: request handling failed", { err });
+      });
     });
   }
 
@@ -123,7 +125,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     ctx.twitchEventBus?.disconnect();
   }
 
-  private async handleTwitchApiRequest(ctx: TwitchApiContext, msg: Msg) {
+  private async handleTwitchApiRequest(ctx: TwitchApiContext, msg: Msg, span?: Span) {
     const isRequest = !!msg.reply;
     let request: TwitchApiRequest | null = null;
     try {
@@ -151,6 +153,9 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       }
       return;
     }
+
+    span?.updateName(`twitchapi.${request.command}`);
+    span?.setAttribute("rpc.method", request.command);
 
     const twitchApi = ctx.twitchApi as unknown as Record<string, (input: unknown) => Promise<unknown>>;
 

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join, normalize, resolve } from "node:path";
 import type { ServerWebSocket, WebSocketHandler } from "bun";
-import { createServiceLogger } from "@woofx3/common/logging";
+import { createServiceLogger, SpanKind, withSpan } from "@woofx3/common/logging";
 import { createMessageBus } from "@woofx3/nats";
 import { EventQueueManager } from "./events/queue-manager";
 import { initWidgetEventHandlers } from "./events/handlers";
@@ -189,82 +189,91 @@ function startHttpServer(
         return new Response(null, { status: 204, headers: CORS_HEADERS });
       }
 
-      // Accept the same /overlay/ prefix the api gateway's proxy rewrites
-      // to /o/ — streamware is also reachable directly (e.g.
-      // streamwareProxy's tunnel in process-compose.yml, bypassing api
-      // entirely), and a client hitting streamware's own public address
-      // has no way to know whether it's going through api's rewrite or
-      // not. Normalizing here means every route below works identically
-      // either way.
-      url.pathname = normalizeOverlayPrefix(url.pathname);
+      return withSpan(
+        `streamware ${req.method}`,
+        async (): Promise<Response> => {
+          // Accept the same /overlay/ prefix the api gateway's proxy rewrites
+          // to /o/ — streamware is also reachable directly (e.g.
+          // streamwareProxy's tunnel in process-compose.yml, bypassing api
+          // entirely), and a client hitting streamware's own public address
+          // has no way to know whether it's going through api's rewrite or
+          // not. Normalizing here means every route below works identically
+          // either way.
+          url.pathname = normalizeOverlayPrefix(url.pathname);
 
-      const response: Response = await (async (): Promise<Response> => {
-        // Public, token-independent asset byte routes. Must be checked
-        // BEFORE the generic /o/{token}/... dispatch below — otherwise
-        // "assets" would be misread as a token. Asset bytes cannot be
-        // token-scoped: URLs referencing them may be constructed by
-        // workflow (server-side, before any overlay/token is known) or by
-        // a future CDN override, neither of which has a per-viewer token
-        // to embed (see docs/woofwoofwoof/streamware/asset-prefix.md).
-        if (url.pathname.startsWith("/o/assets/")) {
-          return handleAssetRoutes(req, url, widgetAssetProxy, logger);
-        }
+          const response: Response = await (async (): Promise<Response> => {
+            // Public, token-independent asset byte routes. Must be checked
+            // BEFORE the generic /o/{token}/... dispatch below — otherwise
+            // "assets" would be misread as a token. Asset bytes cannot be
+            // token-scoped: URLs referencing them may be constructed by
+            // workflow (server-side, before any overlay/token is known) or by
+            // a future CDN override, neither of which has a per-viewer token
+            // to embed (see docs/woofwoofwoof/streamware/asset-prefix.md).
+            if (url.pathname.startsWith("/o/assets/")) {
+              return handleAssetRoutes(req, url, widgetAssetProxy, logger);
+            }
 
-        // Token-scoped overlay routes (design §5.2).
-        if (url.pathname.startsWith("/o/")) {
-          logger.info("overlay route", { method: req.method, path: url.pathname });
-          return handleOverlayRoutes(
-            req,
-            url,
-            server,
-            uiDist,
-            overlayHost,
-            frameAssembler,
-            resolver,
-            overlayConnections,
-            logger
-          );
-        }
+            // Token-scoped overlay routes (design §5.2).
+            if (url.pathname.startsWith("/o/")) {
+              logger.info("overlay route", { method: req.method, path: url.pathname });
+              return handleOverlayRoutes(
+                req,
+                url,
+                server,
+                uiDist,
+                overlayHost,
+                frameAssembler,
+                resolver,
+                overlayConnections,
+                logger
+              );
+            }
 
-        if (url.pathname === "/health") {
-          return Response.json({ status: "ok", overlayClients: storageBroadcaster.overlayClientCount() });
-        }
+            if (url.pathname === "/health") {
+              return Response.json({ status: "ok", overlayClients: storageBroadcaster.overlayClientCount() });
+            }
 
-        if (url.pathname === "/api/builtin-widgets") {
-          return Response.json(buildBuiltinWidgetDefinitions(), {
-            headers: SCENE_CORS_HEADERS,
-          });
-        }
+            if (url.pathname === "/api/builtin-widgets") {
+              return Response.json(buildBuiltinWidgetDefinitions(), {
+                headers: SCENE_CORS_HEADERS,
+              });
+            }
 
-        if (url.pathname === "/api/widgets") {
-          if (!db) {
-            return Response.json({ status: "error", message: "db not available" }, { status: 503 });
+            if (url.pathname === "/api/widgets") {
+              if (!db) {
+                return Response.json({ status: "error", message: "db not available" }, { status: 503 });
+              }
+              try {
+                const result = await db.listWidgets({ createdByType: "", createdByRef: "" });
+                return Response.json({ widgets: result.widgets }, { headers: SCENE_CORS_HEADERS });
+              } catch (err) {
+                logger.warn("listWidgets failed", { err });
+                return Response.json({ status: "error", message: String(err) }, { status: 500 });
+              }
+            }
+
+            const fromUi = await tryServeUnder(uiDist, url.pathname);
+            if (fromUi) {
+              return fromUi;
+            }
+            const fromPublic = await tryServeUnder(publicDir, url.pathname);
+            if (fromPublic) {
+              return fromPublic;
+            }
+
+            return new Response("Not Found", { status: 404 });
+          })();
+
+          if (url.pathname.startsWith("/o/")) {
+            logger.info("overlay route response", { path: url.pathname, status: response.status });
           }
-          try {
-            const result = await db.listWidgets({ createdByType: "", createdByRef: "" });
-            return Response.json({ widgets: result.widgets }, { headers: SCENE_CORS_HEADERS });
-          } catch (err) {
-            logger.warn("listWidgets failed", { err });
-            return Response.json({ status: "error", message: String(err) }, { status: 500 });
-          }
+          return withCors(response);
+        },
+        {
+          attributes: { "http.request.method": req.method, "url.path": url.pathname },
+          kind: SpanKind.SERVER,
         }
-
-        const fromUi = await tryServeUnder(uiDist, url.pathname);
-        if (fromUi) {
-          return fromUi;
-        }
-        const fromPublic = await tryServeUnder(publicDir, url.pathname);
-        if (fromPublic) {
-          return fromPublic;
-        }
-
-        return new Response("Not Found", { status: 404 });
-      })();
-
-      if (url.pathname.startsWith("/o/")) {
-        logger.info("overlay route response", { path: url.pathname, status: response.status });
-      }
-      return withCors(response);
+      );
     },
     websocket: websocket as WebSocketHandler<unknown>,
   });
