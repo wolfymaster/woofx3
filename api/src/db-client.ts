@@ -264,24 +264,60 @@ export class DbClient {
     return unwrap("listPermissions", response, response.permissions ?? []);
   }
 
-  async getWorkflow(req: workflow.GetWorkflowRequest): Promise<workflow.WorkflowResponse> {
-    return workflow.GetWorkflow(req, this.config);
+  async getWorkflow(req: workflow.GetWorkflowRequest): Promise<workflow.Workflow> {
+    const response = await workflow.GetWorkflow(req, this.config);
+    return unwrap("getWorkflow", response, response.workflow);
   }
 
-  async listWorkflows(req: workflow.ListWorkflowsRequest): Promise<workflow.ListWorkflowsResponse> {
-    return workflow.ListWorkflows(req, this.config);
+  /** The workflow, or null when it does not exist. See findScene. */
+  async findWorkflow(req: workflow.GetWorkflowRequest): Promise<workflow.Workflow | null> {
+    const response = await workflow.GetWorkflow(req, this.config);
+    if (response.status?.code !== "OK" || !response.workflow) {
+      return null;
+    }
+    return response.workflow;
   }
 
-  async createWorkflow(req: workflow.CreateWorkflowRequest): Promise<workflow.WorkflowResponse> {
-    return workflow.CreateWorkflow(req, this.config);
+  async listWorkflows(
+    req: workflow.ListWorkflowsRequest
+  ): Promise<{ workflows: workflow.Workflow[]; totalCount: number; page: number; pageSize: number }> {
+    const response = await workflow.ListWorkflows(req, this.config);
+    unwrapVoid("listWorkflows", response);
+    return {
+      workflows: response.workflows ?? [],
+      totalCount: response.totalCount ?? 0,
+      page: response.page ?? 0,
+      pageSize: response.pageSize ?? 0,
+    };
   }
 
-  async updateWorkflow(req: workflow.UpdateWorkflowRequest): Promise<workflow.WorkflowResponse> {
-    return workflow.UpdateWorkflow(req, this.config);
+  async createWorkflow(req: workflow.CreateWorkflowRequest): Promise<workflow.Workflow> {
+    const response = await workflow.CreateWorkflow(req, this.config);
+    return unwrap("createWorkflow", response, response.workflow);
   }
 
-  async deleteWorkflow(req: workflow.DeleteWorkflowRequest): Promise<common.ResponseStatus> {
-    return workflow.DeleteWorkflow(req, this.config);
+  async updateWorkflow(req: workflow.UpdateWorkflowRequest): Promise<workflow.Workflow> {
+    const response = await workflow.UpdateWorkflow(req, this.config);
+    return unwrap("updateWorkflow", response, response.workflow);
+  }
+
+  /** Update, or null when it did not happen. See tryUpdateScene. */
+  async tryUpdateWorkflow(req: workflow.UpdateWorkflowRequest): Promise<workflow.Workflow | null> {
+    const response = await workflow.UpdateWorkflow(req, this.config);
+    if (response.status?.code !== "OK" || !response.workflow) {
+      return null;
+    }
+    return response.workflow;
+  }
+
+  /** Delete, reporting whether it happened. See tryDeleteScene. */
+  async tryDeleteWorkflow(req: workflow.DeleteWorkflowRequest): Promise<boolean> {
+    const status = await workflow.DeleteWorkflow(req, this.config);
+    return status.code === "OK";
+  }
+
+  async deleteWorkflow(req: workflow.DeleteWorkflowRequest): Promise<void> {
+    unwrapStatus("deleteWorkflow", await workflow.DeleteWorkflow(req, this.config));
   }
 
   // SceneService — per-application widget arrangement persistence.
@@ -357,22 +393,49 @@ export class DbClient {
     return status.code === "OK";
   }
 
-  async executeWorkflow(req: workflow.ExecuteWorkflowRequest): Promise<workflow.ExecuteWorkflowResponse> {
-    return workflow.ExecuteWorkflow(req, this.config);
+  async executeWorkflow(
+    req: workflow.ExecuteWorkflowRequest
+  ): Promise<{ executionId: string; async: boolean }> {
+    const response = await workflow.ExecuteWorkflow(req, this.config);
+    unwrapVoid("executeWorkflow", response);
+    return { executionId: response.executionId ?? "", async: response.async ?? false };
   }
 
-  async getWorkflowExecution(req: workflow.GetWorkflowExecutionRequest): Promise<workflow.WorkflowExecutionResponse> {
-    return workflow.GetWorkflowExecution(req, this.config);
+  async getWorkflowExecution(req: workflow.GetWorkflowExecutionRequest): Promise<workflow.WorkflowExecution> {
+    const response = await workflow.GetWorkflowExecution(req, this.config);
+    return unwrap("getWorkflowExecution", response, response.execution);
   }
 
   async listWorkflowExecutions(
     req: workflow.ListWorkflowExecutionsRequest
-  ): Promise<workflow.ListWorkflowExecutionsResponse> {
-    return workflow.ListWorkflowExecutions(req, this.config);
+  ): Promise<{ executions: workflow.WorkflowExecution[]; totalCount: number; page: number; pageSize: number }> {
+    const response = await workflow.ListWorkflowExecutions(req, this.config);
+    unwrapVoid("listWorkflowExecutions", response);
+    return {
+      executions: response.executions ?? [],
+      totalCount: response.totalCount ?? 0,
+      page: response.page ?? 0,
+      pageSize: response.pageSize ?? 0,
+    };
   }
 
-  async cancelWorkflowExecution(req: workflow.CancelWorkflowExecutionRequest): Promise<common.ResponseStatus> {
-    return workflow.CancelWorkflowExecution(req, this.config);
+  /**
+   * Executions, or an empty list when the lookup fails. For callers rendering
+   * a "recent runs" strip, where an empty strip is a better answer than an
+   * error page.
+   */
+  async tryListWorkflowExecutions(
+    req: workflow.ListWorkflowExecutionsRequest
+  ): Promise<workflow.WorkflowExecution[]> {
+    const response = await workflow.ListWorkflowExecutions(req, this.config);
+    if (response.status?.code !== "OK") {
+      return [];
+    }
+    return response.executions ?? [];
+  }
+
+  async cancelWorkflowExecution(req: workflow.CancelWorkflowExecutionRequest): Promise<void> {
+    unwrapStatus("cancelWorkflowExecution", await workflow.CancelWorkflowExecution(req, this.config));
   }
 
   async createAlert(req: alert.CreateAlertRequest): Promise<alert.AlertResponse> {

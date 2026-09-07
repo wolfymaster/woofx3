@@ -28,11 +28,8 @@ export const workflowsRoutes = routeModule({
       sortBy: "",
       sortDesc: false,
     });
-    if (response.status?.code !== "OK") {
-      throw new Error(response.status?.message || "Failed to list workflows");
-    }
     return {
-      workflows: (response.workflows ?? []).map((wf) => this.workflowToItem(wf)),
+      workflows: response.workflows.map((wf: workflow.Workflow) => this.workflowToItem(wf)),
       total: response.totalCount ?? 0,
       page: response.page ?? page,
       pageSize: response.pageSize ?? pageSize,
@@ -41,13 +38,13 @@ export const workflowsRoutes = routeModule({
 
   async getWorkflow(id: string): Promise<WorkflowItem | null> {
     this.logger.info("Getting workflow", { id });
-    const response = await this.db.getWorkflow({ id });
-    if (response.status?.code !== "OK" || !response.workflow) {
+    const found = await this.db.findWorkflow({ id });
+    if (!found) {
       this.logger.warn("Workflow not found", { id });
       return null;
     }
-    this.logger.info("Retrieved workflow", { id, name: response.workflow.name });
-    return this.workflowToItem(response.workflow);
+    this.logger.info("Retrieved workflow", { id, name: found.name });
+    return this.workflowToItem(found);
   },
 
   async createWorkflow(data: CreateWorkflowInput): Promise<WorkflowMutationResult> {
@@ -90,17 +87,13 @@ export const workflowsRoutes = routeModule({
       manifestId: "",
       taxonomy: [],
     });
-    if (response.status?.code !== "OK" || !response.workflow) {
-      throw new Error(response.status?.message || "Failed to create workflow");
-    }
-
-    const createdId = response.workflow.id ?? "";
+    const createdId = response.id ?? "";
     const storedDefinition: WorkflowDefinition = { id: createdId, ...data.definition };
 
     this.logger.info("Created workflow", { id: createdId, name: storedDefinition.name });
 
-    const createdAt = timestampToIso(response.workflow.createdAt);
-    const updatedAt = timestampToIso(response.workflow.updatedAt);
+    const createdAt = timestampToIso(response.createdAt);
+    const updatedAt = timestampToIso(response.updatedAt);
 
     void this.emitWorkflowWebhook({
       type: EngineEventType.WORKFLOW_CREATED,
@@ -112,7 +105,7 @@ export const workflowsRoutes = routeModule({
         isEnabled: false,
         createdAt,
         updatedAt,
-        taxonomy: response.workflow.taxonomy ?? [],
+        taxonomy: response.taxonomy ?? [],
       },
     });
 
@@ -131,8 +124,8 @@ export const workflowsRoutes = routeModule({
     }
 
     this.logger.info("Updating workflow", { id });
-    const existing = await this.db.getWorkflow({ id });
-    if (existing.status?.code !== "OK" || !existing.workflow) {
+    const existing = await this.db.findWorkflow({ id });
+    if (!existing) {
       this.logger.warn("Workflow not found for update", { id });
       return null;
     }
@@ -141,25 +134,25 @@ export const workflowsRoutes = routeModule({
       id,
       name: data.definition.name,
       description: data.definition.description ?? "",
-      enabled: existing.workflow.enabled ?? false,
+      enabled: existing.enabled ?? false,
       stepsJson: JSON.stringify(data.definition.tasks ?? []),
       triggerJson: JSON.stringify(data.definition.trigger),
-      variables: existing.workflow.variables ?? {},
-      onSuccess: existing.workflow.onSuccess ?? "",
-      onFailure: existing.workflow.onFailure ?? "",
-      maxRetries: existing.workflow.maxRetries ?? 0,
-      timeoutSeconds: existing.workflow.timeoutSeconds ?? 0,
+      variables: existing.variables ?? {},
+      onSuccess: existing.onSuccess ?? "",
+      onFailure: existing.onFailure ?? "",
+      maxRetries: existing.maxRetries ?? 0,
+      timeoutSeconds: existing.timeoutSeconds ?? 0,
     });
-    if (response.status?.code !== "OK" || !response.workflow) {
+    if (!response) {
       return null;
     }
 
-    this.logger.info("Updated workflow", { id, name: response.workflow.name });
+    this.logger.info("Updated workflow", { id, name: response.name });
 
     const applicationId = await this.ensureApplicationId();
-    const isEnabled = response.workflow.enabled ?? false;
-    const createdAt = timestampToIso(existing.workflow.createdAt);
-    const updatedAt = timestampToIso(response.workflow.updatedAt);
+    const isEnabled = response.enabled ?? false;
+    const createdAt = timestampToIso(existing.createdAt);
+    const updatedAt = timestampToIso(response.updatedAt);
 
     void this.emitWorkflowWebhook({
       type: EngineEventType.WORKFLOW_UPDATED,
@@ -171,7 +164,7 @@ export const workflowsRoutes = routeModule({
         isEnabled,
         createdAt,
         updatedAt,
-        taxonomy: response.workflow.taxonomy ?? [],
+        taxonomy: response.taxonomy ?? [],
       },
     });
 
@@ -181,8 +174,7 @@ export const workflowsRoutes = routeModule({
   async deleteWorkflow(id: string, correlationKey?: string): Promise<boolean> {
     const applicationId = await this.ensureApplicationId();
     this.logger.info("Deleting workflow", { id });
-    const response = await this.db.deleteWorkflow({ id });
-    const deleted = response.code === "OK";
+    const deleted = await this.db.tryDeleteWorkflow({ id });
     this.logger.info("Workflow deleted", { id, success: deleted });
     if (deleted) {
       void this.emitWorkflowWebhook({
@@ -201,33 +193,27 @@ export const workflowsRoutes = routeModule({
     correlationKey?: string
   ): Promise<{ id: string; isEnabled: boolean }> {
     const existing = await this.db.getWorkflow({ id });
-    if (existing.status?.code !== "OK" || !existing.workflow) {
-      throw new Error("Workflow not found");
-    }
     // Toggle enabled without rewriting the workflow definition —
     // pass the existing JSON columns through unchanged.
     const response = await this.db.updateWorkflow({
       id,
-      name: existing.workflow.name ?? "",
-      description: existing.workflow.description ?? "",
+      name: existing.name ?? "",
+      description: existing.description ?? "",
       enabled: isEnabled,
-      stepsJson: existing.workflow.stepsJson ?? "",
-      triggerJson: existing.workflow.triggerJson ?? "",
-      variables: existing.workflow.variables ?? {},
-      onSuccess: existing.workflow.onSuccess ?? "",
-      onFailure: existing.workflow.onFailure ?? "",
-      maxRetries: existing.workflow.maxRetries ?? 0,
-      timeoutSeconds: existing.workflow.timeoutSeconds ?? 0,
+      stepsJson: existing.stepsJson ?? "",
+      triggerJson: existing.triggerJson ?? "",
+      variables: existing.variables ?? {},
+      onSuccess: existing.onSuccess ?? "",
+      onFailure: existing.onFailure ?? "",
+      maxRetries: existing.maxRetries ?? 0,
+      timeoutSeconds: existing.timeoutSeconds ?? 0,
     });
-    if (response.status?.code !== "OK" || !response.workflow) {
-      throw new Error("Failed to toggle workflow enabled state");
-    }
 
     const applicationId = await this.ensureApplicationId();
-    const definition = rebuildWorkflowDefinition(existing.workflow);
+    const definition = rebuildWorkflowDefinition(existing);
     if (definition) {
-      const createdAt = timestampToIso(existing.workflow.createdAt);
-      const updatedAt = timestampToIso(response.workflow.updatedAt);
+      const createdAt = timestampToIso(existing.createdAt);
+      const updatedAt = timestampToIso(response.updatedAt);
       void this.emitWorkflowWebhook({
         type: EngineEventType.WORKFLOW_UPDATED,
         applicationId,
@@ -238,7 +224,7 @@ export const workflowsRoutes = routeModule({
           isEnabled,
           createdAt,
           updatedAt,
-          taxonomy: response.workflow.taxonomy ?? [],
+          taxonomy: response.taxonomy ?? [],
         },
       });
     }
@@ -271,21 +257,18 @@ export const workflowsRoutes = routeModule({
       sortDesc: true,
     };
 
-    const response = await this.db.listWorkflowExecutions(req);
-    if (response.status?.code !== "OK") {
-      // Fall back to empty array on error
-      return [];
-    }
+    // An empty strip reads better here than an error page.
+    const executions = await this.db.tryListWorkflowExecutions(req);
 
     // Get workflow names and calculate durations
     const runs = await Promise.all(
-      (response.executions || []).map(async (exec) => {
+      executions.map(async (exec) => {
         // Get workflow name
         const workflowReq: workflow.GetWorkflowRequest = {
           id: exec.workflowId,
         };
-        const workflowResponse = await this.db.getWorkflow(workflowReq);
-        const workflowName = workflowResponse.workflow?.name || "Unknown Workflow";
+        const workflowRow = await this.db.findWorkflow(workflowReq);
+        const workflowName = workflowRow?.name || "Unknown Workflow";
 
         // Calculate startedAt timestamp
         const startedAt = exec.startedAt
