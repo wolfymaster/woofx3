@@ -164,28 +164,57 @@ export class DbClient {
     unwrapStatus("deleteCommand", await command.DeleteCommand(req, this.config));
   }
 
-  async createResource(req: resource.CreateResourceRequest): Promise<resource.ResourceResponse> {
-    return resource.CreateResource(req, this.config);
+  async createResource(req: resource.CreateResourceRequest): Promise<resource.Resource> {
+    const response = await resource.CreateResource(req, this.config);
+    return unwrap("createResource", response, response.resource);
   }
 
-  async createResourceFolder(req: resource.CreateFolderRequest): Promise<resource.ResourceResponse> {
-    return resource.CreateFolder(req, this.config);
+  async createResourceFolder(req: resource.CreateFolderRequest): Promise<resource.Resource> {
+    const response = await resource.CreateFolder(req, this.config);
+    return unwrap("createResourceFolder", response, response.resource);
   }
 
-  async getResource(req: resource.GetResourceRequest): Promise<resource.ResourceResponse> {
-    return resource.GetResource(req, this.config);
+  async getResource(req: resource.GetResourceRequest): Promise<resource.Resource> {
+    const response = await resource.GetResource(req, this.config);
+    return unwrap("getResource", response, response.resource);
   }
 
-  async listResources(req: resource.ListResourcesRequest): Promise<resource.ListResourcesResponse> {
-    return resource.ListResources(req, this.config);
+  async listResources(
+    req: resource.ListResourcesRequest
+  ): Promise<{ resources: resource.Resource[]; total: number; page: number; pageSize: number }> {
+    const response = await resource.ListResources(req, this.config);
+    unwrapVoid("listResources", response);
+    return {
+      resources: response.resources ?? [],
+      total: response.total ?? 0,
+      page: response.page ?? 0,
+      pageSize: response.pageSize ?? 0,
+    };
   }
 
-  async updateResource(req: resource.UpdateResourceRequest): Promise<resource.ResourceResponse> {
-    return resource.UpdateResource(req, this.config);
+  async updateResource(req: resource.UpdateResourceRequest): Promise<resource.Resource> {
+    const response = await resource.UpdateResource(req, this.config);
+    return unwrap("updateResource", response, response.resource);
   }
 
-  async deleteResource(req: resource.DeleteResourceRequest): Promise<resource.DeleteResourceResponse> {
-    return resource.DeleteResource(req, this.config);
+  /**
+   * Update, or null when it did not happen. Used where a caller has a
+   * reasonable answer without the update -- recording the repository key on a
+   * freshly created row, which can fall back to the row it just made.
+   */
+  async tryUpdateResource(req: resource.UpdateResourceRequest): Promise<resource.Resource | null> {
+    const response = await resource.UpdateResource(req, this.config);
+    if (response.status?.code !== "OK" || !response.resource) {
+      return null;
+    }
+    return response.resource;
+  }
+
+  /** Returns the repository keys of everything removed, for the caller to purge. */
+  async deleteResource(req: resource.DeleteResourceRequest): Promise<string[]> {
+    const response = await resource.DeleteResource(req, this.config);
+    unwrapVoid("deleteResource", response);
+    return response.repositoryKeys ?? [];
   }
 
   async createGroup(req: group.CreateGroupRequest): Promise<group.Group> {

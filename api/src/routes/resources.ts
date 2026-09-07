@@ -145,10 +145,7 @@ export const resourcesRoutes = routeModule({
       size: BigInt(input.size ?? 0),
       status: "pending",
     });
-    if (created.status?.code !== "OK" || !created.resource) {
-      throw new Error("Failed to create resource");
-    }
-    const resourceId = created.resource.id ?? "";
+    const resourceId = created.id ?? "";
 
     const response = await this.barkloaderRequest("/assets/upload-url", {
       method: "POST",
@@ -171,12 +168,14 @@ export const resourcesRoutes = routeModule({
 
     // Record where the bytes are going. Without this the row could never
     // be resolved back to an object.
-    const updated = await this.db.updateResource({
+    const updated = await this.db.tryUpdateResource({
       id: resourceId,
       applicationId,
       repositoryKey: grant.repositoryKey,
     } as resource.UpdateResourceRequest);
-    const row = updated.status?.code === "OK" && updated.resource ? updated.resource : created.resource;
+    // Falling back to the row just created: the key is recorded for later
+    // resolution, not needed to answer this call.
+    const row = updated ?? created;
 
     this.logger.info("Issued upload grant", { resourceId, name: input.name });
     return {
@@ -200,10 +199,7 @@ export const resourcesRoutes = routeModule({
       status: "ready",
       size: size === undefined ? undefined : BigInt(size),
     } as resource.UpdateResourceRequest);
-    if (response.status?.code !== "OK" || !response.resource) {
-      throw new Error("Resource not found");
-    }
-    return resourceToItem(this.overlayPublicUrl, response.resource);
+    return resourceToItem(this.overlayPublicUrl, response);
   },
 
   async createFolder(name: string, parentId?: string | null): Promise<ResourceItem> {
@@ -216,19 +212,13 @@ export const resourcesRoutes = routeModule({
       parentId: parentId ?? undefined,
       name,
     });
-    if (response.status?.code !== "OK" || !response.resource) {
-      throw new Error("Failed to create folder");
-    }
-    return resourceToItem(this.overlayPublicUrl, response.resource);
+    return resourceToItem(this.overlayPublicUrl, response);
   },
 
   async getResource(id: string): Promise<ResourceItem> {
     const applicationId = await this.ensureApplicationId();
     const response = await this.db.getResource({ id, applicationId });
-    if (response.status?.code !== "OK" || !response.resource) {
-      throw new Error("Resource not found");
-    }
-    return resourceToItem(this.overlayPublicUrl, response.resource);
+    return resourceToItem(this.overlayPublicUrl, response);
   },
 
   /**
@@ -253,14 +243,11 @@ export const resourcesRoutes = routeModule({
       page: query?.page ?? 0,
       pageSize: query?.pageSize ?? 0,
     });
-    if (response.status?.code !== "OK") {
-      throw new Error("Failed to list resources");
-    }
     return {
-      resources: (response.resources ?? []).map((row) => resourceToItem(this.overlayPublicUrl, row)),
-      total: response.total ?? 0,
-      page: response.page ?? 0,
-      pageSize: response.pageSize ?? 0,
+      resources: response.resources.map((row) => resourceToItem(this.overlayPublicUrl, row)),
+      total: response.total,
+      page: response.page,
+      pageSize: response.pageSize,
     };
   },
 
@@ -279,10 +266,7 @@ export const resourcesRoutes = routeModule({
       parentId: changes.parentId === undefined ? undefined : (changes.parentId ?? ""),
     } as resource.UpdateResourceRequest;
     const response = await this.db.updateResource(request);
-    if (response.status?.code !== "OK" || !response.resource) {
-      throw new Error("Resource not found");
-    }
-    return resourceToItem(this.overlayPublicUrl, response.resource);
+    return resourceToItem(this.overlayPublicUrl, response);
   },
 
   /**
@@ -298,13 +282,10 @@ export const resourcesRoutes = routeModule({
    */
   async deleteResource(id: string): Promise<{ deleted: boolean }> {
     const applicationId = await this.ensureApplicationId();
-    const response = await this.db.deleteResource({ id, applicationId });
-    if (response.status?.code !== "OK") {
-      throw new Error("Failed to delete resource");
-    }
+    const repositoryKeys = await this.db.deleteResource({ id, applicationId });
 
     const resourceIds = new Set<string>();
-    for (const key of response.repositoryKeys ?? []) {
+    for (const key of repositoryKeys) {
       // Keys are `user/{applicationId}/{resourceId}/{file}`.
       const segments = key.split("/");
       if (segments.length >= 3 && segments[0] === "user") {
@@ -344,10 +325,7 @@ export const resourcesRoutes = routeModule({
     }
 
     const existing = await this.db.getResource({ id: resourceId, applicationId });
-    if (existing.status?.code !== "OK" || !existing.resource) {
-      throw new Error("Resource not found");
-    }
-    const row = existing.resource;
+    const row = existing;
     if (row.isFolder === true) {
       throw new Error("Folders cannot be processed");
     }
