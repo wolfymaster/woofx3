@@ -37,24 +37,18 @@ function groupToSnapshot(g: {
 export const groupsRoutes = routeModule({
   async listGroups(): Promise<GroupSnapshot[]> {
     const applicationId = await this.ensureApplicationId();
-    const response = await this.db.listGroups({ applicationId });
-    if (response.status?.code !== "OK") {
-      throw new Error(response.status?.message || "Failed to list groups");
-    }
-    return (response.groups ?? []).map(groupToSnapshot);
+    const groups = await this.db.listGroups({ applicationId });
+    return groups.map(groupToSnapshot);
   },
 
   async createGroup(input: CreateGroupInput): Promise<GroupSnapshot> {
     const applicationId = await this.ensureApplicationId();
-    const response = await this.db.createGroup({
+    const group = await this.db.createGroup({
       applicationId,
       name: input.name,
       description: input.description ?? "",
     });
-    if (response.status?.code !== "OK" || !response.group) {
-      throw new Error(response.status?.message || "Failed to create group");
-    }
-    const snapshot = groupToSnapshot(response.group);
+    const snapshot = groupToSnapshot(group);
     void this.emitGroupWebhook({
       type: EngineEventType.GROUP_CREATED,
       applicationId,
@@ -65,15 +59,12 @@ export const groupsRoutes = routeModule({
   },
 
   async updateGroup(id: string, input: UpdateGroupInput): Promise<GroupSnapshot> {
-    const response = await this.db.updateGroup({
+    const group = await this.db.updateGroup({
       id,
       name: input.name,
       description: input.description ?? "",
     });
-    if (response.status?.code !== "OK" || !response.group) {
-      throw new Error(response.status?.message || "Failed to update group");
-    }
-    const snapshot = groupToSnapshot(response.group);
+    const snapshot = groupToSnapshot(group);
     void this.emitGroupWebhook({
       type: EngineEventType.GROUP_UPDATED,
       applicationId: snapshot.applicationId,
@@ -85,10 +76,7 @@ export const groupsRoutes = routeModule({
 
   async deleteGroup(id: string, correlationKey?: string): Promise<{ deleted: boolean }> {
     const applicationId = await this.ensureApplicationId();
-    const status = await this.db.deleteGroup({ id });
-    if (status.code !== "OK") {
-      throw new Error(status.message || "Failed to delete group");
-    }
+    await this.db.deleteGroup({ id });
     void this.emitGroupWebhook({
       type: EngineEventType.GROUP_DELETED,
       applicationId,
@@ -99,11 +87,7 @@ export const groupsRoutes = routeModule({
   },
 
   async listGroupMembers(groupId: string): Promise<string[]> {
-    const response = await this.db.listGroupMembers({ groupId });
-    if (response.status?.code !== "OK") {
-      throw new Error(response.status?.message || "Failed to list group members");
-    }
-    return response.usernames ?? [];
+    return this.db.listGroupMembers({ groupId });
   },
 
   async addUserToGroup(groupId: string, username: string): Promise<{ ok: true }> {
@@ -123,11 +107,8 @@ export const groupsRoutes = routeModule({
 
   async listGroupsForUser(username: string): Promise<GroupSnapshot[]> {
     const applicationId = await this.ensureApplicationId();
-    const response = await this.db.listUserGroupsForUser({ applicationId, username });
-    if (response.status?.code !== "OK") {
-      throw new Error(response.status?.message || "Failed to list groups for user");
-    }
-    return (response.groups ?? []).map(groupToSnapshot);
+    const groups = await this.db.listUserGroupsForUser({ applicationId, username });
+    return groups.map(groupToSnapshot);
   },
 
   async listPermissions(query: ListPermissionsQuery = {}): Promise<PermissionRule[]> {

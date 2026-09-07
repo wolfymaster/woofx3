@@ -188,24 +188,28 @@ export class DbClient {
     return resource.DeleteResource(req, this.config);
   }
 
-  async createGroup(req: group.CreateGroupRequest): Promise<group.GroupResponse> {
-    return group.CreateGroup(req, this.config);
+  async createGroup(req: group.CreateGroupRequest): Promise<group.Group> {
+    const response = await group.CreateGroup(req, this.config);
+    return unwrap("createGroup", response, response.group);
   }
 
-  async getGroup(req: group.GetGroupRequest): Promise<group.GroupResponse> {
-    return group.GetGroup(req, this.config);
+  async getGroup(req: group.GetGroupRequest): Promise<group.Group> {
+    const response = await group.GetGroup(req, this.config);
+    return unwrap("getGroup", response, response.group);
   }
 
-  async listGroups(req: group.ListGroupsRequest): Promise<group.ListGroupsResponse> {
-    return group.ListGroups(req, this.config);
+  async listGroups(req: group.ListGroupsRequest): Promise<group.Group[]> {
+    const response = await group.ListGroups(req, this.config);
+    return unwrap("listGroups", response, response.groups ?? []);
   }
 
-  async updateGroup(req: group.UpdateGroupRequest): Promise<group.GroupResponse> {
-    return group.UpdateGroup(req, this.config);
+  async updateGroup(req: group.UpdateGroupRequest): Promise<group.Group> {
+    const response = await group.UpdateGroup(req, this.config);
+    return unwrap("updateGroup", response, response.group);
   }
 
-  async deleteGroup(req: group.DeleteGroupRequest): Promise<common.ResponseStatus> {
-    return group.DeleteGroup(req, this.config);
+  async deleteGroup(req: group.DeleteGroupRequest): Promise<void> {
+    unwrapStatus("deleteGroup", await group.DeleteGroup(req, this.config));
   }
 
   async addUserToGroup(req: group.GroupMembershipRequest): Promise<common.ResponseStatus> {
@@ -216,12 +220,14 @@ export class DbClient {
     return group.RemoveUserFromGroup(req, this.config);
   }
 
-  async listGroupMembers(req: group.ListGroupMembersRequest): Promise<group.ListGroupMembersResponse> {
-    return group.ListGroupMembers(req, this.config);
+  async listGroupMembers(req: group.ListGroupMembersRequest): Promise<string[]> {
+    const response = await group.ListGroupMembers(req, this.config);
+    return unwrap("listGroupMembers", response, response.usernames ?? []);
   }
 
-  async listUserGroupsForUser(req: group.ListUserGroupsForUserRequest): Promise<group.ListGroupsResponse> {
-    return group.ListUserGroupsForUser(req, this.config);
+  async listUserGroupsForUser(req: group.ListUserGroupsForUserRequest): Promise<group.Group[]> {
+    const response = await group.ListUserGroupsForUser(req, this.config);
+    return unwrap("listUserGroupsForUser", response, response.groups ?? []);
   }
 
   async listPermissions(req: permission.ListPermissionsRequest): Promise<permission.ListPermissionsResponse> {
@@ -251,24 +257,74 @@ export class DbClient {
   // SceneService — per-application widget arrangement persistence.
   // The engine treats widgets_json / layout_json as opaque strings,
   // mirroring the workflow steps_json / trigger_json pattern.
-  async getScene(req: scene.GetSceneRequest): Promise<scene.SceneResponse> {
-    return scene.GetScene(req, this.config);
+  async getScene(req: scene.GetSceneRequest): Promise<scene.Scene> {
+    const response = await scene.GetScene(req, this.config);
+    return unwrap("getScene", response, response.scene);
   }
 
-  async listScenes(req: scene.ListScenesRequest): Promise<scene.ListScenesResponse> {
-    return scene.ListScenes(req, this.config);
+  /**
+   * The scene, or null when it does not exist. Distinct from `getScene`,
+   * which treats absence as a failure: a lookup that legitimately tolerates
+   * a miss says so at the call site rather than by catching.
+   */
+  async findScene(req: scene.GetSceneRequest): Promise<scene.Scene | null> {
+    const response = await scene.GetScene(req, this.config);
+    if (response.status?.code !== "OK" || !response.scene) {
+      return null;
+    }
+    return response.scene;
   }
 
-  async createScene(req: scene.CreateSceneRequest): Promise<scene.SceneResponse> {
-    return scene.CreateScene(req, this.config);
+  /**
+   * Paginated, so this returns the page rather than a bare array: the counts
+   * are part of the answer, and dropping them would push a second call onto
+   * every caller that renders a pager.
+   */
+  async listScenes(
+    req: scene.ListScenesRequest
+  ): Promise<{ scenes: scene.Scene[]; totalCount: number; page: number; pageSize: number }> {
+    const response = await scene.ListScenes(req, this.config);
+    unwrapVoid("listScenes", response);
+    return {
+      scenes: response.scenes ?? [],
+      totalCount: response.totalCount ?? 0,
+      page: response.page ?? 0,
+      pageSize: response.pageSize ?? 0,
+    };
   }
 
-  async updateScene(req: scene.UpdateSceneRequest): Promise<scene.SceneResponse> {
-    return scene.UpdateScene(req, this.config);
+  async createScene(req: scene.CreateSceneRequest): Promise<scene.Scene> {
+    const response = await scene.CreateScene(req, this.config);
+    return unwrap("createScene", response, response.scene);
   }
 
-  async deleteScene(req: scene.DeleteSceneRequest): Promise<common.ResponseStatus> {
-    return scene.DeleteScene(req, this.config);
+  async updateScene(req: scene.UpdateSceneRequest): Promise<scene.Scene> {
+    const response = await scene.UpdateScene(req, this.config);
+    return unwrap("updateScene", response, response.scene);
+  }
+
+  async deleteScene(req: scene.DeleteSceneRequest): Promise<void> {
+    unwrapStatus("deleteScene", await scene.DeleteScene(req, this.config));
+  }
+
+  /**
+   * Update, or null when db-proxy refuses. For callers that report an
+   * outcome rather than fail -- scene edits surface as `{ success: false }`
+   * in the UI, and turning that into a thrown error would change what the
+   * client sees.
+   */
+  async tryUpdateScene(req: scene.UpdateSceneRequest): Promise<scene.Scene | null> {
+    const response = await scene.UpdateScene(req, this.config);
+    if (response.status?.code !== "OK" || !response.scene) {
+      return null;
+    }
+    return response.scene;
+  }
+
+  /** Delete, reporting whether it happened. Same reasoning as tryUpdateScene. */
+  async tryDeleteScene(req: scene.DeleteSceneRequest): Promise<boolean> {
+    const status = await scene.DeleteScene(req, this.config);
+    return status.code === "OK";
   }
 
   async executeWorkflow(req: workflow.ExecuteWorkflowRequest): Promise<workflow.ExecuteWorkflowResponse> {
