@@ -801,6 +801,9 @@ export interface GroupWebhookSnapshot {
   name: string;
   description: string;
   createdAt: string;
+  /** See GroupSnapshot.isBuiltIn in ./api. The group.* webhooks carry the full
+   *  snapshot, so this was always on the wire — it was simply missing here. */
+  isBuiltIn: boolean;
 }
 
 export interface GroupCreatedEvent {
