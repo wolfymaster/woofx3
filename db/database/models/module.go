@@ -96,11 +96,16 @@ type Trigger struct {
 	// Taxonomy is a JSON-encoded string array of open, dotted hierarchical
 	// classification terms (e.g. `["platform.twitch.chat"]`). Marshaled /
 	// unmarshaled at the proto boundary, mirroring Widget.AlertTypes.
-	Taxonomy      string `gorm:"column:taxonomy;type:jsonb;not null;default:'[]'"`
-	Name          string `gorm:"column:name;type:text;not null"`
-	Description   string `gorm:"column:description;type:text;not null"`
-	Event         string `gorm:"column:event;type:text;not null"`
-	ConfigSchema  string `gorm:"column:config_schema;type:jsonb;not null;default:'[]'"`
+	Taxonomy     string `gorm:"column:taxonomy;type:jsonb;not null;default:'[]'"`
+	Name         string `gorm:"column:name;type:text;not null"`
+	Description  string `gorm:"column:description;type:text;not null"`
+	Event        string `gorm:"column:event;type:text;not null"`
+	ConfigSchema string `gorm:"column:config_schema;type:jsonb;not null;default:'[]'"`
+	// PayloadSchema is a JSON-encoded DataSchema describing the shape of
+	// `trigger.data` when this trigger fires. UI-only — see
+	// module_trigger.proto Trigger.payload_schema for why it is separate from
+	// ConfigSchema.
+	PayloadSchema string `gorm:"column:payload_schema;type:jsonb;not null;default:'{}'"`
 	AllowVariants bool   `gorm:"column:allow_variants;default:false"`
 	CreatedByType string `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
 	CreatedByRef  string `gorm:"column:created_by_ref;type:text;not null;default:''"`

@@ -307,6 +307,29 @@ func (a *WorkflowApp) registerBuiltinTriggers(ctx context.Context) error {
 		name        string
 		description string
 	}
+
+	// All three lifecycle events carry the same payload: the GORM-cased
+	// workflow_definitions row. Declaring it is what makes
+	// `${trigger.data.Name}` discoverable in the workflow builder - these
+	// triggers have no config fields at all, so without a payload schema the
+	// builder has nothing to derive variables from and offers none.
+	//
+	// Go-cased keys because that is what the row serializes as on the bus;
+	// the schema describes what is actually there, not what would read
+	// better. Steps and Trigger are JSON-encoded strings on the row rather
+	// than nested objects, hence "string" and no dotted sub-paths.
+	const workflowRowPayloadSchema = `{"fields":[
+		{"path":"ID","type":"string","description":"Workflow id."},
+		{"path":"ApplicationID","type":"string","description":"Application the workflow belongs to."},
+		{"path":"Name","type":"string","description":"Workflow name."},
+		{"path":"Steps","type":"string","description":"JSON-encoded step list."},
+		{"path":"Trigger","type":"string","description":"JSON-encoded trigger binding."},
+		{"path":"Taxonomy","type":"string","description":"JSON-encoded classification terms."},
+		{"path":"CreatedByType","type":"string","description":"USER for UI-authored workflows, MODULE for module-registered ones."},
+		{"path":"CreatedByRef","type":"string","description":"Manifest module id for MODULE rows; empty for USER rows."},
+		{"path":"ManifestID","type":"string","description":"Manifest-local workflow id for MODULE rows; empty for USER rows."},
+		{"path":"Enabled","type":"boolean","description":"Whether the workflow runtime considers this row a candidate to run."}
+	]}`
 	builtins := []builtinTrigger{
 		{
 			manifestID:  "workflow.created",
@@ -336,6 +359,7 @@ func (a *WorkflowApp) registerBuiltinTriggers(ctx context.Context) error {
 			Description:   b.description,
 			Event:         b.event,
 			ConfigSchema:  "[]",
+			PayloadSchema: workflowRowPayloadSchema,
 			AllowVariants: false,
 			ManifestId:    b.manifestID,
 		})
@@ -469,4 +493,3 @@ func (a *WorkflowApp) handleTriggerEvent(payload []byte, subject string) {
 		// Continue processing other events (fail fast per event)
 	}
 }
-

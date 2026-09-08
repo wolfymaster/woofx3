@@ -108,6 +108,7 @@ func buildTriggerRegisteredData(modulePrefix, moduleKey, moduleName, version str
 			"description":     t.Description,
 			"event":           t.Event,
 			"config_schema":   t.ConfigSchema,
+			"payload_schema":  t.PayloadSchema,
 			"allow_variants":  t.AllowVariants,
 			"created_by_type": t.CreatedByType,
 			"created_by_ref":  t.CreatedByRef,
@@ -210,6 +211,7 @@ func buildTriggerDeregisteredData(modulePrefix, moduleKey string, triggers []*mo
 			"description":    t.Description,
 			"event":          t.Event,
 			"config_schema":  t.ConfigSchema,
+			"payload_schema": t.PayloadSchema,
 			"allow_variants": t.AllowVariants,
 			"created_by_ref": t.CreatedByRef,
 		}

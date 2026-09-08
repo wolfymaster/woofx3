@@ -66,6 +66,40 @@ describe("parseModuleTriggerRegistered", () => {
     });
   });
 
+  test("carries a declared payload schema through", () => {
+    const payloadSchema = JSON.stringify({ fields: [{ path: "bits", type: "number" }] });
+    const ce = {
+      data: {
+        module_key: "k",
+        triggers: [{ id: "uuid-1", name: "cheer", payload_schema: payloadSchema }],
+      },
+    };
+
+    const result = parseModuleTriggerRegistered(ce);
+
+    expect(result.event.triggers[0]?.payloadSchema).toBe(payloadSchema);
+  });
+
+  // The db column defaults to "{}". Forwarding that would make every trigger
+  // look like it declares a payload schema that declares nothing, and the UI
+  // would stop falling back to the configFields derivation.
+  test("omits an undeclared payload schema rather than forwarding the column default", () => {
+    const ce = {
+      data: {
+        module_key: "k",
+        triggers: [
+          { id: "uuid-1", name: "a", payload_schema: "{}" },
+          { id: "uuid-2", name: "b" },
+        ],
+      },
+    };
+
+    const result = parseModuleTriggerRegistered(ce);
+
+    expect(result.event.triggers[0]).not.toHaveProperty("payloadSchema");
+    expect(result.event.triggers[1]).not.toHaveProperty("payloadSchema");
+  });
+
   test("defaults missing fields to empty values", () => {
     const ce = { data: {} };
     const result = parseModuleTriggerRegistered(ce);
@@ -112,9 +146,7 @@ describe("parseModuleTriggerRegistered", () => {
       },
     };
     const result = parseModuleTriggerRegistered(ce);
-    expect(result.event.triggers[0]?.projectionKey).toBe(
-      "twitch:1.0.0:abcdef1:trigger:channel.follow"
-    );
+    expect(result.event.triggers[0]?.projectionKey).toBe("twitch:1.0.0:abcdef1:trigger:channel.follow");
   });
 
   test("leaves projectionKey undefined when payload omits projection_key", () => {
@@ -219,9 +251,7 @@ describe("parseModuleActionRegistered", () => {
       },
     };
     const result = parseModuleActionRegistered(ce);
-    expect(result.event.actions[0]?.projectionKey).toBe(
-      "twitch:1.0.0:abcdef1:action:send"
-    );
+    expect(result.event.actions[0]?.projectionKey).toBe("twitch:1.0.0:abcdef1:action:send");
   });
 
   test("leaves projectionKey undefined when payload omits projection_key", () => {
@@ -713,7 +743,13 @@ describe("module event addressing", () => {
 
   test("lifecycle events expose the same modulePrefix as the definition events", () => {
     const { event: installed } = parseModuleInstalled({
-      data: { module_prefix: prefix, module_key: key, module_name: "Twitch Platform", version: "1.0.0", status: "completed" },
+      data: {
+        module_prefix: prefix,
+        module_key: key,
+        module_name: "Twitch Platform",
+        version: "1.0.0",
+        status: "completed",
+      },
     });
     expect(installed.modulePrefix).toBe(prefix);
     expect(installed.moduleKey).toBe(key);

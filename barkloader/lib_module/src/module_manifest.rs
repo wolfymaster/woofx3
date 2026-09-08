@@ -40,6 +40,19 @@ pub struct ManifestTrigger {
     pub taxonomy: Vec<String>,
     #[serde(default)]
     pub schema: Option<serde_json::Value>,
+    /// `DataSchema`-shaped declaration of what `trigger.data` looks like when
+    /// this trigger fires:
+    /// `{ "fields": [{ "path": "user_name", "type": "string" }] }`.
+    ///
+    /// Distinct from `schema`, which is the trigger's *configuration form*.
+    /// Only config fields carrying an `eventPath` become workflow variables,
+    /// so a trigger that emits payload keys it does not also expose as config
+    /// fields has no way to advertise them without this. UI-only, for the
+    /// workflow builder's `${trigger.data.X}` autocomplete — the engine never
+    /// validates an event payload against it. Absent means the builder falls
+    /// back to deriving variables from `schema`, exactly as it does today.
+    #[serde(default)]
+    pub payload_schema: Option<serde_json::Value>,
     /// When true, the UI lets the user create multiple bound instances ("variants")
     /// of this trigger, each with its own values for the `schema` fields. Used for
     /// triggers like cheer/subscribe/subscription.gift where the same event class
@@ -682,12 +695,21 @@ impl ManifestTrigger {
         } else {
             self.event.clone()
         };
+        // "{}" rather than "null" for an undeclared schema: the column is
+        // NOT NULL and every consumer parses this as an object, so an empty
+        // one reads as "declared nothing" without a null branch anywhere.
+        let payload_schema = self
+            .payload_schema
+            .as_ref()
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "{}".to_string());
         super::db_proxy::TriggerInputJson {
             taxonomy: self.resolve_taxonomy(),
             name: self.name.clone(),
             description: self.description.clone(),
             event,
             config_schema,
+            payload_schema,
             allow_variants: self.allow_variants,
             manifest_id: self.id.clone(),
         }
@@ -1561,6 +1583,42 @@ mod tests {
         // to the literal "null" — mirrors how `schema` already behaves when
         // omitted, and the UI-side parser treats non-array JSON as "no fields".
         assert_eq!(a.to_input("play_alert").output_schema, "null");
+    }
+
+    #[test]
+    fn trigger_to_input_projects_payload_schema() {
+        let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
+            "id": "channel_cheer",
+            "name": "Cheer",
+            "event": "cheer.channel.twitch",
+            "payloadSchema": {
+                "fields": [
+                    { "path": "bits", "type": "number", "description": "Bits cheered" },
+                    { "path": "user_name", "type": "string" }
+                ]
+            }
+        }))
+        .expect("parse");
+        let payload_schema = t.to_input().payload_schema;
+        let parsed: serde_json::Value = serde_json::from_str(&payload_schema).expect("valid json");
+        assert_eq!(parsed["fields"][0]["path"], "bits");
+        assert_eq!(parsed["fields"][0]["type"], "number");
+        assert_eq!(parsed["fields"][1]["path"], "user_name");
+    }
+
+    #[test]
+    fn trigger_to_input_defaults_payload_schema_to_empty_object() {
+        let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
+            "id": "channel_cheer",
+            "name": "Cheer",
+            "event": "cheer.channel.twitch"
+        }))
+        .expect("parse");
+        // "{}" rather than "null": the column is NOT NULL and every consumer
+        // parses this as an object, so an undeclared schema reads as
+        // "declared nothing" with no null branch anywhere. A trigger that
+        // never declares one keeps deriving its variables from `schema`.
+        assert_eq!(t.to_input().payload_schema, "{}");
     }
 
     #[test]

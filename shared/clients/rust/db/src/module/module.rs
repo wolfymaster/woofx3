@@ -103,6 +103,18 @@ pub struct Trigger {
     /// classification axes. Not validated against a fixed vocabulary.
     #[prost(string, repeated, tag="13")]
     pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// JSON-encoded DataSchema describing the shape of `trigger.data` when
+    /// this trigger fires: `{"fields":\[{"path","type","description?","example?"}\]}`.
+    ///
+    /// Distinct from config_schema, which describes the trigger's *configuration
+    /// form*. The two are not the same shape: a trigger may emit payload keys it
+    /// does not expose as config fields, and today those keys are simply
+    /// undiscoverable — only config fields carrying an `eventPath` become
+    /// variables. UI-only; the engine never validates an event payload against
+    /// this. Empty/absent means fall back to the config_schema derivation, so a
+    /// trigger that never declares one keeps working exactly as it does now.
+    #[prost(string, tag="14")]
+    pub payload_schema: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct TriggerInput {
@@ -121,6 +133,9 @@ pub struct TriggerInput {
     pub manifest_id: ::prost::alloc::string::String,
     #[prost(string, repeated, tag="8")]
     pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// JSON string — see Trigger.payload_schema
+    #[prost(string, tag="9")]
+    pub payload_schema: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterTriggersRequest {

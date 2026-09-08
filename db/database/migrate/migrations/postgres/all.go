@@ -46,5 +46,6 @@ func All() []*gormigrate.Migration {
 		AddBuiltInGroups(),
 		CreateResourcesTable(),
 		RefreshBuiltInGroupDescriptions(),
+		AddTriggerPayloadSchemaColumn(),
 	}
 }

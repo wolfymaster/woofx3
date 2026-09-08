@@ -54,6 +54,9 @@ pub struct TriggerInputJson {
     pub description: String,
     pub event: String,
     pub config_schema: String,
+    /// JSON-encoded `DataSchema` for `trigger.data`. "{}" when the manifest
+    /// declared none — see `ManifestTrigger::payload_schema`.
+    pub payload_schema: String,
     pub allow_variants: bool,
     /// Stable manifest-local id (e.g. "channel_subscribe"). Forms the
     /// canonical id `{moduleId}:trigger:{manifest_id}` together with the

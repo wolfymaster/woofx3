@@ -101,6 +101,18 @@ export interface TriggerDefinition {
   description: string;
   event: string;
   configSchema: string;
+  /**
+   * JSON-encoded `DataSchema` describing the shape of `trigger.data` when this
+   * trigger fires: `{"fields":[{"path","type","description?","example?"}]}`.
+   *
+   * Distinct from `configSchema`, which describes the configuration form. Only
+   * config fields carrying an `eventPath` become workflow variables, so a
+   * trigger emitting payload keys it does not also expose as config fields has
+   * no other way to advertise them. UI-only — nothing validates a payload
+   * against it. `"{}"`/absent means fall back to the configSchema derivation.
+   * Parse with `parseDataSchema` from `./ui-schema`.
+   */
+  payloadSchema?: string;
   allowVariants: boolean;
   createdByType: string;
   createdByRef: string;
@@ -126,12 +138,24 @@ export interface ActionDefinition {
   call: string;
   paramsSchema: string;
   /**
-   * JSON-encoded array of ConfigField-shaped output declarations describing
-   * the action function's return value (e.g. the counter module's increment
-   * action returns `{next, previous, step}`). UI-only — the engine treats
-   * function results as opaque at runtime; this powers the workflow
-   * builder's `${stepId.field}` variable autocomplete. `"null"`/absent means
-   * no declared outputs.
+   * JSON-encoded declaration of the action function's return value (e.g. the
+   * counter module's increment action returns `{next, previous, step}`).
+   * UI-only — the engine treats function results as opaque at runtime; this
+   * powers the workflow builder's `${stepId.field}` variable autocomplete.
+   * `"null"`/absent means no declared outputs.
+   *
+   * Two shapes are accepted, and which one it is can be told apart by
+   * inspecting the parsed value:
+   *   - An **array** of ConfigField-shaped entries — what modules have always
+   *     written here, still fully supported.
+   *   - A **`DataSchema` object** `{"fields":[{"path","type",...}]}` — the
+   *     richer form, matching `TriggerDefinition.payloadSchema`. `path` and
+   *     `example` have no ConfigField equivalent.
+   *
+   * This mirrors the two-shape contract `configSchema` already documents,
+   * rather than adding a second field that would mean almost the same thing.
+   * Use `parseDataSchema` from `./ui-schema`: it returns undefined for the
+   * array form, which is the signal to fall back to the ConfigField reading.
    */
   outputSchema?: string;
   createdByType: string;
