@@ -13,10 +13,26 @@ package models
 // subject without the membership table ever being consulted.
 const (
 	GroupEveryone    = "everyone"
+	GroupFollower    = "follower"
 	GroupSubscriber  = "subscriber"
 	GroupVIP         = "vip"
 	GroupModerator   = "moderator"
 	GroupBroadcaster = "broadcaster"
+)
+
+// Subscription tier groups. A tier N subscriber is written into both
+// GroupSubscriber and the matching tier group, so a grant to plain
+// "subscriber" keeps matching every subscriber regardless of tier while
+// "tier 2 and above" is expressed by granting tier2 and tier3 together.
+//
+// Nothing in the enforcement path orders these or parses the names: ordering
+// would require the engine to know each platform's tier hierarchy, and it does
+// not. A platform with no tiers writes only GroupSubscriber, leaving these
+// empty, so a grant to one correctly matches nobody.
+const (
+	GroupSubscriberTier1 = "subscriber_tier1"
+	GroupSubscriberTier2 = "subscriber_tier2"
+	GroupSubscriberTier3 = "subscriber_tier3"
 )
 
 // WildcardSubject is the Casbin subject that matches every user. The Casbin
@@ -45,8 +61,28 @@ var BuiltInGroups = []BuiltInGroup{
 		PlatformDerived: false,
 	},
 	{
+		Name:            GroupFollower,
+		Description:     "Users who follow the channel.",
+		PlatformDerived: true,
+	},
+	{
 		Name:            GroupSubscriber,
 		Description:     "Users with an active paid subscription to the channel.",
+		PlatformDerived: true,
+	},
+	{
+		Name:            GroupSubscriberTier1,
+		Description:     "Subscribers on the channel's first subscription tier.",
+		PlatformDerived: true,
+	},
+	{
+		Name:            GroupSubscriberTier2,
+		Description:     "Subscribers on the channel's second subscription tier.",
+		PlatformDerived: true,
+	},
+	{
+		Name:            GroupSubscriberTier3,
+		Description:     "Subscribers on the channel's third subscription tier.",
 		PlatformDerived: true,
 	},
 	{
