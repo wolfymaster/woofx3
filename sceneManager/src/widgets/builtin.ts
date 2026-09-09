@@ -70,9 +70,12 @@ const BUILTIN_WIDGET_SPECS: BuiltinWidgetSpec[] = [
 
 /**
  * Build canonical `WidgetDefinition` objects from the built-in specs.
- * Each definition uses `canonicalId = "builtin:{manifestId}"` — the
- * `builtin` module namespace is reserved and never granted to external
- * module uploads (enforced at the barkloader module-install boundary).
+ * Each definition uses `canonicalId = "builtin:{manifestId}"`.
+ *
+ * The `builtin` namespace is **not** reserved, despite what this comment
+ * used to claim: nothing enforced it, and a user upload could take the id.
+ * `woofx3` is the reserved one (barkloader's manifest_validate), and
+ * `builtin` is being retired along with these specs — see #47.
  */
 export function buildBuiltinWidgetDefinitions(): WidgetDefinition[] {
   return BUILTIN_WIDGET_SPECS.map((spec) => ({

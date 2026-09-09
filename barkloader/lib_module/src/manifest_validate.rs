@@ -104,9 +104,50 @@ pub struct ResolvedManifest {
     pub assets: Vec<ResolvedAsset>,
 }
 
-/// Validate the manifest and resolve all intra-manifest references.
+/// The module id every bundled ("built-in") declaration lives under.
+///
+/// One id, one exact string. Bundled declarations are added by editing this
+/// module's manifest, not by minting new ids, so there is no reservation list
+/// to keep in step with them.
+pub const SYSTEM_MODULE_ID: &str = "woofx3";
+
+/// Who is installing.
+///
+/// Every install path that exists today is a user upload. The bundled-module
+/// reconciler introduced later boots its embedded archives as `System`; this
+/// exists now so the reservation below is enforceable the moment it does,
+/// rather than being a comment claiming an enforcement that is not there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallProvenance {
+    User,
+    System,
+}
+
+/// Validate a user-uploaded manifest and resolve all intra-manifest references.
+///
+/// The provenance-free entry point, because every caller today is a user
+/// upload. `validate_with_provenance` is the one to reach for from a system
+/// installer.
 pub fn validate(manifest: &ModuleManifest) -> Result<ResolvedManifest> {
+    validate_with_provenance(manifest, InstallProvenance::User)
+}
+
+/// Validate the manifest and resolve all intra-manifest references, enforcing
+/// the rules that depend on who is installing.
+pub fn validate_with_provenance(
+    manifest: &ModuleManifest,
+    provenance: InstallProvenance,
+) -> Result<ResolvedManifest> {
     let module_id = require_module_id(manifest)?;
+
+    // Exact match, deliberately: `woofx3party` is an ordinary id and installs
+    // normally. A prefix or substring test would quietly deny ids nobody
+    // reserved.
+    if module_id == SYSTEM_MODULE_ID && provenance != InstallProvenance::System {
+        return Err(anyhow!(
+            "module id {SYSTEM_MODULE_ID:?} is reserved for bundled system modules and cannot be installed from an upload"
+        ));
+    }
 
     // Pass 1: build per-kind canonical id lookup tables.
     let triggers_table = build_kind_table(
@@ -981,6 +1022,40 @@ mod tests {
             }}"#
         );
         parse(&json)
+    }
+
+    // ---------------------------------------------------------------
+    // Reserved system module id
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn rejects_a_user_upload_claiming_the_system_module_id() {
+        let json = format!(
+            r#"{{"id": "{SYSTEM_MODULE_ID}", "name": "Impostor", "version": "1.0.0"}}"#
+        );
+        let m = parse(&json);
+        let err = validate(&m).expect_err("a user upload must not claim it").to_string();
+        assert!(err.contains(SYSTEM_MODULE_ID), "names the reserved id: {err}");
+        assert!(err.contains("reserved"), "{err}");
+    }
+
+    #[test]
+    fn accepts_a_system_install_of_the_reserved_id() {
+        let json = format!(
+            r#"{{"id": "{SYSTEM_MODULE_ID}", "name": "woofx3", "version": "1.0.0"}}"#
+        );
+        let m = parse(&json);
+        validate_with_provenance(&m, InstallProvenance::System).expect("system install is allowed");
+    }
+
+    // The match is exact. A prefix or substring test would deny ids nobody
+    // reserved and that no bundled declaration will ever use.
+    #[test]
+    fn accepts_ordinary_ids_that_merely_contain_the_reserved_one() {
+        for id in ["woofx3party", "my_woofx3", "woofx3_extras"] {
+            let m = parse(&format!(r#"{{"id": "{id}", "name": "M", "version": "1.0.0"}}"#));
+            validate(&m).unwrap_or_else(|e| panic!("{id} should install: {e}"));
+        }
     }
 
     // ---------------------------------------------------------------
