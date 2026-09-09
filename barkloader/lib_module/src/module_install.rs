@@ -428,10 +428,16 @@ impl<'a, R: Repository> SagaState<'a, R> {
             .iter()
             .enumerate()
             .map(|(i, a)| {
-                let resolved_call = match &self.resolved.actions[i].implementation {
-                    ResolvedActionImpl::Function { canonical_function_id } => canonical_function_id.to_string(),
+                // A function action dispatches through the `function` handler
+                // with the canonical function id as its target; a native
+                // action *is* its handler and has no target.
+                let (action_type, resolved_call) = match &self.resolved.actions[i].implementation {
+                    ResolvedActionImpl::Function { canonical_function_id } => {
+                        ("function".to_string(), canonical_function_id.to_string())
+                    }
+                    ResolvedActionImpl::Native { handler } => (handler.clone(), String::new()),
                 };
-                a.to_input(&resolved_call)
+                a.to_input(&action_type, &resolved_call)
             })
             .collect();
         info!(
@@ -659,6 +665,9 @@ impl<'a, R: Repository> SagaState<'a, R> {
                         ResolvedActionImpl::Function { canonical_function_id: cid } => {
                             ("function".to_string(), Some(cid.to_string()))
                         }
+                        // The step dispatches straight through the engine
+                        // handler; there is no function for it to name.
+                        ResolvedActionImpl::Native { handler } => (handler.clone(), None),
                     }
                 } else {
                     let canonical = action_canonical.to_string();

@@ -131,10 +131,14 @@ func buildActionRegisteredData(modulePrefix, moduleKey, moduleName, version stri
 	rows := make([]map[string]any, 0, len(actions))
 	for _, a := range actions {
 		row := map[string]any{
-			"id":              a.ID.String(),
-			"name":            a.Name,
-			"description":     a.Description,
-			"call":            a.Call,
+			"id":          a.ID.String(),
+			"name":        a.Name,
+			"description": a.Description,
+			"call":        a.Call,
+			// The engine handler this action dispatches through. A native
+			// action carries the handler name and an empty call, so a
+			// consumer cannot infer the type from `call` being present.
+			"type":            a.Type,
 			"params_schema":   a.ParamsSchema,
 			"returns":         a.Returns,
 			"taxonomy":        parseTaxonomy(a.Taxonomy),

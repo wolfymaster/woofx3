@@ -70,6 +70,11 @@ pub struct TriggerInputJson {
 pub struct ActionInputJson {
     pub name: String,
     pub description: String,
+    /// Engine action handler the row dispatches through (`function`,
+    /// `alert`, `print`). Serialized as `type`; named `action_type` because
+    /// `type` is a Rust keyword.
+    #[serde(rename = "type")]
+    pub action_type: String,
     pub call: String,
     pub params_schema: String,
     /// `ConfigField`-shaped output declarations (JSON-encoded array) — see
