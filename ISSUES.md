@@ -188,7 +188,7 @@ item into a real issue (e.g. via `gh issue create --title ... --body ...`).
 
 ### No CI workflow runs tests/lint for the monorepo
 
-- **Files:** `.github/workflows/` (only contains `publish-api.yml`, which publishes the TS SDK on push to main)
+- **Files:** `.github/workflows/`
 - **Category:** tech-debt / enhancement
-- **Size:** medium
-- **Description:** There is no CI gate running `cargo test` (barkloader), `go test` (db/workflow/services), or TS test suites (api/sceneManager/twitch/woofwoofwoof) on PRs.
+- **Size:** small
+- **Description:** `cargo test` (barkloader and the shared Rust crates) and the TS suites for api, twitch and woofwoofwoof now run on PRs. Still uncovered: `go test` for db/workflow/services, and sceneManager, which has a `typecheck` script but no workflow and does not currently pass it.
