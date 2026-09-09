@@ -20,7 +20,6 @@ import type BarkloaderClientService from "./services/barkloader";
 import type DatabaseService from "./services/database";
 import type MessageBusService from "./services/messageBus";
 import type TwitchChatClientService from "./services/twitchChat";
-import Spotify from "./spotify";
 import { DerivedGroupSync } from "./derivedGroupSync";
 import { canUse, parseTime } from "./util";
 
@@ -331,72 +330,6 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       ctx.services.messageBus.client.publish(topic, data);
       return "";
     });
-
-    ctx.commander.add("song", async (_text: string) => {
-      const spotify = new Spotify(
-        (ctx.config.getConfig("spotifyClientId") as string) ?? "",
-        (ctx.config.getConfig("spotifyClientSecret") as string) ?? "",
-        (ctx.config.getConfig("spotifyAccessToken") as string) ?? "",
-        (ctx.config.getConfig("spotifyRefreshToken") as string) ?? ""
-      );
-
-      await spotify.refresh();
-
-      const track = await spotify.currentTrack();
-
-      return `Currently Playing: ${track.name} by ${track.artist}`;
-    });
-
-    // ctx.commander.add("sr", async (text: string) => {
-    //   const spotify = new Spotify(
-    //     (ctx.config.getConfig("spotifyClientId") as string) ?? "",
-    //     (ctx.config.getConfig("spotifyClientSecret") as string) ?? "",
-    //     (ctx.config.getConfig("spotifyAccessToken") as string) ?? "",
-    //     (ctx.config.getConfig("spotifyRefreshToken") as string) ?? ""
-    //   );
-
-    //   // await spotify.refresh();
-
-    //   // list devices
-    //   // console.log(await spotify.devices());
-
-    //   await spotify.refresh();
-
-    //   // const devices = await spotify.devices();
-    //   // console.log('devices', devices);
-
-    //   // select a song and play it via spotify
-    //   const deviceId = "02e7cb6b8d5bae01eeb82eb2af0e32e22e044d43"; // computer device id
-
-    //   // if url, attempt to parse
-    //   if (text.includes("open.spotify.com/track")) {
-    //     const regex = /(?:https?:\/\/)?open\.spotify\.com\/track\/([a-zA-Z0-9]+)(?:\?|$)/;
-
-    //     const matches = text.match(regex);
-    //     if (!matches || matches.length < 2) {
-    //       return "";
-    //     }
-
-    //     const trackId = matches[1];
-
-    //     const song = await spotify.getTrack(trackId);
-
-    //     // await spotify.addToPlaylist(song);
-    //     await spotify.play(song, deviceId);
-
-    //     return `Added to queue: ${song.name} by ${song.artist}`;
-    //   }
-
-    //   const results = await spotify.search(text);
-
-    //   // search spotify "smartly"
-    //   const firstResult = results[0];
-
-    //   // await spotify.addToPlaylist(firstResult);
-    //   await spotify.play(firstResult, deviceId);
-
-    //   return `Added to queue: ${firstResult.name} by ${firstResult.artist}`;
-    // });
 
     // UPDATE STREAM CATEGORY
     ctx.commander.add("category", async (text: string) => {

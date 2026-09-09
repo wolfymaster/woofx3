@@ -90,10 +90,6 @@ function buildTestContext(options: {
     getConfig: (key: string) => {
       const m: Record<string, string> = {
         woofx3TwitchChannelName: "testchannel",
-        spotifyClientId: "",
-        spotifyClientSecret: "",
-        spotifyAccessToken: "",
-        spotifyRefreshToken: "",
       };
       return m[key] ?? "";
     },
@@ -289,9 +285,6 @@ describe("WoofWoofWoof application", () => {
   });
 
   test("function commands with a declared argumentPattern populate ctx.event.data.variables", async () => {
-    // Named "customsong", not "sr" - "sr" is one of the hardcoded built-in
-    // commands registered in run() (Spotify search), which would silently
-    // overwrite a same-named DB-defined command loaded during init().
     const customSongCmd = {
       id: "c2",
       applicationId: "app-1",
