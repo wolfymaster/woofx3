@@ -15,7 +15,11 @@ function membership(overrides: Partial<ChatterMembership> = {}): ChatterMembersh
 
 const BUILT_IN_GROUPS = [
   { id: "g-everyone", name: "everyone", isBuiltIn: true },
+  { id: "g-follower", name: "follower", isBuiltIn: true },
   { id: "g-subscriber", name: "subscriber", isBuiltIn: true },
+  { id: "g-tier1", name: "subscriber_tier1", isBuiltIn: true },
+  { id: "g-tier2", name: "subscriber_tier2", isBuiltIn: true },
+  { id: "g-tier3", name: "subscriber_tier3", isBuiltIn: true },
   { id: "g-vip", name: "vip", isBuiltIn: true },
   { id: "g-moderator", name: "moderator", isBuiltIn: true },
   { id: "g-broadcaster", name: "broadcaster", isBuiltIn: true },
@@ -111,7 +115,9 @@ describe("DerivedGroupSync", () => {
 
     await sync.reconcile("chatter", membership({ isSubscriber: false }));
 
-    expect(removed).toEqual([{ groupId: "g-subscriber", username: "chatter" }]);
+    // Losing the subscriber badge also settles every tier group: they are in
+    // none of them, and that needs no lookup to establish.
+    expect(removed.map((r) => r.groupId).sort()).toEqual(["g-subscriber", "g-tier1", "g-tier2", "g-tier3"]);
   });
 
   it("never syncs the everyone group, which has no membership rows", async () => {
@@ -150,5 +156,126 @@ describe("DerivedGroupSync", () => {
     await sync.reconcile("chatter", membership({ isModerator: true }));
 
     expect(raw.addUserToGroup).toHaveBeenCalledTimes(2);
+  });
+  describe("follower", () => {
+    // Twitch has no follower badge, so an unresolved lookup is the normal case
+    // rather than an error, and must not read as "not a follower".
+    it("does not write the follower group when the platform did not answer", async () => {
+      const { db, added, removed } = fakeDb();
+
+      await newSync(db).reconcile("chatter", membership());
+
+      const touched = [...added, ...removed].map((x) => x.groupId);
+      expect(touched).not.toContain("g-follower");
+    });
+
+    it("adds the follower group when the lookup resolved true", async () => {
+      const { db, added } = fakeDb();
+
+      await newSync(db).reconcile("chatter", membership({ isFollower: true }));
+
+      expect(added.map((a) => a.groupId)).toContain("g-follower");
+    });
+
+    it("removes the follower group when the lookup resolved false", async () => {
+      const { db, removed } = fakeDb();
+
+      await newSync(db).reconcile("chatter", membership({ isFollower: false }));
+
+      expect(removed.map((r) => r.groupId)).toContain("g-follower");
+    });
+
+    // A transient Helix blip must not demote a known follower - the row would
+    // persist until their next message.
+    it("keeps a known follower when a later lookup does not resolve", async () => {
+      const { db, added, removed } = fakeDb();
+      const sync = newSync(db);
+
+      await sync.reconcile("chatter", membership({ isFollower: true }));
+      added.length = 0;
+      removed.length = 0;
+
+      await sync.reconcile("chatter", membership({ isFollower: undefined }));
+
+      expect(removed.map((r) => r.groupId)).not.toContain("g-follower");
+    });
+
+    it("still recognises a resolved answer after an unresolved one", async () => {
+      const { db, added, removed } = fakeDb();
+      const sync = newSync(db);
+
+      await sync.reconcile("chatter", membership({ isFollower: true }));
+      await sync.reconcile("chatter", membership({ isFollower: undefined }));
+      added.length = 0;
+      removed.length = 0;
+
+      await sync.reconcile("chatter", membership({ isFollower: false }));
+
+      expect(removed.map((r) => r.groupId)).toContain("g-follower");
+    });
+  });
+
+  describe("subscription tiers", () => {
+    // A grant to plain "subscriber" has to keep matching every subscriber, so
+    // a tier N subscriber belongs to both groups.
+    it("writes a tier subscriber into both subscriber and the tier group", async () => {
+      const { db, added } = fakeDb();
+
+      await newSync(db).reconcile("chatter", membership({ isSubscriber: true, subscriberTier: "tier2" }));
+
+      expect(added.map((a) => a.groupId).sort()).toEqual(["g-subscriber", "g-tier2"]);
+    });
+
+    it("clears the other tiers when a tier resolves", async () => {
+      const { db, removed } = fakeDb();
+
+      await newSync(db).reconcile("chatter", membership({ isSubscriber: true, subscriberTier: "tier2" }));
+
+      expect(removed.map((r) => r.groupId)).toEqual(expect.arrayContaining(["g-tier1", "g-tier3"]));
+    });
+
+    it("leaves the tier groups alone for a subscriber whose tier did not resolve", async () => {
+      const { db, added, removed } = fakeDb();
+
+      await newSync(db).reconcile("chatter", membership({ isSubscriber: true }));
+
+      const touched = [...added, ...removed].map((x) => x.groupId);
+      expect(touched).not.toContain("g-tier1");
+      expect(touched).not.toContain("g-tier2");
+      expect(touched).not.toContain("g-tier3");
+    });
+
+    // Ordering tier groups would mean the engine knowing each platform's tier
+    // hierarchy. It does not, so an unrecognised token matches no seeded group.
+    it("puts an unrecognised tier token in no tier group", async () => {
+      const { db, added } = fakeDb();
+
+      await newSync(db).reconcile("chatter", membership({ isSubscriber: true, subscriberTier: "prime" }));
+
+      expect(added.map((a) => a.groupId)).toEqual(["g-subscriber"]);
+    });
+
+    it("moves the chatter when their tier changes", async () => {
+      const { db, added, removed } = fakeDb();
+      const sync = newSync(db);
+
+      await sync.reconcile("chatter", membership({ isSubscriber: true, subscriberTier: "tier1" }));
+      added.length = 0;
+      removed.length = 0;
+
+      await sync.reconcile("chatter", membership({ isSubscriber: true, subscriberTier: "tier3" }));
+
+      expect(added.map((a) => a.groupId)).toEqual(["g-tier3"]);
+      expect(removed.map((r) => r.groupId)).toEqual(["g-tier1"]);
+    });
+
+    // A platform with no tiers leaves them empty rather than guessing.
+    it("does not invent a tier for a platform that reports none", async () => {
+      const { db, added } = fakeDb();
+
+      await newSync(db).reconcile("chatter", membership({ isSubscriber: true }));
+
+      expect(added.map((a) => a.groupId)).toEqual(["g-subscriber"]);
+    });
   });
 });
