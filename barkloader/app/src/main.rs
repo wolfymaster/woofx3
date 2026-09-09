@@ -20,6 +20,7 @@ use tracing::{info, warn};
 use std::sync::Arc;
 use types::{AppContext, SharedRepository};
 
+mod bundled_modules;
 mod callback;
 mod errors;
 mod routes;
