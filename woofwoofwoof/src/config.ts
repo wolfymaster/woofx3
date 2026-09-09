@@ -15,10 +15,6 @@ export const WoofEnvSchema = z.object({
   woofx3TwitchClientSecret: z.string().min(1, "TWITCH_WOLFY_CLIENT_SECRET is required"),
   woofx3RootPath: z.string().optional(),
   twitchRedirectUrl: z.string().default("http://localhost"),
-  spotifyClientId: z.string().optional(),
-  spotifyClientSecret: z.string().optional(),
-  spotifyAccessToken: z.string().optional(),
-  spotifyRefreshToken: z.string().optional(),
 });
 
 export type WoofEnvConfig = z.infer<typeof WoofEnvSchema>;
