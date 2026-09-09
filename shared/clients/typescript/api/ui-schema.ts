@@ -63,7 +63,38 @@ export interface ConfigField {
   operator?: ConditionOperator;
   description?: string;
   hint?: string;
+  /**
+   * A JSON-encoded **example** of the event payload this field reads from,
+   * rendered with syntax highlighting in the field's info popover so a user
+   * authoring a path-style input can see what the data looks like.
+   *
+   * It is an illustration, not a declaration: nothing reads its keys, and it
+   * may be partial or elided. The machine-readable answer to "which paths
+   * exist" is the trigger's `emits` / the action's `returns` (see `DataShape`).
+   */
+  examplePayload?: string;
+  /**
+   * @deprecated Renamed to `examplePayload`. It was never a schema — it holds
+   * an example payload, and the name put it in the same bucket as
+   * `configSchema` / `paramsSchema`, which describe forms, and one capital
+   * letter from `DataShape`, which describes a value.
+   *
+   * Still read so manifests and stored rows written before the rename keep
+   * working. Consumers should prefer `examplePayload` and fall back to this;
+   * new manifests should not set it.
+   */
   dataSchema?: string;
+}
+
+/**
+ * The example payload to render for a config field, preferring the current
+ * name and falling back to the pre-rename one.
+ *
+ * Exists so each consumer does not re-derive the fallback and quietly disagree
+ * about precedence. A field carrying both is taking the new name at its word.
+ */
+export function configFieldExamplePayload(field: ConfigField): string | undefined {
+  return field.examplePayload ?? field.dataSchema;
 }
 
 export interface TriggerConfig {

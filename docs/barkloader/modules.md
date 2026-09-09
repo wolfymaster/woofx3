@@ -257,9 +257,15 @@ Every entry in a trigger or action `schema` array is a `ConfigField`. The canoni
 | `operator` | string | no | Comparison operator emitted with this field's value (e.g. `gte`, `eq`). |
 | `description` | string | no | Short prose rendered as muted helper text directly below the input. Always visible. |
 | `hint` | string | no | Longer prose rendered inside the field's info-icon popover. |
-| `dataSchema` | string | no | JSON-encoded example payload, rendered with syntax highlighting in the info-icon popover. Documents the underlying event/data shape so end users know what to type into path-style inputs. |
+| `examplePayload` | string | no | JSON-encoded **example** of the event payload this field reads from, rendered with syntax highlighting in the info-icon popover so a user authoring a path-style input can see what the data looks like. An illustration, not a declaration — nothing reads its keys, and it may be partial. Renamed from `dataSchema`; see [the note below](#renamed-from-dataschema). |
 
-The info icon next to a field's label appears if and only if `hint` or `dataSchema` is present. `description` renders independently below the input.
+The info icon next to a field's label appears if and only if `hint` or `examplePayload` is present. `description` renders independently below the input.
+
+##### Renamed from `dataSchema`
+
+`examplePayload` was called `dataSchema`, which was wrong twice: it holds an example, not a schema, and nothing validates against it. The old name also grouped it with `configSchema` / `paramsSchema`, which describe *forms*, and sat one capital letter from `DataShape`, which describes a *value*.
+
+`dataSchema` is still read, so manifests and stored rows written before the rename keep working with no change. Consumers should prefer `examplePayload` and fall back — use `configFieldExamplePayload()` from `shared/clients/typescript/api/ui-schema.ts` rather than re-deriving that precedence. New manifests should set only `examplePayload`.
 
 #### Picker field types
 
@@ -349,14 +355,14 @@ The Twitch cheer trigger is the canonical worked example. The module author alre
   "operator": "gte",
   "description": "Only fire when the cheer meets or exceeds this amount.",
   "hint": "Compares against the 'bits' field on the Twitch channel.cheer event payload.",
-  "dataSchema": "{\n  \"bits\": 1000,\n  \"isAnonymous\": false,\n  \"userName\": \"viewer42\",\n  \"userId\": \"123456\",\n  \"message\": \"Cheer1000 woof\"\n}"
+  "examplePayload": "{\n  \"bits\": 1000,\n  \"isAnonymous\": false,\n  \"userName\": \"viewer42\",\n  \"userId\": \"123456\",\n  \"message\": \"Cheer1000 woof\"\n}"
 }
 ```
 
 In the UI, the user sees:
 
 - Below the input: the `description` text as muted helper text.
-- Next to the label: an info icon. Hovering it shows a popover containing the `hint` paragraph followed by the `dataSchema` JSON rendered with syntax highlighting. Clicking the icon pins the popover open so the JSON can be read or copied.
+- Next to the label: an info icon. Hovering it shows a popover containing the `hint` paragraph followed by the `examplePayload` JSON rendered with syntax highlighting. Clicking the icon pins the popover open so the JSON can be read or copied.
 
 ### Emits and returns
 
@@ -415,7 +421,7 @@ Deliberately a flat list of path strings rather than full JSON Schema: it matche
 }
 ```
 
-Not to be confused with the `dataSchema` property on an individual **config field**: that is a rendered example blob in that field's info popover, scoped to explaining that one input. `emits` is the machine-readable declaration for the whole payload, and is what feeds variable autocomplete. Declaring both is reasonable — they serve different moments in the UI.
+Not to be confused with the `examplePayload` property on an individual **config field**: that is an illustration rendered in that field's info popover, scoped to explaining one input, and nothing reads its keys. `emits` is the machine-readable declaration for the whole payload, and is what feeds variable autocomplete. Declaring both is reasonable — one is for a human reading the form, the other for the variable picker.
 
 #### An action declares what it `returns`
 
