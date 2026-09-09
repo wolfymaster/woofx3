@@ -2,11 +2,236 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
-  "actions": [],
-  "triggers": [],
+  "actions": [
+    {
+      "id": "function",
+      "name": "Function",
+      "description": "Invoke a sandboxed module function. Set `function` to the canonical function id; everything else in `parameters` is forwarded to the function as a single object argument.",
+      "type": "native",
+      "handler": "function",
+      "taxonomy": [
+        "system.workflow"
+      ]
+    },
+    {
+      "id": "alert",
+      "name": "Alert",
+      "description": "Publish an on-stream alert. Parameters (mediaUrl, audioUrl, text, duration, options, ...) are forwarded to subscribers on the `ui.notify.alert` NATS subject; the UI / overlays render the alert.",
+      "type": "native",
+      "handler": "alert",
+      "taxonomy": [
+        "system.workflow",
+        "alert.renderer"
+      ]
+    },
+    {
+      "id": "print",
+      "name": "Print",
+      "description": "Log the step's parameters to the workflow service log. Useful for debugging workflow shape and expression resolution.",
+      "type": "native",
+      "handler": "print",
+      "taxonomy": [
+        "system.workflow"
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "id": "workflow_created",
+      "name": "Workflow created",
+      "description": "Fires when any workflow is created. Useful for meta-workflows that audit, mirror, or react to workflow authoring activity.",
+      "type": "eventbus",
+      "event": "db.workflow.created.*",
+      "taxonomy": [
+        "system.workflow"
+      ],
+      "emits": {
+        "fields": [
+          {
+            "path": "ID",
+            "type": "string",
+            "description": "Workflow id."
+          },
+          {
+            "path": "ApplicationID",
+            "type": "string",
+            "description": "Application the workflow belongs to."
+          },
+          {
+            "path": "Name",
+            "type": "string",
+            "description": "Workflow name."
+          },
+          {
+            "path": "Steps",
+            "type": "string",
+            "description": "JSON-encoded step list."
+          },
+          {
+            "path": "Trigger",
+            "type": "string",
+            "description": "JSON-encoded trigger binding."
+          },
+          {
+            "path": "Taxonomy",
+            "type": "string",
+            "description": "JSON-encoded classification terms."
+          },
+          {
+            "path": "CreatedByType",
+            "type": "string",
+            "description": "USER for UI-authored workflows, MODULE for module-registered ones."
+          },
+          {
+            "path": "CreatedByRef",
+            "type": "string",
+            "description": "Manifest module id for MODULE rows; empty for USER rows."
+          },
+          {
+            "path": "ManifestID",
+            "type": "string",
+            "description": "Manifest-local workflow id for MODULE rows; empty for USER rows."
+          },
+          {
+            "path": "Enabled",
+            "type": "boolean",
+            "description": "Whether the workflow runtime considers this row a candidate to run."
+          }
+        ]
+      }
+    },
+    {
+      "id": "workflow_updated",
+      "name": "Workflow updated",
+      "description": "Fires when any workflow is updated.",
+      "type": "eventbus",
+      "event": "db.workflow.updated.*",
+      "taxonomy": [
+        "system.workflow"
+      ],
+      "emits": {
+        "fields": [
+          {
+            "path": "ID",
+            "type": "string",
+            "description": "Workflow id."
+          },
+          {
+            "path": "ApplicationID",
+            "type": "string",
+            "description": "Application the workflow belongs to."
+          },
+          {
+            "path": "Name",
+            "type": "string",
+            "description": "Workflow name."
+          },
+          {
+            "path": "Steps",
+            "type": "string",
+            "description": "JSON-encoded step list."
+          },
+          {
+            "path": "Trigger",
+            "type": "string",
+            "description": "JSON-encoded trigger binding."
+          },
+          {
+            "path": "Taxonomy",
+            "type": "string",
+            "description": "JSON-encoded classification terms."
+          },
+          {
+            "path": "CreatedByType",
+            "type": "string",
+            "description": "USER for UI-authored workflows, MODULE for module-registered ones."
+          },
+          {
+            "path": "CreatedByRef",
+            "type": "string",
+            "description": "Manifest module id for MODULE rows; empty for USER rows."
+          },
+          {
+            "path": "ManifestID",
+            "type": "string",
+            "description": "Manifest-local workflow id for MODULE rows; empty for USER rows."
+          },
+          {
+            "path": "Enabled",
+            "type": "boolean",
+            "description": "Whether the workflow runtime considers this row a candidate to run."
+          }
+        ]
+      }
+    },
+    {
+      "id": "workflow_deleted",
+      "name": "Workflow deleted",
+      "description": "Fires when any workflow is deleted.",
+      "type": "eventbus",
+      "event": "db.workflow.deleted.*",
+      "taxonomy": [
+        "system.workflow"
+      ],
+      "emits": {
+        "fields": [
+          {
+            "path": "ID",
+            "type": "string",
+            "description": "Workflow id."
+          },
+          {
+            "path": "ApplicationID",
+            "type": "string",
+            "description": "Application the workflow belongs to."
+          },
+          {
+            "path": "Name",
+            "type": "string",
+            "description": "Workflow name."
+          },
+          {
+            "path": "Steps",
+            "type": "string",
+            "description": "JSON-encoded step list."
+          },
+          {
+            "path": "Trigger",
+            "type": "string",
+            "description": "JSON-encoded trigger binding."
+          },
+          {
+            "path": "Taxonomy",
+            "type": "string",
+            "description": "JSON-encoded classification terms."
+          },
+          {
+            "path": "CreatedByType",
+            "type": "string",
+            "description": "USER for UI-authored workflows, MODULE for module-registered ones."
+          },
+          {
+            "path": "CreatedByRef",
+            "type": "string",
+            "description": "Manifest module id for MODULE rows; empty for USER rows."
+          },
+          {
+            "path": "ManifestID",
+            "type": "string",
+            "description": "Manifest-local workflow id for MODULE rows; empty for USER rows."
+          },
+          {
+            "path": "Enabled",
+            "type": "boolean",
+            "description": "Whether the workflow runtime considers this row a candidate to run."
+          }
+        ]
+      }
+    }
+  ],
   "widgets": [
     {
       "id": "media_alert",
