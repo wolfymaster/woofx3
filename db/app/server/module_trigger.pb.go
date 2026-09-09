@@ -40,7 +40,21 @@ type Trigger struct {
 	// Open, multi-valued UI classification — dotted hierarchical strings
 	// (e.g. "platform.twitch.chat"). Multiple entries express independent
 	// classification axes. Not validated against a fixed vocabulary.
-	Taxonomy      []string `protobuf:"bytes,13,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
+	Taxonomy []string `protobuf:"bytes,13,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
+	// JSON-encoded DataShape naming what `trigger.data` carries when this
+	// trigger fires: `{"fields":[{"path","type","description?","example?"}]}`.
+	//
+	// Deliberately not called a schema: nothing validates an event payload
+	// against it. It answers "which paths can a workflow reference", which is
+	// the only question the variable picker asks. config_schema is a different
+	// thing entirely — the trigger's configuration *form* — and the two are not
+	// the same shape, which is why this exists: only config fields carrying an
+	// `eventPath` become variables today, so a trigger emitting keys it does not
+	// also expose as config fields cannot advertise them at all.
+	//
+	// Empty/absent means the trigger declares nothing, and the UI falls back to
+	// the config_schema derivation exactly as it does today.
+	Emits         string `protobuf:"bytes,14,opt,name=emits,proto3" json:"emits,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -145,6 +159,13 @@ func (x *Trigger) GetTaxonomy() []string {
 	return nil
 }
 
+func (x *Trigger) GetEmits() string {
+	if x != nil {
+		return x.Emits
+	}
+	return ""
+}
+
 type TriggerInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
@@ -154,6 +175,7 @@ type TriggerInput struct {
 	AllowVariants bool                   `protobuf:"varint,6,opt,name=allow_variants,json=allowVariants,proto3" json:"allow_variants,omitempty"`
 	ManifestId    string                 `protobuf:"bytes,7,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
 	Taxonomy      []string               `protobuf:"bytes,8,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
+	Emits         string                 `protobuf:"bytes,9,opt,name=emits,proto3" json:"emits,omitempty"` // JSON string — see Trigger.emits
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -235,6 +257,13 @@ func (x *TriggerInput) GetTaxonomy() []string {
 		return x.Taxonomy
 	}
 	return nil
+}
+
+func (x *TriggerInput) GetEmits() string {
+	if x != nil {
+		return x.Emits
+	}
+	return ""
 }
 
 type RegisterTriggersRequest struct {
@@ -455,7 +484,7 @@ var File_module_trigger_proto protoreflect.FileDescriptor
 
 const file_module_trigger_proto_rawDesc = "" +
 	"\n" +
-	"\x14module_trigger.proto\x12\x06module\x1a\fcommon.proto\"\xcc\x02\n" +
+	"\x14module_trigger.proto\x12\x06module\x1a\fcommon.proto\"\xe2\x02\n" +
 	"\aTrigger\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x05 \x01(\tR\x04name\x12 \n" +
@@ -468,7 +497,8 @@ const file_module_trigger_proto_rawDesc = "" +
 	"\x0ecreated_by_ref\x18\v \x01(\tR\fcreatedByRef\x12\x1f\n" +
 	"\vmanifest_id\x18\f \x01(\tR\n" +
 	"manifestId\x12\x1a\n" +
-	"\btaxonomy\x18\r \x03(\tR\btaxonomyJ\x04\b\x04\x10\x05R\bcategory\"\xf3\x01\n" +
+	"\btaxonomy\x18\r \x03(\tR\btaxonomy\x12\x14\n" +
+	"\x05emits\x18\x0e \x01(\tR\x05emitsJ\x04\b\x04\x10\x05R\bcategory\"\x89\x02\n" +
 	"\fTriggerInput\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x14\n" +
@@ -477,7 +507,8 @@ const file_module_trigger_proto_rawDesc = "" +
 	"\x0eallow_variants\x18\x06 \x01(\bR\rallowVariants\x12\x1f\n" +
 	"\vmanifest_id\x18\a \x01(\tR\n" +
 	"manifestId\x12\x1a\n" +
-	"\btaxonomy\x18\b \x03(\tR\btaxonomyJ\x04\b\x01\x10\x02R\bcategory\"\xb7\x02\n" +
+	"\btaxonomy\x18\b \x03(\tR\btaxonomy\x12\x14\n" +
+	"\x05emits\x18\t \x01(\tR\x05emitsJ\x04\b\x01\x10\x02R\bcategory\"\xb7\x02\n" +
 	"\x17RegisterTriggersRequest\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +

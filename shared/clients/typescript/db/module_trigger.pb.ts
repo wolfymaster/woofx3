@@ -34,6 +34,22 @@ export interface Trigger {
    * classification axes. Not validated against a fixed vocabulary.
    */
   taxonomy: string[];
+  /**
+   * JSON-encoded DataShape naming what `trigger.data` carries when this
+   * trigger fires: `{"fields":[{"path","type","description?","example?"}]}`.
+   *
+   * Deliberately not called a schema: nothing validates an event payload
+   * against it. It answers "which paths can a workflow reference", which is
+   * the only question the variable picker asks. config_schema is a different
+   * thing entirely — the trigger's configuration *form* — and the two are not
+   * the same shape, which is why this exists: only config fields carrying an
+   * `eventPath` become variables today, so a trigger emitting keys it does not
+   * also expose as config fields cannot advertise them at all.
+   *
+   * Empty/absent means the trigger declares nothing, and the UI falls back to
+   * the config_schema derivation exactly as it does today.
+   */
+  emits: string;
 }
 
 export interface TriggerInput {
@@ -44,6 +60,7 @@ export interface TriggerInput {
   allowVariants: boolean;
   manifestId: string;
   taxonomy: string[];
+  emits: string;
 }
 
 export interface RegisterTriggersRequest {
@@ -123,6 +140,7 @@ export const Trigger = {
       createdByRef: "",
       manifestId: "",
       taxonomy: [],
+      emits: "",
       ...msg,
     };
   },
@@ -163,6 +181,9 @@ export const Trigger = {
     }
     if (msg.taxonomy?.length) {
       writer.writeRepeatedString(13, msg.taxonomy);
+    }
+    if (msg.emits) {
+      writer.writeString(14, msg.emits);
     }
     return writer;
   },
@@ -217,6 +238,10 @@ export const Trigger = {
           msg.taxonomy.push(reader.readString());
           break;
         }
+        case 14: {
+          msg.emits = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -260,6 +285,7 @@ export const TriggerInput = {
       allowVariants: false,
       manifestId: "",
       taxonomy: [],
+      emits: "",
       ...msg,
     };
   },
@@ -291,6 +317,9 @@ export const TriggerInput = {
     }
     if (msg.taxonomy?.length) {
       writer.writeRepeatedString(8, msg.taxonomy);
+    }
+    if (msg.emits) {
+      writer.writeString(9, msg.emits);
     }
     return writer;
   },
@@ -331,6 +360,10 @@ export const TriggerInput = {
         }
         case 8: {
           msg.taxonomy.push(reader.readString());
+          break;
+        }
+        case 9: {
+          msg.emits = reader.readString();
           break;
         }
         default: {
@@ -671,6 +704,7 @@ export const TriggerJSON = {
       createdByRef: "",
       manifestId: "",
       taxonomy: [],
+      emits: "",
       ...msg,
     };
   },
@@ -709,6 +743,9 @@ export const TriggerJSON = {
     }
     if (msg.taxonomy?.length) {
       json["taxonomy"] = msg.taxonomy;
+    }
+    if (msg.emits) {
+      json["emits"] = msg.emits;
     }
     return json;
   },
@@ -757,6 +794,10 @@ export const TriggerJSON = {
     if (_taxonomy_) {
       msg.taxonomy = _taxonomy_;
     }
+    const _emits_ = json["emits"];
+    if (_emits_) {
+      msg.emits = _emits_;
+    }
     return msg;
   },
 };
@@ -791,6 +832,7 @@ export const TriggerInputJSON = {
       allowVariants: false,
       manifestId: "",
       taxonomy: [],
+      emits: "",
       ...msg,
     };
   },
@@ -822,6 +864,9 @@ export const TriggerInputJSON = {
     }
     if (msg.taxonomy?.length) {
       json["taxonomy"] = msg.taxonomy;
+    }
+    if (msg.emits) {
+      json["emits"] = msg.emits;
     }
     return json;
   },
@@ -857,6 +902,10 @@ export const TriggerInputJSON = {
     const _taxonomy_ = json["taxonomy"];
     if (_taxonomy_) {
       msg.taxonomy = _taxonomy_;
+    }
+    const _emits_ = json["emits"];
+    if (_emits_) {
+      msg.emits = _emits_;
     }
     return msg;
   },

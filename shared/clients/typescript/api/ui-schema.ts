@@ -71,6 +71,82 @@ export interface TriggerConfig {
   allowVariants?: boolean;
 }
 
-export interface ActionConfig {
-  fields: ConfigField[];
+// ---------------------------------------------------------------------------
+// Data shapes — what an event payload or an action result actually carries.
+//
+// Note the word: this is not a schema, and nothing is ever validated against
+// it. It answers one question — "which paths can a workflow reference?" — for
+// the variable picker. Calling it a schema would promise enforcement the
+// engine does not perform, and would put it in the same bucket as
+// configSchema / paramsSchema / settingsSchema, which are something else
+// entirely: definitions of a form a user fills in.
+//
+// A ConfigField describes a form control; a DataShapeField describes a value
+// that exists at runtime. Keeping them apart is the point:
+//
+//   - A trigger's configFields only become variables when they carry an
+//     `eventPath`, so a trigger that emits payload keys it does not also
+//     expose as config fields cannot advertise them at all.
+//   - An action's result had no declaration that was not form-shaped, so it
+//     inherited `label`, `placeholder` and `options` — vocabulary that means
+//     nothing for a returned value — and could express neither a nested path
+//     nor an example.
+//
+// Deliberately a flat list of path strings rather than full JSON Schema: it
+// matches `${trigger.data.X}` / `${tasks.<id>.<key>}` access exactly, and is
+// trivial to render.
+// ---------------------------------------------------------------------------
+
+export type DataShapeFieldType = "string" | "number" | "boolean" | "array" | "object" | "unknown";
+
+export interface DataShapeField {
+  /** Dot path into the value, e.g. `"user_name"` or `"channel.title"`. */
+  path: string;
+  type: DataShapeFieldType;
+  description?: string;
+  example?: unknown;
+}
+
+export interface DataShape {
+  fields: DataShapeField[];
+}
+
+/**
+ * Parse a trigger's `emits` / an action's `returns` JSON string.
+ *
+ * Returns undefined for anything without a usable `fields` array — absent,
+ * empty, or malformed. Undefined means "declared nothing", and callers fall
+ * back to deriving variables from configFields exactly as they do today, so a
+ * module that never declares a shape keeps working unchanged.
+ *
+ * Barkloader rejects a malformed shape at install time, so a stored value
+ * should always be well-formed. This stays defensive anyway: it also parses
+ * rows written before that validation existed, and a variable picker must
+ * never throw.
+ */
+export function parseDataShape(raw: string | undefined | null): DataShape | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return undefined;
+  }
+  const fields = (parsed as { fields?: unknown }).fields;
+  if (!Array.isArray(fields)) {
+    return undefined;
+  }
+  const valid = fields.filter(
+    (field): field is DataShapeField =>
+      typeof field === "object" &&
+      field !== null &&
+      typeof (field as DataShapeField).path === "string" &&
+      (field as DataShapeField).path.length > 0
+  );
+  return valid.length > 0 ? { fields: valid } : undefined;
 }

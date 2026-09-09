@@ -101,6 +101,19 @@ export interface TriggerDefinition {
   description: string;
   event: string;
   configSchema: string;
+  /**
+   * JSON-encoded `DataShape` naming what `trigger.data` carries when this
+   * trigger fires: `{"fields":[{"path","type","description?","example?"}]}`.
+   *
+   * Not a schema and not validated against — it answers "which paths can be
+   * referenced". Distinct from `configSchema`, which is the configuration
+   * form: only config fields carrying an `eventPath` become workflow
+   * variables, so a trigger emitting payload keys it does not also expose as
+   * config fields has no other way to advertise them. Absent means fall back
+   * to the configSchema derivation. Parse with `parseDataShape` from
+   * `./ui-schema`.
+   */
+  emits?: string;
   allowVariants: boolean;
   createdByType: string;
   createdByRef: string;
@@ -126,14 +139,16 @@ export interface ActionDefinition {
   call: string;
   paramsSchema: string;
   /**
-   * JSON-encoded array of ConfigField-shaped output declarations describing
-   * the action function's return value (e.g. the counter module's increment
-   * action returns `{next, previous, step}`). UI-only — the engine treats
-   * function results as opaque at runtime; this powers the workflow
-   * builder's `${stepId.field}` variable autocomplete. `"null"`/absent means
-   * no declared outputs.
+   * JSON-encoded `DataShape` naming what this action's function hands back
+   * (e.g. the counter module's increment action returns `{next, previous}`).
+   * Powers the workflow builder's `${stepId.field}` variable autocomplete.
+   *
+   * Replaces `outputSchema`, which said the same thing in ConfigField shape.
+   * Not a schema: the engine treats a function result as opaque at runtime and
+   * never validates it against this. Absent means nothing was declared. Parse
+   * with `parseDataShape` from `./ui-schema`.
    */
-  outputSchema?: string;
+  returns?: string;
   createdByType: string;
   createdByRef: string;
 }

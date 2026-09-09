@@ -47,5 +47,6 @@ func All() []*gormigrate.Migration {
 		CreateResourcesTable(),
 		RefreshBuiltInGroupDescriptions(),
 		AddFollowerAndTierGroups(),
+		AddTriggerEmitsAndActionReturns(),
 	}
 }

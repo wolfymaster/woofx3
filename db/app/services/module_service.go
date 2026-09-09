@@ -442,6 +442,7 @@ func (s *moduleService) RegisterTriggers(ctx context.Context, req *client.Regist
 			Description:   in.Description,
 			Event:         in.Event,
 			ConfigSchema:  in.ConfigSchema,
+			Emits:         in.Emits,
 			AllowVariants: in.AllowVariants,
 			CreatedByType: createdByType,
 			CreatedByRef:  createdByRef,
@@ -570,6 +571,7 @@ func triggerToProto(t *models.Trigger) *client.Trigger {
 		Description:   t.Description,
 		Event:         t.Event,
 		ConfigSchema:  t.ConfigSchema,
+		Emits:         t.Emits,
 		AllowVariants: t.AllowVariants,
 		CreatedByType: t.CreatedByType,
 		CreatedByRef:  t.CreatedByRef,
@@ -604,7 +606,7 @@ func (s *moduleService) RegisterActions(ctx context.Context, req *client.Registe
 			ManifestID:    in.ManifestId,
 			Type:          in.Type,
 			Taxonomy:      string(taxonomyJSON),
-			OutputSchema:  in.OutputSchema,
+			Returns:       in.Returns,
 			// Module catalog rows are instance-global; applicationId is
 			// stamped on events / workflow runs, not on action declarations.
 			ApplicationID: "",
@@ -744,7 +746,7 @@ func actionToProto(a *models.Action) *client.Action {
 		ManifestId:    a.ManifestID,
 		Type:          a.Type,
 		Taxonomy:      taxonomy,
-		OutputSchema:  a.OutputSchema,
+		Returns:       a.Returns,
 	}
 }
 

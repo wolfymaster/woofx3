@@ -37,7 +37,7 @@ impl serde::Serialize for Action {
         if !self.taxonomy.is_empty() {
             len += 1;
         }
-        if !self.output_schema.is_empty() {
+        if !self.returns.is_empty() {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("module.Action", len)?;
@@ -71,8 +71,8 @@ impl serde::Serialize for Action {
         if !self.taxonomy.is_empty() {
             struct_ser.serialize_field("taxonomy", &self.taxonomy)?;
         }
-        if !self.output_schema.is_empty() {
-            struct_ser.serialize_field("outputSchema", &self.output_schema)?;
+        if !self.returns.is_empty() {
+            struct_ser.serialize_field("returns", &self.returns)?;
         }
         struct_ser.end()
     }
@@ -98,8 +98,7 @@ impl<'de> serde::Deserialize<'de> for Action {
             "manifestId",
             "type",
             "taxonomy",
-            "output_schema",
-            "outputSchema",
+            "returns",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -114,7 +113,7 @@ impl<'de> serde::Deserialize<'de> for Action {
             ManifestId,
             Type,
             Taxonomy,
-            OutputSchema,
+            Returns,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -146,7 +145,7 @@ impl<'de> serde::Deserialize<'de> for Action {
                             "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
                             "type" => Ok(GeneratedField::Type),
                             "taxonomy" => Ok(GeneratedField::Taxonomy),
-                            "outputSchema" | "output_schema" => Ok(GeneratedField::OutputSchema),
+                            "returns" => Ok(GeneratedField::Returns),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -176,7 +175,7 @@ impl<'de> serde::Deserialize<'de> for Action {
                 let mut manifest_id__ = None;
                 let mut r#type__ = None;
                 let mut taxonomy__ = None;
-                let mut output_schema__ = None;
+                let mut returns__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -239,11 +238,11 @@ impl<'de> serde::Deserialize<'de> for Action {
                             }
                             taxonomy__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::OutputSchema => {
-                            if output_schema__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("outputSchema"));
+                        GeneratedField::Returns => {
+                            if returns__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("returns"));
                             }
-                            output_schema__ = Some(map_.next_value()?);
+                            returns__ = Some(map_.next_value()?);
                         }
                     }
                 }
@@ -258,7 +257,7 @@ impl<'de> serde::Deserialize<'de> for Action {
                     manifest_id: manifest_id__.unwrap_or_default(),
                     r#type: r#type__.unwrap_or_default(),
                     taxonomy: taxonomy__.unwrap_or_default(),
-                    output_schema: output_schema__.unwrap_or_default(),
+                    returns: returns__.unwrap_or_default(),
                 })
             }
         }
@@ -294,7 +293,7 @@ impl serde::Serialize for ActionInput {
         if !self.taxonomy.is_empty() {
             len += 1;
         }
-        if !self.output_schema.is_empty() {
+        if !self.returns.is_empty() {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("module.ActionInput", len)?;
@@ -319,8 +318,8 @@ impl serde::Serialize for ActionInput {
         if !self.taxonomy.is_empty() {
             struct_ser.serialize_field("taxonomy", &self.taxonomy)?;
         }
-        if !self.output_schema.is_empty() {
-            struct_ser.serialize_field("outputSchema", &self.output_schema)?;
+        if !self.returns.is_empty() {
+            struct_ser.serialize_field("returns", &self.returns)?;
         }
         struct_ser.end()
     }
@@ -341,8 +340,7 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
             "manifestId",
             "type",
             "taxonomy",
-            "output_schema",
-            "outputSchema",
+            "returns",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -354,7 +352,7 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
             ManifestId,
             Type,
             Taxonomy,
-            OutputSchema,
+            Returns,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -383,7 +381,7 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
                             "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
                             "type" => Ok(GeneratedField::Type),
                             "taxonomy" => Ok(GeneratedField::Taxonomy),
-                            "outputSchema" | "output_schema" => Ok(GeneratedField::OutputSchema),
+                            "returns" => Ok(GeneratedField::Returns),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -410,7 +408,7 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
                 let mut manifest_id__ = None;
                 let mut r#type__ = None;
                 let mut taxonomy__ = None;
-                let mut output_schema__ = None;
+                let mut returns__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Name => {
@@ -455,11 +453,11 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
                             }
                             taxonomy__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::OutputSchema => {
-                            if output_schema__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("outputSchema"));
+                        GeneratedField::Returns => {
+                            if returns__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("returns"));
                             }
-                            output_schema__ = Some(map_.next_value()?);
+                            returns__ = Some(map_.next_value()?);
                         }
                     }
                 }
@@ -471,7 +469,7 @@ impl<'de> serde::Deserialize<'de> for ActionInput {
                     manifest_id: manifest_id__.unwrap_or_default(),
                     r#type: r#type__.unwrap_or_default(),
                     taxonomy: taxonomy__.unwrap_or_default(),
-                    output_schema: output_schema__.unwrap_or_default(),
+                    returns: returns__.unwrap_or_default(),
                 })
             }
         }
@@ -9348,6 +9346,9 @@ impl serde::Serialize for Trigger {
         if !self.taxonomy.is_empty() {
             len += 1;
         }
+        if !self.emits.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.Trigger", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -9379,6 +9380,9 @@ impl serde::Serialize for Trigger {
         if !self.taxonomy.is_empty() {
             struct_ser.serialize_field("taxonomy", &self.taxonomy)?;
         }
+        if !self.emits.is_empty() {
+            struct_ser.serialize_field("emits", &self.emits)?;
+        }
         struct_ser.end()
     }
 }
@@ -9404,6 +9408,7 @@ impl<'de> serde::Deserialize<'de> for Trigger {
             "manifest_id",
             "manifestId",
             "taxonomy",
+            "emits",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -9418,6 +9423,7 @@ impl<'de> serde::Deserialize<'de> for Trigger {
             CreatedByRef,
             ManifestId,
             Taxonomy,
+            Emits,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -9449,6 +9455,7 @@ impl<'de> serde::Deserialize<'de> for Trigger {
                             "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
                             "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
                             "taxonomy" => Ok(GeneratedField::Taxonomy),
+                            "emits" => Ok(GeneratedField::Emits),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -9478,6 +9485,7 @@ impl<'de> serde::Deserialize<'de> for Trigger {
                 let mut created_by_ref__ = None;
                 let mut manifest_id__ = None;
                 let mut taxonomy__ = None;
+                let mut emits__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -9540,6 +9548,12 @@ impl<'de> serde::Deserialize<'de> for Trigger {
                             }
                             taxonomy__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Emits => {
+                            if emits__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("emits"));
+                            }
+                            emits__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Trigger {
@@ -9553,6 +9567,7 @@ impl<'de> serde::Deserialize<'de> for Trigger {
                     created_by_ref: created_by_ref__.unwrap_or_default(),
                     manifest_id: manifest_id__.unwrap_or_default(),
                     taxonomy: taxonomy__.unwrap_or_default(),
+                    emits: emits__.unwrap_or_default(),
                 })
             }
         }
@@ -9588,6 +9603,9 @@ impl serde::Serialize for TriggerInput {
         if !self.taxonomy.is_empty() {
             len += 1;
         }
+        if !self.emits.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.TriggerInput", len)?;
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
@@ -9610,6 +9628,9 @@ impl serde::Serialize for TriggerInput {
         if !self.taxonomy.is_empty() {
             struct_ser.serialize_field("taxonomy", &self.taxonomy)?;
         }
+        if !self.emits.is_empty() {
+            struct_ser.serialize_field("emits", &self.emits)?;
+        }
         struct_ser.end()
     }
 }
@@ -9630,6 +9651,7 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
             "manifest_id",
             "manifestId",
             "taxonomy",
+            "emits",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -9641,6 +9663,7 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
             AllowVariants,
             ManifestId,
             Taxonomy,
+            Emits,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -9669,6 +9692,7 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
                             "allowVariants" | "allow_variants" => Ok(GeneratedField::AllowVariants),
                             "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
                             "taxonomy" => Ok(GeneratedField::Taxonomy),
+                            "emits" => Ok(GeneratedField::Emits),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -9695,6 +9719,7 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
                 let mut allow_variants__ = None;
                 let mut manifest_id__ = None;
                 let mut taxonomy__ = None;
+                let mut emits__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Name => {
@@ -9739,6 +9764,12 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
                             }
                             taxonomy__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Emits => {
+                            if emits__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("emits"));
+                            }
+                            emits__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(TriggerInput {
@@ -9749,6 +9780,7 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
                     allow_variants: allow_variants__.unwrap_or_default(),
                     manifest_id: manifest_id__.unwrap_or_default(),
                     taxonomy: taxonomy__.unwrap_or_default(),
+                    emits: emits__.unwrap_or_default(),
                 })
             }
         }

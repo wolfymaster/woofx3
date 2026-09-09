@@ -54,6 +54,9 @@ pub struct TriggerInputJson {
     pub description: String,
     pub event: String,
     pub config_schema: String,
+    /// JSON-encoded `DataShape` naming what `trigger.data` carries. "{}" when
+    /// the manifest declared none — see `ManifestTrigger::emits`.
+    pub emits: String,
     pub allow_variants: bool,
     /// Stable manifest-local id (e.g. "channel_subscribe"). Forms the
     /// canonical id `{moduleId}:trigger:{manifest_id}` together with the
@@ -71,7 +74,9 @@ pub struct ActionInputJson {
     pub params_schema: String,
     /// `ConfigField`-shaped output declarations (JSON-encoded array) — see
     /// `ManifestAction::outputs`. Empty/`"null"` means no declared outputs.
-    pub output_schema: String,
+    /// JSON-encoded `DataShape` naming what the function hands back. "{}" when
+    /// the manifest declared none — see `ManifestAction::returns`.
+    pub returns: String,
     /// Open, multi-valued classification (dotted hierarchical strings, e.g.
     /// `platform.govee`, `function.lighting`). See
     /// `TriggerInputJson::taxonomy`.

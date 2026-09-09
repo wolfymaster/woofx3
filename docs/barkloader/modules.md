@@ -43,7 +43,14 @@ The manifest uses **camelCase** JSON keys. All top-level sections are optional *
       "description": "Fires when a viewer subscribes",
       "type": "eventbus",
       "event": "channel.subscribe",
-      "schema": [{ "id": "tier", "label": "Tier", "type": "select" }]
+      "schema": [{ "id": "tier", "label": "Tier", "type": "select" }],
+      "emits": {
+        "fields": [
+          { "path": "userName", "type": "string", "description": "Who subscribed." },
+          { "path": "tier", "type": "string", "example": "1000" },
+          { "path": "isGift", "type": "boolean" }
+        ]
+      }
     }
   ],
   "functions": [
@@ -206,9 +213,10 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `taxonomy` | array of string | no | Open, multi-valued UI classification (e.g. `["platform.twitch.chat", "function.chat"]`). Sent to RegisterTrigger as `taxonomy`. See [Taxonomy](#taxonomy). **Legacy:** superseded by `category`. |
 | `category` | string | no | **Legacy.** UX / registry grouping (e.g. `platform.twitch`). Still accepted; folded into a single-element `taxonomy` at parse time when `taxonomy` is unset, otherwise falls back to `type`. New manifests should use `taxonomy` instead. |
 | `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this trigger to a workflow; see [Schema field reference](#schema-field-reference). |
+| `emits` | object | no | `DataShape` naming what `trigger.data` carries when this trigger fires; see [Emits and returns](#emits-and-returns). Forwarded to the DB as `emits`. |
 | `allowVariants` | boolean | no | When true, the UI lets a user create multiple bound instances of this trigger (each with its own `schema` values). Used for trigger classes like cheer / subscribe that fan out per tier or threshold. |
 
-On install, when `databaseProxyUrl` is set in `.woofx3.json`, each trigger is registered via Twirp `module.ModuleService/RegisterTrigger`. The trigger row's `event` column carries the NATS subject from the manifest's `event` field; `manifest_id` carries the manifest's `id`; `config_schema` is the JSON-encoded `schema`. `taxonomy` is resolved in priority order: a non-empty `taxonomy` array as given, else a non-empty `category` wrapped in a single-element array, else the `type` field — see [Taxonomy](#taxonomy).
+On install, when `databaseProxyUrl` is set in `.woofx3.json`, each trigger is registered via Twirp `module.ModuleService/RegisterTrigger`. The trigger row's `event` column carries the NATS subject from the manifest's `event` field; `manifest_id` carries the manifest's `id`; `config_schema` is the JSON-encoded `schema`; `emits` is the JSON-encoded `emits` (`{}` when the manifest declares none). `taxonomy` is resolved in priority order: a non-empty `taxonomy` array as given, else a non-empty `category` wrapped in a single-element array, else the `type` field — see [Taxonomy](#taxonomy).
 
 ### Taxonomy
 
@@ -350,6 +358,71 @@ In the UI, the user sees:
 - Below the input: the `description` text as muted helper text.
 - Next to the label: an info icon. Hovering it shows a popover containing the `hint` paragraph followed by the `dataSchema` JSON rendered with syntax highlighting. Clicking the icon pins the popover open so the JSON can be read or copied.
 
+### Emits and returns
+
+`schema` describes a **form** the user fills in. `emits` and `returns` describe **values that exist at runtime**. Different things, and the naming keeps them apart on purpose.
+
+Neither is called a schema, because **nothing is ever validated against them**. They answer one question — *which paths can a workflow reference?* — for the variable picker. Calling them schemas would promise enforcement the engine does not perform.
+
+The workflow builder offers suggestions for `${trigger.data.X}` and `${tasks.<id>.<key>}`. Without a declaration it falls back to deriving them from config fields, which leaves a real gap:
+
+- Only a config field carrying an `eventPath` becomes a variable. A trigger that emits payload keys it does not also expose as config fields cannot advertise them at all — and a trigger with no config fields offers no variables whatsoever.
+- An action's result had no declaration that was not form-shaped.
+
+Both fields are **optional**. A module that declares neither behaves exactly as it does today.
+
+#### `DataShape`
+
+```jsonc
+{
+  "fields": [
+    {
+      "path": "user_name",            // dot path into the value: "bits", "channel.title"
+      "type": "string",               // string | number | boolean | array | object | unknown
+      "description": "Who cheered.",  // optional, shown in the variable picker
+      "example": "viewer42"           // optional
+    }
+  ]
+}
+```
+
+Deliberately a flat list of path strings rather than full JSON Schema: it matches `${trigger.data.X}` access exactly and renders straight into a picker. It carries no `required`, no nesting and no constraints — those would all be promises the engine does not keep.
+
+**Validated at install.** A malformed declaration aborts the install before any database or filesystem side effect, so a bad shape can never land and render wrong variables forever. Structure is enforced when the manifest is parsed (`fields` must be a list; every entry needs `path` and `type`), and these rules are checked after, each reporting the offending resource by id:
+
+| Rule | Why |
+|---|---|
+| `path` must be non-empty | An unnamed variable cannot be referenced. |
+| `type` must be one of the six tokens | The accepted set is quoted back, so `"integer"` tells you it should have been `"number"`. |
+| paths must be unique within one shape | A path is a variable's identity. Two entries under one are either redundant or contradictory, and nothing can tell which — deduplicating would mean silently picking one. |
+
+#### A trigger declares what it `emits`
+
+```json
+{
+  "id": "channel_cheer",
+  "name": "Cheer",
+  "type": "eventbus",
+  "event": "cheer.channel.twitch",
+  "emits": {
+    "fields": [
+      { "path": "bits", "type": "number", "description": "Bits cheered.", "example": 1000 },
+      { "path": "isAnonymous", "type": "boolean" },
+      { "path": "userName", "type": "string", "description": "Display name of the cheerer." },
+      { "path": "message", "type": "string" }
+    ]
+  }
+}
+```
+
+Not to be confused with the `dataSchema` property on an individual **config field**: that is a rendered example blob in that field's info popover, scoped to explaining that one input. `emits` is the machine-readable declaration for the whole payload, and is what feeds variable autocomplete. Declaring both is reasonable — they serve different moments in the UI.
+
+#### An action declares what it `returns`
+
+Same shape, describing the function's result rather than an event payload. See the [action entry](#action-entry-actions) below for a worked example.
+
+> **Removed: `outputs`.** Actions previously declared their result as `outputs`, a `ConfigField[]` array stored as `output_schema`. It carried form vocabulary (`label`, `placeholder`, `options`) that means nothing for a returned value, and could express neither a nested path nor an example. No module ever declared one, so it was removed rather than kept alongside `returns`. A manifest still carrying an `outputs` key parses fine and simply declares nothing — it will not fail an install.
+
 ### Action entry (`actions[]`)
 
 > **Module actions vs. action handlers.** A manifest "action" is **not** a workflow primitive — it's a *configured implementation* of the workflow engine's built-in `action` step type. Each action's `type` field names a workflow action handler (`function` is the only one today; more may ship), and at runtime the engine dispatches via that handler. Modules cannot add new step types or new action handlers; they only declare configured invocations of existing handlers. The shape mirrors how engine `TaskDefinition` puts handler-specific config (`wait`, `workflow`, etc.) at the top level next to `type`.
@@ -365,7 +438,7 @@ Common fields:
 | `description` | string | no | Human-readable summary. |
 | `type` | string | yes | Workflow action handler name. Must match an existing engine handler (`function` is the only one today). Determines which other top-level fields are required. |
 | `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this action into a workflow step; see [Schema field reference](#schema-field-reference). Forwarded to the DB as `params_schema`. |
-| `outputs` | array | no | `ConfigField[]`-shaped declarations describing the shape of the value this action's function returns (e.g. `[{ "id": "next", "label": "New value", "type": "number" }]` for an increment-style counter action). UI-only — the engine treats a function's return value as opaque `map[string]any` at runtime and never validates it against this. Powers the workflow builder's `${stepId.field}` variable autocomplete: when a downstream step references `${action-1.next}`, the picker looks up `action-1`'s declared `outputs` to know `next` exists and what it's called. Only `id`, `label`, `type`, and `description` are meaningful here — input-only properties (`required`, `placeholder`, `source`, …) don't apply. Forwarded to the DB as `output_schema`. |
+| `returns` | object | no | `DataShape` naming what this action's function hands back; see [Emits and returns](#emits-and-returns). Powers the workflow builder's `${stepId.field}` autocomplete: when a downstream step references `${action-1.next}`, the picker looks up `action-1`'s declared `returns` to know `next` exists. Forwarded to the DB as `returns`. |
 | `taxonomy` | array of string | no | Open, multi-valued UI classification. See [Taxonomy](#taxonomy). |
 
 Type-specific fields:
@@ -374,7 +447,7 @@ Type-specific fields:
 |----------------|----------------|-------------|
 | `function`     | `function`     | Manifest-local function id (or full canonical id for cross-module references). Resolved to the canonical function id at install and stored on the action row's `call` column. |
 
-**Example — an increment action declaring its outputs:**
+**Example — an increment action declaring what it returns:**
 
 ```json
 {
@@ -387,16 +460,18 @@ Type-specific fields:
     { "id": "target", "label": "Counter", "type": "resource_ref", "kind": "counter", "required": true },
     { "id": "step", "label": "Increment by", "type": "number", "defaultValue": 1, "min": 1 }
   ],
-  "outputs": [
-    { "id": "target", "label": "Counter", "type": "text" },
-    { "id": "previous", "label": "Previous value", "type": "number" },
-    { "id": "next", "label": "New value", "type": "number" },
-    { "id": "step", "label": "Step applied", "type": "number" }
-  ]
+  "returns": {
+    "fields": [
+      { "path": "target", "type": "string", "description": "Counter that was incremented." },
+      { "path": "previous", "type": "number", "description": "Value before the increment." },
+      { "path": "next", "type": "number", "description": "Value after the increment." },
+      { "path": "step", "type": "number", "description": "Step applied." }
+    ]
+  }
 }
 ```
 
-A later workflow step can then reference `${increment.next}` (where `increment` is that step's id) in any of its own field values, and the workflow builder's variable picker will offer `next` / `previous` / `step` with their declared labels.
+A later workflow step can then reference `${increment.next}` (where `increment` is that step's id) in any of its own field values, and the workflow builder's variable picker will offer `next` / `previous` / `step` with their declared descriptions.
 
 ### Function entry (`functions[]`)
 

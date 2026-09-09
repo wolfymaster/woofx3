@@ -66,6 +66,40 @@ describe("parseModuleTriggerRegistered", () => {
     });
   });
 
+  test("carries a declared emits shape through", () => {
+    const emits = JSON.stringify({ fields: [{ path: "bits", type: "number" }] });
+    const ce = {
+      data: {
+        module_key: "k",
+        triggers: [{ id: "uuid-1", name: "cheer", emits }],
+      },
+    };
+
+    const result = parseModuleTriggerRegistered(ce);
+
+    expect(result.event.triggers[0]?.emits).toBe(emits);
+  });
+
+  // The db column defaults to "{}". Forwarding that would make every trigger
+  // look like it declares a shape naming nothing, and the UI would stop
+  // falling back to the configFields derivation.
+  test("omits an undeclared emits rather than forwarding the column default", () => {
+    const ce = {
+      data: {
+        module_key: "k",
+        triggers: [
+          { id: "uuid-1", name: "a", emits: "{}" },
+          { id: "uuid-2", name: "b" },
+        ],
+      },
+    };
+
+    const result = parseModuleTriggerRegistered(ce);
+
+    expect(result.event.triggers[0]).not.toHaveProperty("emits");
+    expect(result.event.triggers[1]).not.toHaveProperty("emits");
+  });
+
   test("defaults missing fields to empty values", () => {
     const ce = { data: {} };
     const result = parseModuleTriggerRegistered(ce);
@@ -112,9 +146,7 @@ describe("parseModuleTriggerRegistered", () => {
       },
     };
     const result = parseModuleTriggerRegistered(ce);
-    expect(result.event.triggers[0]?.projectionKey).toBe(
-      "twitch:1.0.0:abcdef1:trigger:channel.follow"
-    );
+    expect(result.event.triggers[0]?.projectionKey).toBe("twitch:1.0.0:abcdef1:trigger:channel.follow");
   });
 
   test("leaves projectionKey undefined when payload omits projection_key", () => {
@@ -144,7 +176,6 @@ describe("parseModuleActionRegistered", () => {
             description: "desc",
             call: "mod.send",
             params_schema: "{}",
-            output_schema: "[]",
             taxonomy: ["platform.govee", "function.lighting"],
             created_by_type: "MODULE",
             created_by_ref: "twitch",
@@ -171,7 +202,6 @@ describe("parseModuleActionRegistered", () => {
             description: "desc",
             call: "mod.send",
             paramsSchema: "{}",
-            outputSchema: "[]",
             taxonomy: ["platform.govee", "function.lighting"],
             createdByType: "MODULE",
             createdByRef: "twitch",
@@ -219,9 +249,7 @@ describe("parseModuleActionRegistered", () => {
       },
     };
     const result = parseModuleActionRegistered(ce);
-    expect(result.event.actions[0]?.projectionKey).toBe(
-      "twitch:1.0.0:abcdef1:action:send"
-    );
+    expect(result.event.actions[0]?.projectionKey).toBe("twitch:1.0.0:abcdef1:action:send");
   });
 
   test("leaves projectionKey undefined when payload omits projection_key", () => {
@@ -713,7 +741,13 @@ describe("module event addressing", () => {
 
   test("lifecycle events expose the same modulePrefix as the definition events", () => {
     const { event: installed } = parseModuleInstalled({
-      data: { module_prefix: prefix, module_key: key, module_name: "Twitch Platform", version: "1.0.0", status: "completed" },
+      data: {
+        module_prefix: prefix,
+        module_key: key,
+        module_name: "Twitch Platform",
+        version: "1.0.0",
+        status: "completed",
+      },
     });
     expect(installed.modulePrefix).toBe(prefix);
     expect(installed.moduleKey).toBe(key);
