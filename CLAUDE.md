@@ -124,7 +124,10 @@ Write for senior engineers: **homogeneous** patterns, naming, and formatting acr
 
 - **Tiger Style** ([tigerstyle.dev](https://tigerstyle.dev/)): fail fast; use assertions and invariants so the program does not continue in an undesirable or inconsistent state.
 - **Explicit over implicit**: prefer clear names, types, and boundaries over magic, inference-only APIs, or hidden side effects.
-- **Comments**: use sparingly; reserve them for non-obvious rationale, invariants, or genuinely complex logic. Prefer self-documenting names and structure.
+- **Comments**: the code is the documentation of *what*. A comment earns its place only by saying *why*, and only when the why cannot be recovered from reading the code. Prefer a better name, or a smaller function, over a comment explaining a worse one.
+  - Keep: an invariant, a trade-off and what was traded away, a constraint imposed from outside, a choice that looks wrong until you know the reason.
+  - Cut: anything that restates the line below it; change narration (*"was X"*, *"renamed from Y"*, *"previously"*, *"now also"*); PR or issue numbers. Git and the tracker already hold that history, and unlike them a comment is never updated when the thing it describes moves on — so it rots in place and starts lying.
+  - A comment naming a field, value or file that no longer exists is worse than no comment: the reader searches for it, finds nothing, and trusts the rest less.
 - **Optimize for the reader**: clarity and straightforward flow beat cleverness.
 - **Block bodies everywhere**: use braces (or the language’s required block form) for **all** branches and loop bodies—no single-line `if`/`for`/`while` without braces where the grammar allows blocks.
 - **Composition over inheritance**: prefer small units composed together; use interfaces, traits, and protocols so behavior combines cleanly.
