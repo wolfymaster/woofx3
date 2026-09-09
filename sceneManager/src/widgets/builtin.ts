@@ -68,12 +68,7 @@ const BUILTIN_WIDGET_SPECS: BuiltinWidgetSpec[] = [
   },
 ];
 
-/**
- * Build canonical `WidgetDefinition` objects from the built-in specs.
- * Each definition uses `canonicalId = "builtin:{manifestId}"` — the
- * `builtin` module namespace is reserved and never granted to external
- * module uploads (enforced at the barkloader module-install boundary).
- */
+/** Build canonical `WidgetDefinition` objects from the built-in specs. */
 export function buildBuiltinWidgetDefinitions(): WidgetDefinition[] {
   return BUILTIN_WIDGET_SPECS.map((spec) => ({
     id: `builtin:widget:${spec.manifestId}`,
