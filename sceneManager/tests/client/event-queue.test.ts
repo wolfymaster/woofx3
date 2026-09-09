@@ -258,7 +258,7 @@ describe("EventQueueManager — routing and lifecycle", () => {
 
 
 describe("toWidgetEvent", () => {
-  const frame = { eventId: "e1", type: "follow.user.twitch", key: "follow.user.twitch" };
+  const frame = { eventId: "e1", type: "channel.follow", key: "channel.follow" };
 
   it("lifts parameters to the top level where the SDK and widgets read them", () => {
     // media_alert reads event.parameters for text/media/audio/duration;
@@ -266,7 +266,7 @@ describe("toWidgetEvent", () => {
     const event = toWidgetEvent({ ...frame, value: { userName: "someone", parameters: { text: "hi", duration: 3 } } });
     expect(event.parameters).toEqual({ text: "hi", duration: 3 });
     expect(event.data).toEqual({ userName: "someone" });
-    expect(event.type).toBe("follow.user.twitch");
+    expect(event.type).toBe("channel.follow");
     expect(event.eventId).toBe("e1");
   });
 

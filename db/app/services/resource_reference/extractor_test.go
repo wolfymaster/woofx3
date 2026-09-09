@@ -19,7 +19,7 @@ func newSrc() WorkflowSource {
 
 func TestExtractWorkflowEdges_TriggerRefProducesTriggerEdge(t *testing.T) {
 	steps := `[]`
-	trigger := `{"$ref": "twitch_platform:trigger:channel_cheer", "type": "event", "eventType": "cheer.channel.twitch"}`
+	trigger := `{"$ref": "twitch_platform:trigger:channel_cheer", "type": "event", "eventType": "channel.cheer"}`
 
 	edges := ExtractWorkflowEdges(newSrc(), steps, trigger)
 
@@ -44,7 +44,7 @@ func TestExtractWorkflowEdges_TriggerWithoutRefProducesNoEdge(t *testing.T) {
 	}{
 		{"empty string", ""},
 		{"empty object", "{}"},
-		{"object without $ref", `{"type": "event", "eventType": "cheer.channel.twitch"}`},
+		{"object without $ref", `{"type": "event", "eventType": "channel.cheer"}`},
 		{"empty $ref", `{"$ref": ""}`},
 		{"malformed JSON", `{"this is not json`},
 	}
