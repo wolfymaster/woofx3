@@ -65,7 +65,7 @@ func (c *Client) Publish(subject string, data []byte) error {
 	}
 
 	if err := c.connection.Publish(subject, data); err != nil {
-		c.logger.Error("Failed to publish message: %v", err)
+		c.logger.Error("Failed to publish message", "error", err)
 		return fmt.Errorf("failed to publish message: %w", err)
 	}
 
@@ -93,7 +93,7 @@ func (c *Client) Subscribe(subject string, handler Handler) (Subscription, error
 	})
 
 	if err != nil {
-		c.logger.Error("Failed to subscribe: %v", err)
+		c.logger.Error("Failed to subscribe", "error", err)
 		return nil, fmt.Errorf("failed to subscribe: %w", err)
 	}
 
@@ -126,7 +126,7 @@ func (c *Client) Request(subject string, data []byte, timeout time.Duration) ([]
 
 	msg, err := c.connection.Request(subject, data, timeout)
 	if err != nil {
-		c.logger.Error("Failed to send request: %v", err)
+		c.logger.Error("Failed to send request", "error", err)
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 
@@ -157,7 +157,7 @@ func (c *Client) SubscribeWithReply(subject string, handler func(Msg) []byte) (S
 	})
 
 	if err != nil {
-		c.logger.Error("Failed to subscribe with reply: %v", err)
+		c.logger.Error("Failed to subscribe with reply", "error", err)
 		return nil, fmt.Errorf("failed to subscribe with reply: %w", err)
 	}
 
