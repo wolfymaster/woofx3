@@ -5,7 +5,7 @@
  * `sanitizeAssetPath` — the only piece of that file sceneManager still
  * needs; the proxy itself is gone (resource bytes are fetched directly
  * by the browser from Barkloader's public URL now, not relayed through
- * here — see frame-assembler.ts and http.ts's static builtin route).
+ * here — see frame-assembler.ts).
  *
  * Pipeline order (binding):
  *  1. decodeURIComponent — if this throws, return null

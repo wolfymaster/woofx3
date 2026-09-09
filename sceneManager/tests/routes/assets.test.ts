@@ -22,10 +22,11 @@ function get(path: string): { req: Request; url: URL } {
 
 describe("handleStaticAssetRoute", () => {
   // Widgets moved to the bundled woofx3 module and are served from
-  // barkloader's repository, so this route no longer special-cases them.
+  // barkloader's repository, so this route no longer special-cases them
+  // and nothing under a widgets/ path is staged for it to find.
   it("does not serve widget files", async () => {
     await withPublicDir(async (dir) => {
-      const { req, url } = get("/assets/builtin/widgets/media_alert/lottie.min.js");
+      const { req, url } = get("/assets/widgets/media_alert/lottie.min.js");
       const resp = await handleStaticAssetRoute(req, url, dir);
       expect(resp.status).toBe(404);
     });
@@ -40,14 +41,7 @@ describe("handleStaticAssetRoute", () => {
     });
   });
 
-  it("404s a builtin widget asset that does not exist", async () => {
-    await withPublicDir(async (dir) => {
-      const { req, url } = get("/assets/builtin/widgets/media_alert/missing.js");
-      expect((await handleStaticAssetRoute(req, url, dir)).status).toBe(404);
-    });
-  });
-
-  it("never escapes publicDir through the builtin prefix", async () => {
+  it("never escapes publicDir", async () => {
     // `new URL()` collapses a literal `..` before the handler sees it,
     // and a percent-encoded one stays literal in `pathname` — neither
     // reaches the filesystem as a parent-directory hop. The guarantee
@@ -55,8 +49,8 @@ describe("handleStaticAssetRoute", () => {
     // publicDir), not which of the two refusal codes it lands on.
     await withPublicDir(async (dir) => {
       for (const path of [
-        "/assets/builtin/widgets/../../../../etc/passwd",
-        "/assets/builtin/widgets/%2e%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd",
+        "/assets/vendor/../../../../etc/passwd",
+        "/assets/vendor/%2e%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd",
       ]) {
         const { req, url } = get(path);
         const resp = await handleStaticAssetRoute(req, url, dir);

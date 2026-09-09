@@ -480,19 +480,22 @@ fn topo_sort(nodes: Vec<StepNode>) -> Vec<InstallStep> {
     order.into_iter().map(|i| steps[i].take().expect("each index visited exactly once")).collect()
 }
 
-/// Check every cross-module reference this manifest declares (a
-/// workflow's trigger, a workflow step's action, a widget's accepted
-/// event) resolves against an already-installed module, via `db_proxy`.
-/// Same checks and error message as the old `validate_cross_module_dependencies`
-/// in `module_install.rs`, computed once here as part of building the
-/// plan instead of a second traversal of `resolved`.
+/// Check every cross-module reference this manifest declares (a workflow's
+/// trigger, a workflow step's action) resolves against an already-installed
+/// module, via `db_proxy`.
+///
+/// No namespace is exempt. Bundled declarations used to be, because whichever
+/// service owned them wrote their rows on its own startup schedule and they
+/// might genuinely not exist yet at validation time. They are installed by
+/// barkloader's boot reconciler before any user module can be uploaded now,
+/// so they are ordinary rows resolvable by the same query as anything else --
+/// and the namespace that was most prone to drift stops being the one with
+/// the least validation.
 async fn validate_cross_module_refs(
     resolved: &ResolvedManifest,
     db_proxy: &dyn ModuleDbProxy,
 ) -> Result<()> {
-    let is_external = |id: &CanonicalId| {
-        id.module_id() != resolved.module_id.as_str() && id.module_id() != "builtin"
-    };
+    let is_external = |id: &CanonicalId| id.module_id() != resolved.module_id.as_str();
 
     let mut missing: Vec<String> = Vec::new();
     let mut checked: HashSet<String> = HashSet::new();
@@ -1546,6 +1549,68 @@ mod tests {
         let db_proxy = FakeDbProxyClient::new();
 
         let plan = build_install_plan(&m, &resolved, &db_proxy).await.expect("should resolve via the fake");
+        let workflow_step = InstallStep::RegisterWorkflow(resolved.workflows[0].canonical_id.clone());
+        assert!(plan.contains(&workflow_step));
+    }
+
+    // ---------------------------------------------------------------
+    // No namespace is exempt from the existence check. `builtin` was,
+    // which is how `builtin:trigger:*` ids that matched no registered
+    // trigger installed cleanly and then silently dropped every alert.
+    // ---------------------------------------------------------------
+
+    #[tokio::test]
+    async fn a_retired_builtin_reference_is_rejected() {
+        let m = minimal(r#",
+            "workflows": [{
+                "id": "w1", "name": "W1", "trigger": "t1",
+                "steps": [{ "id": "s1", "action": "builtin:action:alert" }]
+            }],
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }]"#);
+        let resolved = validate(&m).expect("validate ok");
+        let db_proxy = FakeDbProxyClient::failing_on(["get_action_ref_by_canonical_id"]);
+
+        let err = build_install_plan(&m, &resolved, &db_proxy).await.expect_err("should fail");
+        assert!(
+            err.to_string().contains("builtin:action:alert"),
+            "the error must name the unresolved id: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unresolvable_bundled_reference_is_rejected() {
+        let m = minimal(r#",
+            "workflows": [{
+                "id": "w1", "name": "W1", "trigger": "t1",
+                "steps": [{ "id": "s1", "action": "woofx3:action:doesnotexist" }]
+            }],
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }]"#);
+        let resolved = validate(&m).expect("validate ok");
+        let db_proxy = FakeDbProxyClient::failing_on(["get_action_ref_by_canonical_id"]);
+
+        let err = build_install_plan(&m, &resolved, &db_proxy).await.expect_err("should fail");
+        assert!(
+            err.to_string().contains("woofx3:action:doesnotexist"),
+            "the error must name the unresolved id: {err}"
+        );
+    }
+
+    /// The bundled module gets no exemption of its own -- it is installed
+    /// before any upload, so its ids resolve through the ordinary check.
+    #[tokio::test]
+    async fn a_real_bundled_reference_installs() {
+        let m = minimal(r#",
+            "workflows": [{
+                "id": "w1", "name": "W1", "trigger": "t1",
+                "steps": [{ "id": "s1", "action": "woofx3:action:alert" }]
+            }],
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }]"#);
+        let resolved = validate(&m).expect("validate ok");
+        let db_proxy = FakeDbProxyClient::new();
+
+        let plan = build_install_plan(&m, &resolved, &db_proxy)
+            .await
+            .expect("a resolvable bundled reference installs");
         let workflow_step = InstallStep::RegisterWorkflow(resolved.workflows[0].canonical_id.clone());
         assert!(plan.contains(&workflow_step));
     }

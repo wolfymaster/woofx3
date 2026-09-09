@@ -173,9 +173,8 @@ mod tests {
         assert_eq!(sanitize_asset_key("archives/m.zip"), None);
         assert_eq!(sanitize_asset_key("modules"), None);
         assert_eq!(sanitize_asset_key(""), None);
-        // Former builtin/ prefix is no longer served from barkloader.
-        assert_eq!(sanitize_asset_key("builtin/widgets/media_alert/index.html"), None);
-        assert_eq!(sanitize_asset_key("builtin/../etc/passwd"), None);
+        assert_eq!(sanitize_asset_key("widgets/media_alert/index.html"), None);
+        assert_eq!(sanitize_asset_key("widgets/../etc/passwd"), None);
     }
 
     #[test]
@@ -330,7 +329,7 @@ mod tests {
             "/assets/modules/%2e%2e%2f%2e%2e%2fetc/passwd",
             // Prefix enforcement: non-modules/ keys 404 even when present.
             "/assets/archives/m1.zip",
-            "/assets/builtin/widgets/media_alert/index.html",
+            "/assets/widgets/media_alert/index.html",
             // Plain miss.
             "/assets/modules/m1/nope.js",
         ];

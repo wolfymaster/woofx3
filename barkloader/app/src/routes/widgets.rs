@@ -18,9 +18,9 @@ struct FrameResponse {
 /// Resolves a module widget's frame: raw entry HTML (fetched
 /// server-to-server, for the caller to inject its own boot payload/shim
 /// into) plus a ready-to-use public base URL for every other resource
-/// under that widget's version-scoped asset root. Builtin widgets are
-/// out of scope here — the caller (sceneManager) serves those from its
-/// own local disk, same as streamware does today.
+/// under that widget's version-scoped asset root. Every widget resolves
+/// through here, the bundled `woofx3` ones included -- there is no second
+/// path serving widget frames from anywhere else.
 #[get("/widgets/{module_key}/{manifest_id}/frame")]
 #[tracing::instrument(
     name = "GET /widgets/{module_key}/{manifest_id}/frame",
