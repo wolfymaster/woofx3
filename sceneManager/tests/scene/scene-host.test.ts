@@ -44,7 +44,7 @@ describe("parseWidgetCanonicalId", () => {
 
 describe("stableModuleKeyFrom", () => {
   it("passes through a simple module key unchanged", () => {
-    expect(stableModuleKeyFrom("builtin")).toBe("builtin");
+    expect(stableModuleKeyFrom("woofx3")).toBe("woofx3");
     expect(stableModuleKeyFrom("spotify_sr")).toBe("spotify_sr");
   });
 

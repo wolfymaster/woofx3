@@ -223,42 +223,6 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
     });
 
     ctx.commander = commander;
-
-    // Register a first-class "Chat Command" workflow trigger so any chat
-    // command is selectable in the workflow builder's trigger picker
-    // (event: "chat.command.*", filtered per-instance via a Conditions
-    // entry on trigger.data.command - the same wildcard-subject +
-    // Conditions pattern already used by other Twitch triggers). Idempotent:
-    // the upsert key is (createdByType, createdByRef, manifestId), so this
-    // is safe to call on every startup. Best-effort - a failure here
-    // shouldn't block the bot from starting.
-    try {
-      await db.registerTriggers({
-        moduleId: "chat_commands",
-        moduleKey: "",
-        moduleName: "chat-commands-builtin",
-        version: "builtin",
-        createdByType: "SYSTEM",
-        createdByRef: "chat_commands",
-        applicationId: "",
-        triggers: [
-          {
-            taxonomy: ["chat"],
-            emits: "{}",
-            name: "Chat Command",
-            description: "When someone uses a chat command",
-            event: "chat.command.*",
-            configSchema: JSON.stringify([
-              { id: "command", label: "Command", type: "text", required: true, placeholder: "hello" },
-            ]),
-            allowVariants: false,
-            manifestId: "chat_command",
-          },
-        ],
-      });
-    } catch (err) {
-      ctx.logger.error("Failed to register chat command trigger", err);
-    }
   }
 
   async run(ctx: Context) {

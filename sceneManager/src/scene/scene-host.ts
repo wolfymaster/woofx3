@@ -338,7 +338,7 @@ export class OverlayHost {
 
     // Strip version segments from the module key so scene placements remain
     // stable across module updates. A versioned key like "spotify:1.0.0:abc1234"
-    // normalises to "spotify"; a simple key like "builtin" is unchanged.
+    // normalises to "spotify"; a simple key like "woofx3" is unchanged.
     const stableModuleKey = stableModuleKeyFrom(parsed.moduleKey);
     const stableCanonicalId = `${stableModuleKey}:widget:${parsed.manifestId}`;
     if (stableModuleKey !== parsed.moduleKey) {
@@ -379,7 +379,7 @@ export class OverlayHost {
 /**
  * Extract the stable base name from a module key. If the key contains colons
  * (indicating a versioned form like "spotify:1.0.0:abc1234"), only the first
- * segment is returned. Simple keys like "builtin" pass through unchanged.
+ * segment is returned. Simple keys like "woofx3" pass through unchanged.
  */
 export function stableModuleKeyFrom(moduleKey: string): string {
   const colonIdx = moduleKey.indexOf(":");

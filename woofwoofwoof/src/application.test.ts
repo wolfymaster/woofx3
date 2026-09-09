@@ -492,22 +492,16 @@ describe("WoofWoofWoof application", () => {
     expect(base.chatSay).not.toHaveBeenCalled();
   });
 
-  test("registers a SYSTEM chat-command workflow trigger on init", async () => {
+  // The chat-command trigger is declared by the bundled `woofx3` module and
+  // installed by barkloader, not registered from here. woofwoofwoof still
+  // owns the commander and command CRUD -- only the declaration moved, and
+  // a service that writes catalog rows on startup is what this replaces.
+  test("registers no workflow triggers on init", async () => {
     const app = new WoofWoofWoof();
     const base = buildTestContext({});
     const ctx = { ...app.context, ...base } as InitCtx & typeof base;
     await app.init(ctx);
 
-    expect(base.registerTriggers).toHaveBeenCalledTimes(1);
-    const req = base.registerTriggers.mock.calls[0][0] as {
-      createdByType: string;
-      createdByRef: string;
-      triggers: Array<{ event: string; manifestId: string }>;
-    };
-    expect(req.createdByType).toBe("SYSTEM");
-    expect(req.createdByRef).toBe("chat_commands");
-    expect(req.triggers).toHaveLength(1);
-    expect(req.triggers[0].event).toBe("chat.command.*");
-    expect(req.triggers[0].manifestId).toBe("chat_command");
+    expect(base.registerTriggers).not.toHaveBeenCalled();
   });
 });

@@ -230,6 +230,26 @@
           }
         ]
       }
+    },
+    {
+      "id": "chat_command",
+      "name": "Chat command",
+      "description": "Fires when a viewer runs a chat command. Bind a workflow to one command by naming it in the trigger's `command` field.",
+      "type": "eventbus",
+      "event": "chat.command.*",
+      "taxonomy": [
+        "system.chat"
+      ],
+      "schema": [
+        {
+          "id": "command",
+          "label": "Command",
+          "type": "text",
+          "required": true,
+          "placeholder": "hello",
+          "description": "The command word, without its prefix (e.g. `sr` for `!sr`)."
+        }
+      ]
     }
   ],
   "widgets": [
