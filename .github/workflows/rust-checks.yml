@@ -1,0 +1,83 @@
+name: rust checks
+
+# Builds and tests the Rust crates. Nothing ran cargo on CI before this, so
+# barkloader -- the module system, its sandbox, and every install/validate
+# rule -- was verified only on whoever's machine last touched it.
+#
+# Three roots rather than one job: barkloader is a workspace, but the shared
+# crates it depends on by path are their own workspaces, so `cargo test` in
+# barkloader compiles them without running their tests.
+#
+# shared/clients/rust/{db,twirp} are absent deliberately: both are generated
+# protobuf output with no tests of their own, and barkloader's build already
+# fails if either stops compiling.
+#
+# No `cargo fmt --check` and no clippy gate. The tree is not rustfmt-clean
+# today -- hundreds of pre-existing diffs across lib_module alone -- so either
+# would fail on its first run and teach people to ignore a red check.
+# Formatting the tree is worth doing, but as its own change, and this should
+# not be blocked behind it.
+
+on:
+  push:
+    branches: [main, master, release]
+    paths:
+      - "barkloader/**"
+      - "shared/common/rust/**"
+      - "shared/clients/rust/**"
+      - ".github/workflows/rust-checks.yml"
+  pull_request:
+    paths:
+      - "barkloader/**"
+      - "shared/common/rust/**"
+      - "shared/clients/rust/**"
+      - ".github/workflows/rust-checks.yml"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - barkloader
+          - shared/common/rust/logging
+          - shared/common/rust/runtime
+    steps:
+      - uses: actions/checkout@v4
+
+      # barkloader depends on shared/clients/rust/db, whose prost-wkt-types
+      # build script shells out to protoc. It is not on the runner image, and
+      # locally it comes from devbox - so this is the one thing a developer
+      # machine has that CI does not.
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      # No rust-toolchain.toml and no rust in devbox.json, so the version is
+      # whatever the developer has. `resolver = "3"` in barkloader's workspace
+      # needs 1.84+; stable is comfortably past that.
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # barkloader pulls aws-sdk-s3 and two wasm runtimes; a cold build is
+      # several minutes. Keyed per crate root because the three have different
+      # dependency graphs and separate target directories.
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.crate }}
+
+      # --locked so a drifted Cargo.lock fails here rather than silently
+      # resolving to different versions than a developer gets.
+      # --all-targets so the binary and the test targets are both compiled,
+      # not just the libraries.
+      - name: Build
+        working-directory: ${{ matrix.crate }}
+        run: cargo build --workspace --locked --all-targets
+
+      - name: Test
+        working-directory: ${{ matrix.crate }}
+        run: cargo test --workspace --locked
