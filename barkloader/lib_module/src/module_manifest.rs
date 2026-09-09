@@ -38,8 +38,10 @@ pub struct ManifestTrigger {
     /// fixed vocabulary; module authors are free to introduce new terms.
     #[serde(default)]
     pub taxonomy: Vec<String>,
+    /// The fields a user fills in when wiring this trigger to a workflow.
+    /// A bare array - see `ManifestConfigField`.
     #[serde(default)]
-    pub schema: Option<serde_json::Value>,
+    pub schema: Option<Vec<ManifestConfigField>>,
     /// What `trigger.data` carries when this trigger fires:
     /// `{ "fields": [{ "path": "user_name", "type": "string" }] }`.
     ///
@@ -95,32 +97,12 @@ pub struct ManifestAction {
     /// nesting under an `implementation` key.
     #[serde(flatten)]
     pub implementation: ManifestActionImpl,
-    /// UI form definition for this action's user-editable inputs.
-    /// `ConfigField[]` — engine treats it as opaque and forwards as
-    /// `paramsSchema` for the UI to render. Distinct from a workflow
-    /// step's `parameters` (the values the user provides per invocation).
-    ///
-    /// Supported field `type` values (the editor knows how to render
-    /// each; the engine itself does not validate type strings):
-    ///
-    ///   - `"text"`     — single-line string
-    ///   - `"number"`   — numeric input with optional `min` / `max`
-    ///   - `"boolean"`  — checkbox / toggle
-    ///   - `"select"`   — dropdown driven by `options[]`
-    ///   - `"color"`    — color picker (CSS color string)
-    ///   - `"asset"`    — picker scoped to the declaring module's
-    ///                    `assets[]`. Field shape:
-    ///                    `{ id, label, type: "asset", required?,
-    ///                       kinds?: string[] }`.
-    ///                    `kinds` filters the picker by
-    ///                    `ManifestAsset.kind` (e.g. `["image"]`).
-    ///                    The value stored in the workflow's `parameters`
-    ///                    map is the asset's canonical id; the editor
-    ///                    resolves to a public URL at config time and
-    ///                    bakes that URL into the saved workflow so the
-    ///                    runtime never has to re-resolve.
+    /// The fields a user fills in when wiring this action into a workflow
+    /// step. A bare array - see `ManifestConfigField`. Distinct from a
+    /// workflow step's `parameters`, which are the values a user supplies per
+    /// invocation.
     #[serde(default)]
-    pub schema: serde_json::Value,
+    pub schema: Vec<ManifestConfigField>,
     /// Open, multi-valued classification for the UI catalog. See
     /// `ManifestTrigger::taxonomy` for the shape/convention.
     #[serde(default)]
@@ -139,6 +121,102 @@ pub struct ManifestAction {
     #[serde(default)]
     pub returns: Option<ManifestDataShape>,
 }
+
+/// One field a user fills in.
+///
+/// The same shape for a trigger's `schema`, an action's `schema`, a widget's
+/// `settingsSchema` and a module's `settings` - all four mean "render this
+/// input, collect this value", and described a field differently only because
+/// they were built at different times. There are no accepted aliases: `key`,
+/// `fieldType`, `name` and `default` are rejected, so every consumer handles
+/// exactly one spelling.
+///
+/// Unknown properties are rejected rather than ignored, so a typo is reported
+/// at install instead of silently rendering a control that misses half its
+/// configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ManifestConfigField {
+    /// Stable field id; the key the collected value is stored under.
+    pub id: String,
+    pub label: String,
+    /// One of `CONFIG_FIELD_TYPES`. Validated at install rather than as a
+    /// serde enum so an unrecognised token reports the offending field and
+    /// the accepted set, instead of a bare "unknown variant".
+    #[serde(rename = "type")]
+    pub field_type: String,
+    #[serde(default)]
+    pub required: Option<bool>,
+    #[serde(default)]
+    pub placeholder: Option<String>,
+    #[serde(default)]
+    pub unit: Option<String>,
+    #[serde(default)]
+    pub options: Option<Vec<ManifestConfigFieldOption>>,
+    /// Dynamic option source, e.g. a NATS request/reply descriptor. Opaque
+    /// here and forwarded for the consumer to interpret.
+    #[serde(default)]
+    pub source: Option<serde_json::Value>,
+    #[serde(default)]
+    pub min: Option<f64>,
+    #[serde(default)]
+    pub max: Option<f64>,
+    #[serde(default)]
+    pub default_value: Option<serde_json::Value>,
+    #[serde(default)]
+    pub media_type: Option<String>,
+    /// For `type: "asset"` - filter the picker by `ManifestAsset.kind`.
+    #[serde(default)]
+    pub kinds: Option<Vec<String>>,
+    /// Required for `type: "resource_ref"` - which resource kind to list.
+    #[serde(default)]
+    pub resource_kind: Option<String>,
+    /// Present only on `type: "button"`, which collects no value and instead
+    /// fires a request. Opaque here.
+    #[serde(default)]
+    pub action: Option<serde_json::Value>,
+    /// Trigger config only - binds this field to a path in the event payload.
+    #[serde(default)]
+    pub event_path: Option<String>,
+    /// Trigger config only - the comparison emitted with this field's value.
+    #[serde(default)]
+    pub operator: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub hint: Option<String>,
+    /// A JSON-encoded example of the event payload this field reads from,
+    /// rendered in the field's info popover. An illustration, not a
+    /// declaration - see `ManifestTrigger::emits` for the machine-readable one.
+    #[serde(default)]
+    pub example_payload: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ManifestConfigFieldOption {
+    pub value: String,
+    pub label: String,
+}
+
+/// The accepted `type` tokens. Mirrors `CONFIG_FIELD_TYPES` in
+/// `shared/clients/typescript/api/ui-schema.ts` - the two must not drift.
+///
+/// `text` and `toggle` rather than `string` and `boolean`: these name the
+/// control, not the stored value, and the latter pair only ever appeared on
+/// module settings.
+pub const CONFIG_FIELD_TYPES: [&str; 10] = [
+    "number",
+    "range",
+    "text",
+    "select",
+    "media",
+    "toggle",
+    "color",
+    "asset",
+    "resource_ref",
+    "button",
+];
 
 /// A flat list of the paths a runtime value carries, with their types.
 ///
@@ -183,6 +261,18 @@ pub const DATA_SHAPE_FIELD_TYPES: [&str; 6] =
 /// parses this as an object, so "declared nothing" needs no null branch
 /// anywhere. The gateway drops the `"{}"` again rather than forwarding it, so
 /// an undeclared shape never reads as one declaring zero fields.
+/// Serialize a field list for the wire, or `"[]"` when none was declared.
+///
+/// Always a bare array: the contract has one container shape, and re-emitting
+/// what serde parsed is what guarantees it — an author cannot smuggle a
+/// different one through, because anything else failed to deserialize.
+fn encode_field_list(fields: Option<&[ManifestConfigField]>) -> String {
+    match fields {
+        Some(fields) => serde_json::to_string(fields).unwrap_or_else(|_| "[]".to_string()),
+        None => "[]".to_string(),
+    }
+}
+
 fn encode_data_shape(shape: Option<&ManifestDataShape>) -> String {
     match shape {
         Some(shape) => serde_json::to_string(shape).unwrap_or_else(|_| "{}".to_string()),
@@ -349,8 +439,11 @@ pub struct ModuleWidget {
     pub entry: Option<String>,
     #[serde(default)]
     pub assets: Option<String>,
+    /// The fields a user fills in when placing this widget on a scene. A bare
+    /// array - see `ManifestConfigField`. Values come back to the widget at
+    /// render time as `widgetHost.settings`.
     #[serde(default)]
-    pub settings_schema: Option<serde_json::Value>,
+    pub settings_schema: Option<Vec<ManifestConfigField>>,
     /// Canonical trigger ids (e.g. `twitch_platform:trigger:follow.channel.twitch`)
     /// the widget consumes. Resolved at install via `manifest_validate.rs` to
     /// confirm those triggers actually exist in the engine — this is the
@@ -389,25 +482,37 @@ pub struct ManifestBackgroundTask {
 
 /// A setting declared in the module manifest. Values are stored in the
 /// `module_settings` table keyed by `module_id` + `id`. Type must be one of
-/// `"string"` | `"number"` | `"boolean"` | `"button"`.
+/// `CONFIG_FIELD_TYPES`.
+/// A module-level setting.
+///
+/// Same field vocabulary as every other surface - `id`, `label`, `type`,
+/// `defaultValue` - because it means the same thing: render an input, collect
+/// a value. It was previously spelled `name` / `default`, which is exactly the
+/// divergence this contract removes.
+///
+/// What is genuinely different is storage, not description: these values
+/// persist engine-side in `module_settings` and are read by sandboxed
+/// functions as `ctx.module.settings`, where a trigger's or widget's values
+/// live UI-side. That is why this stays its own struct rather than becoming a
+/// plain `ManifestConfigField`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ManifestSetting {
     pub id: String,
-    pub name: String,
+    pub label: String,
     #[serde(default)]
     pub description: String,
     #[serde(rename = "type")]
     pub setting_type: String,
     #[serde(default)]
     pub required: bool,
-    #[serde(rename = "default", default)]
+    #[serde(default)]
     pub default_value: Option<String>,
     /// Present only when `type: "button"` — `{ kind: "internal", request: {...},
     /// timeoutMs? } | { kind: "integration", integration: "..." }`. Opaque to
-    /// the engine (never inspected here, same treatment as `ManifestAction.schema`)
-    /// and forwarded verbatim so the UI can interpret it. `RegisterModuleSettings`
-    /// skips settings with this present — buttons have no stored value.
+    /// the engine and forwarded verbatim so the UI can interpret it.
+    /// `RegisterModuleSettings` skips settings with this present — buttons
+    /// have no stored value.
     #[serde(default)]
     pub action: serde_json::Value,
 }
@@ -420,7 +525,7 @@ impl ManifestSetting {
         }
         match self.setting_type.as_str() {
             "number" => "0".to_string(),
-            "boolean" => "false".to_string(),
+            "toggle" => "false".to_string(),
             _ => String::new(),
         }
     }
@@ -735,11 +840,7 @@ impl ManifestTrigger {
     /// `module_resources` ledger and in workflow `$ref` fields, never on
     /// the trigger row itself.
     pub fn to_input(&self) -> super::db_proxy::TriggerInputJson {
-        let config_schema = self
-            .schema
-            .as_ref()
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "{}".to_string());
+        let config_schema = encode_field_list(self.schema.as_deref());
         // Manifest authors give us `event` (the NATS subject) and `id`
         // (the manifest-local identifier). Older manifests put the
         // subject in `id` and left `event` empty; for that case we fall
@@ -881,10 +982,7 @@ impl ModuleWidget {
                     })
             })
             .unwrap_or_default();
-        let settings_schema = match &self.settings_schema {
-            Some(v) => v.to_string(),
-            None => "{}".to_string(),
-        };
+        let settings_schema = encode_field_list(self.settings_schema.as_deref());
         // Manifest validation rejects unnormalizable entries before any
         // registration runs, so the error arm is unreachable on the
         // install path; registering an empty entry there keeps this
@@ -1024,7 +1122,7 @@ impl ManifestAction {
             name: self.name.clone(),
             description: self.description.clone(),
             call: resolved_call.to_string(),
-            params_schema: self.schema.to_string(),
+            params_schema: encode_field_list(Some(&self.schema)),
             returns: encode_data_shape(self.returns.as_ref()),
             taxonomy: self.taxonomy.clone(),
             manifest_id: self.id.clone(),
@@ -1701,22 +1799,20 @@ mod tests {
                     "entry": "widgets/raid_counter/index.html",
                     "assets": "widgets/raid_counter",
                     "acceptedEvents": ["twitch_platform:trigger:raid.channel.twitch"],
-                    "settingsSchema": {
-                        "fields": [
-                            {
-                                "key": "minViewers",
-                                "fieldType": "number",
-                                "label": "Minimum viewers",
-                                "defaultValue": 1
-                            },
-                            {
-                                "key": "accentColor",
-                                "fieldType": "color",
-                                "label": "Accent color",
-                                "defaultValue": "#ff5e3a"
-                            }
-                        ]
-                    }
+                    "settingsSchema": [
+                        {
+                            "id": "minViewers",
+                            "type": "number",
+                            "label": "Minimum viewers",
+                            "defaultValue": 1
+                        },
+                        {
+                            "id": "accentColor",
+                            "type": "color",
+                            "label": "Accent color",
+                            "defaultValue": "#ff5e3a"
+                        }
+                    ]
                 }
             ]
         }"##;
@@ -1727,9 +1823,10 @@ mod tests {
         assert_eq!(w.entry.as_deref(), Some("widgets/raid_counter/index.html"));
         assert_eq!(w.assets.as_deref(), Some("widgets/raid_counter"));
         assert_eq!(w.accepted_events, vec!["twitch_platform:trigger:raid.channel.twitch"]);
-        let schema = w.settings_schema.as_ref().expect("settings_schema present");
-        let fields = schema.get("fields").and_then(|v| v.as_array()).expect("fields array");
+        let fields = w.settings_schema.as_ref().expect("settings_schema present");
         assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].id, "minViewers");
+        assert_eq!(fields[0].field_type, "number");
     }
 
     #[test]
@@ -1844,11 +1941,9 @@ mod tests {
             "entry": "widgets/raid_counter/index.html",
             "assets": "widgets/raid_counter",
             "acceptedEvents": ["twitch_platform:trigger:raid.channel.twitch"],
-            "settingsSchema": {
-                "fields": [
-                    { "key": "minViewers", "fieldType": "number", "label": "Minimum viewers", "defaultValue": 1 }
-                ]
-            }
+            "settingsSchema": [
+                { "id": "minViewers", "type": "number", "label": "Minimum viewers", "defaultValue": 1 }
+            ]
         }))
         .expect("parse");
         let input = w.to_input();
@@ -1859,7 +1954,8 @@ mod tests {
         // Registered entry is assets-relative (design 5.2.5).
         assert_eq!(input.entry, "index.html");
         assert_eq!(input.alert_types, vec!["raid"]);
-        // settings_schema is serialized JSON of the original Value.
+        // Re-emitted from the parsed fields, so always the canonical array.
+        assert!(input.settings_schema.starts_with('['));
         assert!(input.settings_schema.contains("minViewers"));
     }
 
@@ -1875,8 +1971,9 @@ mod tests {
         assert_eq!(input.directory, "");
         // No entry -> empty string; consumers fall back to index.html.
         assert_eq!(input.entry, "");
-        // No settings_schema -> default "{}" (parses cleanly server-side).
-        assert_eq!(input.settings_schema, "{}");
+        // No settings_schema -> an empty list, not an empty object: the
+        // contract has one container shape and it is an array.
+        assert_eq!(input.settings_schema, "[]");
         assert!(input.alert_types.is_empty());
     }
 
@@ -1978,16 +2075,16 @@ mod tests {
         "id": "mymod",
         "name": "My Module",
         "settings": [
-            {"id": "clientId", "name": "Client ID", "description": "OAuth client ID", "type": "string", "required": true},
-            {"id": "maxRetries", "name": "Max Retries", "description": "Retry count", "type": "number", "required": false, "default": "5"},
-            {"id": "enabled", "name": "Enabled", "description": "Toggle feature", "type": "boolean", "required": false, "default": "true"}
+            {"id": "clientId", "label": "Client ID", "description": "OAuth client ID", "type": "text", "required": true},
+            {"id": "maxRetries", "label": "Max Retries", "description": "Retry count", "type": "number", "required": false, "defaultValue": "5"},
+            {"id": "enabled", "label": "Enabled", "description": "Toggle feature", "type": "toggle", "required": false, "defaultValue": "true"}
         ]
     }"#;
         let m: ModuleManifest = serde_json::from_str(j).expect("parse");
         assert_eq!(m.settings.len(), 3);
         let s0 = &m.settings[0];
         assert_eq!(s0.id, "clientId");
-        assert_eq!(s0.setting_type, "string");
+        assert_eq!(s0.setting_type, "text");
         assert_eq!(s0.required, true);
         assert!(s0.default_value.is_none());
 
@@ -1997,7 +2094,7 @@ mod tests {
         assert_eq!(s1.default_value.as_deref(), Some("5"));
 
         let s2 = &m.settings[2];
-        assert_eq!(s2.setting_type, "boolean");
+        assert_eq!(s2.setting_type, "toggle");
         assert_eq!(s2.default_value.as_deref(), Some("true"));
     }
 
@@ -2013,13 +2110,13 @@ mod tests {
         "settings": [
             {
                 "id": "authorizeSpotify",
-                "name": "Authorize Spotify",
+                "label": "Authorize Spotify",
                 "type": "button",
                 "action": { "kind": "integration", "integration": "spotify" }
             },
             {
                 "id": "someInternalButton",
-                "name": "Do something",
+                "label": "Do something",
                 "type": "button",
                 "action": {
                     "kind": "internal",
@@ -2027,7 +2124,7 @@ mod tests {
                     "timeoutMs": 10000
                 }
             },
-            {"id": "clientId", "name": "Spotify Client ID", "type": "string", "required": false}
+            {"id": "clientId", "label": "Spotify Client ID", "type": "text", "required": false}
         ]
     }"#;
         let m: ModuleManifest = serde_json::from_str(j).expect("parse");
@@ -2061,7 +2158,7 @@ mod tests {
         assert_eq!(m.settings[0].action["kind"], "integration");
         assert_eq!(m.settings[0].action["integration"], "spotify");
         assert_eq!(m.settings[1].id, "clientId");
-        assert_eq!(m.settings[1].setting_type, "string");
+        assert_eq!(m.settings[1].setting_type, "text");
         assert!(m.settings[1].action.is_null());
 
         let reserialized = serde_json::to_string(&m).expect("serialize");

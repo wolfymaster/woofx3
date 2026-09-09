@@ -284,16 +284,16 @@ describe("parseModuleWidgetRegistered", () => {
             alert_types: ["raid"],
             settings: [
               {
-                key: "minViewers",
-                field_type: "number",
+                id: "minViewers",
+                type: "number",
                 label: "Minimum viewers",
-                default_value: 1,
+                defaultValue: 1,
               },
               {
-                key: "tier",
-                field_type: "select",
+                id: "tier",
+                type: "select",
                 label: "Display tier",
-                default_value: "default",
+                defaultValue: "default",
                 options: [
                   { label: "Default", value: "default" },
                   { label: "Big", value: "big" },
@@ -330,14 +330,14 @@ describe("parseModuleWidgetRegistered", () => {
             alertTypes: ["raid"],
             settings: [
               {
-                key: "minViewers",
-                fieldType: "number",
+                id: "minViewers",
+                type: "number",
                 label: "Minimum viewers",
                 defaultValue: 1,
               },
               {
-                key: "tier",
-                fieldType: "select",
+                id: "tier",
+                type: "select",
                 label: "Display tier",
                 defaultValue: "default",
                 options: [
@@ -354,7 +354,7 @@ describe("parseModuleWidgetRegistered", () => {
     });
   });
 
-  test("accepts camelCase setting fields as a fallback", () => {
+  test("maps a widget's declared fields onto the shared ConfigField shape", () => {
     const ce = {
       data: {
         module_key: "k",
@@ -367,8 +367,8 @@ describe("parseModuleWidgetRegistered", () => {
             alertTypes: ["follow"],
             settings: [
               {
-                key: "label",
-                fieldType: "text",
+                id: "label",
+                type: "text",
                 label: "Label",
                 defaultValue: "hi",
               },
@@ -380,8 +380,8 @@ describe("parseModuleWidgetRegistered", () => {
     const result = parseModuleWidgetRegistered(ce);
     expect(result.event.widgets[0]?.alertTypes).toEqual(["follow"]);
     expect(result.event.widgets[0]?.settings[0]).toEqual({
-      key: "label",
-      fieldType: "text",
+      id: "label",
+      type: "text",
       label: "Label",
       defaultValue: "hi",
     });
@@ -425,7 +425,7 @@ describe("parseModuleWidgetRegistered", () => {
             name: "X",
             directory: "d",
             alert_types: [],
-            settings: [{ key: "k", field_type: "number", label: "L", default_value: 0 }],
+            settings: [{ id: "k", type: "number", label: "L", defaultValue: 0 }],
           },
         ],
       },

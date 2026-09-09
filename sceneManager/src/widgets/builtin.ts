@@ -1,4 +1,5 @@
-import type { WidgetDefinition, WidgetSettingDefinition } from "@woofx3/api/webhooks";
+import type { ConfigField } from "@woofx3/api/ui-schema";
+import type { WidgetDefinition } from "@woofx3/api/webhooks";
 import type { Logger } from "@woofx3/common/runtime";
 import type { createMessageBus } from "@woofx3/nats";
 import type { DbClient } from "../db";
@@ -25,7 +26,7 @@ export interface BuiltinWidgetSpec {
    * Format: `{owner}:trigger:{canonical_subject}`.
    */
   acceptedEvents: string[];
-  settings: WidgetSettingDefinition[];
+  settings: ConfigField[];
   surface?: "scene" | "dashboard";
 }
 
@@ -58,10 +59,10 @@ const BUILTIN_WIDGET_SPECS: BuiltinWidgetSpec[] = [
       "twitch.stream.offline",
     ],
     settings: [
-      { key: "textTemplate", fieldType: "text", label: "Alert text template", defaultValue: "" },
-      { key: "mediaUrlTemplate", fieldType: "text", label: "Media URL template", defaultValue: "" },
-      { key: "audioUrlTemplate", fieldType: "text", label: "Audio URL template", defaultValue: "" },
-      { key: "duration", fieldType: "number", label: "Display duration (seconds)", defaultValue: 5 },
+      { id: "textTemplate", type: "text", label: "Alert text template", defaultValue: "" },
+      { id: "mediaUrlTemplate", type: "text", label: "Media URL template", defaultValue: "" },
+      { id: "audioUrlTemplate", type: "text", label: "Audio URL template", defaultValue: "" },
+      { id: "duration", type: "number", label: "Display duration (seconds)", defaultValue: 5 },
     ],
     surface: "scene",
   },

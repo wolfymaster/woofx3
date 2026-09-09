@@ -30,9 +30,10 @@ use super::canonical_id::{
 };
 use super::db_proxy_client::ModuleDbProxy;
 use super::module_manifest::{
-    ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestDataShape,
-    ManifestFunction, ManifestOverlay, ManifestResourceKind, ManifestTrigger, ManifestWorkflow,
-    ModuleManifest, ModuleWidget, DATA_SHAPE_FIELD_TYPES,
+    ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField,
+    ManifestDataShape, ManifestFunction, ManifestOverlay, ManifestResourceKind, ManifestSetting,
+    ManifestTrigger, ManifestWorkflow, ModuleManifest, ModuleWidget, CONFIG_FIELD_TYPES,
+    DATA_SHAPE_FIELD_TYPES,
 };
 
 /// Resolved action implementation. Mirrors `ManifestActionImpl` but
@@ -160,6 +161,7 @@ pub fn validate(manifest: &ModuleManifest) -> Result<ResolvedManifest> {
     validate_widget_entries(&manifest.widgets)?;
     validate_resource_kinds(&manifest.resources)?;
     validate_data_shapes(&manifest.triggers, &manifest.actions)?;
+    validate_field_lists(manifest)?;
 
     // Pass 2: resolve references for kinds that have them.
     let triggers = entries_to_resolved(&triggers_table, |e| ResolvedTrigger {
@@ -538,6 +540,110 @@ fn validate_widget_entries(widgets: &[ModuleWidget]) -> Result<()> {
     Ok(())
 }
 
+/// Validate every field declaration on the manifest — a trigger's `schema`,
+/// an action's `schema`, a widget's `settingsSchema`, and `settings`.
+///
+/// All four are the same vocabulary, so they are checked by the same rules.
+/// Serde has already done the structural half by the time this runs: the
+/// container must be a bare array, `id`/`label`/`type` must be present, and
+/// `deny_unknown_fields` rejects `key`, `fieldType`, `name`, `default` and
+/// plain typos. What is left are the rules serde cannot express.
+///
+/// This is what makes the contract single-shaped rather than merely
+/// documented as such. The previous arrangement — four accepted container
+/// shapes, no validation, and a consumer that silently dropped what it did not
+/// recognise — is how a widget came to declare five settings and render none.
+fn validate_field_lists(manifest: &ModuleManifest) -> Result<()> {
+    for (i, t) in manifest.triggers.iter().enumerate() {
+        if let Some(fields) = &t.schema {
+            validate_field_list(fields, &format!("trigger #{i} ({}): `schema`", t.id))?;
+        }
+    }
+    for (i, a) in manifest.actions.iter().enumerate() {
+        validate_field_list(&a.schema, &format!("action #{i} ({}): `schema`", a.id))?;
+    }
+    for (i, w) in manifest.widgets.iter().enumerate() {
+        if let Some(fields) = &w.settings_schema {
+            validate_field_list(fields, &format!("widget #{i} ({}): `settingsSchema`", w.id))?;
+        }
+    }
+    validate_settings(&manifest.settings)
+}
+
+fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<()> {
+    let mut seen: HashSet<&str> = HashSet::with_capacity(fields.len());
+    for (i, field) in fields.iter().enumerate() {
+        let id = field.id.trim();
+        if id.is_empty() {
+            return Err(anyhow!(
+                "{context} field #{i}: `id` is required and must be non-empty"
+            ));
+        }
+        if field.label.trim().is_empty() {
+            return Err(anyhow!("{context} field #{i} ({id}): `label` must be non-empty"));
+        }
+        validate_field_type(&field.field_type, &format!("{context} field #{i} ({id})"))?;
+        // A select with nothing to select, or a resource picker that does not
+        // say what to pick, renders a dead control. Both are cheap to catch
+        // here and confusing to debug in a form.
+        if field.field_type == "select"
+            && field.source.is_none()
+            && field.options.as_ref().is_none_or(|o| o.is_empty())
+        {
+            return Err(anyhow!(
+                "{context} field #{i} ({id}): `select` needs `options` or a `source`"
+            ));
+        }
+        if field.field_type == "resource_ref" && field.resource_kind.is_none() {
+            return Err(anyhow!(
+                "{context} field #{i} ({id}): `resource_ref` needs `resourceKind`"
+            ));
+        }
+        if field.field_type == "button" && field.action.is_none() {
+            return Err(anyhow!(
+                "{context} field #{i} ({id}): `button` needs an `action`"
+            ));
+        }
+        if !seen.insert(id) {
+            return Err(anyhow!("{context}: duplicate field `id` {id:?}"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_settings(settings: &[ManifestSetting]) -> Result<()> {
+    let mut seen: HashSet<&str> = HashSet::with_capacity(settings.len());
+    for (i, setting) in settings.iter().enumerate() {
+        let id = setting.id.trim();
+        if id.is_empty() {
+            return Err(anyhow!(
+                "setting #{i}: `id` is required and must be non-empty"
+            ));
+        }
+        if setting.label.trim().is_empty() {
+            return Err(anyhow!("setting #{i} ({id}): `label` must be non-empty"));
+        }
+        validate_field_type(&setting.setting_type, &format!("setting #{i} ({id})"))?;
+        if setting.setting_type == "button" && setting.action.is_null() {
+            return Err(anyhow!("setting #{i} ({id}): `button` needs an `action`"));
+        }
+        if !seen.insert(id) {
+            return Err(anyhow!("duplicate setting `id` {id:?}"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_field_type(field_type: &str, context: &str) -> Result<()> {
+    if !CONFIG_FIELD_TYPES.contains(&field_type) {
+        return Err(anyhow!(
+            "{context}: unknown `type` {field_type:?}; expected one of {}",
+            CONFIG_FIELD_TYPES.join(", ")
+        ));
+    }
+    Ok(())
+}
+
 /// Validate every declared `emits` / `returns` shape.
 ///
 /// Serde has already enforced the structure by the time this runs — a `fields`
@@ -875,6 +981,138 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
+    // Field declarations: schema / settingsSchema / settings
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn accepts_the_canonical_field_list_on_every_surface() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "schema": [{ "id": "minBits", "label": "Minimum bits", "type": "number", "min": 1 }] }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
+                "schema": [{ "id": "target", "label": "Counter", "type": "resource_ref", "resourceKind": "counter" }] }],
+            "widgets": [{ "id": "w1", "name": "W1",
+                "settingsSchema": [{ "id": "fontSize", "label": "Font size", "type": "number" }] }],
+            "settings": [{ "id": "clientId", "label": "Client ID", "type": "text" }]"#);
+        validate(&m).expect("validate ok");
+    }
+
+    // The counter widget declared five settings this way and rendered none:
+    // the object container is what trigger schemas accept, the widget parser
+    // took only a bare array, and nothing said so.
+    #[test]
+    fn rejects_the_object_container_that_silently_dropped_widget_settings() {
+        let json = r#"{
+            "id": "test_mod", "name": "Test Mod", "version": "1.0.0",
+            "widgets": [{ "id": "w1", "name": "W1", "settingsSchema": {
+                "fields": [{ "id": "fontSize", "label": "Font size", "type": "number" }] } }]
+        }"#;
+        serde_json::from_str::<ModuleManifest>(json).expect_err("object container must not parse");
+    }
+
+    #[test]
+    fn rejects_the_widget_key_and_field_type_spellings() {
+        let json = r#"{
+            "id": "test_mod", "name": "Test Mod", "version": "1.0.0",
+            "widgets": [{ "id": "w1", "name": "W1", "settingsSchema": [
+                { "key": "fontSize", "fieldType": "number", "label": "Font size" }] }]
+        }"#;
+        serde_json::from_str::<ModuleManifest>(json).expect_err("key/fieldType must not parse");
+    }
+
+    #[test]
+    fn rejects_the_setting_name_and_default_spellings() {
+        let json = r#"{
+            "id": "test_mod", "name": "Test Mod", "version": "1.0.0",
+            "settings": [{ "id": "s1", "name": "S1", "type": "text", "default": "x" }]
+        }"#;
+        serde_json::from_str::<ModuleManifest>(json).expect_err("name/default must not parse");
+    }
+
+    // deny_unknown_fields earns its keep on typos, not just renames.
+    #[test]
+    fn rejects_a_misspelled_field_property() {
+        let json = r#"{
+            "id": "test_mod", "name": "Test Mod", "version": "1.0.0",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "schema": [{ "id": "a", "label": "A", "type": "text", "requried": true }] }]
+        }"#;
+        serde_json::from_str::<ModuleManifest>(json).expect_err("typo must not parse");
+    }
+
+    #[test]
+    fn rejects_an_unknown_field_type_token() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "schema": [{ "id": "a", "label": "A", "type": "string" }] }]"#);
+        let err = validate(&m).expect_err("string is not a control type");
+        let msg = err.to_string();
+        assert!(msg.contains("trigger #0 (t1)"), "names the surface: {msg}");
+        assert!(msg.contains("text"), "lists the accepted tokens: {msg}");
+    }
+
+    #[test]
+    fn rejects_duplicate_field_ids() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "schema": [
+                    { "id": "a", "label": "A", "type": "text" },
+                    { "id": "a", "label": "Again", "type": "number" }
+                ] }]"#);
+        assert!(validate(&m).expect_err("duplicate id").to_string().contains("duplicate"));
+    }
+
+    // A select with nothing to select and a resource picker that does not say
+    // what to pick both render a dead control. Cheap here, confusing in a form.
+    #[test]
+    fn rejects_a_select_with_no_options_and_no_source() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "schema": [{ "id": "a", "label": "A", "type": "select" }] }]"#);
+        assert!(validate(&m).expect_err("dead select").to_string().contains("options"));
+    }
+
+    #[test]
+    fn accepts_a_select_backed_by_a_dynamic_source() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "schema": [{ "id": "a", "label": "A", "type": "select",
+                    "source": { "kind": "commands" } }] }]"#);
+        validate(&m).expect("a source supplies the options at render time");
+    }
+
+    #[test]
+    fn rejects_a_resource_ref_without_a_resource_kind() {
+        let m = minimal(r#",
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
+                "schema": [{ "id": "t", "label": "T", "type": "resource_ref" }] }]"#);
+        let err = validate(&m).expect_err("picker with nothing to pick");
+        assert!(err.to_string().contains("resourceKind"), "{err}");
+    }
+
+    #[test]
+    fn rejects_a_button_setting_with_no_action() {
+        let m = minimal(r#",
+            "settings": [{ "id": "s1", "label": "S1", "type": "button" }]"#);
+        assert!(validate(&m).expect_err("button with no action").to_string().contains("action"));
+    }
+
+    #[test]
+    fn rejects_an_empty_field_id_and_an_empty_label() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "schema": [{ "id": "  ", "label": "A", "type": "text" }] }]"#);
+        assert!(validate(&m).expect_err("blank id").to_string().contains("`id`"));
+
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "schema": [{ "id": "a", "label": " ", "type": "text" }] }]"#);
+        assert!(validate(&m).expect_err("blank label").to_string().contains("`label`"));
+    }
+
+    // ---------------------------------------------------------------
     // Data shapes: `emits` on triggers, `returns` on actions
     // ---------------------------------------------------------------
 
@@ -1011,7 +1249,7 @@ mod tests {
     #[tokio::test]
     async fn build_install_plan_omits_bulk_steps_for_empty_or_button_only_kinds() {
         let m = minimal(r#",
-            "settings": [{ "id": "s1", "name": "S1", "type": "button" }]"#);
+            "settings": [{ "id": "s1", "label": "S1", "type": "button", "action": { "kind": "integration", "integration": "x" } }]"#);
         let resolved = validate(&m).expect("validate ok");
         let db_proxy = FakeDbProxyClient::new();
         let plan = build_install_plan(&m, &resolved, &db_proxy).await.expect("plan ok");
@@ -1033,7 +1271,7 @@ mod tests {
         let m = minimal(r#",
             "widgets": [{ "id": "w1", "name": "W1" }],
             "backgroundTasks": [{ "id": "bg1", "function": "f1", "schedule": "* * * * * *" }],
-            "settings": [{ "id": "s1", "name": "S1", "type": "string" }],
+            "settings": [{ "id": "s1", "label": "S1", "type": "text" }],
             "assets": [{ "id": "a1", "name": "A1", "path": "assets/a.png" }]"#);
         let resolved = validate(&m).expect("validate ok");
         let db_proxy = FakeDbProxyClient::new();

@@ -1,30 +1,53 @@
-// UI-facing schema types — how the engine's opaque configSchema /
-// paramsSchema strings get interpreted for rendering by the workflow
-// builder (and any other consumer that wants to show trigger / action
-// configuration forms).
+// The one field-declaration vocabulary.
 //
-// Contract: the engine forwards configSchema / paramsSchema as JSON
-// strings. When parsed, a well-formed configSchema is either:
-//   - An array of ConfigField objects (treated as `fields`), or
-//   - An object with { fields?, allowVariants?, color?, icon? }, optionally
-//     nested under a `ui` key for backward compatibility.
+// A trigger's `schema`, an action's `schema`, a widget's `settingsSchema` and
+// a module's `settings` all mean the same thing: "render these inputs, collect
+// these values". They are therefore the same shape — a bare array of
+// ConfigField — and there is exactly one spelling for every property.
 //
-// Consumers are free to fall back to defaults when fields are missing —
-// the engine treats presentation as opaque.
+// This was not always true. The four surfaces grew independently and diverged
+// on every core property (`id`/`key`, `type`/`fieldType`, `label`/`name`,
+// `defaultValue`/`default`), and the trigger/action parser accreted four
+// accepted container shapes, three of which were never produced by anything.
+// The cost was not theoretical: a widget declaring `{fields:[...]}` — the
+// shape its author had learned from trigger schemas — silently rendered no
+// settings at all.
+//
+// So there are no aliases here on purpose. An alias layer is what let those
+// shapes coexist unnoticed; barkloader rejects anything else at install, which
+// keeps this the only shape any consumer has to handle.
+//
+// What differs per surface is where the *value* is stored — module settings
+// persist engine-side in `module_settings` and are read by sandboxed
+// functions; trigger, action and widget values live UI-side in workflow
+// definitions and scene instances. That difference is real and stays. It is
+// not a reason to describe a field differently.
 
 import type { ConditionOperator } from "./workflow-definition";
 
-export type ConfigFieldType =
-  | "number"
-  | "range"
-  | "text"
-  | "select"
-  | "media"
-  | "toggle"
-  | "boolean"
-  | "color"
-  | "asset"
-  | "resource_ref";
+/**
+ * Every accepted `type` token, in one place so the engine, the SDK and the
+ * docs cannot drift. Closed: an unrecognised token is an author mistake worth
+ * reporting, not an extension point.
+ *
+ * `text` and `toggle` are the spellings — not `string` and `boolean`, which
+ * described the stored value rather than the control and only ever appeared on
+ * module settings.
+ */
+export const CONFIG_FIELD_TYPES = [
+  "number",
+  "range",
+  "text",
+  "select",
+  "media",
+  "toggle",
+  "color",
+  "asset",
+  "resource_ref",
+  "button",
+] as const;
+
+export type ConfigFieldType = (typeof CONFIG_FIELD_TYPES)[number];
 
 export interface ConfigFieldOption {
   value: string;
@@ -43,23 +66,34 @@ export interface InternalConfigFieldSource {
 export type ConfigFieldSource = { kind: "commands" } | InternalConfigFieldSource;
 
 export interface ConfigField {
+  /** Stable field id; the key the collected value is stored under. */
   id: string;
   label: string;
   type: ConfigFieldType;
   required?: boolean;
   placeholder?: string;
   unit?: string;
+  /** Required for `type: "select"` — a select with nothing to select is a dead control. */
   options?: ConfigFieldOption[];
   source?: ConfigFieldSource;
   min?: number;
   max?: number;
   defaultValue?: unknown;
   mediaType?: "image" | "audio" | "video";
-  /** For `type: "asset"` — filter by ManifestAsset.kind */
+  /** For `type: "asset"` — filter the picker by `ManifestAsset.kind`. */
   kinds?: string[];
-  /** For `type: "resource_ref"` — manifest `kind` property */
+  /** Required for `type: "resource_ref"` — which resource kind the picker lists. */
   resourceKind?: string;
+  /**
+   * Present only on `type: "button"`, which collects no value and instead
+   * fires a request: `{ kind: "internal", request: {...}, timeoutMs? }` or
+   * `{ kind: "integration", integration: "..." }`. Opaque here and forwarded
+   * for the consumer to interpret.
+   */
+  action?: unknown;
+  /** Trigger config only — binds this field to a path in the event payload. */
   eventPath?: string;
+  /** Trigger config only — the comparison emitted with this field's value. */
   operator?: ConditionOperator;
   description?: string;
   hint?: string;
@@ -79,9 +113,52 @@ export interface ConfigField {
   examplePayload?: string;
 }
 
-export interface TriggerConfig {
-  fields: ConfigField[];
-  allowVariants?: boolean;
+function isConfigFieldType(raw: unknown): raw is ConfigFieldType {
+  return typeof raw === "string" && (CONFIG_FIELD_TYPES as readonly string[]).includes(raw);
+}
+
+/**
+ * Parse a stored field-declaration JSON string into ConfigFields.
+ *
+ * Barkloader validates these at install, so anything stored should already be
+ * well-formed; this stays defensive because a config form must render rather
+ * than throw. An entry missing `id`, `label` or a recognised `type` is dropped
+ * rather than repaired — a half-built control is worse than an absent one.
+ *
+ * Accepts only a bare array. An object is not unwrapped: `{fields:[...]}` and
+ * friends were exactly the ambiguity this contract removes, and silently
+ * accepting them again would let the divergence back in through the consumer.
+ */
+export function parseFieldList(raw: string | undefined | null): ConfigField[] {
+  if (!raw) {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  const fields: ConfigField[] = [];
+  for (const entry of parsed) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    const candidate = entry as Partial<ConfigField>;
+    if (
+      typeof candidate.id !== "string" ||
+      candidate.id.length === 0 ||
+      typeof candidate.label !== "string" ||
+      !isConfigFieldType(candidate.type)
+    ) {
+      continue;
+    }
+    fields.push(candidate as ConfigField);
+  }
+  return fields;
 }
 
 // ---------------------------------------------------------------------------

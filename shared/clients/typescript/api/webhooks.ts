@@ -19,6 +19,8 @@ import type { WorkflowDefinition } from "./workflow-definition";
  * `EngineEventType.MODULE_INSTALLED` over the raw string in application
  * code so renames surface as compile errors instead of silent string drift.
  */
+import type { ConfigField } from "./ui-schema";
+
 export const EngineEventType = {
   MODULE_INSTALLED: "module.installed",
   MODULE_INSTALL_FAILED: "module.install_failed",
@@ -255,24 +257,6 @@ export interface ModuleFunctionRegisteredEvent {
 }
 
 /**
- * One configurable setting on a widget — surfaced to the scene editor so the
- * user can tune behaviour per widget instance (e.g. minimum bits to display
- * for a cheer-feed widget). Field shape matches the UI's
- * `moduleWidgets.settings` schema verbatim.
- *
- * `fieldType` is a string (not a union) for forward-compat with custom field
- * types; the UI maps known values ("text", "number", "select", "color",
- * "boolean") to inputs and falls back to a text input for unknowns.
- */
-export interface WidgetSettingDefinition {
-  key: string;
-  fieldType: string;
-  label: string;
-  defaultValue: unknown;
-  options?: Array<{ label: string; value: string }>;
-}
-
-/**
  * One widget exposed by an installed module. Widgets are placeable
  * components for the Convex scene manager — the engine never renders them.
  * The UI persists these in `moduleWidgets` and lets the user drop them into
@@ -319,8 +303,13 @@ export interface WidgetDefinition {
    * widget driven by polled data only).
    */
   alertTypes: string[];
-  /** Configuration surface offered to the scene editor. */
-  settings: WidgetSettingDefinition[];
+  /**
+   * The fields a user fills in when placing this widget on a scene — the same
+   * `ConfigField` vocabulary a trigger's or action's schema uses. It was once
+   * its own shape (`key` / `fieldType`), which is how a widget declaring five
+   * settings in the trigger-style container came to render none of them.
+   */
+  settings: ConfigField[];
   /**
    * Render surface this widget targets.
    *
