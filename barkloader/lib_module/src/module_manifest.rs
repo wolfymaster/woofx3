@@ -83,6 +83,19 @@ pub enum ManifestActionImpl {
         /// cross-module function references.
         function: String,
     },
+    /// `type: "native"` — dispatches to a handler compiled into the
+    /// workflow engine (`alert`, `print`), with no sandboxed function
+    /// behind it. This is what lets those handlers be *declared* by a
+    /// manifest instead of hand-registered in `workflow/app.go`.
+    ///
+    /// Restricted to system-provenance installs: an upload that could
+    /// name an engine handler would be a way to bind workflow steps to
+    /// arbitrary engine internals. Enforced in `manifest_validate`.
+    Native {
+        /// Engine action handler name, matching a `RegisterAction` call in
+        /// the workflow engine.
+        handler: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1119,15 +1132,21 @@ impl ManifestOverlay {
 impl ManifestAction {
     /// Build the Twirp ActionInput JSON for bulk registration.
     ///
-    /// `resolved_call` is the action's resolved handler invocation
-    /// target — currently always the canonical function id, since
-    /// `function` is the only `ManifestActionImpl` variant. When more
-    /// action types ship, the install path picks the right resolved
-    /// value per variant.
-    pub fn to_input(&self, resolved_call: &str) -> super::db_proxy::ActionInputJson {
+    /// `action_type` names the engine handler the row dispatches through and
+    /// `resolved_call` is its invocation target; the install path derives both
+    /// from the resolved `ManifestActionImpl`. A `function` action carries
+    /// `type: "function"` and the canonical function id; a `native` action
+    /// carries the handler name and an empty call, which is the shape
+    /// `workflow/app.go` writes for the handlers it registers by hand.
+    ///
+    /// `type` used to be omitted entirely, leaving every barkloader-installed
+    /// action on the column default - fine while `function` was the only
+    /// variant, wrong the moment it was not.
+    pub fn to_input(&self, action_type: &str, resolved_call: &str) -> super::db_proxy::ActionInputJson {
         super::db_proxy::ActionInputJson {
             name: self.name.clone(),
             description: self.description.clone(),
+            action_type: action_type.to_string(),
             call: resolved_call.to_string(),
             params_schema: encode_field_list(Some(&self.schema)),
             returns: encode_data_shape(self.returns.as_ref()),
@@ -1686,7 +1705,7 @@ mod tests {
         }))
         .expect("parse");
         assert_eq!(
-            a.to_input("play_alert").taxonomy,
+            a.to_input("function", "play_alert").taxonomy,
             vec!["platform.govee".to_string(), "function.lighting".to_string()]
         );
     }
@@ -1700,7 +1719,7 @@ mod tests {
             "function": "play_alert"
         }))
         .expect("parse");
-        assert!(a.to_input("play_alert").taxonomy.is_empty());
+        assert!(a.to_input("function", "play_alert").taxonomy.is_empty());
     }
 
     #[test]
@@ -1718,7 +1737,7 @@ mod tests {
             }
         }))
         .expect("parse");
-        let returns = a.to_input("increment").returns;
+        let returns = a.to_input("function", "increment").returns;
         let parsed: serde_json::Value = serde_json::from_str(&returns).expect("valid json");
         assert_eq!(parsed["fields"][0]["path"], "next");
         assert_eq!(parsed["fields"][0]["type"], "number");
@@ -1734,7 +1753,7 @@ mod tests {
             "function": "play_alert"
         }))
         .expect("parse");
-        assert_eq!(a.to_input("play_alert").returns, "{}");
+        assert_eq!(a.to_input("function", "play_alert").returns, "{}");
     }
 
     // The old ConfigField-shaped `outputs` key is gone. A manifest still
@@ -1750,7 +1769,7 @@ mod tests {
             "outputs": [{ "id": "next", "label": "New value", "type": "number" }]
         }))
         .expect("parse");
-        assert_eq!(a.to_input("increment").returns, "{}");
+        assert_eq!(a.to_input("function", "increment").returns, "{}");
     }
 
     #[test]

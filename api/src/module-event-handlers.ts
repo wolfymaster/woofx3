@@ -54,6 +54,7 @@ interface RawAction {
   name?: unknown;
   description?: unknown;
   call?: unknown;
+  type?: unknown;
   params_schema?: unknown;
   returns?: unknown;
   created_by_type?: unknown;
@@ -181,6 +182,7 @@ function mapAction(raw: RawAction): ActionDefinition {
     name: asString(raw.name),
     description: asString(raw.description),
     call: asString(raw.call),
+    type: asString(raw.type),
     paramsSchema: asString(raw.params_schema),
     createdByType: asString(raw.created_by_type),
     createdByRef: asString(raw.created_by_ref),

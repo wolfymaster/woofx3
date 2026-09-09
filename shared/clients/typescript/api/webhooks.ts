@@ -139,6 +139,13 @@ export interface ActionDefinition {
   name: string;
   description: string;
   call: string;
+  /**
+   * Engine action handler this action dispatches through (`function`,
+   * `alert`, `print`). A `function` action carries the canonical function id
+   * in `call`; a native action names its handler here and leaves `call`
+   * empty, so consumers must read this rather than infer from `call`.
+   */
+  type: string;
   paramsSchema: string;
   /**
    * JSON-encoded `DataShape` naming what this action's function hands back

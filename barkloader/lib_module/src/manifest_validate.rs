@@ -44,6 +44,9 @@ pub enum ResolvedActionImpl {
     Function {
         canonical_function_id: CanonicalId,
     },
+    /// `type: "native"` — an engine handler name. Nothing to resolve: the
+    /// handler lives in the workflow engine, not in this manifest.
+    Native { handler: String },
 }
 
 #[derive(Debug, Clone)]
@@ -147,6 +150,20 @@ pub fn validate_with_provenance(
         return Err(anyhow!(
             "module id {SYSTEM_MODULE_ID:?} is reserved for bundled system modules and cannot be installed from an upload"
         ));
+    }
+
+    // A `native` action names a handler compiled into the engine. Letting an
+    // upload do that would turn a manifest into a way to bind workflow steps
+    // to arbitrary engine internals, so it is system-provenance only.
+    if provenance != InstallProvenance::System {
+        for (i, action) in manifest.actions.iter().enumerate() {
+            if let ManifestActionImpl::Native { .. } = action.implementation {
+                return Err(anyhow!(
+                    "action #{i} ({}): `native` actions name an engine handler and may only be declared by a bundled system module",
+                    action.id
+                ));
+            }
+        }
     }
 
     // Pass 1: build per-kind canonical id lookup tables.
@@ -858,6 +875,13 @@ fn resolve_action_impl(
     field_label: &str,
 ) -> Result<ResolvedActionImpl> {
     match impl_ {
+        ManifestActionImpl::Native { handler } => {
+            let handler = handler.trim();
+            if handler.is_empty() {
+                return Err(anyhow!("{field_label}: `native` needs a non-empty `handler`"));
+            }
+            Ok(ResolvedActionImpl::Native { handler: handler.to_string() })
+        }
         ManifestActionImpl::Function { function } => {
             let target = function.trim();
             if target.is_empty() {
@@ -1022,6 +1046,58 @@ mod tests {
             }}"#
         );
         parse(&json)
+    }
+
+    // ---------------------------------------------------------------
+    // `native` actions
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn a_system_module_may_declare_a_native_action() {
+        let m = parse(&format!(
+            r#"{{"id": "{SYSTEM_MODULE_ID}", "name": "woofx3", "version": "1.0.0",
+                 "actions": [{{"id": "alert", "name": "Alert", "type": "native", "handler": "alert"}}]}}"#
+        ));
+        let resolved = validate_with_provenance(&m, InstallProvenance::System).expect("system ok");
+        assert_eq!(
+            resolved.actions[0].implementation,
+            ResolvedActionImpl::Native { handler: "alert".to_string() }
+        );
+    }
+
+    // Otherwise a manifest becomes a way to bind a workflow step to whatever
+    // engine internals happen to be registered.
+    #[test]
+    fn a_user_upload_may_not_declare_a_native_action() {
+        let m = minimal(r#",
+            "actions": [{ "id": "alert", "name": "Alert", "type": "native", "handler": "alert" }]"#);
+        let err = validate(&m).expect_err("uploads may not name engine handlers").to_string();
+        assert!(err.contains("action #0 (alert)"), "names the action: {err}");
+        assert!(err.contains("native"), "{err}");
+    }
+
+    #[test]
+    fn a_native_action_needs_a_handler() {
+        let m = parse(&format!(
+            r#"{{"id": "{SYSTEM_MODULE_ID}", "name": "woofx3", "version": "1.0.0",
+                 "actions": [{{"id": "alert", "name": "Alert", "type": "native", "handler": "  "}}]}}"#
+        ));
+        let err = validate_with_provenance(&m, InstallProvenance::System)
+            .expect_err("an empty handler dispatches nowhere")
+            .to_string();
+        assert!(err.contains("handler"), "{err}");
+    }
+
+    // A native action resolves nothing, so it must not be made to look like a
+    // function reference that failed to resolve.
+    #[test]
+    fn a_native_action_does_not_need_a_function_to_exist() {
+        let m = parse(&format!(
+            r#"{{"id": "{SYSTEM_MODULE_ID}", "name": "woofx3", "version": "1.0.0",
+                 "actions": [{{"id": "print", "name": "Print", "type": "native", "handler": "print"}}]}}"#
+        ));
+        validate_with_provenance(&m, InstallProvenance::System)
+            .expect("no functions declared, and none needed");
     }
 
     // ---------------------------------------------------------------
@@ -1474,6 +1550,7 @@ mod tests {
             ResolvedActionImpl::Function { canonical_function_id } => {
                 assert_eq!(canonical_function_id.to_string(), "test_mod:function:play_alert");
             }
+            other => panic!("expected a function reference, got {other:?}"),
         }
     }
 
@@ -1491,6 +1568,7 @@ mod tests {
             ResolvedActionImpl::Function { canonical_function_id } => {
                 assert_eq!(canonical_function_id.to_string(), "other_mod:function:bar");
             }
+            other => panic!("expected a function reference, got {other:?}"),
         }
     }
 
