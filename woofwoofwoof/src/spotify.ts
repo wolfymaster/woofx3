@@ -8,12 +8,16 @@ export type Song = {
 };
 
 export default class Spotify {
-  private client: SpotifyApi;
+  // Never assigned: the constructor's SpotifyApi.withAccessToken call is
+  // commented out below, so every method dereferences undefined and the !song
+  // command throws. The assertion keeps that a visible known defect rather
+  // than papering over it; restoring the init is its own change.
+  private client!: SpotifyApi;
 
   constructor(
     private clientId: string,
     private clientSecret: string,
-    accessToken: string,
+    _accessToken: string,
     private refreshToken: string
   ) {
     // this.client = SpotifyApi.withAccessToken(clientId, {
@@ -93,7 +97,7 @@ export default class Spotify {
     this.client = SpotifyApi.withAccessToken(this.clientId, json);
   }
 
-  async getTrack(trackId): Promise<Song> {
+  async getTrack(trackId: string): Promise<Song> {
     const track = await this.client.tracks.get(trackId);
 
     return {

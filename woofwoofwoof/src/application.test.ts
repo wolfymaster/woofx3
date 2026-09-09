@@ -21,9 +21,12 @@ function getChatHandler(base: {
   return chatSub.handler as (msg: { json: () => unknown }) => Promise<void>;
 }
 
+// Return type inferred from the cast below, deliberately: annotating it
+// `InitCtx` widens away the spies the tests then assert on, which is why every
+// `base.chatSay` / `base.publishLog` read was a type error.
 function buildTestContext(options: {
   listCommands?: () => Promise<{ status: { code: string; message?: string }; commands: Command[] }>;
-}): InitCtx {
+}) {
   const say = mock(async (_channel: string, _message: string, _opts?: unknown) => {});
 
   const publishLog: { topic: string; data: Uint8Array }[] = [];
@@ -41,7 +44,7 @@ function buildTestContext(options: {
 
   const barkHandlers: Record<string, (msg: unknown) => void> = {};
   const barkSend = mock((_payload: string) => {});
-  const barkInvoke = mock(async (_func: string, _event: Record<string, unknown>) => "");
+  const barkInvoke = mock(async (_func: string, _event: Record<string, unknown>): Promise<unknown> => "");
 
   const barkloader = {
     client: {
@@ -81,7 +84,7 @@ function buildTestContext(options: {
     db,
     messageBus,
     twitchChat,
-  } as WoofWoofWoofServices;
+  } as unknown as WoofWoofWoofServices;
 
   const config = {
     getConfig: (key: string) => {
@@ -133,7 +136,7 @@ describe("WoofWoofWoof application", () => {
   test("run refuses to start before chat command handling is wired up", async () => {
     const app = new WoofWoofWoof();
     const base = buildTestContext({});
-    const ctx = { ...app.context, ...base } as InitCtx;
+    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
     await expect(app.run(ctx)).rejects.toThrow(/Commander not set/i);
   });
 
@@ -145,7 +148,7 @@ describe("WoofWoofWoof application", () => {
         commands: [],
       }),
     });
-    const ctx = { ...app.context, ...base } as InitCtx;
+    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
     await app.init(ctx);
     await expect(app.run(ctx)).rejects.toThrow(/Failed to load commands/);
   });
@@ -246,7 +249,7 @@ describe("WoofWoofWoof application", () => {
       createdAt: {} as never,
       createdByType: "",
       createdByRef: "",
-    } as Command;
+    } as unknown as Command;
 
     const app = new WoofWoofWoof();
     const base = buildTestContext({
@@ -303,7 +306,7 @@ describe("WoofWoofWoof application", () => {
       createdByType: "",
       createdByRef: "",
       argumentPattern: "{songTitle}",
-    } as Command;
+    } as unknown as Command;
 
     const app = new WoofWoofWoof();
     const base = buildTestContext({
@@ -353,7 +356,7 @@ describe("WoofWoofWoof application", () => {
       createdAt: {} as never,
       createdByType: "",
       createdByRef: "",
-    } as Command;
+    } as unknown as Command;
 
     const app = new WoofWoofWoof();
     const base = buildTestContext({
@@ -391,7 +394,7 @@ describe("WoofWoofWoof application", () => {
       createdAt: {} as never,
       createdByType: "",
       createdByRef: "",
-    } as Command;
+    } as unknown as Command;
 
     const app = new WoofWoofWoof();
     const base = buildTestContext({
@@ -429,7 +432,7 @@ describe("WoofWoofWoof application", () => {
       createdAt: {} as never,
       createdByType: "",
       createdByRef: "",
-    } as Command;
+    } as unknown as Command;
 
     const app = new WoofWoofWoof();
     const base = buildTestContext({

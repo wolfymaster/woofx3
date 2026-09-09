@@ -1,0 +1,70 @@
+name: service checks
+
+# Type-checks and tests the Bun services that had no gate.
+#
+# api has its own workflow (api-checks.yml); streamware and sceneManager
+# already carried a typecheck script. twitch and woofwoofwoof did not, which
+# is how a `category` field that the proto stopped accepting, a logger call
+# dropping four of its five arguments, a `disconnect()` calling a method that
+# does not exist, and a stale `@client/*` import all sat unnoticed.
+#
+# Each service resolves its workspace siblings by relative path, so their
+# dependencies have to be installed too or every shared import fails to
+# resolve and the run reports hundreds of phantom errors.
+
+on:
+  push:
+    branches: [main, master, release]
+    paths:
+      - "twitch/**"
+      - "woofwoofwoof/**"
+      - "shared/clients/typescript/**"
+      - "shared/common/typescript/**"
+      - ".github/workflows/service-checks.yml"
+  pull_request:
+    paths:
+      - "twitch/**"
+      - "woofwoofwoof/**"
+      - "shared/clients/typescript/**"
+      - "shared/common/typescript/**"
+      - ".github/workflows/service-checks.yml"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [twitch, woofwoofwoof]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install workspace dependencies
+        run: |
+          for dir in \
+            shared/common/typescript \
+            shared/clients/typescript/db \
+            shared/clients/typescript/nats \
+            shared/clients/typescript/twitch \
+            ${{ matrix.service }}
+          do
+            echo "::group::bun install ($dir)"
+            (cd "$dir" && bun install --frozen-lockfile)
+            echo "::endgroup::"
+          done
+
+      - name: Type check
+        working-directory: ${{ matrix.service }}
+        run: bun run typecheck
+
+      - name: Test
+        working-directory: ${{ matrix.service }}
+        run: bun test

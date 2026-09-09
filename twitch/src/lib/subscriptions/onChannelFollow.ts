@@ -4,7 +4,7 @@ import type { Context } from "src/types";
 
 export default function onChannelFollow(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
     return listener.onChannelFollow(ctx.broadcaster.id, ctx.broadcaster.id, async (event: EventSubChannelFollowEvent) => {
-       const { followDate, userDisplayName, userId } = event;
+       const { userDisplayName } = event;
         // publish the follow event to workflow
         const [topic, data] = ctx.events.Twitch().follow({
             userName: userDisplayName,

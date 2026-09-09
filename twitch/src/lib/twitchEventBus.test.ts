@@ -79,8 +79,8 @@ function minimalContext(): Context {
       error: mock(() => {}),
       debug: mock(() => {}),
       child: mock(() => ({ info: mock(() => {}) })),
-    },
-    messageBus: { publish: mock(() => {}) } as Context["messageBus"],
+    } as unknown as Context["logger"],
+    messageBus: { publish: mock(() => {}) } as unknown as Context["messageBus"],
     events: {} as Context["events"],
   };
 }

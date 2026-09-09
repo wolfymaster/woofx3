@@ -244,12 +244,13 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
         applicationId: "",
         triggers: [
           {
-            category: "chat",
+            taxonomy: ["chat"],
+            emits: "{}",
             name: "Chat Command",
             description: "When someone uses a chat command",
             event: "chat.command.*",
             configSchema: JSON.stringify([
-              { id: "command", label: "Command", type: "string", required: true, placeholder: "hello" },
+              { id: "command", label: "Command", type: "text", required: true, placeholder: "hello" },
             ]),
             allowVariants: false,
             manifestId: "chat_command",
@@ -295,7 +296,7 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       ctx.logger.info(`${user} says: ${msg}`);
     });
 
-    ctx.commander.add("grantcommands", async (text: string, user?: string) => {
+    ctx.commander.add("grantcommands", async (text: string, _user?: string) => {
       await db.addUserToResource({
         applicationId: "",
         username: text,
@@ -305,7 +306,7 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       return "";
     });
 
-    ctx.commander.add("revokecommands", async (text: string, user?: string) => {
+    ctx.commander.add("revokecommands", async (text: string, _user?: string) => {
       await db.removeUserFromResource({
         applicationId: "",
         username: text,
@@ -315,7 +316,7 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       return "";
     });
 
-    ctx.commander.add("vanish", async (text: string, user?: string) => {
+    ctx.commander.add("vanish", async (_text: string, user?: string) => {
       const [topic, data] = ctx.events.TwitchApi().timeout({
         user,
         duration: Math.floor(Math.random() * 600),
@@ -331,7 +332,7 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       return "";
     });
 
-    ctx.commander.add("song", async (text: string) => {
+    ctx.commander.add("song", async (_text: string) => {
       const spotify = new Spotify(
         (ctx.config.getConfig("spotifyClientId") as string) ?? "",
         (ctx.config.getConfig("spotifyClientSecret") as string) ?? "",
@@ -635,7 +636,6 @@ function snapshotToCommand(snapshot: {
     cooldown: snapshot.cooldown,
     priority: snapshot.priority,
     enabled: snapshot.enabled,
-    createdBy: "",
     createdAt: { seconds: 0n, nanos: 0 },
     createdByType: "",
     createdByRef: "",

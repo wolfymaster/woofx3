@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { Commands, type AuthorizationResponse, type CommandMatch } from "./commands";
 
 function makeChatClient() {
-  const say = mock(async (_channel: string, _message: string) => {});
+  const say = mock(async (_channel: string, _message: string, _opts?: unknown) => {});
   return { say };
 }
 

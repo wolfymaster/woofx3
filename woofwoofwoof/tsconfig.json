@@ -8,7 +8,12 @@
         "@woofx3/common/*": ["../shared/common/typescript/*"],
         "@woofx3/*": ["../shared/clients/typescript/*"]
       },
+      // Third-party .d.ts files are not ours to fix. Checking them turns a
+      // dependency bump into a broken build for code nobody here can edit.
+      "skipLibCheck": true,
       "strict": true,
       "target": "es2022",
-    }
+      "types": ["bun-types"],
+    },
+    "include": ["src"]
   }

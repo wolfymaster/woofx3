@@ -567,6 +567,9 @@ fn validate_field_lists(manifest: &ModuleManifest) -> Result<()> {
             validate_field_list(fields, &format!("widget #{i} ({}): `settingsSchema`", w.id))?;
         }
     }
+    for (i, r) in manifest.resources.iter().enumerate() {
+        validate_field_list(&r.schema, &format!("resource #{i} ({}): `schema`", r.kind))?;
+    }
     validate_settings(&manifest.settings)
 }
 
@@ -1090,6 +1093,25 @@ mod tests {
                 "schema": [{ "id": "t", "label": "T", "type": "resource_ref" }] }]"#);
         let err = validate(&m).expect_err("picker with nothing to pick");
         assert!(err.to_string().contains("resourceKind"), "{err}");
+    }
+
+    #[test]
+    fn validates_a_resource_kind_create_form_like_every_other_surface() {
+        let ok = minimal(r#",
+            "resources": [{ "kind": "counter", "name": "Counter",
+                "schema": [{ "id": "initialValue", "label": "Initial value", "type": "number" }] }]"#);
+        validate(&ok).expect("validate ok");
+
+        let bad = minimal(r#",
+            "resources": [{ "kind": "counter", "name": "Counter",
+                "schema": [{ "id": "initialValue", "label": "Initial value", "type": "integer" }] }]"#);
+        let err = bad_err(&bad);
+        assert!(err.contains("resource #0 (counter)"), "names the surface: {err}");
+        assert!(err.contains("`schema`"), "{err}");
+    }
+
+    fn bad_err(m: &ModuleManifest) -> String {
+        validate(m).expect_err("expected a validation failure").to_string()
     }
 
     #[test]

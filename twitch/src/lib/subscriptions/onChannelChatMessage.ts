@@ -24,7 +24,7 @@ import type { Context } from "src/types";
 function readMembership(event: EventSubChannelChatMessageEvent): ChatterMembership {
     const hasBadge = (name: string): boolean => {
         if (event.sourceBadges !== null && event.sourceBadges !== undefined) {
-            return event.hasSourceBadge(name);
+            return event.hasSourceBadge(name) ?? false;
         }
         return event.hasBadge(name);
     };

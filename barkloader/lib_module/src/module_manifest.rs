@@ -404,9 +404,10 @@ pub struct ManifestAsset {
 /// learns what the kind *means*. Mutation operations, value storage,
 /// and validation all live in the owning module's functions / commands.
 ///
-/// `value_schema` is opaque to the engine — modules may use it to drive
-/// a UI create-form, or omit it entirely. The engine forwards it as
-/// part of the manifest payload so consumers (the UI) can inspect.
+/// `schema` is the form shown when creating an instance of this kind - the
+/// same `ManifestConfigField` list every other surface uses. The engine never
+/// renders it and never validates an instance's value against it; it forwards
+/// the declaration so the UI can build the form.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestResourceKind {
@@ -421,11 +422,17 @@ pub struct ManifestResourceKind {
     /// Optional asset-or-icon canonical id for picker UX.
     #[serde(default)]
     pub icon: Option<String>,
-    /// Opaque value schema. The engine does not validate values of
-    /// this kind; modules may publish a JSON-schema-like document
-    /// here to drive a create-form in the UI.
+    /// The fields a user fills in to create an instance of this kind.
+    ///
+    /// Was `valueSchema`, a JSON-Schema-ish blob describing the stored
+    /// *value* (`{"type":"number","default":0}`). Its documented purpose was
+    /// always to drive a create-form, but nothing could render it: a form
+    /// needs an id, a label and a control type per input, none of which that
+    /// shape carries. Declaring it as fields makes the stated purpose
+    /// achievable and removes the last vocabulary that was not
+    /// `ManifestConfigField`.
     #[serde(default)]
-    pub value_schema: Option<serde_json::Value>,
+    pub schema: Vec<ManifestConfigField>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2147,11 +2154,19 @@ mod tests {
     }
 
     #[test]
-    fn spotify_sr_manifest_parses_and_round_trips() {
-        // Regression coverage for the real shipped manifest, not just a
-        // synthetic fixture — catches drift between it and this struct.
-        let j = include_str!("../../modules/spotify_sr/manifest.json");
-        let m: ModuleManifest = serde_json::from_str(j).expect("parse real spotify_sr manifest");
+    fn realistic_manifest_parses_and_round_trips() {
+        // A committed copy of a real first-party manifest (woofx3_spotify),
+        // exercising the whole struct against something an author actually
+        // wrote rather than the minimum each test needs.
+        //
+        // It used to `include_str!` the live manifest out of a sibling
+        // checkout, which meant this test — and every other test in the crate,
+        // since a missing `include_str!` target fails compilation — could not
+        // run on CI or a fresh clone at all. Drift against the real modules is
+        // caught where it actually matters now: a manifest that no longer
+        // matches this struct fails to install (see manifest_validate).
+        let j = include_str!("../fixtures/spotify_manifest.json");
+        let m: ModuleManifest = serde_json::from_str(j).expect("parse spotify fixture");
         assert_eq!(m.settings.len(), 2);
         assert_eq!(m.settings[0].id, "authorizeSpotify");
         assert_eq!(m.settings[0].setting_type, "button");

@@ -22,7 +22,7 @@ describe("getBroadcasterId", () => {
       clientId: "cid",
       clientSecret: "sec",
       accessToken: "token",
-      logger: { info: mock(() => {}) } as TwitchContext["logger"],
+      logger: { info: mock(() => {}) } as unknown as TwitchContext["logger"],
     };
 
     const id = await getBroadcasterId(ctx, "someone");
@@ -39,7 +39,7 @@ describe("getBroadcasterId", () => {
       clientId: "cid",
       clientSecret: "sec",
       accessToken: "token",
-      logger: { info: mock(() => {}) } as TwitchContext["logger"],
+      logger: { info: mock(() => {}) } as unknown as TwitchContext["logger"],
     };
 
     await expect(getBroadcasterId(ctx, "x")).rejects.toThrow("Received error from twitch api: bad token");

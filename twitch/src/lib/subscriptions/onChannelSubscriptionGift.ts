@@ -7,8 +7,8 @@ export default function onChannelSubscriptionGift(ctx: Context, listener: EventS
     const { gifterId, gifterDisplayName, amount, tier, isAnonymous } = event;
     const [topic, data] = ctx.events.Twitch().subscriptionGift({
       amount,
-      gifterId,
-      gifterName: gifterDisplayName,
+      gifterId: gifterId ?? "",
+      gifterName: gifterDisplayName ?? "",
       isAnonymous,
       tier,
     });

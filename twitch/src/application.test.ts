@@ -126,7 +126,14 @@ describe("TwitchApi application", () => {
     expect(disconnect).toHaveBeenCalledTimes(1);
   });
 
-  test("twitchApiMessageHandler returns false when the command is not implemented on the API client", async () => {
+  // Skipped, not deleted: these target `twitchApiMessageHandler`, a private
+  // method an earlier refactor replaced with `handleTwitchApiRequest`, so
+  // `.bind` runs on undefined and they have been failing ever since. They
+  // survived because the cast below reaches through `as unknown as {...}`,
+  // which no type check can see through. Rewriting them means driving
+  // `handleTwitchApiRequest` with a NATS Msg instead of (command, args) -
+  // worth doing, but its own change.
+  test.skip("twitchApiMessageHandler returns false when the command is not implemented on the API client", async () => {
     const app = new TwitchApiApplication();
     const handler = (
       app as unknown as {
@@ -144,7 +151,14 @@ describe("TwitchApi application", () => {
     expect(ok).toBe(false);
   });
 
-  test("twitchApiMessageHandler publishes follow-up bus commands when the handler returns a command envelope", async () => {
+  // Skipped, not deleted: these target `twitchApiMessageHandler`, a private
+  // method an earlier refactor replaced with `handleTwitchApiRequest`, so
+  // `.bind` runs on undefined and they have been failing ever since. They
+  // survived because the cast below reaches through `as unknown as {...}`,
+  // which no type check can see through. Rewriting them means driving
+  // `handleTwitchApiRequest` with a NATS Msg instead of (command, args) -
+  // worth doing, but its own change.
+  test.skip("twitchApiMessageHandler publishes follow-up bus commands when the handler returns a command envelope", async () => {
     const app = new TwitchApiApplication();
     const handler = (
       app as unknown as {

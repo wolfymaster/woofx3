@@ -1,0 +1,133 @@
+{
+  "id": "woofx3_spotify",
+  "name": "Spotify Song Request",
+  "author": "WolfyMaster LLC",
+  "version": "0.1.2",
+  "category": "platform",
+  "description": "Adds the !sr chat command to queue songs on Spotify. Accepts a song name or a Spotify track URL.",
+  "functions": [
+    {
+      "id": "song_request",
+      "name": "Song Request",
+      "runtime": "js",
+      "path": "functions/song_request.js",
+      "entryPoint": "song_request"
+    },
+    {
+      "id": "poll_current_track",
+      "name": "Poll Current Track",
+      "runtime": "js",
+      "path": "functions/poll_current_track.js",
+      "entryPoint": "poll_current_track"
+    },
+    {
+      "id": "get_devices",
+      "name": "Get Devices",
+      "runtime": "js",
+      "path": "functions/get_devices.js",
+      "entryPoint": "get_devices"
+    }
+  ],
+  "actions": [
+    {
+      "id": "song_request",
+      "name": "Queue song request",
+      "description": "Searches Spotify for the given query and adds the top result to the playback queue.",
+      "type": "function",
+      "function": "song_request",
+      "schema": [
+        {
+          "id": "deviceId",
+          "label": "Playback Device",
+          "type": "select",
+          "required": false,
+          "defaultValue": "",
+          "description": "Spotify device to queue songs on. Leave blank to use the currently active device.",
+          "source": {
+            "kind": "internal",
+            "request": {
+              "event": "barkloader.module.field_options",
+              "payload": {
+                "moduleId": "spotify",
+                "functionId": "get_devices"
+              }
+            },
+            "timeoutMs": 10000
+          }
+        }
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "id": "sr_command",
+      "name": "Song request command",
+      "description": "Fires when a viewer uses !sr in chat.",
+      "type": "eventbus",
+      "event": "chat.command.sr",
+      "category": "chat"
+    }
+  ],
+  "commands": [
+    {
+      "id": "sr",
+      "name": "Song Request",
+      "pattern": "!sr",
+      "type": "prefix",
+      "workflow": "song_request_workflow"
+    }
+  ],
+  "workflows": [
+    {
+      "id": "song_request_workflow",
+      "name": "Song Request Workflow",
+      "trigger": "sr_command",
+      "steps": [
+        {
+          "id": "queue_song",
+          "type": "action",
+          "action": "song_request"
+        }
+      ]
+    }
+  ],
+  "background_tasks": [
+    {
+      "id": "poll_now_playing",
+      "function": "poll_current_track",
+      "schedule": "*/30 * * * * *",
+      "description": "Polls Spotify every 30 seconds to update the currently playing track."
+    }
+  ],
+  "settings": [
+    {
+      "id": "authorizeSpotify",
+      "label": "Authorize Spotify",
+      "description": "Connect your Spotify account to enable song requests and playback control.",
+      "type": "button",
+      "action": {
+        "kind": "integration",
+        "integration": "spotify"
+      }
+    },
+    {
+      "id": "clientId",
+      "label": "Spotify Client ID",
+      "description": "Optional: use your own Spotify app's Client ID instead of the default. Not required — Authorize Spotify above fills this in automatically.",
+      "type": "text",
+      "required": false
+    }
+  ],
+  "widgets": [
+    {
+      "id": "now_playing",
+      "name": "Now Playing",
+      "description": "Displays the currently playing Spotify track.",
+      "entry": "widgets/now_playing/index.html",
+      "assets": "widgets/now_playing",
+      "alertTypes": [
+        "module.storage.changed"
+      ]
+    }
+  ]
+}

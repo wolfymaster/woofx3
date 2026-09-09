@@ -15,12 +15,8 @@ describe("TwitchApi", () => {
 
     const result = await api.clip({});
 
-    expect(result.error).toBe(false);
     expect(createClip).toHaveBeenCalledWith({ channel: broadcaster });
-    expect(result.command?.topic).toBe("woofwoofwoof");
-    expect(result.command?.command).toBe("write_message");
-    expect(result.command?.args).toEqual({
-      message: "https://clips.twitch.tv/abcClipId",
-    });
+    expect(result.id).toBe("abcClipId");
+    expect(result.url).toBe("https://clips.twitch.tv/abcClipId");
   });
 });
