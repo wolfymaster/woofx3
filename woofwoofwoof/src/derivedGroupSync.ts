@@ -9,18 +9,74 @@ import type { DatabaseClient } from "./services/database";
  * "everyone" is deliberately absent: it matches every user implicitly through
  * the Casbin wildcard subject and has no membership rows to maintain.
  */
-export const DERIVED_GROUPS = ["subscriber", "vip", "moderator", "broadcaster"] as const;
+export const DERIVED_GROUPS = [
+  "follower",
+  "subscriber",
+  "subscriber_tier1",
+  "subscriber_tier2",
+  "subscriber_tier3",
+  "vip",
+  "moderator",
+  "broadcaster",
+] as const;
 
 export type DerivedGroup = (typeof DERIVED_GROUPS)[number];
 
-/** Which membership flag decides each derived group. */
-function membershipGroups(membership: ChatterMembership): Record<DerivedGroup, boolean> {
-  return {
+/**
+ * What the platform says about one chatter's derived groups.
+ *
+ * A group is absent when the platform did not answer for it - it does not
+ * report the signal, or the lookup did not resolve. Absent is not `false`:
+ * writing "not a member" on an unresolved lookup would demote a real follower
+ * on a transient Helix blip, and the row would persist until their next
+ * message. Callers must skip absent groups, never default them.
+ */
+export type DerivedMembership = Partial<Record<DerivedGroup, boolean>>;
+
+/**
+ * The tier groups, in the order the catalog seeds them. A tier is selected by
+ * the neutral token on the membership (`"tier2"` -> `subscriber_tier2`); the
+ * platform adapter is what translates its own codes into that token.
+ */
+const TIER_GROUPS = ["subscriber_tier1", "subscriber_tier2", "subscriber_tier3"] as const;
+
+function tierGroupFor(token: string): DerivedGroup | undefined {
+  const name = `subscriber_${token}`;
+  return TIER_GROUPS.find((group) => group === name);
+}
+
+/** Which membership signal decides each derived group. */
+function membershipGroups(membership: ChatterMembership): DerivedMembership {
+  const groups: DerivedMembership = {
     subscriber: membership.isSubscriber,
     vip: membership.isVip,
     moderator: membership.isModerator,
     broadcaster: membership.isBroadcaster,
   };
+
+  if (membership.isFollower !== undefined) {
+    groups.follower = membership.isFollower;
+  }
+
+  if (!membership.isSubscriber) {
+    // Not subscribed is a definite answer for every tier: they are in none of
+    // them. No lookup needed, and no lookup can contradict it.
+    for (const group of TIER_GROUPS) {
+      groups[group] = false;
+    }
+  } else if (membership.subscriberTier !== undefined) {
+    // A resolved tier is exclusive - one tier group in, the rest out. An
+    // unrecognised token leaves the chatter in none of the seeded tier groups,
+    // which is the honest answer rather than a guess at which one it means.
+    const resolved = tierGroupFor(membership.subscriberTier);
+    for (const group of TIER_GROUPS) {
+      groups[group] = group === resolved;
+    }
+  }
+  // Subscribed but tier unresolved: leave the tier groups absent. They keep
+  // whatever was last written rather than being cleared by a failed lookup.
+
+  return groups;
 }
 
 interface Logger {
@@ -44,6 +100,11 @@ interface Logger {
  * actually changes. State is per-process and intentionally not persisted - on
  * restart the first message from each chatter re-reconciles them, which is
  * cheap and self-healing.
+ *
+ * Groups the platform did not answer for are skipped rather than written as
+ * "not a member", and the cache keeps the last value actually written for
+ * them, so an unresolved lookup costs nothing and a later resolved one is
+ * still recognised as a change.
  */
 export class DerivedGroupSync {
   private readonly db: DatabaseClient;
@@ -51,7 +112,7 @@ export class DerivedGroupSync {
   private readonly applicationId: string;
 
   /** username -> the derived membership last written for them. */
-  private readonly lastSeen = new Map<string, Record<DerivedGroup, boolean>>();
+  private readonly lastSeen = new Map<string, DerivedMembership>();
 
   /** group name -> group id, resolved once from the seeded catalog. */
   private groupIds: Map<string, string> | null = null;
@@ -75,32 +136,41 @@ export class DerivedGroupSync {
 
     const desired = membershipGroups(membership);
     const previous = this.lastSeen.get(user);
-    if (previous && DERIVED_GROUPS.every((group) => previous[group] === desired[group])) {
+    if (
+      previous &&
+      DERIVED_GROUPS.every((group) => desired[group] === undefined || previous[group] === desired[group])
+    ) {
       return;
     }
 
     try {
       const ids = await this.resolveGroupIds();
+      const written: DerivedMembership = { ...previous };
 
       for (const group of DERIVED_GROUPS) {
-        if (previous && previous[group] === desired[group]) {
+        const want = desired[group];
+        if (want === undefined) {
+          continue;
+        }
+        if (previous && previous[group] === want) {
           continue;
         }
         const groupId = ids.get(group);
-        if (!groupId) {
-          // The application predates the built-in catalog and has not been
-          // migrated. Skip rather than invent a group.
-          continue;
+        if (groupId) {
+          const req = { applicationId: this.applicationId, groupId, username: user };
+          if (want) {
+            await this.db.addUserToGroup(req);
+          } else {
+            await this.db.removeUserFromGroup(req);
+          }
         }
-        const req = { applicationId: this.applicationId, groupId, username: user };
-        if (desired[group]) {
-          await this.db.addUserToGroup(req);
-        } else {
-          await this.db.removeUserFromGroup(req);
-        }
+        // Recorded either way. A group missing from the catalog means the
+        // application predates it and has not been migrated - there is nothing
+        // to write, so retrying it on every message would be pure noise.
+        written[group] = want;
       }
 
-      this.lastSeen.set(user, desired);
+      this.lastSeen.set(user, written);
     } catch (err) {
       // Drop the cache entry so the next message retries rather than treating
       // a failed write as applied.

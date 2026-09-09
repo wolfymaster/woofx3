@@ -1,4 +1,4 @@
-import type { HelixUser } from "@twurple/api";
+import type { ApiClient, HelixUser } from "@twurple/api";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import { type Span, type SharedLogger, SpanKind, withSpan } from "@woofx3/common/logging";
 import type { Application, IApplication } from "@woofx3/common/runtime";
@@ -8,6 +8,7 @@ import TwitchClient from "@woofx3/twitch";
 import chalk from "chalk";
 import type TwitchApiClient from "./lib/twitch";
 import TwitchApiClientImpl from "./lib/twitch";
+import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import TwitchEventBus from "./lib/twitchEventBus";
 import type DbProxyService from "./services/dbProxy";
 import type MessageBusService from "./services/messageBus";
@@ -76,6 +77,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       logger: ctx.logger,
       messageBus: ctx.services.messageBus.client,
       events: new EventFactory({ source: "twitch" }),
+      membershipEnricher: this.buildMembershipEnricher(ctx, apiClient),
     };
     const twitchEventBus = new TwitchEventBus(eventBusCtx, listener);
     await twitchEventBus.start();
@@ -103,6 +105,24 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       }).catch((err) => {
         ctx.logger.error("twitchapi: request handling failed", { err });
       });
+    });
+  }
+
+  /**
+   * Follower status and subscription tier have to be read from Helix - no
+   * badge carries either. Returns undefined when enrichment is switched off,
+   * in which case both fields stay absent and grants against the follower and
+   * tier groups simply match nobody, rather than matching everybody.
+   */
+  private buildMembershipEnricher(ctx: TwitchApiContext, apiClient: ApiClient): ChatterMembershipEnricher | undefined {
+    if (ctx.config.getConfig("woofx3TwitchMembershipEnrichmentEnabled") === false) {
+      ctx.logger.info("twitch: chatter membership enrichment disabled by config");
+      return undefined;
+    }
+    return new ChatterMembershipEnricher(new TwurpleMembershipLookup(apiClient), ctx.logger, {
+      ...DEFAULT_ENRICHER_OPTIONS,
+      ttlMs: ctx.config.getConfig("woofx3TwitchMembershipTtlMs") as number,
+      deadlineMs: ctx.config.getConfig("woofx3TwitchMembershipDeadlineMs") as number,
     });
   }
 

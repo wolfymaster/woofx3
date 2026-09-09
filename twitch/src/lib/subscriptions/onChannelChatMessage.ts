@@ -6,6 +6,10 @@ import type { Context } from "src/types";
 /**
  * Map Twitch's badges onto the platform-neutral ChatterMembership shape.
  *
+ * This covers only what a badge can answer. Following has no badge at all and
+ * the subscriber badge's version encodes tier by a brittle convention, so both
+ * are filled in out of band by the enricher - see chatterMembership.ts.
+ *
  * Badges are a Twitch wire detail and stop here: nothing downstream knows how
  * this channel reports membership, only that it does. Twitch exposes no
  * queryable roster for moderator/VIP/subscriber status but stamps the badges
@@ -38,6 +42,16 @@ function readMembership(event: EventSubChannelChatMessageEvent): ChatterMembersh
 export default function onChannelChatmessage(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
     return listener.onChannelChatMessage(ctx.broadcaster.id, ctx.broadcaster.id, async (event: EventSubChannelChatMessageEvent) => {
         const { bits, chatterId, chatterDisplayName, sourceBroadcasterName, sourceBroadcasterId, messageText } = event;
+
+        // Following and subscription tier are not on the message at all, so
+        // they come from Helix. The enricher bounds how long that may take and
+        // leaves the fields absent when it does not resolve: a chat message
+        // must never wait on a permissions lookup.
+        const badged = readMembership(event);
+        const membership = ctx.membershipEnricher
+            ? await ctx.membershipEnricher.enrich(ctx.broadcaster.id, chatterId, badged)
+            : badged;
+
         const [topic, data] = ctx.events.Twitch().chatMessage({
             amount: bits,
             channelId: sourceBroadcasterId,
@@ -46,7 +60,7 @@ export default function onChannelChatmessage(ctx: Context, listener: EventSubWsL
             chatterName: chatterDisplayName,
             isPaid: Boolean(bits),
             message: messageText,
-            membership: readMembership(event),
+            membership,
         });
         try {
             ctx.messageBus.publish(topic, data);
