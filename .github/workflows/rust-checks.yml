@@ -49,6 +49,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # barkloader depends on shared/clients/rust/db, whose prost-wkt-types
+      # build script shells out to protoc. It is not on the runner image, and
+      # locally it comes from devbox - so this is the one thing a developer
+      # machine has that CI does not.
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       # No rust-toolchain.toml and no rust in devbox.json, so the version is
       # whatever the developer has. `resolver = "3"` in barkloader's workspace
       # needs 1.84+; stable is comfortably past that.
