@@ -15,13 +15,5 @@
       "target": "es2022",
       "types": ["bun-types"],
     },
-    "include": ["src"],
-    // handlers.ts imports @langchain/*, whose type surface exhausts tsc's heap
-    // (a 6GB run still OOMs), so a program containing it cannot be checked on
-    // an ordinary machine. Nothing imports handlers.ts - its only reference is
-    // a commented-out line in api.ts - so excluding it costs no live coverage.
-    // src/test.ts is a scratch harness nothing imports and which cannot run at
-    // all: it imports "./nats", which does not exist.
-    // Delete all three files and this entry together.
-    "exclude": ["src/handlers.ts", "src/handlers.test.ts", "src/test.ts"]
+    "include": ["src"]
   }
