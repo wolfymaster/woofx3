@@ -101,11 +101,11 @@ type Trigger struct {
 	Description  string `gorm:"column:description;type:text;not null"`
 	Event        string `gorm:"column:event;type:text;not null"`
 	ConfigSchema string `gorm:"column:config_schema;type:jsonb;not null;default:'[]'"`
-	// PayloadSchema is a JSON-encoded DataSchema describing the shape of
-	// `trigger.data` when this trigger fires. UI-only — see
-	// module_trigger.proto Trigger.payload_schema for why it is separate from
-	// ConfigSchema.
-	PayloadSchema string `gorm:"column:payload_schema;type:jsonb;not null;default:'{}'"`
+	// Emits is a JSON-encoded DataShape naming what `trigger.data` carries
+	// when this trigger fires. Nothing validates a payload against it — see
+	// module_trigger.proto Trigger.emits for why it is not called a schema
+	// and why it is separate from ConfigSchema.
+	Emits         string `gorm:"column:emits;type:jsonb;not null;default:'{}'"`
 	AllowVariants bool   `gorm:"column:allow_variants;default:false"`
 	CreatedByType string `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
 	CreatedByRef  string `gorm:"column:created_by_ref;type:text;not null;default:''"`
@@ -141,10 +141,10 @@ type Action struct {
 	// Taxonomy is a JSON-encoded string array of open, dotted hierarchical
 	// classification terms. See Trigger.Taxonomy.
 	Taxonomy string `gorm:"column:taxonomy;type:jsonb;not null;default:'[]'"`
-	// OutputSchema is a JSON-encoded array of ConfigField-shaped output
-	// declarations describing the action function's return value. UI-only —
-	// see module_action.proto Action.output_schema.
-	OutputSchema string `gorm:"column:output_schema;type:jsonb;not null;default:'[]'"`
+	// Returns is a JSON-encoded DataShape naming what this action's function
+	// hands back. Replaces the ConfigField-shaped output_schema — see
+	// module_action.proto Action.returns.
+	Returns string `gorm:"column:returns;type:jsonb;not null;default:'{}'"`
 	// ArchivedAt is set when a module upgrade drops this action from the
 	// manifest. Archived rows stay resolvable by canonical id (existing
 	// workflows keep working) but are excluded from catalog listings.

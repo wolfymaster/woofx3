@@ -311,14 +311,14 @@ func (a *WorkflowApp) registerBuiltinTriggers(ctx context.Context) error {
 	// All three lifecycle events carry the same payload: the GORM-cased
 	// workflow_definitions row. Declaring it is what makes
 	// `${trigger.data.Name}` discoverable in the workflow builder - these
-	// triggers have no config fields at all, so without a payload schema the
-	// builder has nothing to derive variables from and offers none.
+	// triggers have no config fields at all, so without this the builder has
+	// nothing to derive variables from and offers none.
 	//
 	// Go-cased keys because that is what the row serializes as on the bus;
 	// the schema describes what is actually there, not what would read
 	// better. Steps and Trigger are JSON-encoded strings on the row rather
 	// than nested objects, hence "string" and no dotted sub-paths.
-	const workflowRowPayloadSchema = `{"fields":[
+	const workflowRowShape = `{"fields":[
 		{"path":"ID","type":"string","description":"Workflow id."},
 		{"path":"ApplicationID","type":"string","description":"Application the workflow belongs to."},
 		{"path":"Name","type":"string","description":"Workflow name."},
@@ -359,7 +359,7 @@ func (a *WorkflowApp) registerBuiltinTriggers(ctx context.Context) error {
 			Description:   b.description,
 			Event:         b.event,
 			ConfigSchema:  "[]",
-			PayloadSchema: workflowRowPayloadSchema,
+			Emits:         workflowRowShape,
 			AllowVariants: false,
 			ManifestId:    b.manifestID,
 		})

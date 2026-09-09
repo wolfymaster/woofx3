@@ -29,14 +29,21 @@ message Action {
   // (e.g. "platform.govee", "function.lighting"). See
   // module.Trigger.taxonomy.
   repeated string taxonomy = 12;
-  // JSON-encoded array of ConfigField-shaped output declarations
-  // describing the action function's return value (e.g. the counter
-  // module's increment action returns `{next, previous, step}`).
-  // UI-only — the engine treats function results as opaque
-  // map[string]any at runtime; this powers the workflow builder's
-  // ${stepId.field} variable autocomplete. Empty/absent means the
-  // action has no declared outputs.
-  string output_schema = 13;
+  reserved 13;                       // was: string output_schema, replaced by returns
+  reserved "output_schema";
+  // JSON-encoded DataShape naming what this action's function hands back:
+  // `{"fields":[{"path","type","description?","example?"}]}`. Powers the
+  // workflow builder's ${stepId.field} variable autocomplete.
+  //
+  // Replaces output_schema, which carried the same intent in ConfigField
+  // shape — form vocabulary (`label`, `placeholder`, `options`) that means
+  // nothing for a returned value, and no way to express a nested path or an
+  // example. No module ever declared one, so it was removed rather than
+  // carried alongside.
+  //
+  // Deliberately not called a schema: the engine treats a function result as
+  // an opaque map[string]any and never validates it against this.
+  string returns = 14;
 }
 
 message ActionInput {
@@ -47,7 +54,9 @@ message ActionInput {
   string manifest_id = 5;
   string type = 6;
   repeated string taxonomy = 7;
-  string output_schema = 8;  // JSON string — see Action.output_schema
+  reserved 8;                        // was: string output_schema, replaced by returns
+  reserved "output_schema";
+  string returns = 9;  // JSON string — see Action.returns
 }
 
 message RegisterActionsRequest {

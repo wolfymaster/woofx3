@@ -66,29 +66,29 @@ describe("parseModuleTriggerRegistered", () => {
     });
   });
 
-  test("carries a declared payload schema through", () => {
-    const payloadSchema = JSON.stringify({ fields: [{ path: "bits", type: "number" }] });
+  test("carries a declared emits shape through", () => {
+    const emits = JSON.stringify({ fields: [{ path: "bits", type: "number" }] });
     const ce = {
       data: {
         module_key: "k",
-        triggers: [{ id: "uuid-1", name: "cheer", payload_schema: payloadSchema }],
+        triggers: [{ id: "uuid-1", name: "cheer", emits }],
       },
     };
 
     const result = parseModuleTriggerRegistered(ce);
 
-    expect(result.event.triggers[0]?.payloadSchema).toBe(payloadSchema);
+    expect(result.event.triggers[0]?.emits).toBe(emits);
   });
 
   // The db column defaults to "{}". Forwarding that would make every trigger
-  // look like it declares a payload schema that declares nothing, and the UI
-  // would stop falling back to the configFields derivation.
-  test("omits an undeclared payload schema rather than forwarding the column default", () => {
+  // look like it declares a shape naming nothing, and the UI would stop
+  // falling back to the configFields derivation.
+  test("omits an undeclared emits rather than forwarding the column default", () => {
     const ce = {
       data: {
         module_key: "k",
         triggers: [
-          { id: "uuid-1", name: "a", payload_schema: "{}" },
+          { id: "uuid-1", name: "a", emits: "{}" },
           { id: "uuid-2", name: "b" },
         ],
       },
@@ -96,8 +96,8 @@ describe("parseModuleTriggerRegistered", () => {
 
     const result = parseModuleTriggerRegistered(ce);
 
-    expect(result.event.triggers[0]).not.toHaveProperty("payloadSchema");
-    expect(result.event.triggers[1]).not.toHaveProperty("payloadSchema");
+    expect(result.event.triggers[0]).not.toHaveProperty("emits");
+    expect(result.event.triggers[1]).not.toHaveProperty("emits");
   });
 
   test("defaults missing fields to empty values", () => {
@@ -176,7 +176,6 @@ describe("parseModuleActionRegistered", () => {
             description: "desc",
             call: "mod.send",
             params_schema: "{}",
-            output_schema: "[]",
             taxonomy: ["platform.govee", "function.lighting"],
             created_by_type: "MODULE",
             created_by_ref: "twitch",
@@ -203,7 +202,6 @@ describe("parseModuleActionRegistered", () => {
             description: "desc",
             call: "mod.send",
             paramsSchema: "{}",
-            outputSchema: "[]",
             taxonomy: ["platform.govee", "function.lighting"],
             createdByType: "MODULE",
             createdByRef: "twitch",

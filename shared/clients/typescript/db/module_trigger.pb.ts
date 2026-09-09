@@ -35,18 +35,21 @@ export interface Trigger {
    */
   taxonomy: string[];
   /**
-   * JSON-encoded DataSchema describing the shape of `trigger.data` when
-   * this trigger fires: `{"fields":[{"path","type","description?","example?"}]}`.
+   * JSON-encoded DataShape naming what `trigger.data` carries when this
+   * trigger fires: `{"fields":[{"path","type","description?","example?"}]}`.
    *
-   * Distinct from config_schema, which describes the trigger's *configuration
-   * form*. The two are not the same shape: a trigger may emit payload keys it
-   * does not expose as config fields, and today those keys are simply
-   * undiscoverable — only config fields carrying an `eventPath` become
-   * variables. UI-only; the engine never validates an event payload against
-   * this. Empty/absent means fall back to the config_schema derivation, so a
-   * trigger that never declares one keeps working exactly as it does now.
+   * Deliberately not called a schema: nothing validates an event payload
+   * against it. It answers "which paths can a workflow reference", which is
+   * the only question the variable picker asks. config_schema is a different
+   * thing entirely — the trigger's configuration *form* — and the two are not
+   * the same shape, which is why this exists: only config fields carrying an
+   * `eventPath` become variables today, so a trigger emitting keys it does not
+   * also expose as config fields cannot advertise them at all.
+   *
+   * Empty/absent means the trigger declares nothing, and the UI falls back to
+   * the config_schema derivation exactly as it does today.
    */
-  payloadSchema: string;
+  emits: string;
 }
 
 export interface TriggerInput {
@@ -57,7 +60,7 @@ export interface TriggerInput {
   allowVariants: boolean;
   manifestId: string;
   taxonomy: string[];
-  payloadSchema: string;
+  emits: string;
 }
 
 export interface RegisterTriggersRequest {
@@ -137,7 +140,7 @@ export const Trigger = {
       createdByRef: "",
       manifestId: "",
       taxonomy: [],
-      payloadSchema: "",
+      emits: "",
       ...msg,
     };
   },
@@ -179,8 +182,8 @@ export const Trigger = {
     if (msg.taxonomy?.length) {
       writer.writeRepeatedString(13, msg.taxonomy);
     }
-    if (msg.payloadSchema) {
-      writer.writeString(14, msg.payloadSchema);
+    if (msg.emits) {
+      writer.writeString(14, msg.emits);
     }
     return writer;
   },
@@ -236,7 +239,7 @@ export const Trigger = {
           break;
         }
         case 14: {
-          msg.payloadSchema = reader.readString();
+          msg.emits = reader.readString();
           break;
         }
         default: {
@@ -282,7 +285,7 @@ export const TriggerInput = {
       allowVariants: false,
       manifestId: "",
       taxonomy: [],
-      payloadSchema: "",
+      emits: "",
       ...msg,
     };
   },
@@ -315,8 +318,8 @@ export const TriggerInput = {
     if (msg.taxonomy?.length) {
       writer.writeRepeatedString(8, msg.taxonomy);
     }
-    if (msg.payloadSchema) {
-      writer.writeString(9, msg.payloadSchema);
+    if (msg.emits) {
+      writer.writeString(9, msg.emits);
     }
     return writer;
   },
@@ -360,7 +363,7 @@ export const TriggerInput = {
           break;
         }
         case 9: {
-          msg.payloadSchema = reader.readString();
+          msg.emits = reader.readString();
           break;
         }
         default: {
@@ -701,7 +704,7 @@ export const TriggerJSON = {
       createdByRef: "",
       manifestId: "",
       taxonomy: [],
-      payloadSchema: "",
+      emits: "",
       ...msg,
     };
   },
@@ -741,8 +744,8 @@ export const TriggerJSON = {
     if (msg.taxonomy?.length) {
       json["taxonomy"] = msg.taxonomy;
     }
-    if (msg.payloadSchema) {
-      json["payloadSchema"] = msg.payloadSchema;
+    if (msg.emits) {
+      json["emits"] = msg.emits;
     }
     return json;
   },
@@ -791,9 +794,9 @@ export const TriggerJSON = {
     if (_taxonomy_) {
       msg.taxonomy = _taxonomy_;
     }
-    const _payloadSchema_ = json["payloadSchema"] ?? json["payload_schema"];
-    if (_payloadSchema_) {
-      msg.payloadSchema = _payloadSchema_;
+    const _emits_ = json["emits"];
+    if (_emits_) {
+      msg.emits = _emits_;
     }
     return msg;
   },
@@ -829,7 +832,7 @@ export const TriggerInputJSON = {
       allowVariants: false,
       manifestId: "",
       taxonomy: [],
-      payloadSchema: "",
+      emits: "",
       ...msg,
     };
   },
@@ -862,8 +865,8 @@ export const TriggerInputJSON = {
     if (msg.taxonomy?.length) {
       json["taxonomy"] = msg.taxonomy;
     }
-    if (msg.payloadSchema) {
-      json["payloadSchema"] = msg.payloadSchema;
+    if (msg.emits) {
+      json["emits"] = msg.emits;
     }
     return json;
   },
@@ -900,9 +903,9 @@ export const TriggerInputJSON = {
     if (_taxonomy_) {
       msg.taxonomy = _taxonomy_;
     }
-    const _payloadSchema_ = json["payloadSchema"] ?? json["payload_schema"];
-    if (_payloadSchema_) {
-      msg.payloadSchema = _payloadSchema_;
+    const _emits_ = json["emits"];
+    if (_emits_) {
+      msg.emits = _emits_;
     }
     return msg;
   },

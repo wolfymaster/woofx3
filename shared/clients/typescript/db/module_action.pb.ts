@@ -41,15 +41,20 @@ export interface Action {
    */
   taxonomy: string[];
   /**
-   * JSON-encoded array of ConfigField-shaped output declarations
-   * describing the action function's return value (e.g. the counter
-   * module's increment action returns `{next, previous, step}`).
-   * UI-only — the engine treats function results as opaque
-   * map[string]any at runtime; this powers the workflow builder's
-   * ${stepId.field} variable autocomplete. Empty/absent means the
-   * action has no declared outputs.
+   * JSON-encoded DataShape naming what this action's function hands back:
+   * `{"fields":[{"path","type","description?","example?"}]}`. Powers the
+   * workflow builder's ${stepId.field} variable autocomplete.
+   *
+   * Replaces output_schema, which carried the same intent in ConfigField
+   * shape — form vocabulary (`label`, `placeholder`, `options`) that means
+   * nothing for a returned value, and no way to express a nested path or an
+   * example. No module ever declared one, so it was removed rather than
+   * carried alongside.
+   *
+   * Deliberately not called a schema: the engine treats a function result as
+   * an opaque map[string]any and never validates it against this.
    */
-  outputSchema: string;
+  returns: string;
 }
 
 export interface ActionInput {
@@ -60,7 +65,7 @@ export interface ActionInput {
   manifestId: string;
   type: string;
   taxonomy: string[];
-  outputSchema: string;
+  returns: string;
 }
 
 export interface RegisterActionsRequest {
@@ -140,7 +145,7 @@ export const Action = {
       manifestId: "",
       type: "",
       taxonomy: [],
-      outputSchema: "",
+      returns: "",
       ...msg,
     };
   },
@@ -182,8 +187,8 @@ export const Action = {
     if (msg.taxonomy?.length) {
       writer.writeRepeatedString(12, msg.taxonomy);
     }
-    if (msg.outputSchema) {
-      writer.writeString(13, msg.outputSchema);
+    if (msg.returns) {
+      writer.writeString(14, msg.returns);
     }
     return writer;
   },
@@ -238,8 +243,8 @@ export const Action = {
           msg.taxonomy.push(reader.readString());
           break;
         }
-        case 13: {
-          msg.outputSchema = reader.readString();
+        case 14: {
+          msg.returns = reader.readString();
           break;
         }
         default: {
@@ -285,7 +290,7 @@ export const ActionInput = {
       manifestId: "",
       type: "",
       taxonomy: [],
-      outputSchema: "",
+      returns: "",
       ...msg,
     };
   },
@@ -318,8 +323,8 @@ export const ActionInput = {
     if (msg.taxonomy?.length) {
       writer.writeRepeatedString(7, msg.taxonomy);
     }
-    if (msg.outputSchema) {
-      writer.writeString(8, msg.outputSchema);
+    if (msg.returns) {
+      writer.writeString(9, msg.returns);
     }
     return writer;
   },
@@ -362,8 +367,8 @@ export const ActionInput = {
           msg.taxonomy.push(reader.readString());
           break;
         }
-        case 8: {
-          msg.outputSchema = reader.readString();
+        case 9: {
+          msg.returns = reader.readString();
           break;
         }
         default: {
@@ -698,7 +703,7 @@ export const ActionJSON = {
       manifestId: "",
       type: "",
       taxonomy: [],
-      outputSchema: "",
+      returns: "",
       ...msg,
     };
   },
@@ -738,8 +743,8 @@ export const ActionJSON = {
     if (msg.taxonomy?.length) {
       json["taxonomy"] = msg.taxonomy;
     }
-    if (msg.outputSchema) {
-      json["outputSchema"] = msg.outputSchema;
+    if (msg.returns) {
+      json["returns"] = msg.returns;
     }
     return json;
   },
@@ -788,9 +793,9 @@ export const ActionJSON = {
     if (_taxonomy_) {
       msg.taxonomy = _taxonomy_;
     }
-    const _outputSchema_ = json["outputSchema"] ?? json["output_schema"];
-    if (_outputSchema_) {
-      msg.outputSchema = _outputSchema_;
+    const _returns_ = json["returns"];
+    if (_returns_) {
+      msg.returns = _returns_;
     }
     return msg;
   },
@@ -826,7 +831,7 @@ export const ActionInputJSON = {
       manifestId: "",
       type: "",
       taxonomy: [],
-      outputSchema: "",
+      returns: "",
       ...msg,
     };
   },
@@ -859,8 +864,8 @@ export const ActionInputJSON = {
     if (msg.taxonomy?.length) {
       json["taxonomy"] = msg.taxonomy;
     }
-    if (msg.outputSchema) {
-      json["outputSchema"] = msg.outputSchema;
+    if (msg.returns) {
+      json["returns"] = msg.returns;
     }
     return json;
   },
@@ -897,9 +902,9 @@ export const ActionInputJSON = {
     if (_taxonomy_) {
       msg.taxonomy = _taxonomy_;
     }
-    const _outputSchema_ = json["outputSchema"] ?? json["output_schema"];
-    if (_outputSchema_) {
-      msg.outputSchema = _outputSchema_;
+    const _returns_ = json["returns"];
+    if (_returns_) {
+      msg.returns = _returns_;
     }
     return msg;
   },

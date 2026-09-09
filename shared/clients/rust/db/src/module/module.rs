@@ -103,18 +103,21 @@ pub struct Trigger {
     /// classification axes. Not validated against a fixed vocabulary.
     #[prost(string, repeated, tag="13")]
     pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// JSON-encoded DataSchema describing the shape of `trigger.data` when
-    /// this trigger fires: `{"fields":\[{"path","type","description?","example?"}\]}`.
+    /// JSON-encoded DataShape naming what `trigger.data` carries when this
+    /// trigger fires: `{"fields":\[{"path","type","description?","example?"}\]}`.
     ///
-    /// Distinct from config_schema, which describes the trigger's *configuration
-    /// form*. The two are not the same shape: a trigger may emit payload keys it
-    /// does not expose as config fields, and today those keys are simply
-    /// undiscoverable — only config fields carrying an `eventPath` become
-    /// variables. UI-only; the engine never validates an event payload against
-    /// this. Empty/absent means fall back to the config_schema derivation, so a
-    /// trigger that never declares one keeps working exactly as it does now.
+    /// Deliberately not called a schema: nothing validates an event payload
+    /// against it. It answers "which paths can a workflow reference", which is
+    /// the only question the variable picker asks. config_schema is a different
+    /// thing entirely — the trigger's configuration *form* — and the two are not
+    /// the same shape, which is why this exists: only config fields carrying an
+    /// `eventPath` become variables today, so a trigger emitting keys it does not
+    /// also expose as config fields cannot advertise them at all.
+    ///
+    /// Empty/absent means the trigger declares nothing, and the UI falls back to
+    /// the config_schema derivation exactly as it does today.
     #[prost(string, tag="14")]
-    pub payload_schema: ::prost::alloc::string::String,
+    pub emits: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct TriggerInput {
@@ -133,9 +136,9 @@ pub struct TriggerInput {
     pub manifest_id: ::prost::alloc::string::String,
     #[prost(string, repeated, tag="8")]
     pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// JSON string — see Trigger.payload_schema
+    /// JSON string — see Trigger.emits
     #[prost(string, tag="9")]
-    pub payload_schema: ::prost::alloc::string::String,
+    pub emits: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterTriggersRequest {
@@ -217,15 +220,20 @@ pub struct Action {
     /// module.Trigger.taxonomy.
     #[prost(string, repeated, tag="12")]
     pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// JSON-encoded array of ConfigField-shaped output declarations
-    /// describing the action function's return value (e.g. the counter
-    /// module's increment action returns `{next, previous, step}`).
-    /// UI-only — the engine treats function results as opaque
-    /// map\[string\]any at runtime; this powers the workflow builder's
-    /// ${stepId.field} variable autocomplete. Empty/absent means the
-    /// action has no declared outputs.
-    #[prost(string, tag="13")]
-    pub output_schema: ::prost::alloc::string::String,
+    /// JSON-encoded DataShape naming what this action's function hands back:
+    /// `{"fields":\[{"path","type","description?","example?"}\]}`. Powers the
+    /// workflow builder's ${stepId.field} variable autocomplete.
+    ///
+    /// Replaces output_schema, which carried the same intent in ConfigField
+    /// shape — form vocabulary (`label`, `placeholder`, `options`) that means
+    /// nothing for a returned value, and no way to express a nested path or an
+    /// example. No module ever declared one, so it was removed rather than
+    /// carried alongside.
+    ///
+    /// Deliberately not called a schema: the engine treats a function result as
+    /// an opaque map\[string\]any and never validates it against this.
+    #[prost(string, tag="14")]
+    pub returns: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ActionInput {
@@ -244,9 +252,9 @@ pub struct ActionInput {
     pub r#type: ::prost::alloc::string::String,
     #[prost(string, repeated, tag="7")]
     pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// JSON string — see Action.output_schema
-    #[prost(string, tag="8")]
-    pub output_schema: ::prost::alloc::string::String,
+    /// JSON string — see Action.returns
+    #[prost(string, tag="9")]
+    pub returns: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterActionsRequest {

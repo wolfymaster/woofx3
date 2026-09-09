@@ -72,52 +72,59 @@ export interface TriggerConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Data schemas — what an event payload or an action result actually contains.
+// Data shapes — what an event payload or an action result actually carries.
 //
-// A ConfigField describes a *form control*; a DataSchemaField describes a
-// *value that exists at runtime*. They are not the same thing, which is why
-// this is a separate shape rather than more ConfigFields:
+// Note the word: this is not a schema, and nothing is ever validated against
+// it. It answers one question — "which paths can a workflow reference?" — for
+// the variable picker. Calling it a schema would promise enforcement the
+// engine does not perform, and would put it in the same bucket as
+// configSchema / paramsSchema / settingsSchema, which are something else
+// entirely: definitions of a form a user fills in.
+//
+// A ConfigField describes a form control; a DataShapeField describes a value
+// that exists at runtime. Keeping them apart is the point:
 //
 //   - A trigger's configFields only become variables when they carry an
 //     `eventPath`, so a trigger that emits payload keys it does not also
 //     expose as config fields cannot advertise them at all.
-//   - An action's outputSchema is the closest thing to a declared result
-//     shape, but it is ConfigField-shaped, so it inherits form vocabulary
-//     (`label`, `placeholder`, `options`) that means nothing for a value.
+//   - An action's result had no declaration that was not form-shaped, so it
+//     inherited `label`, `placeholder` and `options` — vocabulary that means
+//     nothing for a returned value — and could express neither a nested path
+//     nor an example.
 //
 // Deliberately a flat list of path strings rather than full JSON Schema: it
 // matches `${trigger.data.X}` / `${tasks.<id>.<key>}` access exactly, and is
-// trivial to render in a variable picker. Nothing validates a payload against
-// it — this is discovery, not enforcement.
+// trivial to render.
 // ---------------------------------------------------------------------------
 
-export type DataSchemaFieldType = "string" | "number" | "boolean" | "array" | "object" | "unknown";
+export type DataShapeFieldType = "string" | "number" | "boolean" | "array" | "object" | "unknown";
 
-export interface DataSchemaField {
+export interface DataShapeField {
   /** Dot path into the value, e.g. `"user_name"` or `"channel.title"`. */
   path: string;
-  type: DataSchemaFieldType;
+  type: DataShapeFieldType;
   description?: string;
   example?: unknown;
 }
 
-export interface DataSchema {
-  fields: DataSchemaField[];
+export interface DataShape {
+  fields: DataShapeField[];
 }
 
 /**
- * Parse a `payloadSchema` / `outputSchema` JSON string into a DataSchema.
+ * Parse a trigger's `emits` / an action's `returns` JSON string.
  *
- * Returns undefined for anything that does not carry a `fields` array —
- * absent, empty, malformed, or the ConfigField[] array that `outputSchema`
- * has always held. Undefined means "nothing declared here", and callers fall
- * back to deriving variables from configFields / outputFields exactly as they
- * do today, so a module that never migrates keeps working unchanged.
+ * Returns undefined for anything without a usable `fields` array — absent,
+ * empty, or malformed. Undefined means "declared nothing", and callers fall
+ * back to deriving variables from configFields exactly as they do today, so a
+ * module that never declares a shape keeps working unchanged.
  *
- * Consumers pass engine-provided strings straight in; a module author's typo
- * must not throw in a variable picker.
+ * Barkloader rejects a malformed shape at install time, so a stored value
+ * should always be well-formed. This stays defensive anyway: it also parses
+ * rows written before that validation existed, and a variable picker must
+ * never throw.
  */
-export function parseDataSchema(raw: string | undefined | null): DataSchema | undefined {
+export function parseDataShape(raw: string | undefined | null): DataShape | undefined {
   if (!raw) {
     return undefined;
   }
@@ -135,15 +142,11 @@ export function parseDataSchema(raw: string | undefined | null): DataSchema | un
     return undefined;
   }
   const valid = fields.filter(
-    (field): field is DataSchemaField =>
+    (field): field is DataShapeField =>
       typeof field === "object" &&
       field !== null &&
-      typeof (field as DataSchemaField).path === "string" &&
-      (field as DataSchemaField).path.length > 0
+      typeof (field as DataShapeField).path === "string" &&
+      (field as DataShapeField).path.length > 0
   );
   return valid.length > 0 ? { fields: valid } : undefined;
-}
-
-export interface ActionConfig {
-  fields: ConfigField[];
 }

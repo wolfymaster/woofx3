@@ -40,19 +40,20 @@ pub struct ManifestTrigger {
     pub taxonomy: Vec<String>,
     #[serde(default)]
     pub schema: Option<serde_json::Value>,
-    /// `DataSchema`-shaped declaration of what `trigger.data` looks like when
-    /// this trigger fires:
+    /// What `trigger.data` carries when this trigger fires:
     /// `{ "fields": [{ "path": "user_name", "type": "string" }] }`.
     ///
     /// Distinct from `schema`, which is the trigger's *configuration form*.
     /// Only config fields carrying an `eventPath` become workflow variables,
-    /// so a trigger that emits payload keys it does not also expose as config
-    /// fields has no way to advertise them without this. UI-only, for the
-    /// workflow builder's `${trigger.data.X}` autocomplete — the engine never
-    /// validates an event payload against it. Absent means the builder falls
-    /// back to deriving variables from `schema`, exactly as it does today.
+    /// so a trigger emitting payload keys it does not also expose as config
+    /// fields has no way to advertise them without this. Absent means the
+    /// builder falls back to deriving variables from `schema`, exactly as it
+    /// does today.
+    ///
+    /// Not called a schema on purpose: nothing validates an event payload
+    /// against it. It answers "which paths can be referenced".
     #[serde(default)]
-    pub payload_schema: Option<serde_json::Value>,
+    pub emits: Option<ManifestDataShape>,
     /// When true, the UI lets the user create multiple bound instances ("variants")
     /// of this trigger, each with its own values for the `schema` fields. Used for
     /// triggers like cheer/subscribe/subscription.gift where the same event class
@@ -124,15 +125,69 @@ pub struct ManifestAction {
     /// `ManifestTrigger::taxonomy` for the shape/convention.
     #[serde(default)]
     pub taxonomy: Vec<String>,
-    /// `ConfigField`-shaped declarations describing the action function's
-    /// return value (e.g. `[{ id: "next", label: "New value", type: "number" }]`
-    /// for the counter module's increment action). UI-only, for the
-    /// workflow builder's `${stepId.field}` variable autocomplete — the
-    /// engine never validates a function's actual return value against
-    /// this. Same array shape as `schema`, minus input-only properties
-    /// (`required`, `placeholder`, `source`, …).
+    /// What this action's function hands back:
+    /// `{ "fields": [{ "path": "next", "type": "number" }] }`. Feeds the
+    /// workflow builder's `${stepId.field}` autocomplete.
+    ///
+    /// Replaces the older `outputs` key, which said the same thing in
+    /// `ConfigField` shape — form vocabulary (`label`, `placeholder`,
+    /// `options`) that means nothing for a returned value, and no way to
+    /// express a nested path or an example.
+    ///
+    /// Not called a schema on purpose: the engine treats a function result as
+    /// an opaque map and never validates it against this.
     #[serde(default)]
-    pub outputs: serde_json::Value,
+    pub returns: Option<ManifestDataShape>,
+}
+
+/// A flat list of the paths a runtime value carries, with their types.
+///
+/// Deliberately not JSON Schema: it matches `${trigger.data.X}` /
+/// `${tasks.<id>.<key>}` access exactly and renders straight into a variable
+/// picker, which is the only question anything asks of it. Nothing validates a
+/// payload or a function result against it, so it carries no `required`, no
+/// nesting and no constraints — those would all be promises the engine does
+/// not keep.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManifestDataShape {
+    #[serde(default)]
+    pub fields: Vec<ManifestDataShapeField>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestDataShapeField {
+    /// Dot path into the value, e.g. `"bits"` or `"channel.title"`.
+    pub path: String,
+    /// One of `DATA_SHAPE_FIELD_TYPES`. Validated at install time rather than
+    /// as a serde enum so an unrecognised token reports the offending field
+    /// and the accepted set, instead of a bare "unknown variant".
+    #[serde(rename = "type")]
+    pub field_type: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub example: Option<serde_json::Value>,
+}
+
+/// The accepted `type` tokens for a data-shape field. Closed on purpose: this
+/// drives a picker's rendering, so an unrecognised token is an author mistake
+/// worth reporting rather than an extension point.
+pub const DATA_SHAPE_FIELD_TYPES: [&str; 6] =
+    ["string", "number", "boolean", "array", "object", "unknown"];
+
+/// Serialize a declared shape for the wire, or `"{}"` when the manifest
+/// declared none.
+///
+/// `"{}"` rather than `"null"`: the db column is NOT NULL and every consumer
+/// parses this as an object, so "declared nothing" needs no null branch
+/// anywhere. The gateway drops the `"{}"` again rather than forwarding it, so
+/// an undeclared shape never reads as one declaring zero fields.
+fn encode_data_shape(shape: Option<&ManifestDataShape>) -> String {
+    match shape {
+        Some(shape) => serde_json::to_string(shape).unwrap_or_else(|_| "{}".to_string()),
+        None => "{}".to_string(),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -695,21 +750,13 @@ impl ManifestTrigger {
         } else {
             self.event.clone()
         };
-        // "{}" rather than "null" for an undeclared schema: the column is
-        // NOT NULL and every consumer parses this as an object, so an empty
-        // one reads as "declared nothing" without a null branch anywhere.
-        let payload_schema = self
-            .payload_schema
-            .as_ref()
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "{}".to_string());
         super::db_proxy::TriggerInputJson {
             taxonomy: self.resolve_taxonomy(),
             name: self.name.clone(),
             description: self.description.clone(),
             event,
             config_schema,
-            payload_schema,
+            emits: encode_data_shape(self.emits.as_ref()),
             allow_variants: self.allow_variants,
             manifest_id: self.id.clone(),
         }
@@ -978,7 +1025,7 @@ impl ManifestAction {
             description: self.description.clone(),
             call: resolved_call.to_string(),
             params_schema: self.schema.to_string(),
-            output_schema: self.outputs.to_string(),
+            returns: encode_data_shape(self.returns.as_ref()),
             taxonomy: self.taxonomy.clone(),
             manifest_id: self.id.clone(),
         }
@@ -1552,26 +1599,29 @@ mod tests {
     }
 
     #[test]
-    fn action_to_input_projects_outputs() {
+    fn action_to_input_projects_returns() {
         let a: ManifestAction = serde_json::from_value(serde_json::json!({
             "id": "increment",
             "name": "Increment Counter",
             "type": "function",
             "function": "increment",
-            "outputs": [
-                { "id": "next", "label": "New value", "type": "number" },
-                { "id": "previous", "label": "Previous value", "type": "number" }
-            ]
+            "returns": {
+                "fields": [
+                    { "path": "next", "type": "number", "description": "New value" },
+                    { "path": "previous", "type": "number" }
+                ]
+            }
         }))
         .expect("parse");
-        let output_schema = a.to_input("increment").output_schema;
-        let parsed: serde_json::Value = serde_json::from_str(&output_schema).expect("valid json");
-        assert_eq!(parsed[0]["id"], "next");
-        assert_eq!(parsed[1]["id"], "previous");
+        let returns = a.to_input("increment").returns;
+        let parsed: serde_json::Value = serde_json::from_str(&returns).expect("valid json");
+        assert_eq!(parsed["fields"][0]["path"], "next");
+        assert_eq!(parsed["fields"][0]["type"], "number");
+        assert_eq!(parsed["fields"][1]["path"], "previous");
     }
 
     #[test]
-    fn action_to_input_defaults_outputs_to_null_when_absent() {
+    fn action_to_input_defaults_returns_to_empty_object() {
         let a: ManifestAction = serde_json::from_value(serde_json::json!({
             "id": "play_alert",
             "name": "Play Alert",
@@ -1579,19 +1629,32 @@ mod tests {
             "function": "play_alert"
         }))
         .expect("parse");
-        // Absent `outputs` deserializes to Value::Null, which `.to_string()`s
-        // to the literal "null" — mirrors how `schema` already behaves when
-        // omitted, and the UI-side parser treats non-array JSON as "no fields".
-        assert_eq!(a.to_input("play_alert").output_schema, "null");
+        assert_eq!(a.to_input("play_alert").returns, "{}");
+    }
+
+    // The old ConfigField-shaped `outputs` key is gone. A manifest still
+    // carrying one parses fine and simply declares nothing, so an unmigrated
+    // module installs rather than failing on a key it cannot know is dead.
+    #[test]
+    fn action_ignores_the_removed_outputs_key() {
+        let a: ManifestAction = serde_json::from_value(serde_json::json!({
+            "id": "increment",
+            "name": "Increment Counter",
+            "type": "function",
+            "function": "increment",
+            "outputs": [{ "id": "next", "label": "New value", "type": "number" }]
+        }))
+        .expect("parse");
+        assert_eq!(a.to_input("increment").returns, "{}");
     }
 
     #[test]
-    fn trigger_to_input_projects_payload_schema() {
+    fn trigger_to_input_projects_emits() {
         let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
             "id": "channel_cheer",
             "name": "Cheer",
             "event": "cheer.channel.twitch",
-            "payloadSchema": {
+            "emits": {
                 "fields": [
                     { "path": "bits", "type": "number", "description": "Bits cheered" },
                     { "path": "user_name", "type": "string" }
@@ -1599,15 +1662,15 @@ mod tests {
             }
         }))
         .expect("parse");
-        let payload_schema = t.to_input().payload_schema;
-        let parsed: serde_json::Value = serde_json::from_str(&payload_schema).expect("valid json");
+        let emits = t.to_input().emits;
+        let parsed: serde_json::Value = serde_json::from_str(&emits).expect("valid json");
         assert_eq!(parsed["fields"][0]["path"], "bits");
         assert_eq!(parsed["fields"][0]["type"], "number");
         assert_eq!(parsed["fields"][1]["path"], "user_name");
     }
 
     #[test]
-    fn trigger_to_input_defaults_payload_schema_to_empty_object() {
+    fn trigger_to_input_defaults_emits_to_empty_object() {
         let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
             "id": "channel_cheer",
             "name": "Cheer",
@@ -1615,10 +1678,10 @@ mod tests {
         }))
         .expect("parse");
         // "{}" rather than "null": the column is NOT NULL and every consumer
-        // parses this as an object, so an undeclared schema reads as
-        // "declared nothing" with no null branch anywhere. A trigger that
-        // never declares one keeps deriving its variables from `schema`.
-        assert_eq!(t.to_input().payload_schema, "{}");
+        // parses this as an object, so an undeclared shape reads as "declared
+        // nothing" with no null branch anywhere. A trigger that never declares
+        // one keeps deriving its variables from `schema`.
+        assert_eq!(t.to_input().emits, "{}");
     }
 
     #[test]

@@ -40,7 +40,7 @@ interface RawTrigger {
   description?: unknown;
   event?: unknown;
   config_schema?: unknown;
-  payload_schema?: unknown;
+  emits?: unknown;
   allow_variants?: unknown;
   created_by_type?: unknown;
   created_by_ref?: unknown;
@@ -55,7 +55,7 @@ interface RawAction {
   description?: unknown;
   call?: unknown;
   params_schema?: unknown;
-  output_schema?: unknown;
+  returns?: unknown;
   created_by_type?: unknown;
   created_by_ref?: unknown;
 }
@@ -160,10 +160,11 @@ function mapTrigger(raw: RawTrigger): TriggerDefinition {
   };
   // Only carried when the module declared one. An empty object is what the
   // db column defaults to, and forwarding it would make every trigger look
-  // like it has a payload schema that declares nothing.
-  const payloadSchema = asString(raw.payload_schema);
-  if (payloadSchema !== "" && payloadSchema !== "{}") {
-    def.payloadSchema = payloadSchema;
+  // like it declares a shape naming nothing — which would stop the UI falling
+  // back to the configFields derivation it uses today.
+  const emits = asString(raw.emits);
+  if (emits !== "" && emits !== "{}") {
+    def.emits = emits;
   }
   const canonicalId = asString(raw.canonical_id);
   if (canonicalId !== "") {
@@ -184,10 +185,14 @@ function mapAction(raw: RawAction): ActionDefinition {
     description: asString(raw.description),
     call: asString(raw.call),
     paramsSchema: asString(raw.params_schema),
-    outputSchema: asString(raw.output_schema),
     createdByType: asString(raw.created_by_type),
     createdByRef: asString(raw.created_by_ref),
   };
+  // Same "{}" rule as a trigger's emits, above.
+  const returns = asString(raw.returns);
+  if (returns !== "" && returns !== "{}") {
+    def.returns = returns;
+  }
   const canonicalId = asString(raw.canonical_id);
   if (canonicalId !== "") {
     def.canonicalId = canonicalId;

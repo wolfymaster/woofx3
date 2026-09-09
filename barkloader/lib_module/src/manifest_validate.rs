@@ -30,9 +30,9 @@ use super::canonical_id::{
 };
 use super::db_proxy_client::ModuleDbProxy;
 use super::module_manifest::{
-    ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestFunction,
-    ManifestOverlay, ManifestResourceKind, ManifestTrigger, ManifestWorkflow, ModuleManifest,
-    ModuleWidget,
+    ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestDataShape,
+    ManifestFunction, ManifestOverlay, ManifestResourceKind, ManifestTrigger, ManifestWorkflow,
+    ModuleManifest, ModuleWidget, DATA_SHAPE_FIELD_TYPES,
 };
 
 /// Resolved action implementation. Mirrors `ManifestActionImpl` but
@@ -159,6 +159,7 @@ pub fn validate(manifest: &ModuleManifest) -> Result<ResolvedManifest> {
     validate_asset_paths(&manifest.assets)?;
     validate_widget_entries(&manifest.widgets)?;
     validate_resource_kinds(&manifest.resources)?;
+    validate_data_shapes(&manifest.triggers, &manifest.actions)?;
 
     // Pass 2: resolve references for kinds that have them.
     let triggers = entries_to_resolved(&triggers_table, |e| ResolvedTrigger {
@@ -537,6 +538,60 @@ fn validate_widget_entries(widgets: &[ModuleWidget]) -> Result<()> {
     Ok(())
 }
 
+/// Validate every declared `emits` / `returns` shape.
+///
+/// Serde has already enforced the structure by the time this runs — a `fields`
+/// that is not a list, or an entry missing `path` or `type`, fails at parse.
+/// What is left are the rules serde cannot express, and each one is reported
+/// with the offending module resource named so the author can find it:
+///
+///   - a `path` must be non-empty
+///   - a `type` must be one of the accepted tokens
+///   - paths must be unique within one shape
+///
+/// A duplicate path is rejected rather than deduplicated because the two
+/// entries disagree about something — type, description, or example — and
+/// silently keeping one would make the picker show an answer the author never
+/// wrote. This runs before any database or file-system side effect, so a bad
+/// declaration aborts the install rather than landing a shape that renders
+/// wrong variables forever.
+fn validate_data_shapes(triggers: &[ManifestTrigger], actions: &[ManifestAction]) -> Result<()> {
+    for (i, t) in triggers.iter().enumerate() {
+        if let Some(shape) = &t.emits {
+            validate_data_shape(shape, &format!("trigger #{i} ({}): `emits`", t.id))?;
+        }
+    }
+    for (i, a) in actions.iter().enumerate() {
+        if let Some(shape) = &a.returns {
+            validate_data_shape(shape, &format!("action #{i} ({}): `returns`", a.id))?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_data_shape(shape: &ManifestDataShape, context: &str) -> Result<()> {
+    let mut seen: HashSet<&str> = HashSet::with_capacity(shape.fields.len());
+    for (i, field) in shape.fields.iter().enumerate() {
+        let path = field.path.trim();
+        if path.is_empty() {
+            return Err(anyhow!(
+                "{context} field #{i}: `path` is required and must be non-empty"
+            ));
+        }
+        if !DATA_SHAPE_FIELD_TYPES.contains(&field.field_type.as_str()) {
+            return Err(anyhow!(
+                "{context} field #{i} ({path}): unknown `type` {:?}; expected one of {}",
+                field.field_type,
+                DATA_SHAPE_FIELD_TYPES.join(", ")
+            ));
+        }
+        if !seen.insert(path) {
+            return Err(anyhow!("{context}: duplicate `path` {path:?}"));
+        }
+    }
+    Ok(())
+}
+
 /// Cheap manifest-time validation for `assets[]`: each entry must have
 /// a non-empty `path` that doesn't try to escape the module root.
 /// Existence inside the zip is checked at install time by the upload
@@ -813,6 +868,104 @@ mod tests {
             }}"#
         );
         parse(&json)
+    }
+
+    // ---------------------------------------------------------------
+    // Data shapes: `emits` on triggers, `returns` on actions
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn accepts_a_well_formed_emits_and_returns() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "emits": { "fields": [
+                    { "path": "bits", "type": "number", "description": "Bits cheered.", "example": 1000 },
+                    { "path": "channel.title", "type": "string" }
+                ] } }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
+                "returns": { "fields": [{ "path": "next", "type": "number" }] } }]"#);
+        validate(&m).expect("validate ok");
+    }
+
+    #[test]
+    fn accepts_a_manifest_declaring_no_shapes_at_all() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus" }]"#);
+        validate(&m).expect("validate ok");
+    }
+
+    #[test]
+    fn rejects_an_empty_path_in_emits() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "emits": { "fields": [{ "path": "  ", "type": "string" }] } }]"#);
+        let err = validate(&m).expect_err("empty path must fail");
+        let msg = err.to_string();
+        assert!(msg.contains("trigger #0 (t1)"), "names the offending trigger: {msg}");
+        assert!(msg.contains("`emits`"), "names the offending field: {msg}");
+        assert!(msg.contains("path"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_an_unknown_field_type() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "emits": { "fields": [{ "path": "bits", "type": "integer" }] } }]"#);
+        let err = validate(&m).expect_err("unknown type must fail");
+        let msg = err.to_string();
+        // The accepted set is quoted back so the author does not have to go
+        // find the docs to learn "integer" should have been "number".
+        assert!(msg.contains("integer"), "{msg}");
+        assert!(msg.contains("number"), "lists the accepted tokens: {msg}");
+    }
+
+    // Two entries under one path disagree about type, description or example.
+    // Keeping one silently would render a variable the author never wrote.
+    #[test]
+    fn rejects_duplicate_paths_within_one_shape() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "emits": { "fields": [
+                    { "path": "bits", "type": "number" },
+                    { "path": "bits", "type": "string" }
+                ] } }]"#);
+        let err = validate(&m).expect_err("duplicate path must fail");
+        assert!(err.to_string().contains("duplicate"), "{}", err);
+    }
+
+    #[test]
+    fn rejects_a_bad_returns_on_an_action() {
+        let m = minimal(r#",
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
+                "returns": { "fields": [{ "path": "next", "type": "int" }] } }]"#);
+        let err = validate(&m).expect_err("unknown type must fail");
+        let msg = err.to_string();
+        assert!(msg.contains("action #0 (a1)"), "names the offending action: {msg}");
+        assert!(msg.contains("`returns`"), "{msg}");
+    }
+
+    // Structure is serde's job; this pins that a malformed shape fails at
+    // parse rather than reaching validation as something half-built.
+    #[test]
+    fn a_non_list_fields_value_fails_to_parse() {
+        let json = r#"{
+            "id": "test_mod", "name": "Test Mod", "version": "1.0.0",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "emits": { "fields": "oops" } }]
+        }"#;
+        serde_json::from_str::<ModuleManifest>(json).expect_err("must not parse");
+    }
+
+    #[test]
+    fn a_field_missing_its_type_fails_to_parse() {
+        let json = r#"{
+            "id": "test_mod", "name": "Test Mod", "version": "1.0.0",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "emits": { "fields": [{ "path": "bits" }] } }]
+        }"#;
+        serde_json::from_str::<ModuleManifest>(json).expect_err("must not parse");
     }
 
     // ---------------------------------------------------------------
