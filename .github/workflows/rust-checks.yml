@@ -53,8 +53,16 @@ jobs:
       # build script shells out to protoc. It is not on the runner image, and
       # locally it comes from devbox - so this is the one thing a developer
       # machine has that CI does not.
+      #
+      # Fetched directly rather than through apt: `apt-get update` refreshes
+      # every list the runner image ships, including third-party ones this
+      # build has nothing to do with, and fails the job when any of them is
+      # briefly inconsistent.
       - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+        if: matrix.crate == 'barkloader'
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       # No rust-toolchain.toml and no rust in devbox.json, so the version is
       # whatever the developer has. `resolver = "3"` in barkloader's workspace

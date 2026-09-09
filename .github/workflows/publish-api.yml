@@ -40,8 +40,17 @@ jobs:
       # The SDK is type-only + capnweb facade; tsc --noEmit is the
       # real check. Running it from the package dir catches drift
       # between the shared interface and capnweb's published types.
+      #
+      # The compiler is pinned to the version api/ uses. Unpinned, `bunx tsc`
+      # resolves whatever is newest, so a TypeScript release breaks publishing
+      # for a package nobody touched.
+      #
+      # skipLibCheck for the same reason api/tsconfig.json sets it: capnweb's
+      # shipped .d.ts has a rest element TypeScript rejects, and it is not
+      # ours to fix. target esnext because client.ts uses `Symbol.dispose`,
+      # which es2022's lib does not declare.
       - name: Type check
-        run: bunx tsc --noEmit --target es2022 --module esnext --moduleResolution node --strict *.ts
+        run: bunx tsc@5.9.3 --noEmit --target esnext --module esnext --moduleResolution node --strict --skipLibCheck *.ts
 
       - name: Configure GitHub Packages auth
         run: |
