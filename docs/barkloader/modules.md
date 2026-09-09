@@ -257,7 +257,7 @@ Every entry in a trigger or action `schema` array is a `ConfigField`. The canoni
 | `operator` | string | no | Comparison operator emitted with this field's value (e.g. `gte`, `eq`). |
 | `description` | string | no | Short prose rendered as muted helper text directly below the input. Always visible. |
 | `hint` | string | no | Longer prose rendered inside the field's info-icon popover. |
-| `examplePayload` | string | no | JSON-encoded **example** of the event payload this field reads from, rendered with syntax highlighting in the info-icon popover so a user authoring a path-style input can see what the data looks like. An illustration, not a declaration — nothing reads its keys, and it may be partial. Renamed from `dataSchema`; see [the note below](#renamed-from-dataschema). |
+| `examplePayload` | string | no | JSON-encoded **example** of the event payload this field reads from, rendered with syntax highlighting in the info-icon popover so a user authoring a path-style input can see what the data looks like. An illustration, not a declaration — nothing reads its keys, and it may be partial. Renamed from `dataSchema` — the old spelling is not accepted; see [the note below](#renamed-from-dataschema). |
 
 The info icon next to a field's label appears if and only if `hint` or `examplePayload` is present. `description` renders independently below the input.
 
@@ -265,7 +265,7 @@ The info icon next to a field's label appears if and only if `hint` or `exampleP
 
 `examplePayload` was called `dataSchema`, which was wrong twice: it holds an example, not a schema, and nothing validates against it. The old name also grouped it with `configSchema` / `paramsSchema`, which describe *forms*, and sat one capital letter from `DataShape`, which describes a *value*.
 
-`dataSchema` is still read, so manifests and stored rows written before the rename keep working with no change. Consumers should prefer `examplePayload` and fall back — use `configFieldExamplePayload()` from `shared/clients/typescript/api/ui-schema.ts` rather than re-deriving that precedence. New manifests should set only `examplePayload`.
+The old name is **not** accepted — there is one spelling, and a manifest still using `dataSchema` must be migrated. See [Field declarations](#field-declarations) for why this contract carries no aliases.
 
 #### Picker field types
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type ConfigField, configFieldExamplePayload, type DataShape, parseDataShape } from "@woofx3/api/ui-schema";
+import { type DataShape, parseDataShape } from "@woofx3/api/ui-schema";
 
 // parseDataShape is the one place that decides whether a trigger's `emits` /
 // an action's `returns` names anything at all. Every "no" answer means the
@@ -63,30 +63,5 @@ describe("parseDataShape", () => {
 
   test("returns undefined when every entry is unusable", () => {
     expect(parseDataShape('{"fields":[{"type":"string"},null]}')).toBeUndefined();
-  });
-});
-
-// examplePayload was called dataSchema. Both names have to resolve while
-// manifests and stored rows written before the rename are still in the wild.
-describe("configFieldExamplePayload", () => {
-  const base: ConfigField = { id: "minBits", label: "Minimum bits", type: "number" };
-
-  test("reads the current name", () => {
-    expect(configFieldExamplePayload({ ...base, examplePayload: '{"bits":1000}' })).toBe('{"bits":1000}');
-  });
-
-  test("falls back to the pre-rename name", () => {
-    expect(configFieldExamplePayload({ ...base, dataSchema: '{"bits":1000}' })).toBe('{"bits":1000}');
-  });
-
-  // A field carrying both is taking the new name at its word.
-  test("prefers the current name when a field carries both", () => {
-    const field = { ...base, examplePayload: '{"new":true}', dataSchema: '{"old":true}' };
-
-    expect(configFieldExamplePayload(field)).toBe('{"new":true}');
-  });
-
-  test("returns undefined when a field declares neither", () => {
-    expect(configFieldExamplePayload(base)).toBeUndefined();
   });
 });
