@@ -549,10 +549,14 @@ fn validate_widget_entries(widgets: &[ModuleWidget]) -> Result<()> {
 ///   - a `type` must be one of the accepted tokens
 ///   - paths must be unique within one shape
 ///
-/// A duplicate path is rejected rather than deduplicated because the two
-/// entries disagree about something — type, description, or example — and
-/// silently keeping one would make the picker show an answer the author never
-/// wrote. This runs before any database or file-system side effect, so a bad
+/// A duplicate path is rejected rather than deduplicated. A path is a
+/// variable's identity, so two entries under one path are either redundant or
+/// contradictory, and nothing here can tell which the author meant.
+/// Deduplicating would mean silently picking one — harmless if they match,
+/// arbitrary if they do not. Rejecting covers both without guessing, and a
+/// duplicate is an author slip that should not reach a manifest anyway.
+///
+/// This runs before any database or file-system side effect, so a bad
 /// declaration aborts the install rather than landing a shape that renders
 /// wrong variables forever.
 fn validate_data_shapes(triggers: &[ManifestTrigger], actions: &[ManifestAction]) -> Result<()> {
@@ -920,8 +924,8 @@ mod tests {
         assert!(msg.contains("number"), "lists the accepted tokens: {msg}");
     }
 
-    // Two entries under one path disagree about type, description or example.
-    // Keeping one silently would render a variable the author never wrote.
+    // A path is a variable's identity, so a duplicate is either redundant or
+    // contradictory and nothing can tell which. Rejecting beats picking one.
     #[test]
     fn rejects_duplicate_paths_within_one_shape() {
         let m = minimal(r#",

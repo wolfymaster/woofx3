@@ -394,7 +394,7 @@ Deliberately a flat list of path strings rather than full JSON Schema: it matche
 |---|---|
 | `path` must be non-empty | An unnamed variable cannot be referenced. |
 | `type` must be one of the six tokens | The accepted set is quoted back, so `"integer"` tells you it should have been `"number"`. |
-| paths must be unique within one shape | Two entries under one path disagree about type, description or example; silently keeping one would show a variable the author never wrote. |
+| paths must be unique within one shape | A path is a variable's identity. Two entries under one are either redundant or contradictory, and nothing can tell which — deduplicating would mean silently picking one. |
 
 #### A trigger declares what it `emits`
 
