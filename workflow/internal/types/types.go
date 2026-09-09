@@ -131,12 +131,31 @@ type WorkflowOptions struct {
 }
 
 type Event struct {
-	ID      string                 `json:"id"`
-	Type    string                 `json:"type"`
-	Source  string                 `json:"source"`
-	Time    time.Time              `json:"time"`
-	Data    map[string]any `json:"data"`
-	Subject string                 `json:"subject,omitempty"`
+	ID     string    `json:"id"`
+	Type   string    `json:"type"`
+	Source string    `json:"source"`
+	Time   time.Time `json:"time"`
+	// Platform is the CloudEvents extension attribute naming where the
+	// event came from ("twitch", ...). Event types are platform-agnostic,
+	// so this is how a workflow subscribed to `channel.follow` narrows to
+	// one platform. Empty for events with no originating platform (module
+	// lifecycle, db outbox, scheduler).
+	Platform string         `json:"platform,omitempty"`
+	Data     map[string]any `json:"data"`
+	Subject  string         `json:"subject,omitempty"`
+}
+
+// TriggerFields is the `${trigger.*}` view of an event, shared by trigger
+// conditions and step expression resolution so the two cannot drift.
+func (e *Event) TriggerFields() map[string]any {
+	return map[string]any{
+		"id":       e.ID,
+		"type":     e.Type,
+		"source":   e.Source,
+		"time":     e.Time,
+		"platform": e.Platform,
+		"data":     e.Data,
+	}
 }
 
 type TaskStatus string

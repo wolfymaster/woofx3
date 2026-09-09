@@ -3,16 +3,25 @@ package cloudevents
 type Subject string
 
 const (
-	// Twitch user events
-	SubjectTwitchChatMessage      Subject = "message.user.twitch"
-	SubjectTwitchCheer            Subject = "cheer.channel.twitch"
-	SubjectTwitchFollow           Subject = "follow.channel.twitch"
-	SubjectTwitchSubscribe        Subject = "subscribe.channel.twitch"
-	SubjectTwitchSubscriptionGift Subject = "subscriptionGift.channel.twitch"
-	SubjectTwitchStreamOnline     Subject = "online.channel.twitch"
+	// Stream platform events. Platform-agnostic by design: the same
+	// `channel.follow` is emitted whichever platform the follow came from,
+	// and the originating platform travels as the CloudEvent's top-level
+	// `platform` attribute. Subscribe to the event class, narrow by platform
+	// only when it matters.
+	SubjectChatMessage      Subject = "user.message"
+	SubjectChannelCheer     Subject = "channel.cheer"
+	SubjectChannelFollow    Subject = "channel.follow"
+	SubjectChannelSubscribe Subject = "channel.subscribe"
+	SubjectChannelSubGift   Subject = "channel.subscriptionGift"
+	SubjectChannelHypeTrain Subject = "channel.hypetrain"
+	SubjectChannelRaid      Subject = "channel.raid"
+	SubjectStreamOnline     Subject = "stream.online"
+	SubjectStreamOffline    Subject = "stream.offline"
 
-	// Twitch channel events
-	SubjectTwitchHypeTrainBegin Subject = "hypetrain.channel.twitch"
+	// Channel points are a Twitch construct with no equivalent elsewhere.
+	// It keeps its own scope rather than being forced under `channel.`,
+	// and still carries `platform` like every other event.
+	SubjectChannelPointsRedeem Subject = "channelpoints.redeem"
 
 	// Twitch API commands
 	SubjectTwitchApi Subject = "twitchapi"
