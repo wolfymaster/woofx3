@@ -14,13 +14,16 @@
   },
   "scripts": {
     "start": "bun run src/woofwoofwoof.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "typecheck": "tsc --noEmit --noUnusedLocals --noUnusedParameters"
   },
   "bin": {
     "woofwoofwoof": "./index.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/yargs": "^17.0.33"
+    "@types/yargs": "^17.0.33",
+    "typescript": "5.9.3",
+    "@types/node": "^26.4.1"
   }
 }

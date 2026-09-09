@@ -1,4 +1,4 @@
-import { GetSetting } from "@client/setting.pb";
+import { GetSetting } from "@woofx3/db/setting.pb";
 import { type AccessTokenWithUserId, RefreshingAuthProvider } from "@twurple/auth";
 
 type BootstrapArgs = {
@@ -16,14 +16,14 @@ async function GetBroadcasterToken(dbUrl: string): Promise<AccessTokenWithUserId
   return JSON.parse(response.setting.value.stringValue || "") satisfies AccessTokenWithUserId;
 }
 
-export default async function bootstrap(channel: string, args: BootstrapArgs): Promise<RefreshingAuthProvider> {
+export default async function bootstrap(_channel: string, args: BootstrapArgs): Promise<RefreshingAuthProvider> {
   const authProvider = new RefreshingAuthProvider({
     clientId: process.env.TWITCH_WOLFY_CLIENT_ID || "",
     clientSecret: process.env.TWITCH_WOLFY_CLIENT_SECRET || "",
     redirectUri: process.env.TWITCH_REDIRECT_URL || "http://localhost",
   });
 
-  authProvider.onRefresh(([userId, token]) => {
+  authProvider.onRefresh(([userId, _token]) => {
     console.log("refreshing token for: ", userId);
   });
 

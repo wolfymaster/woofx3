@@ -1,3 +1,4 @@
+import type NATSClient from "@woofx3/nats/src/client";
 import { describe, expect, mock, test } from "bun:test";
 import MessageBusService from "./messageBus";
 
@@ -13,7 +14,7 @@ describe("MessageBusService", () => {
     expect(svc.type).toBe("nats");
     expect(svc.connected).toBe(false);
     expect(svc.healthcheck).toBe(false);
-    expect(svc.client).toBe(nats);
+    expect(svc.client).toBe(nats as unknown as NATSClient);
   });
 
   test("connect establishes the NATS client once and marks the service as connected", async () => {

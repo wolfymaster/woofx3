@@ -99,8 +99,8 @@ export default class Govee {
     }
 
     lookupColor(color: string): number[] {
-        let key = color.toLowerCase().trim();
-        return this.colorMap[key];
+        const key = color.toLowerCase().trim();
+        return this.colorMap[key as keyof typeof this.colorMap];
     }
 
     private rgbToColor(r: number, g: number, b: number): number {

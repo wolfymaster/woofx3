@@ -16,9 +16,12 @@
   },
   "scripts": {
     "start": "bun run src/api.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "typecheck": "tsc --noEmit --noUnusedLocals --noUnusedParameters"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "typescript": "5.9.3",
+    "@types/node": "^26.4.1"
   }
 }

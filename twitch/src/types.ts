@@ -23,14 +23,14 @@ export interface TwitchApiRequestMessage {
   args: Record<string, string>;
 }
 
-export type HandlerResponse<T> = SuccessHandlerResponse<T> | ErrorHandlerResponse<T>;
+export type HandlerResponse<T> = SuccessHandlerResponse<T> | ErrorHandlerResponse;
 
 export type SuccessHandlerResponse<T> = {
   error: false;
   payload?: T;
 };
 
-export type ErrorHandlerResponse<T> = {
+export type ErrorHandlerResponse = {
   error: true;
   errorMsg: string;
 };

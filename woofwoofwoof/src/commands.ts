@@ -1,7 +1,11 @@
-import type { ChatSayMessageAttributes } from "@twurple/chat";
 import { extractCommandVariables } from "@woofx3/common/templates/command-variables";
 import { resolve, type ResolverContext } from "@woofx3/common/templates/resolver";
 import type { ChatClient } from "@woofx3/twitch";
+
+/** Options `ChatClient.say` accepts, derived from the client this module
+ *  actually calls rather than a second @twurple/chat install, whose
+ *  identically-named type is nominally distinct. */
+type ChatSayMessageAttributes = NonNullable<Parameters<ChatClient["say"]>[2]>;
 
 export type CommandVisibility = "public" | "restricted";
 

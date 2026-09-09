@@ -1,6 +1,6 @@
 import net from 'net';
 
-const encrypt = (payload) => {
+const encrypt = (payload: string) => {
     let key = 171;
     const buffer = Buffer.from(payload);
     const encrypted = Buffer.alloc(buffer.length);
@@ -16,7 +16,7 @@ const encrypt = (payload) => {
     return Buffer.concat([sizeBuf, encrypted]);
 };
 
-const decrypt = (payload) => {
+const decrypt = (payload: Buffer) => {
     let key = 171;
     const decrypted = Buffer.alloc(payload.length);
 
@@ -29,7 +29,7 @@ const decrypt = (payload) => {
     return decrypted.toString();
 };
 
-const sendCommand = (ip, payload) => {
+const sendCommand = (ip: string, payload: unknown) => {
     return new Promise((resolve, reject) => {
         const client = new net.Socket();
         client.connect(9999, ip, () => {
@@ -37,7 +37,7 @@ const sendCommand = (ip, payload) => {
         });
 
         let buffer = Buffer.alloc(0);
-        client.on('data', (data) => {
+        client.on('data', (data: Buffer) => {
             buffer = Buffer.concat([buffer, data]);
             if (buffer.length >= 4) {
                 const size = buffer.readInt32BE(0);

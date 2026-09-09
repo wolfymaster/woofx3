@@ -100,7 +100,7 @@ describe("BarkloaderClientService", () => {
     await svc.connect();
     expect(svc.connected).toBe(true);
 
-    stub.handlers.onClose?.();
+    stub.handlers.onClose?.(undefined);
 
     expect(svc.connected).toBe(false);
     expect(svc.healthcheck).toBe(false);

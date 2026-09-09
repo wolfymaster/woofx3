@@ -87,6 +87,18 @@ export default class TwitchClient {
     return this.eventListener;
   }
 
+  /**
+   * Release what this client owns. Only the EventSub listener is held here -
+   * ChatClient() hands out a fresh instance per call, so its lifetime belongs
+   * to the caller. Safe to call when nothing was started.
+   */
+  async close(): Promise<void> {
+    if (this.eventListener) {
+      this.eventListener.stop();
+      this.eventListener = null;
+    }
+  }
+
   async broadcaster(): Promise<HelixUser> {
     const user = await this.ApiClient().users.getUserByName({ name: this.args.channel });
     if (!user) {

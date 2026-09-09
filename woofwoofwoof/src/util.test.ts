@@ -24,9 +24,9 @@ describe("canUse", () => {
   test("allows the command when the database grants read permission on command/<cmd>", async () => {
     const db = {
       hasPermission: async () => ({ code: "OK" as const }),
-    } satisfies Pick<DatabaseClient, "hasPermission">;
+    };
 
-    const result = await canUse("SomeUser", "song", db as DatabaseClient);
+    const result = await canUse("SomeUser", "song", db as unknown as DatabaseClient);
     expect(result.granted).toBe(true);
     expect(result.message).toBe("");
   });
@@ -34,9 +34,9 @@ describe("canUse", () => {
   test("denies the command with feedback when permission is not granted", async () => {
     const db = {
       hasPermission: async () => ({ code: "DENIED" as const }),
-    } satisfies Pick<DatabaseClient, "hasPermission">;
+    };
 
-    const result = await canUse("intruder", "song", db as DatabaseClient);
+    const result = await canUse("intruder", "song", db as unknown as DatabaseClient);
     expect(result.granted).toBe(false);
     expect(result.message).toContain("intruder");
     expect(result.message).toContain("YOU CAN'T DO THAT");
@@ -49,9 +49,9 @@ describe("canUse", () => {
         seen = { username: req.username, resource: req.resource };
         return { code: "OK" as const };
       },
-    } satisfies Pick<DatabaseClient, "hasPermission">;
+    };
 
-    await canUse("  ModName  ", "vanish", db as DatabaseClient);
+    await canUse("  ModName  ", "vanish", db as unknown as DatabaseClient);
     expect(seen?.username).toBe("modname");
     expect(seen?.resource).toBe("command/vanish");
   });
