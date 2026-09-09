@@ -48,12 +48,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Read from the module being built rather than pinned here, so a module
-      # raising its own floor does not need this file edited too.
+      # The version devbox.json pins, so CI runs what developers run. Reading
+      # each module's own `go` directive instead would test most of them on
+      # 1.23, which nobody uses and which several already exceed.
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: ${{ matrix.module }}/go.mod
+          go-version: "1.24"
           cache-dependency-path: ${{ matrix.module }}/go.sum
 
       - name: Build
