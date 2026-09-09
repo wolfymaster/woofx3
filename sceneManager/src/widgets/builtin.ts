@@ -1,4 +1,5 @@
 import type { ConfigField } from "@woofx3/api/ui-schema";
+import { EventType } from "@woofx3/common/cloudevents/Twitch";
 import type { WidgetDefinition } from "@woofx3/api/webhooks";
 import type { Logger } from "@woofx3/common/runtime";
 import type { createMessageBus } from "@woofx3/nats";
@@ -8,9 +9,8 @@ import type { DbClient } from "../db";
  * Spec shape for a built-in woofx3 widget. Each entry produces a
  * canonical `WidgetDefinition` at registration time — mirroring the
  * shape a module-packaged widget would produce from its `manifest.json`.
- * Ported from streamware/src/widgets/builtin.ts — sceneManager keeps
- * serving these from its own local `public/widgets/builtin/` directory
- * (see frame-assembler.ts), same as streamware did.
+ * Assets are served from the local `public/widgets/builtin/` directory
+ * rather than through barkloader's repository (see frame-assembler.ts).
  *
  * Adding a new built-in widget is a single entry in `BUILTIN_WIDGET_SPECS`
  * below. No manifest.json, no module zip, no db-proxy migration required.
@@ -22,8 +22,8 @@ export interface BuiltinWidgetSpec {
   directory: string;
   alertTypes: string[];
   /**
-   * Canonical trigger ids the widget wants to receive in scene context.
-   * Format: `{owner}:trigger:{canonical_subject}`.
+   * CloudEvent types the widget receives in scene context, matched
+   * verbatim against the alert envelope's `event.type`.
    */
   acceptedEvents: string[];
   settings: ConfigField[];
@@ -40,23 +40,22 @@ const BUILTIN_WIDGET_SPECS: BuiltinWidgetSpec[] = [
       "subscription, redeem, etc.).",
     directory: "builtin/media_alert",
     alertTypes: ["stream_online", "stream_offline", "raid", "follow", "subscription", "subscription_gift", "redeem"],
-    // These must match the `event` values the engine actually puts on
-    // `ui.notify.alert` as `event.type` — that is what
-    // `fanOutToConnectedScenes` compares against, and a value matching
-    // nothing means the alert is dropped with no log anywhere. They are
-    // the `triggers.event` column for the `twitch_platform` module; the
-    // previous `builtin:trigger:*.channel.twitch` ids matched no
-    // registered trigger and no emitted event, so every alert was
-    // silently discarded. NOTE: no `raid` trigger is registered today,
-    // so raids cannot reach this widget until one exists.
+    // `fanOutToConnectedScenes` compares these verbatim against the
+    // alert envelope's `event.type`, which `buildAlertEnvelope` sets to
+    // the originating CloudEvent's type — not to a canonical
+    // `{module}:trigger:{id}` reference. An entry matching no emitted
+    // type is dropped silently, so these are taken from the shared
+    // enum rather than written out by hand: a renamed event breaks the
+    // build instead of the alerts.
     acceptedEvents: [
-      "follow.user.twitch",
-      "cheer.user.twitch",
-      "subscribe.user.twitch",
-      "subscription.gift.twitch",
-      "redeem.channelpoints.twitch",
-      "online.user.twitch",
-      "twitch.stream.offline",
+      EventType.Follow,
+      EventType.Cheer,
+      EventType.Subscribe,
+      EventType.SubscriptionGift,
+      EventType.Redeem,
+      EventType.Raid,
+      EventType.StreamOnline,
+      EventType.StreamOffline,
     ],
     settings: [
       { id: "textTemplate", type: "text", label: "Alert text template", defaultValue: "" },
