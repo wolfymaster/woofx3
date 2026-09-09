@@ -73,10 +73,19 @@ pub async fn hydrate_registry_from_db<R: Repository, S: BackgroundTaskRegistrar>
             continue;
         }
         match build_registered_module(&module, repository).await {
-            Ok(registered) if registered.functions.is_empty() => {
+            // Declared functions that all failed to load is a broken install;
+            // declaring none at all is a legitimate module (actions, triggers
+            // and widgets need no sandbox code). `module.functions` is what the
+            // manifest declared, so the two cases are distinguishable here -
+            // `registered.functions` alone cannot tell them apart.
+            Ok(registered)
+                if functions_failed_to_load(module.functions.len(), registered.functions.len()) =>
+            {
                 warn!(
-                    "Module {} (id={}) has no runnable functions in repository; skipping registry entry",
-                    module.name, registry_key
+                    "Module {} (id={}) declared {} function(s) but none could be loaded from the repository; skipping registry entry",
+                    module.name,
+                    registry_key,
+                    module.functions.len()
                 );
             }
             Ok(registered) => {
@@ -135,14 +144,19 @@ pub async fn refresh_module_in_registry<R: Repository, S: BackgroundTaskRegistra
     }
 
     let registered = build_registered_module(&module, repository).await?;
-    let function_count = registered.functions.len();
-    if function_count == 0 {
+    // A declarations-only module registers with an empty function map. Only a
+    // module that declared functions and loaded none of them is an error -
+    // invoking an absent function id already fails cleanly as "not found".
+    if functions_failed_to_load(module.functions.len(), registered.functions.len()) {
         return Err(format!(
-            "module '{}' (id={}) has no runnable functions (check file_key rows and repository)",
-            module_name, registry_key
+            "module '{}' (id={}) declared {} function(s) but none could be loaded (check file_key rows and repository)",
+            module_name,
+            registry_key,
+            module.functions.len()
         ));
     }
 
+    let function_count = registered.functions.len();
     registry
         .register_module(registry_key.clone(), registered)
         .map_err(|e| e.to_string())?;
@@ -171,6 +185,21 @@ pub async fn refresh_module_in_registry<R: Repository, S: BackgroundTaskRegistra
         registry_key, function_count
     );
     Ok(())
+}
+
+/// Whether a module's function set means the install is broken.
+///
+/// A module that declares no sandboxed functions is a first-class module, not
+/// a degraded one: actions, triggers and widgets need no sandbox code, and the
+/// bundled system modules are entirely declarations. It registers with an
+/// empty function map, and invoking a function id on it fails as "not found"
+/// like any other unknown id.
+///
+/// What is broken is declaring functions and loading none of them - a missing
+/// `file_key` row or an empty repository. `RegisteredModule::functions` alone
+/// cannot tell the two apart, which is why both counts are passed in.
+fn functions_failed_to_load(declared: usize, loaded: usize) -> bool {
+    declared > 0 && loaded == 0
 }
 
 /// Manifest-local module id used as the in-memory registry key (matches
@@ -314,4 +343,33 @@ fn registry_state_from_db(state: &str) -> ModuleState {
 /// uninstalled or deactivated so stale tasks don't keep firing.
 pub fn unregister_background_tasks<S: BackgroundTaskRegistrar>(scheduler: &S, module_key: &str) {
     scheduler.unregister(module_key);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::functions_failed_to_load;
+
+    #[test]
+    fn a_module_declaring_no_functions_is_not_broken() {
+        // The bundled system modules are declarations only.
+        assert!(!functions_failed_to_load(0, 0));
+    }
+
+    #[test]
+    fn declaring_functions_and_loading_none_is_broken() {
+        // A missing file_key row or an empty repository.
+        assert!(functions_failed_to_load(3, 0));
+    }
+
+    #[test]
+    fn loading_some_of_what_was_declared_is_not_fatal() {
+        // Individual load failures are already warned about per function; the
+        // module still has runnable code, so it registers.
+        assert!(!functions_failed_to_load(3, 1));
+    }
+
+    #[test]
+    fn loading_everything_declared_is_not_broken() {
+        assert!(!functions_failed_to_load(2, 2));
+    }
 }
