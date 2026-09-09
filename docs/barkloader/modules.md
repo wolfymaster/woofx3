@@ -653,7 +653,9 @@ A `resources[]` entry declares that this module is the **controller** for runtim
 | `name` | string | yes | Display name (singular). Shown in pickers and management UIs. |
 | `description` | string | no | Short description. |
 | `icon` | string | no | Optional asset canonical id for picker affordances. |
-| `valueSchema` | object | no | Opaque JSON document — the engine doesn't validate values. Modules may publish a JSON-schema-like document here to drive a create-form in the UI. |
+| `schema` | array | no | `ConfigField[]` — the fields a user fills in to create an instance of this kind; see [Field declarations](#field-declarations). The engine never renders the form and never validates an instance's value against it. |
+
+> **Renamed from `valueSchema`.** That field held a JSON-Schema-ish blob describing the stored *value* (`{"type":"number","default":0}`), and its documented purpose was to drive a create-form — which nothing could do, because a form needs an id, a label and a control type per input and that shape carries none of them. It is now the same `ConfigField[]` every other surface uses, so the create-form is actually buildable. It was the last vocabulary in the manifest that was not a field declaration.
 
 Declaring a kind is necessary but not sufficient — the module must also expose **actions or commands** that actually create / mutate / delete instances. By convention these:
 

@@ -404,9 +404,10 @@ pub struct ManifestAsset {
 /// learns what the kind *means*. Mutation operations, value storage,
 /// and validation all live in the owning module's functions / commands.
 ///
-/// `value_schema` is opaque to the engine — modules may use it to drive
-/// a UI create-form, or omit it entirely. The engine forwards it as
-/// part of the manifest payload so consumers (the UI) can inspect.
+/// `schema` is the form shown when creating an instance of this kind - the
+/// same `ManifestConfigField` list every other surface uses. The engine never
+/// renders it and never validates an instance's value against it; it forwards
+/// the declaration so the UI can build the form.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestResourceKind {
@@ -421,11 +422,17 @@ pub struct ManifestResourceKind {
     /// Optional asset-or-icon canonical id for picker UX.
     #[serde(default)]
     pub icon: Option<String>,
-    /// Opaque value schema. The engine does not validate values of
-    /// this kind; modules may publish a JSON-schema-like document
-    /// here to drive a create-form in the UI.
+    /// The fields a user fills in to create an instance of this kind.
+    ///
+    /// Was `valueSchema`, a JSON-Schema-ish blob describing the stored
+    /// *value* (`{"type":"number","default":0}`). Its documented purpose was
+    /// always to drive a create-form, but nothing could render it: a form
+    /// needs an id, a label and a control type per input, none of which that
+    /// shape carries. Declaring it as fields makes the stated purpose
+    /// achievable and removes the last vocabulary that was not
+    /// `ManifestConfigField`.
     #[serde(default)]
-    pub value_schema: Option<serde_json::Value>,
+    pub schema: Vec<ManifestConfigField>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
