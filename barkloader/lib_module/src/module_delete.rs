@@ -36,6 +36,9 @@ pub struct DeleteContext<'a, R: Repository> {
 pub enum DeleteError {
     /// One or more resources owned by the module are referenced externally.
     InUse(Vec<ResourceUsage>),
+    /// The module ships with the engine. Not retryable and not a function of
+    /// what currently references it - see `run_delete_resolved`.
+    SystemModule,
     /// Any other failure while executing a step.
     Other(anyhow::Error),
 }
@@ -53,6 +56,10 @@ impl std::fmt::Display for DeleteError {
                 f,
                 "{} resource(s) still in use by external references",
                 list.len()
+            ),
+            DeleteError::SystemModule => write!(
+                f,
+                "system module cannot be uninstalled: it ships with the engine"
             ),
             DeleteError::Other(e) => write!(f, "{}", e),
         }
@@ -241,10 +248,24 @@ impl ModuleDeletePlan {
 pub struct ResolvedModule {
     pub module_id: String,
     pub module_key: String,
+    /// Install provenance from the module row. `SYSTEM` marks a module that
+    /// ships with the engine and may not be uninstalled.
+    pub created_by_type: String,
     /// First segment of `module_key` ({id}:{version}:{hash}) — the manifest
     /// id used as `created_by_ref` on child resources (triggers, actions,
     /// commands, workflows) at install time.
     pub manifest_id: String,
+}
+
+impl ResolvedModule {
+    /// Whether this module ships with the engine.
+    ///
+    /// Matches the `SYSTEM` value the db-proxy writes on the module row;
+    /// compared case-insensitively so a differently-cased row cannot smuggle
+    /// a system module past the guard.
+    pub fn is_system(&self) -> bool {
+        self.created_by_type.eq_ignore_ascii_case("SYSTEM")
+    }
 }
 
 /// Extract the manifest id (first segment) from a composite module_key of
@@ -297,8 +318,15 @@ pub async fn resolve_module(
         return Err(anyhow!("module {} resolved but id is empty", module_name));
     }
 
+    let created_by_type = value
+        .get("module")
+        .and_then(|m| m.get("created_by_type"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
     let manifest_id = manifest_id_from_module_key(&module_key);
-    Ok(Some(ResolvedModule { module_id, module_key, manifest_id }))
+    Ok(Some(ResolvedModule { module_id, module_key, manifest_id, created_by_type }))
 }
 
 /// Run the usage check and execute the delete plan for a module whose identity
@@ -313,6 +341,15 @@ pub async fn run_delete_resolved<R: Repository>(
     repository: &R,
     registry: Arc<ModuleRegistry>,
 ) -> Result<(), DeleteError> {
+    // 0) provenance guard — before the usage check, deliberately. Whether a
+    // system module is currently referenced is beside the point: a fresh
+    // install has authored no workflows, so nothing references
+    // `woofx3:action:alert` at exactly the moment deleting it does the most
+    // damage. Refusing on provenance is the only check that holds then.
+    if resolved.is_system() {
+        return Err(DeleteError::SystemModule);
+    }
+
     // 1) usage check — abort if any external references exist OR if the
     // module owns runtime-created resource instances. Instance presence
     // is folded into the same `InUse` channel so the UI's existing
@@ -410,7 +447,67 @@ mod tests {
             module_id: format!("{id}-record"),
             module_key: format!("{id}:1.0.0:abc123"),
             manifest_id: id.to_string(),
+            created_by_type: "USER".to_string(),
         }
+    }
+
+    fn system_module(id: &str) -> ResolvedModule {
+        ResolvedModule { created_by_type: "SYSTEM".to_string(), ..resolved_module(id) }
+    }
+
+    #[test]
+    fn provenance_marks_only_system_rows() {
+        assert!(system_module("woofx3").is_system());
+        assert!(!resolved_module("counter").is_system());
+        // The db-proxy writes "SYSTEM"; a differently-cased row must not slip
+        // past a guard that exists to be absolute.
+        let odd = ResolvedModule { created_by_type: "System".to_string(), ..resolved_module("woofx3") };
+        assert!(odd.is_system());
+        // An older row with no provenance recorded is not a system module.
+        let blank = ResolvedModule { created_by_type: String::new(), ..resolved_module("m") };
+        assert!(!blank.is_system());
+    }
+
+    #[tokio::test]
+    async fn refuses_to_delete_a_system_module_and_touches_nothing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        let db_proxy = FakeDbProxyClient::new();
+        let registry = Arc::new(ModuleRegistry::new());
+
+        let err = run_delete_resolved(&system_module("woofx3"), "woofx3", &db_proxy, "", &repo, registry)
+            .await
+            .expect_err("a system module must not be deletable");
+
+        assert!(matches!(err, DeleteError::SystemModule), "got {err:?}");
+        assert!(err.to_string().contains("system module"), "{err}");
+
+        // The guard runs before the usage check, so nothing was consulted and
+        // nothing was deleted - not even the read that decides whether the
+        // module is in use.
+        assert!(
+            db_proxy.calls().is_empty(),
+            "expected no db-proxy calls, got {:?}",
+            db_proxy.calls()
+        );
+    }
+
+    // The point of guarding on provenance rather than references: a freshly
+    // installed engine has authored no workflows, so nothing points at
+    // `woofx3:action:alert` at exactly the moment losing it hurts most.
+    #[tokio::test]
+    async fn refuses_a_system_module_even_when_nothing_references_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        let db_proxy = FakeDbProxyClient::new();
+        let registry = Arc::new(ModuleRegistry::new());
+
+        // Same fake that lets an ordinary module delete cleanly below.
+        let err = run_delete_resolved(&system_module("woofx3"), "woofx3", &db_proxy, "", &repo, registry)
+            .await
+            .expect_err("provenance refusal does not depend on usage");
+
+        assert!(matches!(err, DeleteError::SystemModule));
     }
 
     #[tokio::test]
