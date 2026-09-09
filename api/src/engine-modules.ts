@@ -5,6 +5,13 @@ export interface EngineModule {
   name: string;
   version: string;
   state: string;
+  /**
+   * Install provenance. `"SYSTEM"` marks a module that ships with the engine:
+   * it appears in the installed list — an operator should see what is
+   * installed and at what version — but cannot be uninstalled, so the UI
+   * should render the control as unavailable rather than let the attempt fail.
+   */
+  createdByType: string;
 }
 
 /**
@@ -26,6 +33,7 @@ export async function listEngineModules(db: DbClient, logger: SharedLogger): Pro
       name: m.name,
       version: m.version ?? "",
       state: m.state ?? "active",
+      createdByType: m.createdByType ?? "USER",
     }));
   logger.info("Listed engine modules", { count: result.length });
   return result;

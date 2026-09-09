@@ -509,6 +509,21 @@ async fn delete_handler(
                     Some(&request_context),
                 ).await;
             }
+            Err(DeleteError::SystemModule) => {
+                error!(
+                    "Module {} cannot be deleted: it ships with the engine",
+                    module_name_task
+                );
+                notify_delete(
+                    &db_proxy,
+                    &resolved.module_id,
+                    &module_name_task,
+                    "failed",
+                    "This module ships with the engine and cannot be uninstalled",
+                    &[],
+                    Some(&request_context),
+                ).await;
+            }
             Err(DeleteError::Other(e)) => {
                 let msg = e.to_string();
                 error!("Module {} delete failed: {}", module_name_task, msg);
