@@ -1,4 +1,6 @@
 use anyhow::{anyhow, Result};
+
+use super::manifest_validate::InstallProvenance;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
@@ -512,8 +514,16 @@ pub async fn create_module(
     functions: &[CreateModuleFunctionJson],
     module_key: &str,
     client_id: &str,
+    provenance: InstallProvenance,
 ) -> Result<String> {
     let url = format!("{}/twirp/module.ModuleService/CreateModule", db_proxy_url);
+    // A bundled module has no installing client to attribute to, and the
+    // uninstall guard keys on this pair (`ResolvedModule::is_system`), so
+    // provenance is what decides it rather than an absent client id.
+    let (created_by_type, created_by_ref) = match provenance {
+        InstallProvenance::System => ("SYSTEM", module_id),
+        InstallProvenance::User => ("CLIENT", client_id),
+    };
     let body = serde_json::json!({
         "name": display_name,
         "module_id": module_id,
@@ -521,8 +531,8 @@ pub async fn create_module(
         "manifest": manifest_json,
         "archive_key": archive_key,
         "functions": functions,
-        "created_by_type": "CLIENT",
-        "created_by_ref": client_id,
+        "created_by_type": created_by_type,
+        "created_by_ref": created_by_ref,
         "module_key": module_key,
     });
 
@@ -1263,6 +1273,21 @@ pub async fn get_module_by_module_id(
     Ok(Some(text))
 }
 
+/// The installed module row for a manifest-local module id, or `Ok(None)`
+/// when nothing is installed under it. `Ok(None)` is "not installed", not a
+/// transport error — the reconciler needs to tell those apart.
+pub async fn get_module_record_by_module_id(
+    db_proxy_url: &str,
+    module_id: &str,
+) -> Result<Option<ModuleRecord>> {
+    let Some(body) = get_module_by_module_id(db_proxy_url, module_id).await? else {
+        return Ok(None);
+    };
+    let parsed: ModuleResponseBody = serde_json::from_str(&body)
+        .map_err(|e| anyhow!("parse GetModuleByModuleId response: {}", e))?;
+    Ok(parsed.module)
+}
+
 /// Resolve a stable manifest module id (e.g. "spotify") to its current
 /// version-scoped storage directory — the trailing hash segment of the
 /// composite `module_key` (`{id}:{version}:{hash}`), same derivation
@@ -1270,12 +1295,7 @@ pub async fn get_module_by_module_id(
 /// `Ok(None)` means the module id has no installed row (never resolved
 /// to a version directory, not a transport error).
 pub async fn resolve_module_version_dir(db_proxy_url: &str, module_id: &str) -> Result<Option<String>> {
-    let Some(body) = get_module_by_module_id(db_proxy_url, module_id).await? else {
-        return Ok(None);
-    };
-    let parsed: ModuleResponseBody = serde_json::from_str(&body)
-        .map_err(|e| anyhow!("parse GetModuleByModuleId response: {}", e))?;
-    let Some(module) = parsed.module else {
+    let Some(module) = get_module_record_by_module_id(db_proxy_url, module_id).await? else {
         return Ok(None);
     };
     let version_dir = module

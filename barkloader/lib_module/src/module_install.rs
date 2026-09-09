@@ -7,7 +7,7 @@ use std::path::Path;
 use super::canonical_id::CanonicalId;
 use super::db_proxy::CreateModuleFunctionJson;
 use super::db_proxy_client::ModuleDbProxy;
-use super::manifest_validate::{self, InstallStep, ResolvedActionImpl, ResolvedManifest};
+use super::manifest_validate::{self, InstallProvenance, InstallStep, ResolvedActionImpl, ResolvedManifest};
 use super::module_file::ModuleFile;
 use super::module_manifest::{ModuleManifest, ResolvedWorkflowStep, ResolvedWorkflowTrigger};
 
@@ -224,6 +224,7 @@ struct SagaState<'a, R: Repository> {
     application_id: &'a str,
     client_id: &'a str,
     archive_key: &'a str,
+    provenance: InstallProvenance,
     fn_rows: Vec<CreateModuleFunctionJson>,
     asset_keys: Vec<String>,
     asset_repo_keys: HashMap<String, String>,
@@ -329,6 +330,7 @@ impl<'a, R: Repository> SagaState<'a, R> {
                 &self.fn_rows,
                 self.composite_module_key,
                 self.client_id,
+                self.provenance,
             )
             .await?;
 
@@ -749,6 +751,9 @@ impl<'a, R: Repository> SagaState<'a, R> {
     }
 }
 
+/// The provenance-free entry point, because every caller but the bundled-module
+/// reconciler is a user upload.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_install<R: Repository>(
     manifest: &ModuleManifest,
     files: &[ModuleFile],
@@ -759,6 +764,41 @@ pub async fn run_install<R: Repository>(
     cleanup_old: bool,
     composite_module_key: &str,
     client_id: &str,
+) -> Result<()> {
+    run_install_with_provenance(
+        manifest,
+        files,
+        repository,
+        archive_key,
+        db_proxy,
+        application_id,
+        cleanup_old,
+        composite_module_key,
+        client_id,
+        InstallProvenance::User,
+    )
+    .await
+}
+
+/// Install a module, enforcing the rules that depend on who is installing.
+///
+/// `System` unlocks the reserved `woofx3` module id and `native` action
+/// declarations, and stamps the module row SYSTEM so the uninstall guard
+/// refuses it. Child resource rows keep the ordinary (MODULE, module_key)
+/// pairing every install uses — bundled modules are ordinary modules, and
+/// forking how their resources are keyed would defeat the point.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_install_with_provenance<R: Repository>(
+    manifest: &ModuleManifest,
+    files: &[ModuleFile],
+    repository: &R,
+    archive_key: &str,
+    db_proxy: Option<&dyn ModuleDbProxy>,
+    application_id: &str,
+    cleanup_old: bool,
+    composite_module_key: &str,
+    client_id: &str,
+    provenance: InstallProvenance,
 ) -> Result<()> {
     // `module_key` here is the manifest id (used for file paths and as the
     // module_name-style ref passed to child resource registrations).
@@ -789,7 +829,7 @@ pub async fn run_install<R: Repository>(
     // valid characters, per-kind uniqueness, resolvable references. Any
     // failure here aborts the install with no DB or filesystem state
     // touched.
-    let resolved = manifest_validate::validate(manifest)
+    let resolved = manifest_validate::validate_with_provenance(manifest, provenance)
         .map_err(|e| anyhow!("manifest validation failed: {}", e))?;
 
     // Build the full install plan (graph + cross-module validation +
@@ -822,6 +862,7 @@ pub async fn run_install<R: Repository>(
         application_id,
         client_id,
         archive_key,
+        provenance,
         fn_rows: Vec::with_capacity(manifest.functions.len()),
         asset_keys: Vec::with_capacity(manifest.assets.len()),
         asset_repo_keys: HashMap::new(),
@@ -876,6 +917,98 @@ pub async fn run_install<R: Repository>(
 mod tests {
     use super::*;
     use super::super::db_proxy_client::FakeDbProxyClient;
+
+    // ---------------------------------------------------------------
+    // Install provenance. `System` is what a bundled module installs
+    // under: it unlocks the reserved module id and `native` actions, and
+    // stamps the module row so the uninstall guard refuses it.
+    // ---------------------------------------------------------------
+
+    fn system_manifest(id: &str) -> (ModuleManifest, Vec<u8>) {
+        let json = serde_json::json!({
+            "id": id,
+            "name": id,
+            "version": "1.0.0",
+            "description": "bundled system module fixture"
+        })
+        .to_string();
+        let manifest: ModuleManifest = serde_json::from_str(&json).expect("parse fixture manifest");
+        (manifest, json.into_bytes())
+    }
+
+    #[tokio::test]
+    async fn system_provenance_stamps_the_module_row() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = system_manifest("woofx3");
+        let files = vec![ModuleFile::new(
+            "manifest.json".into(),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+            manifest_json.clone(),
+        )];
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        let db_proxy = FakeDbProxyClient::new();
+        run_install_with_provenance(
+            &manifest, &files, &repo, "archives/woofx3.zip", Some(&db_proxy), "", false, &mid, "",
+            InstallProvenance::System,
+        )
+        .await
+        .expect("system install succeeds");
+
+        assert_eq!(db_proxy.create_module_provenance(), Some(InstallProvenance::System));
+    }
+
+    #[tokio::test]
+    async fn the_reserved_id_is_refused_under_user_provenance() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = system_manifest("woofx3");
+        let files = vec![ModuleFile::new(
+            "manifest.json".into(),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+            manifest_json.clone(),
+        )];
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        let db_proxy = FakeDbProxyClient::new();
+        let err = run_install(&manifest, &files, &repo, "archives/woofx3.zip", Some(&db_proxy), "", false, &mid, "")
+            .await
+            .expect_err("the reserved id must not install from an upload");
+        assert!(err.to_string().contains("reserved"), "unexpected error: {err}");
+        assert!(
+            db_proxy.calls().is_empty(),
+            "validation must fail before any db write: {:?}",
+            db_proxy.calls()
+        );
+    }
+
+    #[tokio::test]
+    async fn run_install_defaults_to_user_provenance() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = system_manifest("ordinary_module");
+        let files = vec![ModuleFile::new(
+            "manifest.json".into(),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+            manifest_json.clone(),
+        )];
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        let db_proxy = FakeDbProxyClient::new();
+        run_install(&manifest, &files, &repo, "archives/om.zip", Some(&db_proxy), "", false, &mid, "")
+            .await
+            .expect("ordinary install succeeds");
+
+        assert_eq!(db_proxy.create_module_provenance(), Some(InstallProvenance::User));
+    }
+
     use crate::module_file::{
         ModuleFile, ModuleFileKind, ModuleValidManifestKind, ModuleValidProgramKind,
     };

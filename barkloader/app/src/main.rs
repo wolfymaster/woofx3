@@ -147,6 +147,30 @@ async fn setup() -> Result<AppContext> {
         default_public_url,
     ));
 
+    // Bundled modules must be installed before the registry is built from
+    // installed modules, and before any service resolves a system canonical
+    // id. A bundled module that will not install is fatal: the engine's core
+    // actions and triggers come from it, and starting anyway is what produces
+    // the silent, hard-to-diagnose failures this replaces.
+    match services::bundled_reconciler::reconcile(&db_proxy_url, &*repository.current()).await {
+        Ok(outcomes) => {
+            for (id, outcome) in outcomes {
+                match outcome {
+                    services::bundled_reconciler::Outcome::UpToDate => {
+                        tracing::debug!(module_id = %id, "bundled module already current");
+                    }
+                    services::bundled_reconciler::Outcome::Installed { version } => {
+                        tracing::info!(module_id = %id, version = %version, "bundled module installed");
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!("bundled module reconciliation failed: {e:#}");
+            return Err(e);
+        }
+    }
+
     boot_modules(&registry, &repository.current(), &db_proxy_url, &scheduler).await?;
 
     // Spawn the generic field-options NATS responder when NATS is available.
