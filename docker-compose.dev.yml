@@ -131,27 +131,6 @@ services:
     networks:
       - woofx3
 
-  streamware:
-    image: woofx3-dev
-    restart: unless-stopped
-    working_dir: /app/streamware
-    command: sh -c "bun install && bun dev"
-    environment:
-      FORCE_COLOR: "1"
-      WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
-    volumes:
-      - ./.woofx3.json:/app/.woofx3.json:ro
-      - ./streamware:/app/streamware
-      - streamware-node-modules:/app/streamware/node_modules
-      - ./shared:/app/shared
-    env_file:
-      - path: ./.env
-        required: false
-    depends_on:
-      - messagebus
-    networks:
-      - woofx3
-
   twitch:
     image: woofx3-dev
     restart: unless-stopped
@@ -201,7 +180,6 @@ volumes:
   cargo-git:
   barkloader-target:
   api-node-modules:
-  streamware-node-modules:
   twitch-node-modules:
   woofwoofwoof-node-modules:
 

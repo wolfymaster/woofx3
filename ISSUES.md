@@ -135,13 +135,6 @@ item into a real issue (e.g. via `gh issue create --title ... --body ...`).
 - **Size:** small
 - **Description:** Doc states `{overlayPublicUrl}/overlay/assets/user/...` is reserved but "not yet implemented." Confirm whether sceneManager's new asset-serving path (introduced in `e46d877`) covers this, or update/remove the doc.
 
-### Tracking issue: retire streamware's overlay-rendering path
-
-- **Files:** `streamware/src/overlay/{asset-proxy.ts, frame-assembler.ts, scene-host.ts, token-resolver.ts, module-version-resolver.ts}`
-- **Category:** tech-debt
-- **Size:** large
-- **Description:** Commit `e46d877` explicitly left streamware's overlay path in place "until sceneManager has taken real production traffic." File as a tracked follow-up so it isn't forgotten once sceneManager is proven out.
-
 ### SPEC.md future consideration: multi-engine federation
 
 - **Files:** `SPEC.md:658-667`
@@ -198,4 +191,4 @@ item into a real issue (e.g. via `gh issue create --title ... --body ...`).
 - **Files:** `.github/workflows/` (only contains `publish-api.yml`, which publishes the TS SDK on push to main)
 - **Category:** tech-debt / enhancement
 - **Size:** medium
-- **Description:** There is no CI gate running `cargo test` (barkloader), `go test` (db/workflow/services), or TS test suites (api/streamware/sceneManager/woofwoofwoof) on PRs.
+- **Description:** There is no CI gate running `cargo test` (barkloader), `go test` (db/workflow/services), or TS test suites (api/sceneManager/twitch/woofwoofwoof) on PRs.
