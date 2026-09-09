@@ -487,21 +487,13 @@ pub struct ManifestBackgroundTask {
     pub description: String,
 }
 
-/// A setting declared in the module manifest. Values are stored in the
-/// `module_settings` table keyed by `module_id` + `id`. Type must be one of
-/// `CONFIG_FIELD_TYPES`.
-/// A module-level setting.
+/// A module-level setting. `type` must be one of `CONFIG_FIELD_TYPES`.
 ///
-/// Same field vocabulary as every other surface - `id`, `label`, `type`,
-/// `defaultValue` - because it means the same thing: render an input, collect
-/// a value. It was previously spelled `name` / `default`, which is exactly the
-/// divergence this contract removes.
-///
-/// What is genuinely different is storage, not description: these values
-/// persist engine-side in `module_settings` and are read by sandboxed
-/// functions as `ctx.module.settings`, where a trigger's or widget's values
-/// live UI-side. That is why this stays its own struct rather than becoming a
-/// plain `ManifestConfigField`.
+/// Carries the same field vocabulary as every other surface but stays its own
+/// struct, because the storage differs: these values persist engine-side in
+/// `module_settings` keyed by `module_id` + `id`, read by sandboxed functions
+/// as `ctx.module.settings`, where a trigger's or widget's values live
+/// UI-side.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ManifestSetting {
@@ -2155,16 +2147,11 @@ mod tests {
 
     #[test]
     fn realistic_manifest_parses_and_round_trips() {
-        // A committed copy of a real first-party manifest (woofx3_spotify),
-        // exercising the whole struct against something an author actually
-        // wrote rather than the minimum each test needs.
-        //
-        // It used to `include_str!` the live manifest out of a sibling
-        // checkout, which meant this test — and every other test in the crate,
-        // since a missing `include_str!` target fails compilation — could not
-        // run on CI or a fresh clone at all. Drift against the real modules is
-        // caught where it actually matters now: a manifest that no longer
-        // matches this struct fails to install (see manifest_validate).
+        // A committed copy of a real first-party manifest, exercising the
+        // whole struct against something an author actually wrote rather than
+        // the minimum each test needs. Committed rather than read from the
+        // modules checkout so the crate's tests compile without it - a missing
+        // `include_str!` target fails the whole test binary, not one test.
         let j = include_str!("../fixtures/spotify_manifest.json");
         let m: ModuleManifest = serde_json::from_str(j).expect("parse spotify fixture");
         assert_eq!(m.settings.len(), 2);

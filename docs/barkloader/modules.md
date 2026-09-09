@@ -244,9 +244,7 @@ The vocabulary is intentionally open — there is no fixed enum and the engine d
 
 A trigger's `schema`, an action's `schema`, a widget's `settingsSchema` and a module's `settings` all mean the same thing — *render these inputs, collect these values* — so they are **the same shape**: a bare array of `ConfigField`. The canonical type lives in `shared/clients/typescript/api/ui-schema.ts`.
 
-There is exactly one spelling for every property, and **no aliases**. `key`, `fieldType`, `name` and `default` are rejected at install, as are unknown properties, so a typo is reported where it can be fixed rather than silently producing a half-configured control.
-
-> **Why this is strict.** These four surfaces grew independently and diverged on every core property, while the trigger/action parser accreted four accepted container shapes — three of which nothing ever produced. The cost was not theoretical: a widget that declared its settings as `{"fields": [...]}`, the container trigger schemas accept, rendered **no settings at all**, because the widget path took only a bare array. An alias layer is what let those shapes coexist unnoticed; rejecting them is what keeps this a single contract.
+There is exactly one spelling for every property, and **no aliases**. Unknown properties are rejected at install, so a typo is reported where it can be fixed rather than silently producing a half-configured control — a field the renderer does not recognise is dropped, and a control that half-exists is harder to diagnose than one that never installed.
 
 What legitimately differs per surface is where the *value* is stored — module settings persist engine-side in `module_settings` and are read by sandboxed functions as `ctx.module.settings`, while trigger, action and widget values live UI-side in workflow definitions and scene instances. That is a storage difference, not a reason to describe a field differently.
 
@@ -270,7 +268,7 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `operator` | string | no | Trigger `schema` only. Comparison emitted with this field's value (e.g. `gte`, `eq`). |
 | `description` | string | no | Short prose rendered as muted helper text below the input. Always visible. |
 | `hint` | string | no | Longer prose rendered inside the field's info-icon popover. |
-| `examplePayload` | string | no | JSON-encoded **example** of the event payload this field reads from, rendered with syntax highlighting in the info-icon popover. An illustration, not a declaration — see [the note below](#renamed-from-dataschema). |
+| `examplePayload` | string | no | JSON-encoded **example** of the event payload this field reads from, rendered with syntax highlighting in the info-icon popover. An illustration, not a declaration: nothing reads its keys. |
 
 The info icon next to a field's label appears if and only if `hint` or `examplePayload` is present. `description` renders independently below the input.
 
@@ -289,12 +287,6 @@ Three of them carry extra requirements, each checked at install:
 | `select` | `options` or a `source` | A select with nothing to select is a dead control. |
 | `resource_ref` | `resourceKind` | A picker that does not say what to pick lists nothing. |
 | `button` | `action` | A button with nothing to fire does nothing. |
-
-##### Renamed from `dataSchema`
-
-`examplePayload` was called `dataSchema`, which was wrong twice: it holds an example, not a schema, and nothing validates against it. The old name also grouped it with `configSchema` / `paramsSchema`, which describe *forms*, and sat one capital letter from `DataShape`, which describes a *value*.
-
-The old name is **not** accepted — there is one spelling, per the rule above.
 
 #### Picker field types
 
@@ -456,7 +448,6 @@ Not to be confused with the `examplePayload` property on an individual **config 
 
 Same shape, describing the function's result rather than an event payload. See the [action entry](#action-entry-actions) below for a worked example.
 
-> **Removed: `outputs`.** Actions previously declared their result as `outputs`, a `ConfigField[]` array stored as `output_schema`. It carried form vocabulary (`label`, `placeholder`, `options`) that means nothing for a returned value, and could express neither a nested path nor an example. No module ever declared one, so it was removed rather than kept alongside `returns`. A manifest still carrying an `outputs` key parses fine and simply declares nothing — it will not fail an install.
 
 ### Action entry (`actions[]`)
 
@@ -655,7 +646,6 @@ A `resources[]` entry declares that this module is the **controller** for runtim
 | `icon` | string | no | Optional asset canonical id for picker affordances. |
 | `schema` | array | no | `ConfigField[]` — the fields a user fills in to create an instance of this kind; see [Field declarations](#field-declarations). The engine never renders the form and never validates an instance's value against it. |
 
-> **Renamed from `valueSchema`.** That field held a JSON-Schema-ish blob describing the stored *value* (`{"type":"number","default":0}`), and its documented purpose was to drive a create-form — which nothing could do, because a form needs an id, a label and a control type per input and that shape carries none of them. It is now the same `ConfigField[]` every other surface uses, so the create-form is actually buildable. It was the last vocabulary in the manifest that was not a field declaration.
 
 Declaring a kind is necessary but not sufficient — the module must also expose **actions or commands** that actually create / mutate / delete instances. By convention these:
 

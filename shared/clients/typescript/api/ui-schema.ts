@@ -105,10 +105,6 @@ export interface ConfigField {
    * It is an illustration, not a declaration: nothing reads its keys, and it
    * may be partial or elided. The machine-readable answer to "which paths
    * exist" is the trigger's `emits` / the action's `returns` (see `DataShape`).
-   *
-   * Renamed from `dataSchema`, which was wrong twice over: it holds an example
-   * rather than a schema, and the old name grouped it with `configSchema` /
-   * `paramsSchema`, which describe forms.
    */
   examplePayload?: string;
 }

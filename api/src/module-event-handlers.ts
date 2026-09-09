@@ -225,11 +225,9 @@ function mapFunction(raw: RawFunction): FunctionDefinition {
 /**
  * Map one declared field onto the shared ConfigField shape.
  *
- * There is a single spelling for every property now, so this no longer has to
- * accept `field_type` alongside `fieldType` or `key` alongside `id` — anything
- * else was rejected at install. Unrecognised properties are carried through
- * rather than dropped: the engine does not own presentation, and a consumer
- * that understands a newer property should still receive it.
+ * Unrecognised properties are carried through rather than dropped: the engine
+ * does not own presentation, and a consumer that understands a newer property
+ * should still receive it.
  */
 function mapConfigField(raw: RawConfigField): ConfigField {
   const { id, label, type, ...rest } = raw;
