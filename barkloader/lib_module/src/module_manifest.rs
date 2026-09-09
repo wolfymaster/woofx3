@@ -2147,11 +2147,19 @@ mod tests {
     }
 
     #[test]
-    fn spotify_sr_manifest_parses_and_round_trips() {
-        // Regression coverage for the real shipped manifest, not just a
-        // synthetic fixture — catches drift between it and this struct.
-        let j = include_str!("../../modules/spotify_sr/manifest.json");
-        let m: ModuleManifest = serde_json::from_str(j).expect("parse real spotify_sr manifest");
+    fn realistic_manifest_parses_and_round_trips() {
+        // A committed copy of a real first-party manifest (woofx3_spotify),
+        // exercising the whole struct against something an author actually
+        // wrote rather than the minimum each test needs.
+        //
+        // It used to `include_str!` the live manifest out of a sibling
+        // checkout, which meant this test — and every other test in the crate,
+        // since a missing `include_str!` target fails compilation — could not
+        // run on CI or a fresh clone at all. Drift against the real modules is
+        // caught where it actually matters now: a manifest that no longer
+        // matches this struct fails to install (see manifest_validate).
+        let j = include_str!("../fixtures/spotify_manifest.json");
+        let m: ModuleManifest = serde_json::from_str(j).expect("parse spotify fixture");
         assert_eq!(m.settings.len(), 2);
         assert_eq!(m.settings[0].id, "authorizeSpotify");
         assert_eq!(m.settings[0].setting_type, "button");
