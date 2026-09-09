@@ -2,8 +2,8 @@ name: service checks
 
 # Type-checks and tests the Bun services that had no gate.
 #
-# api has its own workflow (api-checks.yml); streamware and sceneManager
-# already carried a typecheck script. twitch and woofwoofwoof did not, which
+# api has its own workflow (api-checks.yml) and sceneManager already carried
+# a typecheck script. twitch and woofwoofwoof did not, which
 # is how a `category` field that the proto stopped accepting, a logger call
 # dropping four of its five arguments, a `disconnect()` calling a method that
 # does not exist, and a stale `@client/*` import all sat unnoticed.

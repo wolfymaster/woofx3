@@ -12,7 +12,3 @@ auth.local.woofx3.tv {
 	tls internal
 }
 
-streamware.local.woofx3.tv {
-	reverse_proxy http://localhost:9101
-	tls internal
-}
