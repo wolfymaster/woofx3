@@ -103,7 +103,9 @@ The manifest uses **camelCase** JSON keys. All top-level sections are optional *
       "description": "Stream alert animations",
       "entry": "widgets/alerts/index.html",
       "assets": "widgets/alerts/",
-      "settingsSchema": { "theme": { "type": "string", "default": "default" } },
+      "settingsSchema": [
+        { "id": "theme", "label": "Theme", "type": "text", "defaultValue": "default" }
+      ],
       "acceptedEvents": ["twitch.subscription", "twitch.cheer"]
     }
   ],
@@ -198,7 +200,7 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `widgets` | array | no | Scene widgets (`entry`, optional `assets` directory, `settingsSchema`, `acceptedEvents`). |
 | `overlays` | array | no | Overlay browser sources (`entry`). |
 | `resources` | array | no | Runtime-instance kind declarations — the K8s CRD analog. Each entry says "this module is the controller for instances of kind `X`". See [Resource entry](#resource-entry-resources) and [Runtime resource instances](#runtime-resource-instances). |
-| `settings` | array | no | Module-level configuration values (API keys, tokens, etc.) registered into the `module_settings` table at install time and exposed to sandboxed functions as `ctx.module.settings`. Distinct from a widget's `settingsSchema` — see [Module-level settings](#module-level-settings-settings). |
+| `settings` | array | no | Module-level configuration values (API keys, tokens, etc.) registered into the `module_settings` table at install time and exposed to sandboxed functions as `ctx.module.settings`. Same `ConfigField[]` shape as every other declaration — see [Field declarations](#field-declarations) — but unlike a widget's `settingsSchema` the *values* are stored engine-side; see [Module-level settings](#module-level-settings-settings). |
 | `backgroundTasks` (alias: `background_tasks`) | array | no | Cron-scheduled functions barkloader fires for the lifetime of the module. See [Background tasks](#background-tasks-backgroundtasks). |
 
 ### Trigger entry (`triggers[]`)
@@ -212,7 +214,7 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `event` | string | yes (for `eventbus`) | The NATS subject this trigger fires on (e.g. `channel.subscribe`). Stored on the trigger row as `event`. The trigger's `id` is the manifest-local identifier and is **not** the same as `event` — earlier versions conflated them. |
 | `taxonomy` | array of string | no | Open, multi-valued UI classification (e.g. `["platform.twitch.chat", "function.chat"]`). Sent to RegisterTrigger as `taxonomy`. See [Taxonomy](#taxonomy). **Legacy:** superseded by `category`. |
 | `category` | string | no | **Legacy.** UX / registry grouping (e.g. `platform.twitch`). Still accepted; folded into a single-element `taxonomy` at parse time when `taxonomy` is unset, otherwise falls back to `type`. New manifests should use `taxonomy` instead. |
-| `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this trigger to a workflow; see [Schema field reference](#schema-field-reference). |
+| `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this trigger to a workflow; see [Field declarations](#field-declarations). |
 | `emits` | object | no | `DataShape` naming what `trigger.data` carries when this trigger fires; see [Emits and returns](#emits-and-returns). Forwarded to the DB as `emits`. |
 | `allowVariants` | boolean | no | When true, the UI lets a user create multiple bound instances of this trigger (each with its own `schema` values). Used for trigger classes like cheer / subscribe that fan out per tier or threshold. |
 
@@ -238,34 +240,61 @@ The vocabulary is intentionally open — there is no fixed enum and the engine d
 
 `taxonomy` replaces the older single-value `category` field, which is still accepted on manifests for backward compatibility: when a manifest sets `category` but not `taxonomy`, the engine folds it into a single-element `taxonomy` array at parse time. Everything downstream of the manifest (the DB row, the outbox events, the API) carries only `taxonomy` — `category` is not persisted.
 
-### Schema field reference
+### Field declarations
 
-Every entry in a trigger or action `schema` array is a `ConfigField`. The canonical type lives in `shared/clients/typescript/api/ui-schema.ts`. Recognized properties:
+A trigger's `schema`, an action's `schema`, a widget's `settingsSchema` and a module's `settings` all mean the same thing — *render these inputs, collect these values* — so they are **the same shape**: a bare array of `ConfigField`. The canonical type lives in `shared/clients/typescript/api/ui-schema.ts`.
+
+There is exactly one spelling for every property, and **no aliases**. `key`, `fieldType`, `name` and `default` are rejected at install, as are unknown properties, so a typo is reported where it can be fixed rather than silently producing a half-configured control.
+
+> **Why this is strict.** These four surfaces grew independently and diverged on every core property, while the trigger/action parser accreted four accepted container shapes — three of which nothing ever produced. The cost was not theoretical: a widget that declared its settings as `{"fields": [...]}`, the container trigger schemas accept, rendered **no settings at all**, because the widget path took only a bare array. An alias layer is what let those shapes coexist unnoticed; rejecting them is what keeps this a single contract.
+
+What legitimately differs per surface is where the *value* is stored — module settings persist engine-side in `module_settings` and are read by sandboxed functions as `ctx.module.settings`, while trigger, action and widget values live UI-side in workflow definitions and scene instances. That is a storage difference, not a reason to describe a field differently.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `id` | string | yes | Stable field id; used as the key when the UI emits values. |
+| `id` | string | yes | Stable field id; the key the collected value is stored under. Unique within one declaration. |
 | `label` | string | yes | Display name shown above the input. |
-| `type` | string | yes | One of `number`, `range`, `text`, `select`, `media`, `toggle`, `color`, `asset`, `resource_ref`. The last three are picker types — see field-type reference below. |
+| `type` | string | yes | One of the [field types](#field-types) below. |
 | `required` | boolean | no | Marks the field as mandatory in the form. |
 | `placeholder` | string | no | Placeholder shown inside empty inputs. |
 | `unit` | string | no | Suffix shown next to numeric inputs (e.g. `bits`). |
-| `options` | array | no | Static `{ value, label }` choices for `select`. |
-| `defaultValue` | any | no | Initial value used when no value is set. |
+| `options` | array | no | Static `{ value, label }` choices. Required for `select` unless a `source` supplies them. |
+| `source` | object | no | Dynamic option source; see [dynamic-source select fields](#dynamic-source-select-fields-sourcekind). |
+| `defaultValue` | any | no | Initial value used when none is set. |
 | `min`, `max` | number | no | Bounds for `number` / `range`. |
-| `eventPath` | string | no | Dot path into the trigger event payload that this field maps to. |
-| `operator` | string | no | Comparison operator emitted with this field's value (e.g. `gte`, `eq`). |
-| `description` | string | no | Short prose rendered as muted helper text directly below the input. Always visible. |
+| `mediaType` | string | no | For `media` — `image`, `audio` or `video`. |
+| `kinds` | string[] | no | For `asset` — filter the picker by `ManifestAsset.kind`. |
+| `resourceKind` | string | no | Required for `resource_ref` — which resource kind the picker lists. |
+| `action` | object | no | Required for `button` — the request the button fires. See [module-level settings](#module-level-settings-settings). |
+| `eventPath` | string | no | Trigger `schema` only. Dot path into the event payload this field maps to. |
+| `operator` | string | no | Trigger `schema` only. Comparison emitted with this field's value (e.g. `gte`, `eq`). |
+| `description` | string | no | Short prose rendered as muted helper text below the input. Always visible. |
 | `hint` | string | no | Longer prose rendered inside the field's info-icon popover. |
-| `examplePayload` | string | no | JSON-encoded **example** of the event payload this field reads from, rendered with syntax highlighting in the info-icon popover so a user authoring a path-style input can see what the data looks like. An illustration, not a declaration — nothing reads its keys, and it may be partial. Renamed from `dataSchema` — the old spelling is not accepted; see [the note below](#renamed-from-dataschema). |
+| `examplePayload` | string | no | JSON-encoded **example** of the event payload this field reads from, rendered with syntax highlighting in the info-icon popover. An illustration, not a declaration — see [the note below](#renamed-from-dataschema). |
 
 The info icon next to a field's label appears if and only if `hint` or `examplePayload` is present. `description` renders independently below the input.
+
+#### Field types
+
+`number`, `range`, `text`, `select`, `media`, `toggle`, `color`, `asset`, `resource_ref`, `button`.
+
+The set is closed — an unrecognised token fails the install rather than falling back to a text input, because a silent fallback is indistinguishable from a working field.
+
+Note `text` and `toggle`, not `string` and `boolean`. These name **controls**. The `string` / `boolean` tokens belong to [`DataShape`](#emits-and-returns), which names **values**. The two vocabularies are deliberately different because the things they describe are different: a `toggle` renders a switch, a `boolean` is what comes back in a payload. Neither list is a superset of the other.
+
+Three of them carry extra requirements, each checked at install:
+
+| Type | Requires | Why |
+|---|---|---|
+| `select` | `options` or a `source` | A select with nothing to select is a dead control. |
+| `resource_ref` | `resourceKind` | A picker that does not say what to pick lists nothing. |
+| `button` | `action` | A button with nothing to fire does nothing. |
 
 ##### Renamed from `dataSchema`
 
 `examplePayload` was called `dataSchema`, which was wrong twice: it holds an example, not a schema, and nothing validates against it. The old name also grouped it with `configSchema` / `paramsSchema`, which describe *forms*, and sat one capital letter from `DataShape`, which describes a *value*.
 
-The old name is **not** accepted — there is one spelling, and a manifest still using `dataSchema` must be migrated. See [Field declarations](#field-declarations) for why this contract carries no aliases.
+The old name is **not** accepted — there is one spelling, per the rule above.
 
 #### Picker field types
 
@@ -443,7 +472,7 @@ Common fields:
 | `name` | string | yes | Display name. Presentation only. |
 | `description` | string | no | Human-readable summary. |
 | `type` | string | yes | Workflow action handler name. Must match an existing engine handler (`function` is the only one today). Determines which other top-level fields are required. |
-| `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this action into a workflow step; see [Schema field reference](#schema-field-reference). Forwarded to the DB as `params_schema`. |
+| `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this action into a workflow step; see [Field declarations](#field-declarations). Forwarded to the DB as `params_schema`. |
 | `returns` | object | no | `DataShape` naming what this action's function hands back; see [Emits and returns](#emits-and-returns). Powers the workflow builder's `${stepId.field}` autocomplete: when a downstream step references `${action-1.next}`, the picker looks up `action-1`'s declared `returns` to know `next` exists. Forwarded to the DB as `returns`. |
 | `taxonomy` | array of string | no | Open, multi-valued UI classification. See [Taxonomy](#taxonomy). |
 
@@ -566,7 +595,7 @@ calling `ctx.chat.sendMessage(...)` directly — see [`ctx.response`](./sandbox.
 | `description` | string | no | |
 | `entry` | string | no | HTML entry path in the ZIP. |
 | `assets` | string | no | Directory prefix in the ZIP for static assets (all files under this prefix are uploaded). |
-| `settingsSchema` | object | no | JSON Schema–style settings for the UI. Per-instance values flow back to the widget at render time as `widgetHost.settings`. |
+| `settingsSchema` | array | no | `ConfigField[]` describing the fields a user fills in when placing this widget on a scene; see [Field declarations](#field-declarations). Per-instance values flow back to the widget at render time as `widgetHost.settings`. |
 | `acceptedEvents` | string[] | no | Trigger references this widget cares about. Each entry is a manifest-local trigger id (resolved to canonical form at install) or a full canonical id for cross-module triggers. At runtime, the scene overlay only fires the widget's `widgetHost.onEvent` handler for events whose canonical trigger id matches an entry in this list — widgets without an `acceptedEvents` declaration receive no events. |
 
 Files are stored under **`modules/{moduleId}/widgets/{widgetId}/…`**.
@@ -639,20 +668,26 @@ See `modules/utility/counter/manifest.json` in the **woofx3-modules** repository
 A `settings[]` entry declares an engine-typed, module-scoped configuration value —
 the mechanism a module uses for things like API credentials that its sandboxed
 functions need at runtime (a Spotify client secret, a webhook URL, a poll interval).
-This is a **different feature from a widget's `settingsSchema`** (see
-[Widget entry](#widget-entry-widgets)): `settingsSchema` is an opaque, per-instance
-JSON blob scoped to one widget placement and surfaced to browser-side widget code as
-`widgetHost.settings`; `settings[]` is a flat, typed, per-module namespace surfaced to
-**sandboxed function code** as `ctx.module.settings`.
+It uses the same [field declaration](#field-declarations) shape as everything else —
+the difference from a widget's `settingsSchema` is **where the value is stored**, not
+how the field is described. A widget's values are per-placement and live UI-side,
+surfaced to browser-side widget code as `widgetHost.settings`; a module's values are a
+flat, per-module namespace persisted in `module_settings` and surfaced to **sandboxed
+function code** as `ctx.module.settings`.
+
+Only the properties below are meaningful here — a module setting renders in a simple
+settings pane, not the workflow builder, so `eventPath`, `operator` and the picker
+types have nothing to bind to.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | yes | Manifest-local setting key, e.g. `clientId`. Combined with the module id to key the `module_settings` row (`module_id` + `key`, unique). This is the key a function reads via `ctx.module.settings.<id>`. |
-| `name` | string | yes | Display label for a settings UI. |
+| `label` | string | yes | Display label for the settings UI. |
 | `description` | string | no | Defaults to `""`. |
-| `type` | string | yes | One of `"string"`, `"number"`, `"boolean"`. Not enum-validated by the manifest parser — any string is accepted, but only these three are coerced meaningfully at read time (see below). |
+| `type` | string | yes | A [field type](#field-types) — in practice `text`, `number`, `toggle` or `button`. Validated at install. |
 | `required` | boolean | no | Defaults to `false`. Descriptive only today — **not enforced** anywhere in the install or read path; a module function reading an unset required setting just sees the type's zero value. |
-| `default` | string | no | Stored as a string regardless of `type`. If omitted, the effective default is `"0"` for `type: "number"`, `"false"` for `type: "boolean"`, and `""` otherwise. |
+| `defaultValue` | string | no | Stored as a string regardless of `type`. If omitted, the effective default is `"0"` for `type: "number"`, `"false"` for `type: "toggle"`, and `""` otherwise. |
+| `action` | object | no | Required for `type: "button"`. `{ kind: "internal", request: {...}, timeoutMs? }` or `{ kind: "integration", integration: "..." }`. Buttons store no value and are skipped by `RegisterModuleSettings`. |
 
 Example — `modules/platform/spotify/manifest.json` (**woofx3-modules** repository):
 
@@ -660,16 +695,16 @@ Example — `modules/platform/spotify/manifest.json` (**woofx3-modules** reposit
 "settings": [
   {
     "id": "clientId",
-    "name": "Spotify Client ID",
+    "label": "Spotify Client ID",
     "description": "Your Spotify application client ID from the Spotify Developer Dashboard.",
-    "type": "string",
+    "type": "text",
     "required": true
   },
   {
     "id": "clientSecret",
-    "name": "Spotify Client Secret",
+    "label": "Spotify Client Secret",
     "description": "Your Spotify application client secret.",
-    "type": "string",
+    "type": "text",
     "required": true
   },
   {

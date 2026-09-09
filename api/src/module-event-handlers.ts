@@ -23,11 +23,11 @@ import type {
   TriggerDefinition,
   WebhookClient,
   WidgetDefinition,
-  WidgetSettingDefinition,
 } from "./webhook-client";
 import { asString } from "./outbox";
 import { subscribeProjections } from "./projection";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import type { ConfigField } from "@woofx3/api/ui-schema";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 
@@ -72,14 +72,11 @@ interface RawFunction {
   runtime?: unknown;
 }
 
-interface RawWidgetSetting {
-  key?: unknown;
-  field_type?: unknown;
-  fieldType?: unknown;
+interface RawConfigField {
+  id?: unknown;
   label?: unknown;
-  default_value?: unknown;
-  defaultValue?: unknown;
-  options?: unknown;
+  type?: unknown;
+  [key: string]: unknown;
 }
 
 interface RawWidget {
@@ -225,28 +222,23 @@ function mapFunction(raw: RawFunction): FunctionDefinition {
   return def;
 }
 
-function mapWidgetSetting(raw: RawWidgetSetting): WidgetSettingDefinition {
-  // Accept both snake_case (NATS payload) and camelCase (manifest pass-through)
-  // for tolerance during the producer rollout.
-  const fieldType = asString(raw.field_type) || asString(raw.fieldType);
-  const defaultValue = raw.default_value !== undefined ? raw.default_value : raw.defaultValue;
-  const setting: WidgetSettingDefinition = {
-    key: asString(raw.key),
-    fieldType,
-    label: asString(raw.label),
-    defaultValue: defaultValue ?? null,
+/**
+ * Map one declared field onto the shared ConfigField shape.
+ *
+ * There is a single spelling for every property now, so this no longer has to
+ * accept `field_type` alongside `fieldType` or `key` alongside `id` — anything
+ * else was rejected at install. Unrecognised properties are carried through
+ * rather than dropped: the engine does not own presentation, and a consumer
+ * that understands a newer property should still receive it.
+ */
+function mapConfigField(raw: RawConfigField): ConfigField {
+  const { id, label, type, ...rest } = raw;
+  return {
+    ...(rest as Omit<ConfigField, "id" | "label" | "type">),
+    id: asString(id),
+    label: asString(label),
+    type: asString(type) as ConfigField["type"],
   };
-  if (Array.isArray(raw.options)) {
-    const opts: Array<{ label: string; value: string }> = [];
-    for (const o of raw.options) {
-      if (o && typeof o === "object") {
-        const obj = o as { label?: unknown; value?: unknown };
-        opts.push({ label: asString(obj.label), value: asString(obj.value) });
-      }
-    }
-    setting.options = opts;
-  }
-  return setting;
 }
 
 function mapWidget(raw: RawWidget): WidgetDefinition {
@@ -259,7 +251,7 @@ function mapWidget(raw: RawWidget): WidgetDefinition {
     name: asString(raw.name),
     directory: asString(raw.directory),
     alertTypes,
-    settings: settingsRaw.map((s) => mapWidgetSetting(s as RawWidgetSetting)),
+    settings: settingsRaw.map((s) => mapConfigField(s as RawConfigField)),
     createdByType: asString(raw.created_by_type),
     createdByRef: asString(raw.created_by_ref),
   };
