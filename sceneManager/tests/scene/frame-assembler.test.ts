@@ -11,7 +11,6 @@ import {
 } from "../../src/scene/frame-assembler";
 import type { BarkloaderFrameClient, FrameScaffold } from "../../src/scene/frame-assembler";
 import { sanitizeAssetPath } from "../../src/scene/asset-path";
-import { BUILTIN_MODULE_KEY } from "../../src/scene/scene-host";
 import type { OverlayHost, OverlaySceneState, OverlayWidgetInstance } from "../../src/scene/scene-host";
 import { PublicUrlResolver } from "../../src/scene/public-url-resolver";
 
@@ -303,36 +302,4 @@ describe("FrameAssembler.assemble", () => {
     expect(await resp.text()).toBe("<!doctype html><html><head></head><body></body></html>");
   });
 
-  it("reads a builtin widget's entry HTML from local disk and builds its resourceBaseUrl from selfPublicUrl", async () => {
-    const dir = join(tmpdir(), `scene-manager-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    const widgetDir = join(dir, "widgets", BUILTIN_MODULE_KEY, "media_alert");
-    await mkdir(widgetDir, { recursive: true });
-    await writeFile(join(widgetDir, "index.html"), "<!doctype html><body>alert</body>");
-
-    try {
-      const instance = widgetInstance({ moduleId: BUILTIN_MODULE_KEY, manifestId: "media_alert" });
-      const state: OverlaySceneState = {
-        sceneId: "scene-1",
-        applicationId: "app-1",
-        name: "Scene",
-        layout: {},
-        instances: [instance],
-      };
-      const barkloader: BarkloaderFrameClient = { fetchWidgetFrame: mock(async () => null) };
-      const assembler = new FrameAssembler(fakeHost(state, "index.html"), fakeLogger(), {
-        barkloader,
-        publicDir: dir,
-        selfPublicUrlResolver: fakePublicUrlResolver(),
-      });
-
-      const resp = await assembler.assemble("scene-1", "inst-1", null);
-      const html = await resp.text();
-      expect(html).toContain('<base href="https://scene.example.com/assets/builtin/widgets/media_alert/">');
-      expect(html).toContain("alert");
-      // Builtins never call Barkloader.
-      expect(barkloader.fetchWidgetFrame).not.toHaveBeenCalled();
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
 });

@@ -2,10 +2,58 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "actions": [],
   "triggers": [],
-  "widgets": []
+  "widgets": [
+    {
+      "id": "media_alert",
+      "name": "Media Alert",
+      "description": "Renders alert text, media, and audio with expression-based template substitution. Handles the standard stream alert events (follow, cheer, subscription, raid, channel-point redemption, stream on/off).",
+      "entry": "widgets/media_alert/index.html",
+      "assets": "widgets/media_alert",
+      "acceptedEvents": [
+        "channel.follow",
+        "channel.cheer",
+        "channel.subscribe",
+        "channel.subscriptionGift",
+        "channelpoints.redeem",
+        "channel.raid",
+        "stream.online",
+        "stream.offline"
+      ],
+      "settingsSchema": [
+        {
+          "id": "textTemplate",
+          "type": "text",
+          "label": "Alert text template",
+          "defaultValue": ""
+        },
+        {
+          "id": "mediaUrlTemplate",
+          "type": "text",
+          "label": "Media URL template",
+          "defaultValue": ""
+        },
+        {
+          "id": "audioUrlTemplate",
+          "type": "text",
+          "label": "Audio URL template",
+          "defaultValue": ""
+        },
+        {
+          "id": "duration",
+          "type": "number",
+          "label": "Display duration (seconds)",
+          "defaultValue": 5
+        }
+      ],
+      "taxonomy": [
+        "system.scene",
+        "alert.renderer"
+      ]
+    }
+  ]
 }

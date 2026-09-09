@@ -41,7 +41,6 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { DeliveryStore } = await import("./events/delivery-store");
     const { createMessageBus } = await import("@woofx3/nats");
     const { connectObs } = await import("./obs/manager");
-    const { initBuiltinWidgets } = await import("./widgets/builtin");
     const { initSubscriptions } = await import("./nats-subscriptions");
     const { refreshOverlayBrowserSources } = await import("./obs/refresh-overlays");
 
@@ -91,7 +90,6 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     }
     const obs = await connectObs(ctx.runtimeConfig.obs, ctx.logger);
 
-    await initBuiltinWidgets(ctx.logger, db, nats);
     await initSubscriptions({ nats, obs, db, host, deliveryStore, resolver, logger: ctx.logger });
 
     this.server = createHttpServer({ ctx, host, frameAssembler, sessionTokens, deliveryStore, bootId });
