@@ -71,17 +71,49 @@ pub struct ResolvedCommand {
     pub workflow: Option<CanonicalId>,
 }
 
+/// What a workflow binds to, and therefore whether it creates a dependency.
+///
+/// The distinction is the whole reason both forms exist: naming a declaration
+/// is a promise that it stays installed, and naming an event is not.
+#[derive(Debug, Clone)]
+pub enum WorkflowTriggerRef {
+    /// A declared trigger, by canonical id. A hard dependency: the owning
+    /// module must already be installed, and uninstalling it is refused
+    /// while this workflow exists.
+    Resource(CanonicalId),
+    /// A bare event type (`channel.follow`). No dependency: whichever module
+    /// emits it, at whatever version, satisfies this. The emitting module can
+    /// be installed, removed and reinstalled without touching the workflow.
+    Event(String),
+}
+
+impl WorkflowTriggerRef {
+    /// The canonical id this binds to, or `None` for an event binding.
+    /// `None` is what keeps a soft binding out of the dependency graph.
+    pub fn as_resource(&self) -> Option<&CanonicalId> {
+        match self {
+            Self::Resource(id) => Some(id),
+            Self::Event(_) => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ResolvedWorkflow {
     pub canonical_id: CanonicalId,
-    pub trigger: CanonicalId,
+    pub trigger: WorkflowTriggerRef,
     pub step_actions: Vec<CanonicalId>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ResolvedWidget {
     pub canonical_id: CanonicalId,
-    pub accepted_events: Vec<CanonicalId>,
+    /// Event types the widget wants delivered, matched against a
+    /// CloudEvent's `type` by the scene fan-out. Plain event strings, not
+    /// canonical ids: any module, and any version of it, may emit
+    /// `channel.follow`, so binding a widget to one declaration would make
+    /// it stop receiving events the moment that module was reinstalled.
+    pub accepted_events: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -466,7 +498,10 @@ async fn validate_cross_module_refs(
     let mut checked: HashSet<String> = HashSet::new();
 
     for wf in &resolved.workflows {
-        let canonical = &wf.trigger;
+        // Event bindings name no declaration, so there is nothing to depend on.
+        let Some(canonical) = wf.trigger.as_resource() else {
+            continue;
+        };
         if !is_external(canonical) || !checked.insert(canonical.to_string()) {
             continue;
         }
@@ -477,22 +512,6 @@ async fn validate_cross_module_refs(
                 canonical,
                 e
             ));
-        }
-    }
-
-    for widget in &resolved.widgets {
-        for event in &widget.accepted_events {
-            if !is_external(event) || !checked.insert(event.to_string()) {
-                continue;
-            }
-            if let Err(e) = db_proxy.get_trigger_event_by_canonical_id(&event.to_string()).await {
-                missing.push(format!(
-                    "widget '{}' → trigger '{}' ({})",
-                    widget.canonical_id.resource_id(),
-                    event,
-                    e
-                ));
-            }
         }
     }
 
@@ -942,9 +961,8 @@ fn resolve_workflows(
             .entries
             .get(workflow.id.trim())
             .ok_or_else(|| anyhow!("internal: workflow #{i} missing from workflow table"))?;
-        let trigger = resolve_local_or_canonical(
+        let trigger = resolve_workflow_trigger(
             workflow.trigger.trim(),
-            ResourceKind::Trigger,
             triggers_table,
             &format!("workflow #{i} ({}) trigger", workflow.id),
         )?;
@@ -980,13 +998,23 @@ fn resolve_widgets(
             .ok_or_else(|| anyhow!("internal: widget #{i} missing from widget table"))?;
         let mut accepted_events = Vec::with_capacity(widget.accepted_events.len());
         for (ei, raw) in widget.accepted_events.iter().enumerate() {
-            let canonical = resolve_local_or_canonical(
-                raw.trim(),
-                ResourceKind::Trigger,
-                triggers_table,
-                &format!("widget #{i} ({}) acceptedEvents[{ei}]", widget.id),
-            )?;
-            accepted_events.push(canonical);
+            let event = raw.trim();
+            let label = format!("widget #{i} ({}) acceptedEvents[{ei}]", widget.id);
+            if event.is_empty() {
+                return Err(anyhow!("{label}: event type must not be empty"));
+            }
+            // A canonical id here would be delivered to nothing: the fan-out
+            // compares these against a CloudEvent's `type`. Rejecting it is
+            // the difference between a failed install and a widget that
+            // silently never receives anything.
+            if event.contains(CANONICAL_ID_SEPARATOR) {
+                return Err(anyhow!(
+                    "{label}: expected an event type (e.g. \"channel.follow\"), got {event:?} — \
+                     acceptedEvents are matched against a CloudEvent's `type`, not resolved as \
+                     canonical ids"
+                ));
+            }
+            accepted_events.push(event.to_string());
         }
         out.push(ResolvedWidget {
             canonical_id: entry.canonical_id.clone(),
@@ -994,6 +1022,46 @@ fn resolve_widgets(
         });
     }
     Ok(out)
+}
+
+/// Decide whether a workflow's `trigger` names a declaration or an event.
+///
+/// The form is inferred rather than tagged: a canonical id is recognisable on
+/// sight, and requiring a discriminator key for something already unambiguous
+/// is noise in every manifest.
+///
+/// The one genuinely ambiguous case is a bare word. `t1` could be a local
+/// trigger id or an event type, and guessing wrong on a typo would produce a
+/// workflow that installs cleanly and never fires. Event types in this system
+/// are always dotted, so a dotless value that matches no local trigger is
+/// treated as a mistyped reference and rejected.
+fn resolve_workflow_trigger(
+    raw: &str,
+    triggers_table: &KindTable,
+    label: &str,
+) -> Result<WorkflowTriggerRef> {
+    if raw.is_empty() {
+        return Err(anyhow!("{label}: must name a trigger or an event type"));
+    }
+
+    if raw.contains(CANONICAL_ID_SEPARATOR) {
+        let canonical = resolve_local_or_canonical(raw, ResourceKind::Trigger, triggers_table, label)?;
+        return Ok(WorkflowTriggerRef::Resource(canonical));
+    }
+
+    if triggers_table.entries.contains_key(raw) {
+        let canonical = resolve_local_or_canonical(raw, ResourceKind::Trigger, triggers_table, label)?;
+        return Ok(WorkflowTriggerRef::Resource(canonical));
+    }
+
+    if !raw.contains('.') {
+        return Err(anyhow!(
+            "{label}: {raw:?} matches no trigger in this manifest, and is not an event type \
+             (event types are dotted, e.g. \"channel.follow\")"
+        ));
+    }
+
+    Ok(WorkflowTriggerRef::Event(raw.to_string()))
 }
 
 /// Resolve a reference field that's either a manifest-local id or a full
@@ -1616,9 +1684,72 @@ mod tests {
         let r = validate(&m).expect("ok");
         let wf = &r.workflows[0];
         assert_eq!(wf.canonical_id.to_string(), "test_mod:workflow:on_subscribe");
-        assert_eq!(wf.trigger.to_string(), "test_mod:trigger:channel_subscribe");
+        assert_eq!(
+            wf.trigger.as_resource().expect("a local trigger id is a resource binding").to_string(),
+            "test_mod:trigger:channel_subscribe"
+        );
         assert_eq!(wf.step_actions.len(), 1);
         assert_eq!(wf.step_actions[0].to_string(), "test_mod:action:play_alert");
+    }
+
+    // ---------------------------------------------------------------
+    // Workflow trigger bindings. A canonical id is a promise the
+    // declaration stays installed; an event type is not, and the
+    // difference is what decides whether a dependency edge exists.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn a_dotted_unknown_trigger_binds_to_the_event() {
+        let m = minimal(r#",
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "channel.follow", "steps": [] }]"#);
+        let r = validate(&m).expect("ok");
+        match &r.workflows[0].trigger {
+            WorkflowTriggerRef::Event(e) => assert_eq!(e, "channel.follow"),
+            other => panic!("expected an event binding, got {other:?}"),
+        }
+        assert!(
+            r.workflows[0].trigger.as_resource().is_none(),
+            "an event binding must not produce a dependency"
+        );
+    }
+
+    #[test]
+    fn a_canonical_id_binds_to_the_resource() {
+        let m = minimal(r#",
+            "workflows": [{
+                "id": "w1", "name": "W1",
+                "trigger": "woofx3_twitch:trigger:channel_follow", "steps": []
+            }]"#);
+        let r = validate(&m).expect("ok");
+        let canonical = r.workflows[0]
+            .trigger
+            .as_resource()
+            .expect("a canonical id is a resource binding");
+        assert_eq!(canonical.to_string(), "woofx3_twitch:trigger:channel_follow");
+    }
+
+    /// The ambiguous case the inferred form has to get right: a bare word is
+    /// a local trigger id, and a mistyped one must not slide through as an
+    /// event type that never fires.
+    #[test]
+    fn a_dotless_unknown_trigger_is_rejected_as_a_typo() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "channel_follow", "name": "T", "type": "eventbus" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "chanel_follow", "steps": [] }]"#);
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("matches no trigger"), "got: {err}");
+    }
+
+    #[test]
+    fn a_local_trigger_id_still_binds_to_the_resource() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [] }]"#);
+        let r = validate(&m).expect("ok");
+        assert_eq!(
+            r.workflows[0].trigger.as_resource().expect("local id is a resource").to_string(),
+            "test_mod:trigger:t1"
+        );
     }
 
     #[test]
@@ -1631,25 +1762,56 @@ mod tests {
                 "steps": []
             }]"#);
         let err = validate(&m).unwrap_err().to_string();
-        assert!(err.contains("does not match"), "got: {err}");
+        assert!(err.contains("matches no trigger"), "got: {err}");
     }
 
     #[test]
-    fn resolves_command_workflow_and_widget_accepted_events() {
+    fn resolves_command_workflow_and_keeps_accepted_events_verbatim() {
         let m = minimal(r#",
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus" }],
             "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [] }],
             "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix", "workflow": "w1" }],
-            "widgets": [{ "id": "wd1", "name": "Wd1", "acceptedEvents": ["t1"] }]"#);
+            "widgets": [{ "id": "wd1", "name": "Wd1", "acceptedEvents": ["channel.follow"] }]"#);
         let r = validate(&m).expect("ok");
         assert_eq!(
             r.commands[0].workflow.as_ref().unwrap().to_string(),
             "test_mod:workflow:w1"
         );
+        assert_eq!(r.widgets[0].accepted_events, vec!["channel.follow".to_string()]);
+    }
+
+    /// A widget may accept an event no installed module declares yet. That is
+    /// the point: the emitting module can be installed, removed and
+    /// reinstalled without the widget caring.
+    #[test]
+    fn accepted_events_need_not_match_any_declared_trigger() {
+        let m = minimal(r#",
+            "widgets": [{ "id": "wd1", "name": "Wd1", "acceptedEvents": ["channel.follow", "stream.online"] }]"#);
+        let r = validate(&m).expect("ok");
         assert_eq!(
-            r.widgets[0].accepted_events[0].to_string(),
-            "test_mod:trigger:t1"
+            r.widgets[0].accepted_events,
+            vec!["channel.follow".to_string(), "stream.online".to_string()]
         );
+    }
+
+    /// The old form is now a value that would be compared against a
+    /// CloudEvent `type` and match nothing. Fail the install rather than
+    /// register a widget that silently receives no events.
+    #[test]
+    fn rejects_a_canonical_id_in_accepted_events() {
+        let m = minimal(r#",
+            "widgets": [{ "id": "wd1", "name": "Wd1", "acceptedEvents": ["woofx3_twitch:trigger:channel.follow"] }]"#);
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("acceptedEvents"), "got: {err}");
+        assert!(err.contains("channel.follow"), "error should quote the offending value: {err}");
+    }
+
+    #[test]
+    fn rejects_an_empty_accepted_event() {
+        let m = minimal(r#",
+            "widgets": [{ "id": "wd1", "name": "Wd1", "acceptedEvents": [""] }]"#);
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("must not be empty"), "got: {err}");
     }
 
     #[test]

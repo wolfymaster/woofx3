@@ -275,7 +275,7 @@ describe("installWidgetHostShim — storage", () => {
 describe("installWidgetHostShim — events", () => {
   function makeEvent(overrides: Record<string, unknown> = {}) {
     return {
-      type: "twitch_platform:trigger:follow.channel.twitch",
+      type: "channel.follow",
       source: "twitch",
       time: "2026-06-12T00:00:00Z",
       data: { userName: "wolfy" },

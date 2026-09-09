@@ -42,7 +42,7 @@ describe("P1 woofx3.widget — envelope guard", () => {
       type: "init",
       settings: { label: "x" },
       capabilities: ["storage"],
-      acceptedEvents: ["twitch_platform:trigger:follow.channel.twitch"],
+      acceptedEvents: ["channel.follow"],
     },
     {
       proto: WIDGET_PROTOCOL,
@@ -73,7 +73,7 @@ describe("P1 woofx3.widget — envelope guard", () => {
       nonce: "n1",
       type: "events.subscribe",
       subId: "e2",
-      types: ["twitch_platform:trigger:follow.channel.twitch"],
+      types: ["channel.follow"],
       queue: { retryTimeoutMs: 5000, maxInFlight: 1, autoComplete: false, priorityExpr: "data.amount ?? 0" },
     },
     { proto: WIDGET_PROTOCOL, v: PROTOCOL_VERSION, nonce: "n1", type: "events.unsubscribe", subId: "e1" },
@@ -84,7 +84,7 @@ describe("P1 woofx3.widget — envelope guard", () => {
       type: "event.deliver",
       subId: "e1",
       event: {
-        type: "twitch_platform:trigger:follow.channel.twitch",
+        type: "channel.follow",
         source: "twitch",
         time: "2026-06-12T00:00:00Z",
         data: { userName: "wolfy" },
@@ -168,7 +168,7 @@ describe("P2 woofx3.overlay-events — frame round-trip", () => {
     },
     {
       kind: "event",
-      type: "twitch_platform:trigger:follow.channel.twitch",
+      type: "channel.follow",
       source: "twitch",
       time: "2026-06-12T00:00:00Z",
       data: { userName: "wolfy" },

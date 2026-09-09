@@ -7,7 +7,7 @@ use std::path::Path;
 use super::canonical_id::CanonicalId;
 use super::db_proxy::CreateModuleFunctionJson;
 use super::db_proxy_client::ModuleDbProxy;
-use super::manifest_validate::{self, InstallStep, ResolvedActionImpl, ResolvedManifest};
+use super::manifest_validate::{self, InstallStep, ResolvedActionImpl, ResolvedManifest, WorkflowTriggerRef};
 use super::module_file::ModuleFile;
 use super::module_manifest::{ModuleManifest, ResolvedWorkflowStep, ResolvedWorkflowTrigger};
 
@@ -602,35 +602,48 @@ impl<'a, R: Repository> SagaState<'a, R> {
         // module's trigger declaration) get a db lookup to recover
         // the trigger row's `event` field — that module must be
         // installed first or this fails loudly.
-        let resolved_trigger_ctx = if resolved_wf.trigger.module_id() == self.resolved.module_id {
-            let trigger_local_id = resolved_wf.trigger.resource_id();
-            let trigger_event_subject = self
-                .manifest
-                .triggers
-                .iter()
-                .find(|t| t.id == trigger_local_id)
-                .map(|t| if t.event.is_empty() { t.id.clone() } else { t.event.clone() })
-                .ok_or_else(|| anyhow!(
-                    "internal: bundled workflow {} references local trigger {} not found in manifest",
-                    wf.id,
-                    trigger_local_id,
-                ))?;
-            ResolvedWorkflowTrigger {
-                trigger_ref: resolved_wf.trigger.to_string(),
-                event_subject: trigger_event_subject,
+        let resolved_trigger_ctx = match &resolved_wf.trigger {
+            // An event binding already is the subject. No lookup, no
+            // `trigger_ref` — an empty ref is what keeps this workflow out of
+            // the dependency graph, so the emitting module stays uninstallable
+            // and reinstallable underneath it.
+            WorkflowTriggerRef::Event(event) => ResolvedWorkflowTrigger {
+                trigger_ref: String::new(),
+                event_subject: event.clone(),
+            },
+            WorkflowTriggerRef::Resource(canonical)
+                if canonical.module_id() == self.resolved.module_id =>
+            {
+                let trigger_local_id = canonical.resource_id();
+                let trigger_event_subject = self
+                    .manifest
+                    .triggers
+                    .iter()
+                    .find(|t| t.id == trigger_local_id)
+                    .map(|t| if t.event.is_empty() { t.id.clone() } else { t.event.clone() })
+                    .ok_or_else(|| anyhow!(
+                        "internal: bundled workflow {} references local trigger {} not found in manifest",
+                        wf.id,
+                        trigger_local_id,
+                    ))?;
+                ResolvedWorkflowTrigger {
+                    trigger_ref: canonical.to_string(),
+                    event_subject: trigger_event_subject,
+                }
             }
-        } else {
-            let canonical = resolved_wf.trigger.to_string();
-            let event_subject = db_proxy
-                .get_trigger_event_by_canonical_id(&canonical)
-                .await
-                .map_err(|e| anyhow!(
-                    "bundled workflow {} references trigger {} but the trigger could not be resolved (is the owning module installed?): {}",
-                    wf.id,
-                    canonical,
-                    e,
-                ))?;
-            ResolvedWorkflowTrigger { trigger_ref: canonical, event_subject }
+            WorkflowTriggerRef::Resource(canonical) => {
+                let canonical = canonical.to_string();
+                let event_subject = db_proxy
+                    .get_trigger_event_by_canonical_id(&canonical)
+                    .await
+                    .map_err(|e| anyhow!(
+                        "bundled workflow {} references trigger {} but the trigger could not be resolved (is the owning module installed?): {}",
+                        wf.id,
+                        canonical,
+                        e,
+                    ))?;
+                ResolvedWorkflowTrigger { trigger_ref: canonical, event_subject }
+            }
         };
 
         // Build per-step context. Each step references an action
