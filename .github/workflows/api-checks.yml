@@ -2,9 +2,10 @@ name: api checks
 
 # Type-checks and tests the api service.
 #
-# publish-api.yml already type-checks shared/clients/typescript/api, but that
-# is the SDK contract, not the engine that implements it. Nothing checked
-# api/ itself, which is how it accumulated 400+ type errors unnoticed --
+# This is also the only check on shared/clients/typescript/api: every file in
+# that package is reachable from api/'s own program, so the SDK contract and
+# the engine that implements it are verified together. Nothing checked api/
+# itself for a long time, which is how it accumulated 400+ type errors --
 # including a webhook event missing a required field, a request object
 # carrying a field the proto does not have, and a dead WebSocket error
 # handler Bun never calls.
