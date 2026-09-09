@@ -1,6 +1,6 @@
 module github.com/wolfymaster/woofx3/common/runtime
 
-go 1.23.0
+go 1.24.0
 
 require (
 	github.com/wolfymaster/woofx3/clients/barkloader v0.0.0

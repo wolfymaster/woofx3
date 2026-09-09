@@ -1,6 +1,6 @@
 module github.com/wolfymaster/woofx3/clients/servicediscovery
 
-go 1.23.0
+go 1.24.0
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect

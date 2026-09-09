@@ -1,6 +1,6 @@
 module github.com/wolfymaster/woofx3/common/cloudevents
 
-go 1.23.0
+go 1.24.0
 
 require github.com/cloudevents/sdk-go/v2 v2.16.2
 

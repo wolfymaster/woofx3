@@ -1,6 +1,6 @@
 module github.com/wolfymaster/woofx3/clients/db
 
-go 1.23.0
+go 1.24.0
 
 require (
 	github.com/twitchtv/twirp v8.1.3+incompatible
