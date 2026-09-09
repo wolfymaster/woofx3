@@ -233,14 +233,11 @@ const (
 	builtinCreatedByRef  = "builtin"
 )
 
-// registerBuiltinActions upserts an action row for every engine
-// built-in handler. Idempotent — runs every startup, the
-// (created_by_type, created_by_ref, manifest_id) uniqueness on the
-// actions table dedupes. `call` is empty for non-function handlers
-// (the handler itself does the dispatch); the type column tells the
-// install path which handler to bind workflow steps to.
-func (a *WorkflowApp) registerBuiltinActions(ctx context.Context) error {
-	builtins := []*dbv1.ActionInput{
+// builtinActionInputs is the declaration list for every engine
+// built-in handler. Separated from registration so the taxonomy and
+// dispatch contract can be asserted without a db client.
+func builtinActionInputs() []*dbv1.ActionInput {
+	return []*dbv1.ActionInput{
 		{
 			Name:         "Function",
 			Description:  "Invoke a sandboxed module function. Set `function` to the canonical function id; everything else in `parameters` is forwarded to the function as a single object argument.",
@@ -248,6 +245,7 @@ func (a *WorkflowApp) registerBuiltinActions(ctx context.Context) error {
 			ParamsSchema: "[]",
 			ManifestId:   "function",
 			Type:         "function",
+			Taxonomy:     []string{"system.workflow"},
 		},
 		{
 			Name:         "Alert",
@@ -256,6 +254,11 @@ func (a *WorkflowApp) registerBuiltinActions(ctx context.Context) error {
 			ParamsSchema: "[]",
 			ManifestId:   "alert",
 			Type:         "alert",
+			// `alert.renderer` is a capability axis, not a grouping one:
+			// it answers "which action renders an alert?" so the UI can
+			// query the catalog instead of hardcoding a canonical id
+			// that a rename would silently invalidate.
+			Taxonomy: []string{"system.workflow", "alert.renderer"},
 		},
 		{
 			Name:         "Print",
@@ -264,8 +267,19 @@ func (a *WorkflowApp) registerBuiltinActions(ctx context.Context) error {
 			ParamsSchema: "[]",
 			ManifestId:   "print",
 			Type:         "print",
+			Taxonomy:     []string{"system.workflow"},
 		},
 	}
+}
+
+// registerBuiltinActions upserts an action row for every engine
+// built-in handler. Idempotent — runs every startup, the
+// (created_by_type, created_by_ref, manifest_id) uniqueness on the
+// actions table dedupes. `call` is empty for non-function handlers
+// (the handler itself does the dispatch); the type column tells the
+// install path which handler to bind workflow steps to.
+func (a *WorkflowApp) registerBuiltinActions(ctx context.Context) error {
+	builtins := builtinActionInputs()
 	resp, err := a.moduleDbClient.RegisterActions(ctx, &dbv1.RegisterActionsRequest{
 		// ModuleKey/ModuleName/Version are unused when (CreatedByType,
 		// CreatedByRef) override the default MODULE namespace; pass empty
