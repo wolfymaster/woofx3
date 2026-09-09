@@ -1,0 +1,65 @@
+name: go checks
+
+# Builds and tests the Go modules. Nothing ran `go test` on CI before this,
+# so the db-proxy - the only service that talks to a data store - and the
+# workflow engine were verified only on whoever's machine last touched them.
+#
+# One job per module because each is its own `go.mod` reached by `replace`
+# directives, so building one does not build, let alone test, the others.
+# Modules with no tests are still built: a compile break in a generated
+# client or a service entry point is worth catching, and `go build` is cheap.
+
+on:
+  push:
+    branches: [main, master, release]
+    paths:
+      - "**.go"
+      - "**/go.mod"
+      - "**/go.sum"
+      - ".github/workflows/go-checks.yml"
+  pull_request:
+    paths:
+      - "**.go"
+      - "**/go.mod"
+      - "**/go.sum"
+      - ".github/workflows/go-checks.yml"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - db
+          - workflow
+          - services/nats
+          - build/orchestrator
+          - shared/clients/golang/barkloader
+          - shared/clients/golang/db
+          - shared/clients/golang/nats
+          - shared/clients/golang/servicediscovery
+          - shared/common/golang/cloudevents
+          - shared/common/golang/logging
+          - shared/common/golang/runtime
+    steps:
+      - uses: actions/checkout@v4
+
+      # Read from the module being built rather than pinned here, so a module
+      # raising its own floor does not need this file edited too.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: Build
+        working-directory: ${{ matrix.module }}
+        run: go build ./...
+
+      - name: Test
+        working-directory: ${{ matrix.module }}
+        run: go test ./...

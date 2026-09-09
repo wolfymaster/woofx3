@@ -2,8 +2,8 @@ name: service checks
 
 # Type-checks and tests the Bun services that had no gate.
 #
-# api has its own workflow (api-checks.yml) and sceneManager already carried
-# a typecheck script. twitch and woofwoofwoof did not, which
+# api has its own workflow (api-checks.yml). twitch and woofwoofwoof had no
+# typecheck script at all, and sceneManager had one that nothing ran, which
 # is how a `category` field that the proto stopped accepting, a logger call
 # dropping four of its five arguments, a `disconnect()` calling a method that
 # does not exist, and a stale `@client/*` import all sat unnoticed.
@@ -18,6 +18,7 @@ on:
     paths:
       - "twitch/**"
       - "woofwoofwoof/**"
+      - "sceneManager/**"
       - "shared/clients/typescript/**"
       - "shared/common/typescript/**"
       - ".github/workflows/service-checks.yml"
@@ -25,6 +26,7 @@ on:
     paths:
       - "twitch/**"
       - "woofwoofwoof/**"
+      - "sceneManager/**"
       - "shared/clients/typescript/**"
       - "shared/common/typescript/**"
       - ".github/workflows/service-checks.yml"
@@ -38,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [twitch, woofwoofwoof]
+        service: [twitch, woofwoofwoof, sceneManager]
     steps:
       - uses: actions/checkout@v4
 
@@ -54,12 +56,19 @@ jobs:
             shared/clients/typescript/db \
             shared/clients/typescript/nats \
             shared/clients/typescript/twitch \
+            shared/clients/typescript/module-sdk \
             ${{ matrix.service }}
           do
             echo "::group::bun install ($dir)"
             (cd "$dir" && bun install --frozen-lockfile)
             echo "::endgroup::"
           done
+
+      # sceneManager imports @woofx3/module-sdk by its built output, not its
+      # source, so the package has to be compiled before anything type-checks
+      # against it.
+      - name: Build module-sdk
+        run: cd shared/clients/typescript/module-sdk && bun run build
 
       - name: Type check
         working-directory: ${{ matrix.service }}

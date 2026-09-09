@@ -81,3 +81,6 @@ logs/
 # oh-my-openagent
 .sisyphus
 
+# `go build ./...` in a module directory writes the binary next to the source.
+build/orchestrator/orchestrator
+services/nats/messagebus

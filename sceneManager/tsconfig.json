@@ -2,6 +2,8 @@
   "compilerOptions": {
     "esModuleInterop": true,
     "module": "esnext",
+    "moduleResolution": "node",
+    "baseUrl": ".",
     "paths": {
       "@woofx3/common/*": ["../shared/common/typescript/*"],
       "@woofx3/*": ["../shared/clients/typescript/*"]
