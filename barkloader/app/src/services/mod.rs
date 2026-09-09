@@ -1,6 +1,7 @@
 pub mod background_scheduler;
 pub mod bundled_reconciler;
 pub mod field_options;
+pub mod heartbeat;
 pub mod http_client;
 pub mod http_storage_client;
 pub mod env_reader;

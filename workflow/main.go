@@ -39,7 +39,12 @@ func main() {
 
 	// Messagebus (does not depend on config values)
 	natsSvc := service.NewNATS(logger, "nats", "messagebus")
-	natsMonitor := monitor.NewNATS("nats", natsSvc, "workflow", "HEARTBEAT", 15*time.Second, slogAdapter)
+	// Workflows resolve system canonical ids (woofx3:action:alert and
+	// siblings) as soon as they load, and those rows exist only once
+	// barkloader has installed the bundled modules. Waiting on its readiness
+	// turns a transient resolve failure on a cold start into a slower start.
+	natsMonitor := monitor.NewNATS("nats", natsSvc, "workflow", "HEARTBEAT", 15*time.Second, slogAdapter).
+		WaitFor("barkloader")
 
 	// Create application shell; db clients are wired in RuntimeInit after config is loaded.
 	app := NewWorkflowApp(logger)

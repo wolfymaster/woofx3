@@ -748,7 +748,63 @@ func (r *Runtime) handleHealthMonitorInit() {
 		return
 	}
 	r.logger.Info("Health monitor started successfully")
+
+	if !r.awaitStartupDependencies(monitor) {
+		r.stateChan <- EventHealthMonitorFailed
+		return
+	}
+
 	r.stateChan <- EventHealthMonitorReady
+}
+
+// awaitStartupDependencies blocks until every declared dependency reports
+// ready, or the runtime is cancelled.
+//
+// The wait happens here, after the monitor has subscribed and before the
+// application starts, because this is the last point where not starting is
+// still cheap. Reporting false lets the caller take the existing
+// health-monitor backoff path rather than introducing a second retry loop.
+func (r *Runtime) awaitStartupDependencies(monitor HealthMonitor) bool {
+	gate, ok := monitor.(StartupDependencyProvider)
+	if !ok || len(gate.StartupDependencies()) == 0 {
+		return true
+	}
+
+	r.logger.Info("Waiting for startup dependencies", "services", gate.StartupDependencies())
+	const pollInterval = 500 * time.Millisecond
+	var lastReported []string
+	for {
+		pending := gate.PendingDependencies()
+		if len(pending) == 0 {
+			r.logger.Info("Startup dependencies ready", "services", gate.StartupDependencies())
+			return true
+		}
+		// Log only when the set changes: this polls twice a second and a cold
+		// start can wait a while, so logging every tick would bury everything
+		// else in the boot log.
+		if !sameServices(lastReported, pending) {
+			r.logger.Info("Still waiting on startup dependencies", "pending", pending)
+			lastReported = pending
+		}
+		select {
+		case <-r.ctx.Done():
+			r.logger.Warn("Cancelled while waiting for startup dependencies", "pending", pending)
+			return false
+		case <-time.After(pollInterval):
+		}
+	}
+}
+
+func sameServices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *Runtime) handleHealthMonitorReady() {
