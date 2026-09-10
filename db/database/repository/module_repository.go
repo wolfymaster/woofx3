@@ -178,11 +178,17 @@ func (r *ModuleRepository) ListTriggers(createdByType, createdByRef string) ([]*
 	return triggers, err
 }
 
-func (r *ModuleRepository) DeleteTriggersByModulePrefix(moduleID string) error {
-	return r.db.Where(
+// Returns the number of rows removed. The provenance guard below is
+// deliberate -- a user module must not be able to delete SYSTEM rows by
+// naming itself after one -- but that means a caller can ask to delete
+// something and correctly have nothing happen. Reporting the count is what
+// lets them tell that apart from success.
+func (r *ModuleRepository) DeleteTriggersByModulePrefix(moduleID string) (int64, error) {
+	result := r.db.Where(
 		"created_by_type = ? AND created_by_ref = ?",
 		"MODULE", moduleID,
-	).Delete(&models.Trigger{}).Error
+	).Delete(&models.Trigger{})
+	return result.RowsAffected, result.Error
 }
 
 // ArchiveTriggerByManifestID soft-deletes a single trigger — used by the
@@ -293,11 +299,17 @@ func (r *ModuleRepository) ListActions(createdByType, createdByRef string) ([]*m
 	return actions, err
 }
 
-func (r *ModuleRepository) DeleteActionsByModulePrefix(moduleID string) error {
-	return r.db.Where(
+// Returns the number of rows removed. The provenance guard below is
+// deliberate -- a user module must not be able to delete SYSTEM rows by
+// naming itself after one -- but that means a caller can ask to delete
+// something and correctly have nothing happen. Reporting the count is what
+// lets them tell that apart from success.
+func (r *ModuleRepository) DeleteActionsByModulePrefix(moduleID string) (int64, error) {
+	result := r.db.Where(
 		"created_by_type = ? AND created_by_ref = ?",
 		"MODULE", moduleID,
-	).Delete(&models.Action{}).Error
+	).Delete(&models.Action{})
+	return result.RowsAffected, result.Error
 }
 
 // ArchiveActionByManifestID mirrors ArchiveTriggerByManifestID for actions.
@@ -393,11 +405,17 @@ func (r *ModuleRepository) ListAssetsByModulePrefix(moduleID string) ([]*models.
 	return assets, err
 }
 
-func (r *ModuleRepository) DeleteAssetsByModulePrefix(moduleID string) error {
-	return r.db.Where(
+// Returns the number of rows removed. The provenance guard below is
+// deliberate -- a user module must not be able to delete SYSTEM rows by
+// naming itself after one -- but that means a caller can ask to delete
+// something and correctly have nothing happen. Reporting the count is what
+// lets them tell that apart from success.
+func (r *ModuleRepository) DeleteAssetsByModulePrefix(moduleID string) (int64, error) {
+	result := r.db.Where(
 		"created_by_type = ? AND created_by_ref = ?",
 		"MODULE", moduleID,
-	).Delete(&models.Asset{}).Error
+	).Delete(&models.Asset{})
+	return result.RowsAffected, result.Error
 }
 
 // Note: assets have no selective per-manifest-id delete/archive path.
@@ -537,11 +555,17 @@ func (r *ModuleRepository) GetWidgetByModuleAndManifestID(moduleID, manifestID s
 	return &widget, nil
 }
 
-func (r *ModuleRepository) DeleteWidgetsByModulePrefix(moduleID string) error {
-	return r.db.Where(
+// Returns the number of rows removed. The provenance guard below is
+// deliberate -- a user module must not be able to delete SYSTEM rows by
+// naming itself after one -- but that means a caller can ask to delete
+// something and correctly have nothing happen. Reporting the count is what
+// lets them tell that apart from success.
+func (r *ModuleRepository) DeleteWidgetsByModulePrefix(moduleID string) (int64, error) {
+	result := r.db.Where(
 		"created_by_type = ? AND created_by_ref = ?",
 		"MODULE", moduleID,
-	).Delete(&models.Widget{}).Error
+	).Delete(&models.Widget{})
+	return result.RowsAffected, result.Error
 }
 
 // ArchiveWidgetByManifestID mirrors ArchiveTriggerByManifestID for widgets.
@@ -597,11 +621,17 @@ func (r *ModuleRepository) ListBackgroundTasksByModulePrefix(moduleID string) ([
 	return tasks, err
 }
 
-func (r *ModuleRepository) DeleteBackgroundTasksByModulePrefix(moduleID string) error {
-	return r.db.Where(
+// Returns the number of rows removed. The provenance guard below is
+// deliberate -- a user module must not be able to delete SYSTEM rows by
+// naming itself after one -- but that means a caller can ask to delete
+// something and correctly have nothing happen. Reporting the count is what
+// lets them tell that apart from success.
+func (r *ModuleRepository) DeleteBackgroundTasksByModulePrefix(moduleID string) (int64, error) {
+	result := r.db.Where(
 		"created_by_type = ? AND created_by_ref = ?",
 		"MODULE", moduleID,
-	).Delete(&models.BackgroundTask{}).Error
+	).Delete(&models.BackgroundTask{})
+	return result.RowsAffected, result.Error
 }
 
 // DeleteBackgroundTaskByManifestID mirrors DeleteTriggerByManifestID for
