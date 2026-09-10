@@ -5,7 +5,7 @@
 //!
 //!   - top-level `id` is required, non-empty, and a valid id segment
 //!   - every resource (`triggers`, `actions`, `functions`, `commands`,
-//!     `workflows`, `widgets`, `overlays`) has a non-empty `id` matching
+//!     `workflows`, `widgets`) has a non-empty `id` matching
 //!     `[A-Za-z0-9._-]+`
 //!   - within each kind, canonical ids are unique
 //!
@@ -31,7 +31,7 @@ use super::canonical_id::{
 use super::db_proxy_client::ModuleDbProxy;
 use super::module_manifest::{
     ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField,
-    ManifestDataShape, ManifestFunction, ManifestOverlay, ManifestResourceKind, ManifestSetting,
+    ManifestDataShape, ManifestFunction, ManifestResourceKind, ManifestSetting,
     ManifestTrigger, ManifestWorkflow, ModuleManifest, ModuleWidget, CONFIG_FIELD_TYPES,
     DATA_SHAPE_FIELD_TYPES,
 };
@@ -117,11 +117,6 @@ pub struct ResolvedWidget {
 }
 
 #[derive(Debug, Clone)]
-pub struct ResolvedOverlay {
-    pub canonical_id: CanonicalId,
-}
-
-#[derive(Debug, Clone)]
 pub struct ResolvedAsset {
     pub canonical_id: CanonicalId,
 }
@@ -135,7 +130,6 @@ pub struct ResolvedManifest {
     pub commands: Vec<ResolvedCommand>,
     pub workflows: Vec<ResolvedWorkflow>,
     pub widgets: Vec<ResolvedWidget>,
-    pub overlays: Vec<ResolvedOverlay>,
     pub assets: Vec<ResolvedAsset>,
 }
 
@@ -280,18 +274,13 @@ pub fn validate_with_provenance(
         &manifest.widgets,
         |w: &ModuleWidget| &w.id,
     )?;
-    let overlays_table = build_kind_table(
-        &module_id,
-        ResourceKind::Overlay,
-        &manifest.overlays,
-        |o: &ManifestOverlay| &o.id,
-    )?;
     let assets_table = build_kind_table(
         &module_id,
         ResourceKind::Asset,
         &manifest.assets,
         |a: &ManifestAsset| &a.id,
     )?;
+    validate_no_overlays(manifest)?;
     validate_asset_paths(&manifest.assets)?;
     validate_widget_entries(&manifest.widgets)?;
     validate_resource_kinds(&manifest.resources)?;
@@ -303,9 +292,6 @@ pub fn validate_with_provenance(
         canonical_id: e.canonical_id.clone(),
     });
     let functions = entries_to_resolved(&functions_table, |e| ResolvedFunction {
-        canonical_id: e.canonical_id.clone(),
-    });
-    let overlays = entries_to_resolved(&overlays_table, |e| ResolvedOverlay {
         canonical_id: e.canonical_id.clone(),
     });
     let assets = entries_to_resolved(&assets_table, |e| ResolvedAsset {
@@ -325,7 +311,6 @@ pub fn validate_with_provenance(
         commands,
         workflows,
         widgets,
-        overlays,
         assets,
     })
 }
@@ -420,7 +405,7 @@ pub async fn build_install_plan(
     );
 
     // Triggers and actions register unconditionally today (even with an
-    // empty list) — functions and overlays have no bulk-registration
+    // empty list) — functions have no bulk-registration
     // call of their own, only the upload + (for functions) the ledger
     // entries `CreateModule` writes.
     add_step(&mut nodes, &mut index_of, InstallStep::RegisterTriggers, (2, 0, 0), &[&InstallStep::CreateModule]);
@@ -834,6 +819,33 @@ fn validate_data_shape(shape: &ManifestDataShape, context: &str) -> Result<()> {
 /// a non-empty `path` that doesn't try to escape the module root.
 /// Existence inside the zip is checked at install time by the upload
 /// path (via `resolve_zip_file`) so this stays pure / IO-free.
+/// Reject the retired `overlays[]` surface.
+///
+/// It never had a catalog registration or a serving route, so a declared
+/// overlay uploaded a file and then resolved to nothing -- and an author had
+/// no way to find that out except by noticing their overlay never appeared.
+/// Scenes replaced it: a module contributes widgets, and the operator composes
+/// them into a scene addressed by an overlay token minted in the UI.
+///
+/// An error rather than a warning, because a warning is what this already was
+/// and it did not stop anyone from depending on the field.
+fn validate_no_overlays(manifest: &ModuleManifest) -> Result<()> {
+    if manifest.overlays.is_empty() {
+        return Ok(());
+    }
+    let ids: Vec<&str> = manifest
+        .overlays
+        .iter()
+        .map(|o| if o.id.is_empty() { "<unnamed>" } else { o.id.as_str() })
+        .collect();
+    Err(anyhow!(
+        "`overlays` is no longer supported (declared: {}). Overlays are composed in the UI: \
+         publish the visual as a widget under `widgets[]`, then place it on a scene and point \
+         a browser source at that scene's overlay token.",
+        ids.join(", ")
+    ))
+}
+
 fn validate_asset_paths(assets: &[ManifestAsset]) -> Result<()> {
     for (i, a) in assets.iter().enumerate() {
         let trimmed = a.path.trim();
@@ -905,7 +917,7 @@ fn build_kind_table<T>(
 
 /// Project a KindTable into a manifest-ordered Vec via a per-entry
 /// constructor. Used for kinds that have no references to resolve
-/// (triggers, functions, overlays).
+/// (triggers, functions).
 fn entries_to_resolved<R>(table: &KindTable, build: impl Fn(&KindEntry) -> R) -> Vec<R> {
     let mut entries: Vec<&KindEntry> = table.entries.values().collect();
     entries.sort_by_key(|e| e.manifest_index);

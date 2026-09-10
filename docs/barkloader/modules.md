@@ -9,14 +9,11 @@ my-module.zip
   |-- manifest.json
   |-- functions/
   |     +-- handler.lua
-  |-- widgets/
-  |     +-- alerts/
-  |           +-- index.html
-  |           +-- static/
-  |                 +-- style.css
-  |-- overlays/
-        +-- main/
+  +-- widgets/
+        +-- alerts/
               +-- index.html
+              +-- static/
+                    +-- style.css
 ```
 
 The manifest is **required**. If no manifest file is found (after extraction), processing fails.
@@ -108,20 +105,18 @@ The manifest uses **camelCase** JSON keys. All top-level sections are optional *
       ],
       "acceptedEvents": ["channel.subscribe", "channel.cheer"]
     }
-  ],
-  "overlays": []
+  ]
 }
 ```
 
-> **`overlays[]` is not supported yet.** Entries are parsed, their entry files
-> are uploaded, and the overlay is recorded in the module resource ledger — but
-> nothing registers it into a catalog and no route serves it, so nothing can
-> render one. Install warns when a manifest declares them. Tracked in
-> [#80](https://github.com/wolfymaster/woofx3/issues/80).
+> **`overlays[]` is not a manifest surface.** A module contributes the visual as
+> a **widget**; the operator composes widgets into a **scene** and points a
+> browser source at that scene's overlay token. A manifest that still declares
+> `overlays[]` is rejected at install with a message naming the replacement.
 
 ### Canonical IDs and References
 
-Every resource a module contributes — triggers, actions, functions, commands, workflows, widgets, overlays — gets a **canonical id** that the rest of the system uses to refer to it. Canonical ids are stable across module versions, unique system-wide, and structured so they encode the resource's provenance. Read this section before the per-section field tables below; the validation rules and reference syntax depend on it.
+Every resource a module contributes — triggers, actions, functions, commands, workflows, widgets — gets a **canonical id** that the rest of the system uses to refer to it. Canonical ids are stable across module versions, unique system-wide, and structured so they encode the resource's provenance. Read this section before the per-section field tables below; the validation rules and reference syntax depend on it.
 
 #### Format
 
@@ -197,7 +192,6 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `commands` | array | no | Chat/bot commands (`pattern`, `type`: `prefix` \| `exact` \| `regex`, optional `workflow`, `requiredRole`). |
 | `workflows` | array | no | Bundled workflows (`trigger` reference + `steps`). |
 | `widgets` | array | no | Scene widgets (`entry`, optional `assets` directory, `settingsSchema`, `acceptedEvents`). |
-| `overlays` | array | no | Overlay browser sources (`entry`). |
 | `resources` | array | no | Runtime-instance kind declarations — the K8s CRD analog. Each entry says "this module is the controller for instances of kind `X`". See [Resource entry](#resource-entry-resources) and [Runtime resource instances](#runtime-resource-instances). |
 | `settings` | array | no | Module-level configuration values (API keys, tokens, etc.) registered into the `module_settings` table at install time and exposed to sandboxed functions as `ctx.module.settings`. Same `ConfigField[]` shape as every other declaration — see [Field declarations](#field-declarations) — but unlike a widget's `settingsSchema` the *values* are stored engine-side; see [Module-level settings](#module-level-settings-settings). |
 | `backgroundTasks` (alias: `background_tasks`) | array | no | Cron-scheduled functions barkloader fires for the lifetime of the module. See [Background tasks](#background-tasks-backgroundtasks). |
@@ -622,17 +616,6 @@ interface WidgetEvent {
 
 The contract definition lives at `shared/clients/typescript/module-sdk/src/widget-host.ts`; the shim that implements it inside the iframe is `shared/clients/typescript/module-sdk/src/widget-host-shim.ts`.
 
-### Overlay entry (`overlays[]`)
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | yes | Manifest-local overlay id. Forms the canonical id `{moduleId}:overlay:{id}`. Must match `[A-Za-z0-9._-]+`. |
-| `name` | string | yes | Display name. Presentation only. |
-| `description` | string | no | |
-| `entry` | string | yes | HTML entry path in the ZIP. |
-
-Stored under **`modules/{moduleId}/overlays/{overlayId}/…`**.
-
 ### Resource entry (`resources[]`)
 
 A `resources[]` entry declares that this module is the **controller** for runtime instances of some named *kind* — the [Kubernetes CRD](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/) analog. The engine learns identity (the kind name + which module owns it) but never learns what the kind *means* — all semantics (value storage, mutation operations, validation) live in the owning module's functions and actions.
@@ -880,7 +863,7 @@ The api/ service forwards both to the registered Convex webhook as `ModuleResour
 | `.lua` | Program (Lua) | Sandbox function source. |
 | `.json` | Manifest | Prefer `manifest.json` at ZIP root. |
 | `.yaml`, `.yml` | Manifest | |
-| *other* | Asset | Stored as-is (HTML, CSS, images, fonts, etc.); used for widgets/overlays and any referenced path. |
+| *other* | Asset | Stored as-is (HTML, CSS, images, fonts, etc.); used for widgets and any referenced path. |
 
 ZIP members are read as **raw bytes** (not UTF-8–only), so binary assets are supported.
 
@@ -968,8 +951,6 @@ modules/
       ...                    # paths from manifest assets[].path, e.g. assets/bell.mp3
     widgets/
       {widget-id}/...
-    overlays/
-      {overlay-id}/...
 archives/
   {module-id}/
     {version}.zip

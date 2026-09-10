@@ -362,14 +362,25 @@ pub struct ManifestWorkflow {
     pub taxonomy: Vec<String>,
 }
 
+/// A retired manifest surface, parsed only so that validation can reject it
+/// by name.
+///
+/// `overlays[]` is a streamware-era declaration: it uploaded an entry file and
+/// wrote a ledger row, but no catalog registration or serving route was ever
+/// built, so nothing could render one. What the field was reaching for is now
+/// scenes -- a scene composes module-provided widgets and is addressed by an
+/// overlay token minted in the UI, so a module contributes the widgets and the
+/// operator composes the overlay.
+///
+/// Dropping the field outright would make serde ignore it silently, which is
+/// how an author ends up depending on something that never resolves. Keeping
+/// it parseable costs one struct and turns that silence into an error naming
+/// the replacement.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ManifestOverlay {
-    pub id: String,
-    pub name: String,
+pub struct RetiredOverlay {
     #[serde(default)]
-    pub description: Option<String>,
-    pub entry: String,
+    pub id: String,
 }
 
 /// A static asset bundled with a module — typically image / audio /
@@ -585,7 +596,7 @@ pub struct ModuleManifest {
     #[serde(default)]
     pub widgets: Vec<ModuleWidget>,
     #[serde(default)]
-    pub overlays: Vec<ManifestOverlay>,
+    pub overlays: Vec<RetiredOverlay>,
     /// Static media bundled with the module — see [`ManifestAsset`]. The
     /// engine treats these as opaque blobs: writes them to the
     /// repository at install, lists them in the
@@ -1101,29 +1112,6 @@ impl ModuleWidget {
         }
 
         Ok(keys)
-    }
-}
-
-impl ManifestOverlay {
-    pub async fn upload_entry<R: Repository>(
-        &self,
-        module_key: &str,
-        version_dir: &str,
-        files: &[ModuleFile],
-        repository: &R,
-    ) -> Result<String> {
-        let file = resolve_zip_file(files, &self.entry).ok_or_else(|| {
-            anyhow!(
-                "Overlay {}: entry '{}' not found in module archive",
-                self.id,
-                self.entry
-            )
-        })?;
-        let rel = normalize_rel_path(&self.entry)?;
-        let repo_key = format!("modules/{module_key}/{version_dir}/overlays/{}/{rel}", self.id);
-        let ext = extension_for_path(&self.entry);
-        upload_content_addressed(repository, &repo_key, &file.contents, ext).await?;
-        Ok(repo_key)
     }
 }
 
