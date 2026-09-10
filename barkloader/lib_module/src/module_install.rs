@@ -289,6 +289,24 @@ impl<'a, R: Repository> SagaState<'a, R> {
             w.upload_assets(self.module_key, self.version_dir, self.files, self.repository).await?;
         }
 
+        // Overlays are uploaded and recorded in the resource ledger, but no
+        // catalog registration or serving route exists for them yet -- unlike
+        // widgets, which resolve through `/widgets/{module}/{id}/frame`. The
+        // declaration is documented (docs/barkloader/modules.md), so this is an
+        // unfinished feature rather than a bad manifest, and rejecting it would
+        // break a documented field. Say so once per install instead of
+        // accepting it in silence, which is how an author ends up depending on
+        // something that never resolves.
+        if !self.manifest.overlays.is_empty() {
+            warn!(
+                "Module {} declares {} overlay(s) ({}): the entry files are uploaded, \
+                 but overlays have no catalog registration or serving route yet, so nothing \
+                 can render them. See https://github.com/wolfymaster/woofx3/issues/80",
+                self.module_key,
+                self.manifest.overlays.len(),
+                self.manifest.overlays.iter().map(|o| o.id.as_str()).collect::<Vec<_>>().join(", ")
+            );
+        }
         for o in &self.manifest.overlays {
             o.upload_entry(self.module_key, self.version_dir, self.files, self.repository).await?;
         }
