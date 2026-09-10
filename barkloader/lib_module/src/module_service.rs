@@ -3,7 +3,8 @@ use lib_repository::Repository;
 
 use super::db_proxy_client::HttpDbProxyClient;
 use super::module_file::ModuleFile;
-use super::module_install::run_install;
+use super::manifest_validate::InstallProvenance;
+use super::module_install::run_install_with_provenance;
 use super::module_manifest::ModuleManifest;
 use super::module_file::ModuleFileKind;
 use super::module_plan::ModulePlan;
@@ -102,7 +103,35 @@ where
         self.files.push(ModuleFile::new(name.into(), kind, contents));
     }
 
+    /// The provenance-free entry point, because every caller but the
+    /// bundled-module reconciler is a user upload.
+    #[allow(clippy::too_many_arguments)]
     pub async fn execute_plan(
+        &self,
+        plan: &ModulePlan,
+        archive_key: &str,
+        db_proxy_url: Option<&str>,
+        application_id: &str,
+        force: bool,
+        composite_module_key: &str,
+        client_id: &str,
+    ) -> Result<()> {
+        self.execute_plan_with_provenance(
+            plan,
+            archive_key,
+            db_proxy_url,
+            application_id,
+            force,
+            composite_module_key,
+            client_id,
+            InstallProvenance::User,
+        )
+        .await
+    }
+
+    /// See `run_install_with_provenance` for what `System` unlocks.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn execute_plan_with_provenance(
         &self,
         _plan: &ModulePlan,
         archive_key: &str,
@@ -111,6 +140,7 @@ where
         force: bool,
         composite_module_key: &str,
         client_id: &str,
+        provenance: InstallProvenance,
     ) -> Result<()> {
         let cleanup_old = force;
         let manifest = self
@@ -118,7 +148,7 @@ where
             .as_ref()
             .ok_or_else(|| anyhow!("execute_plan: manifest not loaded; call create_plan first"))?;
         let client = db_proxy_url.map(HttpDbProxyClient::new);
-        run_install(
+        run_install_with_provenance(
             manifest,
             &self.files,
             &self.repository,
@@ -128,6 +158,7 @@ where
             cleanup_old,
             composite_module_key,
             client_id,
+            provenance,
         )
         .await
     }

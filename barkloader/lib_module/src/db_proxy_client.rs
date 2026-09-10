@@ -17,6 +17,8 @@
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 
+use super::manifest_validate::InstallProvenance;
+
 use super::db_proxy::{
     self, ActionInputJson, AssetInputJson, BackgroundTaskInputJson, CreateModuleFunctionJson,
     ModuleRecord, RequestContext, ResolvedActionRef, ResourceInstanceJson, ResourceUsage,
@@ -36,6 +38,7 @@ pub trait ModuleDbProxy: Send + Sync {
         functions: &[CreateModuleFunctionJson],
         module_key: &str,
         client_id: &str,
+        provenance: InstallProvenance,
     ) -> Result<String>;
     async fn delete_module(&self, module_name: &str) -> Result<()>;
     async fn get_module_by_module_id(&self, module_id: &str) -> Result<Option<String>>;
@@ -200,6 +203,7 @@ impl ModuleDbProxy for HttpDbProxyClient {
         functions: &[CreateModuleFunctionJson],
         module_key: &str,
         client_id: &str,
+        provenance: InstallProvenance,
     ) -> Result<String> {
         db_proxy::create_module(
             &self.base_url,
@@ -211,6 +215,7 @@ impl ModuleDbProxy for HttpDbProxyClient {
             functions,
             module_key,
             client_id,
+            provenance,
         )
         .await
     }
@@ -471,6 +476,9 @@ mod test_support {
     pub struct FakeDbProxyClient {
         calls: Mutex<Vec<String>>,
         fail_on: HashSet<&'static str>,
+        /// Provenance the last `create_module` was called with, so tests can
+        /// assert what the module row would be stamped with.
+        provenance: Mutex<Option<InstallProvenance>>,
     }
 
     impl FakeDbProxyClient {
@@ -482,11 +490,16 @@ mod test_support {
             Self {
                 calls: Mutex::new(Vec::new()),
                 fail_on: methods.into_iter().collect(),
+                provenance: Mutex::new(None),
             }
         }
 
         pub fn calls(&self) -> Vec<String> {
             self.calls.lock().expect("calls mutex poisoned").clone()
+        }
+
+        pub fn create_module_provenance(&self) -> Option<InstallProvenance> {
+            *self.provenance.lock().expect("provenance mutex poisoned")
         }
 
         fn record(&self, method: &'static str) -> Result<()> {
@@ -510,8 +523,10 @@ mod test_support {
             _functions: &[CreateModuleFunctionJson],
             _module_key: &str,
             _client_id: &str,
+            provenance: InstallProvenance,
         ) -> Result<String> {
             self.record("create_module")?;
+            self.provenance.lock().expect("provenance mutex poisoned").replace(provenance);
             Ok("fake-db-record-id".to_string())
         }
 
@@ -736,7 +751,7 @@ mod test_support {
     async fn records_calls_in_order() {
         let client = FakeDbProxyClient::new();
         client
-            .create_module("", "mod", "1.0.0", "{}", "archives/mod.zip", &[], "mod:1.0.0:abc", "")
+            .create_module("", "mod", "1.0.0", "{}", "archives/mod.zip", &[], "mod:1.0.0:abc", "", InstallProvenance::User)
             .await
             .expect("create_module");
         client.register_triggers("mod", "mod:1.0.0:abc", "Mod", "1.0.0", vec![], "").await.expect("register_triggers");
