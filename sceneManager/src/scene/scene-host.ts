@@ -1,12 +1,8 @@
 import type { Logger } from "@woofx3/common/runtime";
 import type * as scene from "@woofx3/db/scene.pb";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
-import { getBuiltinWidgetSpecs } from "../widgets/builtin";
 import type { OverlayTokenResolver } from "./token-resolver";
 import { maskToken } from "./token-resolver";
-
-/** Reserved module namespace for built-in widgets. */
-export const BUILTIN_MODULE_KEY = "builtin";
 
 export interface OverlayWidgetPosition {
   x: number;
@@ -360,15 +356,9 @@ export class OverlayHost {
       });
     }
 
-    let acceptedEvents = Array.isArray(w.acceptedEvents)
+    const acceptedEvents = Array.isArray(w.acceptedEvents)
       ? w.acceptedEvents.filter((e): e is string => typeof e === "string" && e !== "")
       : [];
-    if (acceptedEvents.length === 0 && stableModuleKey === BUILTIN_MODULE_KEY) {
-      const spec = getBuiltinWidgetSpecs().find((s) => s.manifestId === parsed.manifestId);
-      if (spec) {
-        acceptedEvents = spec.acceptedEvents;
-      }
-    }
 
     return {
       id,

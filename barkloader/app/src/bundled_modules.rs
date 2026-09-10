@@ -110,6 +110,54 @@ mod tests {
         }
     }
 
+    /// The engine's emitted event vocabulary, embedded at compile time so the
+    /// check spans the language boundary the manifest sits across.
+    const TWITCH_EVENTS_TS: &str =
+        include_str!("../../../shared/common/typescript/cloudevents/Twitch/events.ts");
+
+    fn emitted_event_types() -> Vec<String> {
+        TWITCH_EVENTS_TS
+            .lines()
+            .filter_map(|l| {
+                let (_, rest) = l.split_once(" = '")?;
+                let (value, _) = rest.split_once('\'')?;
+                Some(value.to_string())
+            })
+            .collect()
+    }
+
+    /// A widget's `acceptedEvents` are compared against a CloudEvent's `type`
+    /// by the scene fan-out. An entry no one emits is not an error anywhere at
+    /// runtime -- it simply never matches, and the widget goes dark with no
+    /// log. That is exactly how the retired `*.user.twitch` names survived, so
+    /// the manifest and the engine's vocabulary are checked against each other
+    /// here rather than by eye.
+    #[test]
+    fn bundled_widget_accepted_events_are_emitted_by_the_engine() {
+        let emitted = emitted_event_types();
+        assert!(!emitted.is_empty(), "parsed no event types out of the enum");
+
+        let mut checked = 0;
+        for m in BUNDLED_MODULES {
+            for widget in manifest_of(m).widgets {
+                assert!(
+                    !widget.accepted_events.is_empty(),
+                    "widget {:?} accepts no events, so the fan-out can never reach it",
+                    widget.id
+                );
+                for event in &widget.accepted_events {
+                    assert!(
+                        emitted.contains(event),
+                        "widget {:?} accepts {event:?}, which the engine does not emit",
+                        widget.id
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 0, "no bundled widget declared any accepted event");
+    }
+
     /// The reserved id is only installable as System. If a bundled manifest
     /// passed user validation it would mean the reservation had regressed.
     #[test]

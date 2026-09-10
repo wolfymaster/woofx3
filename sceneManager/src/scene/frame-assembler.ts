@@ -1,7 +1,7 @@
 import { join, resolve, sep } from "node:path";
 import type { Logger } from "@woofx3/common/runtime";
 import type { WidgetBootPayload } from "@woofx3/module-sdk";
-import { BUILTIN_MODULE_KEY, type OverlayHost, type OverlayWidgetInstance } from "./scene-host";
+import type { OverlayHost, OverlayWidgetInstance } from "./scene-host";
 import { sanitizeAssetPath } from "./asset-path";
 import type { PublicUrlResolver } from "./public-url-resolver";
 
@@ -230,9 +230,6 @@ export class FrameAssembler {
   }
 
   private async loadFrameInfo(instance: OverlayWidgetInstance): Promise<BarkloaderFrameInfo | null> {
-    if (instance.moduleId === BUILTIN_MODULE_KEY) {
-      return this.loadBuiltinFrameInfo(instance);
-    }
     try {
       return await this.opts.barkloader.fetchWidgetFrame(instance.moduleId, instance.manifestId);
     } catch (err) {
@@ -242,35 +239,5 @@ export class FrameAssembler {
       });
       return null;
     }
-  }
-
-  private async loadBuiltinFrameInfo(instance: OverlayWidgetInstance): Promise<BarkloaderFrameInfo | null> {
-    const definition = await this.host.lookupWidgetDefinition(instance.moduleId, instance.manifestId);
-    const entryRaw = definition?.entry || "index.html";
-    const entry = sanitizeAssetPath(entryRaw);
-    if (!entry) {
-      this.logger.warn("builtin widget entry path rejected by traversal pipeline", {
-        widgetCanonicalId: instance.widgetCanonicalId,
-        entry: entryRaw,
-      });
-      return null;
-    }
-
-    const manifestId = instance.manifestId;
-    const root = resolve(this.opts.publicDir, "widgets", BUILTIN_MODULE_KEY);
-    const abs = resolve(join(root, manifestId, entry));
-    if (abs !== root && !abs.startsWith(root + sep)) {
-      return null;
-    }
-    const file = Bun.file(abs);
-    if (!(await file.exists())) {
-      return null;
-    }
-    const entryHtml = await file.text();
-    const base = await this.opts.selfPublicUrlResolver.resolve();
-    return {
-      entryHtml,
-      resourceBaseUrl: `${base}/assets/builtin/widgets/${encodeURIComponent(manifestId)}/`,
-    };
   }
 }

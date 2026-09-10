@@ -23,15 +23,13 @@ function get(path: string): { req: Request; url: URL } {
 }
 
 describe("handleStaticAssetRoute", () => {
-  it("serves a builtin widget asset from widgets/builtin/{id} under its builtin/widgets/{id} URL", async () => {
-    // The URL shape is what FrameAssembler emits as the frame's <base
-    // href>; media_alert's `<script src="lottie.min.js">` resolves
-    // through it, so the two layouts have to keep agreeing.
+  // Widgets moved to the bundled woofx3 module and are served from
+  // barkloader's repository, so this route no longer special-cases them.
+  it("does not serve widget files", async () => {
     await withPublicDir(async (dir) => {
       const { req, url } = get("/assets/builtin/widgets/media_alert/lottie.min.js");
       const resp = await handleStaticAssetRoute(req, url, dir);
-      expect(resp.status).toBe(200);
-      expect(await resp.text()).toBe("// lottie");
+      expect(resp.status).toBe(404);
     });
   });
 
