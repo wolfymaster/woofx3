@@ -37,6 +37,9 @@ async fn setup() -> Result<AppContext> {
     // Capture the raw async_nats::Client alongside the host context so we can
     // subscribe to NATS subjects directly (not just publish via NatsPublisher).
     let mut nats_raw_client: Option<async_nats::Client> = None;
+    // None when the message bus is not configured: with nowhere to publish,
+    // there is no readiness to report and nothing can be gating on us.
+    let mut heartbeat: Option<services::heartbeat::HeartbeatHandle> = None;
 
     let host_ctx = {
         let mut ctx = noop_host_context();
@@ -49,6 +52,10 @@ async fn setup() -> Result<AppContext> {
                 Ok(nats) => {
                     info!("Connected to messagebus at {}", messagebus_url);
                     nats_raw_client = Some(nats.raw_client().clone());
+                    heartbeat = Some(services::heartbeat::HeartbeatHandle::new(
+                        nats.raw_client().clone(),
+                        SERVICE_NAME,
+                    ));
                     chat_sender = Arc::new(crate::services::chat::BusChatSender::new(
                         nats.clone(),
                         "twitch",
@@ -172,6 +179,14 @@ async fn setup() -> Result<AppContext> {
     }
 
     boot_modules(&registry, &repository.current(), &db_proxy_url, &scheduler).await?;
+
+    // Everything a dependent waits on us for is now in place: bundled modules
+    // installed and the sandbox registry hydrated. Reconciliation failure is
+    // fatal above, so this is only ever reached having succeeded.
+    if let Some(hb) = &heartbeat {
+        hb.readiness.mark_ready();
+        tracing::info!("barkloader ready");
+    }
 
     // Spawn the generic field-options NATS responder when NATS is available.
     if let Some(raw_client) = nats_raw_client {

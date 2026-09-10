@@ -56,16 +56,17 @@ func (l *natsLogger) Debug(message string, args ...any) {
 }
 
 type NATSMonitor struct {
-	serviceName       string
-	svc               *service.NATSService
-	appName           string
-	subject           string
-	expirationTimeout time.Duration
-	lastHeartbeats    map[string]*heartbeatEntry
-	mu                sync.RWMutex
-	readyFn           func() bool
-	subscription      natsclient.Subscription
-	logger            *natsLogger
+	serviceName         string
+	svc                 *service.NATSService
+	appName             string
+	subject             string
+	expirationTimeout   time.Duration
+	lastHeartbeats      map[string]*heartbeatEntry
+	mu                  sync.RWMutex
+	readyFn             func() bool
+	startupDependencies []string
+	subscription        natsclient.Subscription
+	logger              *natsLogger
 }
 
 // NewNATS returns a health monitor that uses the given NATS service's client. serviceName is used for RequiredServices() so the runtime connects the service before Start().
@@ -89,6 +90,13 @@ func NewNATS(serviceName string, svc *service.NATSService, appName, subject stri
 
 func (n *NATSMonitor) RequiredServices() []string {
 	return []string{n.serviceName}
+}
+
+// WaitFor declares services this application must not start before. Returns
+// the monitor so it can be chained onto NewNATS at the call site.
+func (n *NATSMonitor) WaitFor(services ...string) *NATSMonitor {
+	n.startupDependencies = append(n.startupDependencies, services...)
+	return n
 }
 
 func (n *NATSMonitor) client() *natsclient.Client {
@@ -184,6 +192,35 @@ func (n *NATSMonitor) Heartbeat(ctx context.Context) error {
 		return err
 	}
 	return n.client().Publish(n.subject, data)
+}
+
+// StartupDependencies names the services the runtime should wait for before
+// starting the application.
+func (n *NATSMonitor) StartupDependencies() []string {
+	return n.startupDependencies
+}
+
+// PendingDependencies reports which startup dependencies have not yet said
+// they are ready.
+//
+// A dependency with no heartbeat at all is pending, not ready: silence from a
+// service that has never spoken is indistinguishable from one still starting,
+// and treating it as ready is the assumption this gate exists to remove.
+func (n *NATSMonitor) PendingDependencies() []string {
+	if len(n.startupDependencies) == 0 {
+		return nil
+	}
+	now := time.Now()
+	var pending []string
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	for _, name := range n.startupDependencies {
+		entry, exists := n.lastHeartbeats[name]
+		if !exists || !entry.ready || now.Sub(entry.lastSeen) > n.expirationTimeout {
+			pending = append(pending, name)
+		}
+	}
+	return pending
 }
 
 func (n *NATSMonitor) HealthCheck(ctx context.Context, services runtime.ServicesRegistry) (bool, error) {
