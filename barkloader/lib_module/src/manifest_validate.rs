@@ -198,6 +198,20 @@ pub fn validate_with_provenance(
         }
     }
 
+    // A background task whose schedule cannot be parsed registers fine and
+    // then never fires -- the scheduler declines it with a log line the author
+    // has no reason to read. The expression is known here, so reject it here.
+    for (i, task) in manifest.background_tasks.iter().enumerate() {
+        if !crate::cron_schedule::is_valid_cron(&task.schedule) {
+            return Err(anyhow!(
+                "backgroundTasks[{i}] ({}): {:?} is not a valid cron schedule. \
+                 Five-field (`*/30 * * * *`) and six-field (`0 */30 * * * *`) forms are both accepted.",
+                task.id,
+                task.schedule
+            ));
+        }
+    }
+
     // Pass 1: build per-kind canonical id lookup tables.
     let triggers_table = build_kind_table(
         &module_id,
@@ -1613,6 +1627,34 @@ mod tests {
             .expect("a resolvable bundled reference installs");
         let workflow_step = InstallStep::RegisterWorkflow(resolved.workflows[0].canonical_id.clone());
         assert!(plan.contains(&workflow_step));
+    }
+
+    #[test]
+    fn a_five_field_cron_schedule_installs() {
+        let m = minimal(r#",
+            "functions": [{ "id": "sweep", "name": "Sweep", "runtime": "js", "path": "functions/sweep.js" }],
+            "backgroundTasks": [{ "id": "s1", "function": "sweep", "schedule": "*/30 * * * *", "description": "d" }]"#);
+        validate(&m).expect("standard five-field cron must be accepted");
+    }
+
+    #[test]
+    fn a_six_field_cron_schedule_still_installs() {
+        let m = minimal(r#",
+            "functions": [{ "id": "sweep", "name": "Sweep", "runtime": "js", "path": "functions/sweep.js" }],
+            "backgroundTasks": [{ "id": "s1", "function": "sweep", "schedule": "0 */30 * * * *", "description": "d" }]"#);
+        validate(&m).expect("six-field cron must keep working");
+    }
+
+    /// The failure this replaces was a log line during registry load, long
+    /// after the install reported success.
+    #[test]
+    fn an_unparseable_schedule_fails_the_install_naming_the_task() {
+        let m = minimal(r#",
+            "functions": [{ "id": "sweep", "name": "Sweep", "runtime": "js", "path": "functions/sweep.js" }],
+            "backgroundTasks": [{ "id": "s1", "function": "sweep", "schedule": "not a cron", "description": "d" }]"#);
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("s1"), "the error must name the task: {err}");
+        assert!(err.contains("cron"), "the error must say what is wrong: {err}");
     }
 
     #[test]

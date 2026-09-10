@@ -2506,6 +2506,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "cron",
  "lib_repository",
  "lib_sandbox",
  "reqwest 0.12.15",
