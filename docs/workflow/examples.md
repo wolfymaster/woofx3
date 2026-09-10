@@ -11,7 +11,7 @@ Logs a message when someone cheers any amount of bits.
   "description": "Logs all cheer events",
   "trigger": {
     "type": "event",
-    "eventType": "cheer.channel.twitch"
+    "eventType": "channel.cheer"
   },
   "tasks": [
     {
@@ -36,7 +36,7 @@ Sends different messages based on cheer amount.
   "name": "Cheer Tier Rewards",
   "trigger": {
     "type": "event",
-    "eventType": "cheer.channel.twitch",
+    "eventType": "channel.cheer",
     "conditions": [
       { "field": "${trigger.data.amount}", "operator": "gte", "value": 100 }
     ]
@@ -85,7 +85,7 @@ Waits for a cumulative bit total within a time window, then triggers a special e
   "name": "Bit Goal Tracker",
   "trigger": {
     "type": "event",
-    "eventType": "cheer.channel.twitch"
+    "eventType": "channel.cheer"
   },
   "tasks": [
     {
@@ -93,7 +93,7 @@ Waits for a cumulative bit total within a time window, then triggers a special e
       "type": "wait",
       "wait": {
         "type": "aggregation",
-        "eventType": "cheer.channel.twitch",
+        "eventType": "channel.cheer",
         "aggregation": {
           "strategy": "sum",
           "field": "data.amount",
@@ -131,7 +131,7 @@ A parent workflow triggers a sub-workflow and waits for it to complete.
   "name": "New Subscriber Welcome",
   "trigger": {
     "type": "event",
-    "eventType": "subscription.user.twitch"
+    "eventType": "channel.subscribe"
   },
   "tasks": [
     {
@@ -180,7 +180,7 @@ Workflow that publishes a custom event to the message bus.
   "name": "Stream Online Notification",
   "trigger": {
     "type": "event",
-    "eventType": "online.channel.twitch"
+    "eventType": "stream.online"
   },
   "tasks": [
     {
@@ -220,7 +220,7 @@ Using conditions as guards to conditionally skip tasks (not branching).
   "name": "Follow Reward",
   "trigger": {
     "type": "event",
-    "eventType": "follow.channel.twitch"
+    "eventType": "channel.follow"
   },
   "tasks": [
     {

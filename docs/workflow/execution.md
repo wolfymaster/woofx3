@@ -8,7 +8,7 @@ This page describes how workflows are executed at runtime.
 Event arrives on NATS
     |
     v
-EventPatternRegistry match (*.user.twitch, *.channel.twitch)
+EventPatternRegistry match (channel.*, stream.*, user.*)
     |
     v
 CloudEvents validation (id, type, source required)

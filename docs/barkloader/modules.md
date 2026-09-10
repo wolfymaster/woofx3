@@ -106,19 +106,18 @@ The manifest uses **camelCase** JSON keys. All top-level sections are optional *
       "settingsSchema": [
         { "id": "theme", "label": "Theme", "type": "text", "defaultValue": "default" }
       ],
-      "acceptedEvents": ["twitch.subscription", "twitch.cheer"]
+      "acceptedEvents": ["channel.subscribe", "channel.cheer"]
     }
   ],
-  "overlays": [
-    {
-      "id": "main-overlay",
-      "name": "Main Stream Overlay",
-      "description": "Default full-screen overlay",
-      "entry": "overlays/main/index.html"
-    }
-  ]
+  "overlays": []
 }
 ```
+
+> **`overlays[]` is not supported yet.** Entries are parsed, their entry files
+> are uploaded, and the overlay is recorded in the module resource ledger — but
+> nothing registers it into a catalog and no route serves it, so nothing can
+> render one. Install warns when a manifest declares them. Tracked in
+> [#80](https://github.com/wolfymaster/woofx3/issues/80).
 
 ### Canonical IDs and References
 
@@ -172,7 +171,7 @@ Several manifest fields reference other resources in the same manifest. Authors 
 | `workflows[].trigger: "channel_subscribe"` | a trigger in the same manifest | `twitch_platform:trigger:channel_subscribe` |
 | `workflows[].steps[].action: "play_alert"` | an action in the same manifest | `twitch_platform:action:play_alert` |
 | `commands[].workflow: "on_subscription"` | a workflow in the same manifest | `twitch_platform:workflow:on_subscription` |
-| `widgets[].acceptedEvents: ["channel_subscribe"]` | trigger ids in the same manifest | `["twitch_platform:trigger:channel_subscribe"]` |
+| `widgets[].acceptedEvents: ["channel.subscribe"]` | *(not a reference — see below)* | `["channel.subscribe"]`, stored verbatim |
 
 If a reference can't be resolved (no resource of the expected kind has the referenced id), install fails.
 
@@ -180,7 +179,7 @@ References to **other modules'** resources may use the full canonical id directl
 
 #### What ends up in the database
 
-After install, every persisted reference — entries in `module_resources`, edges in `resource_references`, the workflow trigger config, action `call` strings, command type values, widget `acceptedEvents` arrays — carries the canonical id. The author-supplied `id` and `name` are preserved on the source rows for display, but every downstream lookup, join, and event subscription uses the canonical id. This is what makes the `CheckModuleResourceUsage` join trivial: ledger rows and inbound reference rows both key on the same canonical id string.
+After install, every persisted reference — entries in `module_resources`, edges in `resource_references`, the workflow trigger config, action `call` strings, command type values — carries the canonical id. Widget `acceptedEvents` are the exception: they are event types rather than references, and are stored as written. The author-supplied `id` and `name` are preserved on the source rows for display, but every downstream lookup, join, and event subscription uses the canonical id. This is what makes the `CheckModuleResourceUsage` join trivial: ledger rows and inbound reference rows both key on the same canonical id string.
 
 ### Top-level fields
 
@@ -361,7 +360,7 @@ Two source kinds are supported today:
 
 The worker's reply data is whatever it returns — strings or `{value, label, ...}` objects. The default UI transform (`use-field-options.ts:defaultTransform`) coerces strings to `{value: s, label: s}` and passes through `{value, label}` objects verbatim; consumers that need richer shapes can pass a custom `transform`. Implementing a new `internal` source is just adding a new command branch to a worker that already subscribes to a NATS subject — no engine, manifest schema, or UI code changes.
 
-A worked example lives at `modules/platform/twitch/manifest.json` in the **woofx3-modules** repository (the `redeem.channelpoints.twitch` trigger) and `twitch/src/lib/twitch.ts` `listChannelPointRewards()`.
+A worked example lives at `modules/platform/twitch/manifest.json` in the **woofx3-modules** repository (the `channelpoints.redeem` trigger) and `twitch/src/lib/twitch.ts` `listChannelPointRewards()`.
 
 #### Helping users map fields to event payloads
 
@@ -430,7 +429,7 @@ Deliberately a flat list of path strings rather than full JSON Schema: it matche
   "id": "channel_cheer",
   "name": "Cheer",
   "type": "eventbus",
-  "event": "cheer.channel.twitch",
+  "event": "channel.cheer",
   "emits": {
     "fields": [
       { "path": "bits", "type": "number", "description": "Bits cheered.", "example": 1000 },
@@ -587,7 +586,7 @@ calling `ctx.chat.sendMessage(...)` directly — see [`ctx.response`](./sandbox.
 | `entry` | string | no | HTML entry path in the ZIP. |
 | `assets` | string | no | Directory prefix in the ZIP for static assets (all files under this prefix are uploaded). |
 | `settingsSchema` | array | no | `ConfigField[]` describing the fields a user fills in when placing this widget on a scene; see [Field declarations](#field-declarations). Per-instance values flow back to the widget at render time as `widgetHost.settings`. |
-| `acceptedEvents` | string[] | no | Trigger references this widget cares about. Each entry is a manifest-local trigger id (resolved to canonical form at install) or a full canonical id for cross-module triggers. At runtime, the scene overlay only fires the widget's `widgetHost.onEvent` handler for events whose canonical trigger id matches an entry in this list — widgets without an `acceptedEvents` declaration receive no events. |
+| `acceptedEvents` | string[] | no | **Event types**, not trigger references: `["channel.follow", "channel.cheer"]`. They are stored verbatim and compared against a CloudEvent's `type` by the scene fan-out, so a canonical id here would match nothing and is rejected at install. Any module emitting the event satisfies the entry, at any version — which is what lets the emitting module be uninstalled and reinstalled without touching the widget. Widgets without an `acceptedEvents` declaration receive no events. |
 
 Files are stored under **`modules/{moduleId}/widgets/{widgetId}/…`**.
 
@@ -608,7 +607,7 @@ interface WidgetHost {
 }
 
 interface WidgetEvent {
-  type: string;       // canonical trigger id, e.g. "twitch_platform:trigger:follow.channel.twitch"
+  type: string;       // event type, e.g. "channel.follow"
   source: string;     // CloudEvent source
   time: string;       // RFC3339
   data: unknown;      // event payload
@@ -617,7 +616,7 @@ interface WidgetEvent {
 
 `reportStatus` and `reportComplete` send a P1 `status.report` message to the scene manager, which forwards it over the unified `widget.event` NATS channel. The streamware dispatcher persists generic events to the `widget_status` table and routes `alert.lifecycle` reports to the [event queue](../streamware/alert-queue.md) — see [Widget event channel](../services/widget-events.md).
 
-`onEvent` is the downward channel: the widget sends a P1 `events.subscribe` message, and the scene manager matches engine-side trigger events (delivered over the P2 `event` frame) against the widget's `acceptedEvents` declaration before relaying a matching one as `event.deliver`. A widget that lists `twitch_platform:trigger:follow.channel.twitch` in its manifest will see every follower event the engine processes. Widgets without `acceptedEvents` receive nothing — that's the right default for static display-only widgets.
+`onEvent` is the downward channel: the widget sends a P1 `events.subscribe` message, and the scene manager matches engine-side trigger events (delivered over the P2 `event` frame) against the widget's `acceptedEvents` declaration before relaying a matching one as `event.deliver`. A widget that lists `channel.follow` in its manifest will see every follow the engine processes, from any platform — the originating one travels as the CloudEvent's `platform` attribute. Widgets without `acceptedEvents` receive nothing — that's the right default for static display-only widgets.
 
 `widgetHost.storage` reads the latest module-storage value for `(moduleId, key)` from the local cache populated by `module.storage.changed` events, delivered over the P2 `storage` frame.
 

@@ -43,7 +43,7 @@ untouched (`workflow/internal/expression/resolver.go:41`).
 | Source | What it carries |
 |---|---|
 | `trigger.id` | CloudEvent id of the firing event |
-| `trigger.type` | CloudEvent type (e.g. `cheer.channel.twitch`) |
+| `trigger.type` | CloudEvent type (e.g. `channel.cheer`) |
 | `trigger.source` | CloudEvent source (e.g. `twitch`) |
 | `trigger.time` | RFC3339 timestamp |
 | `trigger.data.X` | Anything on the event's `data` map |
