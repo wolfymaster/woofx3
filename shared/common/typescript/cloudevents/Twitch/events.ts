@@ -1,29 +1,39 @@
 import type { ChatterMembership } from '../Chat/events';
+/**
+ * Event types are platform-agnostic: the same `channel.follow` is emitted
+ * whether the follow arrived from Twitch or anywhere else. Which platform it
+ * came from travels as the CloudEvent's top-level `platform` attribute, so a
+ * workflow can subscribe to the event class and narrow by platform only when
+ * it actually cares.
+ *
+ * The value is also the NATS subject (see `encodeEvent`), so the hierarchy
+ * reads left to right and `channel.>` is a usable subscription.
+ */
 export enum EventType {
-    ChatMessage = 'message.user.twitch',
-    Cheer = 'cheer.channel.twitch',
-    Follow = 'follow.channel.twitch',
-    HypeTrainBegin = 'hypetrain.channel.twitch',
-    Raid = 'raid.channel.twitch',
-    Redeem = 'redeem.channelpoints.twitch',
-    StreamOnline = 'online.channel.twitch',
-    StreamOffline = 'offline.channel.twitch',
-    Subscribe = 'subscribe.channel.twitch',
-    SubscriptionGift = 'subscriptionGift.channel.twitch',
-    Resub = 'resub.channel.twitch',
-    GiftPaidUpgrade = 'giftPaidUpgrade.channel.twitch',
-    PrimePaidUpgrade = 'primePaidUpgrade.channel.twitch',
-    Unraid = 'unraid.channel.twitch',
-    PayItForward = 'payItForward.channel.twitch',
-    Announcement = 'announcement.channel.twitch',
-    CharityDonation = 'charityDonation.channel.twitch',
-    BitsBadgeTier = 'bitsBadgeTier.channel.twitch',
-    WatchStreak = 'watchStreak.channel.twitch',
-    SharedResub = 'sharedResub.channel.twitch',
-    SharedGiftPaidUpgrade = 'sharedGiftPaidUpgrade.channel.twitch',
-    SharedPrimePaidUpgrade = 'sharedPrimePaidUpgrade.channel.twitch',
-    SharedPayItForward = 'sharedPayItForward.channel.twitch',
-    SharedAnnouncement = 'sharedAnnouncement.channel.twitch',
+    ChatMessage = 'user.message',
+    Cheer = 'channel.cheer',
+    Follow = 'channel.follow',
+    HypeTrainBegin = 'channel.hypetrain',
+    Raid = 'channel.raid',
+    Redeem = 'channelpoints.redeem',
+    StreamOnline = 'stream.online',
+    StreamOffline = 'stream.offline',
+    Subscribe = 'channel.subscribe',
+    SubscriptionGift = 'channel.subscriptionGift',
+    Resub = 'channel.resub',
+    GiftPaidUpgrade = 'channel.giftPaidUpgrade',
+    PrimePaidUpgrade = 'channel.primePaidUpgrade',
+    Unraid = 'channel.unraid',
+    PayItForward = 'channel.payItForward',
+    Announcement = 'channel.announcement',
+    CharityDonation = 'channel.charityDonation',
+    BitsBadgeTier = 'channel.bitsBadgeTier',
+    WatchStreak = 'channel.watchStreak',
+    SharedResub = 'channel.sharedResub',
+    SharedGiftPaidUpgrade = 'channel.sharedGiftPaidUpgrade',
+    SharedPrimePaidUpgrade = 'channel.sharedPrimePaidUpgrade',
+    SharedPayItForward = 'channel.sharedPayItForward',
+    SharedAnnouncement = 'channel.sharedAnnouncement',
 }
 
 export interface ChatMessage {

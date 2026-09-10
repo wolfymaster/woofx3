@@ -10,7 +10,7 @@ func TestConvertDBWorkflow_UnpacksJSONColumns(t *testing.T) {
 	dbwf := &dbv1.Workflow{
 		Id:          "wf-1",
 		Name:        "Test Workflow",
-		TriggerJson: `{"type":"event","event":"message.user.twitch"}`,
+		TriggerJson: `{"type":"event","event":"user.message"}`,
 		StepsJson:   `[{"id":"task-1","type":"print","parameters":{"msg":"hi"}}]`,
 	}
 
@@ -25,8 +25,8 @@ func TestConvertDBWorkflow_UnpacksJSONColumns(t *testing.T) {
 	if got.Trigger.Type != "event" {
 		t.Errorf("Trigger.Type = %q, want %q", got.Trigger.Type, "event")
 	}
-	if got.Trigger.Event != "message.user.twitch" {
-		t.Errorf("Trigger.Event = %q, want %q", got.Trigger.Event, "message.user.twitch")
+	if got.Trigger.Event != "user.message" {
+		t.Errorf("Trigger.Event = %q, want %q", got.Trigger.Event, "user.message")
 	}
 	if len(got.Tasks) != 1 {
 		t.Errorf("len(Tasks) = %d, want 1", len(got.Tasks))

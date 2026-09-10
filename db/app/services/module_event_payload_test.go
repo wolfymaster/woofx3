@@ -242,7 +242,7 @@ func TestModuleEventsCarryBothIdentifiers(t *testing.T) {
 		prefix = "twitch_platform"
 		key    = "twitch_platform:1.0.0:075ab4d"
 	)
-	trigger := &models.Trigger{ID: uuid.New(), Name: "follow", CreatedByType: "MODULE", CreatedByRef: prefix, ManifestID: "follow.channel.twitch"}
+	trigger := &models.Trigger{ID: uuid.New(), Name: "follow", CreatedByType: "MODULE", CreatedByRef: prefix, ManifestID: "channel.follow"}
 	action := &models.Action{ID: uuid.New(), Name: "send", CreatedByType: "MODULE", CreatedByRef: prefix, ManifestID: "twitch.chat.send"}
 	widget := &models.Widget{ID: uuid.New(), Name: "alerts", CreatedByType: "MODULE", CreatedByRef: prefix, ManifestID: "alertBox"}
 	asset := &models.Asset{ID: uuid.New(), Name: "bell", CreatedByType: "MODULE", CreatedByRef: prefix, ManifestID: "bell"}
@@ -283,10 +283,10 @@ func TestProjectionKeyVersionPinningIsFunctionsOnly(t *testing.T) {
 		key    = "twitch_platform:1.0.0:075ab4d"
 	)
 
-	trigger := &models.Trigger{ID: uuid.New(), CreatedByType: "MODULE", CreatedByRef: prefix, ManifestID: "follow.channel.twitch"}
+	trigger := &models.Trigger{ID: uuid.New(), CreatedByType: "MODULE", CreatedByRef: prefix, ManifestID: "channel.follow"}
 	data := buildTriggerRegisteredData(prefix, key, "Twitch Platform", "1.0.0", []*models.Trigger{trigger})
 	row := data["triggers"].([]map[string]any)[0]
-	if got, want := row["projection_key"], "twitch_platform:trigger:follow.channel.twitch"; got != want {
+	if got, want := row["projection_key"], "twitch_platform:trigger:channel.follow"; got != want {
 		t.Errorf("trigger projection_key = %v, want %q (version-free so upgrades keep references resolving)", got, want)
 	}
 

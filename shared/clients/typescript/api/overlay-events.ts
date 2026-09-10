@@ -52,7 +52,7 @@ export interface OverlayEventFrame {
   kind: "event";
   /** Originating CloudEvent id, when known. */
   id?: string;
-  /** Canonical trigger id, e.g. `twitch_platform:trigger:follow.channel.twitch`. */
+  /** Event type, e.g. `channel.follow`. */
   type: string;
   /** CloudEvent source. */
   source: string;

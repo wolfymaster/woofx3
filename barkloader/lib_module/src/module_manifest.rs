@@ -464,7 +464,7 @@ pub struct ModuleWidget {
     /// render time as `widgetHost.settings`.
     #[serde(default)]
     pub settings_schema: Option<Vec<ManifestConfigField>>,
-    /// Canonical trigger ids (e.g. `twitch_platform:trigger:follow.channel.twitch`)
+    /// Canonical trigger ids (e.g. `channel.follow`)
     /// the widget consumes. Resolved at install via `manifest_validate.rs` to
     /// confirm those triggers actually exist in the engine — this is the
     /// engine-internal reference graph.
@@ -880,25 +880,26 @@ fn widget_asset_prefix(assets: &str) -> Result<String> {
     Ok(normalize_rel_path(assets)?.trim_end_matches('/').to_string() + "/")
 }
 
-/// Map a canonical trigger id (e.g.
-/// `twitch_platform:trigger:follow.channel.twitch`) to the AlertContext.type
-/// the engine emits for that event. Returns `None` for triggers that
-/// don't translate to an alert (chat messages, internal events, etc.) —
-/// those widgets must declare `alert_types` explicitly in the manifest.
+/// Map an event type to the AlertContext.type the engine emits for it.
+/// Returns `None` for events that don't translate to an alert (chat
+/// messages, internal events) — those widgets must declare `alert_types`
+/// explicitly in the manifest.
+///
+/// Keyed on the event type rather than a canonical trigger id: events are
+/// platform-agnostic, so any module emitting `channel.follow` maps here.
 ///
 /// This table mirrors `api/src/alert-emitter.ts` mappers — keep in sync
 /// when the AlertContext type union grows.
 #[allow(dead_code)]
-pub fn alert_type_for_canonical(canonical: &str) -> Option<&'static str> {
-    let event = canonical.rsplit(':').next().unwrap_or(canonical);
+pub fn alert_type_for_event(event: &str) -> Option<&'static str> {
     match event {
-        "follow.channel.twitch" => Some("follow"),
-        "cheer.channel.twitch" => Some("cheer"),
-        "subscribe.channel.twitch" => Some("subscribe"),
-        "subscriptionGift.channel.twitch" => Some("sub_gift"),
-        "hypetrain.channel.twitch" => Some("hypetrain"),
-        "raid.channel.twitch" => Some("raid"),
-        "online.channel.twitch" => Some("stream_online"),
+        "channel.follow" => Some("follow"),
+        "channel.cheer" => Some("cheer"),
+        "channel.subscribe" => Some("subscribe"),
+        "channel.subscriptionGift" => Some("sub_gift"),
+        "channel.hypetrain" => Some("hypetrain"),
+        "channel.raid" => Some("raid"),
+        "stream.online" => Some("stream_online"),
         _ => None,
     }
 }
@@ -907,8 +908,8 @@ impl ModuleWidget {
     /// Resolve the wire-format alert_types this widget exposes to the
     /// Convex scene manager. Prefers the manifest's explicit `alert_types`
     /// if present; otherwise derives the list from `accepted_events` using
-    /// the AlertContext.type lookup table. Canonical ids that don't map to
-    /// an AlertContext type are skipped. Order is preserved, duplicates
+    /// the AlertContext.type lookup table. Events that don't map to an
+    /// AlertContext type are skipped. Order is preserved, duplicates
     /// removed.
     pub fn resolved_alert_types(&self) -> Vec<String> {
         if !self.alert_types.is_empty() {
@@ -917,7 +918,7 @@ impl ModuleWidget {
         let mut out: Vec<String> = Vec::new();
         let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
         for ev in &self.accepted_events {
-            if let Some(t) = alert_type_for_canonical(ev) {
+            if let Some(t) = alert_type_for_event(ev) {
                 if seen.insert(t) {
                     out.push(t.to_string());
                 }
@@ -1769,7 +1770,7 @@ mod tests {
         let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
             "id": "channel_cheer",
             "name": "Cheer",
-            "event": "cheer.channel.twitch",
+            "event": "channel.cheer",
             "emits": {
                 "fields": [
                     { "path": "bits", "type": "number", "description": "Bits cheered" },
@@ -1790,7 +1791,7 @@ mod tests {
         let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
             "id": "channel_cheer",
             "name": "Cheer",
-            "event": "cheer.channel.twitch"
+            "event": "channel.cheer"
         }))
         .expect("parse");
         // "{}" rather than "null": the column is NOT NULL and every consumer
@@ -1816,7 +1817,7 @@ mod tests {
                     "description": "Counts incoming raids.",
                     "entry": "widgets/raid_counter/index.html",
                     "assets": "widgets/raid_counter",
-                    "acceptedEvents": ["twitch_platform:trigger:raid.channel.twitch"],
+                    "acceptedEvents": ["channel.raid"],
                     "settingsSchema": [
                         {
                             "id": "minViewers",
@@ -1840,7 +1841,7 @@ mod tests {
         assert_eq!(w.id, "raid_counter");
         assert_eq!(w.entry.as_deref(), Some("widgets/raid_counter/index.html"));
         assert_eq!(w.assets.as_deref(), Some("widgets/raid_counter"));
-        assert_eq!(w.accepted_events, vec!["twitch_platform:trigger:raid.channel.twitch"]);
+        assert_eq!(w.accepted_events, vec!["channel.raid"]);
         let fields = w.settings_schema.as_ref().expect("settings_schema present");
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].id, "minViewers");
@@ -1861,7 +1862,7 @@ mod tests {
                     "name": "Recent Followers",
                     "entry": "widgets/recent_followers/index.html",
                     "assets": "widgets/recent_followers",
-                    "acceptedEvents": ["twitch_platform:trigger:follow.channel.twitch"]
+                    "acceptedEvents": ["channel.follow"]
                 },
                 {
                     "id": "alert_feed",
@@ -1869,9 +1870,9 @@ mod tests {
                     "entry": "widgets/alert_feed/index.html",
                     "assets": "widgets/alert_feed",
                     "acceptedEvents": [
-                        "twitch_platform:trigger:follow.channel.twitch",
-                        "twitch_platform:trigger:cheer.channel.twitch",
-                        "twitch_platform:trigger:raid.channel.twitch"
+                        "channel.follow",
+                        "channel.cheer",
+                        "channel.raid"
                     ]
                 }
             ]
@@ -1887,7 +1888,7 @@ mod tests {
         let w: ModuleWidget = serde_json::from_value(serde_json::json!({
             "id": "x",
             "name": "X",
-            "acceptedEvents": ["twitch_platform:trigger:follow.channel.twitch"],
+            "acceptedEvents": ["channel.follow"],
             "alertTypes": ["follow", "raid"]
         }))
         .expect("parse");
@@ -1900,9 +1901,9 @@ mod tests {
             "id": "x",
             "name": "X",
             "acceptedEvents": [
-                "twitch_platform:trigger:follow.channel.twitch",
-                "twitch_platform:trigger:raid.channel.twitch",
-                "twitch_platform:trigger:cheer.channel.twitch"
+                "channel.follow",
+                "channel.raid",
+                "channel.cheer"
             ]
         }))
         .expect("parse");
@@ -1916,8 +1917,8 @@ mod tests {
             "id": "x",
             "name": "X",
             "acceptedEvents": [
-                "twitch_platform:trigger:message.user.twitch",
-                "twitch_platform:trigger:follow.channel.twitch"
+                "user.message",
+                "channel.follow"
             ]
         }))
         .expect("parse");
@@ -1930,8 +1931,8 @@ mod tests {
             "id": "x",
             "name": "X",
             "acceptedEvents": [
-                "twitch_platform:trigger:follow.channel.twitch",
-                "twitch_platform:trigger:follow.channel.twitch"
+                "channel.follow",
+                "channel.follow"
             ]
         }))
         .expect("parse");
@@ -1940,14 +1941,14 @@ mod tests {
 
     #[test]
     fn alert_type_for_canonical_recognizes_full_alert_set() {
-        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:follow.channel.twitch"), Some("follow"));
-        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:cheer.channel.twitch"), Some("cheer"));
-        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:subscribe.channel.twitch"), Some("subscribe"));
-        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:subscriptionGift.channel.twitch"), Some("sub_gift"));
-        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:hypetrain.channel.twitch"), Some("hypetrain"));
-        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:raid.channel.twitch"), Some("raid"));
-        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:online.channel.twitch"), Some("stream_online"));
-        assert_eq!(alert_type_for_canonical("twitch_platform:trigger:message.user.twitch"), None);
+        assert_eq!(alert_type_for_event("channel.follow"), Some("follow"));
+        assert_eq!(alert_type_for_event("channel.cheer"), Some("cheer"));
+        assert_eq!(alert_type_for_event("channel.subscribe"), Some("subscribe"));
+        assert_eq!(alert_type_for_event("channel.subscriptionGift"), Some("sub_gift"));
+        assert_eq!(alert_type_for_event("channel.hypetrain"), Some("hypetrain"));
+        assert_eq!(alert_type_for_event("channel.raid"), Some("raid"));
+        assert_eq!(alert_type_for_event("stream.online"), Some("stream_online"));
+        assert_eq!(alert_type_for_event("user.message"), None);
     }
 
     #[test]
@@ -1958,7 +1959,7 @@ mod tests {
             "description": "Counts incoming raids.",
             "entry": "widgets/raid_counter/index.html",
             "assets": "widgets/raid_counter",
-            "acceptedEvents": ["twitch_platform:trigger:raid.channel.twitch"],
+            "acceptedEvents": ["channel.raid"],
             "settingsSchema": [
                 { "id": "minViewers", "type": "number", "label": "Minimum viewers", "defaultValue": 1 }
             ]
@@ -2073,7 +2074,7 @@ mod tests {
             "name": "Raid Counter",
             "entry": "widgets/raid_counter/index.html",
             "assets": "widgets/raid_counter",
-            "acceptedEvents": ["twitch_platform:trigger:raid.channel.twitch"]
+            "acceptedEvents": ["channel.raid"]
         }"#;
         let w: ModuleWidget = serde_json::from_str(j).expect("parse");
         let s = serde_json::to_string(&w).expect("serialize");

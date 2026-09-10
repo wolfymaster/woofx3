@@ -309,13 +309,7 @@ func (e *Engine[TServices]) evaluateTrigger(wf *types.WorkflowDefinition, event 
 	// empty result from EvaluateMultiple is treated as success.
 	if len(wf.Trigger.Conditions) > 0 {
 		resolver := expression.NewResolver()
-		resolver.AddSource("trigger", map[string]any{
-			"id":     event.ID,
-			"type":   event.Type,
-			"source": event.Source,
-			"time":   event.Time,
-			"data":   event.Data,
-		})
+		resolver.AddSource("trigger", event.TriggerFields())
 		exprConds := make([]expression.Condition, 0, len(wf.Trigger.Conditions))
 		for _, c := range wf.Trigger.Conditions {
 			exprConds = append(exprConds, expression.Condition{
@@ -665,14 +659,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 func (e *Engine[TServices]) buildResolver(triggerEvent *types.Event, taskExports map[string]map[string]any) *expression.Resolver {
 	resolver := expression.NewResolver()
 
-	triggerData := map[string]any{
-		"id":     triggerEvent.ID,
-		"type":   triggerEvent.Type,
-		"source": triggerEvent.Source,
-		"time":   triggerEvent.Time,
-		"data":   triggerEvent.Data,
-	}
-	resolver.AddSource("trigger", triggerData)
+	resolver.AddSource("trigger", triggerEvent.TriggerFields())
 
 	for taskID, exports := range taskExports {
 		resolver.AddSource(taskID, exports)

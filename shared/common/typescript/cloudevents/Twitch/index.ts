@@ -7,6 +7,9 @@ export * from "./messages";
 
 type EventTuple = [string, Uint8Array];
 
+/** Provenance stamped on every event this builder emits. */
+const PLATFORM = "twitch";
+
 export default class TwitchEvents {
   constructor(private source: string) {}
 
@@ -106,7 +109,11 @@ export default class TwitchEvents {
     return this.encodeEvent(TwitchEvent.EventType.SharedAnnouncement, event);
   }
 
+  /** The tuple is `[NATS subject, encoded CloudEvent]`; the subject is the
+   *  event type. Every event this class builds is stamped with its platform
+   *  here rather than at each call site, so a new event cannot be added
+   *  without provenance. */
   private encodeEvent(type: TwitchEvent.EventType, event: any): EventTuple {
-    return [type, encode(Event({ type, source: this.source }, event))];
+    return [type, encode(Event({ type, source: this.source, platform: PLATFORM }, event))];
   }
 }

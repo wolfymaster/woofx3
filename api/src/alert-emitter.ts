@@ -1,25 +1,29 @@
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { AlertContext } from "@woofx3/common/cloudevents/Alert/events";
-import type {
-  Cheer,
-  Follow,
-  HypeTrainBegin,
-  Raid,
-  StreamOnline,
-  Subscribe,
-  SubscriptionGift,
+import {
+  type Cheer,
+  EventType,
+  type Follow,
+  type HypeTrainBegin,
+  type Raid,
+  type StreamOnline,
+  type Subscribe,
+  type SubscriptionGift,
 } from "@woofx3/common/cloudevents/Twitch/events";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
 import type { ConvexWebhookClient } from "./convex-webhook-client";
 
-const SUBJECT_FOLLOW = "follow.channel.twitch";
-const SUBJECT_CHEER = "cheer.channel.twitch";
-const SUBJECT_SUBSCRIBE = "subscribe.channel.twitch";
-const SUBJECT_SUB_GIFT = "subscriptionGift.channel.twitch";
-const SUBJECT_HYPETRAIN = "hypetrain.channel.twitch";
-const SUBJECT_RAID = "raid.channel.twitch";
-const SUBJECT_STREAM_ONLINE = "online.channel.twitch";
+// Subjects come from the shared enum rather than repeated literals: the
+// value is both the CloudEvent type and the NATS subject, and a rename that
+// misses one of these would silently stop emitting alerts.
+const SUBJECT_FOLLOW = EventType.Follow;
+const SUBJECT_CHEER = EventType.Cheer;
+const SUBJECT_SUBSCRIBE = EventType.Subscribe;
+const SUBJECT_SUB_GIFT = EventType.SubscriptionGift;
+const SUBJECT_HYPETRAIN = EventType.HypeTrainBegin;
+const SUBJECT_RAID = EventType.Raid;
+const SUBJECT_STREAM_ONLINE = EventType.StreamOnline;
 
 interface CloudEventEnvelope<T> {
   type?: string;

@@ -1,5 +1,6 @@
 import { getStreamStatus, type StreamStatus } from "../twitch-stream-status";
 import { routeModule } from "./context";
+import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import { parseModuleTriggerDeregistered, parseModuleTriggerRegistered } from "../module-event-handlers";
 
@@ -16,7 +17,7 @@ import { parseModuleTriggerDeregistered, parseModuleTriggerRegistered } from "..
  *     notify in-process trigger subscribers via
  *     `this.notifyTriggerChange`, which reaches into
  *     `ApiRouteHost.triggerSubscribers`.
- *   - `{online,offline}.channel.twitch` call `this.getStreamStatus`
+ *   - `stream.{online,offline}` call `this.getStreamStatus`
  *     (a real RPC method, for enrichment) and
  *     `this.ensureApplicationId`/`this.applicationId` (the cached
  *     default-application id). Extracting them to a standalone
@@ -63,14 +64,14 @@ export const subscriptionsRoutes = routeModule({
     });
 
     // Twitch stream lifecycle. The twitch service publishes
-    // `online.channel.twitch` / `offline.channel.twitch` cloudevents from
+    // `stream.online` / `stream.offline` cloudevents from
     // its EventSub listener; we translate them to the webhook
     // `stream.online` / `stream.offline` events the UI subscribes to.
     //
     // applicationId is resolved lazily from the default application —
     // the engine is single-broadcaster-per-deployment today, so every
     // emitted event scopes to the same id.
-    await this.nats.subscribe("online.channel.twitch", async (msg) => {
+    await this.nats.subscribe(EventType.StreamOnline, async (msg) => {
       try {
         const ce = msg.json() as Record<string, unknown>;
         const data = (ce.data as Record<string, unknown> | undefined) ?? ce;
@@ -115,13 +116,13 @@ export const subscriptionsRoutes = routeModule({
           viewerCount: enrichment?.viewerCount,
         });
       } catch (err) {
-        this.logger.error("online.channel.twitch: handler failed", {
+        this.logger.error(`${EventType.StreamOnline}: handler failed`, {
           error: err instanceof Error ? err.message : String(err),
         });
       }
     });
 
-    await this.nats.subscribe("offline.channel.twitch", async (msg) => {
+    await this.nats.subscribe(EventType.StreamOffline, async (msg) => {
       try {
         const ce = msg.json() as Record<string, unknown>;
         const data = (ce.data as Record<string, unknown> | undefined) ?? ce;
@@ -144,7 +145,7 @@ export const subscriptionsRoutes = routeModule({
           twitchUserId,
         });
       } catch (err) {
-        this.logger.error("offline.channel.twitch: handler failed", {
+        this.logger.error(`${EventType.StreamOffline}: handler failed`, {
           error: err instanceof Error ? err.message : String(err),
         });
       }
