@@ -1103,6 +1103,19 @@ pub struct DeleteByModuleIdRequest {
     /// the exact installed version alongside module_prefix.
     #[prost(string, tag="2")]
     pub module_key: ::prost::alloc::string::String,
+    /// Provenance to match. Empty means MODULE, which is every ordinary
+    /// uninstall: a module removes the rows it registered and nothing else.
+    ///
+    /// Naming SYSTEM here is how a retired engine-owned namespace is removed —
+    /// the `builtin` and `chat_commands` rows the built-in consolidation left
+    /// behind had no removal path at all, because the guard that (correctly)
+    /// stops a module called `builtin` from deleting the system's rows also
+    /// stopped anything else from doing it deliberately.
+    ///
+    /// Deliberately not a boolean "force": the caller states which namespace it
+    /// means, so the request says what it does.
+    #[prost(string, tag="3")]
+    pub created_by_type: ::prost::alloc::string::String,
 }
 /// Lookup by canonical id (`{moduleId}:{kind}:{manifest_id}`). Used by
 /// barkloader's install path to resolve cross-module references before

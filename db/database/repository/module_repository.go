@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"strings"
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
@@ -183,10 +184,24 @@ func (r *ModuleRepository) ListTriggers(createdByType, createdByRef string) ([]*
 // naming itself after one -- but that means a caller can ask to delete
 // something and correctly have nothing happen. Reporting the count is what
 // lets them tell that apart from success.
-func (r *ModuleRepository) DeleteTriggersByModulePrefix(moduleID string) (int64, error) {
+// normalizeProvenance defaults an unset created_by_type to MODULE.
+//
+// MODULE is every ordinary uninstall, so it stays the default and a caller
+// that says nothing gets the safe behaviour. Removing an engine-owned
+// namespace has to name SYSTEM explicitly -- the request should say what it
+// does rather than carry a boolean that means "also delete things you did
+// not ask about".
+func normalizeProvenance(createdByType string) string {
+	if strings.TrimSpace(createdByType) == "" {
+		return "MODULE"
+	}
+	return strings.ToUpper(strings.TrimSpace(createdByType))
+}
+
+func (r *ModuleRepository) DeleteTriggersByModulePrefix(moduleID, createdByType string) (int64, error) {
 	result := r.db.Where(
 		"created_by_type = ? AND created_by_ref = ?",
-		"MODULE", moduleID,
+		normalizeProvenance(createdByType), moduleID,
 	).Delete(&models.Trigger{})
 	return result.RowsAffected, result.Error
 }
@@ -209,11 +224,11 @@ func (r *ModuleRepository) ArchiveTriggerByManifestID(moduleID, manifestID strin
 // given stable manifest module id. Used to fetch the rows that
 // `DeleteTriggersByModulePrefix` will remove so the caller can publish a
 // deregistration event before the rows disappear.
-func (r *ModuleRepository) ListTriggersByModulePrefix(moduleID string) ([]*models.Trigger, error) {
+func (r *ModuleRepository) ListTriggersByModulePrefix(moduleID, createdByType string) ([]*models.Trigger, error) {
 	var triggers []*models.Trigger
 	err := r.db.Where(
 		"created_by_type = ? AND created_by_ref = ?",
-		"MODULE", moduleID,
+		normalizeProvenance(createdByType), moduleID,
 	).Find(&triggers).Error
 	return triggers, err
 }
@@ -304,10 +319,10 @@ func (r *ModuleRepository) ListActions(createdByType, createdByRef string) ([]*m
 // naming itself after one -- but that means a caller can ask to delete
 // something and correctly have nothing happen. Reporting the count is what
 // lets them tell that apart from success.
-func (r *ModuleRepository) DeleteActionsByModulePrefix(moduleID string) (int64, error) {
+func (r *ModuleRepository) DeleteActionsByModulePrefix(moduleID, createdByType string) (int64, error) {
 	result := r.db.Where(
 		"created_by_type = ? AND created_by_ref = ?",
-		"MODULE", moduleID,
+		normalizeProvenance(createdByType), moduleID,
 	).Delete(&models.Action{})
 	return result.RowsAffected, result.Error
 }
@@ -323,11 +338,11 @@ func (r *ModuleRepository) ArchiveActionByManifestID(moduleID, manifestID string
 // ListActionsByModulePrefix mirrors ListTriggersByModulePrefix for the
 // actions table. Used to capture rows for the deregistration event before
 // they are removed.
-func (r *ModuleRepository) ListActionsByModulePrefix(moduleID string) ([]*models.Action, error) {
+func (r *ModuleRepository) ListActionsByModulePrefix(moduleID, createdByType string) ([]*models.Action, error) {
 	var actions []*models.Action
 	err := r.db.Where(
 		"created_by_type = ? AND created_by_ref = ?",
-		"MODULE", moduleID,
+		normalizeProvenance(createdByType), moduleID,
 	).Find(&actions).Error
 	return actions, err
 }
@@ -396,11 +411,11 @@ func (r *ModuleRepository) ListAssets(createdByType, createdByRef string) ([]*mo
 
 // ListAssetsByModulePrefix mirrors ListActionsByModulePrefix — used
 // to capture rows for the deregistration event before they're deleted.
-func (r *ModuleRepository) ListAssetsByModulePrefix(moduleID string) ([]*models.Asset, error) {
+func (r *ModuleRepository) ListAssetsByModulePrefix(moduleID, createdByType string) ([]*models.Asset, error) {
 	var assets []*models.Asset
 	err := r.db.Where(
 		"created_by_type = ? AND created_by_ref = ?",
-		"MODULE", moduleID,
+		normalizeProvenance(createdByType), moduleID,
 	).Find(&assets).Error
 	return assets, err
 }
@@ -410,10 +425,10 @@ func (r *ModuleRepository) ListAssetsByModulePrefix(moduleID string) ([]*models.
 // naming itself after one -- but that means a caller can ask to delete
 // something and correctly have nothing happen. Reporting the count is what
 // lets them tell that apart from success.
-func (r *ModuleRepository) DeleteAssetsByModulePrefix(moduleID string) (int64, error) {
+func (r *ModuleRepository) DeleteAssetsByModulePrefix(moduleID, createdByType string) (int64, error) {
 	result := r.db.Where(
 		"created_by_type = ? AND created_by_ref = ?",
-		"MODULE", moduleID,
+		normalizeProvenance(createdByType), moduleID,
 	).Delete(&models.Asset{})
 	return result.RowsAffected, result.Error
 }
@@ -530,11 +545,11 @@ func (r *ModuleRepository) ListWidgets(createdByType, createdByRef string) ([]*m
 
 // ListWidgetsByModulePrefix mirrors ListAssetsByModulePrefix — used
 // to capture rows for the deregistration event before they're deleted.
-func (r *ModuleRepository) ListWidgetsByModulePrefix(moduleID string) ([]*models.Widget, error) {
+func (r *ModuleRepository) ListWidgetsByModulePrefix(moduleID, createdByType string) ([]*models.Widget, error) {
 	var widgets []*models.Widget
 	err := r.db.Where(
 		"created_by_type = ? AND created_by_ref = ?",
-		"MODULE", moduleID,
+		normalizeProvenance(createdByType), moduleID,
 	).Find(&widgets).Error
 	return widgets, err
 }
@@ -560,10 +575,10 @@ func (r *ModuleRepository) GetWidgetByModuleAndManifestID(moduleID, manifestID s
 // naming itself after one -- but that means a caller can ask to delete
 // something and correctly have nothing happen. Reporting the count is what
 // lets them tell that apart from success.
-func (r *ModuleRepository) DeleteWidgetsByModulePrefix(moduleID string) (int64, error) {
+func (r *ModuleRepository) DeleteWidgetsByModulePrefix(moduleID, createdByType string) (int64, error) {
 	result := r.db.Where(
 		"created_by_type = ? AND created_by_ref = ?",
-		"MODULE", moduleID,
+		normalizeProvenance(createdByType), moduleID,
 	).Delete(&models.Widget{})
 	return result.RowsAffected, result.Error
 }
@@ -612,11 +627,11 @@ func (r *ModuleRepository) ListBackgroundTasks(createdByType, createdByRef strin
 	return tasks, err
 }
 
-func (r *ModuleRepository) ListBackgroundTasksByModulePrefix(moduleID string) ([]*models.BackgroundTask, error) {
+func (r *ModuleRepository) ListBackgroundTasksByModulePrefix(moduleID, createdByType string) ([]*models.BackgroundTask, error) {
 	var tasks []*models.BackgroundTask
 	err := r.db.Where(
 		"created_by_type = ? AND created_by_ref = ?",
-		"MODULE", moduleID,
+		normalizeProvenance(createdByType), moduleID,
 	).Find(&tasks).Error
 	return tasks, err
 }
@@ -626,10 +641,10 @@ func (r *ModuleRepository) ListBackgroundTasksByModulePrefix(moduleID string) ([
 // naming itself after one -- but that means a caller can ask to delete
 // something and correctly have nothing happen. Reporting the count is what
 // lets them tell that apart from success.
-func (r *ModuleRepository) DeleteBackgroundTasksByModulePrefix(moduleID string) (int64, error) {
+func (r *ModuleRepository) DeleteBackgroundTasksByModulePrefix(moduleID, createdByType string) (int64, error) {
 	result := r.db.Where(
 		"created_by_type = ? AND created_by_ref = ?",
-		"MODULE", moduleID,
+		normalizeProvenance(createdByType), moduleID,
 	).Delete(&models.BackgroundTask{})
 	return result.RowsAffected, result.Error
 }

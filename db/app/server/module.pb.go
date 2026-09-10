@@ -1400,7 +1400,19 @@ type DeleteByModuleIdRequest struct {
 	// Composite "{id}:{version}:{hash}" of the module being removed. Not used
 	// for row matching — carried so the deregistration outbox event can name
 	// the exact installed version alongside module_prefix.
-	ModuleKey     string `protobuf:"bytes,2,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`
+	ModuleKey string `protobuf:"bytes,2,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`
+	// Provenance to match. Empty means MODULE, which is every ordinary
+	// uninstall: a module removes the rows it registered and nothing else.
+	//
+	// Naming SYSTEM here is how a retired engine-owned namespace is removed —
+	// the `builtin` and `chat_commands` rows the built-in consolidation left
+	// behind had no removal path at all, because the guard that (correctly)
+	// stops a module called `builtin` from deleting the system's rows also
+	// stopped anything else from doing it deliberately.
+	//
+	// Deliberately not a boolean "force": the caller states which namespace it
+	// means, so the request says what it does.
+	CreatedByType string `protobuf:"bytes,3,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1445,6 +1457,13 @@ func (x *DeleteByModuleIdRequest) GetModuleId() string {
 func (x *DeleteByModuleIdRequest) GetModuleKey() string {
 	if x != nil {
 		return x.ModuleKey
+	}
+	return ""
+}
+
+func (x *DeleteByModuleIdRequest) GetCreatedByType() string {
+	if x != nil {
+		return x.CreatedByType
 	}
 	return ""
 }
@@ -1727,11 +1746,12 @@ const file_module_proto_rawDesc = "" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12\x14\n" +
 	"\x05error\x18\x04 \x01(\tR\x05error\x12?\n" +
 	"\x10in_use_resources\x18\x05 \x03(\v2\x15.module.ResourceUsageR\x0einUseResources\x12?\n" +
-	"\x0frequest_context\x18\x06 \x01(\v2\x16.common.RequestContextR\x0erequestContext\"U\n" +
+	"\x0frequest_context\x18\x06 \x01(\v2\x16.common.RequestContextR\x0erequestContext\"}\n" +
 	"\x17DeleteByModuleIdRequest\x12\x1b\n" +
 	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\x12\x1d\n" +
 	"\n" +
-	"module_key\x18\x02 \x01(\tR\tmoduleKey\"c\n" +
+	"module_key\x18\x02 \x01(\tR\tmoduleKey\x12&\n" +
+	"\x0fcreated_by_type\x18\x03 \x01(\tR\rcreatedByType\"c\n" +
 	"\x17GetByCanonicalIdRequest\x12!\n" +
 	"\fcanonical_id\x18\x01 \x01(\tR\vcanonicalId\x12%\n" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"l\n" +

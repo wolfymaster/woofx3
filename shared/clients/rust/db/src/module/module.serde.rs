@@ -3505,12 +3505,18 @@ impl serde::Serialize for DeleteByModuleIdRequest {
         if !self.module_key.is_empty() {
             len += 1;
         }
+        if !self.created_by_type.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.DeleteByModuleIdRequest", len)?;
         if !self.module_id.is_empty() {
             struct_ser.serialize_field("moduleId", &self.module_id)?;
         }
         if !self.module_key.is_empty() {
             struct_ser.serialize_field("moduleKey", &self.module_key)?;
+        }
+        if !self.created_by_type.is_empty() {
+            struct_ser.serialize_field("createdByType", &self.created_by_type)?;
         }
         struct_ser.end()
     }
@@ -3526,12 +3532,15 @@ impl<'de> serde::Deserialize<'de> for DeleteByModuleIdRequest {
             "moduleId",
             "module_key",
             "moduleKey",
+            "created_by_type",
+            "createdByType",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             ModuleId,
             ModuleKey,
+            CreatedByType,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -3555,6 +3564,7 @@ impl<'de> serde::Deserialize<'de> for DeleteByModuleIdRequest {
                         match value {
                             "moduleId" | "module_id" => Ok(GeneratedField::ModuleId),
                             "moduleKey" | "module_key" => Ok(GeneratedField::ModuleKey),
+                            "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -3576,6 +3586,7 @@ impl<'de> serde::Deserialize<'de> for DeleteByModuleIdRequest {
             {
                 let mut module_id__ = None;
                 let mut module_key__ = None;
+                let mut created_by_type__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::ModuleId => {
@@ -3590,11 +3601,18 @@ impl<'de> serde::Deserialize<'de> for DeleteByModuleIdRequest {
                             }
                             module_key__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::CreatedByType => {
+                            if created_by_type__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdByType"));
+                            }
+                            created_by_type__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(DeleteByModuleIdRequest {
                     module_id: module_id__.unwrap_or_default(),
                     module_key: module_key__.unwrap_or_default(),
+                    created_by_type: created_by_type__.unwrap_or_default(),
                 })
             }
         }
