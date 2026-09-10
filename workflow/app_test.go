@@ -60,7 +60,7 @@ func TestEventSerialization(t *testing.T) {
 	// Test that our Event type matches what we expect from NATS messages
 	testEvent := map[string]any{
 		"id":     "test-123",
-		"type":   "cheer.channel.twitch",
+		"type":   "channel.cheer",
 		"source": "twitch",
 		"data": map[string]any{
 			"amount":   100,
@@ -83,8 +83,8 @@ func TestEventSerialization(t *testing.T) {
 	if event.ID != "test-123" {
 		t.Errorf("Expected ID test-123, got %s", event.ID)
 	}
-	if event.Type != "cheer.channel.twitch" {
-		t.Errorf("Expected type cheer.channel.twitch, got %s", event.Type)
+	if event.Type != "channel.cheer" {
+		t.Errorf("Expected type channel.cheer, got %s", event.Type)
 	}
 	if event.Source != "twitch" {
 		t.Errorf("Expected source twitch, got %s", event.Source)

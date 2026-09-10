@@ -29,7 +29,7 @@ DependencyGraph built from task dependsOn fields
 Topological sort -> execution order
     |
     v
-Tasks execute sequentially in order:
+Tasks execute in order; independent adjacent ones run together:
     |-- Guard conditions evaluated (skip if false)
     |-- Parameters resolved (${...} expressions)
     |-- Task executed
@@ -43,6 +43,32 @@ Execution completed/failed
 ## Dependency Resolution
 
 Tasks declare dependencies via `dependsOn`. The engine builds a directed acyclic graph and performs a topological sort to determine execution order.
+
+### Concurrency
+
+Adjacent tasks that do not depend on one another execute at the same time,
+bounded by a concurrency cap (8 by default). Two actions hanging off the same
+condition run together rather than one after the other, so "play the sound
+*while* the overlay animates" is expressible by declaring both against the
+same dependency rather than chaining them.
+
+A task stays sequential when any of the following holds, because none of them
+has a defined answer under concurrency:
+
+- It is a `wait` or `workflow` task. Both suspend the whole execution and
+  resume by index, so they cannot sit inside a set of tasks with no ordering
+  between them.
+- It is a `condition` task, which decides which later tasks are skipped.
+- It declares `dependsOn` a task in the same run.
+- It reads another run member's exports as `${otherTask.field}` **without**
+  declaring `dependsOn`. Such a workflow works today only because the sorted
+  order happened to put them in sequence; it keeps working, sequentially,
+  rather than becoming a race.
+
+A failing task fails the execution, exactly as it does sequentially. Siblings
+already running are allowed to finish rather than being cancelled: they are
+independent by construction, and tearing them down partway would make a task's
+side effects depend on how quickly an unrelated sibling failed.
 
 ```json
 {
