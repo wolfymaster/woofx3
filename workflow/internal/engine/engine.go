@@ -49,6 +49,9 @@ type Engine[TServices any] struct {
 	logger               tasks.Logger
 	ctx                  context.Context
 	cancel               context.CancelFunc
+	// maxConcurrency caps how many independent tasks run at once. Zero means
+	// DefaultMaxConcurrentTasks.
+	maxConcurrency int
 }
 
 type SubWorkflowWaiter struct {
@@ -296,7 +299,7 @@ func (e *Engine[TServices]) evaluateTrigger(wf *types.WorkflowDefinition, event 
 	}
 
 	// `event` may be an exact subject ("twitch.channel.cheer") or a
-	// NATS-style pattern ("*.user.twitch", "workflow.>").
+	// NATS-style pattern ("channel.*", "workflow.>").
 	// eventmatch.Matches handles both.
 	if !eventmatch.Matches(wf.Trigger.Event, event.Type) {
 		return fmt.Errorf("trigger event mismatch: pattern=%q event=%q", wf.Trigger.Event, event.Type)
@@ -393,6 +396,17 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 	skippedTasks := make(map[string]bool)
 
 	for i := startIndex; i < len(executionOrder); i++ {
+		// Independent adjacent tasks run together. `planConcurrentRun` returns
+		// a run of one whenever anything makes that unsafe, so the loop body
+		// below is unchanged for every workflow that was sequential before.
+		if run := planConcurrentRun(executionOrder, i, skippedTasks, e.maxConcurrentTasks()); run.Len() > 1 {
+			if !e.executeConcurrentRun(execution, executionOrder, run, taskExports, triggerEvent) {
+				return
+			}
+			i = run.End - 1
+			continue
+		}
+
 		taskDef := executionOrder[i]
 
 		if skippedTasks[taskDef.ID] {
@@ -653,6 +667,144 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 	e.logger.Info("Workflow execution completed", "workflow", execution.WorkflowID, "execution", execution.ID, "status", execution.Status)
 
 	// Check if any parent workflows are waiting for this execution to complete
+	e.checkSubWorkflowCompletion(execution.ID)
+}
+
+// maxConcurrentTasks is the cap on tasks running together in one run.
+func (e *Engine[TServices]) maxConcurrentTasks() int {
+	if e.maxConcurrency > 0 {
+		return e.maxConcurrency
+	}
+	return DefaultMaxConcurrentTasks
+}
+
+// executeConcurrentRun runs every task in `run` at the same time and joins
+// before returning. Reports whether the execution should continue.
+//
+// A failing task fails the execution, as it does sequentially -- `OnError` is
+// declared on TaskDefinition but not read anywhere in the engine, so there is
+// only one failure behaviour to preserve. Siblings already in flight are left
+// to finish rather than cancelled: they are independent by construction, and
+// tearing them down halfway would make a task's side effects depend on how
+// fast an unrelated sibling failed.
+func (e *Engine[TServices]) executeConcurrentRun(
+	execution *types.WorkflowExecution,
+	executionOrder []*types.TaskDefinition,
+	run concurrentRun,
+	taskExports map[string]map[string]any,
+	triggerEvent *types.Event,
+) bool {
+	// Guards read exports written by earlier tasks, all of which have
+	// completed -- the run boundary is the happens-before edge. Resolving
+	// every guard up front keeps that read off the concurrent path entirely.
+	toRun := make([]*types.TaskDefinition, 0, run.Len())
+	for i := run.Start; i < run.End; i++ {
+		taskDef := executionOrder[i]
+		taskExec := &types.TaskExecution{
+			TaskID:    taskDef.ID,
+			Status:    types.TaskStatusRunning,
+			StartedAt: time.Now(),
+		}
+		execution.Tasks[taskDef.ID] = taskExec
+
+		if taskDef.Condition == nil && len(taskDef.Conditions) == 0 {
+			toRun = append(toRun, taskDef)
+			continue
+		}
+		resolver := e.buildResolver(triggerEvent, taskExports)
+		shouldRun, err := (&tasks.ConditionTask{}).Evaluate(taskDef, resolver)
+		if err != nil {
+			e.failExecution(execution, taskExec, err, "Task condition evaluation failed", taskDef.ID)
+			return false
+		}
+		if !shouldRun {
+			now := time.Now()
+			taskExec.Status = types.TaskStatusSkipped
+			taskExec.CompletedAt = &now
+			taskExec.Result = &types.TaskResult{
+				Status: types.TaskStatusSkipped,
+				Data:   map[string]any{"skipped": true, "reason": "condition evaluated to false"},
+			}
+			e.logger.Info("Task skipped (condition false)", "workflow", execution.WorkflowID, "task", taskDef.ID)
+			continue
+		}
+		toRun = append(toRun, taskDef)
+	}
+
+	if len(toRun) == 0 {
+		return true
+	}
+
+	type outcome struct {
+		taskDef *types.TaskDefinition
+		result  *types.TaskResult
+		err     error
+	}
+	results := make([]outcome, len(toRun))
+	var wg sync.WaitGroup
+	for idx, taskDef := range toRun {
+		wg.Add(1)
+		go func(idx int, taskDef *types.TaskDefinition) {
+			defer wg.Done()
+			// `taskExports` is only read here, and only for tasks that
+			// completed before this run began -- no member of the run is
+			// referenced by another (planConcurrentRun rejects the run
+			// otherwise), so there is nothing to synchronise on the read side.
+			result, err := e.executeTask(taskDef, execution, triggerEvent, taskExports)
+			results[idx] = outcome{taskDef: taskDef, result: result, err: err}
+		}(idx, taskDef)
+	}
+	wg.Wait()
+
+	e.logger.Info("Concurrent task run completed", "workflow", execution.WorkflowID, "execution", execution.ID, "tasks", len(toRun))
+
+	// Apply outcomes in declaration order so the recorded result, the logs and
+	// the exports do not depend on which goroutine finished first.
+	var firstFailure *outcome
+	for i := range results {
+		out := results[i]
+		taskExec := execution.Tasks[out.taskDef.ID]
+		now := time.Now()
+		taskExec.CompletedAt = &now
+		taskExec.Result = out.result
+
+		if out.err != nil {
+			taskExec.Status = types.TaskStatusFailed
+			taskExec.Error = out.err.Error()
+			e.logger.Error("Task failed", "workflow", execution.WorkflowID, "execution", execution.ID, "task", out.taskDef.ID, "error", out.err)
+			if firstFailure == nil {
+				firstFailure = &results[i]
+			}
+			continue
+		}
+
+		taskExec.Status = types.TaskStatusSuccess
+		publishTaskResultExports(taskExports, out.taskDef.ID, out.result)
+		e.logger.Info("Task completed", "workflow", execution.WorkflowID, "execution", execution.ID, "task", out.taskDef.ID)
+	}
+
+	if firstFailure != nil {
+		execution.Status = types.ExecutionStatusFailed
+		execution.Error = firstFailure.err.Error()
+		now := time.Now()
+		execution.CompletedAt = &now
+		e.checkSubWorkflowCompletion(execution.ID)
+		return false
+	}
+	return true
+}
+
+// failExecution records a task-level error as an execution failure. Extracted
+// so the concurrent path fails identically to the sequential one.
+func (e *Engine[TServices]) failExecution(execution *types.WorkflowExecution, taskExec *types.TaskExecution, err error, msg, taskID string) {
+	now := time.Now()
+	taskExec.Status = types.TaskStatusFailed
+	taskExec.Error = err.Error()
+	taskExec.CompletedAt = &now
+	execution.Status = types.ExecutionStatusFailed
+	execution.Error = err.Error()
+	execution.CompletedAt = &now
+	e.logger.Error(msg, "workflow", execution.WorkflowID, "task", taskID, "error", err)
 	e.checkSubWorkflowCompletion(execution.ID)
 }
 
