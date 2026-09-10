@@ -212,6 +212,37 @@ pub fn validate_with_provenance(
         }
     }
 
+    // Step ids are the names an author's own `${id.field}` references and
+    // `dependsOn` entries resolve against. A duplicate makes a reference
+    // ambiguous and a dangling `dependsOn` makes the graph unsatisfiable --
+    // both of which otherwise surface as a step that quietly does nothing.
+    for (wi, workflow) in manifest.workflows.iter().enumerate() {
+        let mut declared: HashSet<&str> = HashSet::new();
+        for (si, step) in workflow.steps.iter().enumerate() {
+            let Some(id) = step.id.as_deref().map(str::trim).filter(|s| !s.is_empty()) else {
+                continue;
+            };
+            if !declared.insert(id) {
+                return Err(anyhow!(
+                    "workflow #{wi} ({}) step #{si}: duplicate step id {id:?}",
+                    workflow.id
+                ));
+            }
+        }
+        for (si, step) in workflow.steps.iter().enumerate() {
+            for dep in &step.depends_on {
+                let dep = dep.trim();
+                if !declared.contains(dep) {
+                    return Err(anyhow!(
+                        "workflow #{wi} ({}) step #{si}: dependsOn {dep:?} names no step in this workflow. \
+                         Only steps with an explicit `id` can be depended on.",
+                        workflow.id
+                    ));
+                }
+            }
+        }
+    }
+
     // Pass 1: build per-kind canonical id lookup tables.
     let triggers_table = build_kind_table(
         &module_id,
@@ -1655,6 +1686,78 @@ mod tests {
         let err = validate(&m).unwrap_err().to_string();
         assert!(err.contains("s1"), "the error must name the task: {err}");
         assert!(err.contains("cron"), "the error must say what is wrong: {err}");
+    }
+
+    #[test]
+    fn a_declared_step_id_is_kept() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "channel.follow" }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "js", "path": "functions/f1.js" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [
+                { "id": "say", "action": "a1" }
+            ]}]"#);
+        let r = validate(&m).expect("ok");
+        assert_eq!(r.workflows[0].step_actions.len(), 1);
+        // The declared id survives into the stored task; see
+        // module_manifest::step_to_task_json.
+        assert_eq!(m.workflows[0].steps[0].id.as_deref(), Some("say"));
+    }
+
+    #[test]
+    fn duplicate_step_ids_are_rejected() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "channel.follow" }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "js", "path": "functions/f1.js" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [
+                { "id": "dup", "action": "a1" },
+                { "id": "dup", "action": "a1" }
+            ]}]"#);
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("duplicate step id"), "got: {err}");
+    }
+
+    /// A typo here used to produce a step that depended on nothing and ran in
+    /// whatever order the array happened to give.
+    #[test]
+    fn a_dangling_depends_on_is_rejected() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "channel.follow" }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "js", "path": "functions/f1.js" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [
+                { "id": "first", "action": "a1" },
+                { "id": "second", "action": "a1", "dependsOn": ["frist"] }
+            ]}]"#);
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("names no step"), "got: {err}");
+        assert!(err.contains("frist"), "the error must quote the typo: {err}");
+    }
+
+    #[test]
+    fn a_satisfied_depends_on_validates() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "channel.follow" }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "js", "path": "functions/f1.js" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [
+                { "id": "first", "action": "a1" },
+                { "id": "second", "action": "a1", "dependsOn": ["first"] }
+            ]}]"#);
+        validate(&m).expect("a dependency on a declared step is fine");
+    }
+
+    #[test]
+    fn steps_without_ids_still_validate() {
+        let m = minimal(r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "channel.follow" }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "js", "path": "functions/f1.js" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [
+                { "action": "a1" }, { "action": "a1" }
+            ]}]"#);
+        validate(&m).expect("generated ids are still the default");
     }
 
     #[test]

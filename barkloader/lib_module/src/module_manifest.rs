@@ -337,6 +337,11 @@ pub struct ManifestWorkflowStep {
     /// the action handler at runtime. Schema is action-handler defined.
     #[serde(default)]
     pub parameters: serde_json::Value,
+    /// Step ids this step must run after. Without it the engine is free to
+    /// run adjacent steps concurrently, so a step that needs another's
+    /// output has to say so rather than rely on array order.
+    #[serde(default)]
+    pub depends_on: Vec<String>,
 }
 
 fn default_step_type() -> String {
@@ -1326,11 +1331,23 @@ fn step_to_task_json(
     asset_repo_keys: &HashMap<String, String>,
 ) -> Result<serde_json::Value> {
     let mut task = serde_json::Map::new();
-    task.insert(
-        "id".to_string(),
-        serde_json::Value::String(format!("{step_id_prefix}{step_index}")),
-    );
+    // A declared id is what the author's own `${id.field}` references name, so
+    // overwriting it silently breaks every cross-step reference in the
+    // workflow. Generate one only when none was given.
+    let step_id = match step.id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(declared) => declared.to_string(),
+        None => format!("{step_id_prefix}{step_index}"),
+    };
+    task.insert("id".to_string(), serde_json::Value::String(step_id));
     task.insert("type".to_string(), serde_json::Value::String("action".to_string()));
+    if !step.depends_on.is_empty() {
+        task.insert(
+            "dependsOn".to_string(),
+            serde_json::Value::Array(
+                step.depends_on.iter().map(|d| serde_json::Value::String(d.clone())).collect(),
+            ),
+        );
+    }
     task.insert(
         "action".to_string(),
         serde_json::Value::String(resolved.engine_action.clone()),
