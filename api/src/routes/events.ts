@@ -7,11 +7,15 @@ export const eventsRoutes = routeModule({
     success: boolean;
     message: string;
   }> {
+    // Published verbatim, with the platform stamped: a simulated event has to
+    // be byte-identical to a real one or it exercises a path real events do
+    // not take. `eventType` is the registered trigger's event -- e.g.
+    // `channel.follow` -- not a Twitch-prefixed name. The old `twitch.` prefix
+    // matched no registered trigger in any vocabulary this engine has had.
     this.logger.info("Simulating Twitch event", { eventType, eventData });
-    const subject = `twitch.${eventType}`;
-    await this.publishEvent(`twitch.${eventType}`, eventData, subject);
+    await this.publishEvent(eventType, eventData, eventType, "twitch");
 
-    this.logger.info("Twitch event simulated successfully", { eventType, subject });
+    this.logger.info("Twitch event simulated successfully", { eventType, subject: eventType });
     return {
       success: true,
       message: `Simulated Twitch event: ${eventType}`,
