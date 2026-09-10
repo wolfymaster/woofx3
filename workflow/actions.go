@@ -124,8 +124,9 @@ func NewBarkloaderAction() tasks.ActionFunc[AppServices] {
 // widget reads what it needs from parameters + event."
 //
 // Canonical id of the corresponding action declaration row:
-// `builtin:action:alert` (registered by the workflow service on startup;
-// see `registerBuiltinActions` in `app.go`).
+// `woofx3:action:alert`, declared as a `native` action by the bundled
+// woofx3 module and installed by barkloader. The engine implements the
+// handler; the manifest declares it.
 func NewAlertAction() tasks.ActionFunc[AppServices] {
 	return func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
 		bus := ctx.Services.MessageBus()
