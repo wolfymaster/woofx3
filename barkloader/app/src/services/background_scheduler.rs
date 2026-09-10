@@ -41,7 +41,9 @@ impl BackgroundTaskScheduler {
         let mut handles = Vec::with_capacity(task_defs.len());
 
         for task in task_defs {
-            let schedule = match cron::Schedule::from_str(&task.schedule) {
+            // Authors write five-field POSIX cron; the crate wants six.
+            let normalized = lib_module::cron_schedule::normalize_cron(&task.schedule);
+            let schedule = match cron::Schedule::from_str(&normalized) {
                 Ok(s) => s,
                 Err(e) => {
                     warn!(

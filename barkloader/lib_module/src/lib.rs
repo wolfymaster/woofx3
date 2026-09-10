@@ -2,6 +2,7 @@
 //! for barkloader.
 
 pub mod canonical_id;
+pub mod cron_schedule;
 pub mod db_proxy;
 pub mod db_proxy_client;
 pub mod manifest_validate;
