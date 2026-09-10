@@ -122,7 +122,7 @@ pub struct RegisterActionsJson {
     pub actions: Vec<ActionInputJson>,
     // Optional (MODULE, module_key) override. Both empty -> db-proxy falls
     // back to (MODULE, module_key). Both set -> non-module namespace
-    // (e.g. SYSTEM:builtin) upsert key.
+    // (e.g. SYSTEM:woofx3) upsert key.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub created_by_type: String,
     #[serde(skip_serializing_if = "String::is_empty")]

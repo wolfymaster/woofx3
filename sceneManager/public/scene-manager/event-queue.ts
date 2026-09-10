@@ -168,7 +168,7 @@ export class EventQueueManager {
  * `parameters` must surface as a TOP-LEVEL field: that is where the
  * SDK documents it ("widgets that consume alert-style configuration
  * read it from here") and where streamware's broadcast put it, so it
- * is what existing widgets like builtin/media_alert read. The delivery
+ * is what existing widgets like media_alert read. The delivery
  * pipeline carries it nested instead — `nats-subscriptions.ts` packs
  * `{ ...event.data, parameters }` into the frame's single opaque
  * `value` so the persisted scene_event needs no extra column — so this

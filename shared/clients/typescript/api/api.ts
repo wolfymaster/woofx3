@@ -624,10 +624,9 @@ export interface Woofx3EngineGateway {
  * `listOverlayTokens` compose their returned `url` from
  * (`${overlayPublicUrl}/overlay/{token}/`), and, via the same
  * `/overlay/assets/...` route, every widget/module asset kind
- * (module-contributed widgets and generic assets, builtin
- * (engine-bundled) widgets, and reserved user uploads). There is
- * deliberately only one such setting — everything is proxied through
- * the api gateway's `/overlay/` surface today, so a separate
+ * (module-contributed widgets and generic assets, and reserved user
+ * uploads). There is deliberately only one such setting — everything is
+ * proxied through the api gateway's `/overlay/` surface today, so a separate
  * "streamware app" URL or a separate "asset storage" URL would just be
  * two more names for the same value (an earlier iteration of this API
  * had exactly that split — `streamwareBaseUrl` and
