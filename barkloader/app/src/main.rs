@@ -180,6 +180,12 @@ async fn setup() -> Result<AppContext> {
 
     boot_modules(&registry, &repository.current(), &db_proxy_url, &scheduler).await?;
 
+    // Advisory, and deliberately after boot_modules: an installed module going
+    // stale against the engine is a thing to be told about, not a reason to
+    // refuse to start. Silent when no marketplace is configured.
+    let marketplace_url = get_env_or_default_with_key("MARKETPLACE_API_URL", Some("marketplaceUrl"), "");
+    services::module_drift::report(&marketplace_url, &db_proxy_url).await;
+
     // Everything a dependent waits on us for is now in place: bundled modules
     // installed and the sandbox registry hydrated. Reconciliation failure is
     // fatal above, so this is only ever reached having succeeded.
