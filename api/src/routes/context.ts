@@ -190,18 +190,28 @@ export class ApiRouteHost extends RpcTarget {
     }
   }
 
-  protected async publishEvent(eventType: string, data: Record<string, unknown>, subject?: string): Promise<void> {
+  protected async publishEvent(
+    eventType: string,
+    data: Record<string, unknown>,
+    subject?: string,
+    platform?: string
+  ): Promise<void> {
     if (!this.nats) {
       this.logger.error("Cannot publish event - NATS client not available", { eventType });
       throw new Error("NATS client not available");
     }
 
     const eventId = crypto.randomUUID();
-    const event = {
+    // `platform` is a top-level CloudEvents extension attribute, not payload:
+    // event types are platform-agnostic, so it is the only thing telling a
+    // workflow where a `channel.follow` came from. Omitted rather than empty
+    // for events with no originating platform.
+    const event: Record<string, unknown> = {
       id: eventId,
       type: eventType,
       source: "api",
       time: new Date().toISOString(),
+      ...(platform ? { platform } : {}),
       data,
     };
 
