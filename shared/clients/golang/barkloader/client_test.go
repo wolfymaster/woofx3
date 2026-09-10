@@ -39,14 +39,16 @@ func newEchoServer(t *testing.T) (wsURL string, close func()) {
 				continue
 			}
 
+			data, err := json.Marshal(map[string]interface{}{
+				"result": map[string]interface{}{"function": req.Data.Function},
+			})
+			if err != nil {
+				continue
+			}
 			resp := InvokeResponse{
 				Type: "result",
 				Id:   req.Id,
-				Data: map[string]interface{}{
-					"result": map[string]interface{}{
-						"function": req.Data.Function,
-					},
-				},
+				Data: data,
 			}
 			respJSON, err := json.Marshal(resp)
 			if err != nil {
