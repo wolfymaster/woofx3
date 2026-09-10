@@ -49,3 +49,8 @@ path = "../lib_sandbox"
 
 [dependencies.lib_module]
 path = "../lib_module"
+
+[build-dependencies]
+zip = "2.1"
+sha2 = "0.10"
+serde_json = "1.0"

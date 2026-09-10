@@ -1,0 +1,11 @@
+{
+  "id": "woofx3",
+  "name": "woofx3",
+  "author": "WolfyMaster LLC",
+  "version": "0.1.0",
+  "category": "system",
+  "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
+  "actions": [],
+  "triggers": [],
+  "widgets": []
+}
