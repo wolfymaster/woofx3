@@ -1033,6 +1033,7 @@ impl ModuleWidget {
             settings_schema,
             surface: "scene".to_string(),
             entry,
+            accepted_events: self.accepted_events.clone(),
         }
     }
 
@@ -1978,6 +1979,9 @@ mod tests {
         // Registered entry is assets-relative (design 5.2.5).
         assert_eq!(input.entry, "index.html");
         assert_eq!(input.alert_types, vec!["raid"]);
+        // Forwarded verbatim: the scene fan-out compares these against a
+        // CloudEvent's `type`, and nothing else records them.
+        assert_eq!(input.accepted_events, vec!["channel.raid"]);
         // Re-emitted from the parsed fields, so always the canonical array.
         assert!(input.settings_schema.starts_with('['));
         assert!(input.settings_schema.contains("minViewers"));

@@ -66,6 +66,7 @@ export interface OverlayWidgetDefinition {
   manifestId: string;
   /** Entry document relative to the widget asset root; "" -> index.html. */
   entry: string;
+  acceptedEvents: string[];
 }
 
 /** The slice of DbClient the scene host depends on (injectable for tests). */
@@ -174,12 +175,18 @@ export class OverlayHost {
   }
 
   /**
-   * Mark each placement according to whether its widget still exists, and say
-   * so once per unresolvable placement.
+   * Resolve each placement against the widget catalog: whether its widget
+   * still exists, and which event types it accepts. Says so once per
+   * unresolvable placement.
    *
    * Checked on load rather than at render time because this is the only point
    * that sees the whole scene: one warning naming every dead placement is
    * actionable, where a per-frame miss is a line someone has to correlate.
+   *
+   * Accepted events come from the definition, never the placement. A placement
+   * is a reference; a copy stored on it would freeze the event names at the
+   * moment the widget was placed, and a module update that changes them would
+   * have to rewrite every scene to take effect.
    */
   private async resolveInstances(
     instances: OverlayWidgetInstance[],
@@ -196,11 +203,15 @@ export class OverlayHost {
       return instances.map((instance) => ({ ...instance, resolved: true }));
     }
 
-    const known = new Set(catalog.map((row) => `${row.moduleKey}:widget:${row.manifestId}`));
-    const resolved = instances.map((instance) => ({
-      ...instance,
-      resolved: known.has(instance.widgetCanonicalId),
-    }));
+    const byCanonicalId = new Map(catalog.map((row) => [`${row.moduleKey}:widget:${row.manifestId}`, row]));
+    const resolved = instances.map((instance) => {
+      const definition = byCanonicalId.get(instance.widgetCanonicalId);
+      return {
+        ...instance,
+        acceptedEvents: definition?.acceptedEvents ?? [],
+        resolved: definition !== undefined,
+      };
+    });
 
     const dead = resolved.filter((instance) => !instance.resolved);
     if (dead.length > 0) {
@@ -340,6 +351,7 @@ export class OverlayHost {
         moduleKey: w.moduleId,
         manifestId: w.manifestId,
         entry: w.entry ?? "",
+        acceptedEvents: w.acceptedEvents ?? [],
       }));
       this.widgetCache = { rows, expiresAt: this.now() + this.widgetCacheTtlMs };
       return rows;
@@ -412,10 +424,6 @@ export class OverlayHost {
       });
     }
 
-    const acceptedEvents = Array.isArray(w.acceptedEvents)
-      ? w.acceptedEvents.filter((e): e is string => typeof e === "string" && e !== "")
-      : [];
-
     return {
       id,
       widgetCanonicalId: stableCanonicalId,
@@ -426,7 +434,9 @@ export class OverlayHost {
         w.settings && typeof w.settings === "object"
           ? (w.settings as Record<string, unknown>)
           : {},
-      acceptedEvents,
+      // Placements carry no accepted events; `resolveInstances` takes them
+      // from the widget definition.
+      acceptedEvents: [],
       frameUrl: `/scene/${encodeURIComponent(sceneId)}/widget/${encodeURIComponent(id)}`,
       // Assumed until the catalog says otherwise; `resolveInstances` is what
       // decides, since parsing alone cannot know what exists.

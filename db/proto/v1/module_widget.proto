@@ -46,6 +46,11 @@ message Widget {
   // the frame assembler falls back to "index.html". Must resolve to a
   // file inside the widget's assets.
   string entry = 12;
+  // CloudEvent types (e.g. "channel.follow") the scene fan-out delivers to
+  // every placement of this widget. Held on the definition rather than on
+  // placements so a module update that changes them reaches every scene
+  // without rewriting any.
+  repeated string accepted_events = 13;
 }
 
 message WidgetInput {
@@ -59,6 +64,7 @@ message WidgetInput {
   // Entry path relative to the widget asset root; empty means
   // index.html fallback.
   string entry = 8;
+  repeated string accepted_events = 9;
 }
 
 message RegisterWidgetsRequest {

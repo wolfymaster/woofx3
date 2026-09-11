@@ -196,6 +196,9 @@ pub struct WidgetInputJson {
     /// matching the prefix-stripped repository keys). Empty means the
     /// consumer falls back to `index.html`.
     pub entry: String,
+    /// CloudEvent types the scene fan-out delivers to this widget's
+    /// placements, as the manifest declared them.
+    pub accepted_events: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

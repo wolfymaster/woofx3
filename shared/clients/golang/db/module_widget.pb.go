@@ -62,9 +62,14 @@ type Widget struct {
 	// prefix-stripped repository keys under `directory`). Empty means
 	// the frame assembler falls back to "index.html". Must resolve to a
 	// file inside the widget's assets.
-	Entry         string `protobuf:"bytes,12,opt,name=entry,proto3" json:"entry,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Entry string `protobuf:"bytes,12,opt,name=entry,proto3" json:"entry,omitempty"`
+	// CloudEvent types (e.g. "channel.follow") the scene fan-out delivers to
+	// every placement of this widget. Held on the definition rather than on
+	// placements so a module update that changes them reaches every scene
+	// without rewriting any.
+	AcceptedEvents []string `protobuf:"bytes,13,rep,name=accepted_events,json=acceptedEvents,proto3" json:"accepted_events,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Widget) Reset() {
@@ -181,6 +186,13 @@ func (x *Widget) GetEntry() string {
 	return ""
 }
 
+func (x *Widget) GetAcceptedEvents() []string {
+	if x != nil {
+		return x.AcceptedEvents
+	}
+	return nil
+}
+
 type WidgetInput struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ManifestId     string                 `protobuf:"bytes,1,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
@@ -192,9 +204,10 @@ type WidgetInput struct {
 	Surface        string                 `protobuf:"bytes,7,opt,name=surface,proto3" json:"surface,omitempty"`
 	// Entry path relative to the widget asset root; empty means
 	// index.html fallback.
-	Entry         string `protobuf:"bytes,8,opt,name=entry,proto3" json:"entry,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Entry          string   `protobuf:"bytes,8,opt,name=entry,proto3" json:"entry,omitempty"`
+	AcceptedEvents []string `protobuf:"bytes,9,rep,name=accepted_events,json=acceptedEvents,proto3" json:"accepted_events,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *WidgetInput) Reset() {
@@ -281,6 +294,13 @@ func (x *WidgetInput) GetEntry() string {
 		return x.Entry
 	}
 	return ""
+}
+
+func (x *WidgetInput) GetAcceptedEvents() []string {
+	if x != nil {
+		return x.AcceptedEvents
+	}
+	return nil
 }
 
 type RegisterWidgetsRequest struct {
@@ -552,7 +572,7 @@ var File_module_widget_proto protoreflect.FileDescriptor
 
 const file_module_widget_proto_rawDesc = "" +
 	"\n" +
-	"\x13module_widget.proto\x12\x06module\x1a\fcommon.proto\"\xf2\x02\n" +
+	"\x13module_widget.proto\x12\x06module\x1a\fcommon.proto\"\x9b\x03\n" +
 	"\x06Widget\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tmodule_id\x18\x02 \x01(\tR\bmoduleId\x12\x1f\n" +
@@ -568,7 +588,8 @@ const file_module_widget_proto_rawDesc = "" +
 	"\x0ecreated_by_ref\x18\n" +
 	" \x01(\tR\fcreatedByRef\x12\x18\n" +
 	"\asurface\x18\v \x01(\tR\asurface\x12\x14\n" +
-	"\x05entry\x18\f \x01(\tR\x05entry\"\xfc\x01\n" +
+	"\x05entry\x18\f \x01(\tR\x05entry\x12'\n" +
+	"\x0faccepted_events\x18\r \x03(\tR\x0eacceptedEvents\"\xa5\x02\n" +
 	"\vWidgetInput\x12\x1f\n" +
 	"\vmanifest_id\x18\x01 \x01(\tR\n" +
 	"manifestId\x12\x12\n" +
@@ -579,7 +600,8 @@ const file_module_widget_proto_rawDesc = "" +
 	"alertTypes\x12'\n" +
 	"\x0fsettings_schema\x18\x06 \x01(\tR\x0esettingsSchema\x12\x18\n" +
 	"\asurface\x18\a \x01(\tR\asurface\x12\x14\n" +
-	"\x05entry\x18\b \x01(\tR\x05entry\"\xb3\x02\n" +
+	"\x05entry\x18\b \x01(\tR\x05entry\x12'\n" +
+	"\x0faccepted_events\x18\t \x03(\tR\x0eacceptedEvents\"\xb3\x02\n" +
 	"\x16RegisterWidgetsRequest\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +
