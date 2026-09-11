@@ -206,8 +206,11 @@ type Widget struct {
 	Directory   string    `gorm:"column:directory;type:text;not null"`
 	// Entry document path relative to the widget asset root; empty
 	// means the frame assembler falls back to "index.html".
-	Entry          string `gorm:"column:entry;type:text;not null;default:''"`
-	AlertTypes     string `gorm:"column:alert_types;type:jsonb;not null;default:'[]'"`
+	Entry      string `gorm:"column:entry;type:text;not null;default:''"`
+	AlertTypes string `gorm:"column:alert_types;type:jsonb;not null;default:'[]'"`
+	// JSON-serialized CloudEvent types the scene fan-out delivers to this
+	// widget's placements. See module_widget.proto Widget.accepted_events.
+	AcceptedEvents string `gorm:"column:accepted_events;type:jsonb;not null;default:'[]'"`
 	SettingsSchema string `gorm:"column:settings_schema;type:jsonb;not null;default:'[]'"`
 	Surface        string `gorm:"column:surface;type:text;not null;default:'scene'"`
 	CreatedByType  string `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`

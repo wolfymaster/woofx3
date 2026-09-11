@@ -55,6 +55,13 @@ export interface Widget {
    * file inside the widget's assets.
    */
   entry: string;
+  /**
+   * CloudEvent types (e.g. "channel.follow") the scene fan-out delivers to
+   * every placement of this widget. Held on the definition rather than on
+   * placements so a module update that changes them reaches every scene
+   * without rewriting any.
+   */
+  acceptedEvents: string[];
 }
 
 export interface WidgetInput {
@@ -70,6 +77,7 @@ export interface WidgetInput {
    * index.html fallback.
    */
   entry: string;
+  acceptedEvents: string[];
 }
 
 export interface RegisterWidgetsRequest {
@@ -155,6 +163,7 @@ export const Widget = {
       createdByRef: "",
       surface: "",
       entry: "",
+      acceptedEvents: [],
       ...msg,
     };
   },
@@ -201,6 +210,9 @@ export const Widget = {
     }
     if (msg.entry) {
       writer.writeString(12, msg.entry);
+    }
+    if (msg.acceptedEvents?.length) {
+      writer.writeRepeatedString(13, msg.acceptedEvents);
     }
     return writer;
   },
@@ -263,6 +275,10 @@ export const Widget = {
           msg.entry = reader.readString();
           break;
         }
+        case 13: {
+          msg.acceptedEvents.push(reader.readString());
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -307,6 +323,7 @@ export const WidgetInput = {
       settingsSchema: "",
       surface: "",
       entry: "",
+      acceptedEvents: [],
       ...msg,
     };
   },
@@ -341,6 +358,9 @@ export const WidgetInput = {
     }
     if (msg.entry) {
       writer.writeString(8, msg.entry);
+    }
+    if (msg.acceptedEvents?.length) {
+      writer.writeRepeatedString(9, msg.acceptedEvents);
     }
     return writer;
   },
@@ -385,6 +405,10 @@ export const WidgetInput = {
         }
         case 8: {
           msg.entry = reader.readString();
+          break;
+        }
+        case 9: {
+          msg.acceptedEvents.push(reader.readString());
           break;
         }
         default: {
@@ -797,6 +821,7 @@ export const WidgetJSON = {
       createdByRef: "",
       surface: "",
       entry: "",
+      acceptedEvents: [],
       ...msg,
     };
   },
@@ -841,6 +866,9 @@ export const WidgetJSON = {
     }
     if (msg.entry) {
       json["entry"] = msg.entry;
+    }
+    if (msg.acceptedEvents?.length) {
+      json["acceptedEvents"] = msg.acceptedEvents;
     }
     return json;
   },
@@ -897,6 +925,10 @@ export const WidgetJSON = {
     if (_entry_) {
       msg.entry = _entry_;
     }
+    const _acceptedEvents_ = json["acceptedEvents"] ?? json["accepted_events"];
+    if (_acceptedEvents_) {
+      msg.acceptedEvents = _acceptedEvents_;
+    }
     return msg;
   },
 };
@@ -932,6 +964,7 @@ export const WidgetInputJSON = {
       settingsSchema: "",
       surface: "",
       entry: "",
+      acceptedEvents: [],
       ...msg,
     };
   },
@@ -966,6 +999,9 @@ export const WidgetInputJSON = {
     }
     if (msg.entry) {
       json["entry"] = msg.entry;
+    }
+    if (msg.acceptedEvents?.length) {
+      json["acceptedEvents"] = msg.acceptedEvents;
     }
     return json;
   },
@@ -1005,6 +1041,10 @@ export const WidgetInputJSON = {
     const _entry_ = json["entry"];
     if (_entry_) {
       msg.entry = _entry_;
+    }
+    const _acceptedEvents_ = json["acceptedEvents"] ?? json["accepted_events"];
+    if (_acceptedEvents_) {
+      msg.acceptedEvents = _acceptedEvents_;
     }
     return msg;
   },

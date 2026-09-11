@@ -10370,6 +10370,9 @@ impl serde::Serialize for Widget {
         if !self.entry.is_empty() {
             len += 1;
         }
+        if !self.accepted_events.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.Widget", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -10407,6 +10410,9 @@ impl serde::Serialize for Widget {
         if !self.entry.is_empty() {
             struct_ser.serialize_field("entry", &self.entry)?;
         }
+        if !self.accepted_events.is_empty() {
+            struct_ser.serialize_field("acceptedEvents", &self.accepted_events)?;
+        }
         struct_ser.end()
     }
 }
@@ -10435,6 +10441,8 @@ impl<'de> serde::Deserialize<'de> for Widget {
             "createdByRef",
             "surface",
             "entry",
+            "accepted_events",
+            "acceptedEvents",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -10451,6 +10459,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
             CreatedByRef,
             Surface,
             Entry,
+            AcceptedEvents,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -10484,6 +10493,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
                             "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
                             "surface" => Ok(GeneratedField::Surface),
                             "entry" => Ok(GeneratedField::Entry),
+                            "acceptedEvents" | "accepted_events" => Ok(GeneratedField::AcceptedEvents),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -10515,6 +10525,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
                 let mut created_by_ref__ = None;
                 let mut surface__ = None;
                 let mut entry__ = None;
+                let mut accepted_events__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -10589,6 +10600,12 @@ impl<'de> serde::Deserialize<'de> for Widget {
                             }
                             entry__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::AcceptedEvents => {
+                            if accepted_events__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("acceptedEvents"));
+                            }
+                            accepted_events__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Widget {
@@ -10604,6 +10621,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
                     created_by_ref: created_by_ref__.unwrap_or_default(),
                     surface: surface__.unwrap_or_default(),
                     entry: entry__.unwrap_or_default(),
+                    accepted_events: accepted_events__.unwrap_or_default(),
                 })
             }
         }
@@ -10642,6 +10660,9 @@ impl serde::Serialize for WidgetInput {
         if !self.entry.is_empty() {
             len += 1;
         }
+        if !self.accepted_events.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.WidgetInput", len)?;
         if !self.manifest_id.is_empty() {
             struct_ser.serialize_field("manifestId", &self.manifest_id)?;
@@ -10667,6 +10688,9 @@ impl serde::Serialize for WidgetInput {
         if !self.entry.is_empty() {
             struct_ser.serialize_field("entry", &self.entry)?;
         }
+        if !self.accepted_events.is_empty() {
+            struct_ser.serialize_field("acceptedEvents", &self.accepted_events)?;
+        }
         struct_ser.end()
     }
 }
@@ -10688,6 +10712,8 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
             "settingsSchema",
             "surface",
             "entry",
+            "accepted_events",
+            "acceptedEvents",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -10700,6 +10726,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
             SettingsSchema,
             Surface,
             Entry,
+            AcceptedEvents,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -10729,6 +10756,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                             "settingsSchema" | "settings_schema" => Ok(GeneratedField::SettingsSchema),
                             "surface" => Ok(GeneratedField::Surface),
                             "entry" => Ok(GeneratedField::Entry),
+                            "acceptedEvents" | "accepted_events" => Ok(GeneratedField::AcceptedEvents),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -10756,6 +10784,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                 let mut settings_schema__ = None;
                 let mut surface__ = None;
                 let mut entry__ = None;
+                let mut accepted_events__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::ManifestId => {
@@ -10806,6 +10835,12 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                             }
                             entry__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::AcceptedEvents => {
+                            if accepted_events__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("acceptedEvents"));
+                            }
+                            accepted_events__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(WidgetInput {
@@ -10817,6 +10852,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                     settings_schema: settings_schema__.unwrap_or_default(),
                     surface: surface__.unwrap_or_default(),
                     entry: entry__.unwrap_or_default(),
+                    accepted_events: accepted_events__.unwrap_or_default(),
                 })
             }
         }

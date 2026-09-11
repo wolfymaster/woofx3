@@ -213,6 +213,20 @@ export interface DeleteByModuleIdRequest {
    * the exact installed version alongside module_prefix.
    */
   moduleKey: string;
+  /**
+   * Provenance to match. Empty means MODULE, which is every ordinary
+   * uninstall: a module removes the rows it registered and nothing else.
+   *
+   * Naming SYSTEM here is how a retired engine-owned namespace is removed —
+   * the `builtin` and `chat_commands` rows the built-in consolidation left
+   * behind had no removal path at all, because the guard that (correctly)
+   * stops a module called `builtin` from deleting the system's rows also
+   * stopped anything else from doing it deliberately.
+   *
+   * Deliberately not a boolean "force": the caller states which namespace it
+   * means, so the request says what it does.
+   */
+  createdByType: string;
 }
 
 /**
@@ -3962,6 +3976,7 @@ export const DeleteByModuleIdRequest = {
     return {
       moduleId: "",
       moduleKey: "",
+      createdByType: "",
       ...msg,
     };
   },
@@ -3978,6 +3993,9 @@ export const DeleteByModuleIdRequest = {
     }
     if (msg.moduleKey) {
       writer.writeString(2, msg.moduleKey);
+    }
+    if (msg.createdByType) {
+      writer.writeString(3, msg.createdByType);
     }
     return writer;
   },
@@ -3998,6 +4016,10 @@ export const DeleteByModuleIdRequest = {
         }
         case 2: {
           msg.moduleKey = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.createdByType = reader.readString();
           break;
         }
         default: {
@@ -5927,6 +5949,7 @@ export const DeleteByModuleIdRequestJSON = {
     return {
       moduleId: "",
       moduleKey: "",
+      createdByType: "",
       ...msg,
     };
   },
@@ -5943,6 +5966,9 @@ export const DeleteByModuleIdRequestJSON = {
     }
     if (msg.moduleKey) {
       json["moduleKey"] = msg.moduleKey;
+    }
+    if (msg.createdByType) {
+      json["createdByType"] = msg.createdByType;
     }
     return json;
   },
@@ -5961,6 +5987,10 @@ export const DeleteByModuleIdRequestJSON = {
     const _moduleKey_ = json["moduleKey"] ?? json["module_key"];
     if (_moduleKey_) {
       msg.moduleKey = _moduleKey_;
+    }
+    const _createdByType_ = json["createdByType"] ?? json["created_by_type"];
+    if (_createdByType_) {
+      msg.createdByType = _createdByType_;
     }
     return msg;
   },

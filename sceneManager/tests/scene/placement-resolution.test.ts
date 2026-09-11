@@ -6,7 +6,10 @@ function fakeLogger() {
   return { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as any;
 }
 
-function hostWith(placements: unknown[], catalog: Array<{ moduleId: string; manifestId: string }>) {
+function hostWith(
+  placements: unknown[],
+  catalog: Array<{ moduleId: string; manifestId: string; acceptedEvents?: string[] }>
+) {
   const logger = fakeLogger();
   const db = {
     getScene: mock(async () => ({
@@ -42,10 +45,30 @@ const placement = (id: string, canonical: string) => ({
   widgetCanonicalId: canonical,
   position: {},
   settings: {},
-  acceptedEvents: [],
 });
 
 describe("scene placement resolution", () => {
+  it("gives each placement its widget definition's accepted events", async () => {
+    const { host } = hostWith(
+      [placement("inst-1", "woofx3:widget:media_alert"), placement("inst-2", "counter:widget:counter")],
+      [
+        { moduleId: "woofx3", manifestId: "media_alert", acceptedEvents: ["channel.follow", "channel.cheer"] },
+        { moduleId: "counter", manifestId: "counter", acceptedEvents: [] },
+      ]
+    );
+    const state = await host.loadScene("ovl_token");
+    expect(state?.instances.map((i) => i.acceptedEvents)).toEqual([["channel.follow", "channel.cheer"], []]);
+  });
+
+  it("gives a placement whose widget no longer exists no accepted events", async () => {
+    const { host } = hostWith(
+      [placement("inst-1", "builtin:widget:media_alert")],
+      [{ moduleId: "woofx3", manifestId: "media_alert", acceptedEvents: ["channel.follow"] }]
+    );
+    const state = await host.loadScene("ovl_token");
+    expect(state?.instances[0]?.acceptedEvents).toEqual([]);
+  });
+
   it("marks a placement resolved when its widget is in the catalog", async () => {
     const { host } = hostWith(
       [placement("inst-1", "woofx3:widget:media_alert")],
