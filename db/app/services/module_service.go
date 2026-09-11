@@ -534,11 +534,12 @@ func (s *moduleService) DeleteTriggersByModuleId(ctx context.Context, req *clien
 	// delete is racy if something else writes triggers under this prefix
 	// in between, but for module-delete (the only caller today) the prefix
 	// is going away so any new writes would be a bug.
-	triggers, err := s.repo.ListTriggersByModulePrefix(req.ModuleId)
+	triggers, err := s.repo.ListTriggersByModulePrefix(req.ModuleId, req.CreatedByType)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.DeleteTriggersByModulePrefix(req.ModuleId); err != nil {
+	deleted, err := s.repo.DeleteTriggersByModulePrefix(req.ModuleId, req.CreatedByType)
+	if err != nil {
 		return nil, err
 	}
 	if s.publisher != nil && len(triggers) > 0 {
@@ -552,7 +553,7 @@ func (s *moduleService) DeleteTriggersByModuleId(ctx context.Context, req *clien
 	}
 	return &client.ResponseStatus{
 		Code:    client.ResponseStatus_OK,
-		Message: "Triggers deleted successfully",
+		Message: fmt.Sprintf("Deleted %d triggers for %q", deleted, req.ModuleId),
 	}, nil
 }
 
@@ -705,11 +706,12 @@ func parseCanonicalID(canonicalID string) (moduleID, kind, manifestID string, er
 
 func (s *moduleService) DeleteActionsByModuleId(ctx context.Context, req *client.DeleteByModuleIdRequest) (*client.ResponseStatus, error) {
 	// Capture rows for the dereg event before deleting them.
-	actions, err := s.repo.ListActionsByModulePrefix(req.ModuleId)
+	actions, err := s.repo.ListActionsByModulePrefix(req.ModuleId, req.CreatedByType)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.DeleteActionsByModulePrefix(req.ModuleId); err != nil {
+	deleted, err := s.repo.DeleteActionsByModulePrefix(req.ModuleId, req.CreatedByType)
+	if err != nil {
 		return nil, err
 	}
 	if s.publisher != nil && len(actions) > 0 {
@@ -723,7 +725,7 @@ func (s *moduleService) DeleteActionsByModuleId(ctx context.Context, req *client
 	}
 	return &client.ResponseStatus{
 		Code:    client.ResponseStatus_OK,
-		Message: "Actions deleted successfully",
+		Message: fmt.Sprintf("Deleted %d actions for %q", deleted, req.ModuleId),
 	}, nil
 }
 
@@ -1387,11 +1389,12 @@ func (s *moduleService) GetWidgetByCanonicalId(ctx context.Context, req *client.
 }
 
 func (s *moduleService) DeleteWidgetsByModuleId(ctx context.Context, req *client.DeleteByModuleIdRequest) (*client.ResponseStatus, error) {
-	widgets, err := s.repo.ListWidgetsByModulePrefix(req.ModuleId)
+	widgets, err := s.repo.ListWidgetsByModulePrefix(req.ModuleId, req.CreatedByType)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.DeleteWidgetsByModulePrefix(req.ModuleId); err != nil {
+	deleted, err := s.repo.DeleteWidgetsByModulePrefix(req.ModuleId, req.CreatedByType)
+	if err != nil {
 		return nil, err
 	}
 	if s.publisher != nil && len(widgets) > 0 {
@@ -1405,7 +1408,7 @@ func (s *moduleService) DeleteWidgetsByModuleId(ctx context.Context, req *client
 	}
 	return &client.ResponseStatus{
 		Code:    client.ResponseStatus_OK,
-		Message: "Widgets deleted successfully",
+		Message: fmt.Sprintf("Deleted %d widgets for %q", deleted, req.ModuleId),
 	}, nil
 }
 
@@ -1470,11 +1473,12 @@ func (s *moduleService) ListBackgroundTasks(ctx context.Context, req *client.Lis
 }
 
 func (s *moduleService) DeleteBackgroundTasksByModuleId(ctx context.Context, req *client.DeleteByModuleIdRequest) (*client.ResponseStatus, error) {
-	tasks, err := s.repo.ListBackgroundTasksByModulePrefix(req.ModuleId)
+	tasks, err := s.repo.ListBackgroundTasksByModulePrefix(req.ModuleId, req.CreatedByType)
 	if err != nil {
 		return nil, fmt.Errorf("list background_tasks for delete: %w", err)
 	}
-	if err := s.repo.DeleteBackgroundTasksByModulePrefix(req.ModuleId); err != nil {
+	deleted, err := s.repo.DeleteBackgroundTasksByModulePrefix(req.ModuleId, req.CreatedByType)
+	if err != nil {
 		return nil, fmt.Errorf("delete background_tasks: %w", err)
 	}
 	if s.publisher != nil {
@@ -1488,7 +1492,7 @@ func (s *moduleService) DeleteBackgroundTasksByModuleId(ctx context.Context, req
 	}
 	return &client.ResponseStatus{
 		Code:    client.ResponseStatus_OK,
-		Message: "Background tasks deleted successfully",
+		Message: fmt.Sprintf("Deleted %d background tasks for %q", deleted, req.ModuleId),
 	}, nil
 }
 
@@ -1611,11 +1615,12 @@ func (s *moduleService) ListAssets(ctx context.Context, req *client.ListAssetsRe
 func (s *moduleService) DeleteAssetsByModuleId(ctx context.Context, req *client.DeleteByModuleIdRequest) (*client.ResponseStatus, error) {
 	// Capture rows for the deregistration event before deletion —
 	// mirrors DeleteActionsByModuleId.
-	assets, err := s.repo.ListAssetsByModulePrefix(req.ModuleId)
+	assets, err := s.repo.ListAssetsByModulePrefix(req.ModuleId, req.CreatedByType)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.DeleteAssetsByModulePrefix(req.ModuleId); err != nil {
+	deleted, err := s.repo.DeleteAssetsByModulePrefix(req.ModuleId, req.CreatedByType)
+	if err != nil {
 		return nil, err
 	}
 	if s.publisher != nil && len(assets) > 0 {
@@ -1629,7 +1634,7 @@ func (s *moduleService) DeleteAssetsByModuleId(ctx context.Context, req *client.
 	}
 	return &client.ResponseStatus{
 		Code:    client.ResponseStatus_OK,
-		Message: "Assets deleted successfully",
+		Message: fmt.Sprintf("Deleted %d assets for %q", deleted, req.ModuleId),
 	}, nil
 }
 

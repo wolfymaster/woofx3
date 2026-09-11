@@ -9,14 +9,11 @@ my-module.zip
   |-- manifest.json
   |-- functions/
   |     +-- handler.lua
-  |-- widgets/
-  |     +-- alerts/
-  |           +-- index.html
-  |           +-- static/
-  |                 +-- style.css
-  |-- overlays/
-        +-- main/
+  +-- widgets/
+        +-- alerts/
               +-- index.html
+              +-- static/
+                    +-- style.css
 ```
 
 The manifest is **required**. If no manifest file is found (after extraction), processing fails.
@@ -106,23 +103,20 @@ The manifest uses **camelCase** JSON keys. All top-level sections are optional *
       "settingsSchema": [
         { "id": "theme", "label": "Theme", "type": "text", "defaultValue": "default" }
       ],
-      "acceptedEvents": ["twitch.subscription", "twitch.cheer"]
-    }
-  ],
-  "overlays": [
-    {
-      "id": "main-overlay",
-      "name": "Main Stream Overlay",
-      "description": "Default full-screen overlay",
-      "entry": "overlays/main/index.html"
+      "acceptedEvents": ["channel.subscribe", "channel.cheer"]
     }
   ]
 }
 ```
 
+> **`overlays[]` is not a manifest surface.** A module contributes the visual as
+> a **widget**; the operator composes widgets into a **scene** and points a
+> browser source at that scene's overlay token. A manifest that still declares
+> `overlays[]` is rejected at install with a message naming the replacement.
+
 ### Canonical IDs and References
 
-Every resource a module contributes — triggers, actions, functions, commands, workflows, widgets, overlays — gets a **canonical id** that the rest of the system uses to refer to it. Canonical ids are stable across module versions, unique system-wide, and structured so they encode the resource's provenance. Read this section before the per-section field tables below; the validation rules and reference syntax depend on it.
+Every resource a module contributes — triggers, actions, functions, commands, workflows, widgets — gets a **canonical id** that the rest of the system uses to refer to it. Canonical ids are stable across module versions, unique system-wide, and structured so they encode the resource's provenance. Read this section before the per-section field tables below; the validation rules and reference syntax depend on it.
 
 #### Format
 
@@ -172,7 +166,7 @@ Several manifest fields reference other resources in the same manifest. Authors 
 | `workflows[].trigger: "channel_subscribe"` | a trigger in the same manifest | `twitch_platform:trigger:channel_subscribe` |
 | `workflows[].steps[].action: "play_alert"` | an action in the same manifest | `twitch_platform:action:play_alert` |
 | `commands[].workflow: "on_subscription"` | a workflow in the same manifest | `twitch_platform:workflow:on_subscription` |
-| `widgets[].acceptedEvents: ["channel_subscribe"]` | trigger ids in the same manifest | `["twitch_platform:trigger:channel_subscribe"]` |
+| `widgets[].acceptedEvents: ["channel.subscribe"]` | *(not a reference — see below)* | `["channel.subscribe"]`, stored verbatim |
 
 If a reference can't be resolved (no resource of the expected kind has the referenced id), install fails.
 
@@ -180,7 +174,7 @@ References to **other modules'** resources may use the full canonical id directl
 
 #### What ends up in the database
 
-After install, every persisted reference — entries in `module_resources`, edges in `resource_references`, the workflow trigger config, action `call` strings, command type values, widget `acceptedEvents` arrays — carries the canonical id. The author-supplied `id` and `name` are preserved on the source rows for display, but every downstream lookup, join, and event subscription uses the canonical id. This is what makes the `CheckModuleResourceUsage` join trivial: ledger rows and inbound reference rows both key on the same canonical id string.
+After install, every persisted reference — entries in `module_resources`, edges in `resource_references`, the workflow trigger config, action `call` strings, command type values — carries the canonical id. Widget `acceptedEvents` are the exception: they are event types rather than references, and are stored as written. The author-supplied `id` and `name` are preserved on the source rows for display, but every downstream lookup, join, and event subscription uses the canonical id. This is what makes the `CheckModuleResourceUsage` join trivial: ledger rows and inbound reference rows both key on the same canonical id string.
 
 ### Top-level fields
 
@@ -198,7 +192,6 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `commands` | array | no | Chat/bot commands (`pattern`, `type`: `prefix` \| `exact` \| `regex`, optional `workflow`, `requiredRole`). |
 | `workflows` | array | no | Bundled workflows (`trigger` reference + `steps`). |
 | `widgets` | array | no | Scene widgets (`entry`, optional `assets` directory, `settingsSchema`, `acceptedEvents`). |
-| `overlays` | array | no | Overlay browser sources (`entry`). |
 | `resources` | array | no | Runtime-instance kind declarations — the K8s CRD analog. Each entry says "this module is the controller for instances of kind `X`". See [Resource entry](#resource-entry-resources) and [Runtime resource instances](#runtime-resource-instances). |
 | `settings` | array | no | Module-level configuration values (API keys, tokens, etc.) registered into the `module_settings` table at install time and exposed to sandboxed functions as `ctx.module.settings`. Same `ConfigField[]` shape as every other declaration — see [Field declarations](#field-declarations) — but unlike a widget's `settingsSchema` the *values* are stored engine-side; see [Module-level settings](#module-level-settings-settings). |
 | `backgroundTasks` (alias: `background_tasks`) | array | no | Cron-scheduled functions barkloader fires for the lifetime of the module. See [Background tasks](#background-tasks-backgroundtasks). |
@@ -361,7 +354,7 @@ Two source kinds are supported today:
 
 The worker's reply data is whatever it returns — strings or `{value, label, ...}` objects. The default UI transform (`use-field-options.ts:defaultTransform`) coerces strings to `{value: s, label: s}` and passes through `{value, label}` objects verbatim; consumers that need richer shapes can pass a custom `transform`. Implementing a new `internal` source is just adding a new command branch to a worker that already subscribes to a NATS subject — no engine, manifest schema, or UI code changes.
 
-A worked example lives at `modules/platform/twitch/manifest.json` in the **woofx3-modules** repository (the `redeem.channelpoints.twitch` trigger) and `twitch/src/lib/twitch.ts` `listChannelPointRewards()`.
+A worked example lives at `modules/platform/twitch/manifest.json` in the **woofx3-modules** repository (the `channelpoints.redeem` trigger) and `twitch/src/lib/twitch.ts` `listChannelPointRewards()`.
 
 #### Helping users map fields to event payloads
 
@@ -430,7 +423,7 @@ Deliberately a flat list of path strings rather than full JSON Schema: it matche
   "id": "channel_cheer",
   "name": "Cheer",
   "type": "eventbus",
-  "event": "cheer.channel.twitch",
+  "event": "channel.cheer",
   "emits": {
     "fields": [
       { "path": "bits", "type": "number", "description": "Bits cheered.", "example": 1000 },
@@ -587,7 +580,7 @@ calling `ctx.chat.sendMessage(...)` directly — see [`ctx.response`](./sandbox.
 | `entry` | string | no | HTML entry path in the ZIP. |
 | `assets` | string | no | Directory prefix in the ZIP for static assets (all files under this prefix are uploaded). |
 | `settingsSchema` | array | no | `ConfigField[]` describing the fields a user fills in when placing this widget on a scene; see [Field declarations](#field-declarations). Per-instance values flow back to the widget at render time as `widgetHost.settings`. |
-| `acceptedEvents` | string[] | no | Trigger references this widget cares about. Each entry is a manifest-local trigger id (resolved to canonical form at install) or a full canonical id for cross-module triggers. At runtime, the scene overlay only fires the widget's `widgetHost.onEvent` handler for events whose canonical trigger id matches an entry in this list — widgets without an `acceptedEvents` declaration receive no events. |
+| `acceptedEvents` | string[] | no | **Event types**, not trigger references: `["channel.follow", "channel.cheer"]`. They are stored verbatim and compared against a CloudEvent's `type` by the scene fan-out, so a canonical id here would match nothing and is rejected at install. Any module emitting the event satisfies the entry, at any version — which is what lets the emitting module be uninstalled and reinstalled without touching the widget. Widgets without an `acceptedEvents` declaration receive no events. |
 
 Files are stored under **`modules/{moduleId}/widgets/{widgetId}/…`**.
 
@@ -608,7 +601,7 @@ interface WidgetHost {
 }
 
 interface WidgetEvent {
-  type: string;       // canonical trigger id, e.g. "twitch_platform:trigger:follow.channel.twitch"
+  type: string;       // event type, e.g. "channel.follow"
   source: string;     // CloudEvent source
   time: string;       // RFC3339
   data: unknown;      // event payload
@@ -617,22 +610,11 @@ interface WidgetEvent {
 
 `reportStatus` and `reportComplete` send a P1 `status.report` message to the scene manager, which forwards it over the unified `widget.event` NATS channel. The streamware dispatcher persists generic events to the `widget_status` table and routes `alert.lifecycle` reports to the [event queue](../streamware/alert-queue.md) — see [Widget event channel](../services/widget-events.md).
 
-`onEvent` is the downward channel: the widget sends a P1 `events.subscribe` message, and the scene manager matches engine-side trigger events (delivered over the P2 `event` frame) against the widget's `acceptedEvents` declaration before relaying a matching one as `event.deliver`. A widget that lists `twitch_platform:trigger:follow.channel.twitch` in its manifest will see every follower event the engine processes. Widgets without `acceptedEvents` receive nothing — that's the right default for static display-only widgets.
+`onEvent` is the downward channel: the widget sends a P1 `events.subscribe` message, and the scene manager matches engine-side trigger events (delivered over the P2 `event` frame) against the widget's `acceptedEvents` declaration before relaying a matching one as `event.deliver`. A widget that lists `channel.follow` in its manifest will see every follow the engine processes, from any platform — the originating one travels as the CloudEvent's `platform` attribute. Widgets without `acceptedEvents` receive nothing — that's the right default for static display-only widgets.
 
 `widgetHost.storage` reads the latest module-storage value for `(moduleId, key)` from the local cache populated by `module.storage.changed` events, delivered over the P2 `storage` frame.
 
 The contract definition lives at `shared/clients/typescript/module-sdk/src/widget-host.ts`; the shim that implements it inside the iframe is `shared/clients/typescript/module-sdk/src/widget-host-shim.ts`.
-
-### Overlay entry (`overlays[]`)
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | yes | Manifest-local overlay id. Forms the canonical id `{moduleId}:overlay:{id}`. Must match `[A-Za-z0-9._-]+`. |
-| `name` | string | yes | Display name. Presentation only. |
-| `description` | string | no | |
-| `entry` | string | yes | HTML entry path in the ZIP. |
-
-Stored under **`modules/{moduleId}/overlays/{overlayId}/…`**.
 
 ### Resource entry (`resources[]`)
 
@@ -881,7 +863,7 @@ The api/ service forwards both to the registered Convex webhook as `ModuleResour
 | `.lua` | Program (Lua) | Sandbox function source. |
 | `.json` | Manifest | Prefer `manifest.json` at ZIP root. |
 | `.yaml`, `.yml` | Manifest | |
-| *other* | Asset | Stored as-is (HTML, CSS, images, fonts, etc.); used for widgets/overlays and any referenced path. |
+| *other* | Asset | Stored as-is (HTML, CSS, images, fonts, etc.); used for widgets and any referenced path. |
 
 ZIP members are read as **raw bytes** (not UTF-8–only), so binary assets are supported.
 
@@ -969,8 +951,6 @@ modules/
       ...                    # paths from manifest assets[].path, e.g. assets/bell.mp3
     widgets/
       {widget-id}/...
-    overlays/
-      {overlay-id}/...
 archives/
   {module-id}/
     {version}.zip

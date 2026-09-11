@@ -20,8 +20,8 @@ NATS Message Bus
     |
     v
 EventPatternRegistry        CloudEvents (workflow CRUD)
-  *.user.twitch                  |
-  *.channel.twitch               v
+  channel.*                      |
+  stream.*                       v
     |                      WorkflowManager
     v                        |         |
 WorkflowApp              LoadFromDB  Register/Unregister
@@ -67,8 +67,9 @@ The service subscribes to NATS patterns for workflow triggers:
 
 | Pattern | Events |
 |---------|--------|
-| `*.user.twitch` | Cheers, follows, subscriptions, chat messages |
-| `*.channel.twitch` | Hype trains, stream online/offline |
+| `channel.*` | Cheers, follows, subscriptions, raids, hype trains |
+| `stream.*` | Stream online/offline |
+| `user.*` | Chat messages |
 
 Additionally subscribes to workflow lifecycle events:
 

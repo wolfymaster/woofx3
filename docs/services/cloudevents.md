@@ -6,7 +6,7 @@ CloudEvents is the inter-service messaging format used throughout WoofX3. All ev
 
 - **Format**: CloudEvents 1.0 over NATS
 - **Transport encoding**: JSON serialized to `Uint8Array`
-- **Subject routing**: The NATS subject is the CloudEvents `type` field (e.g. `message.user.twitch`)
+- **Subject routing**: The NATS subject is the CloudEvents `type` field (e.g. `user.message`)
 - **Source identification**: Each service sets a `source` string when constructing its `EventFactory`
 - **Command pattern**: Some integrations (TwitchApi, Slobs) use a lightweight command envelope instead of CloudEvents for imperative operations
 
@@ -75,13 +75,13 @@ Twitch channel events carry a full CloudEvent envelope. The NATS subject doubles
 
 | Method | NATS Subject / Type | Description |
 |--------|---------------------|-------------|
-| `chatMessage` | `message.user.twitch` | A chat message was sent in the channel |
-| `cheer` | `cheer.channel.twitch` | A viewer cheered with bits |
-| `follow` | `follow.channel.twitch` | A viewer followed the channel |
-| `hypeTrainBegin` | `hypetrain.channel.twitch` | A hype train started |
-| `streamOnline` | `online.channel.twitch` | The stream went online |
-| `subscribe` | `subscribe.channel.twitch` | A viewer subscribed |
-| `subscriptionGift` | `subscriptionGift.channel.twitch` | A subscription was gifted |
+| `chatMessage` | `user.message` | A chat message was sent in the channel |
+| `cheer` | `channel.cheer` | A viewer cheered with bits |
+| `follow` | `channel.follow` | A viewer followed the channel |
+| `hypeTrainBegin` | `channel.hypetrain` | A hype train started |
+| `streamOnline` | `stream.online` | The stream went online |
+| `subscribe` | `channel.subscribe` | A viewer subscribed |
+| `subscriptionGift` | `channel.subscriptionGift` | A subscription was gifted |
 
 ### Payloads
 

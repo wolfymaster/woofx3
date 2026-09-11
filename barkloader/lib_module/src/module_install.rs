@@ -289,10 +289,6 @@ impl<'a, R: Repository> SagaState<'a, R> {
             w.upload_assets(self.module_key, self.version_dir, self.files, self.repository).await?;
         }
 
-        for o in &self.manifest.overlays {
-            o.upload_entry(self.module_key, self.version_dir, self.files, self.repository).await?;
-        }
-
         // Upload static assets declared in manifest.assets[]. Each asset
         // is written to the repository under `modules/<moduleKey>/<versionDir>/<path>`
         // (path already carries its own directory, e.g. `assets/bell.mp3`
@@ -358,17 +354,6 @@ impl<'a, R: Repository> SagaState<'a, R> {
                 .await
             {
                 warn!("Failed to record widget resource {}: {}", canonical, e);
-            }
-        }
-
-        // Record overlay resources in ledger
-        for (i, o) in self.manifest.overlays.iter().enumerate() {
-            let canonical = self.resolved.overlays[i].canonical_id.to_string();
-            if let Err(e) = db_proxy
-                .create_module_resource(&db_record_id, "overlay", "", &o.id, &canonical, &self.manifest.version)
-                .await
-            {
-                warn!("Failed to record overlay resource {}: {}", canonical, e);
             }
         }
 
@@ -1627,8 +1612,12 @@ mod tests {
         out
     }
 
+    /// The retired `overlays[]` surface must stop the install rather than
+    /// upload a file nothing can serve. Silently ignoring the field would let
+    /// an author keep depending on something that never resolves, which is the
+    /// failure this removal exists to end.
     #[tokio::test]
-    async fn install_stores_overlay_entry() {
+    async fn install_rejects_the_retired_overlays_field() {
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = FileRepository::new(FileRepositoryConfig {
             destination: dir.path().to_path_buf(),
@@ -1642,30 +1631,33 @@ mod tests {
             "overlays": [{ "id": "o1", "name": "O", "entry": "overlays/o1/index.html" }]
         }"#;
 
-        let files = vec![
-            ModuleFile::new(
-                "module.json".into(),
-                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
-                manifest_json.to_vec(),
-            ),
-            ModuleFile::new(
-                "overlays/o1/index.html".into(),
-                ModuleFileKind::ASSET("html".into()),
-                b"<html/>".to_vec(),
-            ),
-        ];
+        let files = vec![ModuleFile::new(
+            "module.json".into(),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+            manifest_json.to_vec(),
+        )];
 
         let manifest: ModuleManifest = serde_json::from_slice(manifest_json).expect("manifest");
         let mid = manifest.compute_module_key(manifest_json);
-        run_install(&manifest, &files, &repo, "archives/om/2.0.0.zip", None, "", false, &mid, "")
-            .await
-            .expect("install");
+        let err = run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/om/2.0.0.zip",
+            None,
+            "",
+            false,
+            &mid,
+            "",
+        )
+        .await
+        .expect_err("an overlay declaration must fail the install");
 
-        let version_dir = version_dir_of(&mid);
-        let html = repo
-            .read_file(&format!("modules/om/{version_dir}/overlays/o1/overlays/o1/index.html"))
-            .await
-            .expect("overlay html");
-        assert_eq!(html, b"<html/>");
+        let message = err.to_string();
+        assert!(message.contains("overlays"), "unexpected error: {message}");
+        assert!(
+            message.contains("o1"),
+            "the error must name the offending id: {message}"
+        );
     }
 }

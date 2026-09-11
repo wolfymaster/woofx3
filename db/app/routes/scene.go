@@ -18,7 +18,7 @@ import (
 // gated only by the higher-level proxy auth.
 func SceneRoutes(mux *http.ServeMux, app *types.App, _ *middleware.CasbinMiddleware) {
 	sceneRepository := repo.NewSceneRepository(app.Db)
-	sceneService := svc.NewSceneService(sceneRepository, app.EventPublisher)
+	sceneService := svc.NewSceneService(sceneRepository, repo.NewOverlayTokenRepository(app.Db), app.EventPublisher)
 	sceneHandler := client.NewSceneServiceServer(
 		sceneService,
 		twirp.WithServerHooks(twirp.ChainHooks(

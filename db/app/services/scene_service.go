@@ -25,17 +25,22 @@ import (
 // nil, the service is silent — useful for tests and for early-boot
 // pre-NATS scenarios.
 type sceneService struct {
-	repo      *repo.SceneRepository
-	publisher *workers.EventPublisher
+	repo *repo.SceneRepository
+	// Deleting a scene has to revoke the tokens that address it; without this
+	// they keep resolving to an id nothing answers for.
+	overlayTokenRepo *repo.OverlayTokenRepository
+	publisher        *workers.EventPublisher
 }
 
 func NewSceneService(
 	sceneRepo *repo.SceneRepository,
+	overlayTokenRepo *repo.OverlayTokenRepository,
 	publisher *workers.EventPublisher,
 ) client.SceneService {
 	return &sceneService{
-		repo:      sceneRepo,
-		publisher: publisher,
+		repo:             sceneRepo,
+		overlayTokenRepo: overlayTokenRepo,
+		publisher:        publisher,
 	}
 }
 
@@ -161,6 +166,21 @@ func (s *sceneService) DeleteScene(ctx context.Context, req *client.DeleteSceneR
 		return nil, twirp.NotFoundError("scene not found")
 	}
 
+	// Revoke first. A token that outlives its scene still resolves -- the
+	// overlay shell renders empty and the only explanation is a log line, which
+	// from a browser source is indistinguishable from a scene with nothing to
+	// show. Revoking rather than deleting matches how tokens are retired
+	// everywhere else (see `tombstone`): the row is the operator's history, and
+	// the outbox event it emits is what poisons the resolver caches holding the
+	// old mapping.
+	//
+	// Done before the delete so a failure here leaves the scene intact and the
+	// operation retryable, rather than a deleted scene with live tokens.
+	revoked, err := s.revokeTokensForScene(scene)
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to revoke overlay tokens for scene: %w", err))
+	}
+
 	if err := s.repo.Delete(scene); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to delete scene: %w", err))
 	}
@@ -169,8 +189,54 @@ func (s *sceneService) DeleteScene(ctx context.Context, req *client.DeleteSceneR
 
 	return &client.ResponseStatus{
 		Code:    client.ResponseStatus_OK,
-		Message: "Scene deleted successfully",
+		Message: fmt.Sprintf("Scene deleted successfully; revoked %d overlay token(s)", revoked),
 	}, nil
+}
+
+// revokeTokensForScene tombstones every still-active token addressing the
+// scene, returning how many were retired.
+//
+// Already-revoked tokens are left alone so their `revoked_at` keeps saying
+// when they were actually retired, and no duplicate outbox event is emitted
+// for them.
+func (s *sceneService) revokeTokensForScene(scene *models.Scene) (int, error) {
+	if s.overlayTokenRepo == nil {
+		return 0, nil
+	}
+	sceneID := scene.ID
+	tokens, err := s.overlayTokenRepo.List(&sceneID, nil, false)
+	if err != nil {
+		return 0, err
+	}
+	revoked := 0
+	for _, token := range tokens {
+		if token.Status == models.OverlayTokenStatusRevoked {
+			continue
+		}
+		if err := tombstone(s.overlayTokenRepo, token); err != nil {
+			return revoked, err
+		}
+		s.publishOverlayTokenChange(token, "updated")
+		revoked++
+	}
+	return revoked, nil
+}
+
+// publishOverlayTokenChange mirrors overlayTokenService.publishChange so a
+// cascade emits the same event shape a direct revoke does -- subscribers
+// poisoning their caches cannot tell, and should not have to.
+func (s *sceneService) publishOverlayTokenChange(token *models.OverlayToken, op string) {
+	if s.publisher == nil {
+		return
+	}
+	s.publisher.Publish(workers.PublishOptions{
+		ApplicationID:   token.ApplicationID.String(),
+		EntityType:      "overlay_token",
+		EntityID:        token.ID.String(),
+		Operation:       op,
+		Data:            buildOverlayTokenChangeData(token),
+		AutoAcknowledge: true,
+	})
 }
 
 func (s *sceneService) ListScenes(ctx context.Context, req *client.ListScenesRequest) (*client.ListScenesResponse, error) {

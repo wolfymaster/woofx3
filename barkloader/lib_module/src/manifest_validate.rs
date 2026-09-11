@@ -5,7 +5,7 @@
 //!
 //!   - top-level `id` is required, non-empty, and a valid id segment
 //!   - every resource (`triggers`, `actions`, `functions`, `commands`,
-//!     `workflows`, `widgets`, `overlays`) has a non-empty `id` matching
+//!     `workflows`, `widgets`) has a non-empty `id` matching
 //!     `[A-Za-z0-9._-]+`
 //!   - within each kind, canonical ids are unique
 //!
@@ -30,10 +30,10 @@ use super::canonical_id::{
 };
 use super::db_proxy_client::ModuleDbProxy;
 use super::module_manifest::{
-    ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField,
-    ManifestDataShape, ManifestFunction, ManifestOverlay, ManifestResourceKind, ManifestSetting,
-    ManifestTrigger, ManifestWorkflow, ModuleManifest, ModuleWidget, CONFIG_FIELD_TYPES,
-    DATA_SHAPE_FIELD_TYPES,
+    CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, ManifestAction, ManifestActionImpl, ManifestAsset,
+    ManifestCommand, ManifestConfigField, ManifestDataShape, ManifestFunction,
+    ManifestResourceKind, ManifestSetting, ManifestTrigger, ManifestWorkflow, ModuleManifest,
+    ModuleWidget,
 };
 
 /// Resolved action implementation. Mirrors `ManifestActionImpl` but
@@ -117,11 +117,6 @@ pub struct ResolvedWidget {
 }
 
 #[derive(Debug, Clone)]
-pub struct ResolvedOverlay {
-    pub canonical_id: CanonicalId,
-}
-
-#[derive(Debug, Clone)]
 pub struct ResolvedAsset {
     pub canonical_id: CanonicalId,
 }
@@ -135,7 +130,6 @@ pub struct ResolvedManifest {
     pub commands: Vec<ResolvedCommand>,
     pub workflows: Vec<ResolvedWorkflow>,
     pub widgets: Vec<ResolvedWidget>,
-    pub overlays: Vec<ResolvedOverlay>,
     pub assets: Vec<ResolvedAsset>,
 }
 
@@ -198,6 +192,51 @@ pub fn validate_with_provenance(
         }
     }
 
+    // A background task whose schedule cannot be parsed registers fine and
+    // then never fires -- the scheduler declines it with a log line the author
+    // has no reason to read. The expression is known here, so reject it here.
+    for (i, task) in manifest.background_tasks.iter().enumerate() {
+        if !crate::cron_schedule::is_valid_cron(&task.schedule) {
+            return Err(anyhow!(
+                "backgroundTasks[{i}] ({}): {:?} is not a valid cron schedule. \
+                 Five-field (`*/30 * * * *`) and six-field (`0 */30 * * * *`) forms are both accepted.",
+                task.id,
+                task.schedule
+            ));
+        }
+    }
+
+    // Step ids are the names an author's own `${id.field}` references and
+    // `dependsOn` entries resolve against. A duplicate makes a reference
+    // ambiguous and a dangling `dependsOn` makes the graph unsatisfiable --
+    // both of which otherwise surface as a step that quietly does nothing.
+    for (wi, workflow) in manifest.workflows.iter().enumerate() {
+        let mut declared: HashSet<&str> = HashSet::new();
+        for (si, step) in workflow.steps.iter().enumerate() {
+            let Some(id) = step.id.as_deref().map(str::trim).filter(|s| !s.is_empty()) else {
+                continue;
+            };
+            if !declared.insert(id) {
+                return Err(anyhow!(
+                    "workflow #{wi} ({}) step #{si}: duplicate step id {id:?}",
+                    workflow.id
+                ));
+            }
+        }
+        for (si, step) in workflow.steps.iter().enumerate() {
+            for dep in &step.depends_on {
+                let dep = dep.trim();
+                if !declared.contains(dep) {
+                    return Err(anyhow!(
+                        "workflow #{wi} ({}) step #{si}: dependsOn {dep:?} names no step in this workflow. \
+                         Only steps with an explicit `id` can be depended on.",
+                        workflow.id
+                    ));
+                }
+            }
+        }
+    }
+
     // Pass 1: build per-kind canonical id lookup tables.
     let triggers_table = build_kind_table(
         &module_id,
@@ -235,18 +274,13 @@ pub fn validate_with_provenance(
         &manifest.widgets,
         |w: &ModuleWidget| &w.id,
     )?;
-    let overlays_table = build_kind_table(
-        &module_id,
-        ResourceKind::Overlay,
-        &manifest.overlays,
-        |o: &ManifestOverlay| &o.id,
-    )?;
     let assets_table = build_kind_table(
         &module_id,
         ResourceKind::Asset,
         &manifest.assets,
         |a: &ManifestAsset| &a.id,
     )?;
+    validate_no_overlays(manifest)?;
     validate_asset_paths(&manifest.assets)?;
     validate_widget_entries(&manifest.widgets)?;
     validate_resource_kinds(&manifest.resources)?;
@@ -258,9 +292,6 @@ pub fn validate_with_provenance(
         canonical_id: e.canonical_id.clone(),
     });
     let functions = entries_to_resolved(&functions_table, |e| ResolvedFunction {
-        canonical_id: e.canonical_id.clone(),
-    });
-    let overlays = entries_to_resolved(&overlays_table, |e| ResolvedOverlay {
         canonical_id: e.canonical_id.clone(),
     });
     let assets = entries_to_resolved(&assets_table, |e| ResolvedAsset {
@@ -280,7 +311,6 @@ pub fn validate_with_provenance(
         commands,
         workflows,
         widgets,
-        overlays,
         assets,
     })
 }
@@ -375,7 +405,7 @@ pub async fn build_install_plan(
     );
 
     // Triggers and actions register unconditionally today (even with an
-    // empty list) — functions and overlays have no bulk-registration
+    // empty list) — functions have no bulk-registration
     // call of their own, only the upload + (for functions) the ledger
     // entries `CreateModule` writes.
     add_step(&mut nodes, &mut index_of, InstallStep::RegisterTriggers, (2, 0, 0), &[&InstallStep::CreateModule]);
@@ -789,6 +819,39 @@ fn validate_data_shape(shape: &ManifestDataShape, context: &str) -> Result<()> {
 /// a non-empty `path` that doesn't try to escape the module root.
 /// Existence inside the zip is checked at install time by the upload
 /// path (via `resolve_zip_file`) so this stays pure / IO-free.
+/// Reject the retired `overlays[]` surface.
+///
+/// It never had a catalog registration or a serving route, so a declared
+/// overlay uploaded a file and then resolved to nothing -- and an author had
+/// no way to find that out except by noticing their overlay never appeared.
+/// Scenes replaced it: a module contributes widgets, and the operator composes
+/// them into a scene addressed by an overlay token minted in the UI.
+///
+/// An error rather than a warning, because a warning is what this already was
+/// and it did not stop anyone from depending on the field.
+fn validate_no_overlays(manifest: &ModuleManifest) -> Result<()> {
+    if manifest.overlays.is_empty() {
+        return Ok(());
+    }
+    let ids: Vec<&str> = manifest
+        .overlays
+        .iter()
+        .map(|o| {
+            if o.id.is_empty() {
+                "<unnamed>"
+            } else {
+                o.id.as_str()
+            }
+        })
+        .collect();
+    Err(anyhow!(
+        "`overlays` is no longer supported (declared: {}). Overlays are composed in the UI: \
+         publish the visual as a widget under `widgets[]`, then place it on a scene and point \
+         a browser source at that scene's overlay token.",
+        ids.join(", ")
+    ))
+}
+
 fn validate_asset_paths(assets: &[ManifestAsset]) -> Result<()> {
     for (i, a) in assets.iter().enumerate() {
         let trimmed = a.path.trim();
@@ -860,7 +923,7 @@ fn build_kind_table<T>(
 
 /// Project a KindTable into a manifest-ordered Vec via a per-entry
 /// constructor. Used for kinds that have no references to resolve
-/// (triggers, functions, overlays).
+/// (triggers, functions).
 fn entries_to_resolved<R>(table: &KindTable, build: impl Fn(&KindEntry) -> R) -> Vec<R> {
     let mut entries: Vec<&KindEntry> = table.entries.values().collect();
     entries.sort_by_key(|e| e.manifest_index);
@@ -1613,6 +1676,128 @@ mod tests {
             .expect("a resolvable bundled reference installs");
         let workflow_step = InstallStep::RegisterWorkflow(resolved.workflows[0].canonical_id.clone());
         assert!(plan.contains(&workflow_step));
+    }
+
+    #[test]
+    fn a_five_field_cron_schedule_installs() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "sweep", "name": "Sweep", "runtime": "js", "path": "functions/sweep.js" }],
+            "backgroundTasks": [{ "id": "s1", "function": "sweep", "schedule": "*/30 * * * *", "description": "d" }]"#,
+        );
+        validate(&m).expect("standard five-field cron must be accepted");
+    }
+
+    #[test]
+    fn a_six_field_cron_schedule_still_installs() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "sweep", "name": "Sweep", "runtime": "js", "path": "functions/sweep.js" }],
+            "backgroundTasks": [{ "id": "s1", "function": "sweep", "schedule": "0 */30 * * * *", "description": "d" }]"#,
+        );
+        validate(&m).expect("six-field cron must keep working");
+    }
+
+    /// The failure this replaces was a log line during registry load, long
+    /// after the install reported success.
+    #[test]
+    fn an_unparseable_schedule_fails_the_install_naming_the_task() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "sweep", "name": "Sweep", "runtime": "js", "path": "functions/sweep.js" }],
+            "backgroundTasks": [{ "id": "s1", "function": "sweep", "schedule": "not a cron", "description": "d" }]"#,
+        );
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("s1"), "the error must name the task: {err}");
+        assert!(
+            err.contains("cron"),
+            "the error must say what is wrong: {err}"
+        );
+    }
+
+    #[test]
+    fn a_declared_step_id_is_kept() {
+        let m = minimal(
+            r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "channel.follow" }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "js", "path": "functions/f1.js" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [
+                { "id": "say", "action": "a1" }
+            ]}]"#,
+        );
+        let r = validate(&m).expect("ok");
+        assert_eq!(r.workflows[0].step_actions.len(), 1);
+        // The declared id survives into the stored task; see
+        // module_manifest::step_to_task_json.
+        assert_eq!(m.workflows[0].steps[0].id.as_deref(), Some("say"));
+    }
+
+    #[test]
+    fn duplicate_step_ids_are_rejected() {
+        let m = minimal(
+            r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "channel.follow" }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "js", "path": "functions/f1.js" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [
+                { "id": "dup", "action": "a1" },
+                { "id": "dup", "action": "a1" }
+            ]}]"#,
+        );
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("duplicate step id"), "got: {err}");
+    }
+
+    /// A typo here used to produce a step that depended on nothing and ran in
+    /// whatever order the array happened to give.
+    #[test]
+    fn a_dangling_depends_on_is_rejected() {
+        let m = minimal(
+            r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "channel.follow" }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "js", "path": "functions/f1.js" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [
+                { "id": "first", "action": "a1" },
+                { "id": "second", "action": "a1", "dependsOn": ["frist"] }
+            ]}]"#,
+        );
+        let err = validate(&m).unwrap_err().to_string();
+        assert!(err.contains("names no step"), "got: {err}");
+        assert!(
+            err.contains("frist"),
+            "the error must quote the typo: {err}"
+        );
+    }
+
+    #[test]
+    fn a_satisfied_depends_on_validates() {
+        let m = minimal(
+            r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "channel.follow" }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "js", "path": "functions/f1.js" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [
+                { "id": "first", "action": "a1" },
+                { "id": "second", "action": "a1", "dependsOn": ["first"] }
+            ]}]"#,
+        );
+        validate(&m).expect("a dependency on a declared step is fine");
+    }
+
+    #[test]
+    fn steps_without_ids_still_validate() {
+        let m = minimal(
+            r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "channel.follow" }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "js", "path": "functions/f1.js" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [
+                { "action": "a1" }, { "action": "a1" }
+            ]}]"#,
+        );
+        validate(&m).expect("generated ids are still the default");
     }
 
     #[test]

@@ -31,6 +31,18 @@ export interface OverlayWidgetInstance {
   settings: Record<string, unknown>;
   acceptedEvents: string[];
   frameUrl: string;
+  /**
+   * False when this placement's `widgetCanonicalId` matches no widget in the
+   * catalog — the widget was renamed, or its module was uninstalled, and the
+   * scene still points at the old id.
+   *
+   * Placements are canonical-id references with no integrity check behind
+   * them: nothing rewrites a scene when a module renames a widget. An
+   * unresolvable one used to render as a blank area, which is exactly what a
+   * widget with nothing to show looks like, so it went unnoticed until
+   * someone wondered why their alerts stopped.
+   */
+  resolved: boolean;
 }
 
 export interface OverlaySceneLayout {
@@ -157,8 +169,51 @@ export class OverlayHost {
       applicationId: s.applicationId || resolved.applicationId,
       name: s.name,
       layout: parseLayout(s.layoutJson),
-      instances: this.parseInstances(s.widgetsJson, s.id),
+      instances: await this.resolveInstances(this.parseInstances(s.widgetsJson, s.id), s.id),
     };
+  }
+
+  /**
+   * Mark each placement according to whether its widget still exists, and say
+   * so once per unresolvable placement.
+   *
+   * Checked on load rather than at render time because this is the only point
+   * that sees the whole scene: one warning naming every dead placement is
+   * actionable, where a per-frame miss is a line someone has to correlate.
+   */
+  private async resolveInstances(
+    instances: OverlayWidgetInstance[],
+    sceneId: string
+  ): Promise<OverlayWidgetInstance[]> {
+    if (instances.length === 0) {
+      return instances;
+    }
+    const catalog = await this.loadWidgetCatalog();
+    // An empty catalog means the lookup failed, not that every widget is gone.
+    // Marking the whole scene broken on a transient db blip would be worse
+    // than the silence this replaces.
+    if (catalog.length === 0) {
+      return instances.map((instance) => ({ ...instance, resolved: true }));
+    }
+
+    const known = new Set(catalog.map((row) => `${row.moduleKey}:widget:${row.manifestId}`));
+    const resolved = instances.map((instance) => ({
+      ...instance,
+      resolved: known.has(instance.widgetCanonicalId),
+    }));
+
+    const dead = resolved.filter((instance) => !instance.resolved);
+    if (dead.length > 0) {
+      this.logger.warn("scene has widget placements that resolve to nothing", {
+        sceneId,
+        count: dead.length,
+        placements: dead.map((instance) => ({
+          instanceId: instance.id,
+          widgetCanonicalId: instance.widgetCanonicalId,
+        })),
+      });
+    }
+    return resolved;
   }
 
   /**
@@ -193,7 +248,7 @@ export class OverlayHost {
       applicationId: s.applicationId,
       name: s.name,
       layout: parseLayout(s.layoutJson),
-      instances: this.parseInstances(s.widgetsJson, s.id),
+      instances: await this.resolveInstances(this.parseInstances(s.widgetsJson, s.id), s.id),
     };
   }
 
@@ -252,6 +307,7 @@ export class OverlayHost {
           settings: w.settings,
           acceptedEvents: w.acceptedEvents,
           frameUrl: w.frameUrl,
+          resolved: w.resolved,
         })),
       },
     };
@@ -372,6 +428,9 @@ export class OverlayHost {
           : {},
       acceptedEvents,
       frameUrl: `/scene/${encodeURIComponent(sceneId)}/widget/${encodeURIComponent(id)}`,
+      // Assumed until the catalog says otherwise; `resolveInstances` is what
+      // decides, since parsing alone cannot know what exists.
+      resolved: true,
     };
   }
 }

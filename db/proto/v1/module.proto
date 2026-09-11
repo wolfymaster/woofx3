@@ -232,6 +232,18 @@ message DeleteByModuleIdRequest {
   // for row matching — carried so the deregistration outbox event can name
   // the exact installed version alongside module_prefix.
   string module_key = 2;
+  // Provenance to match. Empty means MODULE, which is every ordinary
+  // uninstall: a module removes the rows it registered and nothing else.
+  //
+  // Naming SYSTEM here is how a retired engine-owned namespace is removed —
+  // the `builtin` and `chat_commands` rows the built-in consolidation left
+  // behind had no removal path at all, because the guard that (correctly)
+  // stops a module called `builtin` from deleting the system's rows also
+  // stopped anything else from doing it deliberately.
+  //
+  // Deliberately not a boolean "force": the caller states which namespace it
+  // means, so the request says what it does.
+  string created_by_type = 3;
 }
 
 // Lookup by canonical id (`{moduleId}:{kind}:{manifest_id}`). Used by

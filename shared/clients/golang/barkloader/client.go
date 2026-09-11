@@ -15,9 +15,45 @@ import (
 type ReconnectAttemptHandler func(attempt int, maxRetries int)
 
 type InvokeResponse struct {
-	Type string                 `json:"type"`
-	Id   string                 `json:"id,omitempty"`
-	Data map[string]interface{} `json:"data"`
+	Type string `json:"type"`
+	Id   string `json:"id,omitempty"`
+	// Raw because `data` is not one shape. A result carries an object; an
+	// error carries a bare JSON string. Declaring it as a map made every
+	// error frame fail to unmarshal, so it was dropped in messageHandler and
+	// the caller waited out the full invoke timeout instead of being told
+	// what went wrong. The TypeScript client has always accepted both.
+	Data json.RawMessage `json:"data"`
+}
+
+// ErrorMessage is the text of an "error" frame, accepting both shapes:
+// a bare JSON string, and `{"error": "..."}` / `{"data": "..."}`.
+func (r InvokeResponse) ErrorMessage() string {
+	var asString string
+	if err := json.Unmarshal(r.Data, &asString); err == nil && asString != "" {
+		return asString
+	}
+	var asObject map[string]interface{}
+	if err := json.Unmarshal(r.Data, &asObject); err == nil {
+		for _, key := range []string{"error", "data", "message"} {
+			if v, ok := asObject[key].(string); ok && v != "" {
+				return v
+			}
+		}
+	}
+	if len(r.Data) > 0 {
+		return string(r.Data)
+	}
+	return "unknown error"
+}
+
+// DataObject decodes a frame's `data` as an object. Returns nil when it is
+// not one, which a caller reads as "no result".
+func (r InvokeResponse) DataObject() map[string]interface{} {
+	var obj map[string]interface{}
+	if err := json.Unmarshal(r.Data, &obj); err != nil {
+		return nil
+	}
+	return obj
 }
 
 type InvokeRequest struct {
@@ -221,30 +257,25 @@ func (c *Client) Invoke(functionName string, event map[string]interface{}) (map[
 	select {
 	case response := <-responseChan:
 		if response.Type == "error" {
-			errorMsg := "unknown error"
-			if errStr, ok := response.Data["error"].(string); ok {
-				errorMsg = errStr
-			} else if dataStr, ok := response.Data["data"].(string); ok {
-				errorMsg = dataStr
-			}
-			return nil, fmt.Errorf("barkloader error: %s", errorMsg)
+			return nil, fmt.Errorf("barkloader error: %s", response.ErrorMessage())
 		}
 
 		if response.Type == "result" {
-			resultData, hasResult := response.Data["result"]
+			data := response.DataObject()
+			resultData, hasResult := data["result"]
 			if !hasResult || resultData == nil {
 				return nil, fmt.Errorf(
-					"barkloader returned no result for %s (data=%v)",
+					"barkloader returned no result for %s (data=%s)",
 					functionName,
-					response.Data,
+					string(response.Data),
 				)
 			}
 			if resultMap, ok := resultData.(map[string]interface{}); ok {
 				if len(resultMap) == 0 {
 					return nil, fmt.Errorf(
-						"barkloader returned empty result object for %s (data=%v)",
+						"barkloader returned empty result object for %s (data=%s)",
 						functionName,
-						response.Data,
+						string(response.Data),
 					)
 				}
 				return resultMap, nil
