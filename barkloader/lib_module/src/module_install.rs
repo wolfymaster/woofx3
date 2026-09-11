@@ -1639,12 +1639,25 @@ mod tests {
 
         let manifest: ModuleManifest = serde_json::from_slice(manifest_json).expect("manifest");
         let mid = manifest.compute_module_key(manifest_json);
-        let err = run_install(&manifest, &files, &repo, "archives/om/2.0.0.zip", None, "", false, &mid, "")
-            .await
-            .expect_err("an overlay declaration must fail the install");
+        let err = run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/om/2.0.0.zip",
+            None,
+            "",
+            false,
+            &mid,
+            "",
+        )
+        .await
+        .expect_err("an overlay declaration must fail the install");
 
         let message = err.to_string();
         assert!(message.contains("overlays"), "unexpected error: {message}");
-        assert!(message.contains("o1"), "the error must name the offending id: {message}");
+        assert!(
+            message.contains("o1"),
+            "the error must name the offending id: {message}"
+        );
     }
 }

@@ -78,9 +78,7 @@ describe("scene placement resolution", () => {
     );
     await host.loadScene("ovl_token");
 
-    const call = logger.warn.mock.calls.find((c: unknown[]) =>
-      String(c[0]).includes("resolve to nothing")
-    );
+    const call = logger.warn.mock.calls.find((c: unknown[]) => String(c[0]).includes("resolve to nothing"));
     expect(call).toBeDefined();
     const meta = call?.[1] as { sceneId: string; count: number; placements: Array<{ widgetCanonicalId: string }> };
     expect(meta.sceneId).toBe("scene-1");
@@ -97,9 +95,7 @@ describe("scene placement resolution", () => {
       [{ moduleId: "woofx3", manifestId: "media_alert" }]
     );
     await host.loadScene("ovl_token");
-    const call = logger.warn.mock.calls.find((c: unknown[]) =>
-      String(c[0]).includes("resolve to nothing")
-    );
+    const call = logger.warn.mock.calls.find((c: unknown[]) => String(c[0]).includes("resolve to nothing"));
     expect(call).toBeUndefined();
   });
 
@@ -110,9 +106,7 @@ describe("scene placement resolution", () => {
     const { host, logger } = hostWith([placement("inst-1", "woofx3:widget:media_alert")], []);
     const state = await host.loadScene("ovl_token");
     expect(state?.instances[0]?.resolved).toBe(true);
-    const call = logger.warn.mock.calls.find((c: unknown[]) =>
-      String(c[0]).includes("resolve to nothing")
-    );
+    const call = logger.warn.mock.calls.find((c: unknown[]) => String(c[0]).includes("resolve to nothing"));
     expect(call).toBeUndefined();
   });
 

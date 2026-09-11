@@ -13,7 +13,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::Deserialize;
 use tracing::{info, warn};
 
@@ -43,14 +43,20 @@ pub enum Verdict {
     /// The marketplace has no such module: a bundled module, or one installed
     /// from a zip that was never published. Not a problem, just unknowable.
     NotPublished,
-    Differs { installed: String, published: String },
+    Differs {
+        installed: String,
+        published: String,
+    },
 }
 
 /// Compare installed modules against a catalog.
 ///
 /// Split from the fetching so the rule is testable without a marketplace: the
 /// interesting cases are all about which pairs of versions mean what.
-pub fn compare(installed: &[(String, String)], catalog: &HashMap<String, String>) -> Vec<(String, Verdict)> {
+pub fn compare(
+    installed: &[(String, String)],
+    catalog: &HashMap<String, String>,
+) -> Vec<(String, Verdict)> {
     let mut out = Vec::with_capacity(installed.len());
     for (id, version) in installed {
         let verdict = match catalog.get(id) {
@@ -100,7 +106,11 @@ pub async fn report(marketplace_url: &str, db_proxy_url: &str) {
 
     let mut differing = 0;
     for (id, verdict) in compare(&installed, &catalog) {
-        if let Verdict::Differs { installed, published } = verdict {
+        if let Verdict::Differs {
+            installed,
+            published,
+        } = verdict
+        {
             differing += 1;
             warn!(
                 module_id = %id,
@@ -111,7 +121,10 @@ pub async fn report(marketplace_url: &str, db_proxy_url: &str) {
         }
     }
     if differing == 0 {
-        info!(modules = installed.len(), "module drift check: all installed modules match the marketplace");
+        info!(
+            modules = installed.len(),
+            "module drift check: all installed modules match the marketplace"
+        );
     }
 }
 
@@ -136,16 +149,25 @@ mod tests {
     use super::*;
 
     fn catalog(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     fn installed(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     #[test]
     fn a_matching_version_is_current() {
-        let got = compare(&installed(&[("woofx3_twitch", "0.2.0")]), &catalog(&[("woofx3_twitch", "0.2.0")]));
+        let got = compare(
+            &installed(&[("woofx3_twitch", "0.2.0")]),
+            &catalog(&[("woofx3_twitch", "0.2.0")]),
+        );
         assert_eq!(got[0].1, Verdict::Current);
     }
 
@@ -153,10 +175,16 @@ mod tests {
     /// nothing has looked at it since.
     #[test]
     fn an_older_installed_version_is_reported() {
-        let got = compare(&installed(&[("woofx3_twitch", "0.1.1")]), &catalog(&[("woofx3_twitch", "0.2.0")]));
+        let got = compare(
+            &installed(&[("woofx3_twitch", "0.1.1")]),
+            &catalog(&[("woofx3_twitch", "0.2.0")]),
+        );
         assert_eq!(
             got[0].1,
-            Verdict::Differs { installed: "0.1.1".into(), published: "0.2.0".into() }
+            Verdict::Differs {
+                installed: "0.1.1".into(),
+                published: "0.2.0".into()
+            }
         );
     }
 
@@ -174,7 +202,10 @@ mod tests {
     /// module installed from a local zip. Neither is drift.
     #[test]
     fn a_module_absent_from_the_catalog_is_not_drift() {
-        let got = compare(&installed(&[("woofx3", "0.4.0")]), &catalog(&[("woofx3_twitch", "0.2.0")]));
+        let got = compare(
+            &installed(&[("woofx3", "0.4.0")]),
+            &catalog(&[("woofx3_twitch", "0.2.0")]),
+        );
         assert_eq!(got[0].1, Verdict::NotPublished);
     }
 

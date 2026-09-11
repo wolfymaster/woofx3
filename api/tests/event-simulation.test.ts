@@ -12,12 +12,7 @@ function harness() {
   const published: Published[] = [];
   const ctx = {
     logger: { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} },
-    async publishEvent(
-      eventType: string,
-      data: Record<string, unknown>,
-      subject?: string,
-      platform?: string
-    ) {
+    async publishEvent(eventType: string, data: Record<string, unknown>, subject?: string, platform?: string) {
       published.push({
         subject: subject ?? eventType,
         payload: { type: eventType, data, platform },

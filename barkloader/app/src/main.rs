@@ -183,7 +183,8 @@ async fn setup() -> Result<AppContext> {
     // Advisory, and deliberately after boot_modules: an installed module going
     // stale against the engine is a thing to be told about, not a reason to
     // refuse to start. Silent when no marketplace is configured.
-    let marketplace_url = get_env_or_default_with_key("MARKETPLACE_API_URL", Some("marketplaceUrl"), "");
+    let marketplace_url =
+        get_env_or_default_with_key("MARKETPLACE_API_URL", Some("marketplaceUrl"), "");
     services::module_drift::report(&marketplace_url, &db_proxy_url).await;
 
     // Everything a dependent waits on us for is now in place: bundled modules

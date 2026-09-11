@@ -56,7 +56,10 @@ mod tests {
     /// The expression from the issue: the most obvious thing an author writes.
     #[test]
     fn the_standard_five_field_form_is_accepted() {
-        assert!(is_valid_cron("*/30 * * * *"), "every 30 minutes must be valid");
+        assert!(
+            is_valid_cron("*/30 * * * *"),
+            "every 30 minutes must be valid"
+        );
         assert!(is_valid_cron("0 3 * * *"), "daily at 03:00 must be valid");
         assert!(is_valid_cron("*/5 * * * *"));
     }

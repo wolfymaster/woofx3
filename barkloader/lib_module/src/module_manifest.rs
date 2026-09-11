@@ -1332,7 +1332,10 @@ fn step_to_task_json(
         task.insert(
             "dependsOn".to_string(),
             serde_json::Value::Array(
-                step.depends_on.iter().map(|d| serde_json::Value::String(d.clone())).collect(),
+                step.depends_on
+                    .iter()
+                    .map(|d| serde_json::Value::String(d.clone()))
+                    .collect(),
             ),
         );
     }
