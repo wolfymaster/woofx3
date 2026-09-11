@@ -48,7 +48,10 @@ function host(overrides: Record<string, unknown> = {}) {
 
 describe("resource wire mapping", () => {
   test("derives public urls from repository keys", () => {
-    const item = resourceToItem(BASE_URL, readyRow({ thumbnailRepositoryKey: "user/app-1/res-1/thumbnail.png" }) as never);
+    const item = resourceToItem(
+      BASE_URL,
+      readyRow({ thumbnailRepositoryKey: "user/app-1/res-1/thumbnail.png" }) as never
+    );
 
     expect(item.url).toBe("http://127.0.0.1:9100/overlay/assets/user/app-1/res-1/clip.png");
     expect(item.thumbnailUrl).toBe("http://127.0.0.1:9100/overlay/assets/user/app-1/res-1/thumbnail.png");
@@ -64,15 +67,19 @@ describe("resource wire mapping", () => {
   });
 
   test("a pending resource serves no url until its bytes land", () => {
-    const item = resourceToItem(BASE_URL, readyRow({ status: "pending", repositoryKey: "user/app-1/res-1/clip.png" }) as never);
+    const item = resourceToItem(
+      BASE_URL,
+      readyRow({ status: "pending", repositoryKey: "user/app-1/res-1/clip.png" }) as never
+    );
 
     expect(item.status).toBe("pending");
     expect(item.url).toBeNull();
   });
 
   test("folders carry no url", () => {
-    const item = resourceToItem(BASE_URL, 
-      readyRow({ isFolder: true, kind: "folder", repositoryKey: "", contentType: "" }) as never,
+    const item = resourceToItem(
+      BASE_URL,
+      readyRow({ isFolder: true, kind: "folder", repositoryKey: "", contentType: "" }) as never
     );
 
     expect(item.isFolder).toBe(true);
@@ -81,7 +88,7 @@ describe("resource wire mapping", () => {
 
   test("a trailing slash on the public base does not double up", () => {
     expect(resourcePublicUrl("http://example.test/", "user/a/b/c.png")).toBe(
-      "http://example.test/overlay/assets/user/a/b/c.png",
+      "http://example.test/overlay/assets/user/a/b/c.png"
     );
   });
 });
@@ -119,7 +126,7 @@ describe("listResources", () => {
     await api.listResources({ folderId: "folder-9", kind: "image" });
 
     expect(listResources).toHaveBeenCalledWith(
-      expect.objectContaining({ applicationId: APPLICATION_ID, parentId: "folder-9", kind: "image" }),
+      expect.objectContaining({ applicationId: APPLICATION_ID, parentId: "folder-9", kind: "image" })
     );
   });
 });
@@ -137,15 +144,15 @@ describe("requestUploadUrl", () => {
             method: "PUT",
             headers: [{ name: "Content-Type", value: "image/png" }],
             expiresAt: 1_700_000_300,
-          }),
-        ),
+          })
+        )
     );
     const api = host({ db: { createResource, tryUpdateResource: updateResource }, barkloaderRequest });
 
     const grant = await api.requestUploadUrl({ name: "clip.png", contentType: "image/png" });
 
     expect(createResource).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "pending", kind: "image", contentType: "image/png" }),
+      expect.objectContaining({ status: "pending", kind: "image", contentType: "image/png" })
     );
     const [path, init] = barkloaderRequest.mock.calls[0];
     expect(path).toBe("/assets/upload-url");
@@ -156,7 +163,7 @@ describe("requestUploadUrl", () => {
     });
     // The issued key is written back so the row can be resolved to bytes.
     expect(updateResource).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "res-1", repositoryKey: "user/app-1/res-1/clip.png" }),
+      expect.objectContaining({ id: "res-1", repositoryKey: "user/app-1/res-1/clip.png" })
     );
     expect(grant.uploadUrl).toBe("http://storage.test/put");
     expect(grant.expiresAt).toBe(1_700_000_300);
@@ -167,7 +174,8 @@ describe("requestUploadUrl", () => {
     const api = host({
       db: { createResource, tryUpdateResource: mock(async (_req: any) => readyRow()) },
       barkloaderRequest: mock(
-        async () => new Response(JSON.stringify({ repositoryKey: "k", uploadUrl: "u", method: "PUT", headers: [], expiresAt: 0 })),
+        async () =>
+          new Response(JSON.stringify({ repositoryKey: "k", uploadUrl: "u", method: "PUT", headers: [], expiresAt: 0 }))
       ),
     });
 
@@ -180,7 +188,7 @@ describe("requestUploadUrl", () => {
   });
 
   test("rejects a nameless upload before reserving anything", async () => {
-    const createResource = mock(async (_req: any) => (readyRow()));
+    const createResource = mock(async (_req: any) => readyRow());
     const api = host({ db: { createResource } });
 
     await expect(api.requestUploadUrl({ name: "", contentType: "image/png" })).rejects.toThrow("name is required");
@@ -190,19 +198,21 @@ describe("requestUploadUrl", () => {
 
 describe("folders", () => {
   test("createFolder passes the parent through", async () => {
-    const createResourceFolder = mock(async (_req: any) => readyRow({ isFolder: true, kind: "folder", name: "clips", repositoryKey: "" }));
+    const createResourceFolder = mock(async (_req: any) =>
+      readyRow({ isFolder: true, kind: "folder", name: "clips", repositoryKey: "" })
+    );
     const api = host({ db: { createResourceFolder } });
 
     const folder = await api.createFolder("clips", "parent-1");
 
     expect(createResourceFolder).toHaveBeenCalledWith(
-      expect.objectContaining({ applicationId: APPLICATION_ID, name: "clips", parentId: "parent-1" }),
+      expect.objectContaining({ applicationId: APPLICATION_ID, name: "clips", parentId: "parent-1" })
     );
     expect(folder.isFolder).toBe(true);
   });
 
   test("moving to the root sends an empty parent rather than omitting it", async () => {
-    const updateResource = mock(async (_req: any) => (readyRow()));
+    const updateResource = mock(async (_req: any) => readyRow());
     const api = host({ db: { updateResource } });
 
     await api.updateResource("res-1", { parentId: null });
@@ -212,7 +222,7 @@ describe("folders", () => {
   });
 
   test("a rename leaves the parent untouched", async () => {
-    const updateResource = mock(async (_req: any) => (readyRow()));
+    const updateResource = mock(async (_req: any) => readyRow());
     const api = host({ db: { updateResource } });
 
     await api.updateResource("res-1", { name: "renamed.png" });
@@ -225,11 +235,11 @@ describe("folders", () => {
 
 describe("deleteResource", () => {
   test("purges the stored objects db-proxy reports", async () => {
-    const deleteResource = mock(async (_req: any) => ([
-        "user/app-1/res-1/clip.png",
-        "user/app-1/res-1/thumbnail.png",
-        "user/app-1/res-2/other.png",
-    ]));
+    const deleteResource = mock(async (_req: any) => [
+      "user/app-1/res-1/clip.png",
+      "user/app-1/res-1/thumbnail.png",
+      "user/app-1/res-2/other.png",
+    ]);
     const barkloaderRequest = mock(async (_path: string, _init?: RequestInit) => new Response(null, { status: 204 }));
     const api = host({ db: { deleteResource }, barkloaderRequest });
 
@@ -244,7 +254,7 @@ describe("deleteResource", () => {
   test("a storage purge failure does not fail the delete", async () => {
     const api = host({
       db: {
-        deleteResource: mock(async (_req: any) => (["user/app-1/res-1/clip.png"])),
+        deleteResource: mock(async (_req: any) => ["user/app-1/res-1/clip.png"]),
       },
       barkloaderRequest: mock(async (_path: string, _init?: RequestInit) => {
         throw new Error("storage unreachable");
@@ -261,7 +271,7 @@ describe("processing", () => {
   test("requestProcessing hands barkloader a callback and the row to echo back", async () => {
     const barkloaderRequest = mock(async (_path: string, _init?: RequestInit) => new Response("{}"));
     const api = host({
-      db: { getResource: mock(async (_req: any) => (readyRow())) },
+      db: { getResource: mock(async (_req: any) => readyRow()) },
       barkloaderRequest,
     });
 
@@ -285,14 +295,14 @@ describe("processing", () => {
   test("refuses a resource with no stored object", async () => {
     const api = host({
       db: {
-        getResource: mock(async (_req: any) => (readyRow({ repositoryKey: "" }))),
+        getResource: mock(async (_req: any) => readyRow({ repositoryKey: "" })),
       },
     });
     await expect(api.requestProcessing("res-1")).rejects.toThrow("no stored object");
   });
 
   test("a completed job records the thumbnail key", async () => {
-    const updateResource = mock(async (_req: any) => (readyRow()));
+    const updateResource = mock(async (_req: any) => readyRow());
     const api = host({ db: { updateResource } });
 
     await api.handleProcessingCallback({
@@ -304,12 +314,12 @@ describe("processing", () => {
     });
 
     expect(updateResource).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "res-1", thumbnailRepositoryKey: "user/app-1/res-1/thumbnail.png" }),
+      expect.objectContaining({ id: "res-1", thumbnailRepositoryKey: "user/app-1/res-1/thumbnail.png" })
     );
   });
 
   test("not_applicable is a success that writes nothing", async () => {
-    const updateResource = mock(async (_req: any) => (readyRow()));
+    const updateResource = mock(async (_req: any) => readyRow());
     const api = host({ db: { updateResource } });
 
     // Audio has no frame to render. Recording a failure here would put a
@@ -326,7 +336,7 @@ describe("processing", () => {
   });
 
   test("a failed job leaves the row untouched", async () => {
-    const updateResource = mock(async (_req: any) => (readyRow()));
+    const updateResource = mock(async (_req: any) => readyRow());
     const api = host({ db: { updateResource } });
 
     await api.handleProcessingCallback({
@@ -340,7 +350,7 @@ describe("processing", () => {
   });
 
   test("a callback with no resource id is dropped rather than throwing", async () => {
-    const updateResource = mock(async (_req: any) => (readyRow()));
+    const updateResource = mock(async (_req: any) => readyRow());
     const api = host({ db: { updateResource } });
 
     await api.handleProcessingCallback({ status: "completed", thumbnail_repository_key: "k" });

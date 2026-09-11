@@ -3,18 +3,18 @@ package runtime
 type State string
 
 const (
-	StateRuntimeInit               State = "runtime_init"
-	StateHealthMonitorInit         State = "health_monitor_init"
-	StateHealthMonitorReady        State = "health_monitor_ready"
-	StateHealthMonitorWaiting      State = "health_monitor_waiting"
-	StateServicesConnect           State = "services_connect"
-	StateServicesConnectWaiting    State = "services_connect_waiting"
-	StateServicesConnected         State = "services_connected"
-	StateApplicationInit           State = "application_init"
-	StateApplicationRunning        State = "application_running"
-	StateApplicationTerminating    State = "application_terminating"
-	StateRuntimeTerminating        State = "runtime_terminating"
-	StateTerminated                State = "terminated"
+	StateRuntimeInit            State = "runtime_init"
+	StateHealthMonitorInit      State = "health_monitor_init"
+	StateHealthMonitorReady     State = "health_monitor_ready"
+	StateHealthMonitorWaiting   State = "health_monitor_waiting"
+	StateServicesConnect        State = "services_connect"
+	StateServicesConnectWaiting State = "services_connect_waiting"
+	StateServicesConnected      State = "services_connected"
+	StateApplicationInit        State = "application_init"
+	StateApplicationRunning     State = "application_running"
+	StateApplicationTerminating State = "application_terminating"
+	StateRuntimeTerminating     State = "runtime_terminating"
+	StateTerminated             State = "terminated"
 )
 
 type Event string

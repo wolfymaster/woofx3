@@ -8,14 +8,22 @@ describe("createFrameLoadHandler", () => {
     // fire drops the handshake the widget will never redo, and every
     // later events.subscribe is silently ignored.
     let resets = 0;
-    const handler = createFrameLoadHandler({ onFrameLoad: () => { resets += 1; } });
+    const handler = createFrameLoadHandler({
+      onFrameLoad: () => {
+        resets += 1;
+      },
+    });
     handler();
     expect(resets).toBe(0);
   });
 
   it("resets on a subsequent load (in-frame navigation needs a fresh handshake)", () => {
     let resets = 0;
-    const handler = createFrameLoadHandler({ onFrameLoad: () => { resets += 1; } });
+    const handler = createFrameLoadHandler({
+      onFrameLoad: () => {
+        resets += 1;
+      },
+    });
     handler();
     handler();
     handler();
@@ -25,8 +33,16 @@ describe("createFrameLoadHandler", () => {
   it("tracks each frame independently", () => {
     let a = 0;
     let b = 0;
-    const handlerA = createFrameLoadHandler({ onFrameLoad: () => { a += 1; } });
-    const handlerB = createFrameLoadHandler({ onFrameLoad: () => { b += 1; } });
+    const handlerA = createFrameLoadHandler({
+      onFrameLoad: () => {
+        a += 1;
+      },
+    });
+    const handlerB = createFrameLoadHandler({
+      onFrameLoad: () => {
+        b += 1;
+      },
+    });
     handlerA();
     handlerA();
     handlerB();

@@ -81,7 +81,10 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     }
     const parameters = (raw.parameters as Record<string, unknown> | undefined) ?? {};
     const value = { ...(raw.event?.data as Record<string, unknown> | undefined), parameters };
-    await fanOutToConnectedScenes({ applicationId, type: eventType, key: eventType, value }, { host, deliveryStore, logger });
+    await fanOutToConnectedScenes(
+      { applicationId, type: eventType, key: eventType, value },
+      { host, deliveryStore, logger }
+    );
   });
   logger.info("Subscribed to ui.notify.alert");
 

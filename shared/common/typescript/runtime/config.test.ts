@@ -2,22 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import {
-  fillEnvConfig,
-  loadRuntimeEnv,
-  screamingSnakeToCamel,
-  camelToScreamingSnake,
-} from "./config";
+import { fillEnvConfig, loadRuntimeEnv, screamingSnakeToCamel, camelToScreamingSnake } from "./config";
 
 describe("Config loading from file and environment", () => {
   test("loadRuntimeEnv merges process.env, .env file, and .woofx3.json with correct precedence", () => {
     const tmpDir = path.join(process.cwd(), "tmp-runtime-config-test");
     fs.mkdirSync(tmpDir, { recursive: true });
     try {
-      fs.writeFileSync(
-        path.join(tmpDir, ".env"),
-        "FROM_DOTENV=dotenv_value\nWOOFX3_OVERWRITE=from_dotenv"
-      );
+      fs.writeFileSync(path.join(tmpDir, ".env"), "FROM_DOTENV=dotenv_value\nWOOFX3_OVERWRITE=from_dotenv");
       fs.writeFileSync(
         path.join(tmpDir, ".woofx3.json"),
         JSON.stringify({ appName: "from-woofx3", port: 3000, overwrite: "from_woofx3" })

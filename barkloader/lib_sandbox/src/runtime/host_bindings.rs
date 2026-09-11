@@ -28,7 +28,12 @@ use std::collections::HashMap;
 /// the `module.storage.<module_id>.changed` event. Both steps, in this
 /// order, every time — that pairing is the actual behavior worth keeping
 /// in one place.
-pub fn storage_set(host: &HostContext, module_id: &str, key: &str, value: Value) -> Result<(), String> {
+pub fn storage_set(
+    host: &HostContext,
+    module_id: &str,
+    key: &str,
+    value: Value,
+) -> Result<(), String> {
     host.storage.set(key, value.clone())?;
     super::storage_event::publish_storage_changed(&host.nats, module_id, key, &value);
     Ok(())
@@ -44,7 +49,9 @@ pub fn resources_create(
     instance_id: &str,
     display_name: &str,
 ) -> Result<Value, String> {
-    let inst = host.resources.create(owning_module_name, kind, instance_id, display_name)?;
+    let inst = host
+        .resources
+        .create(owning_module_name, kind, instance_id, display_name)?;
     serde_json::to_value(&inst).map_err(|e| e.to_string())
 }
 
@@ -99,12 +106,18 @@ mod tests {
 
     #[test]
     fn format_log_value_returns_strings_verbatim() {
-        assert_eq!(format_log_value(&Value::String("hello".to_string())), "hello");
+        assert_eq!(
+            format_log_value(&Value::String("hello".to_string())),
+            "hello"
+        );
     }
 
     #[test]
     fn format_log_value_json_encodes_non_strings() {
-        assert_eq!(format_log_value(&serde_json::json!({"code": 42})), r#"{"code":42}"#);
+        assert_eq!(
+            format_log_value(&serde_json::json!({"code": 42})),
+            r#"{"code":42}"#
+        );
     }
 
     #[test]
@@ -131,7 +144,8 @@ mod tests {
         let host = noop_host_context();
         // module_id empty is the "not tied to a module" case
         // (`publish_storage_changed` no-ops on it) — must not error.
-        storage_set(&host, "", "key", serde_json::json!("value")).expect("storage_set should succeed");
+        storage_set(&host, "", "key", serde_json::json!("value"))
+            .expect("storage_set should succeed");
     }
 
     #[test]
@@ -140,7 +154,8 @@ mod tests {
         // no real resource backend) always errors — confirms the error
         // path passes through untouched rather than getting swallowed.
         let host = noop_host_context();
-        let err = resources_create(&host, "mymod", "counter", "c1", "Counter One").expect_err("noop resource client errors");
+        let err = resources_create(&host, "mymod", "counter", "c1", "Counter One")
+            .expect_err("noop resource client errors");
         assert_eq!(err, "resource client not configured");
     }
 
@@ -180,7 +195,8 @@ mod tests {
     fn resources_create_serializes_the_instance_on_success() {
         let mut host = noop_host_context();
         host.resources = std::sync::Arc::new(StaticResourceClient);
-        let v = resources_create(&host, "mymod", "counter", "c1", "Counter One").expect("static client succeeds");
+        let v = resources_create(&host, "mymod", "counter", "c1", "Counter One")
+            .expect("static client succeeds");
         assert_eq!(v["kind"], "counter");
         assert_eq!(v["instance_id"], "c1");
         assert_eq!(v["canonical_id"], "mymod:counter:c1");

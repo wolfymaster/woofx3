@@ -78,12 +78,10 @@ export function loadConfig(): ApiConfig {
   const rootDir = String(config.woofx3RootPath);
   const databaseProxyUrl = String(config.woofx3DatabaseProxyUrl ?? config.databaseProxyUrl ?? "");
   const barkloaderUrl = String(config.woofx3BarkloaderUrl ?? config.barkloaderUrl ?? "http://127.0.0.1:3005");
-  const streamwareUrl = String(
-    config.woofx3StreamwareUrl ?? config.streamwareUrl ?? "http://127.0.0.1:9101",
-  );
+  const streamwareUrl = String(config.woofx3StreamwareUrl ?? config.streamwareUrl ?? "http://127.0.0.1:9101");
 
   const overlayPublicUrl = String(
-    config.woofx3OverlayPublicUrl ?? config.overlayPublicUrl ?? `http://127.0.0.1:${port}`,
+    config.woofx3OverlayPublicUrl ?? config.overlayPublicUrl ?? `http://127.0.0.1:${port}`
   );
 
   if (!databaseProxyUrl) {

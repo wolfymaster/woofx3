@@ -10,26 +10,43 @@ use std::sync::{Arc, Mutex};
 fn build_registry() -> Arc<ModuleRegistry> {
     let registry = Arc::new(ModuleRegistry::new());
 
-    let test_dir = std::env::current_dir().unwrap().join("tests/modules/example");
+    let test_dir = std::env::current_dir()
+        .unwrap()
+        .join("tests/modules/example");
 
     let mut functions = HashMap::new();
 
     let echo_code = std::fs::read_to_string(test_dir.join("example.echo")).unwrap();
     functions.insert(
         "example".to_string(),
-        Function::new("example".to_string(), "example.echo".to_string(), echo_code, false),
+        Function::new(
+            "example".to_string(),
+            "example.echo".to_string(),
+            echo_code,
+            false,
+        ),
     );
 
     let lua_code = std::fs::read_to_string(test_dir.join("helloworld.lua")).unwrap();
     functions.insert(
         "helloworld".to_string(),
-        Function::new("helloworld".to_string(), "helloworld.lua".to_string(), lua_code, false),
+        Function::new(
+            "helloworld".to_string(),
+            "helloworld.lua".to_string(),
+            lua_code,
+            false,
+        ),
     );
 
     let js_code = std::fs::read_to_string(test_dir.join("sayhello.js")).unwrap();
     functions.insert(
         "sayhello".to_string(),
-        Function::new("sayhello".to_string(), "sayhello.js".to_string(), js_code, false),
+        Function::new(
+            "sayhello".to_string(),
+            "sayhello.js".to_string(),
+            js_code,
+            false,
+        ),
     );
 
     let module = RegisteredModule {
@@ -43,7 +60,9 @@ fn build_registry() -> Arc<ModuleRegistry> {
         state: ModuleState::Active,
     };
 
-    registry.register_module("example".to_string(), module).unwrap();
+    registry
+        .register_module("example".to_string(), module)
+        .unwrap();
     registry
 }
 
@@ -69,10 +88,7 @@ fn test_sandbox() {
         result["code"],
         serde_json::json!("// This file is intentionally empty")
     );
-    assert_eq!(
-        result["event"],
-        serde_json::json!({ "input": "test" })
-    );
+    assert_eq!(result["event"], serde_json::json!({ "input": "test" }));
 }
 
 #[test]
@@ -131,7 +147,12 @@ fn test_js_instruction_limit() {
     let mut functions = HashMap::new();
     functions.insert(
         "infinite".to_string(),
-        Function::new("infinite".to_string(), "infinite.js".to_string(), code.to_string(), false),
+        Function::new(
+            "infinite".to_string(),
+            "infinite.js".to_string(),
+            code.to_string(),
+            false,
+        ),
     );
 
     let module = RegisteredModule {
@@ -145,7 +166,9 @@ fn test_js_instruction_limit() {
         state: ModuleState::Active,
     };
 
-    registry.register_module("limits".to_string(), module).unwrap();
+    registry
+        .register_module("limits".to_string(), module)
+        .unwrap();
 
     let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
 
@@ -181,7 +204,12 @@ function isolation(ctx) {
     let mut functions = HashMap::new();
     functions.insert(
         "isolation".to_string(),
-        Function::new("isolation".to_string(), "isolation.js".to_string(), code.to_string(), false),
+        Function::new(
+            "isolation".to_string(),
+            "isolation.js".to_string(),
+            code.to_string(),
+            false,
+        ),
     );
 
     let module = RegisteredModule {
@@ -195,7 +223,9 @@ function isolation(ctx) {
         state: ModuleState::Active,
     };
 
-    registry.register_module("example".to_string(), module).unwrap();
+    registry
+        .register_module("example".to_string(), module)
+        .unwrap();
 
     let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
 
@@ -240,7 +270,12 @@ fn test_ctx_event_data() {
     let mut functions = HashMap::new();
     functions.insert(
         "ctx_test".to_string(),
-        Function::new("ctx_test".to_string(), "ctx_test.js".to_string(), code.to_string(), false),
+        Function::new(
+            "ctx_test".to_string(),
+            "ctx_test.js".to_string(),
+            code.to_string(),
+            false,
+        ),
     );
 
     let module = RegisteredModule {
@@ -254,7 +289,9 @@ fn test_ctx_event_data() {
         state: ModuleState::Active,
     };
 
-    registry.register_module("example".to_string(), module).unwrap();
+    registry
+        .register_module("example".to_string(), module)
+        .unwrap();
 
     let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
 
@@ -294,7 +331,12 @@ fn test_ctx_chat_send_message_routes_to_host() {
     let mut functions = HashMap::new();
     functions.insert(
         "send".to_string(),
-        Function::new("send".to_string(), "send.js".to_string(), code.to_string(), false),
+        Function::new(
+            "send".to_string(),
+            "send.js".to_string(),
+            code.to_string(),
+            false,
+        ),
     );
     let module = RegisteredModule {
         metadata: ModuleMetadata {
@@ -306,13 +348,14 @@ fn test_ctx_chat_send_message_routes_to_host() {
         functions,
         state: ModuleState::Active,
     };
-    registry.register_module("chat_test".to_string(), module).unwrap();
+    registry
+        .register_module("chat_test".to_string(), module)
+        .unwrap();
 
     let capturing = Arc::new(CapturingChatSender::default());
     let mut host_ctx = noop_host_context();
-    host_ctx.extensions = Arc::new(
-        ExtensionRegistry::new().with(Arc::new(ChatExtension::new(capturing.clone()))),
-    );
+    host_ctx.extensions =
+        Arc::new(ExtensionRegistry::new().with(Arc::new(ChatExtension::new(capturing.clone()))));
 
     let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
     let result = sandbox
@@ -344,7 +387,12 @@ impl NatsPublisher for CapturingNats {
     }
 }
 
-fn extension_test_module(name: &str, func_name: &str, code: &str, ext: &str) -> Arc<ModuleRegistry> {
+fn extension_test_module(
+    name: &str,
+    func_name: &str,
+    code: &str,
+    ext: &str,
+) -> Arc<ModuleRegistry> {
     let registry = Arc::new(ModuleRegistry::new());
     let mut functions = HashMap::new();
     functions.insert(
@@ -381,9 +429,8 @@ fn test_quickjs_twitch_extension_publishes_canonical_command() {
     let nats = Arc::new(CapturingNats::default());
     let mut host_ctx = noop_host_context();
     host_ctx.nats = nats.clone();
-    host_ctx.extensions = Arc::new(
-        ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(nats.clone()))),
-    );
+    host_ctx.extensions =
+        Arc::new(ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(nats.clone()))));
 
     let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
     sandbox
@@ -420,9 +467,8 @@ end
     let nats = Arc::new(CapturingNats::default());
     let mut host_ctx = noop_host_context();
     host_ctx.nats = nats.clone();
-    host_ctx.extensions = Arc::new(
-        ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(nats.clone()))),
-    );
+    host_ctx.extensions =
+        Arc::new(ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(nats.clone()))));
 
     let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
     sandbox
@@ -456,9 +502,8 @@ fn test_quickjs_zero_arg_extension_function() {
 
     let nats = Arc::new(CapturingNats::default());
     let mut host_ctx = noop_host_context();
-    host_ctx.extensions = Arc::new(
-        ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(nats.clone()))),
-    );
+    host_ctx.extensions =
+        Arc::new(ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(nats.clone()))));
 
     let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
     sandbox
@@ -487,8 +532,7 @@ fn test_quickjs_nested_namespace_platform_alerts() {
     let nats = Arc::new(CapturingNats::default());
     let mut host_ctx = noop_host_context();
     host_ctx.extensions = Arc::new(
-        ExtensionRegistry::new()
-            .with(Arc::new(PlatformAlertsExtension::new(nats.clone()))),
+        ExtensionRegistry::new().with(Arc::new(PlatformAlertsExtension::new(nats.clone()))),
     );
 
     let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();

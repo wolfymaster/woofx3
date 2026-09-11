@@ -51,7 +51,9 @@ pub fn publish_storage_changed(
 }
 
 fn current_iso8601() -> String {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     let secs = now.as_secs() as i64;
     let nanos = now.subsec_nanos();
     format_iso8601(secs, nanos)

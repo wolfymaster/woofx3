@@ -1,15 +1,15 @@
 export default class Queue<T> {
-    queue: T[];
+  queue: T[];
 
-    constructor() {
-        this.queue = new Array(10);
-    }
+  constructor() {
+    this.queue = new Array(10);
+  }
 
-    get(idx: number) {
-        return this.queue[idx];
-    }
+  get(idx: number) {
+    return this.queue[idx];
+  }
 
-    insert(idx: number, item: T) {
-        this.queue[idx] = item;
-    }
+  insert(idx: number, item: T) {
+    this.queue[idx] = item;
+  }
 }

@@ -1,4 +1,4 @@
-import type { BaseEvent } from '../BaseEvent';
-import type { ChatMessage } from './events';
+import type { BaseEvent } from "../BaseEvent";
+import type { ChatMessage } from "./events";
 
-export type ChatMessageMessage = BaseEvent<ChatMessage>
+export type ChatMessageMessage = BaseEvent<ChatMessage>;

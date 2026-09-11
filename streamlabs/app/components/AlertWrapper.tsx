@@ -20,69 +20,70 @@ const schema = i.schema({
 });
 
 function calculateArraySize<T>(item: T | T[]): number {
-    if(item === undefined) {
-        return 0;
-    }
-     return Array.isArray(item) ? item.length : 1;
+  if (item === undefined) {
+    return 0;
+  }
+  return Array.isArray(item) ? item.length : 1;
 }
 
 function findIndexOrDefault<T>(arr: T | T[], index: number, defaultValue: T) {
-    if(Array.isArray(arr)){
-        return arr[index];
-    }
+  if (Array.isArray(arr)) {
+    return arr[index];
+  }
 
-    if(index === 0) {
-        return arr;
-    }
+  if (index === 0) {
+    return arr;
+  }
 
-    return defaultValue;
+  return defaultValue;
 }
 
 export default function AlertWrapper({ message, onDone }: AlertWrapperProps) {
+  // check props to see if we should render more than one alert at a time
+  let totals = [
+    calculateArraySize(message?.mediaUrl),
+    calculateArraySize(message?.audioUrl),
+    calculateArraySize(message?.text),
+  ];
+  let max = Math.max(...totals);
 
-    // check props to see if we should render more than one alert at a time
-    let totals = [
-        calculateArraySize(message?.mediaUrl),
-        calculateArraySize(message?.audioUrl),
-        calculateArraySize(message?.text),
-    ];
-    let max = Math.max(...totals);
+  if (!message) {
+    return <></>;
+  }
 
-    if(!message) {
-        return <></>
-    }
-
-    if(max > 1) {
-        let components = [];
-        for(let i = 0; i < max; i++) {         
-            components.push(<AlertMessage
-                key={i}
-                id={message.id}
-                onDone={onDone}
-                audioUrl={findIndexOrDefault(message.audioUrl, i, undefined)}
-                mediaUrl={findIndexOrDefault(message.mediaUrl, i, undefined)}
-                textPattern={findIndexOrDefault(message.text, i, undefined)}
-                duration={message?.duration}
-                options={findIndexOrDefault(message.options, i, undefined)}
-            />)
-        }
-        return components;
-    }
-
-    return (
+  if (max > 1) {
+    let components = [];
+    for (let i = 0; i < max; i++) {
+      components.push(
         <AlertMessage
-            id={message.id}
-            onDone={onDone}
-            audioUrl={message.audioUrl}
-            mediaUrl={message.mediaUrl}
-            textPattern={message.text}
-            duration={message.duration}
-            options={message.options}
+          key={i}
+          id={message.id}
+          onDone={onDone}
+          audioUrl={findIndexOrDefault(message.audioUrl, i, undefined)}
+          mediaUrl={findIndexOrDefault(message.mediaUrl, i, undefined)}
+          textPattern={findIndexOrDefault(message.text, i, undefined)}
+          duration={message?.duration}
+          options={findIndexOrDefault(message.options, i, undefined)}
         />
-    )
+      );
+    }
+    return components;
+  }
+
+  return (
+    <AlertMessage
+      id={message.id}
+      onDone={onDone}
+      audioUrl={message.audioUrl}
+      mediaUrl={message.mediaUrl}
+      textPattern={message.text}
+      duration={message.duration}
+      options={message.options}
+    />
+  );
 }
 
-type AlertWrapperProps = { 
-    message: Message | null, 
-    onDone: OnDoneCallback 
+type AlertWrapperProps = {
+  message: Message | null;
+  onDone: OnDoneCallback;
 };

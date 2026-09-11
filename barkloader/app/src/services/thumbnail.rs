@@ -19,8 +19,8 @@ use anyhow::{Context, Result, anyhow};
 use image::ImageFormat;
 use image::imageops::FilterType;
 use lib_repository::{CreateFileRequest, Repository, RepositoryImpl};
-use tracing::{info, warn};
 use rand::Rng;
+use tracing::{info, warn};
 
 /// Longest edge of a generated thumbnail, in pixels. Aspect ratio is
 /// always preserved, so this bounds area without cropping.
@@ -99,7 +99,10 @@ pub fn thumbnail_key_for(source_key: &str) -> Result<String> {
         .rsplit_once('/')
         .ok_or_else(|| anyhow!("resource key {} has no directory component", source_key))?;
     if directory.is_empty() {
-        return Err(anyhow!("resource key {} has an empty directory", source_key));
+        return Err(anyhow!(
+            "resource key {} has an empty directory",
+            source_key
+        ));
     }
     Ok(format!("{}/{}", directory, THUMBNAIL_FILE_NAME))
 }
@@ -175,11 +178,12 @@ pub fn encode_image_thumbnail(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
     // `resize` scales to fit the box in both directions, which enlarges a
     // source smaller than the box. Only downscale; a source already inside
     // the box is re-encoded at its original size.
-    let thumbnail = if decoded.width() <= THUMBNAIL_MAX_EDGE && decoded.height() <= THUMBNAIL_MAX_EDGE {
-        decoded
-    } else {
-        decoded.resize(THUMBNAIL_MAX_EDGE, THUMBNAIL_MAX_EDGE, FilterType::Lanczos3)
-    };
+    let thumbnail =
+        if decoded.width() <= THUMBNAIL_MAX_EDGE && decoded.height() <= THUMBNAIL_MAX_EDGE {
+            decoded
+        } else {
+            decoded.resize(THUMBNAIL_MAX_EDGE, THUMBNAIL_MAX_EDGE, FilterType::Lanczos3)
+        };
     let width = thumbnail.width();
     let height = thumbnail.height();
 
@@ -297,10 +301,9 @@ mod tests {
     use image::{ImageBuffer, Rgba};
 
     fn png_bytes(width: u32, height: u32) -> Vec<u8> {
-        let buffer: ImageBuffer<Rgba<u8>, Vec<u8>> =
-            ImageBuffer::from_fn(width, height, |x, y| {
-                Rgba([(x % 256) as u8, (y % 256) as u8, 128, 255])
-            });
+        let buffer: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_fn(width, height, |x, y| {
+            Rgba([(x % 256) as u8, (y % 256) as u8, 128, 255])
+        });
         let mut out = std::io::Cursor::new(Vec::new());
         image::DynamicImage::ImageRgba8(buffer)
             .write_to(&mut out, ImageFormat::Png)
@@ -310,9 +313,18 @@ mod tests {
 
     #[test]
     fn classify_prefers_content_type_then_extension() {
-        assert_eq!(classify(Some("image/png"), "user/a/b/x.bin"), MediaKind::Image);
-        assert_eq!(classify(Some("video/mp4"), "user/a/b/x.bin"), MediaKind::Video);
-        assert_eq!(classify(Some("audio/mpeg"), "user/a/b/x.bin"), MediaKind::Audio);
+        assert_eq!(
+            classify(Some("image/png"), "user/a/b/x.bin"),
+            MediaKind::Image
+        );
+        assert_eq!(
+            classify(Some("video/mp4"), "user/a/b/x.bin"),
+            MediaKind::Video
+        );
+        assert_eq!(
+            classify(Some("audio/mpeg"), "user/a/b/x.bin"),
+            MediaKind::Audio
+        );
         // No content type: fall back to the extension.
         assert_eq!(classify(None, "user/a/b/x.PNG"), MediaKind::Image);
         assert_eq!(classify(None, "user/a/b/x.mov"), MediaKind::Video);
@@ -341,8 +353,15 @@ mod tests {
         let (png, width, height) = encode_image_thumbnail(&source).expect("thumbnail");
 
         assert_eq!(width, THUMBNAIL_MAX_EDGE);
-        assert_eq!(height, THUMBNAIL_MAX_EDGE / 2, "aspect ratio must be preserved");
-        assert!(png.starts_with(&[0x89, b'P', b'N', b'G']), "output must be PNG");
+        assert_eq!(
+            height,
+            THUMBNAIL_MAX_EDGE / 2,
+            "aspect ratio must be preserved"
+        );
+        assert!(
+            png.starts_with(&[0x89, b'P', b'N', b'G']),
+            "output must be PNG"
+        );
     }
 
     #[test]

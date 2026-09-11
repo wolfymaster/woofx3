@@ -105,9 +105,7 @@ describe("executeCommand permission enforcement", () => {
       }),
     });
 
-    await expect(api.executeCommand("vanish", "randomchatter")).rejects.toThrow(
-      /do not have permission/i
-    );
+    await expect(api.executeCommand("vanish", "randomchatter")).rejects.toThrow(/do not have permission/i);
     expect(nats.published).not.toContain("command.execute");
   });
 
@@ -138,24 +136,24 @@ describe("group routes", () => {
   it("marks built-in groups on the snapshot so a UI can disable edit affordances", async () => {
     const { api } = makeApi({
       getDefaultApplication: mock(async () => APPLICATION),
-      listGroups: mock(async () => ([
-          {
-            id: "g-everyone",
-            applicationId: APPLICATION.id,
-            name: "everyone",
-            description: "",
-            createdAt: undefined,
-            isBuiltIn: true,
-          },
-          {
-            id: "g-regulars",
-            applicationId: APPLICATION.id,
-            name: "regulars",
-            description: "",
-            createdAt: undefined,
-            isBuiltIn: false,
-          },
-        ])),
+      listGroups: mock(async () => [
+        {
+          id: "g-everyone",
+          applicationId: APPLICATION.id,
+          name: "everyone",
+          description: "",
+          createdAt: undefined,
+          isBuiltIn: true,
+        },
+        {
+          id: "g-regulars",
+          applicationId: APPLICATION.id,
+          name: "regulars",
+          description: "",
+          createdAt: undefined,
+          isBuiltIn: false,
+        },
+      ]),
     });
 
     const groups = await api.listGroups();
@@ -177,16 +175,16 @@ describe("group routes", () => {
   });
 
   it("lists the groups a user belongs to", async () => {
-    const listUserGroupsForUser = mock(async (_req: any) => ([
-        {
-          id: "g-mods",
-          applicationId: APPLICATION.id,
-          name: "moderator",
-          description: "",
-          createdAt: undefined,
-          isBuiltIn: true,
-        },
-      ]));
+    const listUserGroupsForUser = mock(async (_req: any) => [
+      {
+        id: "g-mods",
+        applicationId: APPLICATION.id,
+        name: "moderator",
+        description: "",
+        createdAt: undefined,
+        isBuiltIn: true,
+      },
+    ]);
     const { api } = makeApi({
       getDefaultApplication: mock(async () => APPLICATION),
       listUserGroupsForUser,

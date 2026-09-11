@@ -11,7 +11,7 @@ export function commandNameToSubjectSegment(name: string): string {
   }
   if (/[.*>\s]/.test(stripped)) {
     throw new Error(
-      `invalid command name ${JSON.stringify(name)}: NATS subject segments may not contain "." "*" ">" or whitespace`,
+      `invalid command name ${JSON.stringify(name)}: NATS subject segments may not contain "." "*" ">" or whitespace`
     );
   }
   return stripped.toLowerCase();

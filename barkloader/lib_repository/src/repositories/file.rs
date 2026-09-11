@@ -5,12 +5,16 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
 
-async fn collect_files_recursive(dir: PathBuf, base: PathBuf, results: &mut Vec<String>) -> Result<()> {
+async fn collect_files_recursive(
+    dir: PathBuf,
+    base: PathBuf,
+    results: &mut Vec<String>,
+) -> Result<()> {
     let mut stack: Vec<PathBuf> = vec![dir];
     while let Some(current) = stack.pop() {
-        let mut read_dir = fs::read_dir(&current)
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to read directory {}: {}", current.display(), e))?;
+        let mut read_dir = fs::read_dir(&current).await.map_err(|e| {
+            anyhow::anyhow!("failed to read directory {}: {}", current.display(), e)
+        })?;
         while let Some(entry) = read_dir.next_entry().await? {
             let path = entry.path();
             let metadata = entry.metadata().await?;
@@ -70,9 +74,9 @@ impl Repository for FileRepository {
             return Ok(());
         }
         if path.is_dir() {
-            fs::remove_dir_all(&path)
-                .await
-                .map_err(|e| anyhow::anyhow!("failed to delete directory {}: {}", path.display(), e))?;
+            fs::remove_dir_all(&path).await.map_err(|e| {
+                anyhow::anyhow!("failed to delete directory {}: {}", path.display(), e)
+            })?;
         } else {
             fs::remove_file(&path)
                 .await

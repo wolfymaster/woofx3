@@ -55,7 +55,9 @@ impl StorageClient for HttpStorageClient {
         let key = key.to_string();
         let value_str = serde_json::to_string(&value).map_err(|e| e.to_string())?;
         Handle::current()
-            .block_on(async move { db_proxy::storage_set(&url, &key, &value_str, &application_id).await })
+            .block_on(async move {
+                db_proxy::storage_set(&url, &key, &value_str, &application_id).await
+            })
             .map_err(|e| e.to_string())
     }
 }

@@ -1,4 +1,4 @@
-use actix_web::{error, http::StatusCode, HttpResponse};
+use actix_web::{HttpResponse, error, http::StatusCode};
 use serde::Serialize;
 use std::fmt;
 
@@ -42,7 +42,7 @@ impl error::ResponseError for AppError {
             Self::InvalidFile(_) => "invalid_file",
             Self::StorageError(_) => "storage_error",
         };
-        
+
         HttpResponse::build(status).json(ErrorResponse {
             code: error_code.to_string(),
             message: self.to_string(),

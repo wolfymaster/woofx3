@@ -72,7 +72,10 @@ fn sanitize_asset_key(raw: &str) -> Option<String> {
         }
     }
     let key = segments.join("/");
-    if !ALLOWED_TOP_LEVEL_PREFIXES.iter().any(|p| key.starts_with(p)) {
+    if !ALLOWED_TOP_LEVEL_PREFIXES
+        .iter()
+        .any(|p| key.starts_with(p))
+    {
         return None;
     }
     Some(key)
@@ -283,7 +286,12 @@ mod tests {
     async fn get_round_trips_file_from_repository() {
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = file_backed_repo(dir.path()).await;
-        seed(&repo, "modules/m1/widgets/w1/index.html", b"<!doctype html>").await;
+        seed(
+            &repo,
+            "modules/m1/widgets/w1/index.html",
+            b"<!doctype html>",
+        )
+        .await;
 
         let app = actix_test::init_service(
             App::new()
@@ -357,8 +365,14 @@ mod tests {
         .await;
 
         for (uri, expected) in [
-            ("/assets/user/app-1/res-1/photo.png", &b"\x89PNG-original"[..]),
-            ("/assets/user/app-1/res-1/thumbnail.png", &b"\x89PNG-thumb"[..]),
+            (
+                "/assets/user/app-1/res-1/photo.png",
+                &b"\x89PNG-original"[..],
+            ),
+            (
+                "/assets/user/app-1/res-1/thumbnail.png",
+                &b"\x89PNG-thumb"[..],
+            ),
         ] {
             let req = actix_test::TestRequest::get().uri(uri).to_request();
             let resp = actix_test::call_service(&app, req).await;

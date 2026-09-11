@@ -1,8 +1,8 @@
 use actix_ws::{AggregatedMessage, AggregatedMessageStream};
 use futures_util::StreamExt as _;
 use lib_sandbox::SandboxFactory;
-use tracing::{error, info};
 use serde::{Deserialize, Serialize};
+use tracing::{error, info};
 #[derive(Debug, Serialize, Deserialize)]
 struct WsMessage {
     #[serde(rename = "type")]
@@ -93,7 +93,10 @@ impl WebSocketSession {
         data: serde_json::Value,
         request_id: Option<String>,
     ) {
-        let event = data.get("event").cloned().unwrap_or(serde_json::Value::Null);
+        let event = data
+            .get("event")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         let params = data
             .get("params")
             .cloned()

@@ -113,13 +113,9 @@ describe("installWidgetHostShim — boot + handshake", () => {
   });
 
   it("getResourceUrl joins the boot payload's resourceBaseUrl and a path, tolerating extra/missing slashes", () => {
-    const h = makeHarness(
-      makeBoot({ resourceBaseUrl: "https://cdn.example.test/modules/mod-1/abc123/widgets/w1/" })
-    );
+    const h = makeHarness(makeBoot({ resourceBaseUrl: "https://cdn.example.test/modules/mod-1/abc123/widgets/w1/" }));
     const host = install(h)!;
-    expect(host.getResourceUrl("asset.png")).toBe(
-      "https://cdn.example.test/modules/mod-1/abc123/widgets/w1/asset.png"
-    );
+    expect(host.getResourceUrl("asset.png")).toBe("https://cdn.example.test/modules/mod-1/abc123/widgets/w1/asset.png");
     expect(host.getResourceUrl("/asset.png")).toBe(
       "https://cdn.example.test/modules/mod-1/abc123/widgets/w1/asset.png"
     );
@@ -177,9 +173,7 @@ describe("installWidgetHostShim — boot + handshake", () => {
     const h = makeHarness(makeBoot());
     const host = install(h)!;
     host.reportStatus("count", 1);
-    h.deliver(
-      fromParent({ type: "init.reject", reason: "unsupported version", supportedVersions: [2] })
-    );
+    h.deliver(fromParent({ type: "init.reject", reason: "unsupported version", supportedVersions: [2] }));
     expect(errorSpy).toHaveBeenCalledTimes(1);
     await sleep(HELLO_RETRY_INTERVAL_MS + 80);
     const helloCount = h.sent("hello").length;
@@ -201,9 +195,7 @@ describe("installWidgetHostShim — queueing", () => {
     expect(h.parent.messages.length).toBe(1);
 
     h.deliver(initMsg());
-    const types = h.parent.messages
-      .map((m) => (m.data as Record<string, unknown>).type)
-      .filter((t) => t !== "hello");
+    const types = h.parent.messages.map((m) => (m.data as Record<string, unknown>).type).filter((t) => t !== "hello");
     expect(types).toEqual(["status.report", "storage.get", "storage.subscribe"]);
   });
 });
@@ -338,9 +330,12 @@ describe("installWidgetHostShim — events", () => {
     h.deliver(initMsg());
 
     let handlerEvent: { complete(): void } | undefined;
-    host.onEvent((event) => {
-      handlerEvent = event;
-    }, { autoComplete: false });
+    host.onEvent(
+      (event) => {
+        handlerEvent = event;
+      },
+      { autoComplete: false }
+    );
     const subId = h.sent("events.subscribe")[0]!.subId as string;
     h.deliver(fromParent({ type: "event.deliver", subId, event: makeEvent() }));
 

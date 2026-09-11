@@ -393,9 +393,7 @@ export class DbClient {
     return status.code === "OK";
   }
 
-  async executeWorkflow(
-    req: workflow.ExecuteWorkflowRequest
-  ): Promise<{ executionId: string; async: boolean }> {
+  async executeWorkflow(req: workflow.ExecuteWorkflowRequest): Promise<{ executionId: string; async: boolean }> {
     const response = await workflow.ExecuteWorkflow(req, this.config);
     unwrapVoid("executeWorkflow", response);
     return { executionId: response.executionId ?? "", async: response.async ?? false };
@@ -424,9 +422,7 @@ export class DbClient {
    * a "recent runs" strip, where an empty strip is a better answer than an
    * error page.
    */
-  async tryListWorkflowExecutions(
-    req: workflow.ListWorkflowExecutionsRequest
-  ): Promise<workflow.WorkflowExecution[]> {
+  async tryListWorkflowExecutions(req: workflow.ListWorkflowExecutionsRequest): Promise<workflow.WorkflowExecution[]> {
     const response = await workflow.ListWorkflowExecutions(req, this.config);
     if (response.status?.code !== "OK") {
       return [];
@@ -466,21 +462,15 @@ export class DbClient {
     return alert.DeleteAlert(req, this.config);
   }
 
-  async upsertWidgetStatus(
-    req: widget_status.UpsertWidgetStatusRequest
-  ): Promise<widget_status.WidgetStatusResponse> {
+  async upsertWidgetStatus(req: widget_status.UpsertWidgetStatusRequest): Promise<widget_status.WidgetStatusResponse> {
     return widget_status.UpsertWidgetStatus(req, this.config);
   }
 
-  async getWidgetStatus(
-    req: widget_status.GetWidgetStatusRequest
-  ): Promise<widget_status.WidgetStatusResponse> {
+  async getWidgetStatus(req: widget_status.GetWidgetStatusRequest): Promise<widget_status.WidgetStatusResponse> {
     return widget_status.GetWidgetStatus(req, this.config);
   }
 
-async listWidgetStatus(
-    req: widget_status.ListWidgetStatusRequest
-  ): Promise<widget_status.ListWidgetStatusResponse> {
+  async listWidgetStatus(req: widget_status.ListWidgetStatusRequest): Promise<widget_status.ListWidgetStatusResponse> {
     return widget_status.ListWidgetStatus(req, this.config);
   }
 
@@ -488,9 +478,7 @@ async listWidgetStatus(
     return module.ListWidgets(req, this.config);
   }
 
-  async deleteWidgetStatus(
-    req: widget_status.DeleteWidgetStatusRequest
-  ): Promise<common.ResponseStatus> {
+  async deleteWidgetStatus(req: widget_status.DeleteWidgetStatusRequest): Promise<common.ResponseStatus> {
     return widget_status.DeleteWidgetStatus(req, this.config);
   }
 
@@ -684,21 +672,15 @@ async listWidgetStatus(
     return clientPb.DeleteClient({ id }, this.config);
   }
 
-  async mintOverlayToken(
-    req: overlay_token.MintOverlayTokenRequest
-  ): Promise<overlay_token.OverlayTokenResponse> {
+  async mintOverlayToken(req: overlay_token.MintOverlayTokenRequest): Promise<overlay_token.OverlayTokenResponse> {
     return overlay_token.MintOverlayToken(req, this.config);
   }
 
-  async revokeOverlayToken(
-    req: overlay_token.RevokeOverlayTokenRequest
-  ): Promise<overlay_token.OverlayTokenResponse> {
+  async revokeOverlayToken(req: overlay_token.RevokeOverlayTokenRequest): Promise<overlay_token.OverlayTokenResponse> {
     return overlay_token.RevokeOverlayToken(req, this.config);
   }
 
-  async rotateOverlayToken(
-    req: overlay_token.RotateOverlayTokenRequest
-  ): Promise<overlay_token.OverlayTokenResponse> {
+  async rotateOverlayToken(req: overlay_token.RotateOverlayTokenRequest): Promise<overlay_token.OverlayTokenResponse> {
     return overlay_token.RotateOverlayToken(req, this.config);
   }
 
@@ -720,9 +702,7 @@ async listWidgetStatus(
     return module_setting.ListModuleSettings(req, this.config);
   }
 
-  async setModuleSetting(
-    req: module_setting.SetModuleSettingRequest
-  ): Promise<module_setting.ModuleSettingRecord> {
+  async setModuleSetting(req: module_setting.SetModuleSettingRequest): Promise<module_setting.ModuleSettingRecord> {
     return module_setting.SetModuleSetting(req, this.config);
   }
 

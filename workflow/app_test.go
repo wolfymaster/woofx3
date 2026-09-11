@@ -15,29 +15,29 @@ func TestValidateCloudEvent(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "valid event",
-			data: []byte(`{"id":"123","type":"test","source":"test","data":{}}`),
-			want: "test",
+			name:    "valid event",
+			data:    []byte(`{"id":"123","type":"test","source":"test","data":{}}`),
+			want:    "test",
 			wantErr: false,
 		},
 		{
-			name: "missing id",
-			data: []byte(`{"type":"test","source":"test","data":{}}`),
+			name:    "missing id",
+			data:    []byte(`{"type":"test","source":"test","data":{}}`),
 			wantErr: true,
 		},
 		{
-			name: "missing type",
-			data: []byte(`{"id":"123","source":"test","data":{}}`),
+			name:    "missing type",
+			data:    []byte(`{"id":"123","source":"test","data":{}}`),
 			wantErr: true,
 		},
 		{
-			name: "missing source",
-			data: []byte(`{"id":"123","type":"test","data":{}}`),
+			name:    "missing source",
+			data:    []byte(`{"id":"123","type":"test","data":{}}`),
 			wantErr: true,
 		},
 		{
-			name: "invalid JSON",
-			data: []byte(`{"id":"123","type":"test","source":"test","data":{`),
+			name:    "invalid JSON",
+			data:    []byte(`{"id":"123","type":"test","source":"test","data":{`),
 			wantErr: true,
 		},
 	}

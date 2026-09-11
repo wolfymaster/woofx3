@@ -129,7 +129,13 @@ export class EventQueueManager {
   private readonly queues = new Map<string, InstanceQueue>();
   private readonly subToInstance = new Map<string, string>();
 
-  register(subId: string, instanceId: string, config: EventQueueConfig | undefined, deliver: DeliverFn, onTimeout: TimeoutFn): void {
+  register(
+    subId: string,
+    instanceId: string,
+    config: EventQueueConfig | undefined,
+    deliver: DeliverFn,
+    onTimeout: TimeoutFn
+  ): void {
     this.subToInstance.set(subId, instanceId);
     this.queues.set(instanceId, new InstanceQueue(config ?? {}, deliver, onTimeout));
   }

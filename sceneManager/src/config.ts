@@ -125,7 +125,11 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   const rootDir = String(c.woofx3RootPath ?? c.rootPath ?? process.cwd());
 
   const messagebusUrl = String(c.woofx3MessagebusUrl ?? c.messagebusUrl ?? "ws://localhost:4225");
-  const jwt = c.woofx3MessagebusJwt ? String(c.woofx3MessagebusJwt) : c.messagebusJwt ? String(c.messagebusJwt) : undefined;
+  const jwt = c.woofx3MessagebusJwt
+    ? String(c.woofx3MessagebusJwt)
+    : c.messagebusJwt
+      ? String(c.messagebusJwt)
+      : undefined;
   const nkeySeed = c.woofx3MessagebusNkey
     ? String(c.woofx3MessagebusNkey)
     : c.messagebusNkey
@@ -134,7 +138,11 @@ export function loadConfig(): SceneManagerRuntimeConfig {
 
   const obsHost = String(c.woofx3ObsHost ?? c.obsHost ?? "127.0.0.1");
   const obsPort = String(c.woofx3ObsPort ?? c.obsPort ?? "4455");
-  const obsToken = c.woofx3ObsRpcToken ? String(c.woofx3ObsRpcToken) : c.obsRpcToken ? String(c.obsRpcToken) : undefined;
+  const obsToken = c.woofx3ObsRpcToken
+    ? String(c.woofx3ObsRpcToken)
+    : c.obsRpcToken
+      ? String(c.obsRpcToken)
+      : undefined;
 
   const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? c.databaseProxyUrl ?? "");
   const barkloaderUrl = String(c.woofx3BarkloaderUrl ?? c.barkloaderUrl ?? "http://127.0.0.1:9653");

@@ -23,7 +23,7 @@ func (g *DependencyGraph) AddService(name string, svc any) error {
 	}
 
 	g.services[name] = svc
-	
+
 	// Get dependencies using type assertion
 	if typedSvc, ok := svc.(interface{ Dependencies() []string }); ok {
 		g.adjList[name] = typedSvc.Dependencies()

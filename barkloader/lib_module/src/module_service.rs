@@ -1,12 +1,12 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use lib_repository::Repository;
 
 use super::db_proxy_client::HttpDbProxyClient;
-use super::module_file::ModuleFile;
 use super::manifest_validate::InstallProvenance;
+use super::module_file::ModuleFile;
+use super::module_file::ModuleFileKind;
 use super::module_install::run_install_with_provenance;
 use super::module_manifest::ModuleManifest;
-use super::module_file::ModuleFileKind;
 use super::module_plan::ModulePlan;
 
 pub struct ModuleService<R> {
@@ -41,11 +41,8 @@ where
         fn norm(p: &str) -> String {
             p.replace('\\', "/").to_lowercase()
         }
-        let manifests: Vec<&ModuleFile> = self
-            .files
-            .iter()
-            .filter(|f| f.kind.is_manifest())
-            .collect();
+        let manifests: Vec<&ModuleFile> =
+            self.files.iter().filter(|f| f.kind.is_manifest()).collect();
         if manifests.is_empty() {
             return Err(anyhow!("No manifest found"));
         }
@@ -94,13 +91,9 @@ where
         Ok(ModulePlan::new(self.stored_manifest.clone()))
     }
 
-    pub fn add_file(
-        &mut self,
-        kind: ModuleFileKind,
-        name: impl Into<String>,
-        contents: Vec<u8>,
-    ) {
-        self.files.push(ModuleFile::new(name.into(), kind, contents));
+    pub fn add_file(&mut self, kind: ModuleFileKind, name: impl Into<String>, contents: Vec<u8>) {
+        self.files
+            .push(ModuleFile::new(name.into(), kind, contents));
     }
 
     /// The provenance-free entry point, because every caller but the
@@ -153,7 +146,9 @@ where
             &self.files,
             &self.repository,
             archive_key,
-            client.as_ref().map(|c| c as &dyn super::db_proxy_client::ModuleDbProxy),
+            client
+                .as_ref()
+                .map(|c| c as &dyn super::db_proxy_client::ModuleDbProxy),
             application_id,
             cleanup_old,
             composite_module_key,
@@ -188,10 +183,16 @@ mod tests {
 
     fn service_with(files: &[(&str, &[u8])]) -> ModuleService<FileRepository> {
         let dir = tempfile::tempdir().expect("tempdir");
-        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
         let mut service = ModuleService::new(ModuleServiceConfig { repository: repo });
         for (name, contents) in files {
-            service.add_file(ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON), *name, contents.to_vec());
+            service.add_file(
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                *name,
+                contents.to_vec(),
+            );
         }
         service
     }
@@ -202,19 +203,30 @@ mod tests {
         // is a legacy/unused convention that should still work but lose the
         // tie when both are present in one archive.
         let mut service = service_with(&[
-            ("module.json", br#"{"id":"legacy_id","name":"Legacy","version":"0.1.0"}"#),
-            ("manifest.json", br#"{"id":"real_id","name":"Real","version":"1.0.0"}"#),
+            (
+                "module.json",
+                br#"{"id":"legacy_id","name":"Legacy","version":"0.1.0"}"#,
+            ),
+            (
+                "manifest.json",
+                br#"{"id":"real_id","name":"Real","version":"1.0.0"}"#,
+            ),
         ]);
-        service.create_plan().expect("create_plan should pick a manifest");
+        service
+            .create_plan()
+            .expect("create_plan should pick a manifest");
         assert_eq!(service.module_id(), Some("real_id"));
     }
 
     #[test]
     fn create_plan_still_accepts_module_json_alone() {
-        let mut service = service_with(&[
-            ("module.json", br#"{"id":"legacy_id","name":"Legacy","version":"0.1.0"}"#),
-        ]);
-        service.create_plan().expect("create_plan should still pick module.json when it's the only manifest");
+        let mut service = service_with(&[(
+            "module.json",
+            br#"{"id":"legacy_id","name":"Legacy","version":"0.1.0"}"#,
+        )]);
+        service
+            .create_plan()
+            .expect("create_plan should still pick module.json when it's the only manifest");
         assert_eq!(service.module_id(), Some("legacy_id"));
     }
 }

@@ -739,9 +739,7 @@ export interface Woofx3EngineApi {
    * credentials, wrong endpoint, missing bucket). `message` carries the
    * reason.
    */
-  setStorageConfig(
-    config: StorageConfig,
-  ): Promise<{ success: boolean; reloaded?: boolean; message?: string }>;
+  setStorageConfig(config: StorageConfig): Promise<{ success: boolean; reloaded?: boolean; message?: string }>;
 
   // Client Management
   deleteClient(clientId: string): Promise<{ success: boolean; message: string }>;
@@ -881,10 +879,7 @@ export interface Woofx3EngineApi {
    * `moduleName` is a fallback when the composite key does not match the
    * engine row (e.g. reinstall hash drift).
    */
-  listResourceInstancesForModule(
-    moduleKey: string,
-    moduleName?: string
-  ): Promise<ResourceInstanceDefinition[]>;
+  listResourceInstancesForModule(moduleKey: string, moduleName?: string): Promise<ResourceInstanceDefinition[]>;
 
   // Triggers & actions catalog
   getTriggers(createdByType?: string, createdByRef?: string): Promise<TriggerDefinition[]>;
@@ -1094,10 +1089,7 @@ export interface Woofx3EngineApi {
   /** Mint a new overlay token for the given scene. Returns the token and
    *  the browser-source URL (`{overlayPublicUrl}/overlay/{token}/`). The
    *  plaintext token is returned exactly once — store it or mint again. */
-  mintOverlayToken(input: {
-    sceneId: string;
-    label?: string;
-  }): Promise<{
+  mintOverlayToken(input: { sceneId: string; label?: string }): Promise<{
     tokenId: string;
     token: string;
     sceneId: string;
@@ -1111,16 +1103,11 @@ export interface Woofx3EngineApi {
   /** Tombstone an active token. Revocation sends a P2 `control:
    *  token.revoked` frame to all open overlay sockets and blanks the
    *  browser source without touching the scene. Idempotent. */
-  revokeOverlayToken(input: {
-    tokenId: string;
-  }): Promise<{ tokenId: string; status: string }>;
+  revokeOverlayToken(input: { tokenId: string }): Promise<{ tokenId: string; status: string }>;
 
   /** Atomically revoke the old token and mint a replacement. Returns the
    *  new token + URL. The old token is permanently revoked. */
-  rotateOverlayToken(input: {
-    tokenId: string;
-    label?: string;
-  }): Promise<{
+  rotateOverlayToken(input: { tokenId: string; label?: string }): Promise<{
     tokenId: string;
     token: string;
     sceneId: string;
@@ -1133,11 +1120,7 @@ export interface Woofx3EngineApi {
 
   /** List all overlay tokens for the authenticated application, optionally
    *  filtered by sceneId. Includes the browser-source URL for each. */
-  listOverlayTokens(input?: {
-    sceneId?: string;
-    page?: number;
-    pageSize?: number;
-  }): Promise<
+  listOverlayTokens(input?: { sceneId?: string; page?: number; pageSize?: number }): Promise<
     Array<{
       tokenId: string;
       token: string;
@@ -1210,12 +1193,7 @@ export interface Woofx3EngineApi {
     }>;
   }>;
 
-  getWorkflowHistory(options: {
-    workflowName?: string;
-    userId?: string;
-    status?: string;
-    limit?: number;
-  }): Promise<{
+  getWorkflowHistory(options: { workflowName?: string; userId?: string; status?: string; limit?: number }): Promise<{
     executions: Array<{
       id: string;
       workflowName: string;

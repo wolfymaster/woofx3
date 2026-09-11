@@ -3,8 +3,8 @@ package models
 import (
 	"time"
 
-	"gorm.io/gorm"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type UserEvent struct {
@@ -76,14 +76,14 @@ func GetRecentUserEvents(db *gorm.DB, userID int, applicationID uuid.UUID, limit
 func GetUserEventCount(db *gorm.DB, userID int, applicationID uuid.UUID, eventType string) (int64, error) {
 	var count int64
 	query := db.Model(&UserEvent{}).Where("userid = ?", userID)
-	
+
 	if applicationID != uuid.Nil {
 		query = query.Where("application_id = ?", applicationID)
 	}
 	if eventType != "" {
 		query = query.Where("eventtype = ?", eventType)
 	}
-	
+
 	err := query.Count(&count).Error
 	return count, err
 }

@@ -4,7 +4,7 @@
 //! the binary so first run needs no network and no `modules/` directory. The
 //! boot reconciler installs them through the ordinary module install path.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use sha2::{Digest, Sha256};
 
 /// One embedded module archive, with the identity read from its manifest at
@@ -42,7 +42,7 @@ include!(concat!(env!("OUT_DIR"), "/bundled_modules_generated.rs"));
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lib_module::manifest_validate::{validate_with_provenance, InstallProvenance};
+    use lib_module::manifest_validate::{InstallProvenance, validate_with_provenance};
     use lib_module::module_manifest::ModuleManifest;
     use std::io::Read;
 
@@ -59,7 +59,10 @@ mod tests {
 
     #[test]
     fn at_least_one_module_is_embedded() {
-        assert!(!BUNDLED_MODULES.is_empty(), "no bundled modules were embedded");
+        assert!(
+            !BUNDLED_MODULES.is_empty(),
+            "no bundled modules were embedded"
+        );
     }
 
     #[test]
@@ -93,8 +96,14 @@ mod tests {
     fn embedded_identity_matches_the_archived_manifest() {
         for m in BUNDLED_MODULES {
             let manifest = manifest_of(m);
-            assert_eq!(manifest.id, m.id, "manifest id disagrees with embedded identity");
-            assert_eq!(manifest.version, m.version, "manifest version disagrees with embedded identity");
+            assert_eq!(
+                manifest.id, m.id,
+                "manifest id disagrees with embedded identity"
+            );
+            assert_eq!(
+                manifest.version, m.version,
+                "manifest version disagrees with embedded identity"
+            );
         }
     }
 

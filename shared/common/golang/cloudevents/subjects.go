@@ -103,16 +103,16 @@ const (
 	// DB-proxy outbox patterns. Format mirrors publisher.go:
 	// "db.{entityType}.{operation}.{appId}". The api/ TypeScript service
 	// subscribes via these wildcards.
-	SubjectDbModuleTriggerRegisteredPattern    Subject = "db.module.trigger.registered.*"
-	SubjectDbModuleActionRegisteredPattern     Subject = "db.module.action.registered.*"
-	SubjectDbModuleFunctionRegisteredPattern   Subject = "db.module.function.registered.*"
-	SubjectDbModuleWidgetRegisteredPattern     Subject = "db.module.widget.registered.*"
-	SubjectDbModuleTriggerDeregisteredPattern  Subject = "db.module.trigger.deregistered.*"
-	SubjectDbModuleActionDeregisteredPattern   Subject = "db.module.action.deregistered.*"
-	SubjectDbModuleFunctionDeregisteredPattern Subject = "db.module.function.deregistered.*"
-	SubjectDbModuleWidgetDeregisteredPattern   Subject = "db.module.widget.deregistered.*"
-	SubjectDbModuleAssetRegisteredPattern      Subject = "db.module.asset.registered.*"
-	SubjectDbModuleAssetDeregisteredPattern    Subject = "db.module.asset.deregistered.*"
+	SubjectDbModuleTriggerRegisteredPattern       Subject = "db.module.trigger.registered.*"
+	SubjectDbModuleActionRegisteredPattern        Subject = "db.module.action.registered.*"
+	SubjectDbModuleFunctionRegisteredPattern      Subject = "db.module.function.registered.*"
+	SubjectDbModuleWidgetRegisteredPattern        Subject = "db.module.widget.registered.*"
+	SubjectDbModuleTriggerDeregisteredPattern     Subject = "db.module.trigger.deregistered.*"
+	SubjectDbModuleActionDeregisteredPattern      Subject = "db.module.action.deregistered.*"
+	SubjectDbModuleFunctionDeregisteredPattern    Subject = "db.module.function.deregistered.*"
+	SubjectDbModuleWidgetDeregisteredPattern      Subject = "db.module.widget.deregistered.*"
+	SubjectDbModuleAssetRegisteredPattern         Subject = "db.module.asset.registered.*"
+	SubjectDbModuleAssetDeregisteredPattern       Subject = "db.module.asset.deregistered.*"
 	SubjectDbModuleResourceInstanceCreatedPattern Subject = "db.module.resource.instance.created.*"
 	SubjectDbModuleResourceInstanceDeletedPattern Subject = "db.module.resource.instance.deleted.*"
 
@@ -127,6 +127,6 @@ const (
 	SubjectDbOverlayTokenUpdatedPattern Subject = "db.overlay_token.updated.*"
 
 	// System events
-	SubjectHeartbeat    Subject = "HEARTBEAT"
+	SubjectHeartbeat      Subject = "HEARTBEAT"
 	SubjectMessageBusInit Subject = "MESSAGEBUS_INIT"
 )

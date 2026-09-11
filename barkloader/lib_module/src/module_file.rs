@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{Error, Result, anyhow};
 
 use super::module_manifest::ModuleManifest;
 
@@ -89,12 +89,10 @@ impl ModuleFile {
             .map_err(|_| anyhow!("File '{}' contents are not valid UTF-8", self.name))?;
 
         match kind {
-            ModuleValidManifestKind::JSON => serde_json::from_str(content_str).map_err(|e| {
-                anyhow!("Failed to parse JSON manifest '{}': {}", self.name, e)
-            }),
-            ModuleValidManifestKind::YAML => serde_yaml::from_str(content_str).map_err(|e| {
-                anyhow!("Failed to parse YAML manifest '{}': {}", self.name, e)
-            }),
+            ModuleValidManifestKind::JSON => serde_json::from_str(content_str)
+                .map_err(|e| anyhow!("Failed to parse JSON manifest '{}': {}", self.name, e)),
+            ModuleValidManifestKind::YAML => serde_yaml::from_str(content_str)
+                .map_err(|e| anyhow!("Failed to parse YAML manifest '{}': {}", self.name, e)),
         }
     }
 }

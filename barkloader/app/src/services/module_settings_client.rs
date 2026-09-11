@@ -49,7 +49,11 @@ fn coerce_value(raw: &str, value_type: &str) -> Value {
     match value_type {
         "number" => raw
             .parse::<f64>()
-            .map(|n| Value::Number(serde_json::Number::from_f64(n).unwrap_or(serde_json::Number::from(0))))
+            .map(|n| {
+                Value::Number(
+                    serde_json::Number::from_f64(n).unwrap_or(serde_json::Number::from(0)),
+                )
+            })
             .unwrap_or(Value::Number(serde_json::Number::from(0))),
         "boolean" => Value::Bool(raw == "true" || raw == "1"),
         _ => Value::String(raw.to_string()),

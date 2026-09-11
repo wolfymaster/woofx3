@@ -16,13 +16,13 @@ import (
 //
 // What the rework changed:
 //
-//   - `triggers.manifest_id` (TEXT, default '') — stable manifest-local
+//   - `triggers.manifest_id` (TEXT, default ”) — stable manifest-local
 //     trigger id; canonical id is `{moduleId}:trigger:{manifest_id}`.
-//   - `actions.manifest_id`  (TEXT, default '') — same idea for actions.
-//   - `functions.manifest_id` (TEXT, default '') — replaces the legacy
+//   - `actions.manifest_id`  (TEXT, default ”) — same idea for actions.
+//   - `functions.manifest_id` (TEXT, default ”) — replaces the legacy
 //     `functions.function_name` column. Existing rows are backfilled
 //     from `function_name` and the old column is dropped.
-//   - `functions.name` (TEXT, default '') — display name, distinct
+//   - `functions.name` (TEXT, default ”) — display name, distinct
 //     from the identifier.
 //   - The (created_by_type, created_by_ref, name) uniqueness on
 //     triggers/actions is replaced by (created_by_type, created_by_ref,

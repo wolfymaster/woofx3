@@ -28,5 +28,5 @@ export const dashboardStatsRoutes = routeModule({
       activeAccounts: 2,
       recentEvents: 147,
     };
-  }
+  },
 });

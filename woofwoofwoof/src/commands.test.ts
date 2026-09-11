@@ -48,10 +48,12 @@ describe("Commands", () => {
 
   test("blocks execution when authorization denies the command and surfaces the denial message", async () => {
     const commands = new Commands("#chan", makeChatClient() as never);
-    commands.setAuth(async (): Promise<AuthorizationResponse> => ({
-      granted: false,
-      message: "nope",
-    }));
+    commands.setAuth(
+      async (): Promise<AuthorizationResponse> => ({
+        granted: false,
+        message: "nope",
+      })
+    );
     commands.add("secret", "classified");
     const [out, matched] = await commands.process("!secret", "guest");
     expect(matched).toBe(true);
@@ -295,7 +297,7 @@ describe("Commands", () => {
     expect(out).toBe("hello wolfy");
   });
 
-  test("a {variable} named the same as a reserved context key (e.g. \"user\") does not clobber it", async () => {
+  test('a {variable} named the same as a reserved context key (e.g. "user") does not clobber it', async () => {
     // Reserved keys (user, args, argsText, rawMessage, command) always win
     // over an extracted variable of the same top-level name, so existing
     // {user}/{command} templates can't be silently broken by a chat-authored
@@ -315,10 +317,15 @@ describe("Commands", () => {
     const [out, matched] = await commands.process("!sr Life is a highway", "player");
     expect(matched).toBe(true);
     expect(out).toBe("queued Life is a highway");
-    expect(handler).toHaveBeenCalledWith("Life is a highway", "player", { songTitle: "Life is a highway" }, {
-      rawMessage: "!sr Life is a highway",
-      args: ["Life", "is", "a", "highway"],
-    });
+    expect(handler).toHaveBeenCalledWith(
+      "Life is a highway",
+      "player",
+      { songTitle: "Life is a highway" },
+      {
+        rawMessage: "!sr Life is a highway",
+        args: ["Life", "is", "a", "highway"],
+      }
+    );
   });
 
   test("commands with no declared variables are unaffected (vars is an empty object)", async () => {

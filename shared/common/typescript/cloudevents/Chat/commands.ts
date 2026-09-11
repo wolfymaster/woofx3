@@ -3,18 +3,18 @@ import { encode } from "../utils";
 import Event from "../BaseEvent";
 
 export interface ChatCommandEventData {
-    command: string;
-    args: string[];
-    rawMessage: string;
-    /** rawMessage with the matched command token stripped, e.g. "!sr bad angel" -> "bad angel". */
-    text: string;
-    /** Named argument_pattern captures (e.g. "{songTitle}" -> { songTitle: "..." }).
-     *  Empty object when the command declares no `{variable}` placeholders. Dotted
-     *  variable names (e.g. "user.name") build nested objects. */
-    variables: Record<string, unknown>;
-    chatter: string;
-    platform: "twitch";
-    channelId?: string;
+  command: string;
+  args: string[];
+  rawMessage: string;
+  /** rawMessage with the matched command token stripped, e.g. "!sr bad angel" -> "bad angel". */
+  text: string;
+  /** Named argument_pattern captures (e.g. "{songTitle}" -> { songTitle: "..." }).
+   *  Empty object when the command declares no `{variable}` placeholders. Dotted
+   *  variable names (e.g. "user.name") build nested objects. */
+  variables: Record<string, unknown>;
+  chatter: string;
+  platform: "twitch";
+  channelId?: string;
 }
 
 type EventTuple = [string, Uint8Array];
@@ -29,12 +29,12 @@ type EventTuple = [string, Uint8Array];
  * its own NATS subject rather than a shared one discriminated by payload.
  */
 export default class ChatCommandEvents {
-    constructor(private source: string) { }
+  constructor(private source: string) {}
 
-    command(commandName: string, data: Omit<ChatCommandEventData, "command">): EventTuple {
-        const slug = commandNameToSubjectSegment(commandName);
-        const subject = `chat.command.${slug}`;
-        const payload: ChatCommandEventData = { ...data, command: slug };
-        return [subject, encode(Event({ type: subject, source: this.source }, payload))];
-    }
+  command(commandName: string, data: Omit<ChatCommandEventData, "command">): EventTuple {
+    const slug = commandNameToSubjectSegment(commandName);
+    const subject = `chat.command.${slug}`;
+    const payload: ChatCommandEventData = { ...data, command: slug };
+    return [subject, encode(Event({ type: subject, source: this.source }, payload))];
+  }
 }

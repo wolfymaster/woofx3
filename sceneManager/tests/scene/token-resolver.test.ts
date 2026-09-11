@@ -1,9 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import {
-  maskToken,
-  OverlayTokenResolver,
-  OVERLAY_TOKEN_CACHE_TTL_MS,
-} from "../../src/scene/token-resolver";
+import { maskToken, OverlayTokenResolver, OVERLAY_TOKEN_CACHE_TTL_MS } from "../../src/scene/token-resolver";
 import type { OverlayTokenDb } from "../../src/scene/token-resolver";
 
 function fakeLogger() {

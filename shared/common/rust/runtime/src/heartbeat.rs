@@ -41,7 +41,9 @@ impl Readiness {
     /// not-ready forever, which is the safe direction: dependents wait rather
     /// than proceeding against a service that never finished starting.
     pub fn not_ready() -> Self {
-        Self { ready: Arc::new(AtomicBool::new(false)) }
+        Self {
+            ready: Arc::new(AtomicBool::new(false)),
+        }
     }
 
     pub fn is_ready(&self) -> bool {

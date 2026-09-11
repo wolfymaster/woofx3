@@ -60,5 +60,5 @@ export const alertsRoutes = routeModule({
     const result = JSON.parse(new TextDecoder().decode(reply.data)) as { cleared: number };
     this.logger.info("clearAlertQueue", { applicationId: appId, cleared: result.cleared });
     return result;
-  }
+  },
 });
