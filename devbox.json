@@ -20,7 +20,8 @@
     "temporal-cli@latest",
     "gopls@latest",
     "twitch-cli@1.1.25",
-    "go-task@latest"
+    "go-task@latest",
+    "biome@2.4.10"
   ],
   "shell": {
     "init_hook": [
