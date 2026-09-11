@@ -1,4 +1,4 @@
-.PHONY: migrate-up migrate-down
+.PHONY: migrate-up migrate-down format format-check
 
 # Database connection string (can be overridden with environment variable)
 DB_URL ?= postgres://postgres:postgres@localhost:5432/woofx3?sslmode=disable
@@ -30,3 +30,11 @@ migrate-create:
 		exit 1; \
 	fi
 	@migrate create -ext sql -dir db/migrations $(name)
+
+# Format every hand-written source file (generated and vendored code excluded)
+format:
+	@./scripts/format.sh
+
+# Fail if any hand-written source file would be reformatted
+format-check:
+	@./scripts/format.sh --check
