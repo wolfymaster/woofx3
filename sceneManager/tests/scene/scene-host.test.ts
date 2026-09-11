@@ -91,7 +91,13 @@ describe("OverlayHost — frameUrl", () => {
       })),
     };
     const resolver = new OverlayTokenResolver(
-      { resolveOverlayToken: async () => ({ status: { code: "OK" as const, message: "" }, sceneId: "scene-1", applicationId: "app-1" }) },
+      {
+        resolveOverlayToken: async () => ({
+          status: { code: "OK" as const, message: "" },
+          sceneId: "scene-1",
+          applicationId: "app-1",
+        }),
+      },
       fakeLogger()
     );
     const host = new OverlayHost(resolver, db as any, fakeLogger());
@@ -129,7 +135,13 @@ describe("OverlayHost — frameUrl", () => {
       })),
     };
     const resolver = new OverlayTokenResolver(
-      { resolveOverlayToken: async () => ({ status: { code: "OK" as const, message: "" }, sceneId: "scene-1", applicationId: "app-1" }) },
+      {
+        resolveOverlayToken: async () => ({
+          status: { code: "OK" as const, message: "" },
+          sceneId: "scene-1",
+          applicationId: "app-1",
+        }),
+      },
       fakeLogger()
     );
     const host = new OverlayHost(resolver, db as any, fakeLogger());

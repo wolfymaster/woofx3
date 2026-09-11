@@ -26,7 +26,7 @@ function createValueGenerator(
   startValue: number,
   targetValue: number,
   frames: number,
-  easingType = "linear",
+  easingType = "linear"
 ): () => number | null {
   const easing = easingFunctions[easingType] ?? easingFunctions.linear;
   const valueRange = targetValue - startValue;
@@ -48,11 +48,11 @@ export async function animate(
   updateFn: (value: number) => Promise<void>,
   startValue: number,
   targetValue: number,
-  options?: SetAnimatedFilterOptions,
+  options?: SetAnimatedFilterOptions
 ): Promise<void> {
   const { frameRate, durationMs, easingType } = Object.assign(
     { frameRate: 60, durationMs: 1000, easingType: "linear" },
-    options,
+    options
   );
 
   const frameMs = Math.max(16, 1000 / frameRate);

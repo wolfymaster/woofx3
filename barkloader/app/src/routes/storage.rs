@@ -1,8 +1,8 @@
 use actix_web::web::{Data, ServiceConfig};
 use actix_web::{Error, HttpResponse, post};
 use lib_repository::{Repository, RepositoryConfig, RepositoryFactory, RepositoryImpl};
-use tracing::{error, info, warn};
 use std::collections::BTreeSet;
+use tracing::{error, info, warn};
 
 use crate::services::storage_settings::resolve_repository_config;
 use crate::types::AppContext;
@@ -28,7 +28,9 @@ const MODULES_PREFIX: &str = "modules";
 #[tracing::instrument(name = "POST /storage/reload", skip_all)]
 async fn reload_storage_handler(ctx: Data<AppContext>) -> Result<HttpResponse, Error> {
     let db_proxy_url = ctx.db_proxy_url.as_deref().ok_or_else(|| {
-        actix_web::error::ErrorInternalServerError("databaseProxyUrl is not configured in .woofx3.json")
+        actix_web::error::ErrorInternalServerError(
+            "databaseProxyUrl is not configured in .woofx3.json",
+        )
     })?;
 
     let config = resolve_repository_config(Some(db_proxy_url), crate::DEFAULT_MODULE_DIR)
@@ -39,11 +41,19 @@ async fn reload_storage_handler(ctx: Data<AppContext>) -> Result<HttpResponse, E
         })?;
 
     let candidate = RepositoryFactory::new(&config).await.map_err(|e| {
-        error!("Storage reload: failed to build {}: {}", describe(&config), e);
+        error!(
+            "Storage reload: failed to build {}: {}",
+            describe(&config),
+            e
+        );
         actix_web::error::ErrorBadRequest(format!("Failed to build storage backend: {}", e))
     })?;
     candidate.setup().map_err(|e| {
-        error!("Storage reload: setup failed for {}: {}", describe(&config), e);
+        error!(
+            "Storage reload: setup failed for {}: {}",
+            describe(&config),
+            e
+        );
         actix_web::error::ErrorBadRequest(format!("Storage backend setup failed: {}", e))
     })?;
 
@@ -51,7 +61,11 @@ async fn reload_storage_handler(ctx: Data<AppContext>) -> Result<HttpResponse, E
     // is the first thing that actually exercises the credentials, the
     // endpoint, and the bucket's existence.
     let new_keys = candidate.list_prefix(MODULES_PREFIX).await.map_err(|e| {
-        error!("Storage reload: probe failed for {}: {}", describe(&config), e);
+        error!(
+            "Storage reload: probe failed for {}: {}",
+            describe(&config),
+            e
+        );
         actix_web::error::ErrorBadRequest(format!(
             "Storage backend unreachable or misconfigured: {}",
             e
@@ -91,7 +105,10 @@ async fn stranded_modules(previous: &RepositoryImpl, new_keys: &[String]) -> Vec
     let old_keys = match previous.list_prefix(MODULES_PREFIX).await {
         Ok(keys) => keys,
         Err(e) => {
-            warn!("Storage reload: could not list current backend to report stranded modules: {}", e);
+            warn!(
+                "Storage reload: could not list current backend to report stranded modules: {}",
+                e
+            );
             return Vec::new();
         }
     };

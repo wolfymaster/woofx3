@@ -51,9 +51,7 @@ describe("parseWidgetStatusUpdated", () => {
   });
 
   it("returns null when applicationId is missing", () => {
-    expect(
-      parseWidgetStatusUpdated({ data: { module_id: "mod-1", instance_id: "inst-1", key: "k" } })
-    ).toBeNull();
+    expect(parseWidgetStatusUpdated({ data: { module_id: "mod-1", instance_id: "inst-1", key: "k" } })).toBeNull();
   });
 });
 

@@ -85,14 +85,10 @@ export interface InstallWidgetHostShimOptions {
  * parent, or a missing/malformed boot payload. A widget loaded
  * outside an assembled frame gets a loud failure, not a half-host.
  */
-export function installWidgetHostShim(
-  options: InstallWidgetHostShimOptions = {}
-): WidgetHost | null {
+export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}): WidgetHost | null {
   const windowCandidate = options.windowRef ?? (globalThis as { window?: ShimWindow }).window;
   if (windowCandidate === undefined || typeof windowCandidate.addEventListener !== "function") {
-    console.error(
-      "[widget-host-shim] no usable window — the shim must run inside a widget frame"
-    );
+    console.error("[widget-host-shim] no usable window — the shim must run inside a widget frame");
     return null;
   }
   const windowRef: ShimWindow = windowCandidate;

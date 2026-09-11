@@ -43,7 +43,8 @@ impl ModuleRegistry {
     /// within a module are keyed by their manifest_id.
     pub fn get_function(&self, path: &str) -> Result<Function, Error> {
         let parts: Vec<&str> = path.split(':').collect();
-        if parts.len() != 3 || parts[1] != "function" || parts[0].is_empty() || parts[2].is_empty() {
+        if parts.len() != 3 || parts[1] != "function" || parts[0].is_empty() || parts[2].is_empty()
+        {
             return Err(Error::InvalidFunctionPath(path.to_string()));
         }
 

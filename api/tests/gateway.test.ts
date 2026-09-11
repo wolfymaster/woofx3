@@ -48,7 +48,9 @@ describe("ApiGateway.registerClient", () => {
 
   it("reuses the existing default application when present", async () => {
     const getDefault = mock(async () => ({ id: "app-existing", name: "default" }));
-    const createApp = mock(async () => { throw new Error("should not be called"); });
+    const createApp = mock(async () => {
+      throw new Error("should not be called");
+    });
     const db = {
       findOrCreateByWoofx3UIUserId: mock(async () => ({ id: "u1" })),
       getDefaultApplication: getDefault,

@@ -152,5 +152,5 @@ export const subscriptionsRoutes = routeModule({
     });
 
     this.logger.info("NATS subscriptions initialized for module events");
-  }
+  },
 });

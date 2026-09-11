@@ -1,8 +1,8 @@
 use actix_web::web::{Data, Path, ServiceConfig};
 use actix_web::{HttpResponse, get};
 use lib_repository::Repository;
-use tracing::warn;
 use serde::Serialize;
+use tracing::warn;
 
 use crate::types::AppContext;
 use lib_module::db_proxy_client::{HttpDbProxyClient, ModuleDbProxy};
@@ -30,7 +30,10 @@ struct FrameResponse {
 async fn widget_frame_handler(ctx: Data<AppContext>, path: Path<(String, String)>) -> HttpResponse {
     let (module_key, manifest_id) = path.into_inner();
     let Some(db_proxy_url) = ctx.db_proxy_url.as_ref() else {
-        warn!("widget_frame: db_proxy_url not configured; refusing {}:{}", module_key, manifest_id);
+        warn!(
+            "widget_frame: db_proxy_url not configured; refusing {}:{}",
+            module_key, manifest_id
+        );
         return HttpResponse::ServiceUnavailable().finish();
     };
     let db_proxy = HttpDbProxyClient::new(db_proxy_url.clone());
@@ -38,27 +41,42 @@ async fn widget_frame_handler(ctx: Data<AppContext>, path: Path<(String, String)
     let entry = match db_proxy.get_widget_entry(&module_key, &manifest_id).await {
         Ok(Some(entry)) => entry,
         Ok(None) => {
-            warn!("widget_frame: no widget registered for {}:{}", module_key, manifest_id);
+            warn!(
+                "widget_frame: no widget registered for {}:{}",
+                module_key, manifest_id
+            );
             return HttpResponse::NotFound().finish();
         }
         Err(e) => {
-            warn!("widget_frame: entry lookup failed for {}:{}: {}", module_key, manifest_id, e);
+            warn!(
+                "widget_frame: entry lookup failed for {}:{}: {}",
+                module_key, manifest_id, e
+            );
             return HttpResponse::InternalServerError().finish();
         }
     };
     let Some(entry) = sanitize_entry(&entry) else {
-        warn!("widget_frame: registered entry rejected by traversal check: {}", entry);
+        warn!(
+            "widget_frame: registered entry rejected by traversal check: {}",
+            entry
+        );
         return HttpResponse::NotFound().finish();
     };
 
     let version_dir = match db_proxy.resolve_module_version_dir(&module_key).await {
         Ok(Some(dir)) => dir,
         Ok(None) => {
-            warn!("widget_frame: module {} has no resolvable installed version", module_key);
+            warn!(
+                "widget_frame: module {} has no resolvable installed version",
+                module_key
+            );
             return HttpResponse::NotFound().finish();
         }
         Err(e) => {
-            warn!("widget_frame: version resolve failed for {}: {}", module_key, e);
+            warn!(
+                "widget_frame: version resolve failed for {}: {}",
+                module_key, e
+            );
             return HttpResponse::InternalServerError().finish();
         }
     };
@@ -68,12 +86,18 @@ async fn widget_frame_handler(ctx: Data<AppContext>, path: Path<(String, String)
         Ok(bytes) => match String::from_utf8(bytes) {
             Ok(text) => text,
             Err(e) => {
-                warn!("widget_frame: entry document is not valid UTF-8 at {}: {}", repo_key, e);
+                warn!(
+                    "widget_frame: entry document is not valid UTF-8 at {}: {}",
+                    repo_key, e
+                );
                 return HttpResponse::InternalServerError().finish();
             }
         },
         Err(e) => {
-            warn!("widget_frame: repository read_file failed for key {}: {}", repo_key, e);
+            warn!(
+                "widget_frame: repository read_file failed for key {}: {}",
+                repo_key, e
+            );
             return HttpResponse::NotFound().finish();
         }
     };
@@ -132,6 +156,9 @@ mod tests {
     #[test]
     fn sanitize_entry_passes_through_valid_paths() {
         assert_eq!(sanitize_entry("index.html").as_deref(), Some("index.html"));
-        assert_eq!(sanitize_entry("nested/entry.html").as_deref(), Some("nested/entry.html"));
+        assert_eq!(
+            sanitize_entry("nested/entry.html").as_deref(),
+            Some("nested/entry.html")
+        );
     }
 }

@@ -58,7 +58,7 @@ describe("buildFrameScaffold", () => {
     expect(bootJsonStr).not.toContain("<script>");
   });
 
-  it("escapes & and \" in baseHref attribute", () => {
+  it('escapes & and " in baseHref attribute', () => {
     const scaffold = buildFrameScaffold({
       boot: minimalBoot(),
       baseHref: 'https://cdn.example.com/&foo"bar',
@@ -274,7 +274,11 @@ describe("FrameAssembler.assemble", () => {
 
   it("returns the uniform blank document for an unknown scene", async () => {
     const barkloader: BarkloaderFrameClient = { fetchWidgetFrame: mock(async () => null) };
-    const host = { async loadSceneById() { return null; } } as unknown as OverlayHost;
+    const host = {
+      async loadSceneById() {
+        return null;
+      },
+    } as unknown as OverlayHost;
     const assembler = new FrameAssembler(host, fakeLogger(), {
       barkloader,
       publicDir: "/nonexistent",
@@ -302,5 +306,4 @@ describe("FrameAssembler.assemble", () => {
     const resp = await assembler.assemble("scene-1", "missing-instance", null);
     expect(await resp.text()).toBe("<!doctype html><html><head></head><body></body></html>");
   });
-
 });

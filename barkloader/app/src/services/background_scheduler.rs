@@ -1,14 +1,14 @@
-use lib_module::module_manifest::ManifestBackgroundTask;
-use lib_module::BackgroundTaskRegistrar;
 use chrono::Utc;
-use lib_sandbox::models::request::InvokeRequest;
+use lib_module::BackgroundTaskRegistrar;
+use lib_module::module_manifest::ManifestBackgroundTask;
 use lib_sandbox::SandboxFactory;
-use tracing::{error, info, warn};
+use lib_sandbox::models::request::InvokeRequest;
 use serde_json::json;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Mutex;
 use tokio::task::AbortHandle;
+use tracing::{error, info, warn};
 
 /// Internal host-managed scheduler for module background tasks.
 ///
@@ -80,7 +80,9 @@ impl BackgroundTaskScheduler {
                     let delay = (next - now).to_std().unwrap_or_default();
                     info!(
                         "Background task {}/{} scheduled next fire at {}",
-                        module_key_owned, task_id, next.to_rfc3339()
+                        module_key_owned,
+                        task_id,
+                        next.to_rfc3339()
                     );
                     tokio::time::sleep(delay).await;
 
@@ -109,10 +111,7 @@ impl BackgroundTaskScheduler {
                     let elapsed_ms = fire_start.elapsed().as_millis();
                     match result {
                         Ok(_) => {
-                            info!(
-                                "Background task {}/{} completed in {}ms",
-                                m, t, elapsed_ms
-                            );
+                            info!("Background task {}/{} completed in {}ms", m, t, elapsed_ms);
                         }
                         Err(lib_sandbox::InvokeBlockingError::TaskJoin(e)) => {
                             error!(

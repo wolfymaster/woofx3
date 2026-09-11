@@ -8,14 +8,35 @@
       return false;
     }
     const msg = value;
-    return msg.proto === WIDGET_PROTOCOL && msg.v === PROTOCOL_VERSION && typeof msg.type === "string" && msg.type.length > 0 && typeof msg.nonce === "string" && msg.nonce.length > 0;
+    return (
+      msg.proto === WIDGET_PROTOCOL &&
+      msg.v === PROTOCOL_VERSION &&
+      typeof msg.type === "string" &&
+      msg.type.length > 0 &&
+      typeof msg.nonce === "string" &&
+      msg.nonce.length > 0
+    );
   }
   function isWidgetBootPayload(value) {
     if (typeof value !== "object" || value === null) {
       return false;
     }
     const boot = value;
-    return boot.v === PROTOCOL_VERSION && typeof boot.nonce === "string" && boot.nonce.length > 0 && typeof boot.instanceId === "string" && boot.instanceId.length > 0 && typeof boot.moduleId === "string" && boot.moduleId.length > 0 && (boot.widgetCanonicalId === undefined || typeof boot.widgetCanonicalId === "string") && typeof boot.settings === "object" && boot.settings !== null && Array.isArray(boot.capabilities) && typeof boot.resourceBaseUrl === "string" && boot.resourceBaseUrl.length > 0;
+    return (
+      boot.v === PROTOCOL_VERSION &&
+      typeof boot.nonce === "string" &&
+      boot.nonce.length > 0 &&
+      typeof boot.instanceId === "string" &&
+      boot.instanceId.length > 0 &&
+      typeof boot.moduleId === "string" &&
+      boot.moduleId.length > 0 &&
+      (boot.widgetCanonicalId === undefined || typeof boot.widgetCanonicalId === "string") &&
+      typeof boot.settings === "object" &&
+      boot.settings !== null &&
+      Array.isArray(boot.capabilities) &&
+      typeof boot.resourceBaseUrl === "string" &&
+      boot.resourceBaseUrl.length > 0
+    );
   }
 
   // src/widget-host-shim.ts
@@ -30,14 +51,22 @@
     }
     const windowRef = windowCandidate;
     const parentCandidate = options.parentRef ?? windowRef.parent;
-    if (parentCandidate === undefined || parentCandidate === null || typeof parentCandidate.postMessage !== "function") {
+    if (
+      parentCandidate === undefined ||
+      parentCandidate === null ||
+      typeof parentCandidate.postMessage !== "function"
+    ) {
       console.error("[widget-host-shim] no parent window — cannot speak " + WIDGET_PROTOCOL);
       return null;
     }
     const parentRef = parentCandidate;
     const bootCandidate = windowRef[WIDGET_BOOT_GLOBAL];
     if (!isWidgetBootPayload(bootCandidate)) {
-      console.error("[widget-host-shim] missing or malformed " + WIDGET_BOOT_GLOBAL + " boot payload — frame was not assembled by the overlay host");
+      console.error(
+        "[widget-host-shim] missing or malformed " +
+          WIDGET_BOOT_GLOBAL +
+          " boot payload — frame was not assembled by the overlay host"
+      );
       return null;
     }
     const boot = bootCandidate;
@@ -45,10 +74,10 @@
     let rejected = false;
     let disposed = false;
     const outQueue = [];
-    const pendingGets = new Map;
-    const storageSubs = new Map;
-    const eventSubs = new Map;
-    const completedEventIds = new Set;
+    const pendingGets = new Map();
+    const storageSubs = new Map();
+    const eventSubs = new Map();
+    const completedEventIds = new Set();
     let nextLocalId = 0;
     function allocId(prefix) {
       nextLocalId += 1;
@@ -75,7 +104,7 @@
       instanceId: boot.instanceId,
       moduleId: boot.moduleId,
       sdkVersion: SDK_VERSION,
-      wants: SHIM_WANTS.slice()
+      wants: SHIM_WANTS.slice(),
     });
     let helloTimer;
     function stopHelloLoop() {
@@ -131,7 +160,7 @@
           outQueue.length = 0;
           console.error("[widget-host-shim] init rejected by host", {
             reason: m.reason,
-            supportedVersions: m.supportedVersions
+            supportedVersions: m.supportedVersions,
           });
           return;
         }
@@ -228,7 +257,7 @@
           }
           send(envelope({ type: "storage.unsubscribe", subId }));
         };
-      }
+      },
     };
     const host = {
       settings: Object.freeze({ ...boot.settings }),
@@ -254,19 +283,21 @@
       },
       reportStatus(key, value) {
         try {
-          send(envelope({
-            type: "status.report",
-            key,
-            value,
-            ts: new Date().toISOString()
-          }));
+          send(
+            envelope({
+              type: "status.report",
+              key,
+              value,
+              ts: new Date().toISOString(),
+            })
+          );
         } catch (err) {
           console.error("[widget-host-shim] reportStatus failed", { key, error: err });
         }
       },
       reportComplete(reason) {
         host.reportStatus("complete", reason !== undefined ? { reason } : null);
-      }
+      },
     };
     windowRef.widgetHost = host;
     windowRef.addEventListener("message", onMessage);

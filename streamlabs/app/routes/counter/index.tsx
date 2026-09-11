@@ -18,15 +18,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     count: 42, // Replace with actual data fetch
     label: "Visitors", // Replace with actual data fetch
   };
-  
+
   return data;
 }
 
 export const meta: MetaFunction = () => {
-  return [
-    { title: "Counter" },
-    { name: "description", content: "Count Stuff" },
-  ];
+  return [{ title: "Counter" }, { name: "description", content: "Count Stuff" }];
 };
 
 const APP_ID = "8c28dd52-4859-4560-8d45-2408b064b248";
@@ -41,40 +38,40 @@ const schema = i.schema({
   },
 });
 
-
 const db = init({ appId: APP_ID, schema });
 
 export default function Counter() {
   const [searchParams] = useSearchParams();
 
-  console.log(searchParams.get('counterId'));
+  console.log(searchParams.get("counterId"));
 
   const { isLoading, error, data } = db.useQuery({
     counts: {
       $: {
         where: {
-          id: searchParams.get('counterId') || ''
-        }
-      }
-    }
+          id: searchParams.get("counterId") || "",
+        },
+      },
+    },
   });
 
-
-  if(isLoading) {
+  if (isLoading) {
     return <></>;
   }
 
-  if(data?.counts.length == 0) {
-    return <>Invalid Counter Id</>
+  if (data?.counts.length == 0) {
+    return <>Invalid Counter Id</>;
   }
 
   const label = data?.counts[0].label;
   const count = data?.counts[0].count;
   const goal = data?.counts[0].goal;
-  
+
   return (
     <div className="counter-container">
-      <h2 style={{ textShadow: '#000 1px 1px 2px' }} className="bg-white/50 text-red-400 text-4xl">{label}: {count}/{goal}</h2>
+      <h2 style={{ textShadow: "#000 1px 1px 2px" }} className="bg-white/50 text-red-400 text-4xl">
+        {label}: {count}/{goal}
+      </h2>
     </div>
   );
 }

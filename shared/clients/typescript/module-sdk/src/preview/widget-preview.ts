@@ -196,9 +196,7 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
       // Fire matching subscribers. The bare-key check matches the real
       // factory's filter (it scopes by the host's own moduleId and
       // matches the bare key the widget passed to .subscribe).
-      const bareKey = scoped.startsWith(`${moduleId}:`)
-        ? scoped.slice(moduleId.length + 1)
-        : scoped;
+      const bareKey = scoped.startsWith(`${moduleId}:`) ? scoped.slice(moduleId.length + 1) : scoped;
       for (const sub of storageSubs) {
         if (sub.key === bareKey) {
           try {

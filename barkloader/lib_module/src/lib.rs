@@ -11,8 +11,8 @@ mod module_file;
 mod module_install;
 pub mod module_manifest;
 mod module_plan;
-pub mod registry_loader;
 mod module_service;
+pub mod registry_loader;
 
 pub use manifest_validate::InstallProvenance;
 pub use module_file::ModuleFileKind;

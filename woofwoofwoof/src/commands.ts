@@ -180,8 +180,7 @@ export class Commands {
           cmdRecord.lastInvokedAt = now;
         }
 
-        const auth =
-          cmdRecord.visibility === "public" ? { granted: true } : await this.checkPermissions(user, msg.cmd);
+        const auth = cmdRecord.visibility === "public" ? { granted: true } : await this.checkPermissions(user, msg.cmd);
         if (!auth.granted) {
           return [auth.message ?? "", !!auth.message];
         }

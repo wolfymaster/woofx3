@@ -244,7 +244,9 @@ export class ConvexWebhookClient {
   }
 
   private sign(body: string): string {
-    return createHmac("sha256", this.signingSecret as string).update(body).digest("hex");
+    return createHmac("sha256", this.signingSecret as string)
+      .update(body)
+      .digest("hex");
   }
 
   private markDeduped(eventId: string): void {

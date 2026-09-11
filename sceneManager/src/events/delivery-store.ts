@@ -105,9 +105,7 @@ export class DeliveryStore {
     this.logger.info("delivery-store: hydrated open deliveries", { count: deliveries.length });
   }
 
-  private async fetchEventPayload(
-    sceneEventId: string
-  ): Promise<{ type: string; key: string; value: unknown } | null> {
+  private async fetchEventPayload(sceneEventId: string): Promise<{ type: string; key: string; value: unknown } | null> {
     try {
       const resp = await this.db.getSceneEvent({ id: sceneEventId });
       if (resp.status?.code !== "OK" || !resp.sceneEvent) {

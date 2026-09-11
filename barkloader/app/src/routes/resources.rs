@@ -21,8 +21,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use actix_web::web::{Bytes, Data, Json, Path, ServiceConfig};
 use actix_web::{HttpResponse, delete, post, put};
 use lib_repository::{CreateFileRequest, Repository, UploadEndpoint, UploadRequest};
-use tracing::{error, info, warn};
 use serde::{Deserialize, Serialize};
+use tracing::{error, info, warn};
 
 use crate::callback::{send_processing_failure_callback, send_processing_success_callback};
 use crate::services::thumbnail::{self, ThumbnailOutcome};
@@ -97,13 +97,14 @@ struct ProcessAcceptedResponse {
 
 /// Issue an upload grant for one `user/` key.
 #[post("/assets/upload-url")]
-async fn upload_url_handler(
-    ctx: Data<AppContext>,
-    body: Json<UploadUrlRequest>,
-) -> HttpResponse {
+async fn upload_url_handler(ctx: Data<AppContext>, body: Json<UploadUrlRequest>) -> HttpResponse {
     let request = body.into_inner();
 
-    let key = match user_resource_key(&request.application_id, &request.resource_id, &request.file_name) {
+    let key = match user_resource_key(
+        &request.application_id,
+        &request.resource_id,
+        &request.file_name,
+    ) {
         Ok(key) => key,
         Err(message) => {
             return HttpResponse::BadRequest().json(error_body(&message));
@@ -140,13 +141,8 @@ async fn upload_url_handler(
             // Local disk: mint our own grant and point the caller at the
             // PUT endpoint below. Same shape, same single request.
             let secret = upload_secret();
-            let issued = upload_token::issue(
-                &secret,
-                &key,
-                request.content_type.as_deref(),
-                ttl,
-                now,
-            );
+            let issued =
+                upload_token::issue(&secret, &key, request.content_type.as_deref(), ttl, now);
             let Ok((token, _)) = issued else {
                 error!("Failed to issue upload token for {}", key);
                 return HttpResponse::InternalServerError()
@@ -166,7 +162,10 @@ async fn upload_url_handler(
             )
         }
         Err(err) => {
-            error!("Storage backend could not issue an upload grant for {}: {}", key, err);
+            error!(
+                "Storage backend could not issue an upload grant for {}: {}",
+                key, err
+            );
             return HttpResponse::InternalServerError()
                 .json(error_body("storage backend rejected the upload request"));
         }
@@ -186,11 +185,7 @@ async fn upload_url_handler(
 /// file backend; the token names the key, so the request body is the
 /// only thing the client controls here.
 #[put("/assets/upload/{token}")]
-async fn upload_handler(
-    ctx: Data<AppContext>,
-    path: Path<String>,
-    body: Bytes,
-) -> HttpResponse {
+async fn upload_handler(ctx: Data<AppContext>, path: Path<String>, body: Bytes) -> HttpResponse {
     let token = path.into_inner();
     let secret = upload_secret();
 
@@ -285,10 +280,16 @@ async fn process_handler(ctx: Data<AppContext>, body: Json<ProcessRequest>) -> H
         let Some(callback_url) = request.callback_url.as_deref() else {
             match outcome {
                 Ok(result) => {
-                    info!("Thumbnail job for {} finished: {:?}", request.repository_key, result);
+                    info!(
+                        "Thumbnail job for {} finished: {:?}",
+                        request.repository_key, result
+                    );
                 }
                 Err(err) => {
-                    error!("Thumbnail job for {} failed: {}", request.repository_key, err);
+                    error!(
+                        "Thumbnail job for {} failed: {}",
+                        request.repository_key, err
+                    );
                 }
             }
             return;
@@ -296,7 +297,11 @@ async fn process_handler(ctx: Data<AppContext>, body: Json<ProcessRequest>) -> H
 
         let resource_id = request.resource_id.as_deref().unwrap_or_default();
         match outcome {
-            Ok(ThumbnailOutcome::Generated { repository_key, content_type, .. }) => {
+            Ok(ThumbnailOutcome::Generated {
+                repository_key,
+                content_type,
+                ..
+            }) => {
                 send_processing_success_callback(
                     callback_url,
                     resource_id,
@@ -363,7 +368,10 @@ fn user_resource_key(
     if sanitized.is_empty() {
         return Err("file_name is not a usable file name".to_string());
     }
-    Ok(format!("user/{}/{}/{}", application_id, resource_id, sanitized))
+    Ok(format!(
+        "user/{}/{}/{}",
+        application_id, resource_id, sanitized
+    ))
 }
 
 /// A usable path segment: non-empty, no separators, no traversal, and
@@ -382,11 +390,7 @@ fn is_safe_segment(value: &str) -> bool {
 /// here means the process is misconfigured rather than that a default
 /// is wanted -- `upload_token::issue` rejects it.
 fn upload_secret() -> String {
-    crate::util::get_env_or_default_with_key(
-        "WOOFX3_BARKLOADER_KEY",
-        Some("barkloaderKey"),
-        "",
-    )
+    crate::util::get_env_or_default_with_key("WOOFX3_BARKLOADER_KEY", Some("barkloaderKey"), "")
 }
 
 fn unix_now() -> i64 {
@@ -436,8 +440,7 @@ async fn delete_resource_handler(
         }
         Err(err) => {
             error!("Failed to delete stored objects under {}: {}", prefix, err);
-            HttpResponse::InternalServerError()
-                .json(error_body("failed to delete stored objects"))
+            HttpResponse::InternalServerError().json(error_body("failed to delete stored objects"))
         }
     }
 }

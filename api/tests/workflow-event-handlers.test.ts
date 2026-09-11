@@ -46,9 +46,7 @@ describe("parseWorkflowCreated", () => {
     expect(event.applicationId).toBe("app-1");
     expect(event.workflow.id).toBe("wf-uuid");
     expect(event.workflow.isEnabled).toBe(false);
-    expect(event.workflow.definition?.name).toBe(
-      "wolfy_profile/Someone Follows the Stream"
-    );
+    expect(event.workflow.definition?.name).toBe("wolfy_profile/Someone Follows the Stream");
     // The persisted trigger JSON also carries a `$ref` graph-metadata
     // key that isn't on the typed `TriggerConfig` shape; assert via
     // index access so the typed surface stays clean.
@@ -116,14 +114,11 @@ describe("parseWorkflowCreated", () => {
         name: "with pk",
         steps_json: sampleSteps,
         trigger_json: sampleTrigger,
-        projection_key:
-          "wolfy_profile:1.0.0:abc1234:workflow:follow-workflow",
+        projection_key: "wolfy_profile:1.0.0:abc1234:workflow:follow-workflow",
       },
     };
     const { event } = parseWorkflowCreated(ce);
-    expect(event?.workflow.projectionKey).toBe(
-      "wolfy_profile:1.0.0:abc1234:workflow:follow-workflow"
-    );
+    expect(event?.workflow.projectionKey).toBe("wolfy_profile:1.0.0:abc1234:workflow:follow-workflow");
   });
 
   test("leaves projectionKey undefined when payload omits projection_key", () => {
@@ -239,14 +234,11 @@ describe("parseWorkflowDeleted", () => {
       application_id: "app-1",
       data: {
         id: "wf-deleted",
-        projection_key:
-          "wolfy_profile:1.0.0:abc1234:workflow:follow-workflow",
+        projection_key: "wolfy_profile:1.0.0:abc1234:workflow:follow-workflow",
       },
     };
     const { event } = parseWorkflowDeleted(ce);
-    expect(event?.projectionKey).toBe(
-      "wolfy_profile:1.0.0:abc1234:workflow:follow-workflow"
-    );
+    expect(event?.projectionKey).toBe("wolfy_profile:1.0.0:abc1234:workflow:follow-workflow");
   });
 
   test("leaves projectionKey undefined on USER-authored workflow deletes", () => {

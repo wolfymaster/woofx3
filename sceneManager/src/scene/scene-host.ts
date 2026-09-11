@@ -88,9 +88,7 @@ const WIDGET_CACHE_TTL_MS = 30_000;
  * The moduleKey itself may contain colons (e.g. `spotify:1.0.0:df18e02`), so we
  * locate the last `:widget:` marker rather than splitting on all colons.
  */
-export function parseWidgetCanonicalId(
-  canonicalId: string
-): { moduleKey: string; manifestId: string } | null {
+export function parseWidgetCanonicalId(canonicalId: string): { moduleKey: string; manifestId: string } | null {
   const MARKER = ":widget:";
   const markerIdx = canonicalId.lastIndexOf(MARKER);
   if (markerIdx <= 0) {
@@ -330,10 +328,7 @@ export class OverlayHost {
    * no matching row — the frame assembler then falls back to the
    * default entry ("index.html").
    */
-  async lookupWidgetDefinition(
-    moduleKey: string,
-    manifestId: string
-  ): Promise<OverlayWidgetDefinition | null> {
+  async lookupWidgetDefinition(moduleKey: string, manifestId: string): Promise<OverlayWidgetDefinition | null> {
     const rows = await this.loadWidgetCatalog();
     return rows.find((r) => r.moduleKey === moduleKey && r.manifestId === manifestId) ?? null;
   }
@@ -410,11 +405,14 @@ export class OverlayHost {
     const stableModuleKey = stableModuleKeyFrom(parsed.moduleKey);
     const stableCanonicalId = `${stableModuleKey}:widget:${parsed.manifestId}`;
     if (stableModuleKey !== parsed.moduleKey) {
-      this.logger.warn("normalizeInstance: stripping version from moduleKey — update the UI to store the stable projection key", {
-        id,
-        stored: canonicalId,
-        normalized: stableCanonicalId,
-      });
+      this.logger.warn(
+        "normalizeInstance: stripping version from moduleKey — update the UI to store the stable projection key",
+        {
+          id,
+          stored: canonicalId,
+          normalized: stableCanonicalId,
+        }
+      );
     }
 
     if (typeof w.bundleUrl === "string" && w.bundleUrl && !this.bundleUrlWarned.has(stableCanonicalId)) {
@@ -430,10 +428,7 @@ export class OverlayHost {
       moduleId: stableModuleKey,
       manifestId: parsed.manifestId,
       position: normalizePosition(w),
-      settings:
-        w.settings && typeof w.settings === "object"
-          ? (w.settings as Record<string, unknown>)
-          : {},
+      settings: w.settings && typeof w.settings === "object" ? (w.settings as Record<string, unknown>) : {},
       // Placements carry no accepted events; `resolveInstances` takes them
       // from the widget definition.
       acceptedEvents: [],
@@ -470,9 +465,7 @@ function normalizePosition(w: Record<string, unknown>): OverlayWidgetPosition {
 function parseLayout(layoutJson: string): OverlaySceneLayout {
   try {
     const parsed = JSON.parse(layoutJson || "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as OverlaySceneLayout)
-      : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as OverlaySceneLayout) : {};
   } catch {
     return {};
   }

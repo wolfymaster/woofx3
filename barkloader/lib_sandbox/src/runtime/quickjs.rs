@@ -2,17 +2,15 @@ use crate::error::Error;
 use crate::host::InvocationContext;
 use crate::runtime::RuntimeAdapter;
 use rquickjs::{
-    Array, Context, Ctx, Function as JsFunction, Object, Runtime,
-    Value as JsValue,
-    function::Opt,
+    Array, Context, Ctx, Function as JsFunction, Object, Runtime, Value as JsValue, function::Opt,
     object::Accessor,
 };
 use serde_json::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 const DEFAULT_MEMORY_LIMIT: usize = 16 * 1024 * 1024;
 const DEFAULT_MAX_STACK_SIZE: usize = 1024 * 1024;
@@ -29,8 +27,8 @@ pub struct QuickJSAdapter {
 
 impl QuickJSAdapter {
     pub fn new() -> Result<Self, Error> {
-        let runtime =
-            Runtime::new().map_err(|e| Error::RuntimeError(format!("QuickJS runtime init: {e}")))?;
+        let runtime = Runtime::new()
+            .map_err(|e| Error::RuntimeError(format!("QuickJS runtime init: {e}")))?;
         runtime.set_memory_limit(DEFAULT_MEMORY_LIMIT);
         runtime.set_max_stack_size(DEFAULT_MAX_STACK_SIZE);
 
@@ -88,11 +86,7 @@ impl RuntimeAdapter for QuickJSAdapter {
     }
 }
 
-fn to_sandbox_error(
-    counter: &AtomicU64,
-    max_instructions: u64,
-    e: rquickjs::Error,
-) -> Error {
+fn to_sandbox_error(counter: &AtomicU64, max_instructions: u64, e: rquickjs::Error) -> Error {
     if counter.load(Ordering::Relaxed) >= max_instructions {
         Error::InstructionLimitExceeded
     } else {
@@ -121,8 +115,7 @@ fn json_to_js<'js>(ctx: &Ctx<'js>, value: &Value) -> Result<JsValue<'js>, Error>
             Ok(js_str.into())
         }
         Value::Array(arr) => {
-            let js_arr =
-                Array::new(ctx.clone()).map_err(|e| Error::RuntimeError(e.to_string()))?;
+            let js_arr = Array::new(ctx.clone()).map_err(|e| Error::RuntimeError(e.to_string()))?;
             for (i, v) in arr.iter().enumerate() {
                 let js_v = json_to_js(ctx, v)?;
                 js_arr
@@ -132,8 +125,7 @@ fn json_to_js<'js>(ctx: &Ctx<'js>, value: &Value) -> Result<JsValue<'js>, Error>
             Ok(js_arr.into())
         }
         Value::Object(map) => {
-            let obj =
-                Object::new(ctx.clone()).map_err(|e| Error::RuntimeError(e.to_string()))?;
+            let obj = Object::new(ctx.clone()).map_err(|e| Error::RuntimeError(e.to_string()))?;
             for (k, v) in map {
                 let js_v = json_to_js(ctx, v)?;
                 obj.set(k.as_str(), js_v)
@@ -251,17 +243,14 @@ fn bind_extensions<'js>(
         let target = ensure_namespace_object(ctx, ctx_obj, ext.namespace())?;
         for func in ext.functions() {
             let handler = func.handler.clone();
-            let js_func = JsFunction::new(
-                ctx.clone(),
-                move |ctx, arg: Opt<JsValue<'_>>| {
-                    let value = match arg.0 {
-                        Some(v) => js_to_json(&v).map_err(|e| host_err(e.to_string()))?,
-                        None => Value::Null,
-                    };
-                    let result = handler(value).map_err(host_err)?;
-                    json_to_js(&ctx, &result).map_err(|e| host_err(e.to_string()))
-                },
-            )
+            let js_func = JsFunction::new(ctx.clone(), move |ctx, arg: Opt<JsValue<'_>>| {
+                let value = match arg.0 {
+                    Some(v) => js_to_json(&v).map_err(|e| host_err(e.to_string()))?,
+                    None => Value::Null,
+                };
+                let result = handler(value).map_err(host_err)?;
+                json_to_js(&ctx, &result).map_err(|e| host_err(e.to_string()))
+            })
             .map_err(map)?;
             target.set(func.name.as_str(), js_func).map_err(map)?;
         }
@@ -278,11 +267,15 @@ fn build_events_namespace<'js>(
     let events = Object::new(ctx.clone()).map_err(map)?;
 
     let nats = invocation.host.nats.clone();
-    let publish = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, subject: String, data: JsValue<'_>| -> rquickjs::Result<()> {
-        let json_data = js_to_json(&data).map_err(|e| host_err(e.to_string()))?;
-        nats.publish(&subject, json_data).map_err(|e| host_err(e))?;
-        Ok(())
-    }).map_err(map)?;
+    let publish = JsFunction::new(
+        ctx.clone(),
+        move |_ctx: Ctx<'_>, subject: String, data: JsValue<'_>| -> rquickjs::Result<()> {
+            let json_data = js_to_json(&data).map_err(|e| host_err(e.to_string()))?;
+            nats.publish(&subject, json_data).map_err(|e| host_err(e))?;
+            Ok(())
+        },
+    )
+    .map_err(map)?;
     events.set("publish", publish).map_err(map)?;
 
     ctx_obj.set("events", events).map_err(map)?;
@@ -298,22 +291,26 @@ fn build_storage_namespace<'js>(
     let storage = Object::new(ctx.clone()).map_err(map)?;
 
     let store = invocation.host.storage.clone();
-    let get_fn = JsFunction::new(ctx.clone(), move |ctx, key: String| {
-        match store.get(&key) {
-            Ok(Some(v)) => json_to_js(&ctx, &v).map_err(|e| host_err(e.to_string())),
-            Ok(None) => Ok(rquickjs::Value::new_null(ctx)),
-            Err(e) => Err(host_err(e)),
-        }
-    }).map_err(map)?;
+    let get_fn = JsFunction::new(ctx.clone(), move |ctx, key: String| match store.get(&key) {
+        Ok(Some(v)) => json_to_js(&ctx, &v).map_err(|e| host_err(e.to_string())),
+        Ok(None) => Ok(rquickjs::Value::new_null(ctx)),
+        Err(e) => Err(host_err(e)),
+    })
+    .map_err(map)?;
     storage.set("get", get_fn).map_err(map)?;
 
     let host = invocation.host.clone();
     let module_id = invocation.module_id.clone();
-    let set_fn = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, key: String, value: JsValue<'_>| -> rquickjs::Result<()> {
-        let json_val = js_to_json(&value).map_err(|e| host_err(e.to_string()))?;
-        super::host_bindings::storage_set(&host, &module_id, &key, json_val).map_err(host_err)?;
-        Ok(())
-    }).map_err(map)?;
+    let set_fn = JsFunction::new(
+        ctx.clone(),
+        move |_ctx: Ctx<'_>, key: String, value: JsValue<'_>| -> rquickjs::Result<()> {
+            let json_val = js_to_json(&value).map_err(|e| host_err(e.to_string()))?;
+            super::host_bindings::storage_set(&host, &module_id, &key, json_val)
+                .map_err(host_err)?;
+            Ok(())
+        },
+    )
+    .map_err(map)?;
     storage.set("set", set_fn).map_err(map)?;
 
     ctx_obj.set("storage", storage).map_err(map)?;
@@ -329,11 +326,17 @@ fn build_http_namespace<'js>(
     let http = Object::new(ctx.clone()).map_err(map)?;
 
     let client = invocation.host.http.clone();
-    let request_fn = JsFunction::new(ctx.clone(), move |ctx, url: String, method: String, opts: rquickjs::Value<'_>| {
-        let json_opts = js_to_json(&opts).map_err(|e| host_err(e.to_string()))?;
-        let response = client.request(&url, &method, json_opts).map_err(|e| host_err(e))?;
-        json_to_js(&ctx, &response).map_err(|e| host_err(e.to_string()))
-    }).map_err(map)?;
+    let request_fn = JsFunction::new(
+        ctx.clone(),
+        move |ctx, url: String, method: String, opts: rquickjs::Value<'_>| {
+            let json_opts = js_to_json(&opts).map_err(|e| host_err(e.to_string()))?;
+            let response = client
+                .request(&url, &method, json_opts)
+                .map_err(|e| host_err(e))?;
+            json_to_js(&ctx, &response).map_err(|e| host_err(e.to_string()))
+        },
+    )
+    .map_err(map)?;
     http.set("request", request_fn).map_err(map)?;
 
     ctx_obj.set("http", http).map_err(map)?;
@@ -357,7 +360,8 @@ fn build_env_namespace<'js>(
             }
             None => Ok(rquickjs::Value::new_null(ctx)),
         }
-    }).map_err(map)?;
+    })
+    .map_err(map)?;
     env.set("get", get_fn).map_err(map)?;
 
     ctx_obj.set("env", env).map_err(map)?;
@@ -389,7 +393,13 @@ fn build_resources_namespace<'js>(
         ctx.clone(),
         move |ctx, kind: String, instance_id: String, display_name: Option<String>| {
             let display = display_name.unwrap_or_default();
-            match super::host_bindings::resources_create(&host, &module_name, &kind, &instance_id, &display) {
+            match super::host_bindings::resources_create(
+                &host,
+                &module_name,
+                &kind,
+                &instance_id,
+                &display,
+            ) {
                 Ok(v) => json_to_js(&ctx, &v).map_err(|e| host_err(e.to_string())),
                 Err(e) => Err(host_err(e)),
             }
@@ -437,7 +447,8 @@ fn build_module_namespace<'js>(
     let name_str = rquickjs::String::from_str(ctx.clone(), &invocation.module_name).map_err(map)?;
     module.set("name", name_str).map_err(map)?;
 
-    let version_str = rquickjs::String::from_str(ctx.clone(), &invocation.module_version).map_err(map)?;
+    let version_str =
+        rquickjs::String::from_str(ctx.clone(), &invocation.module_version).map_err(map)?;
     module.set("version", version_str).map_err(map)?;
 
     // `ctx.module.settings` is fetched lazily, on first property access,
@@ -455,7 +466,10 @@ fn build_module_namespace<'js>(
             Accessor::from(move |ctx| {
                 let mut cache = settings_cache.borrow_mut();
                 if cache.is_none() {
-                    *cache = Some(super::host_bindings::module_settings_snapshot(&host, &module_id_for_settings));
+                    *cache = Some(super::host_bindings::module_settings_snapshot(
+                        &host,
+                        &module_id_for_settings,
+                    ));
                 }
                 let settings_map = cache.as_ref().expect("populated above");
                 let settings_obj =
@@ -482,7 +496,9 @@ fn build_module_namespace<'js>(
     let set_setting_fn = JsFunction::new(
         ctx.clone(),
         move |_ctx: Ctx<'_>, key: String, value: String| -> rquickjs::Result<()> {
-            client.set(&module_id_for_set, &key, &value).map_err(host_err)?;
+            client
+                .set(&module_id_for_set, &key, &value)
+                .map_err(host_err)?;
             Ok(())
         },
     )
@@ -525,24 +541,36 @@ fn build_log_namespace<'js>(
     let log = Object::new(ctx.clone()).map_err(map)?;
 
     let module_id = invocation.module_id.clone();
-    let info_fn = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, value: JsValue<'_>| -> rquickjs::Result<()> {
-        tracing::info!("[module:{}] {}", module_id, format_log_value(&value));
-        Ok(())
-    }).map_err(map)?;
+    let info_fn = JsFunction::new(
+        ctx.clone(),
+        move |_ctx: Ctx<'_>, value: JsValue<'_>| -> rquickjs::Result<()> {
+            tracing::info!("[module:{}] {}", module_id, format_log_value(&value));
+            Ok(())
+        },
+    )
+    .map_err(map)?;
     log.set("info", info_fn).map_err(map)?;
 
     let module_id = invocation.module_id.clone();
-    let warn_fn = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, value: JsValue<'_>| -> rquickjs::Result<()> {
-        tracing::warn!("[module:{}] {}", module_id, format_log_value(&value));
-        Ok(())
-    }).map_err(map)?;
+    let warn_fn = JsFunction::new(
+        ctx.clone(),
+        move |_ctx: Ctx<'_>, value: JsValue<'_>| -> rquickjs::Result<()> {
+            tracing::warn!("[module:{}] {}", module_id, format_log_value(&value));
+            Ok(())
+        },
+    )
+    .map_err(map)?;
     log.set("warn", warn_fn).map_err(map)?;
 
     let module_id = invocation.module_id.clone();
-    let error_fn = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, value: JsValue<'_>| -> rquickjs::Result<()> {
-        tracing::error!("[module:{}] {}", module_id, format_log_value(&value));
-        Ok(())
-    }).map_err(map)?;
+    let error_fn = JsFunction::new(
+        ctx.clone(),
+        move |_ctx: Ctx<'_>, value: JsValue<'_>| -> rquickjs::Result<()> {
+            tracing::error!("[module:{}] {}", module_id, format_log_value(&value));
+            Ok(())
+        },
+    )
+    .map_err(map)?;
     log.set("error", error_fn).map_err(map)?;
 
     ctx_obj.set("log", log).map_err(map)?;

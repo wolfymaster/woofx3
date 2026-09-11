@@ -5,7 +5,12 @@
 // queue, and drives the Disconnected banner from the SSE connection
 // state.
 
-import { createFrameLoadHandler, WidgetBridge, type WidgetBridgeCallbacks, type WidgetStatusReportPayload } from "./widget-bridge";
+import {
+  createFrameLoadHandler,
+  WidgetBridge,
+  type WidgetBridgeCallbacks,
+  type WidgetStatusReportPayload,
+} from "./widget-bridge";
 import { EventQueueManager, toWidgetEvent } from "./event-queue";
 import { AckBatcher } from "./ack-batcher";
 import { SceneEventSource, type DeliveryFrame } from "./event-source";
@@ -41,7 +46,10 @@ const REFRESH_INTERVAL_MS = 50_000;
 function generateNonce(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 function renderConnected(connected: boolean): void {
@@ -199,7 +207,12 @@ function main(): void {
   eventSource.start({
     onFrame: (frame: DeliveryFrame) => {
       deliveredBatcher.add(frame.eventId, frame.instanceId);
-      queueManager.enqueue(frame.instanceId, { eventId: frame.eventId, type: frame.type, key: frame.key, value: frame.value });
+      queueManager.enqueue(frame.instanceId, {
+        eventId: frame.eventId,
+        type: frame.type,
+        key: frame.key,
+        value: frame.value,
+      });
     },
     onConnectionChange: (connected) => status.set("stream", connected),
     onHello: (bootId) => {

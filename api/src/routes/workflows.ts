@@ -300,5 +300,5 @@ export const workflowsRoutes = routeModule({
     );
 
     return runs;
-  }
+  },
 });

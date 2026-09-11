@@ -3,8 +3,8 @@ package models
 import (
 	"time"
 
-	"gorm.io/gorm"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type UserMeta struct {

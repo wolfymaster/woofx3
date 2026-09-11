@@ -114,7 +114,7 @@ describe("function ctx drift guard", () => {
       throw new Error(
         `QuickJS adapter registers ${undocumented.length} ctx properties not in the documented set:\n  ` +
           undocumented.sort().join(", ") +
-          "\nUpdate src/function-ctx.d.ts + src/function-ctx.lua + KNOWN_* in this test.",
+          "\nUpdate src/function-ctx.d.ts + src/function-ctx.lua + KNOWN_* in this test."
       );
     }
   });
@@ -195,7 +195,7 @@ describe("function ctx drift guard", () => {
       const inL = lua.includes(`build_${ns}_namespace`) || lua.includes(`"${ns}"`);
       if (!inQ || !inL) {
         throw new Error(
-          `runtime asymmetry — ns=${ns}: quickjs=${inQ}, lua=${inL}. The two adapters should expose the same surface.`,
+          `runtime asymmetry — ns=${ns}: quickjs=${inQ}, lua=${inL}. The two adapters should expose the same surface.`
         );
       }
     }

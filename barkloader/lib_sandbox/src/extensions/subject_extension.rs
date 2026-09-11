@@ -12,7 +12,7 @@
 //! fit it.
 
 use crate::host::{HostExtension, HostFunction, NatsPublisher};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 /// One entry in a subject extension's command table:
@@ -48,7 +48,10 @@ impl SubjectExtension {
                 })
             })
             .collect();
-        Self { namespace, functions }
+        Self {
+            namespace,
+            functions,
+        }
     }
 }
 
@@ -73,33 +76,66 @@ mod tests {
 
     impl NatsPublisher for CapturingNats {
         fn publish(&self, subject: &str, data: Value) -> Result<(), String> {
-            self.published.lock().unwrap().push((subject.to_string(), data));
+            self.published
+                .lock()
+                .unwrap()
+                .push((subject.to_string(), data));
             Ok(())
         }
     }
 
     #[test]
     fn omits_args_key_when_takes_args_is_false() {
-        let nats = Arc::new(CapturingNats { published: Mutex::new(Vec::new()) });
-        let ext = SubjectExtension::new("x", "subj", &[("noArgs", "no_args_cmd", false)], nats.clone());
+        let nats = Arc::new(CapturingNats {
+            published: Mutex::new(Vec::new()),
+        });
+        let ext = SubjectExtension::new(
+            "x",
+            "subj",
+            &[("noArgs", "no_args_cmd", false)],
+            nats.clone(),
+        );
         (ext.functions()[0].handler)(serde_json::json!({"ignored": true})).unwrap();
         let published = nats.published.lock().unwrap();
-        assert_eq!(published[0], ("subj".to_string(), json!({ "command": "no_args_cmd" })));
+        assert_eq!(
+            published[0],
+            ("subj".to_string(), json!({ "command": "no_args_cmd" }))
+        );
     }
 
     #[test]
     fn includes_args_key_when_takes_args_is_true() {
-        let nats = Arc::new(CapturingNats { published: Mutex::new(Vec::new()) });
-        let ext = SubjectExtension::new("x", "subj", &[("withArgs", "with_args_cmd", true)], nats.clone());
+        let nats = Arc::new(CapturingNats {
+            published: Mutex::new(Vec::new()),
+        });
+        let ext = SubjectExtension::new(
+            "x",
+            "subj",
+            &[("withArgs", "with_args_cmd", true)],
+            nats.clone(),
+        );
         (ext.functions()[0].handler)(json!({"n": 1})).unwrap();
         let published = nats.published.lock().unwrap();
-        assert_eq!(published[0], ("subj".to_string(), json!({ "command": "with_args_cmd", "args": {"n": 1} })));
+        assert_eq!(
+            published[0],
+            (
+                "subj".to_string(),
+                json!({ "command": "with_args_cmd", "args": {"n": 1} })
+            )
+        );
     }
 
     #[test]
     fn namespace_and_function_names_are_exposed() {
-        let nats = Arc::new(CapturingNats { published: Mutex::new(Vec::new()) });
-        let ext = SubjectExtension::new("my.ns", "subj", &[("a", "cmd_a", true), ("b", "cmd_b", false)], nats);
+        let nats = Arc::new(CapturingNats {
+            published: Mutex::new(Vec::new()),
+        });
+        let ext = SubjectExtension::new(
+            "my.ns",
+            "subj",
+            &[("a", "cmd_a", true), ("b", "cmd_b", false)],
+            nats,
+        );
         assert_eq!(ext.namespace(), "my.ns");
         assert_eq!(ext.functions().len(), 2);
         assert_eq!(ext.functions()[0].name, "a");

@@ -48,10 +48,7 @@ describe("AckBatcher", () => {
     batcher.add("e1", "w-1");
     batcher.add("e2", "w-1");
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(calls.map((c) => c.url).sort()).toEqual([
-      "/scene/s1/events/e1/completed",
-      "/scene/s1/events/e2/completed",
-    ]);
+    expect(calls.map((c) => c.url).sort()).toEqual(["/scene/s1/events/e1/completed", "/scene/s1/events/e2/completed"]);
   });
 
   it("starts a fresh window after a flush instead of going inert", async () => {

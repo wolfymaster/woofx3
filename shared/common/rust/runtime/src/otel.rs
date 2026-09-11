@@ -28,8 +28,12 @@ impl OtelConfig {
         let enabled = config
             .get_bool(OTEL_ENABLED_KEY)?
             .unwrap_or(exporter_endpoint.is_some());
-        let tracing_enabled = config.get_bool(OTEL_TRACING_ENABLED_KEY)?.unwrap_or(enabled);
-        let local_file_enabled = config.get_bool(OTEL_LOCAL_FILE_ENABLED_KEY)?.unwrap_or(true);
+        let tracing_enabled = config
+            .get_bool(OTEL_TRACING_ENABLED_KEY)?
+            .unwrap_or(enabled);
+        let local_file_enabled = config
+            .get_bool(OTEL_LOCAL_FILE_ENABLED_KEY)?
+            .unwrap_or(true);
 
         Ok(OtelConfig {
             enabled,

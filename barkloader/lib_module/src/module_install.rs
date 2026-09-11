@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use lib_repository::Repository;
-use tracing::{info, warn};
 use std::collections::HashMap;
 use std::path::Path;
+use tracing::{info, warn};
 
 use super::canonical_id::CanonicalId;
 use super::db_proxy::CreateModuleFunctionJson;
@@ -29,11 +29,22 @@ pub async fn cleanup_old_version(
         None => return Ok(()),
     };
 
-    proxy.delete_triggers_by_module_id(module_name, module_key).await?;
-    proxy.delete_actions_by_module_id(module_name, module_key).await?;
-    proxy.delete_widgets_by_module_id(module_name, module_key).await?;
-    proxy.delete_background_tasks_by_module_id(module_name, module_key).await?;
-    info!("Deleted triggers, actions, widgets, and background tasks for module {}", module_name);
+    proxy
+        .delete_triggers_by_module_id(module_name, module_key)
+        .await?;
+    proxy
+        .delete_actions_by_module_id(module_name, module_key)
+        .await?;
+    proxy
+        .delete_widgets_by_module_id(module_name, module_key)
+        .await?;
+    proxy
+        .delete_background_tasks_by_module_id(module_name, module_key)
+        .await?;
+    info!(
+        "Deleted triggers, actions, widgets, and background tasks for module {}",
+        module_name
+    );
 
     proxy.delete_workflows_by_module("", module_name).await?;
     info!("Deleted workflows for module {}", module_name);
@@ -56,8 +67,13 @@ async fn rollback_db_install(
     module_name: &str,
     application_id: &str,
 ) {
-    if let Err(e) =
-        cleanup_old_version(manifest_module_key, composite_module_key, Some(db_proxy), application_id).await
+    if let Err(e) = cleanup_old_version(
+        manifest_module_key,
+        composite_module_key,
+        Some(db_proxy),
+        application_id,
+    )
+    .await
     {
         warn!(
             "rollback: cleanup_old_version({}) failed: {}",
@@ -145,9 +161,12 @@ fn removed_manifest_ids(old: &ModuleManifest, new: &ModuleManifest) -> Vec<(&'st
     let new_background_tasks: std::collections::HashSet<&str> =
         new.background_tasks.iter().map(|t| t.id.as_str()).collect();
     out.extend(
-        removed(old.background_tasks.iter().map(|t| t.id.as_str()), &new_background_tasks)
-            .into_iter()
-            .map(|id| ("background_task", id)),
+        removed(
+            old.background_tasks.iter().map(|t| t.id.as_str()),
+            &new_background_tasks,
+        )
+        .into_iter()
+        .map(|id| ("background_task", id)),
     );
 
     out
@@ -172,7 +191,10 @@ async fn prune_removed_resources(
         Ok(Some(body)) => body,
         Ok(None) => return,
         Err(e) => {
-            warn!("prune_removed_resources: lookup failed for {}: {}", module_key, e);
+            warn!(
+                "prune_removed_resources: lookup failed for {}: {}",
+                module_key, e
+            );
             return;
         }
     };
@@ -184,16 +206,23 @@ async fn prune_removed_resources(
     let prev_manifest: ModuleManifest = match serde_json::from_str(&prev_manifest_json) {
         Ok(m) => m,
         Err(e) => {
-            warn!("prune_removed_resources: failed to parse stored manifest for {}: {}", module_key, e);
+            warn!(
+                "prune_removed_resources: failed to parse stored manifest for {}: {}",
+                module_key, e
+            );
             return;
         }
     };
 
     for (resource_type, manifest_id) in removed_manifest_ids(&prev_manifest, new_manifest) {
         let result = if resource_type == "background_task" {
-            db_proxy.delete_resource_by_manifest_id(module_key, resource_type, &manifest_id).await
+            db_proxy
+                .delete_resource_by_manifest_id(module_key, resource_type, &manifest_id)
+                .await
         } else {
-            db_proxy.archive_resource_by_manifest_id(module_key, resource_type, &manifest_id).await
+            db_proxy
+                .archive_resource_by_manifest_id(module_key, resource_type, &manifest_id)
+                .await
         };
         if let Err(e) = result {
             warn!(
@@ -253,7 +282,9 @@ impl<'a, R: Repository> SagaState<'a, R> {
             InstallStep::RegisterTriggers => self.execute_register_triggers(db_proxy).await,
             InstallStep::RegisterActions => self.execute_register_actions(db_proxy).await,
             InstallStep::RegisterWidgets => self.execute_register_widgets(db_proxy).await,
-            InstallStep::RegisterBackgroundTasks => self.execute_register_background_tasks(db_proxy).await,
+            InstallStep::RegisterBackgroundTasks => {
+                self.execute_register_background_tasks(db_proxy).await
+            }
             InstallStep::RegisterSettings => self.execute_register_settings(db_proxy).await,
             InstallStep::RegisterAssets => self.execute_register_assets(db_proxy).await,
             InstallStep::RegisterWorkflow(canonical_id) => {
@@ -268,7 +299,12 @@ impl<'a, R: Repository> SagaState<'a, R> {
     async fn upload_files(&mut self) -> Result<()> {
         for f in &self.manifest.functions {
             let file_key = f
-                .upload_to_repository(self.module_key, self.version_dir, self.files, self.repository)
+                .upload_to_repository(
+                    self.module_key,
+                    self.version_dir,
+                    self.files,
+                    self.repository,
+                )
                 .await?;
             let file_name = Path::new(&f.path)
                 .file_name()
@@ -286,7 +322,13 @@ impl<'a, R: Repository> SagaState<'a, R> {
         }
 
         for w in &self.manifest.widgets {
-            w.upload_assets(self.module_key, self.version_dir, self.files, self.repository).await?;
+            w.upload_assets(
+                self.module_key,
+                self.version_dir,
+                self.files,
+                self.repository,
+            )
+            .await?;
         }
 
         // Upload static assets declared in manifest.assets[]. Each asset
@@ -296,7 +338,12 @@ impl<'a, R: Repository> SagaState<'a, R> {
         // is captured for the RegisterAssets call further down.
         for a in &self.manifest.assets {
             let repo_key = a
-                .upload_to_repository(self.module_key, self.version_dir, self.files, self.repository)
+                .upload_to_repository(
+                    self.module_key,
+                    self.version_dir,
+                    self.files,
+                    self.repository,
+                )
                 .await?;
             self.asset_keys.push(repo_key);
         }
@@ -339,7 +386,14 @@ impl<'a, R: Repository> SagaState<'a, R> {
         for (i, f) in self.manifest.functions.iter().enumerate() {
             let canonical = self.resolved.functions[i].canonical_id.to_string();
             if let Err(e) = db_proxy
-                .create_module_resource(&db_record_id, "function", "", &f.id, &canonical, &self.manifest.version)
+                .create_module_resource(
+                    &db_record_id,
+                    "function",
+                    "",
+                    &f.id,
+                    &canonical,
+                    &self.manifest.version,
+                )
                 .await
             {
                 warn!("Failed to record function resource {}: {}", canonical, e);
@@ -350,7 +404,14 @@ impl<'a, R: Repository> SagaState<'a, R> {
         for (i, w) in self.manifest.widgets.iter().enumerate() {
             let canonical = self.resolved.widgets[i].canonical_id.to_string();
             if let Err(e) = db_proxy
-                .create_module_resource(&db_record_id, "widget", "", &w.id, &canonical, &self.manifest.version)
+                .create_module_resource(
+                    &db_record_id,
+                    "widget",
+                    "",
+                    &w.id,
+                    &canonical,
+                    &self.manifest.version,
+                )
                 .await
             {
                 warn!("Failed to record widget resource {}: {}", canonical, e);
@@ -377,7 +438,12 @@ impl<'a, R: Repository> SagaState<'a, R> {
         // (`{moduleId}:trigger:{id}`) is recorded separately in the
         // module_resources ledger as `resource_name`, and referenced
         // from workflow `$ref` fields — never on the trigger row.
-        let trigger_inputs: Vec<_> = self.manifest.triggers.iter().map(|t| t.to_input()).collect();
+        let trigger_inputs: Vec<_> = self
+            .manifest
+            .triggers
+            .iter()
+            .map(|t| t.to_input())
+            .collect();
         info!(
             "Registering {} trigger(s) for module {} (moduleKey={})",
             trigger_inputs.len(),
@@ -385,14 +451,28 @@ impl<'a, R: Repository> SagaState<'a, R> {
             self.composite_module_key
         );
         db_proxy
-            .register_triggers(self.module_key, self.composite_module_key, &self.manifest.name, &self.manifest.version, trigger_inputs, "")
+            .register_triggers(
+                self.module_key,
+                self.composite_module_key,
+                &self.manifest.name,
+                &self.manifest.version,
+                trigger_inputs,
+                "",
+            )
             .await?;
 
         // Ledger rows record one resource per trigger, keyed by canonical id.
         for (i, t) in self.manifest.triggers.iter().enumerate() {
             let canonical = self.resolved.triggers[i].canonical_id.to_string();
             if let Err(e) = db_proxy
-                .create_module_resource(db_record_id, "trigger", "", &t.id, &canonical, &self.manifest.version)
+                .create_module_resource(
+                    db_record_id,
+                    "trigger",
+                    "",
+                    &t.id,
+                    &canonical,
+                    &self.manifest.version,
+                )
                 .await
             {
                 warn!("Failed to record trigger resource {}: {}", canonical, e);
@@ -421,9 +501,9 @@ impl<'a, R: Repository> SagaState<'a, R> {
                 // with the canonical function id as its target; a native
                 // action *is* its handler and has no target.
                 let (action_type, resolved_call) = match &self.resolved.actions[i].implementation {
-                    ResolvedActionImpl::Function { canonical_function_id } => {
-                        ("function".to_string(), canonical_function_id.to_string())
-                    }
+                    ResolvedActionImpl::Function {
+                        canonical_function_id,
+                    } => ("function".to_string(), canonical_function_id.to_string()),
                     ResolvedActionImpl::Native { handler } => (handler.clone(), String::new()),
                 };
                 a.to_input(&action_type, &resolved_call)
@@ -436,13 +516,27 @@ impl<'a, R: Repository> SagaState<'a, R> {
             self.composite_module_key
         );
         db_proxy
-            .register_actions(self.module_key, self.composite_module_key, &self.manifest.name, &self.manifest.version, action_inputs, "")
+            .register_actions(
+                self.module_key,
+                self.composite_module_key,
+                &self.manifest.name,
+                &self.manifest.version,
+                action_inputs,
+                "",
+            )
             .await?;
 
         for (i, a) in self.manifest.actions.iter().enumerate() {
             let canonical = self.resolved.actions[i].canonical_id.to_string();
             if let Err(e) = db_proxy
-                .create_module_resource(db_record_id, "action", "", &a.id, &canonical, &self.manifest.version)
+                .create_module_resource(
+                    db_record_id,
+                    "action",
+                    "",
+                    &a.id,
+                    &canonical,
+                    &self.manifest.version,
+                )
                 .await
             {
                 warn!("Failed to record action resource {}: {}", canonical, e);
@@ -518,7 +612,11 @@ impl<'a, R: Repository> SagaState<'a, R> {
                 value_type: s.setting_type.clone(),
             })
             .collect();
-        info!("Registering {} setting(s) for module {}", setting_inputs.len(), self.module_key);
+        info!(
+            "Registering {} setting(s) for module {}",
+            setting_inputs.len(),
+            self.module_key
+        );
         db_proxy
             .register_module_settings(self.module_key, setting_inputs)
             .await
@@ -549,13 +647,26 @@ impl<'a, R: Repository> SagaState<'a, R> {
             self.composite_module_key
         );
         db_proxy
-            .register_assets(self.module_key, self.composite_module_key, &self.manifest.name, &self.manifest.version, asset_inputs)
+            .register_assets(
+                self.module_key,
+                self.composite_module_key,
+                &self.manifest.name,
+                &self.manifest.version,
+                asset_inputs,
+            )
             .await?;
 
         for (i, a) in self.manifest.assets.iter().enumerate() {
             let canonical = self.resolved.assets[i].canonical_id.to_string();
             if let Err(e) = db_proxy
-                .create_module_resource(db_record_id, "asset", "", &a.id, &canonical, &self.manifest.version)
+                .create_module_resource(
+                    db_record_id,
+                    "asset",
+                    "",
+                    &a.id,
+                    &canonical,
+                    &self.manifest.version,
+                )
                 .await
             {
                 warn!("Failed to record asset resource {}: {}", canonical, e);
@@ -578,7 +689,12 @@ impl<'a, R: Repository> SagaState<'a, R> {
             .workflows
             .iter()
             .position(|w| &w.canonical_id == canonical_id)
-            .ok_or_else(|| anyhow!("internal: install plan references workflow {} not found in resolved manifest", canonical_id))?;
+            .ok_or_else(|| {
+                anyhow!(
+                    "internal: install plan references workflow {} not found in resolved manifest",
+                    canonical_id
+                )
+            })?;
         let wf = &self.manifest.workflows[i];
         let resolved_wf = &self.resolved.workflows[i];
 
@@ -631,7 +747,10 @@ impl<'a, R: Repository> SagaState<'a, R> {
                         canonical,
                         e,
                     ))?;
-                ResolvedWorkflowTrigger { trigger_ref: canonical, event_subject }
+                ResolvedWorkflowTrigger {
+                    trigger_ref: canonical,
+                    event_subject,
+                }
             }
         };
 
@@ -644,15 +763,18 @@ impl<'a, R: Repository> SagaState<'a, R> {
         //
         // We can't async-map a Vec inline, so collect step
         // contexts in a sequential loop.
-        let mut resolved_steps_ctx: Vec<ResolvedWorkflowStep> = Vec::with_capacity(resolved_wf.step_actions.len());
+        let mut resolved_steps_ctx: Vec<ResolvedWorkflowStep> =
+            Vec::with_capacity(resolved_wf.step_actions.len());
         for (si, action_canonical) in resolved_wf.step_actions.iter().enumerate() {
             // (engine_action, function_call) — engine_action is
             // the workflow handler name (function / alert / …);
             // function_call is set only when engine_action is
             // "function" (the canonical fn id to invoke).
-            let (engine_action, function_call): (String, Option<String>) =
-                if action_canonical.module_id() == self.resolved.module_id {
-                    let resolved_action = self
+            let (engine_action, function_call): (String, Option<String>) = if action_canonical
+                .module_id()
+                == self.resolved.module_id
+            {
+                let resolved_action = self
                         .resolved
                         .actions
                         .iter()
@@ -663,17 +785,17 @@ impl<'a, R: Repository> SagaState<'a, R> {
                             si,
                             action_canonical,
                         ))?;
-                    match &resolved_action.implementation {
-                        ResolvedActionImpl::Function { canonical_function_id: cid } => {
-                            ("function".to_string(), Some(cid.to_string()))
-                        }
-                        // The step dispatches straight through the engine
-                        // handler; there is no function for it to name.
-                        ResolvedActionImpl::Native { handler } => (handler.clone(), None),
-                    }
-                } else {
-                    let canonical = action_canonical.to_string();
-                    let resolved_ref = db_proxy
+                match &resolved_action.implementation {
+                    ResolvedActionImpl::Function {
+                        canonical_function_id: cid,
+                    } => ("function".to_string(), Some(cid.to_string())),
+                    // The step dispatches straight through the engine
+                    // handler; there is no function for it to name.
+                    ResolvedActionImpl::Native { handler } => (handler.clone(), None),
+                }
+            } else {
+                let canonical = action_canonical.to_string();
+                let resolved_ref = db_proxy
                         .get_action_ref_by_canonical_id(&canonical)
                         .await
                         .map_err(|e| anyhow!(
@@ -683,8 +805,8 @@ impl<'a, R: Repository> SagaState<'a, R> {
                             canonical,
                             e,
                         ))?;
-                    (resolved_ref.action_type, resolved_ref.function_call)
-                };
+                (resolved_ref.action_type, resolved_ref.function_call)
+            };
             resolved_steps_ctx.push(ResolvedWorkflowStep {
                 action_ref: action_canonical.to_string(),
                 engine_action,
@@ -692,11 +814,24 @@ impl<'a, R: Repository> SagaState<'a, R> {
             });
         }
 
-        wf.register(self.module_key, db_proxy, &resolved_trigger_ctx, &resolved_steps_ctx, &self.asset_repo_keys)
-            .await?;
+        wf.register(
+            self.module_key,
+            db_proxy,
+            &resolved_trigger_ctx,
+            &resolved_steps_ctx,
+            &self.asset_repo_keys,
+        )
+        .await?;
         let canonical = resolved_wf.canonical_id.to_string();
         if let Err(e) = db_proxy
-            .create_module_resource(db_record_id, "workflow", "", &wf.id, &canonical, &self.manifest.version)
+            .create_module_resource(
+                db_record_id,
+                "workflow",
+                "",
+                &wf.id,
+                &canonical,
+                &self.manifest.version,
+            )
             .await
         {
             warn!("Failed to record workflow resource {}: {}", canonical, e);
@@ -714,11 +849,17 @@ impl<'a, R: Repository> SagaState<'a, R> {
             .commands
             .iter()
             .position(|c| &c.canonical_id == canonical_id)
-            .ok_or_else(|| anyhow!("internal: install plan references command {} not found in resolved manifest", canonical_id))?;
+            .ok_or_else(|| {
+                anyhow!(
+                    "internal: install plan references command {} not found in resolved manifest",
+                    canonical_id
+                )
+            })?;
         let cmd = &self.manifest.commands[i];
         let resolved_cmd = &self.resolved.commands[i];
         let resolved_workflow = resolved_cmd.workflow.as_ref().map(|c| c.to_string());
-        cmd.register(self.module_key, db_proxy, resolved_workflow.as_deref()).await?;
+        cmd.register(self.module_key, db_proxy, resolved_workflow.as_deref())
+            .await?;
 
         // Resolved lazily and cached: today's code looks this up once,
         // unconditionally, before the (possibly empty) commands loop;
@@ -730,7 +871,11 @@ impl<'a, R: Repository> SagaState<'a, R> {
             let mid = match db_proxy.get_module_by_name(self.module_key).await {
                 Ok(Some(resp)) => {
                     let v: serde_json::Value = serde_json::from_str(&resp).unwrap_or_default();
-                    v.get("module").and_then(|m| m.get("id")).and_then(|v| v.as_str()).unwrap_or("").to_string()
+                    v.get("module")
+                        .and_then(|m| m.get("id"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string()
                 }
                 _ => String::new(),
             };
@@ -741,7 +886,14 @@ impl<'a, R: Repository> SagaState<'a, R> {
         let canonical = resolved_cmd.canonical_id.to_string();
         if !mid.is_empty() {
             if let Err(e) = db_proxy
-                .create_module_resource(mid, "command", "", &cmd.id, &canonical, &self.manifest.version)
+                .create_module_resource(
+                    mid,
+                    "command",
+                    "",
+                    &cmd.id,
+                    &canonical,
+                    &self.manifest.version,
+                )
                 .await
             {
                 warn!("Failed to record command resource {}: {}", canonical, e);
@@ -838,7 +990,9 @@ pub async fn run_install_with_provenance<R: Repository>(
     // own, now folded into plan construction (see
     // `manifest_validate::build_install_plan`).
     let plan = match db_proxy {
-        Some(proxy) => Some(manifest_validate::build_install_plan(manifest, &resolved, proxy).await?),
+        Some(proxy) => {
+            Some(manifest_validate::build_install_plan(manifest, &resolved, proxy).await?)
+        }
         None => None,
     };
 
@@ -875,7 +1029,13 @@ pub async fn run_install_with_provenance<R: Repository>(
         let plan = plan.expect("plan was built above whenever db_proxy is Some");
 
         if cleanup_old {
-            cleanup_old_version(module_key, composite_module_key, Some(proxy), application_id).await?;
+            cleanup_old_version(
+                module_key,
+                composite_module_key,
+                Some(proxy),
+                application_id,
+            )
+            .await?;
         }
 
         // Saga-style install: every step after `CreateModule` must be
@@ -895,7 +1055,14 @@ pub async fn run_install_with_provenance<R: Repository>(
                 "install failed for module {} ({}): rolling back db state: {}",
                 manifest.name, composite_module_key, e
             );
-            rollback_db_install(proxy, module_key, composite_module_key, &manifest.name, application_id).await;
+            rollback_db_install(
+                proxy,
+                module_key,
+                composite_module_key,
+                &manifest.name,
+                application_id,
+            )
+            .await;
             return Err(e);
         }
     } else {
@@ -915,8 +1082,8 @@ pub async fn run_install_with_provenance<R: Repository>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::db_proxy_client::FakeDbProxyClient;
+    use super::*;
 
     // ---------------------------------------------------------------
     // Install provenance. `System` is what a bundled module installs
@@ -939,7 +1106,9 @@ mod tests {
     #[tokio::test]
     async fn system_provenance_stamps_the_module_row() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
         repo.setup().expect("setup");
 
         let (manifest, manifest_json) = system_manifest("woofx3");
@@ -952,19 +1121,32 @@ mod tests {
 
         let db_proxy = FakeDbProxyClient::new();
         run_install_with_provenance(
-            &manifest, &files, &repo, "archives/woofx3.zip", Some(&db_proxy), "", false, &mid, "",
+            &manifest,
+            &files,
+            &repo,
+            "archives/woofx3.zip",
+            Some(&db_proxy),
+            "",
+            false,
+            &mid,
+            "",
             InstallProvenance::System,
         )
         .await
         .expect("system install succeeds");
 
-        assert_eq!(db_proxy.create_module_provenance(), Some(InstallProvenance::System));
+        assert_eq!(
+            db_proxy.create_module_provenance(),
+            Some(InstallProvenance::System)
+        );
     }
 
     #[tokio::test]
     async fn the_reserved_id_is_refused_under_user_provenance() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
         repo.setup().expect("setup");
 
         let (manifest, manifest_json) = system_manifest("woofx3");
@@ -976,10 +1158,23 @@ mod tests {
         let mid = manifest.compute_module_key(&manifest_json);
 
         let db_proxy = FakeDbProxyClient::new();
-        let err = run_install(&manifest, &files, &repo, "archives/woofx3.zip", Some(&db_proxy), "", false, &mid, "")
-            .await
-            .expect_err("the reserved id must not install from an upload");
-        assert!(err.to_string().contains("reserved"), "unexpected error: {err}");
+        let err = run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/woofx3.zip",
+            Some(&db_proxy),
+            "",
+            false,
+            &mid,
+            "",
+        )
+        .await
+        .expect_err("the reserved id must not install from an upload");
+        assert!(
+            err.to_string().contains("reserved"),
+            "unexpected error: {err}"
+        );
         assert!(
             db_proxy.calls().is_empty(),
             "validation must fail before any db write: {:?}",
@@ -990,7 +1185,9 @@ mod tests {
     #[tokio::test]
     async fn run_install_defaults_to_user_provenance() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
         repo.setup().expect("setup");
 
         let (manifest, manifest_json) = system_manifest("ordinary_module");
@@ -1002,11 +1199,24 @@ mod tests {
         let mid = manifest.compute_module_key(&manifest_json);
 
         let db_proxy = FakeDbProxyClient::new();
-        run_install(&manifest, &files, &repo, "archives/om.zip", Some(&db_proxy), "", false, &mid, "")
-            .await
-            .expect("ordinary install succeeds");
+        run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/om.zip",
+            Some(&db_proxy),
+            "",
+            false,
+            &mid,
+            "",
+        )
+        .await
+        .expect("ordinary install succeeds");
 
-        assert_eq!(db_proxy.create_module_provenance(), Some(InstallProvenance::User));
+        assert_eq!(
+            db_proxy.create_module_provenance(),
+            Some(InstallProvenance::User)
+        );
     }
 
     use crate::module_file::{
@@ -1044,20 +1254,37 @@ mod tests {
     #[tokio::test]
     async fn install_with_db_proxy_runs_create_module_then_triggers_then_actions_in_order() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
         repo.setup().expect("setup");
 
         let (manifest, manifest_json) = fault_test_manifest("fault-mod-1");
         let files = vec![
-            ModuleFile::new("module.json".into(), ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON), manifest_json.clone()),
-            ModuleFile::new("functions/f1.lua".into(), ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA), b"return 1".to_vec()),
+            ModuleFile::new(
+                "module.json".into(),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                manifest_json.clone(),
+            ),
+            ModuleFile::new(
+                "functions/f1.lua".into(),
+                ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA),
+                b"return 1".to_vec(),
+            ),
         ];
         let mid = manifest.compute_module_key(&manifest_json);
 
         let db_proxy = FakeDbProxyClient::new();
         run_install(
-            &manifest, &files, &repo, "archives/fault-mod-1.zip",
-            Some(&db_proxy as &dyn ModuleDbProxy), "", false, &mid, "",
+            &manifest,
+            &files,
+            &repo,
+            "archives/fault-mod-1.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy),
+            "",
+            false,
+            &mid,
+            "",
         )
         .await
         .expect("install should succeed against a fake with no configured failures");
@@ -1066,7 +1293,12 @@ mod tests {
         // triggers before actions — the exact order `InstallStep::phase`
         // documents.
         let calls = db_proxy.calls();
-        let idx = |name: &str| calls.iter().position(|c| c == name).unwrap_or_else(|| panic!("{name} not called: {calls:?}"));
+        let idx = |name: &str| {
+            calls
+                .iter()
+                .position(|c| c == name)
+                .unwrap_or_else(|| panic!("{name} not called: {calls:?}"))
+        };
         assert!(idx("create_module") < idx("register_triggers"));
         assert!(idx("register_triggers") < idx("register_actions"));
     }
@@ -1092,26 +1324,48 @@ mod tests {
     #[tokio::test]
     async fn install_with_db_proxy_registers_workflow_then_command_last() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
         repo.setup().expect("setup");
 
         let (manifest, manifest_json) = fault_test_manifest_with_workflow("fault-mod-wf");
         let files = vec![
-            ModuleFile::new("module.json".into(), ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON), manifest_json.clone()),
-            ModuleFile::new("functions/f1.lua".into(), ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA), b"return 1".to_vec()),
+            ModuleFile::new(
+                "module.json".into(),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                manifest_json.clone(),
+            ),
+            ModuleFile::new(
+                "functions/f1.lua".into(),
+                ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA),
+                b"return 1".to_vec(),
+            ),
         ];
         let mid = manifest.compute_module_key(&manifest_json);
 
         let db_proxy = FakeDbProxyClient::new();
         run_install(
-            &manifest, &files, &repo, "archives/fault-mod-wf.zip",
-            Some(&db_proxy as &dyn ModuleDbProxy), "", false, &mid, "",
+            &manifest,
+            &files,
+            &repo,
+            "archives/fault-mod-wf.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy),
+            "",
+            false,
+            &mid,
+            "",
         )
         .await
         .expect("install should succeed against a fake with no configured failures");
 
         let calls = db_proxy.calls();
-        let idx = |name: &str| calls.iter().position(|c| c == name).unwrap_or_else(|| panic!("{name} not called: {calls:?}"));
+        let idx = |name: &str| {
+            calls
+                .iter()
+                .position(|c| c == name)
+                .unwrap_or_else(|| panic!("{name} not called: {calls:?}"))
+        };
         assert!(idx("register_actions") < idx("register_workflow"));
         assert!(idx("register_workflow") < idx("register_command"));
     }
@@ -1122,27 +1376,51 @@ mod tests {
         // failure inside it (not just in its cross-module lookups) still
         // triggers the same compensating rollback as every other step.
         let dir = tempfile::tempdir().expect("tempdir");
-        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
         repo.setup().expect("setup");
 
         let (manifest, manifest_json) = fault_test_manifest_with_workflow("fault-mod-wf-2");
         let files = vec![
-            ModuleFile::new("module.json".into(), ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON), manifest_json.clone()),
-            ModuleFile::new("functions/f1.lua".into(), ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA), b"return 1".to_vec()),
+            ModuleFile::new(
+                "module.json".into(),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                manifest_json.clone(),
+            ),
+            ModuleFile::new(
+                "functions/f1.lua".into(),
+                ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA),
+                b"return 1".to_vec(),
+            ),
         ];
         let mid = manifest.compute_module_key(&manifest_json);
 
         let db_proxy = FakeDbProxyClient::failing_on(["register_workflow"]);
         let err = run_install(
-            &manifest, &files, &repo, "archives/fault-mod-wf-2.zip",
-            Some(&db_proxy as &dyn ModuleDbProxy), "", false, &mid, "",
+            &manifest,
+            &files,
+            &repo,
+            "archives/fault-mod-wf-2.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy),
+            "",
+            false,
+            &mid,
+            "",
         )
         .await
         .expect_err("install should fail when register_workflow fails");
-        assert!(err.to_string().contains("Failed to create workflow"), "got: {err}");
+        assert!(
+            err.to_string().contains("Failed to create workflow"),
+            "got: {err}"
+        );
 
         let calls = db_proxy.calls();
-        let rollback_start = calls.iter().position(|c| c == "register_workflow").expect("register_workflow was attempted") + 1;
+        let rollback_start = calls
+            .iter()
+            .position(|c| c == "register_workflow")
+            .expect("register_workflow was attempted")
+            + 1;
         assert_eq!(
             &calls[rollback_start..],
             &[
@@ -1162,27 +1440,48 @@ mod tests {
     #[tokio::test]
     async fn install_failure_after_create_module_triggers_full_rollback() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
         repo.setup().expect("setup");
 
         let (manifest, manifest_json) = fault_test_manifest("fault-mod-2");
         let files = vec![
-            ModuleFile::new("module.json".into(), ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON), manifest_json.clone()),
-            ModuleFile::new("functions/f1.lua".into(), ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA), b"return 1".to_vec()),
+            ModuleFile::new(
+                "module.json".into(),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                manifest_json.clone(),
+            ),
+            ModuleFile::new(
+                "functions/f1.lua".into(),
+                ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA),
+                b"return 1".to_vec(),
+            ),
         ];
         let mid = manifest.compute_module_key(&manifest_json);
 
         let db_proxy = FakeDbProxyClient::failing_on(["register_actions"]);
         let err = run_install(
-            &manifest, &files, &repo, "archives/fault-mod-2.zip",
-            Some(&db_proxy as &dyn ModuleDbProxy), "", false, &mid, "",
+            &manifest,
+            &files,
+            &repo,
+            "archives/fault-mod-2.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy),
+            "",
+            false,
+            &mid,
+            "",
         )
         .await
         .expect_err("install should fail when register_actions fails");
         assert!(err.to_string().contains("register_actions"), "got: {err}");
 
         let calls = db_proxy.calls();
-        let rollback_start = calls.iter().position(|c| c == "register_actions").expect("register_actions was attempted") + 1;
+        let rollback_start = calls
+            .iter()
+            .position(|c| c == "register_actions")
+            .expect("register_actions was attempted")
+            + 1;
         assert_eq!(
             &calls[rollback_start..],
             &[
@@ -1205,7 +1504,9 @@ mod tests {
         // nothing to compensate for, so `delete_module` etc. must never
         // be called.
         let dir = tempfile::tempdir().expect("tempdir");
-        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
         repo.setup().expect("setup");
 
         let manifest_json = br#"{
@@ -1224,14 +1525,24 @@ mod tests {
 
         let db_proxy = FakeDbProxyClient::failing_on(["get_trigger_event_by_canonical_id"]);
         let err = run_install(
-            &manifest, &files, &repo, "archives/fault-mod-3.zip",
-            Some(&db_proxy as &dyn ModuleDbProxy), "", false, &mid, "",
+            &manifest,
+            &files,
+            &repo,
+            "archives/fault-mod-3.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy),
+            "",
+            false,
+            &mid,
+            "",
         )
         .await
         .expect_err("unresolvable cross-module trigger must fail install");
         assert!(err.to_string().contains("not installed"), "got: {err}");
         // Only the failing lookup itself ran — no write, and no rollback.
-        assert_eq!(db_proxy.calls(), vec!["get_trigger_event_by_canonical_id".to_string()]);
+        assert_eq!(
+            db_proxy.calls(),
+            vec!["get_trigger_event_by_canonical_id".to_string()]
+        );
     }
 
     /// Mirrors `run_install`'s `version_dir` derivation, for tests that
@@ -1353,7 +1664,10 @@ mod tests {
         .expect("install");
 
         let stored = repo
-            .read_file(&format!("modules/test-mod/{}/functions/f1.lua", version_dir_of(&mid)))
+            .read_file(&format!(
+                "modules/test-mod/{}/functions/f1.lua",
+                version_dir_of(&mid)
+            ))
             .await
             .expect("read");
         assert_eq!(stored, b"return 1");
@@ -1399,9 +1713,19 @@ mod tests {
 
         let manifest: ModuleManifest = serde_json::from_slice(manifest_json).expect("manifest");
         let mid = manifest.compute_module_key(manifest_json);
-        run_install(&manifest, &files, &repo, "archives/wm/1.0.0.zip", None, "", false, &mid, "")
-            .await
-            .expect("install");
+        run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/wm/1.0.0.zip",
+            None,
+            "",
+            false,
+            &mid,
+            "",
+        )
+        .await
+        .expect("install");
 
         // Entry and assets-dir files share one key shape: assets-relative
         // under `modules/{module_key}/{version_dir}/widgets/{widget_id}/`
@@ -1413,7 +1737,9 @@ mod tests {
             .expect("html");
         assert_eq!(html, b"<!doctype html>");
         let css = repo
-            .read_file(&format!("modules/wm/{version_dir}/widgets/w1/static/theme.css"))
+            .read_file(&format!(
+                "modules/wm/{version_dir}/widgets/w1/static/theme.css"
+            ))
             .await
             .expect("css");
         assert_eq!(css, b"body{}");
@@ -1457,9 +1783,19 @@ mod tests {
 
         let manifest: ModuleManifest = serde_json::from_slice(manifest_json).expect("manifest");
         let mid = manifest.compute_module_key(manifest_json);
-        run_install(&manifest, &files, &repo, "archives/am/1.0.0.zip", None, "", false, &mid, "")
-            .await
-            .expect("install");
+        run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/am/1.0.0.zip",
+            None,
+            "",
+            false,
+            &mid,
+            "",
+        )
+        .await
+        .expect("install");
 
         let version_dir = version_dir_of(&mid);
         let bytes = repo
@@ -1505,11 +1841,22 @@ mod tests {
 
         let manifest: ModuleManifest = serde_json::from_slice(manifest_json).expect("manifest");
         let mid = manifest.compute_module_key(manifest_json);
-        let err = run_install(&manifest, &files, &repo, "archives/wm2/1.0.0.zip", None, "", false, &mid, "")
-            .await
-            .expect_err("entry outside assets must fail validation");
+        let err = run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/wm2/1.0.0.zip",
+            None,
+            "",
+            false,
+            &mid,
+            "",
+        )
+        .await
+        .expect_err("entry outside assets must fail validation");
         assert!(
-            err.to_string().contains("must live inside the `assets` directory"),
+            err.to_string()
+                .contains("must live inside the `assets` directory"),
             "unexpected error: {err}"
         );
     }
@@ -1565,9 +1912,19 @@ mod tests {
 
         let manifest: ModuleManifest = serde_json::from_slice(manifest_json).expect("manifest");
         let mid = manifest.compute_module_key(manifest_json);
-        let err = run_install(&manifest, &files, &repo, "archives/wm3/1.0.0.zip", None, "", false, &mid, "")
-            .await
-            .expect_err("zip member name traversal must fail install");
+        let err = run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/wm3/1.0.0.zip",
+            None,
+            "",
+            false,
+            &mid,
+            "",
+        )
+        .await
+        .expect_err("zip member name traversal must fail install");
         assert!(
             err.to_string().contains("invalid file name in archive"),
             "unexpected error: {err}"

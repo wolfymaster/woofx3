@@ -53,7 +53,15 @@ describe("P1 woofx3.widget — envelope guard", () => {
       supportedVersions: [1],
     },
     { proto: WIDGET_PROTOCOL, v: PROTOCOL_VERSION, nonce: "n1", type: "storage.get", id: "g1", key: "count" },
-    { proto: WIDGET_PROTOCOL, v: PROTOCOL_VERSION, nonce: "n1", type: "storage.value", id: "g1", key: "count", value: 7 },
+    {
+      proto: WIDGET_PROTOCOL,
+      v: PROTOCOL_VERSION,
+      nonce: "n1",
+      type: "storage.value",
+      id: "g1",
+      key: "count",
+      value: 7,
+    },
     { proto: WIDGET_PROTOCOL, v: PROTOCOL_VERSION, nonce: "n1", type: "storage.subscribe", subId: "s1", key: "count" },
     { proto: WIDGET_PROTOCOL, v: PROTOCOL_VERSION, nonce: "n1", type: "storage.unsubscribe", subId: "s1" },
     {

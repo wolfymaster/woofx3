@@ -474,7 +474,8 @@ export function createRuntimeMachine<
                   ERROR: {
                     target: "application_restart_waiting",
                     actions: [
-                      ({ event }) => console.error("Application run error, restarting:", (event as { error: Error }).error),
+                      ({ event }) =>
+                        console.error("Application run error, restarting:", (event as { error: Error }).error),
                       assign({ backoffDelay: ({ context }) => calculateNextBackoffDelay(context.backoffDelay) }),
                     ],
                   },

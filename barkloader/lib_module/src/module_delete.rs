@@ -9,11 +9,11 @@
 // The usage check is performed before any deletion so callers can abort and
 // return `DeleteError::InUse(list)` without touching any state.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use lib_repository::Repository;
 use lib_sandbox::ModuleRegistry;
-use tracing::{info, warn};
 use std::sync::Arc;
+use tracing::{info, warn};
 
 use super::db_proxy::{self, ResourceInstanceJson, ResourceUsage, UsageRef};
 use super::db_proxy_client::ModuleDbProxy;
@@ -158,7 +158,11 @@ impl ModuleDeletePlan {
         registry: Arc<ModuleRegistry>,
     ) -> Result<()> {
         for step in &self.steps {
-            info!("module delete step: {} (priority {})", step.kind(), step.priority());
+            info!(
+                "module delete step: {} (priority {})",
+                step.kind(),
+                step.priority()
+            );
             if let Err(e) = self.run_step(step, ctx, &registry).await {
                 return Err(anyhow!("step {} failed: {}", step.kind(), e));
             }
@@ -174,22 +178,34 @@ impl ModuleDeletePlan {
     ) -> Result<()> {
         match step {
             DeleteStep::Commands => {
-                ctx.db_proxy.delete_commands_by_module(ctx.manifest_id).await
+                ctx.db_proxy
+                    .delete_commands_by_module(ctx.manifest_id)
+                    .await
             }
             DeleteStep::Workflows => {
-                ctx.db_proxy.delete_workflows_by_module("", ctx.manifest_id).await
+                ctx.db_proxy
+                    .delete_workflows_by_module("", ctx.manifest_id)
+                    .await
             }
             DeleteStep::Actions => {
-                ctx.db_proxy.delete_actions_by_module_id(ctx.manifest_id, ctx.module_key).await
+                ctx.db_proxy
+                    .delete_actions_by_module_id(ctx.manifest_id, ctx.module_key)
+                    .await
             }
             DeleteStep::Triggers => {
-                ctx.db_proxy.delete_triggers_by_module_id(ctx.manifest_id, ctx.module_key).await
+                ctx.db_proxy
+                    .delete_triggers_by_module_id(ctx.manifest_id, ctx.module_key)
+                    .await
             }
             DeleteStep::Widgets => {
-                ctx.db_proxy.delete_widgets_by_module_id(ctx.manifest_id, ctx.module_key).await
+                ctx.db_proxy
+                    .delete_widgets_by_module_id(ctx.manifest_id, ctx.module_key)
+                    .await
             }
             DeleteStep::BackgroundTasks => {
-                ctx.db_proxy.delete_background_tasks_by_module_id(ctx.manifest_id, ctx.module_key).await
+                ctx.db_proxy
+                    .delete_background_tasks_by_module_id(ctx.manifest_id, ctx.module_key)
+                    .await
             }
             DeleteStep::WidgetFiles => {
                 let prefix = format!("modules/{}/widgets/", ctx.module_key);
@@ -227,9 +243,7 @@ impl ModuleDeletePlan {
             DeleteStep::ModuleResourcesLedger => {
                 ctx.db_proxy.delete_module_resources(ctx.module_id).await
             }
-            DeleteStep::ModuleRecord => {
-                ctx.db_proxy.delete_module(ctx.module_name).await
-            }
+            DeleteStep::ModuleRecord => ctx.db_proxy.delete_module(ctx.module_name).await,
             DeleteStep::UnregisterSandbox => {
                 if let Err(e) = registry.unregister_module(ctx.module_name) {
                     // Not fatal: the module may never have been registered in this process.
@@ -298,8 +312,8 @@ pub async fn resolve_module(
         return Ok(None);
     };
 
-    let value: serde_json::Value = serde_json::from_str(&body)
-        .map_err(|e| anyhow!("parse module response: {}", e))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| anyhow!("parse module response: {}", e))?;
 
     let module_id = value
         .get("module")
@@ -326,7 +340,12 @@ pub async fn resolve_module(
         .to_string();
 
     let manifest_id = manifest_id_from_module_key(&module_key);
-    Ok(Some(ResolvedModule { module_id, module_key, manifest_id, created_by_type }))
+    Ok(Some(ResolvedModule {
+        module_id,
+        module_key,
+        manifest_id,
+        created_by_type,
+    }))
 }
 
 /// Run the usage check and execute the delete plan for a module whose identity
@@ -389,7 +408,9 @@ pub async fn run_delete_resolved<R: Repository>(
         manifest_id: &resolved.manifest_id,
         repository,
     };
-    plan.execute(&ctx, registry).await.map_err(DeleteError::Other)?;
+    plan.execute(&ctx, registry)
+        .await
+        .map_err(DeleteError::Other)?;
 
     Ok(())
 }
@@ -425,7 +446,14 @@ pub async fn notify_delete(
     request_context: Option<&db_proxy::RequestContext>,
 ) {
     if let Err(e) = db_proxy
-        .complete_module_delete(module_id, module_name, status, error, in_use, request_context)
+        .complete_module_delete(
+            module_id,
+            module_name,
+            status,
+            error,
+            in_use,
+            request_context,
+        )
         .await
     {
         warn!(
@@ -437,8 +465,8 @@ pub async fn notify_delete(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::db_proxy_client::FakeDbProxyClient;
+    use super::*;
     use lib_repository::{FileRepository, FileRepositoryConfig};
     use lib_sandbox::ModuleRegistry;
 
@@ -452,7 +480,10 @@ mod tests {
     }
 
     fn system_module(id: &str) -> ResolvedModule {
-        ResolvedModule { created_by_type: "SYSTEM".to_string(), ..resolved_module(id) }
+        ResolvedModule {
+            created_by_type: "SYSTEM".to_string(),
+            ..resolved_module(id)
+        }
     }
 
     #[test]
@@ -461,23 +492,38 @@ mod tests {
         assert!(!resolved_module("counter").is_system());
         // The db-proxy writes "SYSTEM"; a differently-cased row must not slip
         // past a guard that exists to be absolute.
-        let odd = ResolvedModule { created_by_type: "System".to_string(), ..resolved_module("woofx3") };
+        let odd = ResolvedModule {
+            created_by_type: "System".to_string(),
+            ..resolved_module("woofx3")
+        };
         assert!(odd.is_system());
         // An older row with no provenance recorded is not a system module.
-        let blank = ResolvedModule { created_by_type: String::new(), ..resolved_module("m") };
+        let blank = ResolvedModule {
+            created_by_type: String::new(),
+            ..resolved_module("m")
+        };
         assert!(!blank.is_system());
     }
 
     #[tokio::test]
     async fn refuses_to_delete_a_system_module_and_touches_nothing() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
         let db_proxy = FakeDbProxyClient::new();
         let registry = Arc::new(ModuleRegistry::new());
 
-        let err = run_delete_resolved(&system_module("woofx3"), "woofx3", &db_proxy, "", &repo, registry)
-            .await
-            .expect_err("a system module must not be deletable");
+        let err = run_delete_resolved(
+            &system_module("woofx3"),
+            "woofx3",
+            &db_proxy,
+            "",
+            &repo,
+            registry,
+        )
+        .await
+        .expect_err("a system module must not be deletable");
 
         assert!(matches!(err, DeleteError::SystemModule), "got {err:?}");
         assert!(err.to_string().contains("system module"), "{err}");
@@ -498,14 +544,23 @@ mod tests {
     #[tokio::test]
     async fn refuses_a_system_module_even_when_nothing_references_it() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
         let db_proxy = FakeDbProxyClient::new();
         let registry = Arc::new(ModuleRegistry::new());
 
         // Same fake that lets an ordinary module delete cleanly below.
-        let err = run_delete_resolved(&system_module("woofx3"), "woofx3", &db_proxy, "", &repo, registry)
-            .await
-            .expect_err("provenance refusal does not depend on usage");
+        let err = run_delete_resolved(
+            &system_module("woofx3"),
+            "woofx3",
+            &db_proxy,
+            "",
+            &repo,
+            registry,
+        )
+        .await
+        .expect_err("provenance refusal does not depend on usage");
 
         assert!(matches!(err, DeleteError::SystemModule));
     }
@@ -513,7 +568,9 @@ mod tests {
     #[tokio::test]
     async fn run_delete_resolved_runs_db_proxy_steps_in_priority_order() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
 
         let db_proxy = FakeDbProxyClient::new();
         let resolved = resolved_module("del-mod-1");
@@ -552,7 +609,9 @@ mod tests {
         // step must simply stop the plan, leaving whatever ran before it
         // done and nothing after it attempted.
         let dir = tempfile::tempdir().expect("tempdir");
-        let repo = FileRepository::new(FileRepositoryConfig { destination: dir.path().to_path_buf() });
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
 
         let db_proxy = FakeDbProxyClient::failing_on(["delete_actions_by_module_id"]);
         let resolved = resolved_module("del-mod-2");

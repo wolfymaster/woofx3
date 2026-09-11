@@ -53,13 +53,19 @@ impl PublicUrlResolver {
     }
 
     pub async fn resolve(&self) -> String {
-        if let Some((value, at)) = self.cache.read().expect("public url cache lock poisoned").clone() {
+        if let Some((value, at)) = self
+            .cache
+            .read()
+            .expect("public url cache lock poisoned")
+            .clone()
+        {
             if at.elapsed() < TTL {
                 return value;
             }
         }
         let resolved = self.resolve_uncached().await;
-        *self.cache.write().expect("public url cache lock poisoned") = Some((resolved.clone(), Instant::now()));
+        *self.cache.write().expect("public url cache lock poisoned") =
+            Some((resolved.clone(), Instant::now()));
         resolved
     }
 
@@ -68,7 +74,10 @@ impl PublicUrlResolver {
             match get_setting(url, SETTING_KEY).await {
                 Ok(Some(value)) if !value.is_empty() => return value,
                 Ok(_) => {}
-                Err(e) => warn!("Failed to fetch {} from db-proxy: {}; falling back", SETTING_KEY, e),
+                Err(e) => warn!(
+                    "Failed to fetch {} from db-proxy: {}; falling back",
+                    SETTING_KEY, e
+                ),
             }
         }
         (self.env_lookup)(ENV_VAR)
@@ -84,16 +93,18 @@ mod tests {
 
     #[tokio::test]
     async fn falls_back_to_default_when_nothing_configured() {
-        let resolver = PublicUrlResolver::with_env_lookup(None, "http://127.0.0.1:9653".to_string(), |_| None);
+        let resolver =
+            PublicUrlResolver::with_env_lookup(None, "http://127.0.0.1:9653".to_string(), |_| None);
         assert_eq!(resolver.resolve().await, "http://127.0.0.1:9653");
     }
 
     #[tokio::test]
     async fn env_var_wins_over_default() {
-        let resolver = PublicUrlResolver::with_env_lookup(None, "http://127.0.0.1:9653".to_string(), |key| {
-            assert_eq!(key, ENV_VAR);
-            Some("https://cdn.example.test".to_string())
-        });
+        let resolver =
+            PublicUrlResolver::with_env_lookup(None, "http://127.0.0.1:9653".to_string(), |key| {
+                assert_eq!(key, ENV_VAR);
+                Some("https://cdn.example.test".to_string())
+            });
         assert_eq!(resolver.resolve().await, "https://cdn.example.test");
     }
 
@@ -103,10 +114,18 @@ mod tests {
         // resolver must not observe it because the first result is
         // still within TTL.
         let calls = AtomicUsize::new(0);
-        let resolver = PublicUrlResolver::with_env_lookup(None, "http://default".to_string(), move |_| {
-            let n = calls.fetch_add(1, Ordering::SeqCst);
-            Some(if n == 0 { "https://first.example.test" } else { "https://second.example.test" }.to_string())
-        });
+        let resolver =
+            PublicUrlResolver::with_env_lookup(None, "http://default".to_string(), move |_| {
+                let n = calls.fetch_add(1, Ordering::SeqCst);
+                Some(
+                    if n == 0 {
+                        "https://first.example.test"
+                    } else {
+                        "https://second.example.test"
+                    }
+                    .to_string(),
+                )
+            });
         assert_eq!(resolver.resolve().await, "https://first.example.test");
         // Still cached — env change within TTL isn't observed yet.
         assert_eq!(resolver.resolve().await, "https://first.example.test");

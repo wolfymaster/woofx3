@@ -82,5 +82,5 @@ export const userActionsRoutes = routeModule({
       success: true,
       message: `Awarded treat "${title}" to user`,
     };
-  }
+  },
 });

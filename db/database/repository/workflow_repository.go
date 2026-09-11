@@ -112,4 +112,3 @@ func (r *WorkflowRepository) GetByName(applicationID uuid.UUID, name string) (*m
 	err := r.db.Where("application_id = ? AND name = ?", applicationID, name).First(&wf).Error
 	return &wf, err
 }
-

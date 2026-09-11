@@ -35,7 +35,6 @@ export interface ApiOptions {
  * Shared host state and internal helpers for route modules.
  */
 export class ApiRouteHost extends RpcTarget {
-
   protected triggerSubscribers = new Set<{
     onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
   }>();

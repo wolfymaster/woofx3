@@ -21,7 +21,7 @@ type Group struct {
 	// one can never be orphaned by a UI edit.
 	IsBuiltIn bool      `gorm:"column:is_built_in;not null;default:false"`
 	CreatedAt time.Time `gorm:"column:created_at;default:CURRENT_TIMESTAMP;not null"`
-	UpdatedAt     time.Time `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;not null"`
+	UpdatedAt time.Time `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;not null"`
 }
 
 func (Group) TableName() string {

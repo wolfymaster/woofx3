@@ -3,7 +3,7 @@ mod workflow;
 pub use workflow::WorkflowServiceClient;
 
 use reqwest::Client;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -95,9 +95,10 @@ pub mod types {
     pub use woofx3::db::common::ResponseStatus;
     pub use woofx3::db::workflow::{
         CancelWorkflowExecutionRequest, CreateWorkflowRequest, DeleteWorkflowRequest,
-        ExecuteWorkflowRequest, ExecuteWorkflowResponse, ExecutionStep, GetWorkflowExecutionRequest,
-        GetWorkflowRequest, ListWorkflowExecutionsRequest, ListWorkflowExecutionsResponse,
-        ListWorkflowsRequest, ListWorkflowsResponse, UpdateWorkflowRequest, Workflow,
-        WorkflowExecution, WorkflowExecutionResponse, WorkflowResponse,
+        ExecuteWorkflowRequest, ExecuteWorkflowResponse, ExecutionStep,
+        GetWorkflowExecutionRequest, GetWorkflowRequest, ListWorkflowExecutionsRequest,
+        ListWorkflowExecutionsResponse, ListWorkflowsRequest, ListWorkflowsResponse,
+        UpdateWorkflowRequest, Workflow, WorkflowExecution, WorkflowExecutionResponse,
+        WorkflowResponse,
     };
 }

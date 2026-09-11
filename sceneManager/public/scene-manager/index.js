@@ -6,7 +6,14 @@ function isWidgetProtocolEnvelope(value) {
     return false;
   }
   const msg = value;
-  return msg.proto === WIDGET_PROTOCOL && msg.v === PROTOCOL_VERSION && typeof msg.type === "string" && msg.type.length > 0 && typeof msg.nonce === "string" && msg.nonce.length > 0;
+  return (
+    msg.proto === WIDGET_PROTOCOL &&
+    msg.v === PROTOCOL_VERSION &&
+    typeof msg.type === "string" &&
+    msg.type.length > 0 &&
+    typeof msg.nonce === "string" &&
+    msg.nonce.length > 0
+  );
 }
 // public/scene-manager/widget-bridge.ts
 class WidgetBridge {
@@ -16,9 +23,9 @@ class WidgetBridge {
   iframe = null;
   moduleId = null;
   initialized = false;
-  shimStorageSubs = new Map;
-  shimSubToKey = new Map;
-  shimEventSubs = new Set;
+  shimStorageSubs = new Map();
+  shimSubToKey = new Map();
+  shimEventSubs = new Set();
   constructor(instanceId, nonce, callbacks) {
     this.instanceId = instanceId;
     this.nonce = nonce;
@@ -88,7 +95,7 @@ class WidgetBridge {
         const storageKey = `${this.moduleId}:${key}`;
         let subIds = this.shimStorageSubs.get(storageKey);
         if (!subIds) {
-          subIds = new Set;
+          subIds = new Set();
           this.shimStorageSubs.set(storageKey, subIds);
         }
         subIds.add(subId);
@@ -161,7 +168,7 @@ class WidgetBridge {
           instanceId: this.instanceId,
           key: typeof msg.key === "string" ? msg.key : "",
           value: msg.value,
-          ts: typeof msg.ts === "string" ? msg.ts : new Date().toISOString()
+          ts: typeof msg.ts === "string" ? msg.ts : new Date().toISOString(),
         });
         return;
       }
@@ -174,14 +181,14 @@ class WidgetBridge {
       type: "init",
       settings,
       capabilities: ["storage", "events", "status"],
-      acceptedEvents: []
+      acceptedEvents: [],
     });
   }
   sendReject(reason) {
     this.post({
       type: "init.reject",
       reason,
-      supportedVersions: [PROTOCOL_VERSION]
+      supportedVersions: [PROTOCOL_VERSION],
     });
   }
   sendStorageChanged(moduleId, key, value) {
@@ -223,12 +230,15 @@ class WidgetBridge {
     if (!win) {
       return;
     }
-    win.postMessage({
-      proto: WIDGET_PROTOCOL,
-      v: PROTOCOL_VERSION,
-      nonce: this.nonce,
-      ...payload
-    }, "*");
+    win.postMessage(
+      {
+        proto: WIDGET_PROTOCOL,
+        v: PROTOCOL_VERSION,
+        nonce: this.nonce,
+        ...payload,
+      },
+      "*"
+    );
   }
 }
 function isEventQueueConfig(value) {
@@ -250,14 +260,20 @@ function tokenize(src) {
   let i = 0;
   while (i < src.length) {
     const c = src[i];
-    if (c === " " || c === "\t" || c === `
-` || c === "\r") {
+    if (
+      c === " " ||
+      c === "\t" ||
+      c ===
+        `
+` ||
+      c === "\r"
+    ) {
       i += 1;
       continue;
     }
-    if (c >= "0" && c <= "9" || c === "." && src[i + 1] >= "0" && src[i + 1] <= "9") {
+    if ((c >= "0" && c <= "9") || (c === "." && src[i + 1] >= "0" && src[i + 1] <= "9")) {
       let j = i + 1;
-      while (j < src.length && (src[j] >= "0" && src[j] <= "9" || src[j] === ".")) {
+      while (j < src.length && ((src[j] >= "0" && src[j] <= "9") || src[j] === ".")) {
         j += 1;
       }
       out.push({ kind: "num", value: Number(src.slice(i, j)) });
@@ -270,8 +286,15 @@ function tokenize(src) {
       while (j < src.length && src[j] !== c) {
         if (src[j] === "\\" && j + 1 < src.length) {
           const next = src[j + 1];
-          s += next === "n" ? `
-` : next === "t" ? "\t" : next === "r" ? "\r" : next;
+          s +=
+            next === "n"
+              ? `
+`
+              : next === "t"
+                ? "\t"
+                : next === "r"
+                  ? "\r"
+                  : next;
           j += 2;
           continue;
         }
@@ -285,9 +308,16 @@ function tokenize(src) {
       i = j + 1;
       continue;
     }
-    if (c >= "a" && c <= "z" || c >= "A" && c <= "Z" || c === "_" || c === "$") {
+    if ((c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c === "_" || c === "$") {
       let j = i + 1;
-      while (j < src.length && (src[j] >= "a" && src[j] <= "z" || src[j] >= "A" && src[j] <= "Z" || src[j] >= "0" && src[j] <= "9" || src[j] === "_" || src[j] === "$")) {
+      while (
+        j < src.length &&
+        ((src[j] >= "a" && src[j] <= "z") ||
+          (src[j] >= "A" && src[j] <= "Z") ||
+          (src[j] >= "0" && src[j] <= "9") ||
+          src[j] === "_" ||
+          src[j] === "$")
+      ) {
         j += 1;
       }
       out.push({ kind: "ident", value: src.slice(i, j) });
@@ -545,7 +575,7 @@ class InstanceQueue {
   deliver;
   onTimeout;
   pending = [];
-  inFlight = new Map;
+  inFlight = new Map();
   constructor(config, deliver, onTimeout) {
     this.config = config;
     this.deliver = deliver;
@@ -584,7 +614,7 @@ class InstanceQueue {
     const result = evaluateExpression(this.config.priorityExpr, {
       type: item.type,
       key: item.key,
-      value: item.value
+      value: item.value,
     });
     return typeof result === "number" && Number.isFinite(result) ? result : 0;
   }
@@ -610,8 +640,8 @@ class InstanceQueue {
 }
 
 class EventQueueManager {
-  queues = new Map;
-  subToInstance = new Map;
+  queues = new Map();
+  subToInstance = new Map();
   register(subId, instanceId, config, deliver, onTimeout) {
     this.subToInstance.set(subId, instanceId);
     this.queues.set(instanceId, new InstanceQueue(config ?? {}, deliver, onTimeout));
@@ -648,7 +678,7 @@ function toWidgetEvent(item) {
     source: "scene-manager",
     time: new Date().toISOString(),
     data: isPlainObject ? data : value,
-    eventId: item.eventId
+    eventId: item.eventId,
   };
   if (parameters && typeof parameters === "object" && !Array.isArray(parameters)) {
     event.parameters = parameters;
@@ -661,7 +691,7 @@ var ACK_BATCH_WINDOW_MS = 250;
 
 class AckBatcher {
   endpoint;
-  pending = new Map;
+  pending = new Map();
   timer = null;
   windowMs;
   fetchFn;
@@ -673,7 +703,7 @@ class AckBatcher {
   add(eventId, instanceId) {
     let set = this.pending.get(eventId);
     if (!set) {
-      set = new Set;
+      set = new Set();
       this.pending.set(eventId, set);
     }
     set.add(instanceId);
@@ -690,7 +720,7 @@ class AckBatcher {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instanceIds: [...instanceIds] })
+        body: JSON.stringify({ instanceIds: [...instanceIds] }),
       }).catch(() => {});
     }
   }
@@ -704,7 +734,7 @@ var ALWAYS_PROBE = {
   onPeerConnected: () => {},
   requestPeerReload: () => {},
   onPeerReload: () => {},
-  stop: () => {}
+  stop: () => {},
 };
 var HEARTBEAT_MS = 2000;
 var PEER_TTL_MS = 5500;
@@ -721,7 +751,7 @@ class BroadcastReconnectCoordinator {
   now;
   heartbeatMs;
   peerTtlMs;
-  peersLastSeen = new Map;
+  peersLastSeen = new Map();
   heartbeatTimer = null;
   peerConnectedHandler = null;
   peerReloadHandler = null;
@@ -826,7 +856,7 @@ function adaptBroadcastChannel(channel) {
     set onmessage(next) {
       handler = next;
       channel.onmessage = next ? (event) => next({ data: event.data }) : null;
-    }
+    },
   };
 }
 function createReconnectCoordinator() {
@@ -865,9 +895,16 @@ function parseSseChunk(rawEvent) {
     return null;
   }
   if (eventName === "hello") {
-    return typeof parsed.bootId === "string" && parsed.bootId.length > 0 ? { kind: "hello", bootId: parsed.bootId } : null;
+    return typeof parsed.bootId === "string" && parsed.bootId.length > 0
+      ? { kind: "hello", bootId: parsed.bootId }
+      : null;
   }
-  if (typeof parsed.eventId === "string" && typeof parsed.instanceId === "string" && typeof parsed.type === "string" && typeof parsed.key === "string") {
+  if (
+    typeof parsed.eventId === "string" &&
+    typeof parsed.instanceId === "string" &&
+    typeof parsed.type === "string" &&
+    typeof parsed.key === "string"
+  ) {
     return {
       kind: "delivery",
       frame: {
@@ -875,8 +912,8 @@ function parseSseChunk(rawEvent) {
         instanceId: parsed.instanceId,
         type: parsed.type,
         key: parsed.key,
-        value: parsed.value
-      }
+        value: parsed.value,
+      },
     };
   }
   return null;
@@ -931,14 +968,14 @@ class SceneEventSource {
     if (this.stopped) {
       return;
     }
-    const controller = new AbortController;
+    const controller = new AbortController();
     this.abortController = controller;
     let response;
     try {
       response = await this.fetchFn(this.url, {
         credentials: "same-origin",
         headers: { Accept: "text/event-stream" },
-        signal: controller.signal
+        signal: controller.signal,
       });
     } catch {
       if (!this.stopped) {
@@ -962,7 +999,7 @@ class SceneEventSource {
     this.coordinator.onConnected();
     this.sink?.onConnectionChange(true);
     const reader = response.body.getReader();
-    const decoder = new TextDecoder;
+    const decoder = new TextDecoder();
     let buffer = "";
     try {
       while (true) {
@@ -972,9 +1009,11 @@ class SceneEventSource {
         }
         buffer += decoder.decode(value, { stream: true });
         let sep;
-        while ((sep = buffer.indexOf(`
+        while (
+          (sep = buffer.indexOf(`
 
-`)) !== -1) {
+`)) !== -1
+        ) {
           const rawEvent = buffer.slice(0, sep);
           buffer = buffer.slice(sep + 2);
           const parsed = parseSseChunk(rawEvent);
@@ -1057,7 +1096,10 @@ var REFRESH_INTERVAL_MS = 50000;
 function generateNonce() {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 function renderConnected(connected) {
   const banner = document.getElementById("disconnected-banner");
@@ -1074,8 +1116,8 @@ function main() {
   }
   const sceneId = sceneData.id;
   const sceneBase = `/scene/${encodeURIComponent(sceneId)}`;
-  const bridgesByInstance = new Map;
-  const queueManager = new EventQueueManager;
+  const bridgesByInstance = new Map();
+  const queueManager = new EventQueueManager();
   const deliveredBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/delivered`);
   const completedBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/completed`);
   function postStatus(instanceId, report) {
@@ -1088,8 +1130,8 @@ function main() {
         widgetCanonicalId: report.widgetCanonicalId,
         key: report.key,
         value: report.value,
-        ts: report.ts
-      })
+        ts: report.ts,
+      }),
     }).catch(() => {});
   }
   for (const instance of sceneData.widgets) {
@@ -1109,7 +1151,13 @@ function main() {
       onStatusReport: (report) => postStatus(instance.id, report),
       onEventsSubscribe: (subId, queue) => {
         currentSubId = subId;
-        queueManager.register(subId, instance.id, queue, (item) => bridge.sendEvent(subId, toWidgetEvent(item)), () => {});
+        queueManager.register(
+          subId,
+          instance.id,
+          queue,
+          (item) => bridge.sendEvent(subId, toWidgetEvent(item)),
+          () => {}
+        );
       },
       onEventsUnsubscribe: (subId) => {
         queueManager.unregister(subId);
@@ -1126,7 +1174,7 @@ function main() {
           queueManager.unregister(currentSubId);
           currentSubId = null;
         }
-      }
+      },
     };
     const bridge = new WidgetBridge(instance.id, nonce, callbacks);
     iframe.addEventListener("load", createFrameLoadHandler(bridge));
@@ -1152,12 +1200,17 @@ function main() {
   });
   const eventSource = new SceneEventSource({
     url: new URL(`${sceneBase}/events`, location.href).toString(),
-    coordinator
+    coordinator,
   });
   eventSource.start({
     onFrame: (frame) => {
       deliveredBatcher.add(frame.eventId, frame.instanceId);
-      queueManager.enqueue(frame.instanceId, { eventId: frame.eventId, type: frame.type, key: frame.key, value: frame.value });
+      queueManager.enqueue(frame.instanceId, {
+        eventId: frame.eventId,
+        type: frame.type,
+        key: frame.key,
+        value: frame.value,
+      });
     },
     onConnectionChange: (connected) => status.set("stream", connected),
     onHello: (bootId) => {
@@ -1169,17 +1222,19 @@ function main() {
     },
     onSessionExpired: () => {
       reloadOverlay();
-    }
+    },
   });
   setInterval(() => {
-    fetch(`${sceneBase}/session/refresh`, { method: "POST", credentials: "same-origin" }).then((resp) => {
-      if (!resp.ok) {
-        throw new Error(`refresh failed: ${resp.status}`);
-      }
-      status.set("session", true);
-    }).catch(() => {
-      status.set("session", false);
-    });
+    fetch(`${sceneBase}/session/refresh`, { method: "POST", credentials: "same-origin" })
+      .then((resp) => {
+        if (!resp.ok) {
+          throw new Error(`refresh failed: ${resp.status}`);
+        }
+        status.set("session", true);
+      })
+      .catch(() => {
+        status.set("session", false);
+      });
   }, REFRESH_INTERVAL_MS);
 }
 main();

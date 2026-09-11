@@ -1,9 +1,9 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use lib_repository::{FileRepositoryConfig, RepositoryConfig, S3RepositoryConfig};
-use tracing::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
+use tracing::{info, warn};
 
 /// Settings keys read from the engine's `settings` table to compose
 /// the active repository. All keys are application-scoped to the
@@ -205,8 +205,8 @@ pub async fn resolve_repository_config(
     } else {
         None
     };
-    let provider = env_or_setting(provider, "STORAGE_PROVIDER")
-        .unwrap_or_else(|| "file".to_string());
+    let provider =
+        env_or_setting(provider, "STORAGE_PROVIDER").unwrap_or_else(|| "file".to_string());
 
     match provider.as_str() {
         "file" => {
@@ -245,11 +245,23 @@ async fn resolve_s3_config(db_proxy_url: Option<&str>) -> Result<S3RepositoryCon
         Ok(None)
     }
 
-    let bucket = env_or_setting(lookup(db_proxy_url, "storage.s3.bucket").await?, "S3_BUCKET")
-        .ok_or_else(|| anyhow!("S3 storage requires 'storage.s3.bucket' setting or S3_BUCKET env"))?;
-    let prefix = env_or_setting(lookup(db_proxy_url, "storage.s3.prefix").await?, "S3_PREFIX");
-    let region = env_or_setting(lookup(db_proxy_url, "storage.s3.region").await?, "S3_REGION");
-    let endpoint = env_or_setting(lookup(db_proxy_url, "storage.s3.endpoint").await?, "S3_ENDPOINT");
+    let bucket = env_or_setting(
+        lookup(db_proxy_url, "storage.s3.bucket").await?,
+        "S3_BUCKET",
+    )
+    .ok_or_else(|| anyhow!("S3 storage requires 'storage.s3.bucket' setting or S3_BUCKET env"))?;
+    let prefix = env_or_setting(
+        lookup(db_proxy_url, "storage.s3.prefix").await?,
+        "S3_PREFIX",
+    );
+    let region = env_or_setting(
+        lookup(db_proxy_url, "storage.s3.region").await?,
+        "S3_REGION",
+    );
+    let endpoint = env_or_setting(
+        lookup(db_proxy_url, "storage.s3.endpoint").await?,
+        "S3_ENDPOINT",
+    );
     let access_key = env_or_setting(
         lookup(db_proxy_url, "storage.s3.access_key").await?,
         "S3_ACCESS_KEY",
@@ -323,7 +335,10 @@ mod tests {
         unsafe {
             std::env::set_var("STORAGE_SETTINGS_TEST_VAR", "from-env");
         }
-        let result = env_or_setting(Some("from-setting".to_string()), "STORAGE_SETTINGS_TEST_VAR");
+        let result = env_or_setting(
+            Some("from-setting".to_string()),
+            "STORAGE_SETTINGS_TEST_VAR",
+        );
         assert_eq!(result, Some("from-setting".to_string()));
         unsafe {
             std::env::remove_var("STORAGE_SETTINGS_TEST_VAR");

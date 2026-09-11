@@ -23,7 +23,9 @@ fn s3_config() -> S3RepositoryConfig {
 }
 
 async fn s3_repo(config: S3RepositoryConfig) -> S3Repository {
-    S3Repository::new(config).await.expect("construct S3Repository")
+    S3Repository::new(config)
+        .await
+        .expect("construct S3Repository")
 }
 
 #[tokio::test]
@@ -124,7 +126,10 @@ async fn s3_presign_without_content_type_returns_no_headers() {
     let UploadEndpoint::Presigned { headers, .. } = grant else {
         panic!("expected a presigned grant");
     };
-    assert!(headers.is_empty(), "no content type means no required headers");
+    assert!(
+        headers.is_empty(),
+        "no content type means no required headers"
+    );
 }
 
 #[tokio::test]
@@ -148,5 +153,8 @@ async fn s3_presign_signature_is_bound_to_the_key() {
         .await
         .expect("presign b");
 
-    assert_ne!(one, two, "a grant for one key must not be reusable for another");
+    assert_ne!(
+        one, two,
+        "a grant for one key must not be reusable for another"
+    );
 }
