@@ -14,7 +14,8 @@
       "!**/*.min.js",
       "!modules",
       "!barkloader/lib_module/fixtures",
-      "!barkloader/perf"
+      "!barkloader/perf",
+      "!streamlabs/chatwidget/style.css"
     ]
   },
   "formatter": {
