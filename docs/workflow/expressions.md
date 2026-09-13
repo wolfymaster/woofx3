@@ -126,18 +126,19 @@ source:
    `source.path` grammar — repository keys contain dots from file
    extensions, which would otherwise be misparsed as a path segment) and
    resolved via plain string concatenation:
-   `{overlayPublicUrl}/overlay/assets/{repositoryKey}`. No DB lookup at
+   `{sceneManagerUrl}/assets/{repositoryKey}`. No DB lookup at
    execution time — the repository key was already baked in at install
    time.
 
-`overlayPublicUrl` is the `overlay.publicUrl` engine setting (see
+`sceneManagerUrl` is the `scene.publicUrl` engine setting (see
 [Engine settings the UI configures](../services/engine-settings-ui.md) —
 `getEngineInfo().overlayPublicUrl` / `setOverlayPublicUrl`), resolved once
-per workflow execution via `workflow/overlay_public_url_resolver.go`'s
-`OverlayPublicURLResolver` (30s cache, process-wide, falls back to this
-service's own env-configured `WOOFX3_OVERLAY_PUBLIC_URL` when unset, and
-to an empty string beyond that — no further hardcoded guess, so an
-unconfigured deployment resolves asset URLs as host-less relative paths).
+per workflow execution via `workflow/scene_manager_url_resolver.go`'s
+`SceneManagerURLResolver` (30s cache, process-wide, falls back to the
+required `WOOFX3_SCENE_MANAGER_URL` when unset). sceneManager relays
+`/assets/...` to barkloader, which redirects to a presigned storage URL
+when the storage backend can sign one and serves the bytes itself
+otherwise.
 
 This mechanism is scoped to a module's **own** declared assets,
 referenced from **that module's own bundled workflows** — it does not

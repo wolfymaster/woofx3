@@ -10,33 +10,14 @@ import (
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 )
 
-// OverlayPublicURLSettingKey is the db-proxy `settings` row a UI settings
-// page writes to configure the single public base URL this deployment's
-// scene surface is reachable at — both session/token-scoped scene access
-// and (via the same base) asset resolution (see
-// docs/services/engine-settings-ui.md). Process-wide, not scoped per
-// application — it describes the deployment's own network topology, not
-// anything per-application.
-//
-// Renamed from "overlay.publicUrl" to "scene.publicUrl" when
-// sceneManager replaced streamware as this setting's primary owner (see
-// db migration 0031_rename_overlay_public_url_setting) — same setting,
-// same purpose.
-const OverlayPublicURLSettingKey = "scene.publicUrl"
+const SceneManagerURLSettingKey = "scene.publicUrl"
 
-const overlayPublicURLCacheTTL = 30 * time.Second
-const overlayPublicURLRequestTimeout = 2 * time.Second
+const sceneManagerURLCacheTTL = 30 * time.Second
+const sceneManagerURLRequestTimeout = 2 * time.Second
 
-// OverlayPublicURLResolver resolves OverlayPublicURLSettingKey via the
-// db-proxy with a 30s TTL cache. Mirrors the "DB setting with config
-// fallback" pattern used elsewhere in this codebase (see
-// streamware/src/overlay/overlay-public-url-resolver.ts, its structural
-// sibling): never returns an error, never blocks callers on a slow or
-// unreachable db-proxy for more than overlayPublicURLRequestTimeout — a
-// lookup failure, an unset setting, or no db client configured all fall
-// back to defaultURL, which itself may be an empty string (no hardcoded
-// guess beyond the caller-supplied env/config default).
-type OverlayPublicURLResolver struct {
+// SceneManagerURLResolver never returns an error: a failed, slow, or empty
+// lookup of the setting falls back to the configured URL.
+type SceneManagerURLResolver struct {
 	settings   dbv1.SettingService
 	defaultURL string
 	logger     tasks.Logger
@@ -46,8 +27,8 @@ type OverlayPublicURLResolver struct {
 	expiresAt time.Time
 }
 
-func NewOverlayPublicURLResolver(settings dbv1.SettingService, defaultURL string, logger tasks.Logger) *OverlayPublicURLResolver {
-	return &OverlayPublicURLResolver{
+func NewSceneManagerURLResolver(settings dbv1.SettingService, defaultURL string, logger tasks.Logger) *SceneManagerURLResolver {
+	return &SceneManagerURLResolver{
 		settings:   settings,
 		defaultURL: strings.TrimRight(defaultURL, "/"),
 		logger:     logger,
@@ -55,7 +36,7 @@ func NewOverlayPublicURLResolver(settings dbv1.SettingService, defaultURL string
 }
 
 // Resolve implements engine.AssetURLResolver.
-func (r *OverlayPublicURLResolver) Resolve() string {
+func (r *SceneManagerURLResolver) Resolve() string {
 	r.mu.Lock()
 	if r.settings == nil {
 		defer r.mu.Unlock()
@@ -67,17 +48,17 @@ func (r *OverlayPublicURLResolver) Resolve() string {
 	}
 	r.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), overlayPublicURLRequestTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), sceneManagerURLRequestTimeout)
 	defer cancel()
 
 	value := r.defaultURL
 	resp, err := r.settings.GetSetting(ctx, &dbv1.GetSettingRequest{
-		Key:           OverlayPublicURLSettingKey,
+		Key:           SceneManagerURLSettingKey,
 		ApplicationId: "",
 	})
 	if err != nil {
 		if r.logger != nil {
-			r.logger.Warn("failed to resolve overlay.publicUrl setting; using default", "error", err, "default", r.defaultURL)
+			r.logger.Warn("failed to resolve scene.publicUrl setting; using default", "error", err, "default", r.defaultURL)
 		}
 	} else if setting := resp.GetSetting(); setting != nil {
 		if s := setting.GetValue().GetStringValue(); s != "" {
@@ -87,7 +68,7 @@ func (r *OverlayPublicURLResolver) Resolve() string {
 
 	r.mu.Lock()
 	r.cached = value
-	r.expiresAt = time.Now().Add(overlayPublicURLCacheTTL)
+	r.expiresAt = time.Now().Add(sceneManagerURLCacheTTL)
 	r.mu.Unlock()
 
 	return value

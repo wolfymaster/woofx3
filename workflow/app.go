@@ -82,21 +82,17 @@ func NewWorkflowApp(logger tasks.Logger) *WorkflowApp {
 // constructed. The services' clients may not be connected yet at the time of
 // this call — Run() reads .Client() / .Connection() once the runtime has
 // completed its connect phase.
-//
-// defaultOverlayPublicURL seeds the `${woofx3_asset_url:...}` token
-// resolution (see OverlayPublicURLResolver) until an `overlay.publicUrl`
-// engine setting is configured.
 func (a *WorkflowApp) SetServices(
 	natsSvc *service.NATSService,
 	barkloaderSvc *service.BarkloaderService,
 	dbClient *dbv1.DbProxyClient,
-	defaultOverlayPublicURL string,
+	sceneManagerURL string,
 ) {
 	a.natsSvc = natsSvc
 	a.barkloaderSvc = barkloaderSvc
 	a.moduleDbClient = dbClient.Module
 	a.manager.SetDbClient(dbClient.Workflow)
-	a.engine.SetAssetURLResolver(NewOverlayPublicURLResolver(dbClient.Setting, defaultOverlayPublicURL, a.logger))
+	a.engine.SetAssetURLResolver(NewSceneManagerURLResolver(dbClient.Setting, sceneManagerURL, a.logger))
 }
 
 func (a *WorkflowApp) Init(ctx context.Context) error {

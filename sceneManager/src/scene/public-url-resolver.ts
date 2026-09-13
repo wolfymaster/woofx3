@@ -29,16 +29,6 @@ function trimTrailingSlash(url: string): string {
  * the db-proxy with a 30s TTL cache, falling back to the process's own
  * env-configured default.
  *
- * `scene.publicUrl` is a rename of streamware/workflow's
- * `overlay.publicUrl` (same setting, same purpose — see db migration
- * 0031_rename_overlay_public_url_setting), not a new one: sceneManager,
- * streamware, and workflow all resolve the exact same DB row, kept in
- * sync via `resolveOverlayPublicUrl` (api/src/routes/helpers.ts) for
- * writes. Structural sibling of barkloader's `PublicUrlResolver`
- * (storage.publicUrl) and streamware's `OverlayPublicUrlResolver` —
- * same "DB setting with config fallback" shape used everywhere else in
- * this codebase for exactly this kind of value.
- *
  * Never throws and never returns empty unless both the DB setting and
  * the caller-supplied default are unset.
  */

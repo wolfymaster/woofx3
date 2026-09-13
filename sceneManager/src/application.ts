@@ -53,11 +53,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const resolver = new OverlayTokenResolver(db, ctx.logger);
     const host = new OverlayHost(resolver, db, ctx.logger);
     const barkloader = new HttpBarkloaderFrameClient(ctx.runtimeConfig.barkloaderUrl, ctx.logger);
-    // Default (env/config) fallback for the scene.publicUrl DB setting —
-    // used only when the setting is unset or unreachable.
-    const selfPublicUrlDefault =
-      ctx.runtimeConfig.publicUrl || `http://${ctx.runtimeConfig.bindHost}:${ctx.runtimeConfig.port}`;
-    const selfPublicUrlResolver = new PublicUrlResolver(db, selfPublicUrlDefault, ctx.logger);
+    const selfPublicUrlResolver = new PublicUrlResolver(db, ctx.runtimeConfig.publicUrl, ctx.logger);
     const frameAssembler = new FrameAssembler(host, ctx.logger, {
       barkloader,
       publicDir: ctx.runtimeConfig.publicDir,

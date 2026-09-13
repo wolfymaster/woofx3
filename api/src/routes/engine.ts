@@ -1,6 +1,6 @@
 import { routeModule } from "./context";
 import type { PingResponse, StorageConfig } from "@woofx3/api";
-import { resolveOverlayPublicUrl } from "./helpers";
+import { resolveSceneManagerUrl } from "./helpers";
 
 export const engineRoutes = routeModule({
   async ping(): Promise<PingResponse> {
@@ -10,24 +10,6 @@ export const engineRoutes = routeModule({
   /**
    * Surface deployment URLs to the UI. Called once per UI session and
    * cached.
-   *
-   * `overlayPublicUrl` is the single public base URL for reaching this
-   * api's overlay surface — both the token-scoped overlay tree
-   * (`/overlay/{token}/...`, what `mintOverlayToken`/`rotateOverlayToken`/
-   * `listOverlayTokens` compose their `url` from) and, via the same
-   * `/overlay/assets/...` route, every widget/module asset kind. There is
-   * deliberately only this one setting: everything is proxied through the
-   * api gateway's `/overlay/` surface today, so a separate
-   * "streamware app" URL or a separate "asset storage" URL would just be
-   * two more names for the same value — see
-   * docs/services/engine-settings-ui.md for the history of why this used
-   * to be three settings.
-   *
-   * Read via `resolveOverlayPublicUrl`: the `overlay.publicUrl` engine
-   * setting, falling back to this service's own env-configured
-   * `overlayPublicUrl` (`WOOFX3_OVERLAY_PUBLIC_URL`) when unset. No
-   * further hardcoded fallback beyond that — an unconfigured deployment
-   * gets an empty string here rather than a guessed value.
    *
    * `engineSceneOverlayBaseUrl` is a cheap derivation
    * (`${overlayPublicUrl}/overlay/scene`), kept for backward
@@ -45,7 +27,7 @@ export const engineRoutes = routeModule({
     engineSceneOverlayBaseUrl: string;
     overlayPublicUrl: string;
   }> {
-    const overlayPublicUrl = await resolveOverlayPublicUrl(this.db, this.overlayPublicUrl);
+    const overlayPublicUrl = await resolveSceneManagerUrl(this.db, this.sceneManagerUrl);
     return {
       engineSceneOverlayBaseUrl: `${overlayPublicUrl}/overlay/scene`,
       overlayPublicUrl,
@@ -66,7 +48,7 @@ export const engineRoutes = routeModule({
    * contract), only the underlying setting key moved.
    *
    * Empty string is allowed and clears the setting — the engine then falls
-   * back to its own env-configured `overlayPublicUrl` (WOOFX3_OVERLAY_PUBLIC_URL).
+   * back to its configured `sceneManagerUrl`.
    */
   async setOverlayPublicUrl(value: string): Promise<{ success: boolean }> {
     const normalized = value.trim().replace(/\/+$/, "");

@@ -148,10 +148,14 @@ async fn setup() -> Result<AppContext> {
     // is not necessarily the last.
     let repository = SharedRepository::new(repository);
 
-    let default_public_url = get_woofx3_json_value("barkloaderUrl", "");
+    let scene_manager_url =
+        get_env_or_default_with_key("WOOFX3_SCENE_MANAGER_URL", Some("sceneManagerUrl"), "");
+    if scene_manager_url.is_empty() {
+        anyhow::bail!("sceneManagerUrl (WOOFX3_SCENE_MANAGER_URL) is required for barkloader");
+    }
     let public_url_resolver = Arc::new(services::public_url::PublicUrlResolver::new(
         Some(db_proxy_url.clone()),
-        default_public_url,
+        scene_manager_url,
     ));
 
     // Bundled modules must be installed before the registry is built from
