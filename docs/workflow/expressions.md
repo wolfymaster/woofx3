@@ -91,7 +91,7 @@ alert's `audioUrl`) can be rendered by a *generic* widget (like the
 builtin `MediaWidget`) whose own `<base href>` belongs to a different
 module than the one that declared the asset — so a bare relative
 filename or a base-URL-relative template can't safely reach it (see
-[Asset prefix rules](../woofwoofwoof/streamware/asset-prefix.md) for
+[Asset delivery](../services/asset-delivery.md) for
 why asset routes are public/token-independent, which is the other half
 of this constraint).
 
@@ -222,6 +222,5 @@ $$ <span style="color: #EC6758">alice</span> gifted <span style="color: #EC6758"
 
 ## See also
 
-- Layer 2 reference: [Streamware substitutions](../streamware/substitutions.md).
 - The alert action that produces these strings: [Tasks → builtin:action:alert](./tasks.md).
 - The full alert envelope shape: [Widget events](../services/widget-events.md#alert-lifecycle-events).

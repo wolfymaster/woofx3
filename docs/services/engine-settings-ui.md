@@ -35,7 +35,7 @@ Every browser-facing request goes to sceneManager: scene pages, widget
 frames, and asset bytes alike. Assets are relayed — sceneManager forwards
 `/assets/...` to barkloader, which redirects to presigned storage or
 serves the bytes itself (see
-[Asset prefix rules](../woofwoofwoof/streamware/asset-prefix.md)). A
+[Asset delivery](./asset-delivery.md)). A
 separate "asset URL" setting would be a second name for the same host.
 
 ## API contract

@@ -1,4 +1,4 @@
-# Asset Prefix Rules
+# Asset delivery
 
 Module and user assets are served over HTTP through a public,
 token-independent surface on sceneManager. Every asset URL is the asset's
@@ -12,7 +12,7 @@ repository key under one base:
 
 `sceneManagerUrl` is the `scene.publicUrl` engine setting, falling back to
 the required `WOOFX3_SCENE_MANAGER_URL` (see
-[Engine settings the UI configures](../../services/engine-settings-ui.md)).
+[Engine settings the UI configures](./engine-settings-ui.md)).
 
 - **`modules/`** holds files unpacked from an installed module bundle.
   `versionDir` is the content-hash segment of the module's composite key
@@ -28,7 +28,7 @@ the required `WOOFX3_SCENE_MANAGER_URL` (see
 
 The api builds resource URLs, the workflow engine builds
 `${woofx3_asset_url:...}` token values (see
-[Expressions](../../workflow/expressions.md)), and barkloader builds each
+[Expressions](../workflow/expressions.md)), and barkloader builds each
 widget's resource base URL — all from the same setting.
 
 ## How an asset request is served
@@ -113,7 +113,7 @@ The same rejection is enforced upstream, at module-install time: barkloader's
 `normalize_rel_path` rejects any `..`-containing path — including one that only
 appears as a raw ZIP archive member name, not just a manifest-declared string —
 before it can become a repository write (see
-[Module manifest reference](../../barkloader/modules.md)).
+[Module manifest reference](../barkloader/modules.md)).
 
 ## Why asset URLs are public, not token-scoped
 
