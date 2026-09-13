@@ -3,9 +3,7 @@
  * local asset. Returns the cleaned path, or null on any rejection.
  * Ported from streamware/src/overlay/asset-proxy.ts's
  * `sanitizeAssetPath` — the only piece of that file sceneManager still
- * needs; the proxy itself is gone (resource bytes are fetched directly
- * by the browser from Barkloader's public URL now, not relayed through
- * here — see frame-assembler.ts).
+ * needs.
  *
  * Pipeline order (binding):
  *  1. decodeURIComponent — if this throws, return null

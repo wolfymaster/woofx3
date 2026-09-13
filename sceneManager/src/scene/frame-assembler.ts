@@ -167,9 +167,7 @@ function defaultNonce(): string {
  * Assembles widget frame documents. Simplified from streamware's
  * version: module widget entry HTML + resource base URL come from a
  * single Barkloader call (which now owns version resolution) instead
- * of a locally-duplicated `ModuleVersionResolver`; there is no
- * `WidgetAssetProxy` — resource bytes are fetched directly by the
- * browser from Barkloader's public URL, never proxied through here.
+ * of a locally-duplicated `ModuleVersionResolver`.
  */
 export class FrameAssembler {
   private readonly generateNonce: () => string;

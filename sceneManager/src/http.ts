@@ -9,6 +9,7 @@ import { handleSceneRoute } from "./routes/scene";
 import { handleSessionRefreshRoute } from "./routes/session";
 import { handleWidgetFrameRoute } from "./routes/widget";
 import { handleStaticAssetRoute } from "./routes/assets";
+import { handleStorageAssetRoute, isStorageAssetPath } from "./routes/storage";
 import {
   handleEventCompletedRoute,
   handleEventDeliveredRoute,
@@ -78,6 +79,12 @@ export function createHttpServer(deps: HttpDeps) {
         async (): Promise<Response> => {
           if (url.pathname === "/health") {
             return withCors(Response.json({ status: "ok" }));
+          }
+
+          if (isStorageAssetPath(url.pathname)) {
+            return withCors(
+              await handleStorageAssetRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger)
+            );
           }
 
           if (url.pathname.startsWith("/assets/")) {
