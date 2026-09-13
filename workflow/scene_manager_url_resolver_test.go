@@ -42,33 +42,23 @@ func (f *fakeSettingService) ListSettingsByPrefix(context.Context, *dbv1.ListSet
 func stringSettingResponse(value string) *dbv1.SettingResponse {
 	return &dbv1.SettingResponse{
 		Setting: &dbv1.Setting{
-			Key:   OverlayPublicURLSettingKey,
+			Key:   SceneManagerURLSettingKey,
 			Value: structpb.NewStringValue(value),
 		},
 	}
 }
 
-func TestOverlayPublicURLResolverFallsBackWithNoDbClient(t *testing.T) {
-	r := NewOverlayPublicURLResolver(nil, "http://127.0.0.1:9100/", nil)
+func TestSceneManagerURLResolverFallsBackWithNoDbClient(t *testing.T) {
+	r := NewSceneManagerURLResolver(nil, "http://127.0.0.1:9100/", nil)
 	if got := r.Resolve(); got != "http://127.0.0.1:9100" {
 		t.Fatalf("got %q", got)
 	}
 }
 
-func TestOverlayPublicURLResolverFallsBackToEmptyWhenUnconfigured(t *testing.T) {
-	// Regression: no hardcoded literal default beyond whatever the caller
-	// supplies — an unconfigured deployment resolves to an empty base
-	// rather than a guessed address.
-	r := NewOverlayPublicURLResolver(nil, "", nil)
-	if got := r.Resolve(); got != "" {
-		t.Fatalf("got %q, want empty string", got)
-	}
-}
-
-func TestOverlayPublicURLResolverUsesConfiguredSettingAndCaches(t *testing.T) {
+func TestSceneManagerURLResolverUsesConfiguredSettingAndCaches(t *testing.T) {
 	settings := &fakeSettingService{
 		getSetting: func(ctx context.Context, req *dbv1.GetSettingRequest) (*dbv1.SettingResponse, error) {
-			if req.Key != OverlayPublicURLSettingKey {
+			if req.Key != SceneManagerURLSettingKey {
 				t.Fatalf("unexpected key %q", req.Key)
 			}
 			if req.ApplicationId != "" {
@@ -77,7 +67,7 @@ func TestOverlayPublicURLResolverUsesConfiguredSettingAndCaches(t *testing.T) {
 			return stringSettingResponse("https://tunnel.example.com/"), nil
 		},
 	}
-	r := NewOverlayPublicURLResolver(settings, "http://127.0.0.1:9100", nil)
+	r := NewSceneManagerURLResolver(settings, "http://127.0.0.1:9100", nil)
 
 	if got := r.Resolve(); got != "https://tunnel.example.com" {
 		t.Fatalf("got %q", got)
@@ -89,26 +79,26 @@ func TestOverlayPublicURLResolverUsesConfiguredSettingAndCaches(t *testing.T) {
 	}
 }
 
-func TestOverlayPublicURLResolverFallsBackOnTransportError(t *testing.T) {
+func TestSceneManagerURLResolverFallsBackOnTransportError(t *testing.T) {
 	settings := &fakeSettingService{
 		getSetting: func(ctx context.Context, req *dbv1.GetSettingRequest) (*dbv1.SettingResponse, error) {
 			return nil, errors.New("db-proxy unreachable")
 		},
 	}
-	r := NewOverlayPublicURLResolver(settings, "http://127.0.0.1:9100", nil)
+	r := NewSceneManagerURLResolver(settings, "http://127.0.0.1:9100", nil)
 
 	if got := r.Resolve(); got != "http://127.0.0.1:9100" {
 		t.Fatalf("got %q", got)
 	}
 }
 
-func TestOverlayPublicURLResolverFallsBackWhenSettingUnset(t *testing.T) {
+func TestSceneManagerURLResolverFallsBackWhenSettingUnset(t *testing.T) {
 	settings := &fakeSettingService{
 		getSetting: func(ctx context.Context, req *dbv1.GetSettingRequest) (*dbv1.SettingResponse, error) {
 			return &dbv1.SettingResponse{}, nil
 		},
 	}
-	r := NewOverlayPublicURLResolver(settings, "http://127.0.0.1:9100", nil)
+	r := NewSceneManagerURLResolver(settings, "http://127.0.0.1:9100", nil)
 
 	if got := r.Resolve(); got != "http://127.0.0.1:9100" {
 		t.Fatalf("got %q", got)

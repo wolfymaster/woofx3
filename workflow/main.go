@@ -94,12 +94,7 @@ func main() {
 			// Wire runtime services into the application now that config is loaded
 			// and the post-config services have been constructed. natsSvc was
 			// constructed pre-config in main(); the others are local to this scope.
-			// Default `overlay.publicUrl` base until a UI-configured setting
-			// overrides it — no hardcoded fallback beyond the env value; an
-			// unconfigured deployment resolves asset URLs as host-less
-			// relative paths rather than a guessed address (see
-			// WorkflowEnvConfig.OverlayPublicURL).
-			app.SetServices(natsSvc, barkloaderService, dbClient, cfg.OverlayPublicURL)
+			app.SetServices(natsSvc, barkloaderService, dbClient, cfg.SceneManagerURL)
 
 			return nil
 		},

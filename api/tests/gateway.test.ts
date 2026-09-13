@@ -27,7 +27,14 @@ describe("ApiGateway.registerClient", () => {
       listClients,
     } as any;
     const logger = fakeLogger();
-    const api = new Api({ db, nats: null, barkloaderUrl: "http://b", logger });
+    const api = new Api({
+      db,
+      nats: null,
+      barkloaderUrl: "http://b",
+      sceneManagerUrl: "http://scene.test",
+      apiUrl: "http://api.test",
+      logger,
+    });
     const webhook = new WebhookClient(db, logger, null);
     api.setWebhookClient(webhook);
     const auth = { validate: mock(async () => ({ valid: true })) } as any;
@@ -57,7 +64,14 @@ describe("ApiGateway.registerClient", () => {
       listClients: mock(async () => ({ clients: [] })),
     } as any;
     const logger = fakeLogger();
-    const api = new Api({ db, nats: null, barkloaderUrl: "http://b", logger });
+    const api = new Api({
+      db,
+      nats: null,
+      barkloaderUrl: "http://b",
+      sceneManagerUrl: "http://scene.test",
+      apiUrl: "http://api.test",
+      logger,
+    });
     const webhook = new WebhookClient(db, logger, null);
     api.setWebhookClient(webhook);
     const gateway = new ApiGateway(api, { validate: mock(async () => ({ valid: true })) } as any, db, logger);
@@ -72,7 +86,14 @@ describe("ApiGateway.registerClient", () => {
   it("rejects empty userId", async () => {
     const db = { findOrCreateByWoofx3UIUserId: mock(async () => ({ id: "u1" })) } as any;
     const logger = fakeLogger();
-    const api = new Api({ db, nats: null, barkloaderUrl: "http://b", logger });
+    const api = new Api({
+      db,
+      nats: null,
+      barkloaderUrl: "http://b",
+      sceneManagerUrl: "http://scene.test",
+      apiUrl: "http://api.test",
+      logger,
+    });
     const gateway = new ApiGateway(api, { validate: mock(async () => ({ valid: true })) } as any, db, logger);
 
     await expect(gateway.registerClient("test", { userId: "" })).rejects.toThrow();

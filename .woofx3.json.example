@@ -1,6 +1,7 @@
 {
   "barkloaderWsUrl": "",
   "databaseProxyUrl": "",
+  "sceneManagerUrl": "",
 
   "rootPath": "",
 
