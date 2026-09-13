@@ -11,8 +11,6 @@ export const SceneManagerEnvSchema = z.object({
   // surface, never assumed here.
   woofx3SceneManagerHost: z.string().default("127.0.0.1"),
   sceneManagerHost: z.string().optional(),
-  woofx3SceneManagerUrl: z.string().optional(),
-  sceneManagerUrl: z.string().optional(),
   // HS256 signing secret for the short-lived session JWT minted at
   // `GET /scene/{sceneId}`. Required — fail fast rather than run with
   // an absent/guessable secret.
@@ -43,7 +41,6 @@ export type SceneManagerConfig = z.infer<typeof SceneManagerEnvSchema>;
 export interface SceneManagerRuntimeConfig {
   port: number;
   bindHost: string;
-  publicUrl: string;
   tokenSecret: string;
   rootDir: string;
   publicDir: string;
@@ -84,14 +81,6 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
   } catch {
     throw new Error(`sceneManager: barkloaderUrl is not a valid URL: ${config.barkloaderUrl}`);
   }
-  if (!config.publicUrl) {
-    throw new Error("sceneManager: publicUrl is required (WOOFX3_SCENE_MANAGER_URL)");
-  }
-  try {
-    new URL(config.publicUrl);
-  } catch {
-    throw new Error(`sceneManager: publicUrl is not a valid URL: ${config.publicUrl}`);
-  }
 }
 
 /**
@@ -112,7 +101,6 @@ export function loadConfig(): SceneManagerRuntimeConfig {
 
   const port = Number(c.woofx3SceneManagerPort ?? c.sceneManagerPort ?? 9101);
   const bindHost = String(c.woofx3SceneManagerHost ?? c.sceneManagerHost ?? "127.0.0.1");
-  const publicUrl = String(c.woofx3SceneManagerUrl ?? c.sceneManagerUrl ?? "");
   const tokenSecret = String(c.woofx3SceneManagerTokenSecret ?? c.sceneManagerTokenSecret ?? "");
   const rootDir = String(c.woofx3RootPath ?? c.rootPath ?? process.cwd());
 
@@ -134,7 +122,6 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   return {
     port,
     bindHost,
-    publicUrl,
     tokenSecret,
     rootDir,
     publicDir: resolvePublicDir(import.meta.dir),

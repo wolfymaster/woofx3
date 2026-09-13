@@ -3,7 +3,6 @@ import type { Logger } from "@woofx3/common/runtime";
 import type { WidgetBootPayload } from "@woofx3/module-sdk";
 import type { OverlayHost, OverlayWidgetInstance } from "./scene-host";
 import { sanitizeAssetPath } from "./asset-path";
-import type { PublicUrlResolver } from "./public-url-resolver";
 
 /**
  * Uniform blank document: served byte-for-byte identically for an
@@ -87,11 +86,6 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
 export interface FrameAssemblerOptions {
   barkloader: BarkloaderFrameClient;
   publicDir: string;
-  /** Resolves this deployment's own public base URL (the `scene.publicUrl`
-   *  DB setting, with env/config fallback — see public-url-resolver.ts),
-   *  used to build the resourceBaseUrl for built-in widgets (served from
-   *  sceneManager's own local disk, never barkloader). */
-  selfPublicUrlResolver: PublicUrlResolver;
   generateNonce?: () => string;
 }
 

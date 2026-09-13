@@ -37,7 +37,6 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { OverlayHost } = await import("./scene/scene-host");
     const { FrameAssembler, HttpBarkloaderFrameClient } = await import("./scene/frame-assembler");
     const { SessionTokenService } = await import("./scene/session-token");
-    const { PublicUrlResolver } = await import("./scene/public-url-resolver");
     const { DeliveryStore } = await import("./events/delivery-store");
     const { createMessageBus } = await import("@woofx3/nats");
     const { connectObs } = await import("./obs/manager");
@@ -53,11 +52,9 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const resolver = new OverlayTokenResolver(db, ctx.logger);
     const host = new OverlayHost(resolver, db, ctx.logger);
     const barkloader = new HttpBarkloaderFrameClient(ctx.runtimeConfig.barkloaderUrl, ctx.logger);
-    const selfPublicUrlResolver = new PublicUrlResolver(db, ctx.runtimeConfig.publicUrl, ctx.logger);
     const frameAssembler = new FrameAssembler(host, ctx.logger, {
       barkloader,
       publicDir: ctx.runtimeConfig.publicDir,
-      selfPublicUrlResolver,
     });
     const sessionTokens = new SessionTokenService(ctx.runtimeConfig.tokenSecret);
 

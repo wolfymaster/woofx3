@@ -51,9 +51,9 @@ the server.
 ## Resolution and fallback
 
 `scene.publicUrl` (DB) → `sceneManagerUrl` (`WOOFX3_SCENE_MANAGER_URL`).
-The fallback is required: api, workflow, barkloader and sceneManager each
-refuse to start without it, so a public URL always resolves to a
-configured address, never to an empty or guessed one.
+The fallback is required: api, workflow and barkloader each refuse to
+start without it, so a public URL always resolves to a configured
+address, never to an empty or guessed one.
 
 ## Form field spec
 

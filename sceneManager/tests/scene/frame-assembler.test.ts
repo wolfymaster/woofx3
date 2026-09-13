@@ -12,16 +12,6 @@ import {
 import type { BarkloaderFrameClient, FrameScaffold } from "../../src/scene/frame-assembler";
 import { sanitizeAssetPath } from "../../src/scene/asset-path";
 import type { OverlayHost, OverlaySceneState, OverlayWidgetInstance } from "../../src/scene/scene-host";
-import { PublicUrlResolver } from "../../src/scene/public-url-resolver";
-
-function fakePublicUrlResolver(url = "https://scene.example.com"): PublicUrlResolver {
-  return new PublicUrlResolver(null, url, {
-    debug: () => {},
-    info: () => {},
-    warn: () => {},
-    error: () => {},
-  } as any);
-}
 
 function minimalBoot(): FrameScaffold["boot"] {
   return {
@@ -244,7 +234,6 @@ describe("FrameAssembler.assemble", () => {
     const assembler = new FrameAssembler(fakeHost(state, "index.html"), fakeLogger(), {
       barkloader,
       publicDir: "/nonexistent",
-      selfPublicUrlResolver: fakePublicUrlResolver(),
     });
 
     const resp = await assembler.assemble("scene-1", "inst-1", null);
@@ -266,7 +255,6 @@ describe("FrameAssembler.assemble", () => {
     const assembler = new FrameAssembler(fakeHost(state, "index.html"), fakeLogger(), {
       barkloader,
       publicDir: "/nonexistent",
-      selfPublicUrlResolver: fakePublicUrlResolver(),
     });
     const resp = await assembler.assemble("scene-1", "inst-1", null);
     expect(resp.status).toBe(502);
@@ -278,7 +266,6 @@ describe("FrameAssembler.assemble", () => {
     const assembler = new FrameAssembler(host, fakeLogger(), {
       barkloader,
       publicDir: "/nonexistent",
-      selfPublicUrlResolver: fakePublicUrlResolver(),
     });
     const resp = await assembler.assemble("nope", "inst-1", null);
     expect(resp.status).toBe(200);
@@ -297,7 +284,6 @@ describe("FrameAssembler.assemble", () => {
     const assembler = new FrameAssembler(fakeHost(state, "index.html"), fakeLogger(), {
       barkloader,
       publicDir: "/nonexistent",
-      selfPublicUrlResolver: fakePublicUrlResolver(),
     });
     const resp = await assembler.assemble("scene-1", "missing-instance", null);
     expect(await resp.text()).toBe("<!doctype html><html><head></head><body></body></html>");
