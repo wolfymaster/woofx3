@@ -49,6 +49,13 @@ pub enum UploadEndpoint {
     Unsupported,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReadEndpoint {
+    Presigned { url: String },
+    /// No signing concept (local disk); the caller serves the bytes itself.
+    Unsupported,
+}
+
 /// One request for permission to upload a single object.
 #[derive(Debug, Clone)]
 pub struct UploadRequest<'a> {
@@ -96,6 +103,9 @@ pub trait Repository {
     /// reserved for a backend that should have been able to sign and
     /// could not.
     async fn presign_upload(&self, req: UploadRequest<'_>) -> Result<UploadEndpoint>;
+
+    /// Does not check that the key exists.
+    async fn presign_read(&self, key: &str, ttl: Duration) -> Result<ReadEndpoint>;
 }
 
 #[enum_dispatch]

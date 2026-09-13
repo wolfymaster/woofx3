@@ -20,16 +20,6 @@ type EventPublisher interface {
 	Publish(event *types.Event) error
 }
 
-// AssetURLResolver resolves the engine's configured `overlay.publicUrl`
-// setting (bare, no suffix — buildResolver appends `/overlay/assets`) —
-// the base URL `${woofx3_asset_url:<repositoryKey>}` tokens (baked by
-// barkloader at module-install time; see ManifestWorkflow::register /
-// encode_asset_url_markers in module_manifest.rs) are resolved against.
-// Backed by the db-proxy `settings` table in production (see
-// workflow/overlay_public_url_resolver.go) so a UI settings page can
-// override the default without redeploying the engine; kept as an
-// interface here so the engine package doesn't need to depend on the db
-// client. Process-wide, not per-application.
 type AssetURLResolver interface {
 	Resolve() string
 }
@@ -818,10 +808,7 @@ func (e *Engine[TServices]) buildResolver(triggerEvent *types.Event, taskExports
 	}
 
 	if e.assetURLResolver != nil {
-		// The resolver returns the bare overlay.publicUrl value; the
-		// /overlay/assets suffix is asset-resolution-specific, not part of
-		// the setting itself (see OverlayPublicURLResolver doc comment).
-		resolver.SetAssetURLBase(e.assetURLResolver.Resolve() + "/overlay/assets")
+		resolver.SetAssetURLBase(e.assetURLResolver.Resolve() + "/assets")
 	}
 
 	return resolver

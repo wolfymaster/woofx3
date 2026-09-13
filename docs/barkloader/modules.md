@@ -586,7 +586,7 @@ Files are stored under **`modules/{moduleId}/widgets/{widgetId}/…`**.
 
 #### Widget runtime — the `widgetHost` contract
 
-Streamware loads widget bundles into sandboxed iframes (`streamware/ui/src/components/WidgetFrame.tsx`) and a shim script injected by the frame assembler installs a `widgetHost` object onto the iframe's `window` as part of the P1 (`woofx3.widget`) handshake with the parent scene manager. Widgets read `window.widgetHost` directly; the postMessage plumbing underneath is invisible to widget code. See [Widget protocol (P1)](../woofwoofwoof/streamware/widget-protocol.md) for the wire-level handshake.
+Streamware loads widget bundles into sandboxed iframes (`streamware/ui/src/components/WidgetFrame.tsx`) and a shim script injected by the frame assembler installs a `widgetHost` object onto the iframe's `window` as part of the P1 (`woofx3.widget`) handshake with the parent scene manager. Widgets read `window.widgetHost` directly; the postMessage plumbing underneath is invisible to widget code.
 
 ```typescript
 interface WidgetHost {
@@ -608,7 +608,7 @@ interface WidgetEvent {
 }
 ```
 
-`reportStatus` and `reportComplete` send a P1 `status.report` message to the scene manager, which forwards it over the unified `widget.event` NATS channel. The streamware dispatcher persists generic events to the `widget_status` table and routes `alert.lifecycle` reports to the [event queue](../streamware/alert-queue.md) — see [Widget event channel](../services/widget-events.md).
+`reportStatus` and `reportComplete` send a P1 `status.report` message to the scene manager, which forwards it over the unified `widget.event` NATS channel. The streamware dispatcher persists generic events to the `widget_status` table and routes `alert.lifecycle` reports to the event queue — see [Widget event channel](../services/widget-events.md).
 
 `onEvent` is the downward channel: the widget sends a P1 `events.subscribe` message, and the scene manager matches engine-side trigger events (delivered over the P2 `event` frame) against the widget's `acceptedEvents` declaration before relaying a matching one as `event.deliver`. A widget that lists `channel.follow` in its manifest will see every follow the engine processes, from any platform — the originating one travels as the CloudEvent's `platform` attribute. Widgets without `acceptedEvents` receive nothing — that's the right default for static display-only widgets.
 

@@ -17,8 +17,7 @@ A generic widget reporting `key="count"` and the alert overlay reporting `key="a
 ## Wire format
 
 The overlay sends the canonical wire shape (`OverlayWidgetEvent`) as a raw JSON
-message over the single P2 overlay WebSocket (`/o/{token}/events` — see
-[P2 event source](../woofwoofwoof/streamware/p2-event-source.md)); there is no longer
+message over the single P2 overlay WebSocket (`/o/{token}/events`); there is no longer
 a separate alert-specific transport. See
 `shared/clients/typescript/module-sdk/src/widget-host-shim.ts` (widget → shim →
 `status.report` P1 message → `WidgetBridge` → this shape) and
@@ -67,7 +66,7 @@ Malformed messages (missing `kind`, `moduleId`, `instanceId`, or `key`) are drop
 
 | Condition | Handler | Persistence |
 |-----------|---------|-------------|
-| `key === "alert.lifecycle"` AND `instanceId === "alert-overlay"` | `EventQueueManager.handleStatus(applicationId, envelopeId, state, error?)` — see [Event queue](../streamware/alert-queue.md) | `alerts` table — lifecycle column on the existing row keyed by `envelope_id` |
+| `key === "alert.lifecycle"` AND `instanceId === "alert-overlay"` | `EventQueueManager.handleStatus(applicationId, envelopeId, state, error?)` | `alerts` table — lifecycle column on the existing row keyed by `envelope_id` |
 | anything else | `db.upsertWidgetStatus({ applicationId, moduleId, instanceId, widgetCanonicalId?, key, value, occurredAt })` | `widget_status` table — upsert on `(application_id, instance_id, key)` |
 
 The two tables answer different questions and so are kept separate:
@@ -96,9 +95,7 @@ The orchestrator drops reports where `state` is anything other than the three va
 Every widget gets the same surface — there's no separate "alert overlay" component
 anymore; the built-in alert widget (`media_alert`) is just another widget bundle
 placed in a scene, using the exact same P1 `WidgetHost` contract as any module
-widget. The contract lives in `shared/clients/typescript/module-sdk/src/widget-host.ts`;
-see [Widget protocol (P1)](../woofwoofwoof/streamware/widget-protocol.md) for the
-full postMessage handshake underneath it.
+widget. The contract lives in `shared/clients/typescript/module-sdk/src/widget-host.ts`.
 
 ```typescript
 interface WidgetHost {
@@ -124,7 +121,7 @@ a sandboxed iframe (`sandbox="allow-scripts"`, no `allow-same-origin`) and talks
 the scene manager exclusively through the P1 postMessage protocol; there is no
 direct property injection onto `iframe.contentWindow`. This is deliberate, not a
 same-origin shortcut waiting to be replaced: widget assets can already be served
-from barkloader or a CDN (see [Asset prefix rules](../woofwoofwoof/streamware/asset-prefix.md)),
+from barkloader or a CDN (see [Asset delivery](./asset-delivery.md)),
 and postMessage is what makes that origin-agnostic.
 
 ### The alert widget's instance id convention
@@ -133,7 +130,7 @@ Alert routing (the dispatch rule above) is keyed on the **scene instance id**, n
 a dedicated component type: a `media_alert` widget placed in a scene must be given
 the instance id `"alert-overlay"` (the `id` field of its entry in the scene's
 `widgetsJson`) for its `alert.lifecycle` status reports to route to the
-[event queue](../streamware/alert-queue.md) instead of falling through to generic
+event queue instead of falling through to generic
 `widget_status` upserts. The dispatch condition checks only `key` and `instanceId` —
 not `moduleId` — so this is purely a scene-authoring convention, not something the
 engine validates. Built-in widgets like `media_alert` use the reserved module key

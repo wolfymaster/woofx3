@@ -207,7 +207,7 @@ function my_function(ctx) {
   message text.
 - Tagged with `proto: "woofx3.response"` / `v: 1`, mirroring the same envelope
   convention `woofx3.widget` and `woofx3.overlay-events` already use elsewhere in
-  this codebase (see [Widget protocol (P1)](../woofwoofwoof/streamware/widget-protocol.md)).
+  this codebase.
   This is what lets a caller reliably recognize "this is a deliberate response"
   versus any other object a function might return for its own purposes — see
   [`extractResponseMessage` in `woofwoofwoof/src/application.ts`](../../woofwoofwoof/src/application.ts),

@@ -35,6 +35,8 @@ function makeApi(db: any) {
     // reaches for; standing up a real NATSClient would test the client.
     nats: nats.client as unknown as ApiOptions["nats"],
     barkloaderUrl: "http://barkloader.local",
+    sceneManagerUrl: "http://scene.test",
+    apiUrl: "http://api.test",
     logger: fakeLogger(),
   });
   return { api, nats };

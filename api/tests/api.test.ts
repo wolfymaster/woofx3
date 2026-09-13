@@ -39,7 +39,14 @@ function makeApi(opts: { db: any; webhookClient?: any }) {
     getDefaultApplication: async () => ({ id: "app-1" }),
     ...opts.db,
   };
-  const api = new Api({ db, nats: null, barkloaderUrl: BARKLOADER_URL, logger });
+  const api = new Api({
+    db,
+    nats: null,
+    barkloaderUrl: BARKLOADER_URL,
+    sceneManagerUrl: "http://scene.test",
+    apiUrl: "http://api.test",
+    logger,
+  });
   if (opts.webhookClient) {
     api.setWebhookClient(opts.webhookClient);
   }

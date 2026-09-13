@@ -1,8 +1,19 @@
+use std::time::Duration;
+
 use actix_web::web::{Data, Path, ServiceConfig};
 use actix_web::{HttpResponse, get};
-use lib_repository::Repository;
+use lib_repository::{ReadEndpoint, Repository, RepositoryImpl};
+use tracing::warn;
 
 use crate::types::SharedRepository;
+
+/// Sized for an overlay holding one URL for a whole stream, not for
+/// secrecy: assets are public by design, only the bucket is private.
+const PRESIGNED_READ_TTL: Duration = Duration::from_secs(12 * 60 * 60);
+
+/// Must stay well below `PRESIGNED_READ_TTL` so a cached redirect never
+/// points at an expired URL.
+const REDIRECT_CACHE_CONTROL: &str = "public, max-age=3600";
 
 /// Top-level repository key prefixes this route will ever serve.
 /// `modules/` holds files unpacked from an installed module bundle;
@@ -11,10 +22,6 @@ use crate::types::SharedRepository;
 /// including the thumbnails derived from them.
 const ALLOWED_TOP_LEVEL_PREFIXES: &[&str] = &["modules/", "user/"];
 
-/// Serve module files straight from the repository (file/S3 agnostic).
-/// Keys mirror repository keys exactly, e.g.
-/// `GET /assets/modules/{module_key}/{version_dir}/widgets/{widget_id}/{entry}`.
-///
 /// Every rejection — traversal attempt, bad prefix, missing file — is a
 /// uniform 404 with no detail, so callers cannot probe the key space.
 #[get("/assets/{key:.*}")]
@@ -24,13 +31,50 @@ async fn assets_handler(repository: Data<SharedRepository>, path: Path<String>) 
     let Some(key) = sanitize_asset_key(&raw) else {
         return not_found();
     };
-    match repository.current().read_file(&key).await {
+    let repository = repository.current();
+    if !is_widget_bundle_key(&key) {
+        match repository.presign_read(&key, PRESIGNED_READ_TTL).await {
+            Ok(ReadEndpoint::Presigned { url }) => {
+                return redirect_if_present(&repository, &key, url).await;
+            }
+            Ok(ReadEndpoint::Unsupported) => {}
+            Err(e) => {
+                warn!("assets: presign_read failed for {}: {}", key, e);
+                return not_found();
+            }
+        }
+    }
+    match repository.read_file(&key).await {
         Ok(bytes) => HttpResponse::Ok()
             .content_type(content_type_for_key(&key))
             .insert_header(("Cache-Control", cache_control_for_key(&key)))
             .body(bytes),
         Err(_) => not_found(),
     }
+}
+
+/// Checked first so a missing key stays a uniform 404 rather than a
+/// redirect to a storage error.
+async fn redirect_if_present(repository: &RepositoryImpl, key: &str, url: String) -> HttpResponse {
+    match repository.exists(key).await {
+        Ok(true) => HttpResponse::Found()
+            .insert_header(("Location", url))
+            .insert_header(("Cache-Control", REDIRECT_CACHE_CONTROL))
+            .finish(),
+        Ok(false) => not_found(),
+        Err(e) => {
+            warn!("assets: exists check failed for {}: {}", key, e);
+            not_found()
+        }
+    }
+}
+
+/// Served inline on every backend: a browser resolves a stylesheet's
+/// `url(...)` or a module's relative `import` against the post-redirect
+/// URL, which on a private bucket would arrive unsigned.
+fn is_widget_bundle_key(key: &str) -> bool {
+    let mut segments = key.split('/');
+    segments.next() == Some("modules") && segments.nth(2) == Some("widgets")
 }
 
 /// Only `modules/{module_key}/{version_dir}/...` keys are safe to cache
@@ -211,6 +255,17 @@ mod tests {
             sanitize_asset_key("modules/m1/my%20file.png").as_deref(),
             Some("modules/m1/my file.png")
         );
+    }
+
+    #[test]
+    fn only_widget_bundle_files_stay_off_the_redirect_path() {
+        assert!(is_widget_bundle_key("modules/m1/abc123/widgets/w1/style.css"));
+        assert!(is_widget_bundle_key("modules/m1/abc123/widgets/w1/nested/app.js"));
+        assert!(!is_widget_bundle_key("modules/m1/abc123/assets/bell.mp3"));
+        assert!(!is_widget_bundle_key("user/app-1/res-1/photo.png"));
+        // A module whose id is literally "widgets" does not make its
+        // assets bundle files.
+        assert!(!is_widget_bundle_key("modules/widgets/abc123/assets/x.png"));
     }
 
     #[test]

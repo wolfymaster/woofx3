@@ -619,27 +619,10 @@ export interface Woofx3EngineGateway {
  * Returned by `getEngineInfo()` — typically called once per UI
  * session and cached.
  *
- * `overlayPublicUrl` is the single public base URL for reaching this
- * api's overlay surface — both what `mintOverlayToken`/`rotateOverlayToken`/
- * `listOverlayTokens` compose their returned `url` from
- * (`${overlayPublicUrl}/overlay/{token}/`), and, via the same
- * `/overlay/assets/...` route, every widget/module asset kind
- * (module-contributed widgets and generic assets, and reserved user
- * uploads). There is deliberately only one such setting — everything is
- * proxied through the api gateway's `/overlay/` surface today, so a separate
- * "streamware app" URL or a separate "asset storage" URL would just be
- * two more names for the same value (an earlier iteration of this API
- * had exactly that split — `streamwareBaseUrl` and
- * `StorageConfig.baseUrl` — and it was a mistake: three settings meant
- * three places to independently misconfigure, for a scenario — assets
- * served from somewhere other than streamware — that isn't built).
- *
  * Lives in the engine's `settings` table under `overlay.publicUrl`
  * (process-wide — not application-scoped); set via
- * `setOverlayPublicUrl`. Falls back to this service's own
- * env-configured `overlayPublicUrl` (`WOOFX3_OVERLAY_PUBLIC_URL`) when
- * no override is configured, and to an empty string beyond that — no
- * further hardcoded guess.
+ * `setOverlayPublicUrl`. Falls back to the engine's configured
+ * `sceneManagerUrl` when no override is configured.
  *
  * `engineSceneOverlayBaseUrl` is a cheap derivation
  * (`${overlayPublicUrl}/overlay/scene`), kept for backward
@@ -713,8 +696,7 @@ export interface Woofx3EngineApi {
    * resolution (see `EngineInfo`'s doc comment). The operator points
    * this at wherever this api service sits behind a tunnel or reverse
    * proxy. Empty string clears the setting (falls back to the
-   * service's own env-configured default, then to an empty string —
-   * no further hardcoded guess). Wired to the UI settings form.
+   * configured `sceneManagerUrl`). Wired to the UI settings form.
    */
   setOverlayPublicUrl(value: string): Promise<{ success: boolean }>;
 

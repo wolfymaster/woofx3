@@ -98,7 +98,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       nats: natsClient,
       barkloaderUrl: config.barkloaderUrl,
       streamwareUrl: config.streamwareUrl,
-      overlayPublicUrl: config.overlayPublicUrl,
+      sceneManagerUrl: config.sceneManagerUrl,
+      apiUrl: config.apiUrl,
       logger,
     });
 
