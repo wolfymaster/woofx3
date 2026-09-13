@@ -368,7 +368,7 @@ export async function DeleteResourceJSON(
  * `user/{application_id}/{resource_id}/{filename}`, mirroring the
  * `modules/` convention. `repository_key` holds that key verbatim;
  * resolving it to a public URL is the api gateway's concern (it
- * composes `{overlayPublicUrl}/overlay/assets/{repository_key}`), so
+ * composes `{sceneManagerUrl}/assets/{repository_key}`), so
  * no URL is persisted on the row.
  *
  * Folders are rows in this same table with `is_folder = true`, an
