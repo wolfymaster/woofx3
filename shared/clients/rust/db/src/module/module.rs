@@ -118,6 +118,14 @@ pub struct Trigger {
     /// the config_schema derivation exactly as it does today.
     #[prost(string, tag="14")]
     pub emits: ::prost::alloc::string::String,
+    /// The manifest trigger `type`: "eventbus" for a trigger the bus fires,
+    /// "webhook" for one fired by inbound HTTP through `handler`.
+    #[prost(string, tag="15")]
+    pub transport: ::prost::alloc::string::String,
+    /// Canonical id of a webhook trigger's handler function
+    /// (`{moduleId}:function:{id}`). Empty for every other transport.
+    #[prost(string, tag="16")]
+    pub handler: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct TriggerInput {
@@ -139,6 +147,12 @@ pub struct TriggerInput {
     /// JSON string — see Trigger.emits
     #[prost(string, tag="9")]
     pub emits: ::prost::alloc::string::String,
+    /// see Trigger.transport
+    #[prost(string, tag="10")]
+    pub transport: ::prost::alloc::string::String,
+    /// see Trigger.handler
+    #[prost(string, tag="11")]
+    pub handler: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterTriggersRequest {

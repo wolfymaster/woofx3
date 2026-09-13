@@ -42,6 +42,7 @@ function makeApi(opts: { db: any; webhookClient?: any }) {
   const api = new Api({
     db,
     nats: null,
+    functions: null,
     barkloaderUrl: BARKLOADER_URL,
     sceneManagerUrl: "http://scene.test",
     apiUrl: "http://api.test",

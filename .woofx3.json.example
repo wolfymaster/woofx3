@@ -5,6 +5,8 @@
 
   "rootPath": "",
 
+  "secretsKey": "",
+
   "messageBusHost": "",
   "messageBusWebSocketPort": 4225,
   "messageBusUrl": "ws://localhost:4225",

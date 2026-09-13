@@ -44,6 +44,7 @@ interface RawTrigger {
   allow_variants?: unknown;
   created_by_type?: unknown;
   created_by_ref?: unknown;
+  transport?: unknown;
 }
 
 interface RawAction {
@@ -171,6 +172,10 @@ function mapTrigger(raw: RawTrigger): TriggerDefinition {
   const projectionKey = asString(raw.projection_key);
   if (projectionKey !== "") {
     def.projectionKey = projectionKey;
+  }
+  const transport = asString(raw.transport);
+  if (transport !== "") {
+    def.transport = transport;
   }
   return def;
 }

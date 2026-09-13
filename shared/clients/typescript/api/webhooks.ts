@@ -119,6 +119,13 @@ export interface TriggerDefinition {
   allowVariants: boolean;
   createdByType: string;
   createdByRef: string;
+  /**
+   * The manifest trigger `type`. `"webhook"` marks a trigger fired by inbound
+   * HTTP through its module's handler: nothing binds to it, so the workflow
+   * builder hides it. Absent on events from engines that predate the field;
+   * treat that as `"eventbus"`.
+   */
+  transport?: string;
 }
 
 export interface ActionDefinition {

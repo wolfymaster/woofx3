@@ -50,6 +50,16 @@ export interface Trigger {
    * the config_schema derivation exactly as it does today.
    */
   emits: string;
+  /**
+   * The manifest trigger `type`: "eventbus" for a trigger the bus fires,
+   * "webhook" for one fired by inbound HTTP through `handler`.
+   */
+  transport: string;
+  /**
+   * Canonical id of a webhook trigger's handler function
+   * (`{moduleId}:function:{id}`). Empty for every other transport.
+   */
+  handler: string;
 }
 
 export interface TriggerInput {
@@ -61,6 +71,8 @@ export interface TriggerInput {
   manifestId: string;
   taxonomy: string[];
   emits: string;
+  transport: string;
+  handler: string;
 }
 
 export interface RegisterTriggersRequest {
@@ -141,6 +153,8 @@ export const Trigger = {
       manifestId: "",
       taxonomy: [],
       emits: "",
+      transport: "",
+      handler: "",
       ...msg,
     };
   },
@@ -184,6 +198,12 @@ export const Trigger = {
     }
     if (msg.emits) {
       writer.writeString(14, msg.emits);
+    }
+    if (msg.transport) {
+      writer.writeString(15, msg.transport);
+    }
+    if (msg.handler) {
+      writer.writeString(16, msg.handler);
     }
     return writer;
   },
@@ -242,6 +262,14 @@ export const Trigger = {
           msg.emits = reader.readString();
           break;
         }
+        case 15: {
+          msg.transport = reader.readString();
+          break;
+        }
+        case 16: {
+          msg.handler = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -286,6 +314,8 @@ export const TriggerInput = {
       manifestId: "",
       taxonomy: [],
       emits: "",
+      transport: "",
+      handler: "",
       ...msg,
     };
   },
@@ -320,6 +350,12 @@ export const TriggerInput = {
     }
     if (msg.emits) {
       writer.writeString(9, msg.emits);
+    }
+    if (msg.transport) {
+      writer.writeString(10, msg.transport);
+    }
+    if (msg.handler) {
+      writer.writeString(11, msg.handler);
     }
     return writer;
   },
@@ -364,6 +400,14 @@ export const TriggerInput = {
         }
         case 9: {
           msg.emits = reader.readString();
+          break;
+        }
+        case 10: {
+          msg.transport = reader.readString();
+          break;
+        }
+        case 11: {
+          msg.handler = reader.readString();
           break;
         }
         default: {
@@ -705,6 +749,8 @@ export const TriggerJSON = {
       manifestId: "",
       taxonomy: [],
       emits: "",
+      transport: "",
+      handler: "",
       ...msg,
     };
   },
@@ -746,6 +792,12 @@ export const TriggerJSON = {
     }
     if (msg.emits) {
       json["emits"] = msg.emits;
+    }
+    if (msg.transport) {
+      json["transport"] = msg.transport;
+    }
+    if (msg.handler) {
+      json["handler"] = msg.handler;
     }
     return json;
   },
@@ -798,6 +850,14 @@ export const TriggerJSON = {
     if (_emits_) {
       msg.emits = _emits_;
     }
+    const _transport_ = json["transport"];
+    if (_transport_) {
+      msg.transport = _transport_;
+    }
+    const _handler_ = json["handler"];
+    if (_handler_) {
+      msg.handler = _handler_;
+    }
     return msg;
   },
 };
@@ -833,6 +893,8 @@ export const TriggerInputJSON = {
       manifestId: "",
       taxonomy: [],
       emits: "",
+      transport: "",
+      handler: "",
       ...msg,
     };
   },
@@ -867,6 +929,12 @@ export const TriggerInputJSON = {
     }
     if (msg.emits) {
       json["emits"] = msg.emits;
+    }
+    if (msg.transport) {
+      json["transport"] = msg.transport;
+    }
+    if (msg.handler) {
+      json["handler"] = msg.handler;
     }
     return json;
   },
@@ -906,6 +974,14 @@ export const TriggerInputJSON = {
     const _emits_ = json["emits"];
     if (_emits_) {
       msg.emits = _emits_;
+    }
+    const _transport_ = json["transport"];
+    if (_transport_) {
+      msg.transport = _transport_;
+    }
+    const _handler_ = json["handler"];
+    if (_handler_) {
+      msg.handler = _handler_;
     }
     return msg;
   },

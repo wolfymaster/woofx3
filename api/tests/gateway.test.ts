@@ -30,6 +30,7 @@ describe("ApiGateway.registerClient", () => {
     const api = new Api({
       db,
       nats: null,
+      functions: null,
       barkloaderUrl: "http://b",
       sceneManagerUrl: "http://scene.test",
       apiUrl: "http://api.test",
@@ -67,6 +68,7 @@ describe("ApiGateway.registerClient", () => {
     const api = new Api({
       db,
       nats: null,
+      functions: null,
       barkloaderUrl: "http://b",
       sceneManagerUrl: "http://scene.test",
       apiUrl: "http://api.test",
@@ -89,6 +91,7 @@ describe("ApiGateway.registerClient", () => {
     const api = new Api({
       db,
       nats: null,
+      functions: null,
       barkloaderUrl: "http://b",
       sceneManagerUrl: "http://scene.test",
       apiUrl: "http://api.test",

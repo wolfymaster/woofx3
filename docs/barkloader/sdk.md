@@ -13,7 +13,7 @@ Module code runs inside two host-managed environments:
 
 - **Function sandbox** — Rust-hosted QuickJS (JS) or mlua (Lua). The
   host builds a `ctx` object per invocation and registers namespaces
-  on it: `events`, `storage`, `http`, `env`, `resources`, `module`, `log`,
+  on it: `crypto`, `storage`, `http`, `env`, `resources`, `module`, `log`,
   plus any extensions the engine deployment wired up (`twitch`, `chat`,
   `platform.alerts`, `platform.chat`).
 - **Widget iframe** — streamware loads your widget bundle into a
@@ -38,14 +38,16 @@ workspace path alias — no install needed.
 /// <reference types="@woofx3/module-sdk/function-ctx" />
 
 /** @param {import("@woofx3/module-sdk/function-ctx").Ctx} ctx */
-function play_alert(ctx) {
-  ctx.events.publish("ui.notify.alert", {
-    parameters: { widget: "MediaWidget", text: "Hi!" },
-    event: ctx.event,
-  });
-  return { dispatched: true };
+function increment(ctx) {
+  const count = (ctx.storage.get("count") ?? 0) + 1;
+  ctx.storage.set("count", count);
+  return ctx.response(true, `Count is now ${count}.`);
 }
 ```
+
+A function asks the engine to act by returning a value, never by
+driving the bus itself. See
+[Engine integrity](../services/engine-integrity.md).
 
 Every namespace on `ctx` is documented in
 `@woofx3/module-sdk/function-ctx`. The full list (current at SDK
@@ -55,7 +57,8 @@ v0.1.0):
 |---|---|
 | `ctx.event` | the triggering CloudEvent (opaque) |
 | `ctx.user` | user context (opaque) |
-| `ctx.events` | `publish(subject, data)` |
+| `ctx.response` | `(success, message)` — see [Sandbox → `ctx.response`](./sandbox.md#ctxresponse) |
+| `ctx.crypto` | `hmac(algorithm, key, data, encoding?)`, `verifyEd25519(publicKey, signature, message, encoding?)`, `timingSafeEqual(a, b)` — see [Sandbox → `ctx.crypto`](./sandbox.md#ctxcrypto) |
 | `ctx.storage` | `get(key)`, `set(key, value)` |
 | `ctx.http` | `request(url, method, opts?)` |
 | `ctx.env` | `get(key)` |
@@ -72,6 +75,34 @@ The engine's runtime registration is the source of truth (see
 a drift test that scans this source on every build — if a new property
 appears in Rust without a matching declaration in
 `function-ctx.d.ts`, the test fails.
+
+## Webhook handlers
+
+A function named as a `webhook` trigger's `handler` receives the inbound HTTP
+request and returns what should happen. The engine checks the result,
+publishes its events, and only then answers the request:
+
+```js
+/** @param {import("@woofx3/module-sdk/function-ctx").Ctx} ctx */
+function handle_order(ctx) {
+  /** @type {import("@woofx3/module-sdk/function-ctx").WebhookRequest} */
+  const req = ctx.event.data;
+  const expected = "sha256=" + ctx.crypto.hmac("sha256", ctx.module.settings.webhookSecret, req.rawBody);
+  if (!ctx.crypto.timingSafeEqual(expected, req.headers["x-signature"] ?? "")) {
+    return { status: 401 };
+  }
+  /** @type {import("@woofx3/module-sdk/function-ctx").WebhookHandlerResult} */
+  const result = {
+    status: 200,
+    events: [{ type: "store.order.created", data: { orderId: req.body.id } }],
+  };
+  return result;
+}
+```
+
+`webhookSecret` is a `secret` setting, entered by the streamer. See
+[Module format → Webhook triggers](./modules.md#webhook-triggers) for the rules
+a result must follow.
 
 ## Function authoring (Lua)
 

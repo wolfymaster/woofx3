@@ -11,7 +11,9 @@ use super::manifest_validate::{
     self, InstallProvenance, InstallStep, ResolvedActionImpl, ResolvedManifest, WorkflowTriggerRef,
 };
 use super::module_file::ModuleFile;
-use super::module_manifest::{ModuleManifest, ResolvedWorkflowStep, ResolvedWorkflowTrigger};
+use super::module_manifest::{
+    ModuleManifest, ResolvedWorkflowStep, ResolvedWorkflowTrigger, WEBHOOK_EVENT_PREFIX,
+};
 
 /// `module_name` is the version-free manifest id — the value stored as
 /// `created_by_ref`, and what every delete-by-module-id call matches on.
@@ -377,7 +379,8 @@ impl<'a, R: Repository> SagaState<'a, R> {
         // (`{moduleId}:trigger:{id}`) is recorded separately in the
         // module_resources ledger as `resource_name`, and referenced
         // from workflow `$ref` fields — never on the trigger row.
-        let trigger_inputs: Vec<_> = self.manifest.triggers.iter().map(|t| t.to_input()).collect();
+        let trigger_inputs: Vec<_> =
+            self.manifest.triggers.iter().map(|t| t.to_input(&self.resolved.module_id)).collect();
         info!(
             "Registering {} trigger(s) for module {} (moduleKey={})",
             trigger_inputs.len(),
@@ -609,7 +612,7 @@ impl<'a, R: Repository> SagaState<'a, R> {
                     .triggers
                     .iter()
                     .find(|t| t.id == trigger_local_id)
-                    .map(|t| if t.event.is_empty() { t.id.clone() } else { t.event.clone() })
+                    .map(|t| t.event_subject(&self.resolved.module_id))
                     .ok_or_else(|| anyhow!(
                         "internal: bundled workflow {} references local trigger {} not found in manifest",
                         wf.id,
@@ -631,6 +634,13 @@ impl<'a, R: Repository> SagaState<'a, R> {
                         canonical,
                         e,
                     ))?;
+                if event_subject.starts_with(WEBHOOK_EVENT_PREFIX) {
+                    return Err(anyhow!(
+                        "bundled workflow {} cannot bind to webhook trigger {}; bind to an event its handler returns",
+                        wf.id,
+                        canonical,
+                    ));
+                }
                 ResolvedWorkflowTrigger { trigger_ref: canonical, event_subject }
             }
         };

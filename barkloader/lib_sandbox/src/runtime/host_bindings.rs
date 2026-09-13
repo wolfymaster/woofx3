@@ -13,8 +13,8 @@
 //! just call in here after marshaling arguments to `serde_json::Value`,
 //! and marshal the `Value` result back out.
 //!
-//! Deliberately does *not* wrap every namespace method: `events.publish`,
-//! `storage.get`, `http.request`, `env.get`, `resources.delete`, and
+//! Deliberately does *not* wrap every namespace method: `storage.get`,
+//! `http.request`, `env.get`, `resources.delete`, and
 //! `module.setSetting` are pure 1:1 passthroughs to a `HostContext` trait
 //! method with no logic of their own — wrapping those here would just add
 //! a layer, not close a gap. Adapters call `invocation.host.*` directly

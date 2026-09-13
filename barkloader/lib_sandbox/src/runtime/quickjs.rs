@@ -206,7 +206,7 @@ fn build_ctx_object<'js>(
     let user_js = json_to_js(ctx, &invocation.user)?;
     ctx_obj.set("user", user_js).map_err(map)?;
 
-    build_events_namespace(ctx, &ctx_obj, invocation)?;
+    build_crypto_namespace(ctx, &ctx_obj)?;
     build_storage_namespace(ctx, &ctx_obj, invocation)?;
     build_http_namespace(ctx, &ctx_obj, invocation)?;
     build_env_namespace(ctx, &ctx_obj, invocation)?;
@@ -269,23 +269,38 @@ fn bind_extensions<'js>(
     Ok(())
 }
 
-fn build_events_namespace<'js>(
-    ctx: &Ctx<'js>,
-    ctx_obj: &Object<'js>,
-    invocation: &InvocationContext,
-) -> Result<(), Error> {
+/// `ctx.crypto` — see `runtime::crypto`. Pure computation: no host state.
+fn build_crypto_namespace<'js>(ctx: &Ctx<'js>, ctx_obj: &Object<'js>) -> Result<(), Error> {
     let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
-    let events = Object::new(ctx.clone()).map_err(map)?;
+    let crypto = Object::new(ctx.clone()).map_err(map)?;
 
-    let nats = invocation.host.nats.clone();
-    let publish = JsFunction::new(ctx.clone(), move |_ctx: Ctx<'_>, subject: String, data: JsValue<'_>| -> rquickjs::Result<()> {
-        let json_data = js_to_json(&data).map_err(|e| host_err(e.to_string()))?;
-        nats.publish(&subject, json_data).map_err(|e| host_err(e))?;
-        Ok(())
-    }).map_err(map)?;
-    events.set("publish", publish).map_err(map)?;
+    let hmac = JsFunction::new(
+        ctx.clone(),
+        |algorithm: String, key: String, data: String, encoding: Opt<String>| -> rquickjs::Result<String> {
+            let encoding = super::crypto::Encoding::parse(encoding.0.as_deref()).map_err(host_err)?;
+            super::crypto::hmac(&algorithm, &key, &data, encoding).map_err(host_err)
+        },
+    )
+    .map_err(map)?;
+    crypto.set("hmac", hmac).map_err(map)?;
 
-    ctx_obj.set("events", events).map_err(map)?;
+    let verify_ed25519 = JsFunction::new(
+        ctx.clone(),
+        |public_key: String, signature: String, message: String, encoding: Opt<String>| -> rquickjs::Result<bool> {
+            let encoding = super::crypto::Encoding::parse(encoding.0.as_deref()).map_err(host_err)?;
+            super::crypto::verify_ed25519(&public_key, &signature, &message, encoding).map_err(host_err)
+        },
+    )
+    .map_err(map)?;
+    crypto.set("verifyEd25519", verify_ed25519).map_err(map)?;
+
+    let timing_safe_equal = JsFunction::new(ctx.clone(), |a: String, b: String| -> bool {
+        super::crypto::timing_safe_equal(&a, &b)
+    })
+    .map_err(map)?;
+    crypto.set("timingSafeEqual", timing_safe_equal).map_err(map)?;
+
+    ctx_obj.set("crypto", crypto).map_err(map)?;
     Ok(())
 }
 

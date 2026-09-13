@@ -61,13 +61,56 @@ export interface CtxHttpOptions {
   [k: string]: unknown;
 }
 
-/** `ctx.events` — publish CloudEvents onto NATS. */
-export interface CtxEvents {
+/**
+ * `ctx.crypto` — signature primitives for verifying inbound webhook
+ * requests. Pure computation; nothing here reaches the engine.
+ */
+export interface CtxCrypto {
   /**
-   * Publish JSON `data` to NATS subject `subject`. Fire-and-forget; no
-   * acknowledgement, no return value.
+   * HMAC of `data` under `key` (both UTF-8). Returns the digest in
+   * `encoding` (default "hex"). Throws for an unknown algorithm or encoding.
    */
-  publish(subject: string, data: unknown): void;
+  hmac(algorithm: "sha1" | "sha256" | "sha512", key: string, data: string, encoding?: "hex" | "base64"): string;
+  /**
+   * Ed25519 signature check. `publicKey` and `signature` are in `encoding`
+   * (default "hex"); `message` is UTF-8. Throws for a malformed public key;
+   * a malformed or non-matching signature is simply `false`.
+   */
+  verifyEd25519(publicKey: string, signature: string, message: string, encoding?: "hex" | "base64"): boolean;
+  /** Constant-time string comparison. Different lengths compare unequal. */
+  timingSafeEqual(a: string, b: string): boolean;
+}
+
+/** `ctx.event.data` for a webhook handler: the inbound HTTP request. */
+export interface WebhookRequest {
+  method: "GET" | "POST";
+  /** Lowercased names; every request header except `cookie`. */
+  headers: Record<string, string>;
+  /** One value per key (the first occurrence). */
+  query: Record<string, string>;
+  /** The parsed JSON body, or `null` when the body is not JSON. */
+  body: unknown;
+  /** The body as UTF-8, exactly as received. Check signatures against this, not `body`. */
+  rawBody: string;
+}
+
+/**
+ * What a webhook handler returns. The engine validates it before acting on
+ * it: a result that breaks any rule below is a 500 and publishes nothing.
+ */
+export interface WebhookHandlerResult {
+  /** An integer from 200 to 599. */
+  status: number;
+  /** Only `content-type` and `x-*` names. */
+  headers?: Record<string, string>;
+  /** A string is sent as-is; an object or array is sent as JSON. At most 64 KiB. */
+  body?: string | Record<string, unknown> | unknown[];
+  /**
+   * Events for the engine to publish, allowed only with a 2xx status. Each
+   * `type` must be the `event` of an eventbus trigger this module declares.
+   * At most 16; each `data` at most 64 KiB serialized.
+   */
+  events?: { type: string; data?: Record<string, unknown> }[];
 }
 
 /**
@@ -221,7 +264,7 @@ export interface Ctx extends CtxExtensions {
   event: unknown;
   /** The user context the host attached, opaque at this boundary. */
   user: unknown;
-  events: CtxEvents;
+  crypto: CtxCrypto;
   storage: CtxStorage;
   http: CtxHttp;
   env: CtxEnv;

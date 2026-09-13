@@ -10,6 +10,7 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 
 ## Cross-cutting
 
+- **[Engine integrity](/services/engine-integrity)** - Modules request, the engine acts: module code never drives the bus directly
 - **[CloudEvents](/services/cloudevents)** - Inter-service messaging format and the canonical NATS subject list
 - **[Widget event channel](/services/widget-events)** - The unified `widget.event` channel and `widgetHost` API contract
 - **[Asset delivery](/services/asset-delivery)** - How module and user assets reach the browser: URL shape, the sceneManager relay, and barkloader's presigned redirects

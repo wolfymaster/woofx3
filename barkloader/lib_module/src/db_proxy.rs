@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 
 use super::manifest_validate::InstallProvenance;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 /// Shared, pooled HTTP client for every Twirp call this module makes to
@@ -65,6 +66,11 @@ pub struct TriggerInputJson {
     /// moduleId segment of the row's `created_by_ref`. Required for the
     /// dedupe/upsert key on the triggers table.
     pub manifest_id: String,
+    /// The manifest `type`, `eventbus` when omitted.
+    pub transport: String,
+    /// Canonical id of a webhook trigger's handler function; empty for every
+    /// other transport.
+    pub handler: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -1936,6 +1942,35 @@ pub async fn get_module_settings(
         .await
         .map_err(|e| anyhow!("parse ListModuleSettings response: {}", e))?;
     Ok(resp.settings)
+}
+
+#[derive(Debug, Deserialize)]
+struct GetModuleSecretValuesResponse {
+    #[serde(default)]
+    values: HashMap<String, String>,
+}
+
+/// Opened `secret` settings for one module, by key. Only the sandbox's
+/// settings client calls this, for the owning module's own invocations.
+pub async fn get_module_secret_values(url: &str, module_id: &str) -> Result<HashMap<String, String>> {
+    let body = serde_json::json!({ "module_id": module_id });
+    let endpoint = format!("{}/twirp/module_setting.ModuleSettingService/GetModuleSecretValues", url);
+    let client = HTTP_CLIENT.clone();
+    let response = client
+        .post(&endpoint)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("get_module_secret_values request: {}", e))?;
+    if !response.status().is_success() {
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("get_module_secret_values failed: {}", text));
+    }
+    let resp: GetModuleSecretValuesResponse = response
+        .json()
+        .await
+        .map_err(|e| anyhow!("parse GetModuleSecretValues response: {}", e))?;
+    Ok(resp.values)
 }
 
 #[derive(Debug, Clone, Serialize)]

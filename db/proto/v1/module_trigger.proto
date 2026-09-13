@@ -41,6 +41,12 @@ message Trigger {
   // Empty/absent means the trigger declares nothing, and the UI falls back to
   // the config_schema derivation exactly as it does today.
   string emits = 14;
+  // The manifest trigger `type`: "eventbus" for a trigger the bus fires,
+  // "webhook" for one fired by inbound HTTP through `handler`.
+  string transport = 15;
+  // Canonical id of a webhook trigger's handler function
+  // (`{moduleId}:function:{id}`). Empty for every other transport.
+  string handler = 16;
 }
 
 message TriggerInput {
@@ -54,6 +60,8 @@ message TriggerInput {
   string manifest_id = 7;
   repeated string taxonomy = 8;
   string emits = 9;  // JSON string — see Trigger.emits
+  string transport = 10;  // see Trigger.transport
+  string handler = 11;    // see Trigger.handler
 }
 
 message RegisterTriggersRequest {

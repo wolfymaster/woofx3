@@ -1,4 +1,189 @@
 // @generated
+impl serde::Serialize for GetModuleSecretValuesRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.module_id.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module_setting.GetModuleSecretValuesRequest", len)?;
+        if !self.module_id.is_empty() {
+            struct_ser.serialize_field("moduleId", &self.module_id)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for GetModuleSecretValuesRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "module_id",
+            "moduleId",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            ModuleId,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "moduleId" | "module_id" => Ok(GeneratedField::ModuleId),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = GetModuleSecretValuesRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module_setting.GetModuleSecretValuesRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<GetModuleSecretValuesRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut module_id__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::ModuleId => {
+                            if module_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("moduleId"));
+                            }
+                            module_id__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(GetModuleSecretValuesRequest {
+                    module_id: module_id__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module_setting.GetModuleSecretValuesRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for GetModuleSecretValuesResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.values.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module_setting.GetModuleSecretValuesResponse", len)?;
+        if !self.values.is_empty() {
+            struct_ser.serialize_field("values", &self.values)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for GetModuleSecretValuesResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "values",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Values,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "values" => Ok(GeneratedField::Values),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = GetModuleSecretValuesResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module_setting.GetModuleSecretValuesResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<GetModuleSecretValuesResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut values__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Values => {
+                            if values__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("values"));
+                            }
+                            values__ = Some(
+                                map_.next_value::<std::collections::HashMap<_, _>>()?
+                            );
+                        }
+                    }
+                }
+                Ok(GetModuleSecretValuesResponse {
+                    values: values__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("module_setting.GetModuleSecretValuesResponse", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for ListModuleSettingsRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -331,6 +516,9 @@ impl serde::Serialize for ModuleSettingRecord {
         if !self.value_type.is_empty() {
             len += 1;
         }
+        if self.is_set {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module_setting.ModuleSettingRecord", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -346,6 +534,9 @@ impl serde::Serialize for ModuleSettingRecord {
         }
         if !self.value_type.is_empty() {
             struct_ser.serialize_field("valueType", &self.value_type)?;
+        }
+        if self.is_set {
+            struct_ser.serialize_field("isSet", &self.is_set)?;
         }
         struct_ser.end()
     }
@@ -364,6 +555,8 @@ impl<'de> serde::Deserialize<'de> for ModuleSettingRecord {
             "value",
             "value_type",
             "valueType",
+            "is_set",
+            "isSet",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -373,6 +566,7 @@ impl<'de> serde::Deserialize<'de> for ModuleSettingRecord {
             Key,
             Value,
             ValueType,
+            IsSet,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -399,6 +593,7 @@ impl<'de> serde::Deserialize<'de> for ModuleSettingRecord {
                             "key" => Ok(GeneratedField::Key),
                             "value" => Ok(GeneratedField::Value),
                             "valueType" | "value_type" => Ok(GeneratedField::ValueType),
+                            "isSet" | "is_set" => Ok(GeneratedField::IsSet),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -423,6 +618,7 @@ impl<'de> serde::Deserialize<'de> for ModuleSettingRecord {
                 let mut key__ = None;
                 let mut value__ = None;
                 let mut value_type__ = None;
+                let mut is_set__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -455,6 +651,12 @@ impl<'de> serde::Deserialize<'de> for ModuleSettingRecord {
                             }
                             value_type__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::IsSet => {
+                            if is_set__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("isSet"));
+                            }
+                            is_set__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(ModuleSettingRecord {
@@ -463,6 +665,7 @@ impl<'de> serde::Deserialize<'de> for ModuleSettingRecord {
                     key: key__.unwrap_or_default(),
                     value: value__.unwrap_or_default(),
                     value_type: value_type__.unwrap_or_default(),
+                    is_set: is_set__.unwrap_or_default(),
                 })
             }
         }

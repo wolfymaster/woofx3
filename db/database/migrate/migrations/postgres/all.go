@@ -49,5 +49,6 @@ func All() []*gormigrate.Migration {
 		AddFollowerAndTierGroups(),
 		AddTriggerEmitsAndActionReturns(),
 		AddWidgetAcceptedEvents(),
+		AddTriggerTransportHandler(),
 	}
 }
