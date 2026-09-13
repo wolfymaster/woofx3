@@ -1,6 +1,3 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, expect, it, mock } from "bun:test";
 import {
   buildFrameScaffold,
@@ -10,7 +7,6 @@ import {
   SHIM_SRC,
 } from "../../src/scene/frame-assembler";
 import type { BarkloaderFrameClient, FrameScaffold } from "../../src/scene/frame-assembler";
-import { sanitizeAssetPath } from "../../src/scene/asset-path";
 import type { OverlayHost, OverlaySceneState, OverlayWidgetInstance } from "../../src/scene/scene-host";
 
 function minimalBoot(): FrameScaffold["boot"] {
@@ -96,42 +92,6 @@ describe("injectFrameScaffold", () => {
     const result = injectFrameScaffold(html, "INJECTED");
     expect(result.charCodeAt(0)).toBe(0xfeff);
     expect(result).toContain("INJECTED");
-  });
-});
-
-describe("sanitizeAssetPath", () => {
-  it("passes normal relative paths unchanged", () => {
-    expect(sanitizeAssetPath("index.html")).toBe("index.html");
-    expect(sanitizeAssetPath("assets/main.js")).toBe("assets/main.js");
-  });
-
-  it("strips a leading slash", () => {
-    expect(sanitizeAssetPath("/index.html")).toBe("index.html");
-  });
-
-  it("collapses multiple slashes", () => {
-    expect(sanitizeAssetPath("a//b///c.js")).toBe("a/b/c.js");
-  });
-
-  it("rejects a .. segment", () => {
-    expect(sanitizeAssetPath("../../etc/passwd")).toBeNull();
-    expect(sanitizeAssetPath("assets/../secret")).toBeNull();
-  });
-
-  it("rejects a . segment", () => {
-    expect(sanitizeAssetPath("./index.html")).toBeNull();
-  });
-
-  it("rejects %2e%2e encoded traversal", () => {
-    expect(sanitizeAssetPath("%2e%2e/%2e%2e/etc/passwd")).toBeNull();
-  });
-
-  it("rejects ..%5c backslash-encoded traversal", () => {
-    expect(sanitizeAssetPath("..%5cetc%5cpasswd")).toBeNull();
-  });
-
-  it("returns null for paths that throw during decodeURIComponent", () => {
-    expect(sanitizeAssetPath("%GG")).toBeNull();
   });
 });
 
@@ -233,7 +193,6 @@ describe("FrameAssembler.assemble", () => {
     };
     const assembler = new FrameAssembler(fakeHost(state, "index.html"), fakeLogger(), {
       barkloader,
-      publicDir: "/nonexistent",
     });
 
     const resp = await assembler.assemble("scene-1", "inst-1", null);
@@ -254,7 +213,6 @@ describe("FrameAssembler.assemble", () => {
     const barkloader: BarkloaderFrameClient = { fetchWidgetFrame: mock(async () => null) };
     const assembler = new FrameAssembler(fakeHost(state, "index.html"), fakeLogger(), {
       barkloader,
-      publicDir: "/nonexistent",
     });
     const resp = await assembler.assemble("scene-1", "inst-1", null);
     expect(resp.status).toBe(502);
@@ -265,7 +223,6 @@ describe("FrameAssembler.assemble", () => {
     const host = { async loadSceneById() { return null; } } as unknown as OverlayHost;
     const assembler = new FrameAssembler(host, fakeLogger(), {
       barkloader,
-      publicDir: "/nonexistent",
     });
     const resp = await assembler.assemble("nope", "inst-1", null);
     expect(resp.status).toBe(200);
@@ -283,7 +240,6 @@ describe("FrameAssembler.assemble", () => {
     const barkloader: BarkloaderFrameClient = { fetchWidgetFrame: mock(async () => null) };
     const assembler = new FrameAssembler(fakeHost(state, "index.html"), fakeLogger(), {
       barkloader,
-      publicDir: "/nonexistent",
     });
     const resp = await assembler.assemble("scene-1", "missing-instance", null);
     expect(await resp.text()).toBe("<!doctype html><html><head></head><body></body></html>");

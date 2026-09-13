@@ -1,8 +1,6 @@
-import { join, resolve, sep } from "node:path";
 import type { Logger } from "@woofx3/common/runtime";
 import type { WidgetBootPayload } from "@woofx3/module-sdk";
 import type { OverlayHost, OverlayWidgetInstance } from "./scene-host";
-import { sanitizeAssetPath } from "./asset-path";
 
 /**
  * Uniform blank document: served byte-for-byte identically for an
@@ -85,7 +83,6 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
 
 export interface FrameAssemblerOptions {
   barkloader: BarkloaderFrameClient;
-  publicDir: string;
   generateNonce?: () => string;
 }
 
