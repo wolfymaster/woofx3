@@ -54,6 +54,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { WebhookClient },
       { initWidgetStatusHandlers },
       { initWorkflowHandlers },
+      { default: BarkloaderClient },
     ] = await Promise.all([
       import("@woofx3/nats"),
       import("./alert-log-handlers"),
@@ -70,6 +71,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./webhook-client"),
       import("./widget-status-handlers"),
       import("./workflow-event-handlers"),
+      import("@woofx3/barkloader"),
     ]);
 
     const config = ctx.runtimeConfig;
@@ -93,9 +95,22 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       natsClient = null;
     }
 
+    // Runs module functions and waits for their result. It reconnects on its
+    // own; until it is up, a webhook handler request answers 503.
+    const functions = new BarkloaderClient({
+      wsUrl: `${config.barkloaderWsUrl}?token=${encodeURIComponent(config.barkloaderKey)}`,
+      onOpen: () => logger.info("Connected to barkloader"),
+      onClose: () => logger.warn("Barkloader connection closed"),
+      onError: () => logger.warn("Barkloader connection error"),
+      maxRetries: Infinity,
+      reconnectTimeout: 5000,
+    });
+    functions.connect();
+
     const api = new Api({
       db,
       nats: natsClient,
+      functions,
       barkloaderUrl: config.barkloaderUrl,
       streamwareUrl: config.streamwareUrl,
       overlayPublicUrl: config.overlayPublicUrl,

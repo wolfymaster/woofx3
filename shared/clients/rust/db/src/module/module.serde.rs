@@ -9367,6 +9367,12 @@ impl serde::Serialize for Trigger {
         if !self.emits.is_empty() {
             len += 1;
         }
+        if !self.transport.is_empty() {
+            len += 1;
+        }
+        if !self.handler.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.Trigger", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -9401,6 +9407,12 @@ impl serde::Serialize for Trigger {
         if !self.emits.is_empty() {
             struct_ser.serialize_field("emits", &self.emits)?;
         }
+        if !self.transport.is_empty() {
+            struct_ser.serialize_field("transport", &self.transport)?;
+        }
+        if !self.handler.is_empty() {
+            struct_ser.serialize_field("handler", &self.handler)?;
+        }
         struct_ser.end()
     }
 }
@@ -9427,6 +9439,8 @@ impl<'de> serde::Deserialize<'de> for Trigger {
             "manifestId",
             "taxonomy",
             "emits",
+            "transport",
+            "handler",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -9442,6 +9456,8 @@ impl<'de> serde::Deserialize<'de> for Trigger {
             ManifestId,
             Taxonomy,
             Emits,
+            Transport,
+            Handler,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -9474,6 +9490,8 @@ impl<'de> serde::Deserialize<'de> for Trigger {
                             "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
                             "taxonomy" => Ok(GeneratedField::Taxonomy),
                             "emits" => Ok(GeneratedField::Emits),
+                            "transport" => Ok(GeneratedField::Transport),
+                            "handler" => Ok(GeneratedField::Handler),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -9504,6 +9522,8 @@ impl<'de> serde::Deserialize<'de> for Trigger {
                 let mut manifest_id__ = None;
                 let mut taxonomy__ = None;
                 let mut emits__ = None;
+                let mut transport__ = None;
+                let mut handler__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -9572,6 +9592,18 @@ impl<'de> serde::Deserialize<'de> for Trigger {
                             }
                             emits__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Transport => {
+                            if transport__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("transport"));
+                            }
+                            transport__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Handler => {
+                            if handler__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("handler"));
+                            }
+                            handler__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Trigger {
@@ -9586,6 +9618,8 @@ impl<'de> serde::Deserialize<'de> for Trigger {
                     manifest_id: manifest_id__.unwrap_or_default(),
                     taxonomy: taxonomy__.unwrap_or_default(),
                     emits: emits__.unwrap_or_default(),
+                    transport: transport__.unwrap_or_default(),
+                    handler: handler__.unwrap_or_default(),
                 })
             }
         }
@@ -9624,6 +9658,12 @@ impl serde::Serialize for TriggerInput {
         if !self.emits.is_empty() {
             len += 1;
         }
+        if !self.transport.is_empty() {
+            len += 1;
+        }
+        if !self.handler.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.TriggerInput", len)?;
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
@@ -9649,6 +9689,12 @@ impl serde::Serialize for TriggerInput {
         if !self.emits.is_empty() {
             struct_ser.serialize_field("emits", &self.emits)?;
         }
+        if !self.transport.is_empty() {
+            struct_ser.serialize_field("transport", &self.transport)?;
+        }
+        if !self.handler.is_empty() {
+            struct_ser.serialize_field("handler", &self.handler)?;
+        }
         struct_ser.end()
     }
 }
@@ -9670,6 +9716,8 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
             "manifestId",
             "taxonomy",
             "emits",
+            "transport",
+            "handler",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -9682,6 +9730,8 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
             ManifestId,
             Taxonomy,
             Emits,
+            Transport,
+            Handler,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -9711,6 +9761,8 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
                             "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
                             "taxonomy" => Ok(GeneratedField::Taxonomy),
                             "emits" => Ok(GeneratedField::Emits),
+                            "transport" => Ok(GeneratedField::Transport),
+                            "handler" => Ok(GeneratedField::Handler),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -9738,6 +9790,8 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
                 let mut manifest_id__ = None;
                 let mut taxonomy__ = None;
                 let mut emits__ = None;
+                let mut transport__ = None;
+                let mut handler__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Name => {
@@ -9788,6 +9842,18 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
                             }
                             emits__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Transport => {
+                            if transport__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("transport"));
+                            }
+                            transport__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Handler => {
+                            if handler__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("handler"));
+                            }
+                            handler__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(TriggerInput {
@@ -9799,6 +9865,8 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
                     manifest_id: manifest_id__.unwrap_or_default(),
                     taxonomy: taxonomy__.unwrap_or_default(),
                     emits: emits__.unwrap_or_default(),
+                    transport: transport__.unwrap_or_default(),
+                    handler: handler__.unwrap_or_default(),
                 })
             }
         }

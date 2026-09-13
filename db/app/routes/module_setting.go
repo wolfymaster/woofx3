@@ -11,7 +11,7 @@ import (
 
 func ModuleSettingRoutes(mux *http.ServeMux, app *types.App) {
 	settingRepo := repo.NewModuleSettingRepository(app.Db)
-	settingService := svc.NewModuleSettingService(settingRepo)
+	settingService := svc.NewModuleSettingService(settingRepo, app.Secrets)
 	handler := client.NewModuleSettingServiceServer(settingService)
 	mux.Handle(handler.PathPrefix(), handler)
 }

@@ -29,6 +29,14 @@ interface BarkloaderInvokeReply {
 
 const INVOKE_TIMEOUT_MS = 5000;
 
+/** Barkloader did not answer an `invoke` within INVOKE_TIMEOUT_MS. */
+export class InvokeTimeoutError extends Error {
+    constructor(func: string) {
+        super(`Barkloader invoke timed out after ${INVOKE_TIMEOUT_MS}ms: ${func}`);
+        this.name = "InvokeTimeoutError";
+    }
+}
+
 export default class BarkloaderClient {
     private socket: WebSocket | null = null;
     private onMessage: MessageHandler;
@@ -123,7 +131,7 @@ export default class BarkloaderClient {
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
                 this.pendingInvokes.delete(id);
-                reject(new Error(`Barkloader invoke timed out after ${INVOKE_TIMEOUT_MS}ms: ${func}`));
+                reject(new InvokeTimeoutError(func));
             }, INVOKE_TIMEOUT_MS);
 
             this.pendingInvokes.set(id, {

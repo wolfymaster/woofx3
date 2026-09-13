@@ -8,10 +8,15 @@ pub struct ModuleSettingRecord {
     pub module_id: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub key: ::prost::alloc::string::String,
+    /// Always empty for a `secret` setting: its value never leaves db-proxy in
+    /// this record. See GetModuleSecretValues.
     #[prost(string, tag="4")]
     pub value: ::prost::alloc::string::String,
     #[prost(string, tag="5")]
     pub value_type: ::prost::alloc::string::String,
+    /// Whether a value is stored — the only way to tell for a secret.
+    #[prost(bool, tag="6")]
+    pub is_set: bool,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListModuleSettingsRequest {
@@ -54,6 +59,18 @@ pub struct RegisterModuleSettingsRequest {
 pub struct RegisterModuleSettingsResponse {
     #[prost(int32, tag="1")]
     pub registered: i32,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetModuleSecretValuesRequest {
+    #[prost(string, tag="1")]
+    pub module_id: ::prost::alloc::string::String,
+}
+/// Decrypted `secret` settings by key. Only barkloader calls this, to build
+/// `ctx.module.settings` for the owning module's functions.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetModuleSecretValuesResponse {
+    #[prost(map="string, string", tag="1")]
+    pub values: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
 }
 include!("module_setting.serde.rs");
 include!("module_setting.tonic.rs");

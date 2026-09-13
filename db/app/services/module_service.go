@@ -450,6 +450,8 @@ func (s *moduleService) RegisterTriggers(ctx context.Context, req *client.Regist
 			// Module catalog rows are instance-global; applicationId is
 			// stamped on events / workflow runs, not on trigger declarations.
 			ApplicationID: "",
+			Transport:     in.Transport,
+			Handler:       in.Handler,
 		}
 		if err := s.repo.UpsertTrigger(t); err != nil {
 			return nil, fmt.Errorf("upsert trigger %q: %w", in.Name, err)
@@ -577,6 +579,8 @@ func triggerToProto(t *models.Trigger) *client.Trigger {
 		CreatedByType: t.CreatedByType,
 		CreatedByRef:  t.CreatedByRef,
 		ManifestId:    t.ManifestID,
+		Transport:     t.Transport,
+		Handler:       t.Handler,
 	}
 }
 
@@ -946,8 +950,21 @@ func (s *moduleService) DeleteResourceByManifestId(ctx context.Context, req *cli
 func (s *moduleService) ArchiveResourceByManifestId(ctx context.Context, req *client.ArchiveResourceByManifestIdRequest) (*client.ResponseStatus, error) {
 	switch req.ResourceType {
 	case "trigger":
-		if err := s.repo.ArchiveTriggerByManifestID(req.ModuleId, req.ManifestId); err != nil {
+		archived, err := s.repo.ArchiveTriggerByManifestID(req.ModuleId, req.ManifestId)
+		if err != nil {
 			return nil, err
+		}
+		// Announced like a delete so subscribers stop offering the trigger
+		// now rather than at their next sync. A webhook trigger's public URL
+		// is disabled off this event.
+		if archived != nil && s.publisher != nil {
+			s.publisher.Publish(workers.PublishOptions{
+				ApplicationID:   "",
+				EntityType:      "module.trigger",
+				Operation:       "deregistered",
+				Data:            buildTriggerDeregisteredData(req.ModuleId, "", []*models.Trigger{archived}),
+				AutoAcknowledge: true,
+			})
 		}
 	case "action":
 		if err := s.repo.ArchiveActionByManifestID(req.ModuleId, req.ManifestId); err != nil {

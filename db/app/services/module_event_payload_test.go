@@ -67,6 +67,37 @@ func TestBuildTriggerRegisteredDataEmpty(t *testing.T) {
 	}
 }
 
+func TestTriggerPayloadsCarryTransportButNeverHandler(t *testing.T) {
+	triggers := []*models.Trigger{{
+		ID:            uuid.New(),
+		Taxonomy:      "[]",
+		Name:          "Orders",
+		Event:         "webhook.example_store.orders",
+		CreatedByType: "MODULE",
+		CreatedByRef:  "example_store",
+		ManifestID:    "orders",
+		Transport:     "webhook",
+		Handler:       "example_store:function:handle_order",
+	}}
+
+	payloads := map[string]map[string]any{
+		"registered":   buildTriggerRegisteredData("example_store", "example_store:1.0.0:abc", "Example Store", "1.0.0", triggers),
+		"deregistered": buildTriggerDeregisteredData("example_store", "", triggers),
+	}
+	for name, data := range payloads {
+		row := data["triggers"].([]map[string]any)[0]
+		if row["transport"] != "webhook" {
+			t.Errorf("%s: transport = %v", name, row["transport"])
+		}
+		if handler, ok := row["handler"]; ok {
+			t.Errorf("%s: handler must stay inside the engine, got %v", name, handler)
+		}
+		if row["projection_key"] != "example_store:trigger:orders" {
+			t.Errorf("%s: projection_key = %v", name, row["projection_key"])
+		}
+	}
+}
+
 func TestBuildActionRegisteredData(t *testing.T) {
 	id := uuid.New()
 	actions := []*models.Action{{

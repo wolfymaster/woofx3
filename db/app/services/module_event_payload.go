@@ -112,6 +112,7 @@ func buildTriggerRegisteredData(modulePrefix, moduleKey, moduleName, version str
 			"allow_variants":  t.AllowVariants,
 			"created_by_type": t.CreatedByType,
 			"created_by_ref":  t.CreatedByRef,
+			"transport":       t.Transport,
 		}
 		if pk := projectionKeyFor(t.CreatedByType, t.CreatedByRef, "trigger", t.ManifestID); pk != "" {
 			row["projection_key"] = pk
@@ -218,6 +219,7 @@ func buildTriggerDeregisteredData(modulePrefix, moduleKey string, triggers []*mo
 			"emits":          t.Emits,
 			"allow_variants": t.AllowVariants,
 			"created_by_ref": t.CreatedByRef,
+			"transport":      t.Transport,
 		}
 		if pk := projectionKeyFor(t.CreatedByType, t.CreatedByRef, "trigger", t.ManifestID); pk != "" {
 			row["projection_key"] = pk

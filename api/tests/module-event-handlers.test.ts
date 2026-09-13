@@ -100,6 +100,23 @@ describe("parseModuleTriggerRegistered", () => {
     expect(result.event.triggers[1]).not.toHaveProperty("emits");
   });
 
+  test("carries transport through, and omits it when the engine sent none", () => {
+    const ce = {
+      data: {
+        module_key: "k",
+        triggers: [
+          { id: "uuid-1", name: "orders", transport: "webhook" },
+          { id: "uuid-2", name: "cheer" },
+        ],
+      },
+    };
+
+    const result = parseModuleTriggerRegistered(ce);
+
+    expect(result.event.triggers[0]?.transport).toBe("webhook");
+    expect(result.event.triggers[1]).not.toHaveProperty("transport");
+  });
+
   test("defaults missing fields to empty values", () => {
     const ce = { data: {} };
     const result = parseModuleTriggerRegistered(ce);

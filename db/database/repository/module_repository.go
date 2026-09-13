@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/google/uuid"
@@ -141,20 +142,29 @@ func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
 	// against an active row, so this never resurrects an archived one;
 	// archived rows and a fresh insert for the same manifest_id coexist
 	// (see AddArchivedAtColumns).
+	// A registrar that declares no shape may send "", which jsonb rejects;
+	// "{}" is the column's own "declares nothing".
+	emits := t.Emits
+	if emits == "" {
+		emits = "{}"
+	}
 	err := r.db.Raw(`
-		INSERT INTO public.triggers (id, taxonomy, name, description, event, config_schema, allow_variants, created_by_type, created_by_ref, manifest_id, application_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO public.triggers (id, taxonomy, name, description, event, config_schema, emits, allow_variants, created_by_type, created_by_ref, manifest_id, application_id, transport, handler, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) WHERE archived_at IS NULL DO UPDATE SET
 			taxonomy = EXCLUDED.taxonomy,
 			name = EXCLUDED.name,
 			description = EXCLUDED.description,
 			event = EXCLUDED.event,
 			config_schema = EXCLUDED.config_schema,
+			emits = EXCLUDED.emits,
 			allow_variants = EXCLUDED.allow_variants,
 			application_id = EXCLUDED.application_id,
+			transport = EXCLUDED.transport,
+			handler = EXCLUDED.handler,
 			updated_at = NOW()
 		RETURNING id
-	`, t.ID, t.Taxonomy, t.Name, t.Description, t.Event, t.ConfigSchema, t.AllowVariants, t.CreatedByType, t.CreatedByRef, t.ManifestID, t.ApplicationID).Scan(&result).Error
+	`, t.ID, t.Taxonomy, t.Name, t.Description, t.Event, t.ConfigSchema, emits, t.AllowVariants, t.CreatedByType, t.CreatedByRef, t.ManifestID, t.ApplicationID, t.Transport, t.Handler).Scan(&result).Error
 	if err != nil {
 		return err
 	}
@@ -214,11 +224,32 @@ func (r *ModuleRepository) DeleteTriggersByModulePrefix(moduleID, createdByType 
 // workflow that references it keeps working) while hiding it from
 // ListTriggers. Only archives an active row — idempotent if called
 // again for an already-archived id.
-func (r *ModuleRepository) ArchiveTriggerByManifestID(moduleID, manifestID string) error {
-	return r.db.Model(&models.Trigger{}).Where(
-		"created_by_type = ? AND created_by_ref = ? AND manifest_id = ? AND archived_at IS NULL",
-		"MODULE", moduleID, manifestID,
-	).Update("archived_at", gorm.Expr("NOW()")).Error
+// It returns the row it archived, or nil when no active row matched, so the
+// caller can announce exactly what went away.
+func (r *ModuleRepository) ArchiveTriggerByManifestID(moduleID, manifestID string) (*models.Trigger, error) {
+	var archived *models.Trigger
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var trigger models.Trigger
+		err := tx.Where(
+			"created_by_type = ? AND created_by_ref = ? AND manifest_id = ? AND archived_at IS NULL",
+			"MODULE", moduleID, manifestID,
+		).First(&trigger).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&trigger).Update("archived_at", gorm.Expr("NOW()")).Error; err != nil {
+			return err
+		}
+		archived = &trigger
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return archived, nil
 }
 
 // ListTriggersByModulePrefix returns every trigger registered under the

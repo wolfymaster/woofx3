@@ -48,8 +48,13 @@
 ---@field body? any
 ---@field query? table<string, string>
 
----@class CtxEvents
----@field publish fun(subject: string, data: any): nil
+---Signature primitives for verifying inbound webhook requests. Pure
+---computation; nothing here reaches the engine. Digests, keys and
+---signatures are hex unless `encoding` is "base64".
+---@class CtxCrypto
+---@field hmac fun(algorithm: "sha1"|"sha256"|"sha512", key: string, data: string, encoding?: "hex"|"base64"): string
+---@field verifyEd25519 fun(public_key: string, signature: string, message: string, encoding?: "hex"|"base64"): boolean
+---@field timingSafeEqual fun(a: string, b: string): boolean
 
 ---@class CtxStorage
 ---@field get fun(key: string): any
@@ -129,7 +134,7 @@
 ---@class Ctx
 ---@field event any              the triggering CloudEvent's payload
 ---@field user any               user context attached by the host
----@field events CtxEvents
+---@field crypto CtxCrypto
 ---@field storage CtxStorage
 ---@field http CtxHttp
 ---@field env CtxEnv

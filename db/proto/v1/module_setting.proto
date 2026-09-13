@@ -8,8 +8,12 @@ message ModuleSettingRecord {
   string id         = 1;
   string module_id  = 2;
   string key        = 3;
+  // Always empty for a `secret` setting: its value never leaves db-proxy in
+  // this record. See GetModuleSecretValues.
   string value      = 4;
   string value_type = 5;
+  // Whether a value is stored — the only way to tell for a secret.
+  bool   is_set     = 6;
 }
 
 message ListModuleSettingsRequest {
@@ -42,8 +46,19 @@ message RegisterModuleSettingsResponse {
   int32 registered = 1;
 }
 
+message GetModuleSecretValuesRequest {
+  string module_id = 1;
+}
+
+// Decrypted `secret` settings by key. Only barkloader calls this, to build
+// `ctx.module.settings` for the owning module's functions.
+message GetModuleSecretValuesResponse {
+  map<string, string> values = 1;
+}
+
 service ModuleSettingService {
   rpc ListModuleSettings(ListModuleSettingsRequest)       returns (ListModuleSettingsResponse);
   rpc SetModuleSetting(SetModuleSettingRequest)           returns (ModuleSettingRecord);
   rpc RegisterModuleSettings(RegisterModuleSettingsRequest) returns (RegisterModuleSettingsResponse);
+  rpc GetModuleSecretValues(GetModuleSecretValuesRequest) returns (GetModuleSecretValuesResponse);
 }

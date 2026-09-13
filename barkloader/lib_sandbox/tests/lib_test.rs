@@ -533,3 +533,72 @@ fn test_unregistered_extension_namespace_is_undefined() {
 
     assert_eq!(result["has_twitch"], serde_json::json!(false));
 }
+
+fn invoke_probe(module: &str, func: &str, code: &str, ext: &str) -> Result<serde_json::Value, String> {
+    let registry = extension_test_module(module, func, code, ext);
+    let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
+    sandbox
+        .invoke(InvokeRequest {
+            function: format!("{module}:function:{func}"),
+            event: serde_json::Value::Null,
+            user: None,
+            params: serde_json::Value::Null,
+        })
+        .map_err(|e| e.to_string())
+}
+
+// RFC 4231 test case 2, HMAC-SHA256.
+const JEFE_HMAC_SHA256: &str = "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843";
+
+#[test]
+fn test_quickjs_binds_ctx_crypto_and_no_ctx_events() {
+    let code = r#"function check(ctx) {
+    return {
+        hmac: ctx.crypto.hmac("sha256", "Jefe", "what do ya want for nothing?"),
+        same: ctx.crypto.timingSafeEqual("a", "a"),
+        hasEvents: typeof ctx.events !== "undefined"
+    };
+}"#;
+    let result = invoke_probe("crypto_test", "check", code, "js").unwrap();
+
+    assert_eq!(result["hmac"], serde_json::json!(JEFE_HMAC_SHA256));
+    assert_eq!(result["same"], serde_json::json!(true));
+    assert_eq!(result["hasEvents"], serde_json::json!(false));
+}
+
+#[test]
+fn test_lua_binds_ctx_crypto_and_no_ctx_events() {
+    let code = r#"
+function check(ctx)
+    return {
+        hmac = ctx.crypto.hmac("sha256", "Jefe", "what do ya want for nothing?"),
+        same = ctx.crypto.timingSafeEqual("a", "a"),
+        hasEvents = ctx.events ~= nil
+    }
+end
+"#;
+    let result = invoke_probe("crypto_test", "check", code, "lua").unwrap();
+
+    assert_eq!(result["hmac"], serde_json::json!(JEFE_HMAC_SHA256));
+    assert_eq!(result["same"], serde_json::json!(true));
+    assert_eq!(result["hasEvents"], serde_json::json!(false));
+}
+
+// The adapter reports any uncaught exception as a generic error, so the
+// message is checked where a module author would see it: inside the catch.
+#[test]
+fn test_quickjs_ctx_crypto_throws_for_an_unknown_algorithm() {
+    let code = r#"function check(ctx) {
+    try {
+        ctx.crypto.hmac("md5", "key", "data");
+        return { threw: false };
+    } catch (e) {
+        return { threw: true, message: String(e && e.message ? e.message : e) };
+    }
+}"#;
+    let result = invoke_probe("crypto_test", "check", code, "js").unwrap();
+
+    assert_eq!(result["threw"], serde_json::json!(true));
+    let message = result["message"].as_str().unwrap_or_default();
+    assert!(message.contains("md5"), "names the algorithm: {message}");
+}

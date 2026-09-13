@@ -111,6 +111,12 @@ type Trigger struct {
 	CreatedByRef  string `gorm:"column:created_by_ref;type:text;not null;default:''"`
 	ManifestID    string `gorm:"column:manifest_id;type:text;not null;default:''"`
 	ApplicationID string `gorm:"column:application_id;type:text;not null;default:''"`
+	// Transport is the manifest trigger `type`: "eventbus" for a trigger the
+	// bus fires, "webhook" for one fired by inbound HTTP through Handler.
+	Transport string `gorm:"column:transport;type:text;not null;default:'eventbus'"`
+	// Handler is the canonical id of a webhook trigger's handler function.
+	// Empty for every other transport.
+	Handler string `gorm:"column:handler;type:text;not null;default:''"`
 	// ArchivedAt is set when a module upgrade drops this trigger from
 	// the manifest. Archived rows stay resolvable by canonical id
 	// (existing workflows keep working) but are excluded from catalog
