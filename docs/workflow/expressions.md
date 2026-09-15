@@ -1,34 +1,19 @@
 # Expression Resolution
 
-Workflow strings can carry expressions that are resolved against runtime
-data. Two distinct resolvers operate on the same envelope, at two
-different points in the pipeline. Knowing which one will see your token
-is the difference between a working workflow and silent failure.
+Workflow strings can carry `${…}` expressions, which the workflow engine
+resolves against runtime data before a step runs. Alert text adds one
+piece of markup, `{primary}…{primary}`, which the Text widget renders as
+highlighted text. It is markup, not an expression.
 
 ## The two layers, in order
 
-```
-                          published to NATS
-                                  │
-                                  ▼
-   workflow                  ui.notify.alert            streamware → overlay
-  ┌─────────┐                ┌─────────────┐           ┌──────────────┐
-  │ engine  │                │  envelope   │           │  MediaWidget │
-  │ Go      │ resolves only  │  on the wire│  resolves │  TS resolver │
-  │ resolver│ ${…} tokens    │             │  only {…} │              │
-  │ (path-  │ here →         │             │  segments │  (full       │
-  │  only)  │                │             │  here →   │   expressions│
-  └─────────┘                └─────────────┘           └──────────────┘
-       ▲                                                       ▲
-       │                                                       │
-   reads `trigger.X`                                       reads `event.X`
-   (the engine's source name)                              (the envelope's
-                                                            attached event)
-```
+1. **Workflow engine** — resolves every `${…}` in a step's parameters
+   against the trigger, earlier tasks and the environment. An alert's
+   layout, widget settings included, leaves the engine with final values.
+2. **Text widget** — renders `{primary}…{primary}` spans in its highlight
+   color. Nothing else in the text is interpreted.
 
-Both resolvers are **safe**: no `eval`, no globals. Both are bounded:
-unknown identifiers resolve to undefined and propagate as empty
-strings rather than throwing.
+The resolver is **safe**: no `eval`, no globals, no arithmetic, no calls.
 
 ## Layer 1 — workflow engine (Go)
 
@@ -50,33 +35,45 @@ untouched (`workflow/internal/expression/resolver.go:41`).
 | `<taskId>.X` | Exports from a previously-executed task in the same workflow |
 | `env.NAME` | Process environment variable (read at substitute time) |
 
-**Semantics**: path lookup only. No operators, no comparisons, no
-ternary, no string concatenation, no function calls. The grammar is
-literally `source ('.' name | '[' index ']')*`
-(`workflow/internal/expression/resolver.go:81-149`).
+**Semantics**: a plain reference is a path lookup,
+`source ('.' name | '[' index ']')*`. An expression containing an
+operator or a quote is evaluated with a small grammar
+(`workflow/internal/expression/compound.go`):
 
-**Examples that work:**
+| Form | Meaning |
+|---|---|
+| `cond ? a : b` | Only the chosen branch is evaluated. |
+| `a \|\| b`, `a && b` | Short-circuiting; yields one of the operands, as in JavaScript. |
+| `!a` | Negation. |
+| `==` `!=` `>` `>=` `<` `<=` | Numeric when both sides are numbers, otherwise compared as text. `===` and `!==` are accepted as aliases. |
+| `( … )` | Grouping. |
+| `'text'` `"text"` `12` `1.5` `-3` `true` `false` `null` | Literals. |
+
+The falsy values are `null`, `false`, `0` and `""`. Inside an expression a
+path that does not exist is `null`, so `${trigger.data.nick ||
+trigger.data.userName}` falls back cleanly, and ordering (`>`, `>=`, `<`,
+`<=`) against `null` is false. An unknown source is still an error. There
+is deliberately no arithmetic, concatenation or function call: an
+expression chooses between values, it does not compute them.
+
+**Examples:**
 
 ```jsonc
 "text": "${trigger.data.userName} just followed!"
-"text": "Bits: ${trigger.data.amount}"
+"text": "${trigger.data.amount} ${trigger.data.amount > 1 ? 'subs' : 'sub'}"
+"text": "${trigger.data.userName == 'wolfymaster' ? 'the boss' : 'a viewer'}"
 "params": ["Hello ${trigger.data.userName}!"]
 "value": "${task1.result.userId}"          // task export
 "apiKey": "${env.TWITCH_TOKEN}"
 ```
 
-**Examples that DO NOT work in this layer** (use Layer 2 instead):
+A string that is exactly one `${…}` keeps the value's type, so a number
+stays a number; one inside a longer string becomes text.
 
-```jsonc
-"text": "${trigger.data.amount > 1 ? 'subs' : 'sub'}"   // no operators
-"text": "${trigger.data.userName + ' (mod)'}"           // no concatenation
-"text": "${trigger.data.amount * 100}"                  // no arithmetic
-```
-
-When a `${…}` segment fails to resolve, the resolver leaves the
-literal token in place and returns the surrounding string unchanged
-(`workflow/internal/expression/resolver.go:50-58`). That makes
-authoring errors visible at render time rather than swallowed.
+When a `${…}` inside a longer string fails to resolve, the resolver
+leaves the literal token in place and returns the rest of the string
+unchanged, which makes authoring errors visible at render time. A string
+that is nothing but one failing `${…}` fails the step instead.
 
 ### Referencing module assets from a bundled workflow (`${asset:<id>}`)
 
@@ -87,8 +84,8 @@ manifest — see `db/proto/v1/module_asset.proto`'s "resolving this to
 a public URL is the deployer's concern" note). There is also a
 structural constraint an earlier `${woofx3_asset_url}` source didn't
 satisfy: an asset referenced in a workflow step's `parameters` (e.g. an
-alert's `audioUrl`) can be rendered by a *generic* widget (like the
-builtin `MediaWidget`) whose own `<base href>` belongs to a different
+Audio widget's `src` in an alert layout) can be rendered by a *generic*
+widget (like the bundled Audio widget) whose own `<base href>` belongs to a different
 module than the one that declared the asset — so a bare relative
 filename or a base-URL-relative template can't safely reach it (see
 [Asset delivery](../services/asset-delivery.md) for
@@ -106,14 +103,14 @@ source:
    ],
    "workflows": [{
      "steps": [{
-       "parameters": { "audioUrl": "${asset:pleasure}" }
+       "parameters": { "layout": { "widgets": [{ "settings": { "src": "${asset:pleasure}" } }] } }
      }]
    }]
    ```
 2. **Install-time baking** (barkloader, `encode_asset_url_markers` in
    `module_manifest.rs`): every `${asset:<id>}` marker anywhere in a
    bundled workflow's step `parameters` (recursively — including inside
-   arrays, e.g. a `mediaUrl` list) is rewritten into
+   arrays, e.g. a layout's `widgets`) is rewritten into
    `${woofx3_asset_url:<repositoryKey>}`, using the *just-uploaded*
    asset's actual repository key (e.g.
    `modules/wolfy_profile/assets/pleasure.mp3`) — this is what gets
@@ -147,80 +144,48 @@ cover cross-module asset references or the `asset`-typed
 user-authored workflows (see [Module manifest reference](../barkloader/modules.md)
 for that field's separate, still-unresolved authoring story).
 
-## Layer 2 — streamware MediaWidget (TypeScript)
+## Layer 2 — Text widget highlight markup
 
-Code: `streamware/ui/src/lib/resolver.ts`. Runs in the browser inside
-the alert overlay, immediately before each alert is rendered.
-
-**Syntax**: `{expression}` — bare braces, no leading `$`. Strings
-without `{` pass through. The full grammar is documented in the
-resolver source: ternary, logical AND/OR, equality, comparison,
-arithmetic, string concat, paren-grouped subexpressions, string and
-number literals, dotted paths, bracket indexing.
-
-**Sources**: the resolver context is `{ ...parameters, event }` where
-`parameters` is the alert envelope's `parameters` map and `event` is
-the originating CloudEvent attached by the workflow engine
-(`workflow/actions.go:118-131`). There is **no `trigger`** — the
-streamware resolver only knows about `event`.
-
-**Examples that work:**
-
-```jsonc
-"text": "{event.data.userName} cheered {event.data.amount} {event.data.amount > 1 ? 'bits' : 'bit'}"
-"text": "{event.data.userName === 'wolfymaster' ? 'the boss' : 'a viewer'}"
-```
-
-## The legacy color-tag span
-
-Streamware's `MediaWidget` runs a small substitution pass *before* the
-expression resolver to support a legacy color tag from streamlabs:
-`{primary}…{primary}` becomes `<span style="color: #EC6758">…</span>`.
-First occurrence opens the span, second closes, third opens again, and
-so on (`streamware/ui/src/widgets/media-widget.ts:30-38, 110-127`).
-This is intentionally first in the pipeline so the expanded HTML
-survives the expression resolver pass untouched.
+Code: `modules/woofx3/widgets/text/index.html`. The Text widget splits its
+`text` setting on `{primary}` and shows every other segment in its
+highlight color: the first marker opens a highlight, the second closes
+it, and so on. The text goes in as text, never as HTML, so a viewer's
+name cannot inject markup. No other `{…}` is interpreted.
 
 ## Mixing both layers in one string
 
-You can — and the bundled `wolfy_profile` workflows do. The layers
-process disjoint syntaxes, so the order is:
+The bundled `wolfy_profile` workflows do. The layers never overlap, so
+the order is:
 
-1. Workflow engine (Go) resolves every `${…}` against `trigger.*`.
-2. The substituted result rides on `ui.notify.alert` to streamware.
-3. Streamware's MediaWidget resolves `{primary}…{primary}` first, then
-   every remaining `{…}` against `event.*`.
+1. The workflow engine resolves every `${…}` against `trigger.*`,
+   earlier tasks and the environment.
+2. The Text widget highlights the `{primary}…{primary}` spans.
 
-A "gifted subs" alert combining both layers:
+A "gifted subs" Text widget setting:
 
 ```json
 {
-  "text": "$$ {primary}${trigger.data.gifterName}{primary} gifted {primary}${trigger.data.amount}{primary} {event.data.amount > 1 ? 'subs' : 'sub'} $$"
+  "text": "$$ {primary}${trigger.data.gifterName}{primary} gifted {primary}${trigger.data.amount}{primary} ${trigger.data.amount > 1 ? 'subs' : 'sub'} $$"
 }
 ```
 
-After Layer 1, the wire payload reads (gifter "alice", amount "5"):
+After the engine (gifter "alice", amount 5), the widget receives:
 
 ```
-$$ {primary}alice{primary} gifted {primary}5{primary} {event.data.amount > 1 ? 'subs' : 'sub'} $$
+$$ {primary}alice{primary} gifted {primary}5{primary} subs $$
 ```
 
-After Layer 2 (color tags expanded, ternary resolved):
-
-```
-$$ <span style="color: #EC6758">alice</span> gifted <span style="color: #EC6758">5</span> subs $$
-```
+and shows "alice" and "5" in its highlight color.
 
 ## Common authoring mistakes
 
 | Token | What goes wrong | Fix |
 |---|---|---|
-| `${trigger.data.amount > 1 ? 'subs' : 'sub'}` | Layer 1 (Go) doesn't support ternary; Layer 2 doesn't see `trigger.*`. Always falls through unresolved. | `{event.data.amount > 1 ? 'subs' : 'sub'}` |
-| `{trigger.data.userName}` | Layer 1 ignores it (no `$`); Layer 2 has no `trigger`. Renders empty. | `${trigger.data.userName}` for plain substitution, or `{event.data.userName}` for use inside expressions. |
-| `${event.data.X}` | Layer 1's `event` source doesn't exist; Layer 1 returns undefined. | `${trigger.data.X}` |
-| `${trigger.data.X + 'suffix'}` | Layer 1 has no concat. Renders unresolved literal. | `{trigger…}` doesn't work in Layer 2 either; emit the prefix as a literal: `"${trigger.data.X}suffix"`. |
+| `{trigger.data.amount > 1 ? 'subs' : 'sub'}` | Braces without `$` are not an expression; the Text widget shows them as written. | `${trigger.data.amount > 1 ? 'subs' : 'sub'}` |
+| `${event.data.X}` | The engine has no `event` source, so the token is left unresolved. | `${trigger.data.X}` |
+| `${trigger.data.X + 'suffix'}` | There is no concatenation. | Put the literal outside the expression: `"${trigger.data.X}suffix"`. |
 
 ## See also
 
-- The alert action that produces these strings: [Tasks → builtin:action:alert](./tasks.md).
-- The full alert envelope shape: [Widget events](../services/widget-events.md#alert-lifecycle-events).
+- The alert action that produces these strings: [Tasks → alert](./tasks.md#alert).
+- How a scene plays an alert: [Alerts](../services/widget-events.md#alerts).
