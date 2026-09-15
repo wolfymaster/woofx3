@@ -2,14 +2,11 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
-use aws_config::{meta::region::RegionProviderChain, BehaviorVersion, Region};
+use aws_config::{BehaviorVersion, Region, meta::region::RegionProviderChain};
 use aws_sdk_s3::{
-    config::Credentials,
-    presigning::PresigningConfig,
-    primitives::ByteStream,
-    Client,
+    Client, config::Credentials, presigning::PresigningConfig, primitives::ByteStream,
 };
 use mime_guess::MimeGuess;
 use tracing::{info, warn};
@@ -100,10 +97,7 @@ impl S3Repository {
         }
         let client = Arc::new(Client::from_conf(s3_builder.build()));
 
-        Ok(Self {
-            config,
-            client,
-        })
+        Ok(Self { config, client })
     }
 
     /// Prepend the configured prefix (when set) to the storage key.
@@ -157,10 +151,13 @@ impl Repository for S3Repository {
             if let Some(token) = continuation.as_deref() {
                 list = list.continuation_token(token);
             }
-            let output = list
-                .send()
-                .await
-                .map_err(|e| anyhow!("S3 list_objects_v2 for delete {} failed: {}", full_prefix, e))?;
+            let output = list.send().await.map_err(|e| {
+                anyhow!(
+                    "S3 list_objects_v2 for delete {} failed: {}",
+                    full_prefix,
+                    e
+                )
+            })?;
 
             let keys: Vec<String> = output
                 .contents
@@ -189,7 +186,9 @@ impl Repository for S3Repository {
                     .delete(delete)
                     .send()
                     .await
-                    .map_err(|e| anyhow!("S3 delete_objects under {} failed: {}", full_prefix, e))?;
+                    .map_err(|e| {
+                        anyhow!("S3 delete_objects under {} failed: {}", full_prefix, e)
+                    })?;
             }
 
             if output.is_truncated.unwrap_or(false) {

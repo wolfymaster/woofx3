@@ -86,9 +86,7 @@ export function loadConfig(): ApiConfig {
   const barkloaderUrl = String(config.woofx3BarkloaderUrl ?? config.barkloaderUrl ?? "http://127.0.0.1:3005");
   const barkloaderWsUrl = String(config.woofx3BarkloaderWsUrl ?? config.barkloaderWsUrl ?? "");
   const barkloaderKey = String(config.woofx3BarkloaderKey ?? config.barkloaderKey ?? "");
-  const streamwareUrl = String(
-    config.woofx3StreamwareUrl ?? config.streamwareUrl ?? "http://127.0.0.1:9101",
-  );
+  const streamwareUrl = String(config.woofx3StreamwareUrl ?? config.streamwareUrl ?? "http://127.0.0.1:9101");
 
   const sceneManagerUrl = String(config.woofx3SceneManagerUrl ?? config.sceneManagerUrl ?? "");
   const apiUrl = String(config.woofx3ApiUrl ?? config.apiUrl ?? `http://127.0.0.1:${port}`);

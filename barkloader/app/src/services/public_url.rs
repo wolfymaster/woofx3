@@ -24,13 +24,19 @@ impl PublicUrlResolver {
     }
 
     pub async fn resolve(&self) -> String {
-        if let Some((value, at)) = self.cache.read().expect("public url cache lock poisoned").clone() {
+        if let Some((value, at)) = self
+            .cache
+            .read()
+            .expect("public url cache lock poisoned")
+            .clone()
+        {
             if at.elapsed() < TTL {
                 return value;
             }
         }
         let resolved = self.resolve_uncached().await;
-        *self.cache.write().expect("public url cache lock poisoned") = Some((resolved.clone(), Instant::now()));
+        *self.cache.write().expect("public url cache lock poisoned") =
+            Some((resolved.clone(), Instant::now()));
         resolved
     }
 
@@ -39,7 +45,10 @@ impl PublicUrlResolver {
             match get_setting(url, SETTING_KEY).await {
                 Ok(Some(value)) if !value.is_empty() => return value,
                 Ok(_) => {}
-                Err(e) => warn!("Failed to fetch {} from db-proxy: {}; falling back", SETTING_KEY, e),
+                Err(e) => warn!(
+                    "Failed to fetch {} from db-proxy: {}; falling back",
+                    SETTING_KEY, e
+                ),
             }
         }
         self.default_url.clone()

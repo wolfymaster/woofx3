@@ -302,5 +302,5 @@ export const workflowsExecutionRoutes = routeModule({
     };
     await this.db.cancelWorkflowExecution(req);
     this.logger.info("Workflow cancelled successfully", { executionId });
-  }
+  },
 });

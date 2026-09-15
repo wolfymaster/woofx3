@@ -123,9 +123,7 @@ export interface ParsedWorkflowChange<T> {
   event: T | null;
 }
 
-export function parseWorkflowCreated(
-  ce: Record<string, unknown>
-): ParsedWorkflowChange<WorkflowCreatedEvent> {
+export function parseWorkflowCreated(ce: Record<string, unknown>): ParsedWorkflowChange<WorkflowCreatedEvent> {
   const applicationId = asString(ce.application_id);
   const clientId = asString(ce.client_id);
   const snapshot = buildSnapshot(ce);
@@ -142,9 +140,7 @@ export function parseWorkflowCreated(
   };
 }
 
-export function parseWorkflowUpdated(
-  ce: Record<string, unknown>
-): ParsedWorkflowChange<WorkflowUpdatedEvent> {
+export function parseWorkflowUpdated(ce: Record<string, unknown>): ParsedWorkflowChange<WorkflowUpdatedEvent> {
   const applicationId = asString(ce.application_id);
   const clientId = asString(ce.client_id);
   const snapshot = buildSnapshot(ce);
@@ -161,9 +157,7 @@ export function parseWorkflowUpdated(
   };
 }
 
-export function parseWorkflowDeleted(
-  ce: Record<string, unknown>
-): ParsedWorkflowChange<WorkflowDeletedEvent> {
+export function parseWorkflowDeleted(ce: Record<string, unknown>): ParsedWorkflowChange<WorkflowDeletedEvent> {
   const applicationId = asString(ce.application_id);
   const clientId = asString(ce.client_id);
   // workflow_service.DeleteWorkflow publishes `{ "id": <uuid> }` (plus

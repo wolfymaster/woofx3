@@ -22,50 +22,54 @@ import type { Context } from "src/types";
  * one.
  */
 function readMembership(event: EventSubChannelChatMessageEvent): ChatterMembership {
-    const hasBadge = (name: string): boolean => {
-        if (event.sourceBadges !== null && event.sourceBadges !== undefined) {
-            return event.hasSourceBadge(name) ?? false;
-        }
-        return event.hasBadge(name);
-    };
+  const hasBadge = (name: string): boolean => {
+    if (event.sourceBadges !== null && event.sourceBadges !== undefined) {
+      return event.hasSourceBadge(name) ?? false;
+    }
+    return event.hasBadge(name);
+  };
 
-    return {
-        isBroadcaster: hasBadge("broadcaster"),
-        isModerator: hasBadge("moderator"),
-        // "founder" is the badge long-term subscribers keep in place of the
-        // subscriber badge; both mean an active subscription.
-        isSubscriber: hasBadge("subscriber") || hasBadge("founder"),
-        isVip: hasBadge("vip"),
-    };
+  return {
+    isBroadcaster: hasBadge("broadcaster"),
+    isModerator: hasBadge("moderator"),
+    // "founder" is the badge long-term subscribers keep in place of the
+    // subscriber badge; both mean an active subscription.
+    isSubscriber: hasBadge("subscriber") || hasBadge("founder"),
+    isVip: hasBadge("vip"),
+  };
 }
 
 export default function onChannelChatmessage(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
-    return listener.onChannelChatMessage(ctx.broadcaster.id, ctx.broadcaster.id, async (event: EventSubChannelChatMessageEvent) => {
-        const { bits, chatterId, chatterDisplayName, sourceBroadcasterName, sourceBroadcasterId, messageText } = event;
+  return listener.onChannelChatMessage(
+    ctx.broadcaster.id,
+    ctx.broadcaster.id,
+    async (event: EventSubChannelChatMessageEvent) => {
+      const { bits, chatterId, chatterDisplayName, sourceBroadcasterName, sourceBroadcasterId, messageText } = event;
 
-        // Following and subscription tier are not on the message at all, so
-        // they come from Helix. The enricher bounds how long that may take and
-        // leaves the fields absent when it does not resolve: a chat message
-        // must never wait on a permissions lookup.
-        const badged = readMembership(event);
-        const membership = ctx.membershipEnricher
-            ? await ctx.membershipEnricher.enrich(ctx.broadcaster.id, chatterId, badged)
-            : badged;
+      // Following and subscription tier are not on the message at all, so
+      // they come from Helix. The enricher bounds how long that may take and
+      // leaves the fields absent when it does not resolve: a chat message
+      // must never wait on a permissions lookup.
+      const badged = readMembership(event);
+      const membership = ctx.membershipEnricher
+        ? await ctx.membershipEnricher.enrich(ctx.broadcaster.id, chatterId, badged)
+        : badged;
 
-        const [topic, data] = ctx.events.Twitch().chatMessage({
-            amount: bits,
-            channelId: sourceBroadcasterId,
-            channelName: sourceBroadcasterName,
-            chatterId,
-            chatterName: chatterDisplayName,
-            isPaid: Boolean(bits),
-            message: messageText,
-            membership,
-        });
-        try {
-            ctx.messageBus.publish(topic, data);
-        } catch (err) {
-            console.error(err);
-        }
-    })
+      const [topic, data] = ctx.events.Twitch().chatMessage({
+        amount: bits,
+        channelId: sourceBroadcasterId,
+        channelName: sourceBroadcasterName,
+        chatterId,
+        chatterName: chatterDisplayName,
+        isPaid: Boolean(bits),
+        message: messageText,
+        membership,
+      });
+      try {
+        ctx.messageBus.publish(topic, data);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  );
 }

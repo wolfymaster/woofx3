@@ -1,6 +1,6 @@
 export function encode(event: any): Uint8Array {
-    const payload = JSON.stringify(event);
-    return new TextEncoder().encode(payload);
+  const payload = JSON.stringify(event);
+  return new TextEncoder().encode(payload);
 }
 
 /**
@@ -10,5 +10,5 @@ export function encode(event: any): Uint8Array {
  * body only JSON-encodes, so any object shape is fine.
  */
 export function encodeCommand<TArgs extends object>(payload: { command: string; args: TArgs }): Uint8Array {
-    return new TextEncoder().encode(JSON.stringify(payload));
+  return new TextEncoder().encode(JSON.stringify(payload));
 }

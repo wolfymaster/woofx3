@@ -28,10 +28,7 @@ interface FakeMsg {
 class FakeNatsClient {
   private handlers: Map<string, (msg: FakeMsg) => void | Promise<void>> = new Map();
 
-  async subscribe(
-    subject: string,
-    handler: (msg: FakeMsg) => void | Promise<void>
-  ): Promise<void> {
+  async subscribe(subject: string, handler: (msg: FakeMsg) => void | Promise<void>): Promise<void> {
     this.handlers.set(subject, handler);
   }
 

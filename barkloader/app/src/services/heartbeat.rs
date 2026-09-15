@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use async_nats::Client;
 use tracing::{debug, warn};
-use woofx3_runtime::heartbeat::{heartbeat_event, Readiness, HEARTBEAT_SUBJECT};
+use woofx3_runtime::heartbeat::{HEARTBEAT_SUBJECT, Readiness, heartbeat_event};
 
 /// How often to publish. Matches the runtime's default heartbeat interval on
 /// the Go and TypeScript sides, so a dependent's staleness window is the same
@@ -23,7 +23,11 @@ const INTERVAL: Duration = Duration::from_secs(5);
 /// Publishing begins immediately and before readiness is set, so a dependent
 /// that connects during reconciliation sees an explicit `ready: false` rather
 /// than silence it would have to time out on.
-pub fn spawn(client: Client, app_name: &'static str, readiness: Readiness) -> tokio::task::JoinHandle<()> {
+pub fn spawn(
+    client: Client,
+    app_name: &'static str,
+    readiness: Readiness,
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(INTERVAL);
         loop {
@@ -63,6 +67,9 @@ impl HeartbeatHandle {
     pub fn new(client: Client, app_name: &'static str) -> Self {
         let readiness = Readiness::not_ready();
         let task = spawn(client, app_name, readiness.clone());
-        Self { readiness, _task: Arc::new(task) }
+        Self {
+            readiness,
+            _task: Arc::new(task),
+        }
     }
 }

@@ -118,9 +118,7 @@ export const engineRoutes = routeModule({
    * the operator can edit endpoint/bucket/region without re-typing
    * credentials every time.
    */
-  async setStorageConfig(
-    config: StorageConfig,
-  ): Promise<{ success: boolean; reloaded?: boolean; message?: string }> {
+  async setStorageConfig(config: StorageConfig): Promise<{ success: boolean; reloaded?: boolean; message?: string }> {
     const applicationId = "";
     if (config.provider !== "file" && config.provider !== "s3") {
       throw new Error(`Unknown provider: ${config.provider}`);
@@ -181,5 +179,5 @@ export const engineRoutes = routeModule({
     }
     this.logger.info("Client deleted", { clientId });
     return { success: true, message: "Client deleted" };
-  }
+  },
 });

@@ -22,7 +22,9 @@ impl Encoding {
         match raw.unwrap_or("hex") {
             "hex" => Ok(Self::Hex),
             "base64" => Ok(Self::Base64),
-            other => Err(format!("unknown encoding {other:?}; expected \"hex\" or \"base64\"")),
+            other => Err(format!(
+                "unknown encoding {other:?}; expected \"hex\" or \"base64\""
+            )),
         }
     }
 
@@ -87,7 +89,9 @@ pub fn verify_ed25519(
     else {
         return Ok(false);
     };
-    Ok(key.verify(message.as_bytes(), &Signature::from_bytes(&signature_bytes)).is_ok())
+    Ok(key
+        .verify(message.as_bytes(), &Signature::from_bytes(&signature_bytes))
+        .is_ok())
 }
 
 /// Constant-time comparison, so a signature check does not reveal how many

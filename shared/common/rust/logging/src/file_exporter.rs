@@ -101,7 +101,10 @@ fn encode_span(service_name: &str, span: &SpanData) -> Value {
 
     let mut attributes = Map::new();
     for attribute in &span.attributes {
-        attributes.insert(attribute.key.to_string(), json!(attribute.value.to_string()));
+        attributes.insert(
+            attribute.key.to_string(),
+            json!(attribute.value.to_string()),
+        );
     }
 
     let events: Vec<Value> = span

@@ -64,7 +64,10 @@ fn module_dirs(modules_dir: &Path) -> Vec<PathBuf> {
     let Ok(entries) = fs::read_dir(modules_dir) else {
         // No bundled modules is a valid state; the reconciler simply has
         // nothing to install.
-        println!("cargo:warning=no modules/ directory at {}", modules_dir.display());
+        println!(
+            "cargo:warning=no modules/ directory at {}",
+            modules_dir.display()
+        );
         return Vec::new();
     };
     let mut dirs: Vec<PathBuf> = entries
@@ -98,7 +101,13 @@ fn package(module_dir: &Path, archive_dir: &Path) -> Packaged {
     let archive_path = archive_dir.join(format!("{id}.zip"));
     fs::write(&archive_path, &bytes).expect("write bundled archive");
 
-    Packaged { id, version, sha256, len: bytes.len(), archive_path }
+    Packaged {
+        id,
+        version,
+        sha256,
+        len: bytes.len(),
+        archive_path,
+    }
 }
 
 /// Every file under the module directory, keyed by its path relative to that
@@ -122,8 +131,12 @@ fn collect_files(module_dir: &Path) -> (BTreeMap<PathBuf, Vec<u8>>, Vec<PathBuf>
                 dirs.push(path.clone());
                 stack.push(path);
             } else {
-                let rel = path.strip_prefix(module_dir).expect("path is under module_dir").to_path_buf();
-                let bytes = fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+                let rel = path
+                    .strip_prefix(module_dir)
+                    .expect("path is under module_dir")
+                    .to_path_buf();
+                let bytes =
+                    fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
                 files.insert(rel, bytes);
             }
         }
@@ -132,8 +145,12 @@ fn collect_files(module_dir: &Path) -> (BTreeMap<PathBuf, Vec<u8>>, Vec<PathBuf>
 }
 
 fn identity(manifest_bytes: &[u8], module_dir: &Path) -> (String, String) {
-    let manifest: serde_json::Value = serde_json::from_slice(manifest_bytes)
-        .unwrap_or_else(|e| panic!("{}: manifest.json is not valid JSON: {e}", module_dir.display()));
+    let manifest: serde_json::Value = serde_json::from_slice(manifest_bytes).unwrap_or_else(|e| {
+        panic!(
+            "{}: manifest.json is not valid JSON: {e}",
+            module_dir.display()
+        )
+    });
     let field = |key: &str| -> String {
         manifest
             .get(key)
@@ -166,7 +183,11 @@ fn zip_deterministic(files: &BTreeMap<PathBuf, Vec<u8>>) -> Vec<u8> {
 
     for (rel, bytes) in files {
         // Zip entries are '/'-separated regardless of host platform.
-        let name = rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
+        let name = rel
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
         writer.start_file(name, options).expect("start zip entry");
         writer.write_all(bytes).expect("write zip entry");
     }

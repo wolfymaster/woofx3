@@ -54,7 +54,7 @@ export interface ApiGatewayContract {
    */
   registerClient(
     description: string,
-    options: RegisterClientOptions,
+    options: RegisterClientOptions
   ): Promise<{ clientId: string; clientSecret: string; applicationId: string }>;
 
   /**

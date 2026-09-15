@@ -8,14 +8,14 @@
 
 use std::io::Read;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use lib_module::db_proxy;
 use lib_module::{InstallProvenance, ModuleFileKind, ModuleService, ModuleServiceConfig};
 use lib_repository::{CreateFileRequest, Repository};
 use sha2::{Digest, Sha256};
 use tracing::info;
 
-use crate::bundled_modules::{BundledModule, BUNDLED_MODULES};
+use crate::bundled_modules::{BUNDLED_MODULES, BundledModule};
 
 /// What the reconciler did for one module, so the caller can log a summary
 /// without the reconciler deciding how loud a no-op should be.
@@ -23,7 +23,9 @@ use crate::bundled_modules::{BundledModule, BUNDLED_MODULES};
 pub enum Outcome {
     /// Already installed at this version. No writes.
     UpToDate,
-    Installed { version: String },
+    Installed {
+        version: String,
+    },
 }
 
 /// Install every embedded module that is missing or at a different version.
@@ -32,7 +34,10 @@ pub enum Outcome {
 /// functional without its core actions, triggers, and widget, and starting
 /// anyway is what produced the silent failures this replaces — so the caller
 /// is expected to treat an error here as fatal.
-pub async fn reconcile<R: Repository + Clone>(db_proxy_url: &str, repository: &R) -> Result<Vec<(String, Outcome)>> {
+pub async fn reconcile<R: Repository + Clone>(
+    db_proxy_url: &str,
+    repository: &R,
+) -> Result<Vec<(String, Outcome)>> {
     let mut outcomes = Vec::with_capacity(BUNDLED_MODULES.len());
     for module in BUNDLED_MODULES {
         let outcome = reconcile_one(module, db_proxy_url, repository)
@@ -65,7 +70,9 @@ async fn reconcile_one<R: Repository + Clone>(
     );
 
     install(module, db_proxy_url, repository).await?;
-    Ok(Outcome::Installed { version: module.version.to_string() })
+    Ok(Outcome::Installed {
+        version: module.version.to_string(),
+    })
 }
 
 /// Whether the embedded copy has to be installed over what is in the db.
@@ -81,8 +88,14 @@ fn needs_install(installed_version: Option<&str>, bundled_version: &str) -> bool
     installed_version != Some(bundled_version)
 }
 
-async fn install<R: Repository + Clone>(module: &BundledModule, db_proxy_url: &str, repository: &R) -> Result<()> {
-    let mut service = ModuleService::new(ModuleServiceConfig { repository: repository.clone() });
+async fn install<R: Repository + Clone>(
+    module: &BundledModule,
+    db_proxy_url: &str,
+    repository: &R,
+) -> Result<()> {
+    let mut service = ModuleService::new(ModuleServiceConfig {
+        repository: repository.clone(),
+    });
     for (name, contents) in read_archive(module)? {
         let extension = std::path::Path::new(&name)
             .extension()
@@ -141,17 +154,23 @@ async fn install<R: Repository + Clone>(module: &BundledModule, db_proxy_url: &s
         .await
         .with_context(|| format!("store bundled archive at {archive_key}"))?;
     if !failed.is_empty() {
-        return Err(anyhow!("store bundled archive at {archive_key}: {}", failed.join(", ")));
+        return Err(anyhow!(
+            "store bundled archive at {archive_key}: {}",
+            failed.join(", ")
+        ));
     }
     Ok(())
 }
 
 fn read_archive(module: &BundledModule) -> Result<Vec<(String, Vec<u8>)>> {
     let cursor = std::io::Cursor::new(module.archive);
-    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| anyhow!("open embedded archive: {}", e))?;
+    let mut archive =
+        zip::ZipArchive::new(cursor).map_err(|e| anyhow!("open embedded archive: {}", e))?;
     let mut files = Vec::with_capacity(archive.len());
     for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).map_err(|e| anyhow!("read zip entry {}: {}", i, e))?;
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| anyhow!("read zip entry {}: {}", i, e))?;
         if entry.is_dir() {
             continue;
         }
@@ -200,6 +219,9 @@ mod tests {
             archive: b"not the bytes that were hashed",
         };
         let err = bad.verify().expect_err("a mismatched digest must fail");
-        assert!(err.to_string().contains("digest mismatch"), "unexpected error: {err}");
+        assert!(
+            err.to_string().contains("digest mismatch"),
+            "unexpected error: {err}"
+        );
     }
 }

@@ -1,7 +1,9 @@
 use crate::error::Error;
 use crate::host::InvocationContext;
 use crate::runtime::RuntimeAdapter;
-use mlua::{Function, HookTriggers, Lua, LuaOptions, LuaSerdeExt, StdLib, Value as LuaValue, VmState};
+use mlua::{
+    Function, HookTriggers, Lua, LuaOptions, LuaSerdeExt, StdLib, Value as LuaValue, VmState,
+};
 use serde_json::Value;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -77,10 +79,7 @@ fn format_log_value(value: &LuaValue) -> String {
     }
 }
 
-fn build_lua_ctx(
-    lua: &Lua,
-    invocation: &InvocationContext,
-) -> Result<mlua::Table, Error> {
+fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Table, Error> {
     let ctx = lua.create_table()?;
 
     let event = lua.to_value(&invocation.event)?;
@@ -97,13 +96,20 @@ fn build_lua_ctx(
             |_, (algorithm, key, data, encoding): (String, String, String, Option<String>)| {
                 let encoding = super::crypto::Encoding::parse(encoding.as_deref())
                     .map_err(mlua::Error::RuntimeError)?;
-                super::crypto::hmac(&algorithm, &key, &data, encoding).map_err(mlua::Error::RuntimeError)
+                super::crypto::hmac(&algorithm, &key, &data, encoding)
+                    .map_err(mlua::Error::RuntimeError)
             },
         )?;
         crypto.set("hmac", hmac)?;
 
         let verify_ed25519 = lua.create_function(
-            |_, (public_key, signature, message, encoding): (String, String, String, Option<String>)| {
+            |_,
+             (public_key, signature, message, encoding): (
+                String,
+                String,
+                String,
+                Option<String>,
+            )| {
                 let encoding = super::crypto::Encoding::parse(encoding.as_deref())
                     .map_err(mlua::Error::RuntimeError)?;
                 super::crypto::verify_ed25519(&public_key, &signature, &message, encoding)
@@ -149,15 +155,16 @@ fn build_lua_ctx(
     let http = lua.create_table()?;
     {
         let client = invocation.host.http.clone();
-        let request_fn =
-            lua.create_function(move |lua, (url, method, opts): (String, String, LuaValue)| {
+        let request_fn = lua.create_function(
+            move |lua, (url, method, opts): (String, String, LuaValue)| {
                 let json_opts: Value = serde_json::to_value(&opts)
                     .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
                 let result = client
                     .request(&url, &method, json_opts)
                     .map_err(mlua::Error::RuntimeError)?;
                 lua.to_value(&result)
-            })?;
+            },
+        )?;
         http.set("request", request_fn)?;
     }
     ctx.set("http", http)?;
@@ -166,9 +173,10 @@ fn build_lua_ctx(
     let env = lua.create_table()?;
     {
         let reader = invocation.host.env.clone();
-        let get_fn = lua.create_function(move |_, key: String| -> mlua::Result<Option<String>> {
-            Ok(reader.get(&key))
-        })?;
+        let get_fn =
+            lua.create_function(move |_, key: String| -> mlua::Result<Option<String>> {
+                Ok(reader.get(&key))
+            })?;
         env.set("get", get_fn)?;
     }
     ctx.set("env", env)?;
@@ -183,7 +191,13 @@ fn build_lua_ctx(
         let create_fn = lua.create_function(
             move |lua, (kind, instance_id, display_name): (String, String, Option<String>)| {
                 let display = display_name.unwrap_or_default();
-                match super::host_bindings::resources_create(&host, &module_name, &kind, &instance_id, &display) {
+                match super::host_bindings::resources_create(
+                    &host,
+                    &module_name,
+                    &kind,
+                    &instance_id,
+                    &display,
+                ) {
                     Ok(v) => lua.to_value(&v),
                     Err(e) => Err(mlua::Error::RuntimeError(e)),
                 }
@@ -193,18 +207,21 @@ fn build_lua_ctx(
 
         let client = invocation.host.resources.clone();
         let delete_fn = lua.create_function(move |_lua, canonical_id: String| {
-            client.delete(&canonical_id).map_err(mlua::Error::RuntimeError)?;
+            client
+                .delete(&canonical_id)
+                .map_err(mlua::Error::RuntimeError)?;
             Ok(())
         })?;
         resources.set("delete", delete_fn)?;
 
         let host = invocation.host.clone();
-        let list_fn = lua.create_function(move |lua, kind: String| {
-            match super::host_bindings::resources_list(&host, &kind) {
-                Ok(v) => lua.to_value(&v),
-                Err(e) => Err(mlua::Error::RuntimeError(e)),
-            }
-        })?;
+        let list_fn =
+            lua.create_function(
+                move |lua, kind: String| match super::host_bindings::resources_list(&host, &kind) {
+                    Ok(v) => lua.to_value(&v),
+                    Err(e) => Err(mlua::Error::RuntimeError(e)),
+                },
+            )?;
         resources.set("list", list_fn)?;
     }
     ctx.set("resources", resources)?;
@@ -235,7 +252,8 @@ fn build_lua_ctx(
             }
             let mut cache = settings_cache.borrow_mut();
             if cache.is_none() {
-                let settings_map = super::host_bindings::module_settings_snapshot(&host, &module_id_for_settings);
+                let settings_map =
+                    super::host_bindings::module_settings_snapshot(&host, &module_id_for_settings);
                 let settings_tbl = lua.create_table()?;
                 for (k, v) in &settings_map {
                     let lua_val = lua.to_value(v)?;
@@ -243,7 +261,9 @@ fn build_lua_ctx(
                 }
                 *cache = Some(settings_tbl);
             }
-            Ok(LuaValue::Table(cache.as_ref().expect("populated above").clone()))
+            Ok(LuaValue::Table(
+                cache.as_ref().expect("populated above").clone(),
+            ))
         })?;
         metatable.set("__index", index_fn)?;
         module_tbl.set_metatable(Some(metatable));

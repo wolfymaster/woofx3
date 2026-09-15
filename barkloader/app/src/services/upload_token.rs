@@ -188,7 +188,10 @@ mod tests {
             "must still be valid one second before expiry"
         );
         assert_eq!(verify(SECRET, &token, NOW + 300), Err(TokenError::Expired));
-        assert_eq!(verify(SECRET, &token, NOW + 10_000), Err(TokenError::Expired));
+        assert_eq!(
+            verify(SECRET, &token, NOW + 10_000),
+            Err(TokenError::Expired)
+        );
     }
 
     #[test]
@@ -234,9 +237,15 @@ mod tests {
 
     #[test]
     fn malformed_tokens_are_rejected_before_expiry_is_considered() {
-        assert_eq!(verify(SECRET, "no-dot-here", NOW), Err(TokenError::Malformed));
+        assert_eq!(
+            verify(SECRET, "no-dot-here", NOW),
+            Err(TokenError::Malformed)
+        );
         assert_eq!(verify(SECRET, ".onlysig", NOW), Err(TokenError::Malformed));
-        assert_eq!(verify(SECRET, "onlypayload.", NOW), Err(TokenError::Malformed));
+        assert_eq!(
+            verify(SECRET, "onlypayload.", NOW),
+            Err(TokenError::Malformed)
+        );
         // Well-formed shape, garbage payload: the signature check runs
         // first, so this reports a signature mismatch rather than
         // confirming the payload decoded.

@@ -39,5 +39,5 @@ export const eventsRoutes = routeModule({
       success: true,
       message: `Published event: ${eventType}`,
     };
-  }
+  },
 });

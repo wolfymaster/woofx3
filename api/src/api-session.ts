@@ -21,11 +21,7 @@ export class ApiSession extends RpcTarget {
     this.clientId = clientId;
   }
 
-  async installModuleZip(
-    fileName: string,
-    zipBase64: string,
-    context?: { moduleKey?: string },
-  ) {
+  async installModuleZip(fileName: string, zipBase64: string, context?: { moduleKey?: string }) {
     return this.api.installModuleZip(fileName, zipBase64, {
       clientId: this.clientId,
       moduleKey: context?.moduleKey,
@@ -40,7 +36,7 @@ export class ApiSession extends RpcTarget {
       version: string;
       source: "marketplace";
       marketplaceModuleId: string;
-    },
+    }
   ) {
     return this.api.installModuleFromUrl(downloadUrl, moduleKey, {
       clientId: this.clientId,

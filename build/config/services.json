@@ -1,72 +1,69 @@
 {
-    "services": [
-        {
-            "enabled": true,
-            "entry": "src/server.ts",
-            "name": "api",
-            "output": "api",
-            "path": "../api",
-            "type": "bun"
-        },
-        {
-            "enabled": true,
-            "name": "barkloader",
-            "output": "barkloader",
-            "path": "../barkloader",
-            "type": "rust"
-        },
-        {
-            "name": "db-proxy",
-            "type": "go",
-            "path": "../db",
-            "enabled": true,
-            "output": "db-proxy"
-        },
-        {
-            "name": "message-bus",
-            "type": "go",
-            "path": "../services/nats",
-            "enabled": true,
-            "output": "messagebus"
-        },
-        {
-            "name": "sceneManager",
-            "type": "bun",
-            "path": "../sceneManager",
-            "enabled": true,
-            "entry": "src/server.ts",
-            "output": "sceneManager",
-            "assets": "public"
-        },
-        {
-            "name": "twitch",
-            "type": "bun",
-            "path": "../twitch",
-            "enabled": true,
-            "entry": "src/api.ts",
-            "output": "twitch"
-        },
-        {
-            "name": "wooflow",
-            "type": "go",
-            "path": "../workflow",
-            "enabled": true,
-            "output": "wooflow"
-        },
-        {
-            "name": "woofwoofwoof",
-            "type": "bun",
-            "path": "../woofwoofwoof",
-            "enabled": true,
-            "entry": "src/woofwoofwoof.ts",
-            "output": "woofwoofwoof"
-        }
-    ],
-    "build": {
-        "output_dir": "./dist",
-        "targets": [
-            "linux-amd64",
-            "windows-amd64"
-        ]
+  "services": [
+    {
+      "enabled": true,
+      "entry": "src/server.ts",
+      "name": "api",
+      "output": "api",
+      "path": "../api",
+      "type": "bun"
+    },
+    {
+      "enabled": true,
+      "name": "barkloader",
+      "output": "barkloader",
+      "path": "../barkloader",
+      "type": "rust"
+    },
+    {
+      "name": "db-proxy",
+      "type": "go",
+      "path": "../db",
+      "enabled": true,
+      "output": "db-proxy"
+    },
+    {
+      "name": "message-bus",
+      "type": "go",
+      "path": "../services/nats",
+      "enabled": true,
+      "output": "messagebus"
+    },
+    {
+      "name": "sceneManager",
+      "type": "bun",
+      "path": "../sceneManager",
+      "enabled": true,
+      "entry": "src/server.ts",
+      "output": "sceneManager",
+      "assets": "public"
+    },
+    {
+      "name": "twitch",
+      "type": "bun",
+      "path": "../twitch",
+      "enabled": true,
+      "entry": "src/api.ts",
+      "output": "twitch"
+    },
+    {
+      "name": "wooflow",
+      "type": "go",
+      "path": "../workflow",
+      "enabled": true,
+      "output": "wooflow"
+    },
+    {
+      "name": "woofwoofwoof",
+      "type": "bun",
+      "path": "../woofwoofwoof",
+      "enabled": true,
+      "entry": "src/woofwoofwoof.ts",
+      "output": "woofwoofwoof"
     }
+  ],
+  "build": {
+    "output_dir": "./dist",
+    "targets": ["linux-amd64", "windows-amd64"]
+  }
 }

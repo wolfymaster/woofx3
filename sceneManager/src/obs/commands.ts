@@ -16,7 +16,7 @@ interface SlobsLegacyMessage {
 export async function handleLegacySlobsCommand(
   obs: Manager | null,
   msg: SlobsLegacyMessage,
-  logger: Logger,
+  logger: Logger
 ): Promise<void> {
   const { command, args } = msg;
 

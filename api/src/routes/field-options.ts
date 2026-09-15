@@ -133,5 +133,5 @@ export const fieldOptionsRoutes = routeModule({
       });
 
     return { dispatched: true };
-  }
+  },
 });

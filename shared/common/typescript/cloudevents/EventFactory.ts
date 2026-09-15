@@ -1,57 +1,57 @@
-import TwitchEvents from './Twitch';
-import TwitchApiEvents from './Twitch/commands';
-import SlobsEvents from './Slobs';
-import ChatEvents from './Chat';
-import ChatCommandEvents from './Chat/commands';
-import CommandEvents from './Command';
-import AlertEvents from './Alert';
-import ObsEvents from './Obs';
-import ModuleEvents from './Module';
+import TwitchEvents from "./Twitch";
+import TwitchApiEvents from "./Twitch/commands";
+import SlobsEvents from "./Slobs";
+import ChatEvents from "./Chat";
+import ChatCommandEvents from "./Chat/commands";
+import CommandEvents from "./Command";
+import AlertEvents from "./Alert";
+import ObsEvents from "./Obs";
+import ModuleEvents from "./Module";
 
 export interface EventFactoryOpts {
-    source: string;
+  source: string;
 }
 
 export default class EventFactory {
-    private source: string;
+  private source: string;
 
-    constructor(opts?: EventFactoryOpts) {
-        this.source = opts?.source ?? 'unkown';
-    }
+  constructor(opts?: EventFactoryOpts) {
+    this.source = opts?.source ?? "unkown";
+  }
 
-    Twitch() {
-        return new TwitchEvents(this.source);
-    }
+  Twitch() {
+    return new TwitchEvents(this.source);
+  }
 
-    TwitchApi() {
-        return new TwitchApiEvents();
-    }
+  TwitchApi() {
+    return new TwitchApiEvents();
+  }
 
-    Slobs() {
-        return new SlobsEvents(this.source);
-    }
+  Slobs() {
+    return new SlobsEvents(this.source);
+  }
 
-    Chat() {
-        return new ChatEvents(this.source);
-    }
+  Chat() {
+    return new ChatEvents(this.source);
+  }
 
-    ChatCommand() {
-        return new ChatCommandEvents(this.source);
-    }
+  ChatCommand() {
+    return new ChatCommandEvents(this.source);
+  }
 
-    Command() {
-        return new CommandEvents(this.source);
-    }
+  Command() {
+    return new CommandEvents(this.source);
+  }
 
-    Alert() {
-        return new AlertEvents(this.source);
-    }
+  Alert() {
+    return new AlertEvents(this.source);
+  }
 
-    Obs() {
-        return new ObsEvents(this.source);
-    }
+  Obs() {
+    return new ObsEvents(this.source);
+  }
 
-    Module() {
-        return new ModuleEvents(this.source);
-    }
+  Module() {
+    return new ModuleEvents(this.source);
+  }
 }

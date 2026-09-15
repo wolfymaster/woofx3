@@ -2,10 +2,10 @@ use actix_multipart::{Field, Multipart};
 use actix_web::Error;
 use anyhow::Result;
 use futures::{StreamExt, TryStreamExt};
-use tracing::{error, info};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use tracing::{error, info};
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -56,13 +56,20 @@ impl FileService {
 
             let field_name = content_disposition.get_name().unwrap_or("").to_string();
             let file_name = content_disposition.get_filename().map(|s| s.to_string());
-            info!("Multipart field: name={:?} filename={:?}", field_name, file_name);
+            info!(
+                "Multipart field: name={:?} filename={:?}",
+                field_name, file_name
+            );
 
             match field_name.as_str() {
                 "file" => {
-                    let name = file_name
-                        .ok_or_else(|| actix_web::error::ErrorBadRequest("File missing file name"))?;
-                    metadata = Some(self.handle_file_field(&mut field, name, callback_url.clone()).await?)
+                    let name = file_name.ok_or_else(|| {
+                        actix_web::error::ErrorBadRequest("File missing file name")
+                    })?;
+                    metadata = Some(
+                        self.handle_file_field(&mut field, name, callback_url.clone())
+                            .await?,
+                    )
                 }
                 "callback_url" | "client_id" | "module_key" | "application_id" => {
                     let mut value = String::new();
@@ -89,8 +96,8 @@ impl FileService {
             }
         }
 
-        let mut meta = metadata
-            .ok_or_else(|| actix_web::error::ErrorBadRequest("No file field found"))?;
+        let mut meta =
+            metadata.ok_or_else(|| actix_web::error::ErrorBadRequest("No file field found"))?;
         meta.client_id = client_id;
         meta.module_key = module_key;
         meta.application_id = application_id;
@@ -120,7 +127,11 @@ impl FileService {
                                 tracing::info!("  [dir]  {}/", name);
                                 walk_dir(&p, &format!("{}/", name));
                             } else {
-                                tracing::info!("  [file] {} ({} bytes)", name, p.metadata().map(|m| m.len()).unwrap_or(0));
+                                tracing::info!(
+                                    "  [file] {} ({} bytes)",
+                                    name,
+                                    p.metadata().map(|m| m.len()).unwrap_or(0)
+                                );
                             }
                         }
                     }
@@ -216,13 +227,13 @@ impl FileService {
         callback_url: Option<String>,
     ) -> Result<FileMetadata, Error> {
         let temp_dir_name = Uuid::new_v4().to_string();
-                
+
         // Get filename
         let mut file_extension = None;
-        let sanitized = sanitize_filename::sanitize(file_name);        
+        let sanitized = sanitize_filename::sanitize(file_name);
         let upload_dir_path = PathBuf::from(&self.upload_dir);
         let temp_dir_path = upload_dir_path.join(&temp_dir_name);
-        
+
         if let Some(ext) = Path::new(&sanitized).extension() {
             file_extension = Some(ext.to_str().unwrap_or("").to_string());
         }
@@ -232,7 +243,7 @@ impl FileService {
             eprintln!("Failed to create uploads directory: {}", e);
             actix_web::error::ErrorInternalServerError("Storage error")
         })?;
-        
+
         // Create file
         let mut file = fs::File::create(temp_dir_path.join(&sanitized)).map_err(|e| {
             error!("Failed to create file: {}", e);

@@ -109,7 +109,10 @@ mod tests {
     }
 
     impl SettingsClient for StaticSettingsClient {
-        fn list_by_module(&self, _module_id: &str) -> Result<HashMap<String, serde_json::Value>, String> {
+        fn list_by_module(
+            &self,
+            _module_id: &str,
+        ) -> Result<HashMap<String, serde_json::Value>, String> {
             Ok(self.data.clone())
         }
         fn set(&self, _module_id: &str, _key: &str, _value: &str) -> Result<(), String> {
@@ -120,9 +123,15 @@ mod tests {
     #[test]
     fn settings_client_returns_map() {
         let mut data = HashMap::new();
-        data.insert("clientId".to_string(), serde_json::Value::String("abc".to_string()));
+        data.insert(
+            "clientId".to_string(),
+            serde_json::Value::String("abc".to_string()),
+        );
         let client = StaticSettingsClient { data };
         let result = client.list_by_module("spotify").unwrap();
-        assert_eq!(result["clientId"], serde_json::Value::String("abc".to_string()));
+        assert_eq!(
+            result["clientId"],
+            serde_json::Value::String("abc".to_string())
+        );
     }
 }

@@ -7,9 +7,9 @@ import (
 )
 
 type WorkflowDefinition struct {
-	ID          string           `json:"id" yaml:"id"`
-	Name        string           `json:"name" yaml:"name"`
-	Description string           `json:"description,omitempty" yaml:"description,omitempty"`
+	ID          string `json:"id" yaml:"id"`
+	Name        string `json:"name" yaml:"name"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 	// ApplicationID scopes this workflow to a specific application. Source
 	// of truth is the `workflow_definitions.application_id` column;
 	// populated by `convertDBWorkflowToEngineWorkflow` when the engine
@@ -79,11 +79,11 @@ type WaitConfig struct {
 }
 
 type WorkflowConfig struct {
-	WorkflowID          string                 `json:"workflowId" yaml:"workflowId"`                   // ID of the workflow to trigger
-	WaitUntilCompletion bool                   `json:"waitUntilCompletion" yaml:"waitUntilCompletion"` // Whether to wait for completion
-	Event               string                 `json:"event,omitempty" yaml:"event,omitempty"`         // NATS subject to publish to trigger the workflow
-	EventData           map[string]any         `json:"eventData,omitempty" yaml:"eventData,omitempty"` // Data to pass to the workflow
-	Timeout             *Duration              `json:"timeout,omitempty" yaml:"timeout,omitempty"`     // Timeout when waiting for completion
+	WorkflowID          string         `json:"workflowId" yaml:"workflowId"`                   // ID of the workflow to trigger
+	WaitUntilCompletion bool           `json:"waitUntilCompletion" yaml:"waitUntilCompletion"` // Whether to wait for completion
+	Event               string         `json:"event,omitempty" yaml:"event,omitempty"`         // NATS subject to publish to trigger the workflow
+	EventData           map[string]any `json:"eventData,omitempty" yaml:"eventData,omitempty"` // Data to pass to the workflow
+	Timeout             *Duration      `json:"timeout,omitempty" yaml:"timeout,omitempty"`     // Timeout when waiting for completion
 }
 
 type AggregationConfig struct {
@@ -170,10 +170,10 @@ const (
 )
 
 type TaskResult struct {
-	Status  TaskStatus             `json:"status"`
+	Status  TaskStatus     `json:"status"`
 	Data    map[string]any `json:"data,omitempty"`
 	Exports map[string]any `json:"exports,omitempty"`
-	Error   string                 `json:"error,omitempty"`
+	Error   string         `json:"error,omitempty"`
 }
 
 type ExecutionStatus string
@@ -228,10 +228,10 @@ type AggregationState struct {
 }
 
 type WorkflowState struct {
-	SubWorkflowID       string                 `json:"subWorkflowId"`         // ID of the sub-workflow to execute
-	ExecutionID         string                 `json:"executionId,omitempty"` // Execution ID of the triggered sub-workflow
-	WaitUntilCompletion bool                   `json:"waitUntilCompletion"`   // Whether waiting for completion
-	Timeout             time.Time              `json:"timeout"`               // Timeout for waiting
-	Completed           bool                   `json:"completed"`             // Whether the sub-workflow has completed
+	SubWorkflowID       string         `json:"subWorkflowId"`         // ID of the sub-workflow to execute
+	ExecutionID         string         `json:"executionId,omitempty"` // Execution ID of the triggered sub-workflow
+	WaitUntilCompletion bool           `json:"waitUntilCompletion"`   // Whether waiting for completion
+	Timeout             time.Time      `json:"timeout"`               // Timeout for waiting
+	Completed           bool           `json:"completed"`             // Whether the sub-workflow has completed
 	Result              map[string]any `json:"result,omitempty"`      // Result from the sub-workflow (variables)
 }

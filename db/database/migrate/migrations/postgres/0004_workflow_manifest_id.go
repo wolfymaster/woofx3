@@ -16,10 +16,10 @@ import (
 //
 // Existing rows:
 //   - User-created workflows have `created_by_type = 'USER'`, no
-//     manifest id; `manifest_id` defaults to '' which is fine — these
+//     manifest id; `manifest_id` defaults to ” which is fine — these
 //     don't get a projectionKey emitted.
 //   - Module-created workflows registered before this migration have
-//     `created_by_type = 'MODULE'` but `manifest_id = ''`. They won't
+//     `created_by_type = 'MODULE'` but `manifest_id = ”`. They won't
 //     project until the owning module is reinstalled (which writes the
 //     full row via barkloader). Backfilling from `name`'s
 //     `{moduleName}/{wfName}` prefix is fragile — a reinstall is the

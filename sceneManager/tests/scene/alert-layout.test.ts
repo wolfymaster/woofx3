@@ -1,17 +1,16 @@
 import { describe, expect, it } from "bun:test";
-import {
-  alertTarget,
-  alertWidgetsNamed,
-  parseAlertDelivery,
-  parseAlertLayout,
-} from "../../src/scene/alert-layout";
+import { alertTarget, alertWidgetsNamed, parseAlertDelivery, parseAlertLayout } from "../../src/scene/alert-layout";
 import type { OverlayWidgetDefinition, OverlayWidgetInstance } from "../../src/scene/scene-host";
 
 function definition(manifestId: string, surfaces: string[]): OverlayWidgetDefinition {
   return { moduleKey: "woofx3", manifestId, entry: "index.html", surfaces, hostsSurface: "" };
 }
 
-const catalog = [definition("text", ["scene", "alert"]), definition("audio", ["alert"]), definition("clock", ["scene"])];
+const catalog = [
+  definition("text", ["scene", "alert"]),
+  definition("audio", ["alert"]),
+  definition("clock", ["scene"]),
+];
 
 function layoutWidget(id: string, manifestId: string) {
   return {

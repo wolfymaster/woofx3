@@ -49,10 +49,19 @@ export class ClientAuth {
         return result;
       }
     } catch (err) {
-      this.logger.warn("Auth: Client validation failed", { clientId, error: err instanceof Error ? err.message : String(err) });
+      this.logger.warn("Auth: Client validation failed", {
+        clientId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
-    const invalid: AuthResult = { valid: false, applicationId: null, description: null, callbackUrl: null, callbackToken: null };
+    const invalid: AuthResult = {
+      valid: false,
+      applicationId: null,
+      description: null,
+      callbackUrl: null,
+      callbackToken: null,
+    };
     this.cache.set(clientId, { result: invalid, expiresAt: now + this.ttlMs });
     this.logger.warn("Auth: Invalid client credentials", { clientId });
     return invalid;

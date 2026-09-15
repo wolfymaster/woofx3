@@ -69,10 +69,7 @@ const PEER_TTL_MS = 5_500;
 
 const CHANNEL_NAME = "woofx3-scene-manager-reconnect";
 
-type CoordinatorMessage =
-  | { t: "alive"; id: string }
-  | { t: "up" }
-  | { t: "reload" };
+type CoordinatorMessage = { t: "alive"; id: string } | { t: "up" } | { t: "reload" };
 
 /** Minimal structural view of BroadcastChannel so tests can drive the
  *  coordinator without a real one. */

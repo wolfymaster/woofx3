@@ -8,12 +8,12 @@ import (
 
 // TreatsSummary represents a summary of treats for a user over a specific period
 type TreatsSummary struct {
-	UserID                uuid.UUID                        `json:"user_id"`
-	TotalPoints           int                              `json:"total_points"`
-	TreatTypeDistribution map[string]TreatTypeStats        `json:"treat_type_distribution"`
-	RecentTreats         []Treat                          `json:"recent_treats,omitempty"`
-	PeriodStart          time.Time                        `json:"period_start,omitempty"`
-	PeriodEnd            time.Time                        `json:"period_end,omitempty"`
+	UserID                uuid.UUID                 `json:"user_id"`
+	TotalPoints           int                       `json:"total_points"`
+	TreatTypeDistribution map[string]TreatTypeStats `json:"treat_type_distribution"`
+	RecentTreats          []Treat                   `json:"recent_treats,omitempty"`
+	PeriodStart           time.Time                 `json:"period_start,omitempty"`
+	PeriodEnd             time.Time                 `json:"period_end,omitempty"`
 }
 
 // TreatTypeStats contains statistics for a specific treat type

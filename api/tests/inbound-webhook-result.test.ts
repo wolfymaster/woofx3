@@ -48,7 +48,10 @@ describe("validateWebhookHandlerResult", () => {
 
   test("passes declared events through", () => {
     const checked = validateWebhookHandlerResult(
-      { status: 200, events: [{ type: "store.order.created", data: { orderId: "o-1" } }, { type: "store.order.created" }] },
+      {
+        status: 200,
+        events: [{ type: "store.order.created", data: { orderId: "o-1" } }, { type: "store.order.created" }],
+      },
       ALLOWED
     );
     expect(checked.ok && checked.events).toEqual([
@@ -97,7 +100,10 @@ describe("validateWebhookHandlerResult", () => {
     expect(reason({ status: 200, events: [{ type: "store.order.created", data: [] }] })).toContain("data must be");
     expect(reason({ status: 200, events: [{ type: "store.order.created", extra: 1 }] })).toContain("extra");
     expect(
-      reason({ status: 200, events: [{ type: "store.order.created", data: { big: "a".repeat(MAX_EVENT_DATA_BYTES) } }] })
+      reason({
+        status: 200,
+        events: [{ type: "store.order.created", data: { big: "a".repeat(MAX_EVENT_DATA_BYTES) } }],
+      })
     ).toContain("exceeds");
     const many = Array.from({ length: MAX_EVENTS + 1 }, () => ({ type: "store.order.created" }));
     expect(reason({ status: 200, events: many })).toContain(`at most ${MAX_EVENTS}`);

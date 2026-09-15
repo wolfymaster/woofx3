@@ -4,7 +4,8 @@ import type { ReconnectCoordinator } from "../../public/scene-manager/reconnect-
 
 describe("parseSseChunk", () => {
   it("parses a well-formed delivery frame", () => {
-    const raw = 'event: delivery\ndata: {"eventId":"e1","instanceId":"i1","type":"widget.event","key":"count","value":5}';
+    const raw =
+      'event: delivery\ndata: {"eventId":"e1","instanceId":"i1","type":"widget.event","key":"count","value":5}';
     expect(parseSseChunk(raw)).toEqual({
       kind: "delivery",
       frame: { eventId: "e1", instanceId: "i1", type: "widget.event", key: "count", value: 5 },
@@ -24,7 +25,7 @@ describe("parseSseChunk", () => {
   });
 
   it("returns null for a hello frame with no bootId", () => {
-    expect(parseSseChunk('event: hello\ndata: {}')).toBeNull();
+    expect(parseSseChunk("event: hello\ndata: {}")).toBeNull();
   });
 
   it("returns null for a comment/keepalive line", () => {
@@ -92,7 +93,12 @@ describe("SceneEventSource", () => {
       }
       return new Response(streamFromChunks([]), { status: 200 });
     }) as unknown as typeof fetch;
-    const source = new SceneEventSource({ url: "https://example.test/events", fetchFn, reconnectBaseMs: 5, reconnectMaxMs: 20 });
+    const source = new SceneEventSource({
+      url: "https://example.test/events",
+      fetchFn,
+      reconnectBaseMs: 5,
+      reconnectMaxMs: 20,
+    });
     source.start({
       onFrame: () => {},
       onConnectionChange: (c) => connectionEvents.push(c),

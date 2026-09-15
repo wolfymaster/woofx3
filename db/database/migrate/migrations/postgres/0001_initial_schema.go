@@ -407,7 +407,6 @@ func CreateInitialSchema() *gormigrate.Migration {
 				`ALTER TABLE public.triggers
 					DROP CONSTRAINT IF EXISTS uq_module_triggers_module_id_name`,
 
-
 				// Unique-by-creator constraints on the decoupled tables.
 				`DO $$
 				BEGIN

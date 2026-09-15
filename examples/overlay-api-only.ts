@@ -54,10 +54,7 @@ const USER_ID = process.env.WOOFX3_USER_ID ?? "example-user";
 // (they post-date the contract). We extend the type locally so this
 // script gets full type coverage without modifying shared types.
 interface OverlayApi extends Woofx3EngineApi {
-  mintOverlayToken(input: {
-    sceneId: string;
-    label?: string;
-  }): Promise<{
+  mintOverlayToken(input: { sceneId: string; label?: string }): Promise<{
     tokenId: string;
     token: string;
     sceneId: string;
@@ -68,9 +65,7 @@ interface OverlayApi extends Woofx3EngineApi {
     url: string;
   }>;
 
-  revokeOverlayToken(input: {
-    tokenId: string;
-  }): Promise<{ tokenId: string; status: string }>;
+  revokeOverlayToken(input: { tokenId: string }): Promise<{ tokenId: string; status: string }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -87,9 +82,7 @@ async function getCredentials(): Promise<{ clientId: string; clientSecret: strin
   const gateway = createEngineGatewaySession(ENGINE_URL);
   const result = await gateway.registerClient("overlay-api-example", { userId: USER_ID });
   console.log(`[auth] Registered client: ${result.clientId}`);
-  console.log(
-    `       Set WOOFX3_CLIENT_ID=${result.clientId} WOOFX3_CLIENT_SECRET=${result.clientSecret} to reuse.`
-  );
+  console.log(`       Set WOOFX3_CLIENT_ID=${result.clientId} WOOFX3_CLIENT_SECRET=${result.clientSecret} to reuse.`);
   return { clientId: result.clientId, clientSecret: result.clientSecret };
 }
 
@@ -130,9 +123,7 @@ async function findWidget(api: OverlayApi): Promise<{
   }
 
   // Prefer spotify_sr now_playing; fall back to whatever is first.
-  const preferred = widgets.find(
-    (w) => w.manifestId === "now_playing" && w.createdByRef?.startsWith("spotify_sr")
-  );
+  const preferred = widgets.find((w) => w.manifestId === "now_playing" && w.createdByRef?.startsWith("spotify_sr"));
   const chosen = preferred ?? widgets[0]!;
 
   // `createdByRef` is the moduleKey; manifestId is the per-module widget id.
@@ -148,11 +139,7 @@ async function findWidget(api: OverlayApi): Promise<{
 // Step 4: Create a scene with the widget placed at the given bounds
 // ---------------------------------------------------------------------------
 
-async function createSceneWithWidget(
-  api: OverlayApi,
-  accountId: string,
-  widgetCanonicalId: string
-): Promise<string> {
+async function createSceneWithWidget(api: OverlayApi, accountId: string, widgetCanonicalId: string): Promise<string> {
   // WidgetInstance shape (shared/clients/typescript/api/api.ts WidgetInstance).
   // We generate a stable but arbitrary instance id; the engine never reads it.
   const instanceId = `widget-${Date.now()}`;
@@ -184,10 +171,7 @@ async function createSceneWithWidget(
 // Step 5: Mint an overlay token and print the browser-source URL
 // ---------------------------------------------------------------------------
 
-async function mintToken(
-  api: OverlayApi,
-  sceneId: string
-): Promise<{ tokenId: string; url: string }> {
+async function mintToken(api: OverlayApi, sceneId: string): Promise<{ tokenId: string; url: string }> {
   const result = await api.mintOverlayToken({
     sceneId,
     label: "example-token",
@@ -198,12 +182,8 @@ async function mintToken(
   console.log(`[token] Browser-source URL:`);
   console.log(`          ${result.url}`);
   console.log();
-  console.log(
-    "  Add this URL as a Browser Source in OBS. The overlay renders through"
-  );
-  console.log(
-    "  the api proxy (/overlay/{token}/) — streamware's port is never exposed."
-  );
+  console.log("  Add this URL as a Browser Source in OBS. The overlay renders through");
+  console.log("  the api proxy (/overlay/{token}/) — streamware's port is never exposed.");
 
   return { tokenId: result.tokenId, url: result.url };
 }
@@ -215,9 +195,7 @@ async function mintToken(
 async function revokeToken(api: OverlayApi, tokenId: string): Promise<void> {
   const result = await api.revokeOverlayToken({ tokenId });
   console.log(`[token] Revoked token: ${result.tokenId} -> status=${result.status}`);
-  console.log(
-    "  The overlay is now blank. The scene still exists and a new token can be minted."
-  );
+  console.log("  The overlay is now blank. The scene still exists and a new token can be minted.");
 }
 
 // ---------------------------------------------------------------------------
@@ -230,10 +208,7 @@ async function main(): Promise<void> {
   console.log();
 
   if (!ACCOUNT_ID) {
-    throw new Error(
-      "WOOFX3_ACCOUNT_ID is required. " +
-        "Set it to an account id that already exists in the engine."
-    );
+    throw new Error("WOOFX3_ACCOUNT_ID is required. " + "Set it to an account id that already exists in the engine.");
   }
 
   // Step 1: credentials
@@ -267,9 +242,7 @@ async function main(): Promise<void> {
 
     console.log();
     console.log("[done] Full overlay flow complete.");
-    console.log(
-      `       Scene ${sceneId} still exists — mint a new token any time to restore the overlay.`
-    );
+    console.log(`       Scene ${sceneId} still exists — mint a new token any time to restore the overlay.`);
   } finally {
     dispose();
   }

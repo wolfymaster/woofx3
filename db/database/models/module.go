@@ -213,8 +213,8 @@ type Widget struct {
 	Directory   string    `gorm:"column:directory;type:text;not null"`
 	// Entry document path relative to the widget asset root; empty
 	// means the frame assembler falls back to "index.html".
-	Entry      string `gorm:"column:entry;type:text;not null;default:''"`
-	AlertTypes string `gorm:"column:alert_types;type:jsonb;not null;default:'[]'"`
+	Entry          string `gorm:"column:entry;type:text;not null;default:''"`
+	AlertTypes     string `gorm:"column:alert_types;type:jsonb;not null;default:'[]'"`
 	SettingsSchema string `gorm:"column:settings_schema;type:jsonb;not null;default:'[]'"`
 	Surfaces       string `gorm:"column:surfaces;type:jsonb;not null;default:'[\"scene\"]'"`
 	HostsSurface   string `gorm:"column:hosts_surface;type:text;not null;default:''"`

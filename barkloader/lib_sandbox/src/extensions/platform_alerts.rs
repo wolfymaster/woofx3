@@ -12,7 +12,12 @@ pub struct PlatformAlertsExtension(SubjectExtension);
 
 impl PlatformAlertsExtension {
     pub fn new(nats: Arc<dyn NatsPublisher>) -> Self {
-        Self(SubjectExtension::new("platform.alerts", SUBJECT, COMMANDS, nats))
+        Self(SubjectExtension::new(
+            "platform.alerts",
+            SUBJECT,
+            COMMANDS,
+            nats,
+        ))
     }
 }
 

@@ -1,64 +1,57 @@
-import { useEffect, useState } from 'react';
-import Lottie from 'react-lottie-player'
+import { useEffect, useState } from "react";
+import Lottie from "react-lottie-player";
 
 export default function Animation({ src, width, loop, path, value }: AnimationProps) {
-    const [animation, setAnimation] = useState(null);
+  const [animation, setAnimation] = useState(null);
 
-    useEffect(() => {
-        async function makeRequest() {
-            const res = await fetch(src);
-            const json = await res.json();
-            
-            let currentObj = json;
-            let currentIdx = 0;
+  useEffect(() => {
+    async function makeRequest() {
+      const res = await fetch(src);
+      const json = await res.json();
 
-            while(currentIdx < path.length) {
-                // read from array
-                const property = path[currentIdx];
+      let currentObj = json;
+      let currentIdx = 0;
 
-                // want to stop 1 short of the full path, so that we assign the final property
-                if(currentIdx == path.length - 1) {
-                    // update value of currentObj
-                    currentObj[property] = value;
-                } else {
-                    // access that next property of json
-                    currentObj = currentObj[property];
-                }
+      while (currentIdx < path.length) {
+        // read from array
+        const property = path[currentIdx];
 
-                // increment the current index
-                currentIdx++;
-            }            
-
-            setAnimation(json);
+        // want to stop 1 short of the full path, so that we assign the final property
+        if (currentIdx == path.length - 1) {
+          // update value of currentObj
+          currentObj[property] = value;
+        } else {
+          // access that next property of json
+          currentObj = currentObj[property];
         }
 
-        makeRequest();
-    }, [])
+        // increment the current index
+        currentIdx++;
+      }
 
-    if(!animation) {
-        return (
-            <></>
-        )
+      setAnimation(json);
     }
 
-    return (
-        <>
-            <Lottie
-                loop
-                animationData={animation}
-                play
-                style={{ width, height: '100%' }}
-            />
-        </>
-    )
+    makeRequest();
+  }, []);
+
+  if (!animation) {
+    return <></>;
+  }
+
+  return (
+    <>
+      <Lottie loop animationData={animation} play style={{ width, height: "100%" }} />
+    </>
+  );
 }
 
 type pathIndex = string | number;
 
 type AnimationProps = {
-    src: string,
-    width: string,
-    loop: boolean,
-    path: pathIndex[],
-    value: string
+  src: string;
+  width: string;
+  loop: boolean;
+  path: pathIndex[];
+  value: string;
 };

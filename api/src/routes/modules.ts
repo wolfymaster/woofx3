@@ -159,7 +159,7 @@ export const modulesRoutes = routeModule({
             moduleKey,
             alreadyInstalled: true,
           },
-          clientId || undefined,
+          clientId || undefined
         );
       }
       return { success: true, message: "Module already installed", alreadyInstalled: true };
@@ -175,15 +175,11 @@ export const modulesRoutes = routeModule({
       }
       const contentLength = Number(res.headers.get("content-length") ?? "0");
       if (contentLength > MARKETPLACE_MAX_BYTES) {
-        throw new Error(
-          `Marketplace archive exceeds size cap (${contentLength} > ${MARKETPLACE_MAX_BYTES})`,
-        );
+        throw new Error(`Marketplace archive exceeds size cap (${contentLength} > ${MARKETPLACE_MAX_BYTES})`);
       }
       const buf = new Uint8Array((await res.arrayBuffer()) as ArrayBuffer);
       if (buf.byteLength > MARKETPLACE_MAX_BYTES) {
-        throw new Error(
-          `Marketplace archive exceeds size cap (${buf.byteLength} > ${MARKETPLACE_MAX_BYTES})`,
-        );
+        throw new Error(`Marketplace archive exceeds size cap (${buf.byteLength} > ${MARKETPLACE_MAX_BYTES})`);
       }
       archiveBytes = buf;
     } catch (err) {
@@ -199,7 +195,7 @@ export const modulesRoutes = routeModule({
             moduleKey,
             error: `Failed to fetch marketplace archive: ${message}`,
           },
-          clientId || undefined,
+          clientId || undefined
         );
       }
       throw err;
@@ -209,10 +205,7 @@ export const modulesRoutes = routeModule({
 
     const fileName = `${name}-${version}.zip`;
     const formData = new FormData();
-    formData.append(
-      "file",
-      new File([archiveBytes as Uint8Array<ArrayBuffer>], fileName, { type: "application/zip" }),
-    );
+    formData.append("file", new File([archiveBytes as Uint8Array<ArrayBuffer>], fileName, { type: "application/zip" }));
     formData.append("client_id", clientId);
     formData.append("module_key", moduleKey);
     // Resolved rather than read: omitting the field installed the module
@@ -242,12 +235,7 @@ export const modulesRoutes = routeModule({
     name: string,
     context?: { clientId?: string; moduleKey?: string }
   ): Promise<UninstallModuleResponse> {
-    return requestEngineModuleUninstall(
-      (path, init) => this.barkloaderRequest(path, init),
-      this.logger,
-      name,
-      context
-    );
+    return requestEngineModuleUninstall((path, init) => this.barkloaderRequest(path, init), this.logger, name, context);
   },
 
   async getModules(query?: {
@@ -500,10 +488,7 @@ export const modulesRoutes = routeModule({
    * back when the composite key does not match the engine modules row
    * (reinstall hash drift, manual installs, etc.).
    */
-  async listResourceInstancesForModule(
-    moduleKey: string,
-    moduleName?: string
-  ): Promise<ResourceInstanceDefinition[]> {
+  async listResourceInstancesForModule(moduleKey: string, moduleName?: string): Promise<ResourceInstanceDefinition[]> {
     if (!moduleKey && !moduleName) {
       throw new Error("listResourceInstancesForModule: moduleKey or moduleName is required");
     }

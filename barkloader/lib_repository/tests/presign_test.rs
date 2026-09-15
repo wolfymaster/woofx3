@@ -23,7 +23,9 @@ fn s3_config() -> S3RepositoryConfig {
 }
 
 async fn s3_repo(config: S3RepositoryConfig) -> S3Repository {
-    S3Repository::new(config).await.expect("construct S3Repository")
+    S3Repository::new(config)
+        .await
+        .expect("construct S3Repository")
 }
 
 #[tokio::test]
@@ -124,7 +126,10 @@ async fn s3_presign_without_content_type_returns_no_headers() {
     let UploadEndpoint::Presigned { headers, .. } = grant else {
         panic!("expected a presigned grant");
     };
-    assert!(headers.is_empty(), "no content type means no required headers");
+    assert!(
+        headers.is_empty(),
+        "no content type means no required headers"
+    );
 }
 
 #[tokio::test]
@@ -148,7 +153,10 @@ async fn s3_presign_signature_is_bound_to_the_key() {
         .await
         .expect("presign b");
 
-    assert_ne!(one, two, "a grant for one key must not be reusable for another");
+    assert_ne!(
+        one, two,
+        "a grant for one key must not be reusable for another"
+    );
 }
 
 #[tokio::test]
@@ -159,7 +167,10 @@ async fn file_backend_reports_it_cannot_sign_reads() {
     });
 
     let endpoint = repo
-        .presign_read("modules/m1/abc123/assets/bell.mp3", Duration::from_secs(300))
+        .presign_read(
+            "modules/m1/abc123/assets/bell.mp3",
+            Duration::from_secs(300),
+        )
         .await
         .expect("file backend must answer, not error");
 
@@ -173,7 +184,10 @@ async fn s3_backend_signs_a_get_url_for_the_prefixed_key() {
     let repo = s3_repo(config).await;
 
     let endpoint = repo
-        .presign_read("modules/m1/abc123/assets/bell.mp3", Duration::from_secs(600))
+        .presign_read(
+            "modules/m1/abc123/assets/bell.mp3",
+            Duration::from_secs(600),
+        )
         .await
         .expect("presign");
 

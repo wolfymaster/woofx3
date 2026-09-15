@@ -72,10 +72,11 @@ func ParseDatabaseURL(raw string) (ParsedDSN, error) {
 // sqlitePathFromURL maps sqlite:// URLs onto a filesystem path or ":memory:".
 //
 // url.Parse quirks we normalize:
-//   sqlite://db.sqlite          → Host=db.sqlite, Path=""
-//   sqlite:///tmp/db.sqlite     → Host="", Path=/tmp/db.sqlite
-//   sqlite://./data/db.sqlite   → Host=., Path=/data/db.sqlite
-//   sqlite:///:memory:          → Host="", Path=/:memory:
+//
+//	sqlite://db.sqlite          → Host=db.sqlite, Path=""
+//	sqlite:///tmp/db.sqlite     → Host="", Path=/tmp/db.sqlite
+//	sqlite://./data/db.sqlite   → Host=., Path=/data/db.sqlite
+//	sqlite:///:memory:          → Host="", Path=/:memory:
 func sqlitePathFromURL(u *url.URL) (string, error) {
 	path := u.Opaque
 	if path == "" {

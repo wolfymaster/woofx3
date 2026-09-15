@@ -106,9 +106,7 @@ export interface ParsedAlertChange<T> {
   event: T | null;
 }
 
-export function parseAlertCreated(
-  ce: Record<string, unknown>
-): ParsedAlertChange<AlertRecordedEvent> {
+export function parseAlertCreated(ce: Record<string, unknown>): ParsedAlertChange<AlertRecordedEvent> {
   const applicationId = asString(ce.application_id);
   const clientId = asString(ce.client_id);
   const snapshot = buildSnapshot(ce);
@@ -137,9 +135,7 @@ export function parseAlertCreated(
  * without enabling a dashboard surface. Phase 3 may revisit when
  * the operator UI wants live "currently playing" highlights.
  */
-export function parseAlertUpdated(
-  ce: Record<string, unknown>
-): ParsedAlertChange<AlertUpdatedEvent> {
+export function parseAlertUpdated(ce: Record<string, unknown>): ParsedAlertChange<AlertUpdatedEvent> {
   const applicationId = asString(ce.application_id);
   const clientId = asString(ce.client_id);
   const snapshot = buildSnapshot(ce);

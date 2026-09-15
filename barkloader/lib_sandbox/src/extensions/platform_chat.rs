@@ -9,7 +9,12 @@ pub struct PlatformChatExtension(SubjectExtension);
 
 impl PlatformChatExtension {
     pub fn new(nats: Arc<dyn NatsPublisher>) -> Self {
-        Self(SubjectExtension::new("platform.chat", SUBJECT, COMMANDS, nats))
+        Self(SubjectExtension::new(
+            "platform.chat",
+            SUBJECT,
+            COMMANDS,
+            nats,
+        ))
     }
 }
 

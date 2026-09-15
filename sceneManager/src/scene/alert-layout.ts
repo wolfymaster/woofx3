@@ -122,7 +122,12 @@ export function parseAlertLayout(
  * before it was recorded, so this only restores the shape.
  */
 export function parseAlertDelivery(raw: unknown): AlertDelivery | null {
-  if (!isRecord(raw) || typeof raw.alertId !== "string" || !isRecord(raw.layout) || !Array.isArray(raw.layout.widgets)) {
+  if (
+    !isRecord(raw) ||
+    typeof raw.alertId !== "string" ||
+    !isRecord(raw.layout) ||
+    !Array.isArray(raw.layout.widgets)
+  ) {
     return null;
   }
   return raw as unknown as AlertDelivery;

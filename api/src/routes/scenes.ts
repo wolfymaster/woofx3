@@ -151,5 +151,5 @@ export const scenesRoutes = routeModule({
       });
     }
     return { success };
-  }
+  },
 });

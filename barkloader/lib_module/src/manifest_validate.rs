@@ -20,13 +20,12 @@
 //! iterate alongside the original manifest. Any failure aborts install
 //! before any database or file-system side effect runs.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use super::canonical_id::{
-    looks_like_canonical_id, validate_segment, CanonicalId, ResourceKind,
-    CANONICAL_ID_SEPARATOR,
+    CANONICAL_ID_SEPARATOR, CanonicalId, ResourceKind, looks_like_canonical_id, validate_segment,
 };
 use super::db_proxy_client::ModuleDbProxy;
 use super::module_manifest::{
@@ -41,9 +40,7 @@ use super::module_manifest::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedActionImpl {
     /// `type: "function"` — function reference resolved to a canonical id.
-    Function {
-        canonical_function_id: CanonicalId,
-    },
+    Function { canonical_function_id: CanonicalId },
     /// `type: "native"` — an engine handler name. Nothing to resolve: the
     /// handler lives in the workflow engine, not in this manifest.
     Native { handler: String },
@@ -295,8 +292,12 @@ pub fn validate_with_provenance(
     });
     let actions = resolve_actions(&manifest.actions, &actions_table, &functions_table)?;
     let commands = resolve_commands(&manifest.commands, &commands_table, &workflows_table)?;
-    let workflows =
-        resolve_workflows(&manifest.workflows, &workflows_table, &triggers_table, &actions_table)?;
+    let workflows = resolve_workflows(
+        &manifest.workflows,
+        &workflows_table,
+        &triggers_table,
+        &actions_table,
+    )?;
     let widgets = resolve_widgets(&manifest.widgets, &widgets_table)?;
     validate_trigger_transports(manifest, provenance)?;
     validate_no_ingress_bindings(manifest, &module_id, &workflows)?;
@@ -333,26 +334,44 @@ fn reserved_event_prefixes(provenance: InstallProvenance) -> &'static [&'static 
 /// A webhook trigger is fired by its handler, never by the bus, and nothing
 /// binds to it, so the fields that describe a bus event or a builder binding
 /// mean nothing on it. They are rejected rather than silently ignored.
-fn validate_trigger_transports(manifest: &ModuleManifest, provenance: InstallProvenance) -> Result<()> {
+fn validate_trigger_transports(
+    manifest: &ModuleManifest,
+    provenance: InstallProvenance,
+) -> Result<()> {
     for (i, trigger) in manifest.triggers.iter().enumerate() {
         let label = format!("trigger #{i} ({})", trigger.id);
         if trigger.trigger_type != WEBHOOK_TRIGGER_TYPE {
             if !trigger.handler.is_empty() {
-                return Err(anyhow!("{label}: `handler` is only valid on `type: \"webhook\"` triggers"));
+                return Err(anyhow!(
+                    "{label}: `handler` is only valid on `type: \"webhook\"` triggers"
+                ));
             }
-            let event = if trigger.event.is_empty() { &trigger.id } else { &trigger.event };
-            if let Some(prefix) = reserved_event_prefixes(provenance).iter().find(|p| event.starts_with(**p)) {
-                return Err(anyhow!("{label}: event {event:?} uses the reserved prefix {prefix:?}"));
+            let event = if trigger.event.is_empty() {
+                &trigger.id
+            } else {
+                &trigger.event
+            };
+            if let Some(prefix) = reserved_event_prefixes(provenance)
+                .iter()
+                .find(|p| event.starts_with(**p))
+            {
+                return Err(anyhow!(
+                    "{label}: event {event:?} uses the reserved prefix {prefix:?}"
+                ));
             }
             continue;
         }
 
         let handler = trigger.handler.trim();
         if handler.is_empty() {
-            return Err(anyhow!("{label}: a webhook trigger must name its `handler` function"));
+            return Err(anyhow!(
+                "{label}: a webhook trigger must name its `handler` function"
+            ));
         }
         if !manifest.functions.iter().any(|f| f.id.trim() == handler) {
-            return Err(anyhow!("{label}: handler {handler:?} names no function in this manifest"));
+            return Err(anyhow!(
+                "{label}: handler {handler:?} names no function in this manifest"
+            ));
         }
         if !trigger.event.is_empty() {
             return Err(anyhow!(
@@ -360,7 +379,9 @@ fn validate_trigger_transports(manifest: &ModuleManifest, provenance: InstallPro
             ));
         }
         if trigger.schema.is_some() {
-            return Err(anyhow!("{label}: a webhook trigger cannot declare `schema`; nothing binds to it"));
+            return Err(anyhow!(
+                "{label}: a webhook trigger cannot declare `schema`; nothing binds to it"
+            ));
         }
         if trigger.emits.is_some() {
             return Err(anyhow!(
@@ -368,7 +389,9 @@ fn validate_trigger_transports(manifest: &ModuleManifest, provenance: InstallPro
             ));
         }
         if trigger.allow_variants {
-            return Err(anyhow!("{label}: a webhook trigger cannot set `allowVariants`; nothing binds to it"));
+            return Err(anyhow!(
+                "{label}: a webhook trigger cannot set `allowVariants`; nothing binds to it"
+            ));
         }
     }
     Ok(())
@@ -457,7 +480,11 @@ fn add_step(
     let dep_indices = deps.iter().map(|d| index_of[*d]).collect();
     let idx = nodes.len();
     index_of.insert(step.clone(), idx);
-    nodes.push(StepNode { step, phase, deps: dep_indices });
+    nodes.push(StepNode {
+        step,
+        phase,
+        deps: dep_indices,
+    });
     idx
 }
 
@@ -479,10 +506,34 @@ pub async fn build_install_plan(
     let mut nodes: Vec<StepNode> = Vec::new();
     let mut index_of: HashMap<InstallStep, usize> = HashMap::new();
 
-    add_step(&mut nodes, &mut index_of, InstallStep::UploadFunctionFiles, (0, 0, 0), &[]);
-    add_step(&mut nodes, &mut index_of, InstallStep::UploadWidgetAssets, (0, 1, 0), &[]);
-    add_step(&mut nodes, &mut index_of, InstallStep::UploadOverlayEntries, (0, 2, 0), &[]);
-    add_step(&mut nodes, &mut index_of, InstallStep::UploadAssets, (0, 3, 0), &[]);
+    add_step(
+        &mut nodes,
+        &mut index_of,
+        InstallStep::UploadFunctionFiles,
+        (0, 0, 0),
+        &[],
+    );
+    add_step(
+        &mut nodes,
+        &mut index_of,
+        InstallStep::UploadWidgetAssets,
+        (0, 1, 0),
+        &[],
+    );
+    add_step(
+        &mut nodes,
+        &mut index_of,
+        InstallStep::UploadOverlayEntries,
+        (0, 2, 0),
+        &[],
+    );
+    add_step(
+        &mut nodes,
+        &mut index_of,
+        InstallStep::UploadAssets,
+        (0, 3, 0),
+        &[],
+    );
 
     add_step(
         &mut nodes,
@@ -496,11 +547,29 @@ pub async fn build_install_plan(
     // empty list) — functions have no bulk-registration
     // call of their own, only the upload + (for functions) the ledger
     // entries `CreateModule` writes.
-    add_step(&mut nodes, &mut index_of, InstallStep::RegisterTriggers, (2, 0, 0), &[&InstallStep::CreateModule]);
-    add_step(&mut nodes, &mut index_of, InstallStep::RegisterActions, (2, 1, 0), &[&InstallStep::CreateModule]);
+    add_step(
+        &mut nodes,
+        &mut index_of,
+        InstallStep::RegisterTriggers,
+        (2, 0, 0),
+        &[&InstallStep::CreateModule],
+    );
+    add_step(
+        &mut nodes,
+        &mut index_of,
+        InstallStep::RegisterActions,
+        (2, 1, 0),
+        &[&InstallStep::CreateModule],
+    );
 
     if !resolved.widgets.is_empty() {
-        add_step(&mut nodes, &mut index_of, InstallStep::RegisterWidgets, (2, 2, 0), &[&InstallStep::CreateModule]);
+        add_step(
+            &mut nodes,
+            &mut index_of,
+            InstallStep::RegisterWidgets,
+            (2, 2, 0),
+            &[&InstallStep::CreateModule],
+        );
     }
     if !manifest.background_tasks.is_empty() {
         add_step(
@@ -515,7 +584,13 @@ pub async fn build_install_plan(
     // filter `run_install` applies before deciding whether there's
     // anything to register.
     if manifest.settings.iter().any(|s| s.setting_type != "button") {
-        add_step(&mut nodes, &mut index_of, InstallStep::RegisterSettings, (2, 4, 0), &[&InstallStep::CreateModule]);
+        add_step(
+            &mut nodes,
+            &mut index_of,
+            InstallStep::RegisterSettings,
+            (2, 4, 0),
+            &[&InstallStep::CreateModule],
+        );
     }
     if !resolved.assets.is_empty() {
         add_step(
@@ -592,10 +667,18 @@ fn topo_sort(nodes: Vec<StepNode>) -> Vec<InstallStep> {
         }
     }
 
-    debug_assert_eq!(order.len(), n, "install step graph must be acyclic by construction");
+    debug_assert_eq!(
+        order.len(),
+        n,
+        "install step graph must be acyclic by construction"
+    );
 
-    let mut steps: Vec<Option<InstallStep>> = nodes.into_iter().map(|node| Some(node.step)).collect();
-    order.into_iter().map(|i| steps[i].take().expect("each index visited exactly once")).collect()
+    let mut steps: Vec<Option<InstallStep>> =
+        nodes.into_iter().map(|node| Some(node.step)).collect();
+    order
+        .into_iter()
+        .map(|i| steps[i].take().expect("each index visited exactly once"))
+        .collect()
 }
 
 /// Check every cross-module reference this manifest declares (a workflow's
@@ -626,7 +709,10 @@ async fn validate_cross_module_refs(
         if !is_external(canonical) || !checked.insert(canonical.to_string()) {
             continue;
         }
-        if let Err(e) = db_proxy.get_trigger_event_by_canonical_id(&canonical.to_string()).await {
+        if let Err(e) = db_proxy
+            .get_trigger_event_by_canonical_id(&canonical.to_string())
+            .await
+        {
             missing.push(format!(
                 "workflow '{}' → trigger '{}' ({})",
                 wf.canonical_id.resource_id(),
@@ -641,7 +727,10 @@ async fn validate_cross_module_refs(
             if !is_external(action_canonical) || !checked.insert(action_canonical.to_string()) {
                 continue;
             }
-            if let Err(e) = db_proxy.get_action_ref_by_canonical_id(&action_canonical.to_string()).await {
+            if let Err(e) = db_proxy
+                .get_action_ref_by_canonical_id(&action_canonical.to_string())
+                .await
+            {
                 missing.push(format!(
                     "workflow '{}' step #{} → action '{}' ({})",
                     wf.canonical_id.resource_id(),
@@ -836,7 +925,9 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
             ));
         }
         if field.label.trim().is_empty() {
-            return Err(anyhow!("{context} field #{i} ({id}): `label` must be non-empty"));
+            return Err(anyhow!(
+                "{context} field #{i} ({id}): `label` must be non-empty"
+            ));
         }
         validate_field_type(&field.field_type, &format!("{context} field #{i} ({id})"))?;
         // A select with nothing to select, or a resource picker that does not
@@ -1049,7 +1140,9 @@ fn validate_asset_paths(assets: &[ManifestAsset]) -> Result<()> {
 fn require_module_id(manifest: &ModuleManifest) -> Result<String> {
     let trimmed = manifest.id.trim();
     if trimmed.is_empty() {
-        return Err(anyhow!("manifest top-level `id` is required and must be non-empty"));
+        return Err(anyhow!(
+            "manifest top-level `id` is required and must be non-empty"
+        ));
     }
     validate_segment(trimmed, "manifest top-level id")?;
     Ok(trimmed.to_string())
@@ -1142,9 +1235,13 @@ fn resolve_action_impl(
         ManifestActionImpl::Native { handler } => {
             let handler = handler.trim();
             if handler.is_empty() {
-                return Err(anyhow!("{field_label}: `native` needs a non-empty `handler`"));
+                return Err(anyhow!(
+                    "{field_label}: `native` needs a non-empty `handler`"
+                ));
             }
-            Ok(ResolvedActionImpl::Native { handler: handler.to_string() })
+            Ok(ResolvedActionImpl::Native {
+                handler: handler.to_string(),
+            })
         }
         ManifestActionImpl::Function { function } => {
             let target = function.trim();
@@ -1230,7 +1327,10 @@ fn resolve_workflows(
     Ok(out)
 }
 
-fn resolve_widgets(items: &[ModuleWidget], widgets_table: &KindTable) -> Result<Vec<ResolvedWidget>> {
+fn resolve_widgets(
+    items: &[ModuleWidget],
+    widgets_table: &KindTable,
+) -> Result<Vec<ResolvedWidget>> {
     let mut out = Vec::with_capacity(items.len());
     for (i, widget) in items.iter().enumerate() {
         let entry = widgets_table
@@ -1265,12 +1365,14 @@ fn resolve_workflow_trigger(
     }
 
     if raw.contains(CANONICAL_ID_SEPARATOR) {
-        let canonical = resolve_local_or_canonical(raw, ResourceKind::Trigger, triggers_table, label)?;
+        let canonical =
+            resolve_local_or_canonical(raw, ResourceKind::Trigger, triggers_table, label)?;
         return Ok(WorkflowTriggerRef::Resource(canonical));
     }
 
     if triggers_table.entries.contains_key(raw) {
-        let canonical = resolve_local_or_canonical(raw, ResourceKind::Trigger, triggers_table, label)?;
+        let canonical =
+            resolve_local_or_canonical(raw, ResourceKind::Trigger, triggers_table, label)?;
         return Ok(WorkflowTriggerRef::Resource(canonical));
     }
 
@@ -1349,7 +1451,9 @@ mod tests {
         let resolved = validate_with_provenance(&m, InstallProvenance::System).expect("system ok");
         assert_eq!(
             resolved.actions[0].implementation,
-            ResolvedActionImpl::Native { handler: "alert".to_string() }
+            ResolvedActionImpl::Native {
+                handler: "alert".to_string()
+            }
         );
     }
 
@@ -1357,9 +1461,13 @@ mod tests {
     // engine internals happen to be registered.
     #[test]
     fn a_user_upload_may_not_declare_a_native_action() {
-        let m = minimal(r#",
-            "actions": [{ "id": "alert", "name": "Alert", "type": "native", "handler": "alert" }]"#);
-        let err = validate(&m).expect_err("uploads may not name engine handlers").to_string();
+        let m = minimal(
+            r#",
+            "actions": [{ "id": "alert", "name": "Alert", "type": "native", "handler": "alert" }]"#,
+        );
+        let err = validate(&m)
+            .expect_err("uploads may not name engine handlers")
+            .to_string();
         assert!(err.contains("action #0 (alert)"), "names the action: {err}");
         assert!(err.contains("native"), "{err}");
     }
@@ -1394,20 +1502,23 @@ mod tests {
 
     #[test]
     fn rejects_a_user_upload_claiming_the_system_module_id() {
-        let json = format!(
-            r#"{{"id": "{SYSTEM_MODULE_ID}", "name": "Impostor", "version": "1.0.0"}}"#
-        );
+        let json =
+            format!(r#"{{"id": "{SYSTEM_MODULE_ID}", "name": "Impostor", "version": "1.0.0"}}"#);
         let m = parse(&json);
-        let err = validate(&m).expect_err("a user upload must not claim it").to_string();
-        assert!(err.contains(SYSTEM_MODULE_ID), "names the reserved id: {err}");
+        let err = validate(&m)
+            .expect_err("a user upload must not claim it")
+            .to_string();
+        assert!(
+            err.contains(SYSTEM_MODULE_ID),
+            "names the reserved id: {err}"
+        );
         assert!(err.contains("reserved"), "{err}");
     }
 
     #[test]
     fn accepts_a_system_install_of_the_reserved_id() {
-        let json = format!(
-            r#"{{"id": "{SYSTEM_MODULE_ID}", "name": "woofx3", "version": "1.0.0"}}"#
-        );
+        let json =
+            format!(r#"{{"id": "{SYSTEM_MODULE_ID}", "name": "woofx3", "version": "1.0.0"}}"#);
         let m = parse(&json);
         validate_with_provenance(&m, InstallProvenance::System).expect("system install is allowed");
     }
@@ -1417,7 +1528,9 @@ mod tests {
     #[test]
     fn accepts_ordinary_ids_that_merely_contain_the_reserved_one() {
         for id in ["woofx3party", "my_woofx3", "woofx3_extras"] {
-            let m = parse(&format!(r#"{{"id": "{id}", "name": "M", "version": "1.0.0"}}"#));
+            let m = parse(&format!(
+                r#"{{"id": "{id}", "name": "M", "version": "1.0.0"}}"#
+            ));
             validate(&m).unwrap_or_else(|e| panic!("{id} should install: {e}"));
         }
     }
@@ -1449,7 +1562,10 @@ mod tests {
 
     #[test]
     fn rejects_a_webhook_trigger_without_a_handler() {
-        let err = rejection(r#"{ "id": "orders", "name": "Orders", "type": "webhook" }"#, "");
+        let err = rejection(
+            r#"{ "id": "orders", "name": "Orders", "type": "webhook" }"#,
+            "",
+        );
         assert!(err.contains("must name its `handler`"), "{err}");
     }
 
@@ -1475,8 +1591,14 @@ mod tests {
     fn rejects_bus_and_builder_fields_on_a_webhook_trigger() {
         for (field, json) in [
             ("`event`", r#""event": "store.order.created""#),
-            ("`schema`", r#""schema": [{ "id": "a", "label": "A", "type": "text" }]"#),
-            ("`emits`", r#""emits": { "fields": [{ "path": "a", "type": "string" }] }"#),
+            (
+                "`schema`",
+                r#""schema": [{ "id": "a", "label": "A", "type": "text" }]"#,
+            ),
+            (
+                "`emits`",
+                r#""emits": { "fields": [{ "path": "a", "type": "string" }] }"#,
+            ),
             ("`allowVariants`", r#""allowVariants": true"#),
         ] {
             let trigger = format!(
@@ -1490,7 +1612,9 @@ mod tests {
     #[test]
     fn rejects_reserved_prefixes_on_bus_triggers() {
         for event in ["webhook.other_mod.orders", "db.module.trigger.registered"] {
-            let trigger = format!(r#"{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "{event}" }}"#);
+            let trigger = format!(
+                r#"{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "{event}" }}"#
+            );
             let err = rejection(&trigger, "");
             assert!(err.contains("reserved prefix"), "{event}: {err}");
         }
@@ -1499,7 +1623,10 @@ mod tests {
     // A trigger with no `event` fires on its id, so the id is checked too.
     #[test]
     fn rejects_a_reserved_prefix_reached_through_the_id_fallback() {
-        let err = rejection(r#"{ "id": "webhook.sneaky", "name": "T1", "type": "eventbus" }"#, "");
+        let err = rejection(
+            r#"{ "id": "webhook.sneaky", "name": "T1", "type": "eventbus" }"#,
+            "",
+        );
         assert!(err.contains("reserved prefix"), "{err}");
     }
 
@@ -1513,7 +1640,8 @@ mod tests {
     #[test]
     fn accepts_an_outbox_trigger_from_the_system_module() {
         let m = system_module_with_trigger_event("db.workflow.created.*");
-        validate_with_provenance(&m, InstallProvenance::System).expect("the system module binds the outbox");
+        validate_with_provenance(&m, InstallProvenance::System)
+            .expect("the system module binds the outbox");
     }
 
     #[test]
@@ -1553,22 +1681,29 @@ mod tests {
 
     #[test]
     fn accepts_a_widget_placed_on_scenes_and_alerts() {
-        let m = minimal(r#", "widgets": [{ "id": "w1", "name": "W1", "surfaces": ["scene", "alert"] }]"#);
+        let m = minimal(
+            r#", "widgets": [{ "id": "w1", "name": "W1", "surfaces": ["scene", "alert"] }]"#,
+        );
         validate(&m).expect("validate ok");
     }
 
     #[test]
     fn rejects_unknown_empty_or_repeated_surfaces() {
         for surfaces in [r#"["overlay"]"#, "[]", r#"["alert", "alert"]"#] {
-            let err = widget_rejection(&format!(r#"{{ "id": "w1", "name": "W1", "surfaces": {surfaces} }}"#));
+            let err = widget_rejection(&format!(
+                r#"{{ "id": "w1", "name": "W1", "surfaces": {surfaces} }}"#
+            ));
             assert!(err.contains("`surfaces`"), "{surfaces}: {err}");
         }
     }
 
     #[test]
     fn accepts_the_system_alert_widget() {
-        validate_with_provenance(&system_module_with_widget(ALERT_WIDGET), InstallProvenance::System)
-            .expect("the system module declares the alert widget");
+        validate_with_provenance(
+            &system_module_with_widget(ALERT_WIDGET),
+            InstallProvenance::System,
+        )
+        .expect("the system module declares the alert widget");
     }
 
     #[test]
@@ -1583,7 +1718,10 @@ mod tests {
             r#"{ "id": "alert", "name": "Alert", "surfaces": ["scene", "alert"], "hostsSurface": "alert" }"#,
             r#"{ "id": "alert", "name": "Alert", "hostsSurface": "alert", "entry": "w/index.html", "assets": "w" }"#,
         ] {
-            let result = validate_with_provenance(&system_module_with_widget(widget), InstallProvenance::System);
+            let result = validate_with_provenance(
+                &system_module_with_widget(widget),
+                InstallProvenance::System,
+            );
             assert!(result.is_err(), "{widget} must be rejected");
         }
     }
@@ -1598,7 +1736,9 @@ mod tests {
             ))
         };
         validate(&with_layout(r#", "surface": "alert""#)).expect("validate ok");
-        let err = validate(&with_layout("")).expect_err("a layout without a surface").to_string();
+        let err = validate(&with_layout(""))
+            .expect_err("a layout without a surface")
+            .to_string();
         assert!(err.contains("`layout` needs a `surface`"), "{err}");
     }
 
@@ -1610,7 +1750,10 @@ mod tests {
                 "workflows": [{{ "id": "wf", "name": "WF", "trigger": "{trigger_ref}", "steps": [{{ "action": "a1" }}] }}]"#
             );
             let err = rejection(WEBHOOK_TRIGGER, &extra);
-            assert!(err.contains("cannot bind to a webhook trigger"), "{trigger_ref}: {err}");
+            assert!(
+                err.contains("cannot bind to a webhook trigger"),
+                "{trigger_ref}: {err}"
+            );
         }
     }
 
@@ -1650,7 +1793,8 @@ mod tests {
 
     #[test]
     fn accepts_the_canonical_field_list_on_every_surface() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
                 "schema": [{ "id": "minBits", "label": "Minimum bits", "type": "number", "min": 1 }] }],
             "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
@@ -1658,7 +1802,8 @@ mod tests {
                 "schema": [{ "id": "target", "label": "Counter", "type": "resource_ref", "resourceKind": "counter" }] }],
             "widgets": [{ "id": "w1", "name": "W1",
                 "settingsSchema": [{ "id": "fontSize", "label": "Font size", "type": "number" }] }],
-            "settings": [{ "id": "clientId", "label": "Client ID", "type": "text" }]"#);
+            "settings": [{ "id": "clientId", "label": "Client ID", "type": "text" }]"#,
+        );
         validate(&m).expect("validate ok");
     }
 
@@ -1707,9 +1852,11 @@ mod tests {
 
     #[test]
     fn rejects_an_unknown_field_type_token() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
-                "schema": [{ "id": "a", "label": "A", "type": "string" }] }]"#);
+                "schema": [{ "id": "a", "label": "A", "type": "string" }] }]"#,
+        );
         let err = validate(&m).expect_err("string is not a control type");
         let msg = err.to_string();
         assert!(msg.contains("trigger #0 (t1)"), "names the surface: {msg}");
@@ -1718,81 +1865,129 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_field_ids() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
                 "schema": [
                     { "id": "a", "label": "A", "type": "text" },
                     { "id": "a", "label": "Again", "type": "number" }
-                ] }]"#);
-        assert!(validate(&m).expect_err("duplicate id").to_string().contains("duplicate"));
+                ] }]"#,
+        );
+        assert!(
+            validate(&m)
+                .expect_err("duplicate id")
+                .to_string()
+                .contains("duplicate")
+        );
     }
 
     // A select with nothing to select and a resource picker that does not say
     // what to pick both render a dead control. Cheap here, confusing in a form.
     #[test]
     fn rejects_a_select_with_no_options_and_no_source() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
-                "schema": [{ "id": "a", "label": "A", "type": "select" }] }]"#);
-        assert!(validate(&m).expect_err("dead select").to_string().contains("options"));
+                "schema": [{ "id": "a", "label": "A", "type": "select" }] }]"#,
+        );
+        assert!(
+            validate(&m)
+                .expect_err("dead select")
+                .to_string()
+                .contains("options")
+        );
     }
 
     #[test]
     fn accepts_a_select_backed_by_a_dynamic_source() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
                 "schema": [{ "id": "a", "label": "A", "type": "select",
-                    "source": { "kind": "commands" } }] }]"#);
+                    "source": { "kind": "commands" } }] }]"#,
+        );
         validate(&m).expect("a source supplies the options at render time");
     }
 
     #[test]
     fn rejects_a_resource_ref_without_a_resource_kind() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
             "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
-                "schema": [{ "id": "t", "label": "T", "type": "resource_ref" }] }]"#);
+                "schema": [{ "id": "t", "label": "T", "type": "resource_ref" }] }]"#,
+        );
         let err = validate(&m).expect_err("picker with nothing to pick");
         assert!(err.to_string().contains("resourceKind"), "{err}");
     }
 
     #[test]
     fn validates_a_resource_kind_create_form_like_every_other_surface() {
-        let ok = minimal(r#",
+        let ok = minimal(
+            r#",
             "resources": [{ "kind": "counter", "name": "Counter",
-                "schema": [{ "id": "initialValue", "label": "Initial value", "type": "number" }] }]"#);
+                "schema": [{ "id": "initialValue", "label": "Initial value", "type": "number" }] }]"#,
+        );
         validate(&ok).expect("validate ok");
 
-        let bad = minimal(r#",
+        let bad = minimal(
+            r#",
             "resources": [{ "kind": "counter", "name": "Counter",
-                "schema": [{ "id": "initialValue", "label": "Initial value", "type": "integer" }] }]"#);
+                "schema": [{ "id": "initialValue", "label": "Initial value", "type": "integer" }] }]"#,
+        );
         let err = bad_err(&bad);
-        assert!(err.contains("resource #0 (counter)"), "names the surface: {err}");
+        assert!(
+            err.contains("resource #0 (counter)"),
+            "names the surface: {err}"
+        );
         assert!(err.contains("`schema`"), "{err}");
     }
 
     fn bad_err(m: &ModuleManifest) -> String {
-        validate(m).expect_err("expected a validation failure").to_string()
+        validate(m)
+            .expect_err("expected a validation failure")
+            .to_string()
     }
 
     #[test]
     fn rejects_a_button_setting_with_no_action() {
-        let m = minimal(r#",
-            "settings": [{ "id": "s1", "label": "S1", "type": "button" }]"#);
-        assert!(validate(&m).expect_err("button with no action").to_string().contains("action"));
+        let m = minimal(
+            r#",
+            "settings": [{ "id": "s1", "label": "S1", "type": "button" }]"#,
+        );
+        assert!(
+            validate(&m)
+                .expect_err("button with no action")
+                .to_string()
+                .contains("action")
+        );
     }
 
     #[test]
     fn rejects_an_empty_field_id_and_an_empty_label() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
-                "schema": [{ "id": "  ", "label": "A", "type": "text" }] }]"#);
-        assert!(validate(&m).expect_err("blank id").to_string().contains("`id`"));
+                "schema": [{ "id": "  ", "label": "A", "type": "text" }] }]"#,
+        );
+        assert!(
+            validate(&m)
+                .expect_err("blank id")
+                .to_string()
+                .contains("`id`")
+        );
 
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
-                "schema": [{ "id": "a", "label": " ", "type": "text" }] }]"#);
-        assert!(validate(&m).expect_err("blank label").to_string().contains("`label`"));
+                "schema": [{ "id": "a", "label": " ", "type": "text" }] }]"#,
+        );
+        assert!(
+            validate(&m)
+                .expect_err("blank label")
+                .to_string()
+                .contains("`label`")
+        );
     }
 
     // ---------------------------------------------------------------
@@ -1801,7 +1996,8 @@ mod tests {
 
     #[test]
     fn accepts_a_well_formed_emits_and_returns() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
                 "emits": { "fields": [
                     { "path": "bits", "type": "number", "description": "Bits cheered.", "example": 1000 },
@@ -1809,34 +2005,44 @@ mod tests {
                 ] } }],
             "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
             "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
-                "returns": { "fields": [{ "path": "next", "type": "number" }] } }]"#);
+                "returns": { "fields": [{ "path": "next", "type": "number" }] } }]"#,
+        );
         validate(&m).expect("validate ok");
     }
 
     #[test]
     fn accepts_a_manifest_declaring_no_shapes_at_all() {
-        let m = minimal(r#",
-            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus" }]"#);
+        let m = minimal(
+            r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus" }]"#,
+        );
         validate(&m).expect("validate ok");
     }
 
     #[test]
     fn rejects_an_empty_path_in_emits() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
-                "emits": { "fields": [{ "path": "  ", "type": "string" }] } }]"#);
+                "emits": { "fields": [{ "path": "  ", "type": "string" }] } }]"#,
+        );
         let err = validate(&m).expect_err("empty path must fail");
         let msg = err.to_string();
-        assert!(msg.contains("trigger #0 (t1)"), "names the offending trigger: {msg}");
+        assert!(
+            msg.contains("trigger #0 (t1)"),
+            "names the offending trigger: {msg}"
+        );
         assert!(msg.contains("`emits`"), "names the offending field: {msg}");
         assert!(msg.contains("path"), "{msg}");
     }
 
     #[test]
     fn rejects_an_unknown_field_type() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
-                "emits": { "fields": [{ "path": "bits", "type": "integer" }] } }]"#);
+                "emits": { "fields": [{ "path": "bits", "type": "integer" }] } }]"#,
+        );
         let err = validate(&m).expect_err("unknown type must fail");
         let msg = err.to_string();
         // The accepted set is quoted back so the author does not have to go
@@ -1849,25 +2055,32 @@ mod tests {
     // contradictory and nothing can tell which. Rejecting beats picking one.
     #[test]
     fn rejects_duplicate_paths_within_one_shape() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
                 "emits": { "fields": [
                     { "path": "bits", "type": "number" },
                     { "path": "bits", "type": "string" }
-                ] } }]"#);
+                ] } }]"#,
+        );
         let err = validate(&m).expect_err("duplicate path must fail");
         assert!(err.to_string().contains("duplicate"), "{}", err);
     }
 
     #[test]
     fn rejects_a_bad_returns_on_an_action() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
             "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
-                "returns": { "fields": [{ "path": "next", "type": "int" }] } }]"#);
+                "returns": { "fields": [{ "path": "next", "type": "int" }] } }]"#,
+        );
         let err = validate(&m).expect_err("unknown type must fail");
         let msg = err.to_string();
-        assert!(msg.contains("action #0 (a1)"), "names the offending action: {msg}");
+        assert!(
+            msg.contains("action #0 (a1)"),
+            "names the offending action: {msg}"
+        );
         assert!(msg.contains("`returns`"), "{msg}");
     }
 
@@ -1901,17 +2114,22 @@ mod tests {
 
     #[tokio::test]
     async fn build_install_plan_orders_uploads_before_create_module_before_registration() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus" }],
             "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "f.lua" }],
             "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
             "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [{ "action": "a1" }] }],
-            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix", "workflow": "w1" }]"#);
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix", "workflow": "w1" }]"#,
+        );
         let resolved = validate(&m).expect("validate ok");
         let db_proxy = FakeDbProxyClient::new();
-        let plan = build_install_plan(&m, &resolved, &db_proxy).await.expect("plan ok");
+        let plan = build_install_plan(&m, &resolved, &db_proxy)
+            .await
+            .expect("plan ok");
 
-        let workflow_step = InstallStep::RegisterWorkflow(resolved.workflows[0].canonical_id.clone());
+        let workflow_step =
+            InstallStep::RegisterWorkflow(resolved.workflows[0].canonical_id.clone());
         let command_step = InstallStep::RegisterCommand(resolved.commands[0].canonical_id.clone());
         let pos = |step: &InstallStep| {
             plan.iter()
@@ -1931,11 +2149,15 @@ mod tests {
 
     #[tokio::test]
     async fn build_install_plan_omits_bulk_steps_for_empty_or_button_only_kinds() {
-        let m = minimal(r#",
-            "settings": [{ "id": "s1", "label": "S1", "type": "button", "action": { "kind": "integration", "integration": "x" } }]"#);
+        let m = minimal(
+            r#",
+            "settings": [{ "id": "s1", "label": "S1", "type": "button", "action": { "kind": "integration", "integration": "x" } }]"#,
+        );
         let resolved = validate(&m).expect("validate ok");
         let db_proxy = FakeDbProxyClient::new();
-        let plan = build_install_plan(&m, &resolved, &db_proxy).await.expect("plan ok");
+        let plan = build_install_plan(&m, &resolved, &db_proxy)
+            .await
+            .expect("plan ok");
 
         assert!(!plan.contains(&InstallStep::RegisterWidgets));
         assert!(!plan.contains(&InstallStep::RegisterBackgroundTasks));
@@ -1951,14 +2173,18 @@ mod tests {
 
     #[tokio::test]
     async fn build_install_plan_includes_bulk_steps_when_kinds_are_present() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "widgets": [{ "id": "w1", "name": "W1" }],
             "backgroundTasks": [{ "id": "bg1", "function": "f1", "schedule": "* * * * * *" }],
             "settings": [{ "id": "s1", "label": "S1", "type": "text" }],
-            "assets": [{ "id": "a1", "name": "A1", "path": "assets/a.png" }]"#);
+            "assets": [{ "id": "a1", "name": "A1", "path": "assets/a.png" }]"#,
+        );
         let resolved = validate(&m).expect("validate ok");
         let db_proxy = FakeDbProxyClient::new();
-        let plan = build_install_plan(&m, &resolved, &db_proxy).await.expect("plan ok");
+        let plan = build_install_plan(&m, &resolved, &db_proxy)
+            .await
+            .expect("plan ok");
 
         assert!(plan.contains(&InstallStep::RegisterWidgets));
         assert!(plan.contains(&InstallStep::RegisterBackgroundTasks));
@@ -1968,27 +2194,37 @@ mod tests {
 
     #[tokio::test]
     async fn build_install_plan_fails_fast_on_unresolvable_cross_module_trigger() {
-        let m = minimal(r#",
-            "workflows": [{ "id": "w1", "name": "W1", "trigger": "other_mod:trigger:missing", "steps": [] }]"#);
+        let m = minimal(
+            r#",
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "other_mod:trigger:missing", "steps": [] }]"#,
+        );
         let resolved = validate(&m).expect("validate ok");
         let db_proxy = FakeDbProxyClient::failing_on(["get_trigger_event_by_canonical_id"]);
 
-        let err = build_install_plan(&m, &resolved, &db_proxy).await.expect_err("should fail");
+        let err = build_install_plan(&m, &resolved, &db_proxy)
+            .await
+            .expect_err("should fail");
         assert!(
-            err.to_string().contains("depends on resources from other modules that are not installed"),
+            err.to_string()
+                .contains("depends on resources from other modules that are not installed"),
             "got: {err}"
         );
     }
 
     #[tokio::test]
     async fn build_install_plan_passes_when_cross_module_trigger_resolves() {
-        let m = minimal(r#",
-            "workflows": [{ "id": "w1", "name": "W1", "trigger": "other_mod:trigger:exists", "steps": [] }]"#);
+        let m = minimal(
+            r#",
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "other_mod:trigger:exists", "steps": [] }]"#,
+        );
         let resolved = validate(&m).expect("validate ok");
         let db_proxy = FakeDbProxyClient::new();
 
-        let plan = build_install_plan(&m, &resolved, &db_proxy).await.expect("should resolve via the fake");
-        let workflow_step = InstallStep::RegisterWorkflow(resolved.workflows[0].canonical_id.clone());
+        let plan = build_install_plan(&m, &resolved, &db_proxy)
+            .await
+            .expect("should resolve via the fake");
+        let workflow_step =
+            InstallStep::RegisterWorkflow(resolved.workflows[0].canonical_id.clone());
         assert!(plan.contains(&workflow_step));
     }
 
@@ -2000,16 +2236,20 @@ mod tests {
 
     #[tokio::test]
     async fn a_retired_builtin_reference_is_rejected() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "workflows": [{
                 "id": "w1", "name": "W1", "trigger": "t1",
                 "steps": [{ "id": "s1", "action": "builtin:action:alert" }]
             }],
-            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }]"#);
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }]"#,
+        );
         let resolved = validate(&m).expect("validate ok");
         let db_proxy = FakeDbProxyClient::failing_on(["get_action_ref_by_canonical_id"]);
 
-        let err = build_install_plan(&m, &resolved, &db_proxy).await.expect_err("should fail");
+        let err = build_install_plan(&m, &resolved, &db_proxy)
+            .await
+            .expect_err("should fail");
         assert!(
             err.to_string().contains("builtin:action:alert"),
             "the error must name the unresolved id: {err}"
@@ -2018,16 +2258,20 @@ mod tests {
 
     #[tokio::test]
     async fn an_unresolvable_bundled_reference_is_rejected() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "workflows": [{
                 "id": "w1", "name": "W1", "trigger": "t1",
                 "steps": [{ "id": "s1", "action": "woofx3:action:doesnotexist" }]
             }],
-            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }]"#);
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }]"#,
+        );
         let resolved = validate(&m).expect("validate ok");
         let db_proxy = FakeDbProxyClient::failing_on(["get_action_ref_by_canonical_id"]);
 
-        let err = build_install_plan(&m, &resolved, &db_proxy).await.expect_err("should fail");
+        let err = build_install_plan(&m, &resolved, &db_proxy)
+            .await
+            .expect_err("should fail");
         assert!(
             err.to_string().contains("woofx3:action:doesnotexist"),
             "the error must name the unresolved id: {err}"
@@ -2038,19 +2282,22 @@ mod tests {
     /// before any upload, so its ids resolve through the ordinary check.
     #[tokio::test]
     async fn a_real_bundled_reference_installs() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "workflows": [{
                 "id": "w1", "name": "W1", "trigger": "t1",
                 "steps": [{ "id": "s1", "action": "woofx3:action:alert" }]
             }],
-            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }]"#);
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }]"#,
+        );
         let resolved = validate(&m).expect("validate ok");
         let db_proxy = FakeDbProxyClient::new();
 
         let plan = build_install_plan(&m, &resolved, &db_proxy)
             .await
             .expect("a resolvable bundled reference installs");
-        let workflow_step = InstallStep::RegisterWorkflow(resolved.workflows[0].canonical_id.clone());
+        let workflow_step =
+            InstallStep::RegisterWorkflow(resolved.workflows[0].canonical_id.clone());
         assert!(plan.contains(&workflow_step));
     }
 
@@ -2200,29 +2447,35 @@ mod tests {
 
     #[test]
     fn rejects_trigger_missing_id() {
-        let m = minimal(r#",
-            "triggers": [{ "id": "", "name": "T", "type": "eventbus" }]"#);
+        let m = minimal(
+            r#",
+            "triggers": [{ "id": "", "name": "T", "type": "eventbus" }]"#,
+        );
         let err = validate(&m).unwrap_err().to_string();
         assert!(err.contains("trigger #0"), "got: {err}");
     }
 
     #[test]
     fn rejects_duplicate_ids_within_kind() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [
                 { "id": "foo", "name": "Foo", "type": "eventbus" },
                 { "id": "foo", "name": "Foo Two", "type": "eventbus" }
-            ]"#);
+            ]"#,
+        );
         let err = validate(&m).unwrap_err().to_string();
         assert!(err.contains("duplicate"), "got: {err}");
     }
 
     #[test]
     fn allows_same_id_across_different_kinds() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "play_alert", "name": "T", "type": "eventbus" }],
             "functions": [{ "id": "play_alert", "name": "F", "runtime": "lua", "path": "f.lua" }],
-            "actions": [{ "id": "play_alert", "name": "A", "type": "function", "function": "play_alert" }]"#);
+            "actions": [{ "id": "play_alert", "name": "A", "type": "function", "function": "play_alert" }]"#,
+        );
         let r = validate(&m).expect("ok");
         assert_eq!(
             r.triggers[0].canonical_id.to_string(),
@@ -2236,13 +2489,20 @@ mod tests {
 
     #[test]
     fn resolves_function_action_to_canonical_function() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "functions": [{ "id": "play_alert", "name": "F", "runtime": "lua", "path": "f.lua" }],
-            "actions": [{ "id": "play.alert", "name": "A", "type": "function", "function": "play_alert" }]"#);
+            "actions": [{ "id": "play.alert", "name": "A", "type": "function", "function": "play_alert" }]"#,
+        );
         let r = validate(&m).expect("ok");
         match &r.actions[0].implementation {
-            ResolvedActionImpl::Function { canonical_function_id } => {
-                assert_eq!(canonical_function_id.to_string(), "test_mod:function:play_alert");
+            ResolvedActionImpl::Function {
+                canonical_function_id,
+            } => {
+                assert_eq!(
+                    canonical_function_id.to_string(),
+                    "test_mod:function:play_alert"
+                );
             }
             other => panic!("expected a function reference, got {other:?}"),
         }
@@ -2250,16 +2510,20 @@ mod tests {
 
     #[test]
     fn function_action_passes_through_full_canonical_id() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "actions": [{
                 "id": "x",
                 "name": "X",
                 "type": "function",
                 "function": "other_mod:function:bar"
-            }]"#);
+            }]"#,
+        );
         let r = validate(&m).expect("ok");
         match &r.actions[0].implementation {
-            ResolvedActionImpl::Function { canonical_function_id } => {
+            ResolvedActionImpl::Function {
+                canonical_function_id,
+            } => {
                 assert_eq!(canonical_function_id.to_string(), "other_mod:function:bar");
             }
             other => panic!("expected a function reference, got {other:?}"),
@@ -2268,36 +2532,43 @@ mod tests {
 
     #[test]
     fn rejects_unresolved_function_reference() {
-        let m = minimal(r#",
-            "actions": [{ "id": "x", "name": "X", "type": "function", "function": "missing" }]"#);
+        let m = minimal(
+            r#",
+            "actions": [{ "id": "x", "name": "X", "type": "function", "function": "missing" }]"#,
+        );
         let err = validate(&m).unwrap_err().to_string();
         assert!(err.contains("does not match"), "got: {err}");
     }
 
     #[test]
     fn rejects_canonical_reference_with_wrong_kind() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "actions": [{
                 "id": "x",
                 "name": "X",
                 "type": "function",
                 "function": "other_mod:trigger:bar"
-            }]"#);
+            }]"#,
+        );
         let err = validate(&m).unwrap_err().to_string();
         assert!(err.contains("does not match expected kind"), "got: {err}");
     }
 
     #[test]
     fn rejects_function_action_with_empty_function_field() {
-        let m = minimal(r#",
-            "actions": [{ "id": "x", "name": "X", "type": "function", "function": "" }]"#);
+        let m = minimal(
+            r#",
+            "actions": [{ "id": "x", "name": "X", "type": "function", "function": "" }]"#,
+        );
         let err = validate(&m).unwrap_err().to_string();
         assert!(err.contains("function"), "got: {err}");
     }
 
     #[test]
     fn resolves_workflow_trigger_and_step_actions() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "channel_subscribe", "name": "T", "type": "eventbus" }],
             "functions": [{ "id": "play_alert", "name": "F", "runtime": "lua", "path": "f.lua" }],
             "actions": [{ "id": "play_alert", "name": "A", "type": "function", "function": "play_alert" }],
@@ -2306,12 +2577,19 @@ mod tests {
                 "name": "W",
                 "trigger": "channel_subscribe",
                 "steps": [{ "action": "play_alert" }]
-            }]"#);
+            }]"#,
+        );
         let r = validate(&m).expect("ok");
         let wf = &r.workflows[0];
-        assert_eq!(wf.canonical_id.to_string(), "test_mod:workflow:on_subscribe");
         assert_eq!(
-            wf.trigger.as_resource().expect("a local trigger id is a resource binding").to_string(),
+            wf.canonical_id.to_string(),
+            "test_mod:workflow:on_subscribe"
+        );
+        assert_eq!(
+            wf.trigger
+                .as_resource()
+                .expect("a local trigger id is a resource binding")
+                .to_string(),
             "test_mod:trigger:channel_subscribe"
         );
         assert_eq!(wf.step_actions.len(), 1);
@@ -2326,8 +2604,10 @@ mod tests {
 
     #[test]
     fn a_dotted_unknown_trigger_binds_to_the_event() {
-        let m = minimal(r#",
-            "workflows": [{ "id": "w1", "name": "W1", "trigger": "channel.follow", "steps": [] }]"#);
+        let m = minimal(
+            r#",
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "channel.follow", "steps": [] }]"#,
+        );
         let r = validate(&m).expect("ok");
         match &r.workflows[0].trigger {
             WorkflowTriggerRef::Event(e) => assert_eq!(e, "channel.follow"),
@@ -2341,17 +2621,22 @@ mod tests {
 
     #[test]
     fn a_canonical_id_binds_to_the_resource() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "workflows": [{
                 "id": "w1", "name": "W1",
                 "trigger": "woofx3_twitch:trigger:channel_follow", "steps": []
-            }]"#);
+            }]"#,
+        );
         let r = validate(&m).expect("ok");
         let canonical = r.workflows[0]
             .trigger
             .as_resource()
             .expect("a canonical id is a resource binding");
-        assert_eq!(canonical.to_string(), "woofx3_twitch:trigger:channel_follow");
+        assert_eq!(
+            canonical.to_string(),
+            "woofx3_twitch:trigger:channel_follow"
+        );
     }
 
     /// The ambiguous case the inferred form has to get right: a bare word is
@@ -2359,44 +2644,56 @@ mod tests {
     /// event type that never fires.
     #[test]
     fn a_dotless_unknown_trigger_is_rejected_as_a_typo() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "channel_follow", "name": "T", "type": "eventbus" }],
-            "workflows": [{ "id": "w1", "name": "W1", "trigger": "chanel_follow", "steps": [] }]"#);
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "chanel_follow", "steps": [] }]"#,
+        );
         let err = validate(&m).unwrap_err().to_string();
         assert!(err.contains("matches no trigger"), "got: {err}");
     }
 
     #[test]
     fn a_local_trigger_id_still_binds_to_the_resource() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus" }],
-            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [] }]"#);
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [] }]"#,
+        );
         let r = validate(&m).expect("ok");
         assert_eq!(
-            r.workflows[0].trigger.as_resource().expect("local id is a resource").to_string(),
+            r.workflows[0]
+                .trigger
+                .as_resource()
+                .expect("local id is a resource")
+                .to_string(),
             "test_mod:trigger:t1"
         );
     }
 
     #[test]
     fn rejects_workflow_with_unknown_trigger() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "workflows": [{
                 "id": "x",
                 "name": "X",
                 "trigger": "missing",
                 "steps": []
-            }]"#);
+            }]"#,
+        );
         let err = validate(&m).unwrap_err().to_string();
         assert!(err.contains("matches no trigger"), "got: {err}");
     }
 
     #[test]
     fn resolves_command_workflow() {
-        let m = minimal(r#",
+        let m = minimal(
+            r#",
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus" }],
             "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [] }],
-            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix", "workflow": "w1" }]"#);
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix", "workflow": "w1" }]"#,
+        );
         let r = validate(&m).expect("ok");
         assert_eq!(
             r.commands[0].workflow.as_ref().unwrap().to_string(),
@@ -2406,20 +2703,29 @@ mod tests {
 
     #[test]
     fn rejects_accepted_events_on_a_widget() {
-        let err = validate(&minimal(r#",
-            "widgets": [{ "id": "wd1", "name": "Wd1", "acceptedEvents": ["channel.follow"] }]"#))
+        let err = validate(&minimal(
+            r#",
+            "widgets": [{ "id": "wd1", "name": "Wd1", "acceptedEvents": ["channel.follow"] }]"#,
+        ))
         .unwrap_err()
         .to_string();
-        assert!(err.contains("`acceptedEvents` is no longer supported"), "got: {err}");
-        validate(&minimal(r#",
-            "widgets": [{ "id": "wd1", "name": "Wd1", "acceptedEvents": [] }]"#))
+        assert!(
+            err.contains("`acceptedEvents` is no longer supported"),
+            "got: {err}"
+        );
+        validate(&minimal(
+            r#",
+            "widgets": [{ "id": "wd1", "name": "Wd1", "acceptedEvents": [] }]"#,
+        ))
         .expect("an empty list asks for nothing");
     }
 
     #[test]
     fn command_without_workflow_resolves_to_none() {
-        let m = minimal(r#",
-            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix" }]"#);
+        let m = minimal(
+            r#",
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix" }]"#,
+        );
         let r = validate(&m).expect("ok");
         assert!(r.commands[0].workflow.is_none());
     }
@@ -2439,7 +2745,10 @@ mod tests {
         );
         let r = validate(&m).expect("ok");
         assert_eq!(r.assets.len(), 2);
-        assert_eq!(r.assets[0].canonical_id.to_string(), "test_mod:asset:victory");
+        assert_eq!(
+            r.assets[0].canonical_id.to_string(),
+            "test_mod:asset:victory"
+        );
         assert_eq!(r.assets[1].canonical_id.to_string(), "test_mod:asset:logo");
     }
 

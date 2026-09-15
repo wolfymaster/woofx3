@@ -1,9 +1,9 @@
-use anyhow::{anyhow, Result};
-use std::collections::HashMap;
+use anyhow::{Result, anyhow};
 use lib_repository::{CreateFileRequest, Repository};
-use tracing::{info, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
+use tracing::{info, warn};
 
 use super::module_file::ModuleFile;
 
@@ -944,7 +944,10 @@ impl ManifestTrigger {
 }
 
 fn widget_asset_prefix(assets: &str) -> Result<String> {
-    Ok(normalize_rel_path(assets)?.trim_end_matches('/').to_string() + "/")
+    Ok(normalize_rel_path(assets)?
+        .trim_end_matches('/')
+        .to_string()
+        + "/")
 }
 
 impl ModuleWidget {
@@ -1058,7 +1061,10 @@ impl ModuleWidget {
         repository: &R,
     ) -> Result<String> {
         let rel = normalize_rel_path(rel_under_widget)?;
-        let repo_key = format!("modules/{module_key}/{version_dir}/widgets/{}/{rel}", self.id);
+        let repo_key = format!(
+            "modules/{module_key}/{version_dir}/widgets/{}/{rel}",
+            self.id
+        );
         let ext = extension_for_path(&file.name);
         upload_content_addressed(repository, &repo_key, &file.contents, ext).await?;
         Ok(repo_key)
@@ -1088,7 +1094,10 @@ impl ModuleWidget {
         let mut entry_uploaded = false;
         if let (Some(entry), Some(rel)) = (&self.entry, &entry_rel) {
             if let Some(f) = resolve_zip_file(files, entry) {
-                keys.push(self.upload_one_file(module_key, version_dir, f, rel, repository).await?);
+                keys.push(
+                    self.upload_one_file(module_key, version_dir, f, rel, repository)
+                        .await?,
+                );
                 entry_uploaded = true;
             } else {
                 warn!("Widget {} entry '{}' not found in archive", self.id, entry);
@@ -1141,7 +1150,11 @@ impl ManifestAction {
     /// `type` used to be omitted entirely, leaving every barkloader-installed
     /// action on the column default - fine while `function` was the only
     /// variant, wrong the moment it was not.
-    pub fn to_input(&self, action_type: &str, resolved_call: &str) -> super::db_proxy::ActionInputJson {
+    pub fn to_input(
+        &self,
+        action_type: &str,
+        resolved_call: &str,
+    ) -> super::db_proxy::ActionInputJson {
         super::db_proxy::ActionInputJson {
             name: self.name.clone(),
             description: self.description.clone(),
@@ -1165,10 +1178,7 @@ impl ManifestCommand {
         db_proxy: &dyn super::db_proxy_client::ModuleDbProxy,
         resolved_workflow: Option<&str>,
     ) -> Result<()> {
-        let command_name = self
-            .pattern
-            .strip_prefix('!')
-            .unwrap_or(&self.pattern);
+        let command_name = self.pattern.strip_prefix('!').unwrap_or(&self.pattern);
 
         let command_type = if resolved_workflow.is_some() {
             "function"
@@ -1179,7 +1189,10 @@ impl ManifestCommand {
         let type_value = if let Some(workflow) = resolved_workflow {
             workflow.to_string()
         } else {
-            format!("Module command: {} ({}). Configure a workflow to handle this command.", self.name, self.pattern)
+            format!(
+                "Module command: {} ({}). Configure a workflow to handle this command.",
+                self.name, self.pattern
+            )
         };
 
         db_proxy
@@ -1188,11 +1201,7 @@ impl ManifestCommand {
 
         info!(
             "Registered command: {} [{}] (pattern={}, type={}, workflow={:?})",
-            self.name,
-            self.id,
-            self.pattern,
-            command_type,
-            resolved_workflow,
+            self.name, self.id, self.pattern, command_type, resolved_workflow,
         );
         Ok(())
     }
@@ -1305,9 +1314,12 @@ fn rewrite_asset_markers(s: &str, asset_repo_keys: &HashMap<String, String>) -> 
     while let Some(start) = rest.find(ASSET_MARKER_PREFIX) {
         result.push_str(&rest[..start]);
         let after_prefix = &rest[start + ASSET_MARKER_PREFIX.len()..];
-        let end = after_prefix
-            .find('}')
-            .ok_or_else(|| anyhow!("unterminated ${{asset:...}} marker in workflow parameters: {:?}", s))?;
+        let end = after_prefix.find('}').ok_or_else(|| {
+            anyhow!(
+                "unterminated ${{asset:...}} marker in workflow parameters: {:?}",
+                s
+            )
+        })?;
         let asset_id = &after_prefix[..end];
         let repo_key = asset_repo_keys.get(asset_id).ok_or_else(|| {
             anyhow!(
@@ -1340,7 +1352,10 @@ fn step_to_task_json(
         None => format!("{step_id_prefix}{step_index}"),
     };
     task.insert("id".to_string(), serde_json::Value::String(step_id));
-    task.insert("type".to_string(), serde_json::Value::String("action".to_string()));
+    task.insert(
+        "type".to_string(),
+        serde_json::Value::String("action".to_string()),
+    );
     if !step.depends_on.is_empty() {
         task.insert(
             "dependsOn".to_string(),
@@ -1423,7 +1438,9 @@ impl ManifestWorkflow {
             .steps
             .iter()
             .enumerate()
-            .map(|(i, s)| step_to_task_json(&step_id_prefix, i, s, &resolved_steps[i], asset_repo_keys))
+            .map(|(i, s)| {
+                step_to_task_json(&step_id_prefix, i, s, &resolved_steps[i], asset_repo_keys)
+            })
             .collect::<Result<Vec<_>>>()?;
 
         // Trigger JSON. `$ref` is reference metadata for the graph;
@@ -1513,12 +1530,18 @@ mod tests {
     use super::*;
 
     fn asset_map(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     #[test]
     fn encode_asset_url_markers_rewrites_a_bare_string() {
-        let map = asset_map(&[("pleasure_sound", "modules/wolfy_profile/assets/pleasure.mp3")]);
+        let map = asset_map(&[(
+            "pleasure_sound",
+            "modules/wolfy_profile/assets/pleasure.mp3",
+        )]);
         let value = serde_json::json!("${asset:pleasure_sound}");
         let result = encode_asset_url_markers(&value, &map).expect("rewrite");
         assert_eq!(
@@ -1607,8 +1630,14 @@ mod tests {
 
         let s = serde_json::to_string(&m).expect("serialize");
         let reparsed: serde_json::Value = serde_json::from_str(&s).expect("reparse");
-        assert_eq!(reparsed.get("author").and_then(|v| v.as_str()), Some("WolfyMaster LLC"));
-        assert_eq!(reparsed.get("category").and_then(|v| v.as_str()), Some("platform"));
+        assert_eq!(
+            reparsed.get("author").and_then(|v| v.as_str()),
+            Some("WolfyMaster LLC")
+        );
+        assert_eq!(
+            reparsed.get("category").and_then(|v| v.as_str()),
+            Some("platform")
+        );
     }
 
     #[test]
@@ -1636,7 +1665,10 @@ mod tests {
         .expect("parse");
         assert_eq!(
             t.resolve_taxonomy(),
-            vec!["platform.twitch.chat".to_string(), "function.chat".to_string()]
+            vec![
+                "platform.twitch.chat".to_string(),
+                "function.chat".to_string()
+            ]
         );
     }
 
@@ -1704,7 +1736,10 @@ mod tests {
         .expect("parse");
         assert_eq!(
             t.to_input("test_mod").taxonomy,
-            vec!["platform.twitch.chat".to_string(), "function.chat".to_string()]
+            vec![
+                "platform.twitch.chat".to_string(),
+                "function.chat".to_string()
+            ]
         );
     }
 
@@ -1720,7 +1755,10 @@ mod tests {
         .expect("parse");
         assert_eq!(
             a.to_input("function", "play_alert").taxonomy,
-            vec!["platform.govee".to_string(), "function.lighting".to_string()]
+            vec![
+                "platform.govee".to_string(),
+                "function.lighting".to_string()
+            ]
         );
     }
 
@@ -2003,7 +2041,8 @@ mod tests {
         .expect("parse");
         let err = w.entry_relative_to_assets().expect_err("outside assets");
         assert!(
-            err.to_string().contains("must live inside the `assets` directory"),
+            err.to_string()
+                .contains("must live inside the `assets` directory"),
             "unexpected error: {err}"
         );
     }
@@ -2046,7 +2085,10 @@ mod tests {
         let s = serde_json::to_string(&w).expect("serialize");
         let reparsed: serde_json::Value = serde_json::from_str(&s).expect("reparse");
         // Confirm the camelCase rename survives the round trip.
-        assert_eq!(reparsed.get("hostsSurface").and_then(|v| v.as_str()), Some("alert"));
+        assert_eq!(
+            reparsed.get("hostsSurface").and_then(|v| v.as_str()),
+            Some("alert")
+        );
         assert!(reparsed.get("hosts_surface").is_none());
     }
 
@@ -2114,7 +2156,10 @@ mod tests {
         assert_eq!(m.settings[0].action["kind"], "integration");
         assert_eq!(m.settings[0].action["integration"], "spotify");
         assert_eq!(m.settings[1].action["kind"], "internal");
-        assert_eq!(m.settings[1].action["request"]["event"], "barkloader.module.field_options");
+        assert_eq!(
+            m.settings[1].action["request"]["event"],
+            "barkloader.module.field_options"
+        );
         // clientId has no action at all — must not gain one from a missing-field default.
         assert!(m.settings[2].action.is_null());
 

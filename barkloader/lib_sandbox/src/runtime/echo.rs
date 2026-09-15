@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::host::InvocationContext;
 use crate::runtime::RuntimeAdapter;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub struct EchoAdapter {}
 

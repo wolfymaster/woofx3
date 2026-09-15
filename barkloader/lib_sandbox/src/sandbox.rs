@@ -3,9 +3,9 @@ use crate::function_executor::FunctionExecutor;
 use crate::host::{HostContext, InvocationContext};
 use crate::models::request::InvokeRequest;
 use crate::module_registry::ModuleRegistry;
-use tracing::{error, info, warn};
 use serde_json::Value;
 use std::sync::Arc;
+use tracing::{error, info, warn};
 
 #[derive(Clone)]
 pub struct SandboxFactory {
@@ -91,12 +91,7 @@ impl Sandbox {
         // (validated by `ModuleRegistry::get_function`). The leading
         // segment is the manifest-local module id, which the storage
         // namespace uses to scope auto-emitted change events.
-        let module_id = request
-            .function
-            .split(':')
-            .next()
-            .unwrap_or("")
-            .to_string();
+        let module_id = request.function.split(':').next().unwrap_or("").to_string();
 
         let meta = self.registry.get_module_metadata(&module_id);
         let invocation = InvocationContext {

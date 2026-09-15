@@ -12,13 +12,9 @@ export const SESSION_COOKIE_NAME = "sm_session";
  * origin).
  */
 export function serializeSessionCookie(token: string, maxAgeSeconds: number): string {
-  return [
-    `${SESSION_COOKIE_NAME}=${token}`,
-    "Path=/",
-    "HttpOnly",
-    "SameSite=Strict",
-    `Max-Age=${maxAgeSeconds}`,
-  ].join("; ");
+  return [`${SESSION_COOKIE_NAME}=${token}`, "Path=/", "HttpOnly", "SameSite=Strict", `Max-Age=${maxAgeSeconds}`].join(
+    "; "
+  );
 }
 
 export function readSessionCookie(req: Request): string | null {

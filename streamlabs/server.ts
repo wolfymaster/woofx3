@@ -1,36 +1,36 @@
-import dotenv from 'dotenv';
-import path from 'path';
+import dotenv from "dotenv";
+import path from "path";
 import express from "express";
 import { createRequestHandler } from "@remix-run/express";
 import SockJS from "sockjs-client";
-import NatsClient, { natsMessageHandler } from './nats';
-import { SlobsRequestMessage } from './types';
+import NatsClient, { natsMessageHandler } from "./nats";
+import { SlobsRequestMessage } from "./types";
 import { init, id, type InstantAdminDatabase, type InstantUnknownSchema } from "@instantdb/admin";
-import Manager from 'obs/Manager';
-import { contextLogger, logger } from './logger';
-import OBSWebSocket from 'obs-websocket-js';
-import './wsShim';
+import Manager from "obs/Manager";
+import { contextLogger, logger } from "./logger";
+import OBSWebSocket from "obs-websocket-js";
+import "./wsShim";
 
 dotenv.config({
-  path: [path.resolve(process.cwd(), '.env'), path.resolve(process.cwd(), '../', '.env')],
+  path: [path.resolve(process.cwd(), ".env"), path.resolve(process.cwd(), "../", ".env")],
 });
 
 const PORT = process.env.SLOBS_PORT || 59650;
-const host = process.env.SLOBS_HOST || '127.0.0.1';
+const host = process.env.SLOBS_HOST || "127.0.0.1";
 const baseUrl = `http://${host}:${PORT}/api`;
-const slobsToken = process.env.SLOBS_RPC_TOKEN || '';
+const slobsToken = process.env.SLOBS_RPC_TOKEN || "";
 
 const APP_ID = "8c28dd52-4859-4560-8d45-2408b064b248";
-const db = init({ appId: APP_ID, adminToken: process.env.INSTANTDB_ADMIN_TOKEN || '' });
+const db = init({ appId: APP_ID, adminToken: process.env.INSTANTDB_ADMIN_TOKEN || "" });
 
 const viteDevServer =
   process.env.NODE_ENV === "production"
     ? null
     : await import("vite").then((vite) =>
-      vite.createServer({
-        server: { middlewareMode: true },
-      })
-    );
+        vite.createServer({
+          server: { middlewareMode: true },
+        })
+      );
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -38,16 +38,15 @@ const port = process.env.PORT || 3000;
 // make context
 const ctx: Context = {
   logger: contextLogger(),
-}
+};
 
-// TODO: Prolly want a timeout on the socket connection. Will hang if 
+// TODO: Prolly want a timeout on the socket connection. Will hang if
 // await make the client, which connects and authenticates else, fails
 // const client = await makeSockJSClient(baseUrl).catch(err => {
 //   throw new Error(err);
 // });
 // const manager = await Manager.New(ctx, client, slobsToken);
 // await manager.init();
-
 
 const obs = new OBSWebSocket();
 const connectionString = `ws://${process.env.OBS_HOST}:${process.env.OBS_PORT}`;
@@ -63,7 +62,7 @@ const bus = await NatsClient();
 
 // listen on the eventbus for api calls
 (async () => {
-  for await (const msg of bus.subscribe('slobs')) {
+  for await (const msg of bus.subscribe("slobs")) {
     natsMessageHandler<SlobsRequestMessage>(msg, slobsMessageHander);
   }
 })();
@@ -72,25 +71,18 @@ const bus = await NatsClient();
 app.use(express.json());
 
 // Express middleware
-app.use(
-  viteDevServer
-    ? viteDevServer.middlewares
-    : express.static("build/client")
-);
+app.use(viteDevServer ? viteDevServer.middlewares : express.static("build/client"));
 app.use(express.static("public"));
 
 const build = viteDevServer
-  ? () =>
-    viteDevServer.ssrLoadModule(
-      "virtual:remix/server-build"
-    )
+  ? () => viteDevServer.ssrLoadModule("virtual:remix/server-build")
   : await import("./build/server/index.js");
 
 // sls stats
-app.post('/sls/stat', (req, res) => {
-  logger.info('streamlabs stat received', { body: req.body });
+app.post("/sls/stat", (req, res) => {
+  logger.info("streamlabs stat received", { body: req.body });
   return res.sendStatus(200);
-})
+});
 
 // Remix request handler
 app.all(
@@ -103,18 +95,17 @@ app.all(
 
 // Start server
 app.listen(port, () => {
-  logger.info('express server listening', { port });
+  logger.info("express server listening", { port });
 });
 
-
 async function slobsMessageHander(command: string, args: Record<string, string>) {
-  logger.info('received command', { command });
+  logger.info("received command", { command });
 
-  if (command === 'alert_message') {
+  if (command === "alert_message") {
     await db.transact(
       db.tx.messages[id()].update({
         ...args,
-        type: 'alert_message',
+        type: "alert_message",
         done: false,
         createdAt: Date.now(),
         woofx3Key: process.env.WOOFX3_KEY,
@@ -122,7 +113,7 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
     );
   }
 
-  if (command === 'count') {
+  if (command === "count") {
     const countId = args.id;
 
     const query = await db.query({
@@ -130,17 +121,17 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
         $: {
           where: {
             id: countId,
-          }
-        }
-      }
-    })
+          },
+        },
+      },
+    });
 
     if (!query) {
-      logger.error('count not found', { countId });
+      logger.error("count not found", { countId });
       return;
     }
 
-    logger.info('count loaded', { count: query.counts[0], countId });
+    logger.info("count loaded", { count: query.counts[0], countId });
 
     let newCount = query.counts[0].count;
 
@@ -150,15 +141,14 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
       newCount += args.value;
     }
 
-
     await db.transact(
       db.tx.counts[countId].update({
         count: newCount,
       })
-    )
+    );
   }
 
-  if (command == 'scene_change') {
+  if (command == "scene_change") {
     const { sceneName } = args;
 
     const scene = manager.findScene(sceneName);
@@ -170,29 +160,29 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
     await manager.switchScene(scene.name);
   }
 
-  if (command == 'source_change') {
+  if (command == "source_change") {
     const { sourceName, value } = args;
-    logger.info('changing source', { sourceName, value });
+    logger.info("changing source", { sourceName, value });
 
     const currentScene = await manager.getActiveScene();
-    const camScene = manager.findScene('[NS] Main Cam');
+    const camScene = manager.findScene("[NS] Main Cam");
 
     if (!currentScene) {
-      logger.error('no current scene found');
+      logger.error("no current scene found");
       return;
     }
 
     const sourceMap = {
-      'cams': { scene: currentScene, source: '[NS] Main Cam' },
-      'maincam': { scene: camScene, source: 'main cam' },
-      'insta': { scene: camScene, source: 'insta360' },
-      'mobile': { scene: camScene, source: 'Restreamer RTMP' },
-    }
+      cams: { scene: currentScene, source: "[NS] Main Cam" },
+      maincam: { scene: camScene, source: "main cam" },
+      insta: { scene: camScene, source: "insta360" },
+      mobile: { scene: camScene, source: "Restreamer RTMP" },
+    };
 
     const sourceObj = sourceMap[sourceName];
 
     if (!sourceObj) {
-      logger.error('no source mapping found', { sourceName });
+      logger.error("no source mapping found", { sourceName });
       return;
     }
 
@@ -201,18 +191,18 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
     const src = scene.findSource(source);
 
     if (!src) {
-      logger.error('no source found', { source });
+      logger.error("no source found", { source });
       return;
     }
 
-    if (value === 'on') {
+    if (value === "on") {
       return src.showSource();
     }
 
     return src.hideSource();
   }
 
-  if (command == 'source_blur') {
+  if (command == "source_blur") {
     const { sceneName, sourceName, value } = args;
 
     const scene = manager.findScene(sceneName);
@@ -227,29 +217,29 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
       return;
     }
 
-    source.setAnimatedFilterValue('Composite Blur', 'radius', +value, {
+    source.setAnimatedFilterValue("Composite Blur", "radius", +value, {
       durationMs: 2000,
     });
   }
 
-  if (command == 'paint') {
+  if (command == "paint") {
     const { action, x, y, xlength, ylength, user, color } = args;
 
     // get user game settings
     const key = `game::paint::user::${user}`;
     const userSettings = inMemoryStorageKV[key];
 
-    if(action == 'pencolor') {
+    if (action == "pencolor") {
       inMemoryStorageKV[key] = {
-        pen: color
-      }
+        pen: color,
+      };
       return;
     }
 
     // get user pen color, else default black
-    const userPenColor = userSettings?.pen ?? 'black';
+    const userPenColor = userSettings?.pen ?? "black";
 
-    if (action == 'draw') {
+    if (action == "draw") {
       await db.transact(
         db.tx.game[id()].update({
           row: x,
@@ -257,46 +247,46 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
           xlength,
           ylength,
           color: userPenColor,
-          done: false
+          done: false,
         })
-      )
+      );
     }
   }
 
-  if (command == 'setTime') {
-    const { timerId, valueInSeconds } = args; 
+  if (command == "setTime") {
+    const { timerId, valueInSeconds } = args;
 
     let now = new Date();
 
-    now.setTime(now.getTime() + (valueInSeconds * 1000));
+    now.setTime(now.getTime() + valueInSeconds * 1000);
 
-    logger.info('updating timer', { expiration: now.toISOString(), timerId });
+    logger.info("updating timer", { expiration: now.toISOString(), timerId });
     try {
       await db.transact(
         db.tx.timers[timerId].update({
           expirationDate: now,
         })
       );
-    } catch(err) {
-      logger.error('failed to set timer', { body: err.body, err, timerId });
-    }   
+    } catch (err) {
+      logger.error("failed to set timer", { body: err.body, err, timerId });
+    }
   }
 
-  if (command == 'updateTime') {
-    const { timerId, valueInSeconds } = args; 
+  if (command == "updateTime") {
+    const { timerId, valueInSeconds } = args;
 
     const query = await db.query({
       timers: {
         $: {
           where: {
             id: timerId,
-          }
-        }
-      }
-    })
+          },
+        },
+      },
+    });
 
     if (!query) {
-      logger.error('timer not found', { timerId });
+      logger.error("timer not found", { timerId });
       return;
     }
 
@@ -304,31 +294,30 @@ async function slobsMessageHander(command: string, args: Record<string, string>)
 
     let newDate = new Date(newExpiration);
 
-    newDate.setTime(newDate.getTime() + (valueInSeconds * 1000));
+    newDate.setTime(newDate.getTime() + valueInSeconds * 1000);
 
-    logger.info('updating timer', { expiration: newDate.toISOString(), timerId });
+    logger.info("updating timer", { expiration: newDate.toISOString(), timerId });
     try {
       await db.transact(
         db.tx.timers[timerId].update({
           expirationDate: newDate,
         })
       );
-    } catch(err) {
-      logger.error('failed to update timer', { body: err.body, err, timerId });
-    }    
+    } catch (err) {
+      logger.error("failed to update timer", { body: err.body, err, timerId });
+    }
   }
 }
-
 
 function makeSockJSClient(sockJsURL: string): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const ws = new SockJS(sockJsURL);
     ws.onopen = () => {
       resolve(ws);
-    }
+    };
 
     ws.onerror = (err) => {
       reject(err);
-    }
-  })
-};
+    };
+  });
+}

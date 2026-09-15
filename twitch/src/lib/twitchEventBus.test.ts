@@ -169,7 +169,10 @@ describe("TwitchEventBus", () => {
     for (const sub of subs.slice(0, TwitchEventBus.expectedSubscriptionCount - 1)) {
       listener.emitSuccess(sub);
     }
-    listener.emitFailure(subs[TwitchEventBus.expectedSubscriptionCount - 1]!, new Error("Encountered HTTP status code 429: Too Many Requests"));
+    listener.emitFailure(
+      subs[TwitchEventBus.expectedSubscriptionCount - 1]!,
+      new Error("Encountered HTTP status code 429: Too Many Requests")
+    );
     await started;
 
     expect(bus.isReady()).toBe(false);

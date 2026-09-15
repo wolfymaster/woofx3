@@ -1,4 +1,4 @@
-use actix_web::{get, web::ServiceConfig, Responder};
+use actix_web::{Responder, get, web::ServiceConfig};
 
 #[get("/echo")]
 #[tracing::instrument(name = "GET /echo")]

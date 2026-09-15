@@ -9,13 +9,13 @@
 // `shared/common/golang/cloudevents/subjects.go`.
 
 export enum EventType {
-    StorageChanged = 'module.storage.changed',
+  StorageChanged = "module.storage.changed",
 }
 
 export interface StorageChanged {
-    moduleId: string;
-    key: string;
-    value: unknown;
-    previousValue?: unknown;
-    occurredAt: string;
+  moduleId: string;
+  key: string;
+  value: unknown;
+  previousValue?: unknown;
+  occurredAt: string;
 }

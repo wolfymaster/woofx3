@@ -1,9 +1,12 @@
-use actix_web::{get, web::{Data, Payload, ServiceConfig, Query}, HttpRequest, HttpResponse, Error, rt};
-use actix_web::http::header;
-use serde::Deserialize;
 use crate::types::AppContext;
-use crate::websocket::WebSocketSession;
 use crate::util::get_env_or_default;
+use crate::websocket::WebSocketSession;
+use actix_web::http::header;
+use actix_web::{
+    Error, HttpRequest, HttpResponse, get, rt,
+    web::{Data, Payload, Query, ServiceConfig},
+};
+use serde::Deserialize;
 
 #[derive(Deserialize)]
 struct WsQueryParams {
@@ -39,22 +42,23 @@ async fn websocket_handler(
     let expected_key = get_env_or_default("WOOFX3_BARKLOADER_KEY", "");
     if expected_key.is_empty() {
         tracing::warn!("WOOFX3_BARKLOADER_KEY not configured - rejecting WebSocket connection");
-        return Ok(HttpResponse::Unauthorized()
-            .body("Server not configured with authentication key"));
+        return Ok(
+            HttpResponse::Unauthorized().body("Server not configured with authentication key")
+        );
     }
 
     let token = match extract_token(&req, &query) {
         Some(t) => t,
         None => {
-            return Ok(HttpResponse::Unauthorized()
-                .body("Missing authentication token. Provide ?token=xxx or Authorization: Bearer xxx"));
+            return Ok(HttpResponse::Unauthorized().body(
+                "Missing authentication token. Provide ?token=xxx or Authorization: Bearer xxx",
+            ));
         }
     };
 
     if !validate_token(&token, &expected_key) {
         tracing::warn!("Invalid WebSocket authentication token");
-        return Ok(HttpResponse::Unauthorized()
-            .body("Invalid authentication token"));
+        return Ok(HttpResponse::Unauthorized().body("Invalid authentication token"));
     }
 
     let (res, session, stream) = actix_ws::handle(&req, stream)?;

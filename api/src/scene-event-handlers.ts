@@ -1,9 +1,4 @@
-import type {
-  SceneCreatedEvent,
-  SceneDeletedEvent,
-  SceneSnapshot,
-  SceneUpdatedEvent,
-} from "@woofx3/api/webhooks";
+import type { SceneCreatedEvent, SceneDeletedEvent, SceneSnapshot, SceneUpdatedEvent } from "@woofx3/api/webhooks";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
@@ -71,9 +66,7 @@ export interface ParsedSceneChange<T> {
   event: T | null;
 }
 
-export function parseSceneCreated(
-  ce: Record<string, unknown>
-): ParsedSceneChange<SceneCreatedEvent> {
+export function parseSceneCreated(ce: Record<string, unknown>): ParsedSceneChange<SceneCreatedEvent> {
   const row = readRow<RawSceneRow>(ce);
   const applicationId = pickFirst(row.ApplicationID, row.application_id);
   const clientId = asString(ce.client_id);
@@ -91,9 +84,7 @@ export function parseSceneCreated(
   };
 }
 
-export function parseSceneUpdated(
-  ce: Record<string, unknown>
-): ParsedSceneChange<SceneUpdatedEvent> {
+export function parseSceneUpdated(ce: Record<string, unknown>): ParsedSceneChange<SceneUpdatedEvent> {
   const row = readRow<RawSceneRow>(ce);
   const applicationId = pickFirst(row.ApplicationID, row.application_id);
   const clientId = asString(ce.client_id);
@@ -111,9 +102,7 @@ export function parseSceneUpdated(
   };
 }
 
-export function parseSceneDeleted(
-  ce: Record<string, unknown>
-): ParsedSceneChange<SceneDeletedEvent> {
+export function parseSceneDeleted(ce: Record<string, unknown>): ParsedSceneChange<SceneDeletedEvent> {
   const row = readRow<RawSceneRow>(ce);
   const applicationId = pickFirst(row.ApplicationID, row.application_id);
   const clientId = asString(ce.client_id);

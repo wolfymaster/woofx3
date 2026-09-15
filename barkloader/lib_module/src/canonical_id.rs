@@ -30,7 +30,7 @@
 //! path ever runs. The primitives are kept around as a safety net and as
 //! a convenience for future tooling (migrations, dev affordances).
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::fmt;
 
 /// The reserved separator between segments of a canonical id.
@@ -296,7 +296,10 @@ mod tests {
 
     #[test]
     fn slug_lowercases_and_replaces_specials() {
-        assert_eq!(slug("Channel subscribe").as_deref(), Some("channel_subscribe"));
+        assert_eq!(
+            slug("Channel subscribe").as_deref(),
+            Some("channel_subscribe")
+        );
         assert_eq!(
             slug("Channel: Cheer (rare!)").as_deref(),
             Some("channel_cheer_rare")
@@ -360,8 +363,12 @@ mod tests {
 
     #[test]
     fn canonical_id_displays_with_colon_separator() {
-        let cid = CanonicalId::new("twitch_platform", ResourceKind::Trigger, "channel_subscribe")
-            .expect("valid id");
+        let cid = CanonicalId::new(
+            "twitch_platform",
+            ResourceKind::Trigger,
+            "channel_subscribe",
+        )
+        .expect("valid id");
         assert_eq!(cid.to_string(), "twitch_platform:trigger:channel_subscribe");
     }
 
@@ -400,15 +407,13 @@ mod tests {
 
     #[test]
     fn resolve_fails_when_name_slug_empty() {
-        let err =
-            resolve_resource_segment(None, Some(":-)"), "trigger", "#0").unwrap_err();
+        let err = resolve_resource_segment(None, Some(":-)"), "trigger", "#0").unwrap_err();
         assert!(format!("{err}").contains("slug"));
     }
 
     #[test]
     fn resolve_fails_when_explicit_id_invalid() {
-        let err =
-            resolve_resource_segment(Some("bad:id"), Some("X"), "trigger", "#0").unwrap_err();
+        let err = resolve_resource_segment(Some("bad:id"), Some("X"), "trigger", "#0").unwrap_err();
         assert!(format!("{err}").contains("disallowed"));
     }
 
@@ -433,7 +438,9 @@ mod tests {
 
     #[test]
     fn detects_instance_canonical_form_open_kinds() {
-        assert!(looks_like_instance_canonical_id("counter:counter:death_count"));
+        assert!(looks_like_instance_canonical_id(
+            "counter:counter:death_count"
+        ));
         assert!(looks_like_instance_canonical_id("timer:race_clock:warmup"));
         assert!(looks_like_instance_canonical_id("polls:poll:lunch_choice"));
     }
