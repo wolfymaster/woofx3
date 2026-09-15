@@ -15,7 +15,7 @@
       return false;
     }
     const boot = value;
-    return boot.v === PROTOCOL_VERSION && typeof boot.nonce === "string" && boot.nonce.length > 0 && typeof boot.instanceId === "string" && boot.instanceId.length > 0 && typeof boot.moduleId === "string" && boot.moduleId.length > 0 && (boot.widgetCanonicalId === undefined || typeof boot.widgetCanonicalId === "string") && typeof boot.settings === "object" && boot.settings !== null && Array.isArray(boot.capabilities) && typeof boot.resourceBaseUrl === "string" && boot.resourceBaseUrl.length > 0;
+    return boot.v === PROTOCOL_VERSION && typeof boot.nonce === "string" && boot.nonce.length > 0 && typeof boot.instanceId === "string" && boot.instanceId.length > 0 && typeof boot.moduleId === "string" && boot.moduleId.length > 0 && (boot.widgetCanonicalId === undefined || typeof boot.widgetCanonicalId === "string") && (boot.surface === "scene" || boot.surface === "alert") && typeof boot.settings === "object" && boot.settings !== null && Array.isArray(boot.capabilities) && typeof boot.resourceBaseUrl === "string" && boot.resourceBaseUrl.length > 0;
   }
 
   // src/widget-host-shim.ts
@@ -232,6 +232,7 @@
     };
     const host = {
       settings: Object.freeze({ ...boot.settings }),
+      surface: boot.surface,
       moduleId: boot.moduleId,
       instanceId: boot.instanceId,
       storage,

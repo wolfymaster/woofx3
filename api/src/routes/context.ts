@@ -38,7 +38,8 @@ export interface ApiOptions {
   functions: FunctionInvoker | null;
   barkloaderUrl: string;
   streamwareUrl?: string;
-  overlayPublicUrl?: string;
+  sceneManagerUrl: string;
+  apiUrl: string;
   logger: SharedLogger;
 }
 
@@ -59,7 +60,8 @@ export class ApiRouteHost extends RpcTarget {
   protected applicationId: string | null = null;
   protected barkloaderUrl: string;
   protected streamwareUrl: string;
-  protected overlayPublicUrl: string;
+  protected sceneManagerUrl: string;
+  protected apiUrl: string;
   protected logger: SharedLogger;
 
   protected getBarkloaderBaseUrl(): string {
@@ -254,12 +256,16 @@ export class ApiRouteHost extends RpcTarget {
     if (!opts.barkloaderUrl) {
       throw new Error("ApiOptions.barkloaderUrl is required");
     }
+    if (!opts.sceneManagerUrl) {
+      throw new Error("ApiOptions.sceneManagerUrl is required");
+    }
     this.db = opts.db;
     this.nats = opts.nats;
     this.functions = opts.functions;
     this.barkloaderUrl = opts.barkloaderUrl;
     this.streamwareUrl = opts.streamwareUrl ?? "";
-    this.overlayPublicUrl = opts.overlayPublicUrl ?? "http://127.0.0.1:9100";
+    this.sceneManagerUrl = opts.sceneManagerUrl;
+    this.apiUrl = opts.apiUrl;
     this.logger = opts.logger;
   }
 }

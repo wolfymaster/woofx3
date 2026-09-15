@@ -5,6 +5,13 @@ import type { DeliveryStore } from "./events/delivery-store";
 import { handleStatusReport } from "./events/handlers";
 import { handleLegacySlobsCommand } from "./obs/commands";
 import type Manager from "./obs/manager";
+import {
+  ALERT_EVENT_TYPE,
+  type AlertDelivery,
+  alertTarget,
+  alertWidgetsNamed,
+  parseAlertLayout,
+} from "./scene/alert-layout";
 import type { OverlayHost } from "./scene/scene-host";
 import type { OverlayTokenResolver } from "./scene/token-resolver";
 
@@ -19,6 +26,7 @@ interface InitArgs {
 }
 
 interface AlertEnvelope {
+  id?: unknown;
   applicationId?: unknown;
   parameters?: unknown;
   event?: { type?: unknown; source?: unknown; time?: unknown; data?: unknown };
@@ -74,14 +82,35 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       return;
     }
     const applicationId = typeof raw.applicationId === "string" ? raw.applicationId : "";
-    const eventType = typeof raw.event?.type === "string" ? raw.event.type : "";
-    if (!applicationId || !eventType) {
-      logger.warn("ui.notify.alert: missing applicationId or event.type; dropping");
+    const alertId = typeof raw.id === "string" ? raw.id : "";
+    if (!applicationId || !alertId) {
+      logger.warn("ui.notify.alert: missing applicationId or id; dropping");
       return;
     }
-    const parameters = (raw.parameters as Record<string, unknown> | undefined) ?? {};
-    const value = { ...(raw.event?.data as Record<string, unknown> | undefined), parameters };
-    await fanOutToConnectedScenes({ applicationId, type: eventType, key: eventType, value }, { host, deliveryStore, logger });
+    const parameters =
+      typeof raw.parameters === "object" && raw.parameters !== null ? (raw.parameters as Record<string, unknown>) : {};
+    const parsed = parseAlertLayout(parameters.layout, await host.loadWidgetCatalog());
+    if (!parsed) {
+      logger.warn("ui.notify.alert: parameters.layout is missing or malformed; dropping", { alertId });
+      return;
+    }
+    if (parsed.rejected.length > 0) {
+      logger.warn("ui.notify.alert: dropped layout widgets that cannot play in an alert", {
+        alertId,
+        rejected: parsed.rejected,
+      });
+    }
+    if (parsed.layout.widgets.length === 0) {
+      logger.warn("ui.notify.alert: layout has no widgets to play; dropping", { alertId });
+      return;
+    }
+    const eventType = typeof raw.event?.type === "string" ? raw.event.type : "";
+    const delivery: AlertDelivery = {
+      alertId,
+      layout: parsed.layout,
+      event: eventType ? { type: eventType, data: raw.event?.data ?? null } : null,
+    };
+    await fanOutAlert({ applicationId, target: alertTarget(parameters), delivery }, { host, deliveryStore, logger });
   });
   logger.info("Subscribed to ui.notify.alert");
 
@@ -144,14 +173,13 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
 
 /**
  * Fan-out targeting: for every scene currently holding an open SSE
- * connection, load its live widget instances and match `type` against
- * each instance's `acceptedEvents`. Only scenes matching the event's
- * `applicationId` and with at least one matching instance get a
- * `recordEvent` call — no-op for everyone else, cheaply (no DB write
- * for a scene with nothing listening).
+ * connection, deliver the alert to each alert widget answering to the
+ * step's target name. Only running scenes are considered, which is what
+ * makes a scene nobody has open behave as disabled. A scene of another
+ * application, or with no alert widget of that name, gets no DB write.
  */
-async function fanOutToConnectedScenes(
-  event: { applicationId: string; type: string; key: string; value: unknown },
+async function fanOutAlert(
+  alert: { applicationId: string; target: string; delivery: AlertDelivery },
   deps: { host: OverlayHost; deliveryStore: DeliveryStore; logger: Logger }
 ): Promise<void> {
   const { host, deliveryStore, logger } = deps;
@@ -159,40 +187,38 @@ async function fanOutToConnectedScenes(
   let recorded = 0;
   for (const sceneId of connectedSceneIds) {
     const state = await host.loadSceneById(sceneId);
-    if (!state || state.applicationId !== event.applicationId) {
+    if (!state || state.applicationId !== alert.applicationId) {
       continue;
     }
-    const targetInstanceIds = state.instances
-      .filter((instance) => instance.acceptedEvents.includes(event.type))
-      .map((instance) => instance.id);
+    const targetInstanceIds = alertWidgetsNamed(state.instances, alert.target).map((instance) => instance.id);
     if (targetInstanceIds.length === 0) {
       continue;
     }
     const eventId = await deliveryStore.recordEvent({
       sceneId,
-      applicationId: event.applicationId,
-      type: event.type,
-      key: event.key,
-      value: event.value,
+      applicationId: alert.applicationId,
+      type: ALERT_EVENT_TYPE,
+      key: alert.delivery.alertId,
+      value: alert.delivery,
       targetInstanceIds,
     });
     if (!eventId) {
-      logger.warn("fanOutToConnectedScenes: recordEvent failed", { sceneId, type: event.type });
+      logger.warn("fanOutAlert: recordEvent failed", { sceneId, alertId: alert.delivery.alertId });
       continue;
     }
     recorded += 1;
   }
 
-  // An event that matches nothing is the single easiest failure to miss
-  // here: it looks identical to "no event was ever published" from the
-  // browser, and every step before this one succeeded. Say so once,
-  // with the vocabulary needed to spot a type mismatch (the engine's
-  // `event.type` vs each instance's `acceptedEvents`). Alert volume is
-  // low enough that one line per undelivered event is not spam.
+  // An alert that reaches nothing looks, from the browser, identical to
+  // one that was never published, and every step before this one
+  // succeeded. Say so once, naming the target so a misspelled alert
+  // widget name is easy to spot. Alert volume is low enough that one
+  // line per undelivered alert is not spam.
   if (recorded === 0) {
-    logger.warn("alert matched no connected scene instance; nothing delivered", {
-      type: event.type,
-      applicationId: event.applicationId,
+    logger.warn("alert matched no alert widget on a running scene; nothing delivered", {
+      target: alert.target,
+      alertId: alert.delivery.alertId,
+      applicationId: alert.applicationId,
       connectedScenes: connectedSceneIds.length,
     });
   }

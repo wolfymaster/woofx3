@@ -20,15 +20,8 @@ export interface ApiConfig {
    * streamware default port) — override via `STREAMWARE_URL` env.
    */
   streamwareUrl: string;
-  /**
-   * Public base URL the api's overlay gateway is reachable at. Used to
-   * compose the `url` returned by mintOverlayToken / rotateOverlayToken /
-   * listOverlayTokens (`${overlayPublicUrl}/overlay/{token}/`). Defaults
-   * to the api's own loopback address — override via
-   * `WOOFX3_OVERLAY_PUBLIC_URL` when the api sits behind a tunnel or
-   * reverse proxy.
-   */
-  overlayPublicUrl: string;
+  sceneManagerUrl: string;
+  apiUrl: string;
   nats: {
     url: string;
     name: string;
@@ -51,8 +44,10 @@ export const ApiEnvSchema = z
     barkloaderKey: z.string().optional(),
     woofx3StreamwareUrl: z.string().optional(),
     streamwareUrl: z.string().optional(),
-    woofx3OverlayPublicUrl: z.string().optional(),
-    overlayPublicUrl: z.string().optional(),
+    woofx3SceneManagerUrl: z.string().optional(),
+    sceneManagerUrl: z.string().optional(),
+    woofx3ApiUrl: z.string().optional(),
+    apiUrl: z.string().optional(),
     woofx3MessagebusUrl: z.string().optional(),
     messagebusUrl: z.string().optional(),
     woofx3MessagebusJwt: z.string().optional(),
@@ -95,12 +90,14 @@ export function loadConfig(): ApiConfig {
     config.woofx3StreamwareUrl ?? config.streamwareUrl ?? "http://127.0.0.1:9101",
   );
 
-  const overlayPublicUrl = String(
-    config.woofx3OverlayPublicUrl ?? config.overlayPublicUrl ?? `http://127.0.0.1:${port}`,
-  );
+  const sceneManagerUrl = String(config.woofx3SceneManagerUrl ?? config.sceneManagerUrl ?? "");
+  const apiUrl = String(config.woofx3ApiUrl ?? config.apiUrl ?? `http://127.0.0.1:${port}`);
 
   if (!databaseProxyUrl) {
     throw new Error("databaseProxyUrl (or DATABASE_PROXY_URL) is required");
+  }
+  if (!sceneManagerUrl) {
+    throw new Error("sceneManagerUrl (WOOFX3_SCENE_MANAGER_URL) is required");
   }
   if (!barkloaderWsUrl) {
     throw new Error("barkloaderWsUrl (or WOOFX3_BARKLOADER_WS_URL) is required");
@@ -112,7 +109,8 @@ export function loadConfig(): ApiConfig {
   // Tiger Style: fail fast at startup on malformed URLs rather than
   // composing broken overlay URLs or proxying into the void at runtime.
   assertValidHttpUrl("streamwareUrl (WOOFX3_STREAMWARE_URL)", streamwareUrl);
-  assertValidHttpUrl("overlayPublicUrl (WOOFX3_OVERLAY_PUBLIC_URL)", overlayPublicUrl);
+  assertValidHttpUrl("sceneManagerUrl (WOOFX3_SCENE_MANAGER_URL)", sceneManagerUrl);
+  assertValidHttpUrl("apiUrl (WOOFX3_API_URL)", apiUrl);
 
   const messageBusUrl = String(config.woofx3MessagebusUrl ?? config.messagebusUrl ?? "nats://localhost:4222");
   const messageBusJwt =
@@ -135,7 +133,8 @@ export function loadConfig(): ApiConfig {
     barkloaderWsUrl,
     barkloaderKey,
     streamwareUrl,
-    overlayPublicUrl,
+    sceneManagerUrl,
+    apiUrl,
     rootDir,
     nats: {
       url: messageBusUrl,

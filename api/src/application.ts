@@ -113,7 +113,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       functions,
       barkloaderUrl: config.barkloaderUrl,
       streamwareUrl: config.streamwareUrl,
-      overlayPublicUrl: config.overlayPublicUrl,
+      sceneManagerUrl: config.sceneManagerUrl,
+      apiUrl: config.apiUrl,
       logger,
     });
 

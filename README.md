@@ -231,7 +231,7 @@ or any mix.
 | **`actions`** | Workflow-step actions that resolve to either a built-in or a function call (`call: "#func handler_id"`). |
 | **`workflows`** | Bundled workflows (trigger + steps) that ship with the module and run on the workflow engine. |
 | **`commands`** | Chat commands matched by `prefix` / `exact` / `regex` and routed to a workflow or function, optionally gated by `requiredRole`. |
-| **`widgets`** | Browser-source UI snippets with a `settingsSchema` for the host UI and a list of `acceptedEvents` they subscribe to. |
+| **`widgets`** | Browser-source UI snippets with a `settingsSchema` for the host UI and the `surfaces` they can be placed on: scenes, alert layouts, or both. |
 | **`overlays`** | Full-screen browser-source HTML for OBS. |
 
 Only `id` and `name` are required at the top level. Anything referenced by a
@@ -349,7 +349,7 @@ Barkloader is the runtime, but a module touches several other services:
 | **Trigger declared** | `db` records it via Twirp `RegisterTrigger`; the workflow engine subscribes to the matching bus subject and routes events to bundled or downstream workflows. |
 | **Workflow step calls a function** | The workflow engine resolves the `#func` action to a barkloader WebSocket invoke (`module/function`) and forwards args. |
 | **Chat command matches** | `woofwoofwoof` matches the message against the module's `commands[]` and routes to either a workflow or a function invoke. |
-| **Widget / overlay loads** | Stored under `modules/{id}/widgets/...` or `overlays/...` and served as a browser source in OBS; widgets subscribe to their declared `acceptedEvents` over the bus. |
+| **Widget / overlay loads** | Stored under `modules/{id}/widgets/...` or `overlays/...` and served as a browser source in OBS; widgets in an alert layout play when an alert reaches their scene's alert widget. |
 | **Module needs persistence** | A separate in-process `StorageClient` (gRPC to the `db` proxy's BadgerDB store) is exposed to modules. Keys are not pre-declared in the manifest — modules write to the KV namespace at runtime. |
 
 A few manifest sections — `actions`, `commands`, and `workflows` — are

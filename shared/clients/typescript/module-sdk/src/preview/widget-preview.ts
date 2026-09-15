@@ -29,6 +29,8 @@ export interface MockHostOptions {
   instanceId?: string;
   /** Frozen settings object surfaced as `widgetHost.settings`. */
   settings?: Record<string, unknown>;
+  /** Where the mocked widget runs; defaults to a scene. */
+  surface?: WidgetHost["surface"];
   /** Initial storage cache: `{ "<moduleId>:<key>": value }` or
    *  `{ "<key>": value }` (the moduleId from `opts.moduleId` is
    *  prepended automatically when the key has no `:`). */
@@ -147,6 +149,7 @@ export function createMockHost(opts: MockHostOptions = {}): MockHostController {
   }
 
   const host: WidgetHost = {
+    surface: opts.surface ?? "scene",
     moduleId,
     instanceId,
     settings,

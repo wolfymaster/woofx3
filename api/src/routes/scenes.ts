@@ -42,7 +42,8 @@ export const scenesRoutes = routeModule({
       directory: string;
       alertTypes: string[];
       settingsSchema: string;
-      surface: string;
+      surfaces: string[];
+      hostsSurface: string;
       createdByType: string;
       createdByRef: string;
     }>;
@@ -57,7 +58,8 @@ export const scenesRoutes = routeModule({
         directory: w.directory,
         alertTypes: w.alertTypes ?? [],
         settingsSchema: w.settingsSchema ?? "[]",
-        surface: w.surface ?? "scene",
+        surfaces: w.surfaces ?? [],
+        hostsSurface: w.hostsSurface ?? "",
         createdByType: w.createdByType ?? "",
         createdByRef: w.createdByRef ?? "",
       })),

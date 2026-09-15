@@ -37,7 +37,6 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { OverlayHost } = await import("./scene/scene-host");
     const { FrameAssembler, HttpBarkloaderFrameClient } = await import("./scene/frame-assembler");
     const { SessionTokenService } = await import("./scene/session-token");
-    const { PublicUrlResolver } = await import("./scene/public-url-resolver");
     const { DeliveryStore } = await import("./events/delivery-store");
     const { createMessageBus } = await import("@woofx3/nats");
     const { connectObs } = await import("./obs/manager");
@@ -53,16 +52,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const resolver = new OverlayTokenResolver(db, ctx.logger);
     const host = new OverlayHost(resolver, db, ctx.logger);
     const barkloader = new HttpBarkloaderFrameClient(ctx.runtimeConfig.barkloaderUrl, ctx.logger);
-    // Default (env/config) fallback for the scene.publicUrl DB setting —
-    // used only when the setting is unset or unreachable.
-    const selfPublicUrlDefault =
-      ctx.runtimeConfig.publicUrl || `http://${ctx.runtimeConfig.bindHost}:${ctx.runtimeConfig.port}`;
-    const selfPublicUrlResolver = new PublicUrlResolver(db, selfPublicUrlDefault, ctx.logger);
-    const frameAssembler = new FrameAssembler(host, ctx.logger, {
-      barkloader,
-      publicDir: ctx.runtimeConfig.publicDir,
-      selfPublicUrlResolver,
-    });
+    const frameAssembler = new FrameAssembler(host, ctx.logger, { barkloader });
     const sessionTokens = new SessionTokenService(ctx.runtimeConfig.tokenSecret);
 
     const deliveryStore = new DeliveryStore(db, ctx.logger);

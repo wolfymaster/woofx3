@@ -663,20 +663,21 @@ pub struct Widget {
     pub created_by_type: ::prost::alloc::string::String,
     #[prost(string, tag="10")]
     pub created_by_ref: ::prost::alloc::string::String,
-    #[prost(string, tag="11")]
-    pub surface: ::prost::alloc::string::String,
     /// Entry document path relative to the widget asset root (the
     /// prefix-stripped repository keys under `directory`). Empty means
     /// the frame assembler falls back to "index.html". Must resolve to a
     /// file inside the widget's assets.
     #[prost(string, tag="12")]
     pub entry: ::prost::alloc::string::String,
-    /// CloudEvent types (e.g. "channel.follow") the scene fan-out delivers to
-    /// every placement of this widget. Held on the definition rather than on
-    /// placements so a module update that changes them reaches every scene
-    /// without rewriting any.
-    #[prost(string, repeated, tag="13")]
-    pub accepted_events: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Where this widget may be placed: "scene", "alert", or both. An alert
+    /// layout may only place widgets that list "alert".
+    #[prost(string, repeated, tag="14")]
+    pub surfaces: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The surface this widget's placements host, or empty. An "alert" widget
+    /// on a scene is the area that plays alert layouts; it has no frame of its
+    /// own.
+    #[prost(string, tag="15")]
+    pub hosts_surface: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WidgetInput {
@@ -692,14 +693,14 @@ pub struct WidgetInput {
     pub alert_types: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, tag="6")]
     pub settings_schema: ::prost::alloc::string::String,
-    #[prost(string, tag="7")]
-    pub surface: ::prost::alloc::string::String,
     /// Entry path relative to the widget asset root; empty means
     /// index.html fallback.
     #[prost(string, tag="8")]
     pub entry: ::prost::alloc::string::String,
-    #[prost(string, repeated, tag="9")]
-    pub accepted_events: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag="10")]
+    pub surfaces: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, tag="11")]
+    pub hosts_surface: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterWidgetsRequest {

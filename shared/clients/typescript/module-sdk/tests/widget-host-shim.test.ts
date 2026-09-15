@@ -26,6 +26,7 @@ function makeBoot(overrides: Partial<WidgetBootPayload> = {}): WidgetBootPayload
     instanceId: "inst-1",
     moduleId: "mod-1",
     widgetCanonicalId: "mod-1:widget:w1",
+    surface: "scene",
     settings: { label: "watchers", accent: "#fff" },
     capabilities: ["storage", "events", "status"],
     resourceBaseUrl: "https://cdn.example.test/modules/mod-1/abc123/widgets/w1/",
@@ -87,7 +88,7 @@ function fromParent(body: Record<string, unknown>): Record<string, unknown> {
 }
 
 function initMsg(): Record<string, unknown> {
-  return fromParent({ type: "init", settings: {}, capabilities: [], acceptedEvents: [] });
+  return fromParent({ type: "init", settings: {}, capabilities: [] });
 }
 
 function install(h: Harness) {
@@ -279,7 +280,6 @@ describe("installWidgetHostShim — events", () => {
       source: "twitch",
       time: "2026-06-12T00:00:00Z",
       data: { userName: "wolfy" },
-      parameters: { text: "thanks!" },
       eventId: "evt-1",
       ...overrides,
     };

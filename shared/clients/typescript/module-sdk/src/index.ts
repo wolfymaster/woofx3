@@ -19,6 +19,7 @@ export type {
   WidgetHost,
   WidgetHostStorage,
   WidgetStatusReport,
+  WidgetSurface,
 } from "./widget-host";
 
 export type {

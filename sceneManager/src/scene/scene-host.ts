@@ -1,6 +1,7 @@
 import type { Logger } from "@woofx3/common/runtime";
 import type * as scene from "@woofx3/db/scene.pb";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
+import type * as scene_event from "@woofx3/db/scene_event.pb";
 import type { OverlayTokenResolver } from "./token-resolver";
 import { maskToken } from "./token-resolver";
 
@@ -29,7 +30,12 @@ export interface OverlayWidgetInstance {
   manifestId: string;
   position: OverlayWidgetPosition;
   settings: Record<string, unknown>;
-  acceptedEvents: string[];
+  /**
+   * The surface this placement hosts, or "" for an ordinary widget. An
+   * "alert" placement is an area that plays alert layouts: the page draws it,
+   * and it has no frame of its own. Taken from the definition.
+   */
+  hostsSurface: string;
   frameUrl: string;
   /**
    * False when this placement's `widgetCanonicalId` matches no widget in the
@@ -66,13 +72,15 @@ export interface OverlayWidgetDefinition {
   manifestId: string;
   /** Entry document relative to the widget asset root; "" -> index.html. */
   entry: string;
-  acceptedEvents: string[];
+  surfaces: string[];
+  hostsSurface: string;
 }
 
 /** The slice of DbClient the scene host depends on (injectable for tests). */
 export interface OverlayHostDb {
   getScene(req: scene.GetSceneRequest): Promise<scene.SceneResponse>;
   listWidgets(req: module_widget.ListWidgetsRequest): Promise<module_widget.ListWidgetsResponse>;
+  getSceneEvent(req: scene_event.GetSceneEventRequest): Promise<scene_event.SceneEventResponse>;
 }
 
 export interface OverlayHostOptions {
@@ -176,17 +184,16 @@ export class OverlayHost {
 
   /**
    * Resolve each placement against the widget catalog: whether its widget
-   * still exists, and which event types it accepts. Says so once per
-   * unresolvable placement.
+   * still exists, and which surface it hosts. Says so once per unresolvable
+   * placement.
    *
    * Checked on load rather than at render time because this is the only point
    * that sees the whole scene: one warning naming every dead placement is
    * actionable, where a per-frame miss is a line someone has to correlate.
    *
-   * Accepted events come from the definition, never the placement. A placement
-   * is a reference; a copy stored on it would freeze the event names at the
-   * moment the widget was placed, and a module update that changes them would
-   * have to rewrite every scene to take effect.
+   * The hosted surface comes from the definition, never the placement: a
+   * placement is a reference, and a copy stored on it would freeze what the
+   * widget was at the moment it was placed.
    */
   private async resolveInstances(
     instances: OverlayWidgetInstance[],
@@ -208,7 +215,7 @@ export class OverlayHost {
       const definition = byCanonicalId.get(instance.widgetCanonicalId);
       return {
         ...instance,
-        acceptedEvents: definition?.acceptedEvents ?? [],
+        hostsSurface: definition?.hostsSurface ?? "",
         resolved: definition !== undefined,
       };
     });
@@ -316,7 +323,7 @@ export class OverlayHost {
           moduleId: w.moduleId,
           position: w.position,
           settings: w.settings,
-          acceptedEvents: w.acceptedEvents,
+          hostsSurface: w.hostsSurface,
           frameUrl: w.frameUrl,
           resolved: w.resolved,
         })),
@@ -338,7 +345,39 @@ export class OverlayHost {
     return rows.find((r) => r.moduleKey === moduleKey && r.manifestId === manifestId) ?? null;
   }
 
-  private async loadWidgetCatalog(): Promise<OverlayWidgetDefinition[]> {
+  /**
+   * A scene event, when it belongs to `sceneId`. Callers hold a session for
+   * one scene; checking ownership here keeps an event id from another scene
+   * from reading across.
+   */
+  async loadSceneEvent(sceneId: string, eventId: string): Promise<{ type: string; value: unknown } | null> {
+    if (!this.db) {
+      return null;
+    }
+    let response: scene_event.SceneEventResponse;
+    try {
+      response = await this.db.getSceneEvent({ id: eventId });
+    } catch (err) {
+      this.logger.warn("scene event fetch failed", {
+        sceneId,
+        eventId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
+    const event = response.status?.code === "OK" ? response.sceneEvent : undefined;
+    if (!event || event.sceneId !== sceneId) {
+      return null;
+    }
+    try {
+      return { type: event.type, value: JSON.parse(event.value) };
+    } catch {
+      return null;
+    }
+  }
+
+  /** The widget catalog, cached for the TTL. Empty when the lookup fails. */
+  async loadWidgetCatalog(): Promise<OverlayWidgetDefinition[]> {
     if (this.widgetCache && this.widgetCache.expiresAt > this.now()) {
       return this.widgetCache.rows;
     }
@@ -351,7 +390,8 @@ export class OverlayHost {
         moduleKey: w.moduleId,
         manifestId: w.manifestId,
         entry: w.entry ?? "",
-        acceptedEvents: w.acceptedEvents ?? [],
+        surfaces: w.surfaces ?? [],
+        hostsSurface: w.hostsSurface ?? "",
       }));
       this.widgetCache = { rows, expiresAt: this.now() + this.widgetCacheTtlMs };
       return rows;
@@ -434,9 +474,9 @@ export class OverlayHost {
         w.settings && typeof w.settings === "object"
           ? (w.settings as Record<string, unknown>)
           : {},
-      // Placements carry no accepted events; `resolveInstances` takes them
-      // from the widget definition.
-      acceptedEvents: [],
+      // Placements carry none; `resolveInstances` takes it from the widget
+      // definition.
+      hostsSurface: "",
       frameUrl: `/scene/${encodeURIComponent(sceneId)}/widget/${encodeURIComponent(id)}`,
       // Assumed until the catalog says otherwise; `resolveInstances` is what
       // decides, since parsing alone cannot know what exists.
@@ -455,7 +495,7 @@ export function stableModuleKeyFrom(moduleKey: string): string {
   return colonIdx === -1 ? moduleKey : moduleKey.slice(0, colonIdx);
 }
 
-function normalizePosition(w: Record<string, unknown>): OverlayWidgetPosition {
+export function normalizePosition(w: Record<string, unknown>): OverlayWidgetPosition {
   const position = (w.position ?? {}) as Record<string, unknown>;
   const size = (w.size ?? {}) as Record<string, unknown>;
   const num = (v: unknown): number | undefined => (typeof v === "number" ? v : undefined);

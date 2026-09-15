@@ -13,7 +13,7 @@
 // carrying its `supportedVersions`. Unknown message `type`s are
 // ignored by both sides (forward compatibility).
 
-import type { WidgetEvent } from "./widget-host";
+import type { WidgetEvent, WidgetSurface } from "./widget-host";
 
 export const WIDGET_PROTOCOL = "woofx3.widget";
 export type WidgetProtocolName = typeof WIDGET_PROTOCOL;
@@ -45,6 +45,7 @@ export interface WidgetBootPayload {
   instanceId: string;
   moduleId: string;
   widgetCanonicalId?: string;
+  surface: WidgetSurface;
   settings: Record<string, unknown>;
   /** Host capability identifiers (e.g. "storage", "events", "status").
    *  Widgets may feature-detect on this; the set is open-ended. */
@@ -137,9 +138,9 @@ export interface EventQueueConfig {
 }
 
 /**
- * Open an event subscription. `types` optionally narrows beyond the
- * instance's `acceptedEvents`; when absent the host delivers every
- * accepted event. Deliveries arrive as `event.deliver` with the same
+ * Open an event subscription. `types` optionally narrows which event
+ * types are delivered; when absent the host delivers every event
+ * addressed to the instance. Deliveries arrive as `event.deliver` with the same
  * `subId`. `queue` registers this instance's dispatch policy with the
  * host's per-instance queue — this is the "widget registers itself
  * with a queue configuration" moment.
@@ -187,14 +188,12 @@ export interface WidgetStatusReportMessage extends WidgetProtocolEnvelope {
 /**
  * Handshake completion. `settings` / `capabilities` echo the boot
  * payload (boot is authoritative for the synchronous `host.settings`
- * surface); `acceptedEvents` is the instance's resolved event-type
- * allowlist for visibility on the widget side.
+ * surface).
  */
 export interface WidgetInitMessage extends WidgetProtocolEnvelope {
   type: "init";
   settings: Record<string, unknown>;
   capabilities: string[];
-  acceptedEvents: string[];
 }
 
 /** Handshake refusal (e.g. unsupported protocol version). Terminal:
@@ -328,6 +327,7 @@ export function isWidgetBootPayload(value: unknown): value is WidgetBootPayload 
     typeof boot.moduleId === "string" &&
     boot.moduleId.length > 0 &&
     (boot.widgetCanonicalId === undefined || typeof boot.widgetCanonicalId === "string") &&
+    (boot.surface === "scene" || boot.surface === "alert") &&
     typeof boot.settings === "object" &&
     boot.settings !== null &&
     Array.isArray(boot.capabilities) &&

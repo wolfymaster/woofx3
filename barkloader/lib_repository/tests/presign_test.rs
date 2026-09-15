@@ -1,4 +1,4 @@
-//! Upload-grant behavior for both storage backends.
+//! Upload and read grants for both storage backends.
 //!
 //! Presigning is pure local computation -- signing a URL never contacts
 //! S3 -- so these run offline against static credentials.
@@ -6,8 +6,8 @@
 use std::time::Duration;
 
 use lib_repository::{
-    FileRepository, FileRepositoryConfig, Repository, S3Repository, S3RepositoryConfig,
-    UploadEndpoint, UploadRequest,
+    FileRepository, FileRepositoryConfig, ReadEndpoint, Repository, S3Repository,
+    S3RepositoryConfig, UploadEndpoint, UploadRequest,
 };
 
 fn s3_config() -> S3RepositoryConfig {
@@ -149,4 +149,48 @@ async fn s3_presign_signature_is_bound_to_the_key() {
         .expect("presign b");
 
     assert_ne!(one, two, "a grant for one key must not be reusable for another");
+}
+
+#[tokio::test]
+async fn file_backend_reports_it_cannot_sign_reads() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let repo = FileRepository::new(FileRepositoryConfig {
+        destination: dir.path().to_path_buf(),
+    });
+
+    let endpoint = repo
+        .presign_read("modules/m1/abc123/assets/bell.mp3", Duration::from_secs(300))
+        .await
+        .expect("file backend must answer, not error");
+
+    assert_eq!(endpoint, ReadEndpoint::Unsupported);
+}
+
+#[tokio::test]
+async fn s3_backend_signs_a_get_url_for_the_prefixed_key() {
+    let mut config = s3_config();
+    config.prefix = Some("prod".to_string());
+    let repo = s3_repo(config).await;
+
+    let endpoint = repo
+        .presign_read("modules/m1/abc123/assets/bell.mp3", Duration::from_secs(600))
+        .await
+        .expect("presign");
+
+    let ReadEndpoint::Presigned { url } = endpoint else {
+        panic!("S3 backend must presign, got {endpoint:?}");
+    };
+    assert!(url.starts_with("https://"), "presigned url was {url}");
+    assert!(
+        url.contains("prod/modules/m1/abc123/assets/bell.mp3"),
+        "presigned key must go through full_key(): {url}"
+    );
+    assert!(
+        url.contains("X-Amz-Signature="),
+        "presigned url must carry a signature: {url}"
+    );
+    assert!(
+        url.contains("X-Amz-Expires=600"),
+        "presigned url must carry the requested TTL: {url}"
+    );
 }

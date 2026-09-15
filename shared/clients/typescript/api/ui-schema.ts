@@ -45,9 +45,23 @@ export const CONFIG_FIELD_TYPES = [
   "asset",
   "resource_ref",
   "button",
+  "layout",
 ] as const;
 
 export type ConfigFieldType = (typeof CONFIG_FIELD_TYPES)[number];
+
+/**
+ * The places a widget can be put. A `layout` field places widgets of one
+ * surface, and only widgets that list it. Mirrors `WIDGET_SURFACES` in
+ * barkloader's module_manifest.rs.
+ */
+export const WIDGET_SURFACES = ["scene", "alert"] as const;
+
+export type WidgetSurface = (typeof WIDGET_SURFACES)[number];
+
+export function isWidgetSurface(raw: unknown): raw is WidgetSurface {
+  return typeof raw === "string" && (WIDGET_SURFACES as readonly string[]).includes(raw);
+}
 
 export interface ConfigFieldOption {
   value: string;
@@ -63,7 +77,12 @@ export interface InternalConfigFieldSource {
   timeoutMs?: number;
 }
 
-export type ConfigFieldSource = { kind: "commands" } | InternalConfigFieldSource;
+/** The names of the alert widgets placed on the user's scenes. */
+export interface AlertWidgetsConfigFieldSource {
+  kind: "alertWidgets";
+}
+
+export type ConfigFieldSource = { kind: "commands" } | InternalConfigFieldSource | AlertWidgetsConfigFieldSource;
 
 export interface ConfigField {
   /** Stable field id; the key the collected value is stored under. */
@@ -84,6 +103,8 @@ export interface ConfigField {
   kinds?: string[];
   /** Required for `type: "resource_ref"` — which resource kind the picker lists. */
   resourceKind?: string;
+  /** Required for `type: "layout"` — whose widgets the layout places. */
+  surface?: WidgetSurface;
   /**
    * Present only on `type: "button"`, which collects no value and instead
    * fires a request: `{ kind: "internal", request: {...}, timeoutMs? }` or

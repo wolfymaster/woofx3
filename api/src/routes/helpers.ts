@@ -31,26 +31,13 @@ export function timestampToIso(ts: { seconds?: bigint; nanos?: number } | undefi
 }
 
 /**
- * Resolves the public base URL the api's overlay gateway is reachable at —
- * the `scene.publicUrl` engine setting when configured, otherwise the
- * service's own env-configured default (`overlayPublicUrl` / `WOOFX3_OVERLAY_
- * PUBLIC_URL`, see api/src/config.ts). Process-wide, not application-scoped —
- * this describes the deployment's own network topology, not anything
- * per-application. The single source every consumer (engine.ts's
- * getEngineInfo, overlay-tokens.ts, and — via getEngineInfo().overlayPublicUrl —
- * streamware/workflow/sceneManager's asset URL resolution) resolves
- * identically from.
- *
- * Renamed from `overlay.publicUrl` (see db migration
- * 0031_rename_overlay_public_url_setting) when sceneManager replaced
- * streamware — same setting, same purpose, "overlay" terminology retired
- * along with streamware's `/overlay/` route prefix. The RPC method names
- * below (`setOverlayPublicUrl`, `overlayPublicUrl` on `getEngineInfo`)
- * are UNCHANGED — that's Convex's public contract, not the DB key.
+ * The RPCs that read and write `scene.publicUrl` (`overlayPublicUrl` on
+ * `getEngineInfo`, `setOverlayPublicUrl`) keep their names: they are
+ * Convex's public contract.
  */
-export async function resolveOverlayPublicUrl(db: DbClient, envDefault: string): Promise<string> {
+export async function resolveSceneManagerUrl(db: DbClient, configured: string): Promise<string> {
   const dbValue = await db.getSetting("scene.publicUrl", "");
-  return (dbValue || envDefault).replace(/\/+$/, "");
+  return (dbValue || configured).replace(/\/+$/, "");
 }
 
 /**

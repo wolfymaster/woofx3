@@ -27,7 +27,7 @@ import type {
 import { asString } from "./outbox";
 import { subscribeProjections } from "./projection";
 import { EngineEventType } from "@woofx3/api/webhooks";
-import type { ConfigField } from "@woofx3/api/ui-schema";
+import { isWidgetSurface, parseFieldList } from "@woofx3/api/ui-schema";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 
@@ -74,13 +74,6 @@ interface RawFunction {
   runtime?: unknown;
 }
 
-interface RawConfigField {
-  id?: unknown;
-  label?: unknown;
-  type?: unknown;
-  [key: string]: unknown;
-}
-
 interface RawWidget {
   id?: unknown;
   canonical_id?: unknown;
@@ -91,8 +84,9 @@ interface RawWidget {
   directory?: unknown;
   alert_types?: unknown;
   alertTypes?: unknown;
-  settings?: unknown;
-  surface?: unknown;
+  settings_schema?: unknown;
+  surfaces?: unknown;
+  hosts_surface?: unknown;
   created_by_type?: unknown;
   created_by_ref?: unknown;
 }
@@ -229,34 +223,20 @@ function mapFunction(raw: RawFunction): FunctionDefinition {
   return def;
 }
 
-/**
- * Map one declared field onto the shared ConfigField shape.
- *
- * Unrecognised properties are carried through rather than dropped: the engine
- * does not own presentation, and a consumer that understands a newer property
- * should still receive it.
- */
-function mapConfigField(raw: RawConfigField): ConfigField {
-  const { id, label, type, ...rest } = raw;
-  return {
-    ...(rest as Omit<ConfigField, "id" | "label" | "type">),
-    id: asString(id),
-    label: asString(label),
-    type: asString(type) as ConfigField["type"],
-  };
-}
-
 function mapWidget(raw: RawWidget): WidgetDefinition {
   const alertTypesRaw = (Array.isArray(raw.alert_types) ? raw.alert_types : raw.alertTypes) ?? [];
   const alertTypes = Array.isArray(alertTypesRaw) ? alertTypesRaw.map((a) => asString(a)) : [];
-  const settingsRaw = Array.isArray(raw.settings) ? raw.settings : [];
   const def: WidgetDefinition = {
     id: asString(raw.id),
     manifestId: asString(raw.manifest_id),
     name: asString(raw.name),
     directory: asString(raw.directory),
     alertTypes,
-    settings: settingsRaw.map((s) => mapConfigField(s as RawConfigField)),
+    // The outbox carries the declared fields as the JSON string the db
+    // stores. Parsed with the same parser the UI's periodic sync uses, so a
+    // widget registered by either path gets the same fields.
+    settings: parseFieldList(asString(raw.settings_schema)),
+    surfaces: asStringArray(raw.surfaces).filter(isWidgetSurface),
     createdByType: asString(raw.created_by_type),
     createdByRef: asString(raw.created_by_ref),
   };
@@ -272,13 +252,9 @@ function mapWidget(raw: RawWidget): WidgetDefinition {
   if (projectionKey !== "") {
     def.projectionKey = projectionKey;
   }
-  // Pass through the manifest's `surface` declaration. The UI defaults
-  // omitted values to "scene"; only forward the discriminator when the
-  // manifest explicitly opts into a non-default surface so the wire
-  // payload stays minimal for the common case.
-  const surface = asString(raw.surface);
-  if (surface === "dashboard" || surface === "scene") {
-    def.surface = surface;
+  const hostsSurface = asString(raw.hosts_surface);
+  if (isWidgetSurface(hostsSurface)) {
+    def.hostsSurface = hostsSurface;
   }
   return def;
 }

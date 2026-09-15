@@ -80,7 +80,7 @@ Additionally subscribes to workflow lifecycle events:
 
 ## Alert action
 
-Workflows that need to drive overlays use the built-in `alert` action. The engine's role ends at NATS publish — `workflow/actions.go` `buildAlertEnvelope` stamps a stable envelope `id` (UUID) onto every payload and publishes to `ui.notify.alert`. From there, streamware owns the queue, lease lifecycle, overlay dispatch, and `alerts` table persistence. See [Task Types — `alert`](./tasks.md#alert) and [Streamware → Alert queue](../streamware/alert-queue.md).
+Workflows that need to drive overlays use the built-in `alert` action. The engine's role ends at NATS publish — `workflow/actions.go` `buildAlertEnvelope` stamps a stable envelope `id` (UUID) onto every payload and publishes to `ui.notify.alert`. From there, streamware owns the queue, lease lifecycle, overlay dispatch, and `alerts` table persistence. See [Task Types — `alert`](./tasks.md#alert).
 
 ## API
 

@@ -1,6 +1,6 @@
 import { routeModule } from "./context";
 import type * as resource from "@woofx3/db/resource.pb";
-import { timestampToIso } from "./helpers";
+import { resolveSceneManagerUrl, timestampToIso } from "./helpers";
 
 /**
  * Wire shape for a stored user asset.
@@ -67,26 +67,22 @@ function kindForContentType(contentType: string): string {
 }
 
 /**
- * Compose the public URL a repository key is served at. Encodes this
- * service's own asset-proxy path, so it lives here rather than in the
- * shared helpers.
- *
  * Deliberately a module-private function rather than a member of
  * `resourcesRoutes`: everything on that object is registered onto the
  * Api prototype, which both exposes it as a callable RPC method and runs
  * it through the span wrapper -- and that wrapper returns a Promise,
  * which would turn this string into a Promise.
  */
-export function resourcePublicUrl(overlayPublicUrl: string, repositoryKey: string): string | null {
+export function resourcePublicUrl(sceneManagerUrl: string, repositoryKey: string): string | null {
   if (repositoryKey.length === 0) {
     return null;
   }
-  const base = overlayPublicUrl.replace(/\/+$/, "");
-  return `${base}/overlay/assets/${repositoryKey}`;
+  const base = sceneManagerUrl.replace(/\/+$/, "");
+  return `${base}/assets/${repositoryKey}`;
 }
 
 /** Map a stored row onto its wire shape. Module-private, for the same reason. */
-export function resourceToItem(overlayPublicUrl: string, row: resource.Resource): ResourceItem {
+export function resourceToItem(sceneManagerUrl: string, row: resource.Resource): ResourceItem {
   const repositoryKey = row.repositoryKey ?? "";
   const thumbnailKey = row.thumbnailRepositoryKey ?? "";
   const isFolder = row.isFolder ?? false;
@@ -102,8 +98,8 @@ export function resourceToItem(overlayPublicUrl: string, row: resource.Resource)
     contentType: row.contentType ?? "",
     size: Number(row.size ?? 0),
     status: row.status ?? "",
-    url: servable ? resourcePublicUrl(overlayPublicUrl, repositoryKey) : null,
-    thumbnailUrl: servable ? resourcePublicUrl(overlayPublicUrl, thumbnailKey) : null,
+    url: servable ? resourcePublicUrl(sceneManagerUrl, repositoryKey) : null,
+    thumbnailUrl: servable ? resourcePublicUrl(sceneManagerUrl, thumbnailKey) : null,
     createdAt: timestampToIso(row.createdAt),
     updatedAt: timestampToIso(row.updatedAt),
   };
@@ -179,7 +175,7 @@ export const resourcesRoutes = routeModule({
 
     this.logger.info("Issued upload grant", { resourceId, name: input.name });
     return {
-      resource: resourceToItem(this.overlayPublicUrl, row),
+      resource: resourceToItem(await resolveSceneManagerUrl(this.db, this.sceneManagerUrl), row),
       uploadUrl: grant.uploadUrl,
       method: grant.method,
       headers: grant.headers,
@@ -199,7 +195,7 @@ export const resourcesRoutes = routeModule({
       status: "ready",
       size: size === undefined ? undefined : BigInt(size),
     } as resource.UpdateResourceRequest);
-    return resourceToItem(this.overlayPublicUrl, response);
+    return resourceToItem(await resolveSceneManagerUrl(this.db, this.sceneManagerUrl), response);
   },
 
   async createFolder(name: string, parentId?: string | null): Promise<ResourceItem> {
@@ -212,13 +208,13 @@ export const resourcesRoutes = routeModule({
       parentId: parentId ?? undefined,
       name,
     });
-    return resourceToItem(this.overlayPublicUrl, response);
+    return resourceToItem(await resolveSceneManagerUrl(this.db, this.sceneManagerUrl), response);
   },
 
   async getResource(id: string): Promise<ResourceItem> {
     const applicationId = await this.ensureApplicationId();
     const response = await this.db.getResource({ id, applicationId });
-    return resourceToItem(this.overlayPublicUrl, response);
+    return resourceToItem(await resolveSceneManagerUrl(this.db, this.sceneManagerUrl), response);
   },
 
   /**
@@ -243,8 +239,9 @@ export const resourcesRoutes = routeModule({
       page: query?.page ?? 0,
       pageSize: query?.pageSize ?? 0,
     });
+    const sceneManagerUrl = await resolveSceneManagerUrl(this.db, this.sceneManagerUrl);
     return {
-      resources: response.resources.map((row) => resourceToItem(this.overlayPublicUrl, row)),
+      resources: response.resources.map((row) => resourceToItem(sceneManagerUrl, row)),
       total: response.total,
       page: response.page,
       pageSize: response.pageSize,
@@ -266,7 +263,7 @@ export const resourcesRoutes = routeModule({
       parentId: changes.parentId === undefined ? undefined : (changes.parentId ?? ""),
     } as resource.UpdateResourceRequest;
     const response = await this.db.updateResource(request);
-    return resourceToItem(this.overlayPublicUrl, response);
+    return resourceToItem(await resolveSceneManagerUrl(this.db, this.sceneManagerUrl), response);
   },
 
   /**
@@ -334,7 +331,7 @@ export const resourcesRoutes = routeModule({
       throw new Error("Resource has no stored object to process");
     }
 
-    const base = this.overlayPublicUrl.replace(/\/+$/, "");
+    const base = this.apiUrl.replace(/\/+$/, "");
     await this.barkloaderRequest("/assets/process", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

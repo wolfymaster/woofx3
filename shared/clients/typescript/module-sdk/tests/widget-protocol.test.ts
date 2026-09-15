@@ -42,7 +42,6 @@ describe("P1 woofx3.widget — envelope guard", () => {
       type: "init",
       settings: { label: "x" },
       capabilities: ["storage"],
-      acceptedEvents: ["channel.follow"],
     },
     {
       proto: WIDGET_PROTOCOL,
@@ -131,6 +130,7 @@ describe("P1 woofx3.widget — boot payload guard", () => {
     instanceId: "inst-1",
     moduleId: "mod-1",
     widgetCanonicalId: "mod-1:widget:w1",
+    surface: "scene",
     settings: { label: "x" },
     capabilities: ["storage"],
     resourceBaseUrl: "https://cdn.example.test/modules/mod-1/abc123/widgets/w1/",
@@ -147,6 +147,8 @@ describe("P1 woofx3.widget — boot payload guard", () => {
     expect(isWidgetBootPayload({ ...boot, nonce: "" })).toBe(false);
     expect(isWidgetBootPayload({ ...boot, instanceId: undefined })).toBe(false);
     expect(isWidgetBootPayload({ ...boot, moduleId: 7 })).toBe(false);
+    expect(isWidgetBootPayload({ ...boot, surface: undefined })).toBe(false);
+    expect(isWidgetBootPayload({ ...boot, surface: "overlay" })).toBe(false);
     expect(isWidgetBootPayload({ ...boot, settings: null })).toBe(false);
     expect(isWidgetBootPayload({ ...boot, capabilities: "storage" })).toBe(false);
     expect(isWidgetBootPayload({ ...boot, resourceBaseUrl: "" })).toBe(false);
@@ -172,7 +174,6 @@ describe("P2 woofx3.overlay-events — frame round-trip", () => {
       source: "twitch",
       time: "2026-06-12T00:00:00Z",
       data: { userName: "wolfy" },
-      parameters: { text: "welcome!", duration: 5 },
     },
     { kind: "scene.updated", sceneId: "scene-1", revision: 4 },
     { kind: "control", action: "token.revoked" },

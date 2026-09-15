@@ -1318,13 +1318,12 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 		if err != nil {
 			return nil, fmt.Errorf("marshal alert_types for widget %q: %w", in.Name, err)
 		}
-		acceptedEvents := in.AcceptedEvents
-		if acceptedEvents == nil {
-			acceptedEvents = []string{}
+		if len(in.Surfaces) == 0 {
+			return nil, fmt.Errorf("widget %q declares no surfaces", in.Name)
 		}
-		acceptedEventsJSON, err := json.Marshal(acceptedEvents)
+		surfacesJSON, err := json.Marshal(in.Surfaces)
 		if err != nil {
-			return nil, fmt.Errorf("marshal accepted_events for widget %q: %w", in.Name, err)
+			return nil, fmt.Errorf("marshal surfaces for widget %q: %w", in.Name, err)
 		}
 		w := &models.Widget{
 			ID:             uuid.New(),
@@ -1333,9 +1332,9 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 			Directory:      in.Directory,
 			Entry:          in.Entry,
 			AlertTypes:     string(alertTypesJSON),
-			AcceptedEvents: string(acceptedEventsJSON),
 			SettingsSchema: in.SettingsSchema,
-			Surface:        in.Surface,
+			Surfaces:       string(surfacesJSON),
+			HostsSurface:   in.HostsSurface,
 			CreatedByType:  createdByType,
 			CreatedByRef:   createdByRef,
 			ManifestID:     in.ManifestId,
@@ -1544,13 +1543,6 @@ func widgetToProto(w *models.Widget) *client.Widget {
 	if alertTypes == nil {
 		alertTypes = []string{}
 	}
-	var acceptedEvents []string
-	if w.AcceptedEvents != "" {
-		json.Unmarshal([]byte(w.AcceptedEvents), &acceptedEvents)
-	}
-	if acceptedEvents == nil {
-		acceptedEvents = []string{}
-	}
 	return &client.Widget{
 		Id:             w.ID.String(),
 		ModuleId:       moduleIDFromCreatedByRef(w.CreatedByRef),
@@ -1560,12 +1552,24 @@ func widgetToProto(w *models.Widget) *client.Widget {
 		Directory:      w.Directory,
 		Entry:          w.Entry,
 		AlertTypes:     alertTypes,
-		AcceptedEvents: acceptedEvents,
 		SettingsSchema: w.SettingsSchema,
-		Surface:        w.Surface,
+		Surfaces:       widgetSurfaces(w),
+		HostsSurface:   w.HostsSurface,
 		CreatedByType:  w.CreatedByType,
 		CreatedByRef:   w.CreatedByRef,
 	}
+}
+
+// widgetSurfaces decodes a widget row's stored surface list.
+func widgetSurfaces(w *models.Widget) []string {
+	var surfaces []string
+	if w.Surfaces != "" {
+		json.Unmarshal([]byte(w.Surfaces), &surfaces)
+	}
+	if surfaces == nil {
+		surfaces = []string{}
+	}
+	return surfaces
 }
 
 // ---------------------------------------------------------------------

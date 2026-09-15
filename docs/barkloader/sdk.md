@@ -128,16 +128,9 @@ contract is the same.
 ## Widget authoring
 
 ```ts
-import type { WidgetHost, WidgetEvent } from "@woofx3/module-sdk";
+import type { WidgetHost } from "@woofx3/module-sdk";
 
 const host: WidgetHost = window.widgetHost!;
-
-// Subscribe to events the widget declared in `acceptedEvents[]`.
-host.onEvent((event: WidgetEvent) => {
-  if (event.type === "channel.follow") {
-    appendFollower(event.data);
-  }
-});
 
 // Read settings the scene editor populated.
 const accent = host.settings.accent ?? "#ff5e3a";
@@ -155,6 +148,21 @@ support:
 
 /** @type {import("@woofx3/module-sdk").WidgetHost} */
 const host = window.widgetHost;
+```
+
+### Playing in an alert
+
+A widget whose manifest `surfaces` include `"alert"` can be placed inside an alert
+layout. There it boots with `host.surface === "alert"` and receives one `alert` event
+per alert. If the widget has a length of its own, subscribe with
+`{ autoComplete: false }` and call `event.complete()` when it is done; the alert waits
+for it. Otherwise subscribe normally, and it stays up until the alert ends.
+
+```js
+host.onEvent((event) => {
+  sound.addEventListener("ended", () => event.complete());
+  sound.play();
+}, { autoComplete: false });
 ```
 
 The full surface lives in

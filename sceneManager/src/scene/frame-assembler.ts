@@ -1,9 +1,7 @@
-import { join, resolve, sep } from "node:path";
 import type { Logger } from "@woofx3/common/runtime";
-import type { WidgetBootPayload } from "@woofx3/module-sdk";
-import type { OverlayHost, OverlayWidgetInstance } from "./scene-host";
-import { sanitizeAssetPath } from "./asset-path";
-import type { PublicUrlResolver } from "./public-url-resolver";
+import type { WidgetBootPayload, WidgetSurface } from "@woofx3/module-sdk";
+import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
+import type { OverlayHost } from "./scene-host";
 
 /**
  * Uniform blank document: served byte-for-byte identically for an
@@ -86,18 +84,22 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
 
 export interface FrameAssemblerOptions {
   barkloader: BarkloaderFrameClient;
-  publicDir: string;
-  /** Resolves this deployment's own public base URL (the `scene.publicUrl`
-   *  DB setting, with env/config fallback — see public-url-resolver.ts),
-   *  used to build the resourceBaseUrl for built-in widgets (served from
-   *  sceneManager's own local disk, never barkloader). */
-  selfPublicUrlResolver: PublicUrlResolver;
   generateNonce?: () => string;
 }
 
 export interface FrameScaffold {
   boot: WidgetBootPayload;
   baseHref: string;
+}
+
+/** What a frame is assembled for: a scene placement, or one widget of an alert layout. */
+interface FrameTarget {
+  instanceId: string;
+  moduleId: string;
+  manifestId: string;
+  widgetCanonicalId: string;
+  settings: Record<string, unknown>;
+  surface: WidgetSurface;
 }
 
 /**
@@ -167,9 +169,7 @@ function defaultNonce(): string {
  * Assembles widget frame documents. Simplified from streamware's
  * version: module widget entry HTML + resource base URL come from a
  * single Barkloader call (which now owns version resolution) instead
- * of a locally-duplicated `ModuleVersionResolver`; there is no
- * `WidgetAssetProxy` — resource bytes are fetched directly by the
- * browser from Barkloader's public URL, never proxied through here.
+ * of a locally-duplicated `ModuleVersionResolver`.
  */
 export class FrameAssembler {
   private readonly generateNonce: () => string;
@@ -195,18 +195,64 @@ export class FrameAssembler {
       return this.blankResponse();
     }
     const instance = state.instances.find((w) => w.id === instanceId);
-    if (!instance) {
+    // A placement that hosts a surface is drawn by the page, never framed.
+    if (!instance || instance.hostsSurface !== "") {
       return this.blankResponse();
     }
+    return this.assembleFrame(
+      sceneId,
+      {
+        instanceId: instance.id,
+        moduleId: instance.moduleId,
+        manifestId: instance.manifestId,
+        widgetCanonicalId: instance.widgetCanonicalId,
+        settings: instance.settings,
+        surface: "scene",
+      },
+      nonceParam
+    );
+  }
 
+  /**
+   * One widget of the alert delivered to `sceneId` as scene event `eventId`.
+   * The alert is read back from that event, so a frame can only ever show
+   * what the scene manager validated and delivered to this scene.
+   */
+  async assembleAlertWidget(
+    sceneId: string,
+    eventId: string,
+    widgetId: string,
+    nonceParam: string | null
+  ): Promise<Response> {
+    const event = await this.host.loadSceneEvent(sceneId, eventId);
+    const delivery = event?.type === ALERT_EVENT_TYPE ? parseAlertDelivery(event.value) : null;
+    const widget = delivery?.layout.widgets.find((w) => w.id === widgetId);
+    if (!widget) {
+      return this.blankResponse();
+    }
+    return this.assembleFrame(
+      sceneId,
+      {
+        instanceId: `${eventId}.${widget.id}`,
+        moduleId: widget.moduleId,
+        manifestId: widget.manifestId,
+        widgetCanonicalId: widget.widgetCanonicalId,
+        settings: widget.settings,
+        surface: "alert",
+      },
+      nonceParam
+    );
+  }
+
+  private async assembleFrame(sceneId: string, target: FrameTarget, nonceParam: string | null): Promise<Response> {
     const nonce = nonceParam && NONCE_PATTERN.test(nonceParam) ? nonceParam : this.generateNonce();
 
-    const frameInfo = await this.loadFrameInfo(instance);
+    const frameInfo = await this.loadFrameInfo(target);
     if (frameInfo === null) {
       this.logger.warn("widget entry document unavailable", {
         sceneId,
-        instanceId,
-        widgetCanonicalId: instance.widgetCanonicalId,
+        instanceId: target.instanceId,
+        widgetCanonicalId: target.widgetCanonicalId,
       });
       return new Response("<!doctype html><!-- widget entry unavailable -->", {
         status: 502,
@@ -217,10 +263,11 @@ export class FrameAssembler {
     const boot: WidgetBootPayload = {
       v: 1,
       nonce,
-      instanceId: instance.id,
-      moduleId: instance.moduleId,
-      widgetCanonicalId: instance.widgetCanonicalId,
-      settings: instance.settings,
+      instanceId: target.instanceId,
+      moduleId: target.moduleId,
+      widgetCanonicalId: target.widgetCanonicalId,
+      surface: target.surface,
+      settings: target.settings,
       capabilities: [...FRAME_CAPABILITIES],
       resourceBaseUrl: frameInfo.resourceBaseUrl,
     };
@@ -229,12 +276,12 @@ export class FrameAssembler {
     return new Response(assembled, { status: 200, headers: { ...FRAME_HEADERS } });
   }
 
-  private async loadFrameInfo(instance: OverlayWidgetInstance): Promise<BarkloaderFrameInfo | null> {
+  private async loadFrameInfo(target: FrameTarget): Promise<BarkloaderFrameInfo | null> {
     try {
-      return await this.opts.barkloader.fetchWidgetFrame(instance.moduleId, instance.manifestId);
+      return await this.opts.barkloader.fetchWidgetFrame(target.moduleId, target.manifestId);
     } catch (err) {
       this.logger.warn("barkloader frame fetch failed", {
-        widgetCanonicalId: instance.widgetCanonicalId,
+        widgetCanonicalId: target.widgetCanonicalId,
         error: err instanceof Error ? err.message : String(err),
       });
       return null;

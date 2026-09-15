@@ -35,13 +35,15 @@ function readyRow(overrides: Record<string, unknown> = {}) {
  * production.
  */
 function host(overrides: Record<string, unknown> = {}) {
+  const { db, ...rest } = overrides;
   const stub = {
-    overlayPublicUrl: "http://127.0.0.1:9100",
+    sceneManagerUrl: "http://127.0.0.1:9101",
+    apiUrl: "http://127.0.0.1:9100",
     ensureApplicationId: async () => APPLICATION_ID,
     logger: { info: mock(() => undefined), error: mock(() => undefined) },
-    db: {},
     barkloaderRequest: mock(async (_path: string, _init?: RequestInit) => new Response("{}")),
-    ...overrides,
+    ...rest,
+    db: { getSetting: mock(async (_key: string, _applicationId: string) => ""), ...(db as object | undefined) },
   };
   return Object.assign(stub, resourcesRoutes) as typeof stub & typeof resourcesRoutes;
 }
@@ -50,8 +52,8 @@ describe("resource wire mapping", () => {
   test("derives public urls from repository keys", () => {
     const item = resourceToItem(BASE_URL, readyRow({ thumbnailRepositoryKey: "user/app-1/res-1/thumbnail.png" }) as never);
 
-    expect(item.url).toBe("http://127.0.0.1:9100/overlay/assets/user/app-1/res-1/clip.png");
-    expect(item.thumbnailUrl).toBe("http://127.0.0.1:9100/overlay/assets/user/app-1/res-1/thumbnail.png");
+    expect(item.url).toBe("http://127.0.0.1:9100/assets/user/app-1/res-1/clip.png");
+    expect(item.thumbnailUrl).toBe("http://127.0.0.1:9100/assets/user/app-1/res-1/thumbnail.png");
     expect(item.size).toBe(2048);
     expect(item.parentId).toBeNull();
   });
@@ -81,7 +83,7 @@ describe("resource wire mapping", () => {
 
   test("a trailing slash on the public base does not double up", () => {
     expect(resourcePublicUrl("http://example.test/", "user/a/b/c.png")).toBe(
-      "http://example.test/overlay/assets/user/a/b/c.png",
+      "http://example.test/assets/user/a/b/c.png",
     );
   });
 });
@@ -121,6 +123,18 @@ describe("listResources", () => {
     expect(listResources).toHaveBeenCalledWith(
       expect.objectContaining({ applicationId: APPLICATION_ID, parentId: "folder-9", kind: "image" }),
     );
+  });
+});
+
+describe("public urls", () => {
+  test("follow the scene.publicUrl setting over the configured default", async () => {
+    const getSetting = mock(async (_key: string, _applicationId: string) => "https://scene.example.test/");
+    const api = host({ db: { getSetting, getResource: mock(async (_req: any) => readyRow()) } });
+
+    const item = await api.getResource("res-1");
+
+    expect(getSetting).toHaveBeenCalledWith("scene.publicUrl", "");
+    expect(item.url).toBe("https://scene.example.test/assets/user/app-1/res-1/clip.png");
   });
 });
 
@@ -358,7 +372,7 @@ describe("registered route surface", () => {
   // registration so that cannot regress unnoticed.
   test("the mappers are not registered as RPC methods", () => {
     const registered: Record<string, unknown> = {
-      overlayPublicUrl: BASE_URL,
+      sceneManagerUrl: BASE_URL,
       logger: { info: mock(() => undefined), error: mock(() => undefined) },
     };
     registerAllRoutes(registered as never);

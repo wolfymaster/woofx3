@@ -1,5 +1,5 @@
 import { routeModule } from "./context";
-import { resolveOverlayPublicUrl, timestampToIso } from "./helpers";
+import { resolveSceneManagerUrl, timestampToIso } from "./helpers";
 
 /**
  * Gateway implementation of `Woofx3EngineApi`'s overlay-token methods (see
@@ -21,22 +21,15 @@ interface OverlayTokenRow {
 }
 
 /**
- * sceneManager is reached directly now (no more `api`-proxied
- * `/overlay/{token}/` — see the removed overlay-proxy.ts); scenes
- * render at `/scene/{sceneId}?token={token}`. Still built from the
- * `overlay.publicUrl` setting (see `resolveOverlayPublicUrl`) — same
- * "this deployment's public base URL" concept, just a different path
- * convention on top of it.
- *
  * NOTE: this URL shape is what Convex is expected to consume for the
  * scene-manager palette; verify against the live Convex integration
  * before relying on it — see the sceneManager migration notes.
  */
-function buildOverlayUrl(overlayPublicUrl: string, sceneId: string, token: string): string {
-  return `${overlayPublicUrl.replace(/\/+$/, "")}/scene/${sceneId}?token=${token}`;
+function buildOverlayUrl(sceneManagerUrl: string, sceneId: string, token: string): string {
+  return `${sceneManagerUrl.replace(/\/+$/, "")}/scene/${sceneId}?token=${token}`;
 }
 
-function toMintedResult(overlayPublicUrl: string, row: OverlayTokenRow) {
+function toMintedResult(sceneManagerUrl: string, row: OverlayTokenRow) {
   return {
     tokenId: row.id,
     token: row.token,
@@ -45,22 +38,22 @@ function toMintedResult(overlayPublicUrl: string, row: OverlayTokenRow) {
     label: row.label,
     status: row.status,
     createdAt: timestampToIso(row.createdAt),
-    url: buildOverlayUrl(overlayPublicUrl, row.sceneId, row.token),
+    url: buildOverlayUrl(sceneManagerUrl, row.sceneId, row.token),
   };
 }
 
 export const overlayTokenRoutes = routeModule({
   async mintOverlayToken(input: { sceneId: string; label?: string }) {
     const applicationId = await this.ensureApplicationId();
-    const [result, overlayPublicUrl] = await Promise.all([
+    const [result, sceneManagerUrl] = await Promise.all([
       this.db.mintOverlayToken({
         sceneId: input.sceneId,
         applicationId,
         label: input.label ?? "",
       }),
-      resolveOverlayPublicUrl(this.db, this.overlayPublicUrl),
+      resolveSceneManagerUrl(this.db, this.sceneManagerUrl),
     ]);
-    return toMintedResult(overlayPublicUrl, result.overlayToken);
+    return toMintedResult(sceneManagerUrl, result.overlayToken);
   },
 
   async revokeOverlayToken(input: { tokenId: string }): Promise<{ tokenId: string; status: string }> {
@@ -69,22 +62,22 @@ export const overlayTokenRoutes = routeModule({
   },
 
   async rotateOverlayToken(input: { tokenId: string; label?: string }) {
-    const [result, overlayPublicUrl] = await Promise.all([
+    const [result, sceneManagerUrl] = await Promise.all([
       this.db.rotateOverlayToken({ id: input.tokenId }),
-      resolveOverlayPublicUrl(this.db, this.overlayPublicUrl),
+      resolveSceneManagerUrl(this.db, this.sceneManagerUrl),
     ]);
-    return toMintedResult(overlayPublicUrl, result.overlayToken);
+    return toMintedResult(sceneManagerUrl, result.overlayToken);
   },
 
   async listOverlayTokens(input?: { sceneId?: string; page?: number; pageSize?: number }) {
     const applicationId = await this.ensureApplicationId();
-    const [result, overlayPublicUrl] = await Promise.all([
+    const [result, sceneManagerUrl] = await Promise.all([
       this.db.listOverlayTokens({
         sceneId: input?.sceneId ?? "",
         applicationId,
         includeRevoked: false,
       }),
-      resolveOverlayPublicUrl(this.db, this.overlayPublicUrl),
+      resolveSceneManagerUrl(this.db, this.sceneManagerUrl),
     ]);
     return (result.overlayTokens ?? []).map((row) => ({
       tokenId: row.id,
@@ -93,7 +86,7 @@ export const overlayTokenRoutes = routeModule({
       label: row.label,
       status: row.status,
       createdAt: timestampToIso(row.createdAt),
-      url: buildOverlayUrl(overlayPublicUrl, row.sceneId, row.token),
+      url: buildOverlayUrl(sceneManagerUrl, row.sceneId, row.token),
     }));
   },
 });

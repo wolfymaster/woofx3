@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -13,7 +14,9 @@ use aws_sdk_s3::{
 use mime_guess::MimeGuess;
 use tracing::{info, warn};
 
-use crate::repository::{CreateFileRequest, Repository, UploadEndpoint, UploadRequest};
+use crate::repository::{
+    CreateFileRequest, ReadEndpoint, Repository, UploadEndpoint, UploadRequest,
+};
 
 /// Configuration for S3-compatible object storage.
 ///
@@ -351,6 +354,25 @@ impl Repository for S3Repository {
         Ok(UploadEndpoint::Presigned {
             url: presigned.uri().to_string(),
             headers,
+        })
+    }
+
+    async fn presign_read(&self, key: &str, ttl: Duration) -> Result<ReadEndpoint> {
+        let full_key = self.full_key(key);
+        let presigning = PresigningConfig::expires_in(ttl)
+            .map_err(|e| anyhow!("invalid presign TTL for {}: {}", full_key, e))?;
+
+        let presigned = self
+            .client
+            .get_object()
+            .bucket(&self.config.bucket)
+            .key(&full_key)
+            .presigned(presigning)
+            .await
+            .map_err(|e| anyhow!("S3 presign get_object {} failed: {}", full_key, e))?;
+
+        Ok(ReadEndpoint::Presigned {
+            url: presigned.uri().to_string(),
         })
     }
 }

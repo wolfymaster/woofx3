@@ -197,14 +197,13 @@ pub struct WidgetInputJson {
     pub directory: String,
     pub alert_types: Vec<String>,
     pub settings_schema: String,
-    pub surface: String,
+    pub surfaces: Vec<String>,
+    /// Empty for an ordinary widget; see `ModuleWidget::hosts_surface`.
+    pub hosts_surface: String,
     /// Entry path relative to the widget asset root (assets-relative,
     /// matching the prefix-stripped repository keys). Empty means the
     /// consumer falls back to `index.html`.
     pub entry: String,
-    /// CloudEvent types the scene fan-out delivers to this widget's
-    /// placements, as the manifest declared them.
-    pub accepted_events: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -36,6 +36,8 @@ function makeApi(db: any) {
     nats: nats.client as unknown as ApiOptions["nats"],
     functions: null,
     barkloaderUrl: "http://barkloader.local",
+    sceneManagerUrl: "http://scene.test",
+    apiUrl: "http://api.test",
     logger: fakeLogger(),
   });
   return { api, nats };

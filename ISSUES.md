@@ -128,13 +128,6 @@ item into a real issue (e.g. via `gh issue create --title ... --body ...`).
 
 ## docs / roadmap
 
-### Update stale overlay asset-prefix doc post-sceneManager migration
-
-- **Files:** `docs/woofwoofwoof/streamware/asset-prefix.md:18`
-- **Category:** documentation
-- **Size:** small
-- **Description:** Doc states `{overlayPublicUrl}/overlay/assets/user/...` is reserved but "not yet implemented." Confirm whether sceneManager's new asset-serving path (introduced in `e46d877`) covers this, or update/remove the doc.
-
 ### SPEC.md future consideration: multi-engine federation
 
 - **Files:** `SPEC.md:658-667`

@@ -1,7 +1,10 @@
-use crate::repository::{CreateFileRequest, Repository, UploadEndpoint, UploadRequest};
+use crate::repository::{
+    CreateFileRequest, ReadEndpoint, Repository, UploadEndpoint, UploadRequest,
+};
 use anyhow::Result;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use tokio::fs;
 use tracing::info;
 
@@ -140,5 +143,9 @@ impl Repository for FileRepository {
     /// S3 presigned PUT does.
     async fn presign_upload(&self, _req: UploadRequest<'_>) -> Result<UploadEndpoint> {
         Ok(UploadEndpoint::Unsupported)
+    }
+
+    async fn presign_read(&self, _key: &str, _ttl: Duration) -> Result<ReadEndpoint> {
+        Ok(ReadEndpoint::Unsupported)
     }
 }

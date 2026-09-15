@@ -1,6 +1,7 @@
 package expression
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -19,6 +20,11 @@ var expressionPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 // legitimately contain dots (file extensions), which would otherwise be
 // misparsed as a path segment.
 const assetURLPrefix = "woofx3_asset_url:"
+
+// ErrPathNotFound wraps every failure to follow a path into a source's data:
+// a missing key, an index out of range, or a step into a value that has no
+// such member.
+var ErrPathNotFound = errors.New("path not found")
 
 type Resolver struct {
 	sources         map[string]any
@@ -105,7 +111,14 @@ func (r *Resolver) evaluateExpression(expr string) (any, error) {
 		}
 		return r.assetURLBase + "/" + rel, nil
 	}
+	if isCompound(expr) {
+		return r.evaluateCompound(expr)
+	}
+	return r.evaluateReference(expr)
+}
 
+// evaluateReference resolves a plain `source.path` reference.
+func (r *Resolver) evaluateReference(expr string) (any, error) {
 	parts := strings.SplitN(expr, ".", 2)
 	if len(parts) == 0 {
 		return nil, fmt.Errorf("empty expression")
@@ -146,16 +159,16 @@ func ResolvePath(data any, path string) (any, error) {
 
 	for _, part := range parts {
 		if current == nil {
-			return nil, fmt.Errorf("cannot access %s on nil", part)
+			return nil, fmt.Errorf("%w: cannot access %s on nil", ErrPathNotFound, part)
 		}
 
 		if idx, isIndex := parseArrayIndex(part); isIndex {
 			slice, ok := current.([]any)
 			if !ok {
-				return nil, fmt.Errorf("cannot index non-array with [%d]", idx)
+				return nil, fmt.Errorf("%w: cannot index non-array with [%d]", ErrPathNotFound, idx)
 			}
 			if idx < 0 || idx >= len(slice) {
-				return nil, fmt.Errorf("index out of bounds: %d", idx)
+				return nil, fmt.Errorf("%w: index out of bounds: %d", ErrPathNotFound, idx)
 			}
 			current = slice[idx]
 			continue
@@ -165,11 +178,11 @@ func ResolvePath(data any, path string) (any, error) {
 		case map[string]any:
 			val, ok := v[part]
 			if !ok {
-				return nil, fmt.Errorf("key not found: %s", part)
+				return nil, fmt.Errorf("%w: key not found: %s", ErrPathNotFound, part)
 			}
 			current = val
 		default:
-			return nil, fmt.Errorf("cannot access %s on %T", part, current)
+			return nil, fmt.Errorf("%w: cannot access %s on %T", ErrPathNotFound, part, current)
 		}
 	}
 

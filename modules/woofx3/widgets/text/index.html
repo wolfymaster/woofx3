@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <title>text</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+    }
+
+    #box {
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      width: 100%;
+      height: 100%;
+      padding: 8px;
+    }
+
+    #text {
+      width: 100%;
+      font-weight: bold;
+      line-height: 1.2;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+    }
+  </style>
+</head>
+
+<body>
+  <div id="box">
+    <div id="text"></div>
+  </div>
+
+  <script>
+    (function () {
+      const host = window.widgetHost;
+      if (!host) {
+        return;
+      }
+      const settings = host.settings;
+      const el = document.getElementById("text");
+      el.style.color = str(settings.color, "#ffffff");
+      el.style.fontFamily = str(settings.fontFamily, "Roboto, system-ui, sans-serif");
+      el.style.fontSize = num(settings.fontSize, 48) + "px";
+      el.style.textAlign = ["left", "center", "right"].includes(settings.align) ? settings.align : "center";
+
+      // Every other segment between {primary} markers is highlighted. The
+      // text goes in as text nodes, never markup: it usually carries a
+      // viewer's name.
+      const highlight = str(settings.highlightColor, "#ec6758");
+      str(settings.text, "").split("{primary}").forEach((segment, i) => {
+        if (i % 2 === 1) {
+          const span = document.createElement("span");
+          span.style.color = highlight;
+          span.textContent = segment;
+          el.appendChild(span);
+        } else {
+          el.appendChild(document.createTextNode(segment));
+        }
+      });
+
+      playForDuration(host, num(settings.duration, 0), () => {
+        el.style.visibility = "hidden";
+      });
+    })();
+
+    // In an alert, a duration gives this widget a length of its own: it
+    // completes when the time is up, and the alert waits for it. Without one
+    // it completes at once and stays up for as long as the alert does.
+    function playForDuration(host, seconds, hide) {
+      if (host.surface !== "alert") {
+        return;
+      }
+      if (seconds <= 0) {
+        host.onEvent(() => {});
+        return;
+      }
+      host.onEvent((event) => {
+        setTimeout(() => {
+          hide();
+          event.complete();
+        }, seconds * 1000);
+      }, { autoComplete: false });
+    }
+
+    function str(value, fallback) {
+      return typeof value === "string" && value.trim() !== "" ? value : fallback;
+    }
+
+    function num(value, fallback) {
+      return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+    }
+  </script>
+</body>
+
+</html>

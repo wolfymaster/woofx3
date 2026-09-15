@@ -344,6 +344,7 @@ export function installWidgetHostShim(
 
   const host: WidgetHost = {
     settings: Object.freeze({ ...boot.settings }),
+    surface: boot.surface,
     moduleId: boot.moduleId,
     instanceId: boot.instanceId,
     storage,

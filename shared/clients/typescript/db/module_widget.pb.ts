@@ -47,7 +47,6 @@ export interface Widget {
   settingsSchema: string;
   createdByType: string;
   createdByRef: string;
-  surface: string;
   /**
    * Entry document path relative to the widget asset root (the
    * prefix-stripped repository keys under `directory`). Empty means
@@ -56,12 +55,16 @@ export interface Widget {
    */
   entry: string;
   /**
-   * CloudEvent types (e.g. "channel.follow") the scene fan-out delivers to
-   * every placement of this widget. Held on the definition rather than on
-   * placements so a module update that changes them reaches every scene
-   * without rewriting any.
+   * Where this widget may be placed: "scene", "alert", or both. An alert
+   * layout may only place widgets that list "alert".
    */
-  acceptedEvents: string[];
+  surfaces: string[];
+  /**
+   * The surface this widget's placements host, or empty. An "alert" widget
+   * on a scene is the area that plays alert layouts; it has no frame of its
+   * own.
+   */
+  hostsSurface: string;
 }
 
 export interface WidgetInput {
@@ -71,13 +74,13 @@ export interface WidgetInput {
   directory: string;
   alertTypes: string[];
   settingsSchema: string;
-  surface: string;
   /**
    * Entry path relative to the widget asset root; empty means
    * index.html fallback.
    */
   entry: string;
-  acceptedEvents: string[];
+  surfaces: string[];
+  hostsSurface: string;
 }
 
 export interface RegisterWidgetsRequest {
@@ -161,9 +164,9 @@ export const Widget = {
       settingsSchema: "",
       createdByType: "",
       createdByRef: "",
-      surface: "",
       entry: "",
-      acceptedEvents: [],
+      surfaces: [],
+      hostsSurface: "",
       ...msg,
     };
   },
@@ -205,14 +208,14 @@ export const Widget = {
     if (msg.createdByRef) {
       writer.writeString(10, msg.createdByRef);
     }
-    if (msg.surface) {
-      writer.writeString(11, msg.surface);
-    }
     if (msg.entry) {
       writer.writeString(12, msg.entry);
     }
-    if (msg.acceptedEvents?.length) {
-      writer.writeRepeatedString(13, msg.acceptedEvents);
+    if (msg.surfaces?.length) {
+      writer.writeRepeatedString(14, msg.surfaces);
+    }
+    if (msg.hostsSurface) {
+      writer.writeString(15, msg.hostsSurface);
     }
     return writer;
   },
@@ -267,16 +270,16 @@ export const Widget = {
           msg.createdByRef = reader.readString();
           break;
         }
-        case 11: {
-          msg.surface = reader.readString();
-          break;
-        }
         case 12: {
           msg.entry = reader.readString();
           break;
         }
-        case 13: {
-          msg.acceptedEvents.push(reader.readString());
+        case 14: {
+          msg.surfaces.push(reader.readString());
+          break;
+        }
+        case 15: {
+          msg.hostsSurface = reader.readString();
           break;
         }
         default: {
@@ -321,9 +324,9 @@ export const WidgetInput = {
       directory: "",
       alertTypes: [],
       settingsSchema: "",
-      surface: "",
       entry: "",
-      acceptedEvents: [],
+      surfaces: [],
+      hostsSurface: "",
       ...msg,
     };
   },
@@ -353,14 +356,14 @@ export const WidgetInput = {
     if (msg.settingsSchema) {
       writer.writeString(6, msg.settingsSchema);
     }
-    if (msg.surface) {
-      writer.writeString(7, msg.surface);
-    }
     if (msg.entry) {
       writer.writeString(8, msg.entry);
     }
-    if (msg.acceptedEvents?.length) {
-      writer.writeRepeatedString(9, msg.acceptedEvents);
+    if (msg.surfaces?.length) {
+      writer.writeRepeatedString(10, msg.surfaces);
+    }
+    if (msg.hostsSurface) {
+      writer.writeString(11, msg.hostsSurface);
     }
     return writer;
   },
@@ -399,16 +402,16 @@ export const WidgetInput = {
           msg.settingsSchema = reader.readString();
           break;
         }
-        case 7: {
-          msg.surface = reader.readString();
-          break;
-        }
         case 8: {
           msg.entry = reader.readString();
           break;
         }
-        case 9: {
-          msg.acceptedEvents.push(reader.readString());
+        case 10: {
+          msg.surfaces.push(reader.readString());
+          break;
+        }
+        case 11: {
+          msg.hostsSurface = reader.readString();
           break;
         }
         default: {
@@ -819,9 +822,9 @@ export const WidgetJSON = {
       settingsSchema: "",
       createdByType: "",
       createdByRef: "",
-      surface: "",
       entry: "",
-      acceptedEvents: [],
+      surfaces: [],
+      hostsSurface: "",
       ...msg,
     };
   },
@@ -861,14 +864,14 @@ export const WidgetJSON = {
     if (msg.createdByRef) {
       json["createdByRef"] = msg.createdByRef;
     }
-    if (msg.surface) {
-      json["surface"] = msg.surface;
-    }
     if (msg.entry) {
       json["entry"] = msg.entry;
     }
-    if (msg.acceptedEvents?.length) {
-      json["acceptedEvents"] = msg.acceptedEvents;
+    if (msg.surfaces?.length) {
+      json["surfaces"] = msg.surfaces;
+    }
+    if (msg.hostsSurface) {
+      json["hostsSurface"] = msg.hostsSurface;
     }
     return json;
   },
@@ -917,17 +920,17 @@ export const WidgetJSON = {
     if (_createdByRef_) {
       msg.createdByRef = _createdByRef_;
     }
-    const _surface_ = json["surface"];
-    if (_surface_) {
-      msg.surface = _surface_;
-    }
     const _entry_ = json["entry"];
     if (_entry_) {
       msg.entry = _entry_;
     }
-    const _acceptedEvents_ = json["acceptedEvents"] ?? json["accepted_events"];
-    if (_acceptedEvents_) {
-      msg.acceptedEvents = _acceptedEvents_;
+    const _surfaces_ = json["surfaces"];
+    if (_surfaces_) {
+      msg.surfaces = _surfaces_;
+    }
+    const _hostsSurface_ = json["hostsSurface"] ?? json["hosts_surface"];
+    if (_hostsSurface_) {
+      msg.hostsSurface = _hostsSurface_;
     }
     return msg;
   },
@@ -962,9 +965,9 @@ export const WidgetInputJSON = {
       directory: "",
       alertTypes: [],
       settingsSchema: "",
-      surface: "",
       entry: "",
-      acceptedEvents: [],
+      surfaces: [],
+      hostsSurface: "",
       ...msg,
     };
   },
@@ -994,14 +997,14 @@ export const WidgetInputJSON = {
     if (msg.settingsSchema) {
       json["settingsSchema"] = msg.settingsSchema;
     }
-    if (msg.surface) {
-      json["surface"] = msg.surface;
-    }
     if (msg.entry) {
       json["entry"] = msg.entry;
     }
-    if (msg.acceptedEvents?.length) {
-      json["acceptedEvents"] = msg.acceptedEvents;
+    if (msg.surfaces?.length) {
+      json["surfaces"] = msg.surfaces;
+    }
+    if (msg.hostsSurface) {
+      json["hostsSurface"] = msg.hostsSurface;
     }
     return json;
   },
@@ -1034,17 +1037,17 @@ export const WidgetInputJSON = {
     if (_settingsSchema_) {
       msg.settingsSchema = _settingsSchema_;
     }
-    const _surface_ = json["surface"];
-    if (_surface_) {
-      msg.surface = _surface_;
-    }
     const _entry_ = json["entry"];
     if (_entry_) {
       msg.entry = _entry_;
     }
-    const _acceptedEvents_ = json["acceptedEvents"] ?? json["accepted_events"];
-    if (_acceptedEvents_) {
-      msg.acceptedEvents = _acceptedEvents_;
+    const _surfaces_ = json["surfaces"];
+    if (_surfaces_) {
+      msg.surfaces = _surfaces_;
+    }
+    const _hostsSurface_ = json["hostsSurface"] ?? json["hosts_surface"];
+    if (_hostsSurface_) {
+      msg.hostsSurface = _hostsSurface_;
     }
     return msg;
   },

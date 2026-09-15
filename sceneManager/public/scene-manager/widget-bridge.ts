@@ -219,7 +219,6 @@ export class WidgetBridge {
       type: "init",
       settings,
       capabilities: ["storage", "events", "status"],
-      acceptedEvents: [],
     });
   }
 

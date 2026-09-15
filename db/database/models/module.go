@@ -201,7 +201,8 @@ func (Asset) TableName() string { return "assets" }
 // configuration surface (WidgetSettingDefinition[]). Engine treats it as
 // opaque; the UI parses it.
 //
-// `Surface` indicates where the widget can be placed: "scene" or "dashboard".
+// `Surfaces` is a JSON-serialized list of where the widget can be placed
+// ("scene", "alert"); `HostsSurface` names the surface its placements host.
 //
 // Module catalog rows are instance-global; applicationId is carried on
 // scene placements and runtime events, not on widget declarations.
@@ -214,11 +215,9 @@ type Widget struct {
 	// means the frame assembler falls back to "index.html".
 	Entry      string `gorm:"column:entry;type:text;not null;default:''"`
 	AlertTypes string `gorm:"column:alert_types;type:jsonb;not null;default:'[]'"`
-	// JSON-serialized CloudEvent types the scene fan-out delivers to this
-	// widget's placements. See module_widget.proto Widget.accepted_events.
-	AcceptedEvents string `gorm:"column:accepted_events;type:jsonb;not null;default:'[]'"`
 	SettingsSchema string `gorm:"column:settings_schema;type:jsonb;not null;default:'[]'"`
-	Surface        string `gorm:"column:surface;type:text;not null;default:'scene'"`
+	Surfaces       string `gorm:"column:surfaces;type:jsonb;not null;default:'[\"scene\"]'"`
+	HostsSurface   string `gorm:"column:hosts_surface;type:text;not null;default:''"`
 	CreatedByType  string `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
 	CreatedByRef   string `gorm:"column:created_by_ref;type:text;not null;default:''"`
 	ManifestID     string `gorm:"column:manifest_id;type:text;not null;default:''"`

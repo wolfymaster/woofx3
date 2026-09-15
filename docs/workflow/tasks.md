@@ -60,7 +60,7 @@ Returns the function's result as a map.
 
 #### `alert`
 
-Publishes an alert envelope onto NATS `ui.notify.alert`. Streamware subscribes there, persists the envelope to the `alerts` table, and runs the per-application FIFO queue that broadcasts one alert at a time to connected overlay clients. The workflow engine's role ends at the publish — queue, lease semantics, overlay dispatch, and lifecycle persistence are all owned by streamware.
+Plays an on-stream alert. The step publishes an envelope onto NATS `ui.notify.alert`; the scene manager validates the layout and delivers it to every alert widget named `target` on a running scene. An alert widget plays one alert at a time, so alerts to the same name queue behind each other. See [Alerts](../services/widget-events.md#alerts) for how a scene plays one.
 
 ```json
 {
@@ -68,9 +68,27 @@ Publishes an alert envelope onto NATS `ui.notify.alert`. Streamware subscribes t
   "type": "action",
   "action": "alert",
   "parameters": {
-    "widget": "follow-alert",
-    "text": "${trigger.data.userName} just followed!",
-    "duration": 5
+    "target": "default",
+    "layout": {
+      "width": 1920,
+      "height": 1080,
+      "widgets": [
+        {
+          "id": "message",
+          "widgetCanonicalId": "woofx3:widget:text",
+          "position": { "x": 360, "y": 780 },
+          "size": { "width": 1200, "height": 160 },
+          "settings": { "text": "{primary}${trigger.data.userName}{primary} just followed!", "duration": 6 }
+        },
+        {
+          "id": "sound",
+          "widgetCanonicalId": "woofx3:widget:audio",
+          "position": { "x": 0, "y": 0 },
+          "size": { "width": 1, "height": 1 },
+          "settings": { "src": "${asset:pleasure}" }
+        }
+      ]
+    }
   }
 }
 ```
@@ -78,10 +96,14 @@ Publishes an alert envelope onto NATS `ui.notify.alert`. Streamware subscribes t
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `action` | `string` | Yes | Must be `"alert"`. Set at the task top level. |
-| `parameters.widget` | `string` | No (convention: yes) | Streamware widget id used to render the alert. |
+| `parameters.target` | `string` | No | Name of the alert widgets to play on. Defaults to `"default"`, the name a scene's first alert widget gets. |
+| `parameters.layout` | `object` | Yes | The alert: a canvas `width` × `height` and the `widgets` placed on it. The alert widget scales the canvas to fit its area. |
+| `parameters.layout.widgets[]` | `object` | Yes | `id` (letters, digits, `-` or `_`, unique in the layout), the `widgetCanonicalId` of a widget whose `surfaces` include `"alert"`, `position`, `size` and `settings`. A widget that fails these rules is dropped with a warning. |
 | `parameters.id` | `string` | No | Pin the envelope id (useful for tests / replays). When omitted, the action stamps a UUID — see below. |
-| `parameters.duration` | `number` | No | Display duration in seconds. Defaults to 5; lease is `duration + 5`, capped at 60. |
-| Other `parameters` keys | any | No | Widget-specific (`text`, `mediaUrl`, `audioUrl`, `options`, `custom`, ...) — passed verbatim to the rendering widget. |
+
+`${…}` expressions anywhere in the layout, widget settings included, are resolved before the envelope is published, so layout widgets receive final values.
+
+An alert lasts as long as its longest widget. A widget with a length of its own (a sound, a video, anything with a duration set) holds the alert until it finishes; one without (a Text or Image with no duration) stays up for the rest of the alert. An alert with no timed widget stays up for 5 seconds.
 
 The action stamps a stable `id` onto every envelope at publish time (see `workflow/actions.go` `buildAlertEnvelope`). All three downstream layers — the api alert log, the streamware queue, and the overlay's lifecycle reports — key on this value end-to-end. A caller-supplied `parameters.id` overrides the generated UUID; this is useful for replays and deterministic tests.
 
