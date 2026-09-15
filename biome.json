@@ -15,7 +15,10 @@
       "!modules",
       "!barkloader/lib_module/fixtures",
       "!barkloader/perf",
-      "!streamlabs/chatwidget/style.css"
+      "!streamlabs/chatwidget/style.css",
+      "!sceneManager/public/scene-manager/index.js",
+      "!sceneManager/public/widget-host-shim.js",
+      "!shared/clients/typescript/module-sdk/dist"
     ]
   },
   "formatter": {
