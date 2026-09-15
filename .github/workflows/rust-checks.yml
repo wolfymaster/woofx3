@@ -12,11 +12,11 @@ name: rust checks
 # protobuf output with no tests of their own, and barkloader's build already
 # fails if either stops compiling.
 #
-# No `cargo fmt --check` and no clippy gate. The tree is not rustfmt-clean
-# today -- hundreds of pre-existing diffs across lib_module alone -- so either
-# would fail on its first run and teach people to ignore a red check.
-# Formatting the tree is worth doing, but as its own change, and this should
-# not be blocked behind it.
+# Formatting is checked for every language at once by format-checks.yml.
+#
+# No clippy gate. barkloader carries dozens of pre-existing clippy warnings,
+# so `-D warnings` would fail on its first run and teach people to ignore a
+# red check.
 
 on:
   push:
