@@ -218,8 +218,7 @@ class WidgetBridge {
     this.post({
       type: "init",
       settings,
-      capabilities: ["storage", "events", "status"],
-      acceptedEvents: []
+      capabilities: ["storage", "events", "status"]
     });
   }
   sendReject(reason) {

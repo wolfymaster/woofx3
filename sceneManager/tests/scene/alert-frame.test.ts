@@ -87,7 +87,6 @@ describe("FrameAssembler.assemble — surfaces", () => {
           manifestId: "text",
           position: { x: 0, y: 0, width: 10, height: 10 },
           settings: {},
-          acceptedEvents: [],
           hostsSurface,
           frameUrl: "",
           resolved: true,

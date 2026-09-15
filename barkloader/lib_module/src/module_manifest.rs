@@ -507,21 +507,15 @@ pub struct ModuleWidget {
     /// render time as `widgetHost.settings`.
     #[serde(default)]
     pub settings_schema: Option<Vec<ManifestConfigField>>,
-    /// Canonical trigger ids (e.g. `channel.follow`)
-    /// the widget consumes. Resolved at install via `manifest_validate.rs` to
-    /// confirm those triggers actually exist in the engine — this is the
-    /// engine-internal reference graph.
-    #[serde(default)]
+    /// Retired: parsed only so validation can reject a non-empty list by name
+    /// rather than serde ignoring it. Scenes are only ever sent alerts, and
+    /// alerts reach alert widgets by name, so an event type here routes
+    /// nothing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub accepted_events: Vec<String>,
     /// AlertContext.type strings the widget renders (e.g. `["follow"]`,
     /// `["raid"]`, `["follow", "cheer", "raid"]`). What the Convex scene
-    /// manager filters on when wiring widgets to slot pipelines. When
-    /// omitted, the engine derives this list at emission time by mapping
-    /// each `accepted_events` canonical id to its AlertContext type via
-    /// the same table the api/ AlertEmitter uses (see
-    /// `api/src/alert-emitter.ts`). Authors typically only set this when
-    /// the widget cares about a coarser bucket than the canonical ids
-    /// imply, or wants to opt in to events the engine doesn't emit yet.
+    /// manager filters on when wiring widgets to slot pipelines.
     #[serde(default)]
     pub alert_types: Vec<String>,
     /// Where this widget may be placed: `WIDGET_SURFACES` tokens. Omitted
@@ -953,51 +947,12 @@ fn widget_asset_prefix(assets: &str) -> Result<String> {
     Ok(normalize_rel_path(assets)?.trim_end_matches('/').to_string() + "/")
 }
 
-/// Map an event type to the AlertContext.type the engine emits for it.
-/// Returns `None` for events that don't translate to an alert (chat
-/// messages, internal events) — those widgets must declare `alert_types`
-/// explicitly in the manifest.
-///
-/// Keyed on the event type rather than a canonical trigger id: events are
-/// platform-agnostic, so any module emitting `channel.follow` maps here.
-///
-/// This table mirrors `api/src/alert-emitter.ts` mappers — keep in sync
-/// when the AlertContext type union grows.
-#[allow(dead_code)]
-pub fn alert_type_for_event(event: &str) -> Option<&'static str> {
-    match event {
-        "channel.follow" => Some("follow"),
-        "channel.cheer" => Some("cheer"),
-        "channel.subscribe" => Some("subscribe"),
-        "channel.subscriptionGift" => Some("sub_gift"),
-        "channel.hypetrain" => Some("hypetrain"),
-        "channel.raid" => Some("raid"),
-        "stream.online" => Some("stream_online"),
-        _ => None,
-    }
-}
-
 impl ModuleWidget {
-    /// Resolve the wire-format alert_types this widget exposes to the
-    /// Convex scene manager. Prefers the manifest's explicit `alert_types`
-    /// if present; otherwise derives the list from `accepted_events` using
-    /// the AlertContext.type lookup table. Events that don't map to an
-    /// AlertContext type are skipped. Order is preserved, duplicates
+    /// The wire-format alert_types this widget exposes to the Convex scene
+    /// manager: the manifest's `alert_types`, order preserved, duplicates
     /// removed.
     pub fn resolved_alert_types(&self) -> Vec<String> {
-        if !self.alert_types.is_empty() {
-            return dedup_preserve_order(&self.alert_types);
-        }
-        let mut out: Vec<String> = Vec::new();
-        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
-        for ev in &self.accepted_events {
-            if let Some(t) = alert_type_for_event(ev) {
-                if seen.insert(t) {
-                    out.push(t.to_string());
-                }
-            }
-        }
-        out
+        dedup_preserve_order(&self.alert_types)
     }
 
     /// Normalize the manifest `entry` path relative to the widget asset
@@ -1091,7 +1046,6 @@ impl ModuleWidget {
             surfaces: self.surfaces.clone(),
             hosts_surface: self.hosts_surface.clone().unwrap_or_default(),
             entry,
-            accepted_events: self.accepted_events.clone(),
         }
     }
 
@@ -1869,10 +1823,10 @@ mod tests {
     }
 
     #[test]
-    fn parses_widget_with_entry_assets_accepted_events_and_settings_schema() {
+    fn parses_widget_with_entry_assets_and_settings_schema() {
         // Mirrors the shape used by the bundled `scene_widgets` reference
-        // module: entry + assets directory + accepted canonical event ids
-        // + a structured settingsSchema with field descriptors.
+        // module: entry + assets directory + a structured settingsSchema
+        // with field descriptors.
         let j = r##"{
             "id": "scene_widgets",
             "name": "Scene Widgets",
@@ -1884,7 +1838,6 @@ mod tests {
                     "description": "Counts incoming raids.",
                     "entry": "widgets/raid_counter/index.html",
                     "assets": "widgets/raid_counter",
-                    "acceptedEvents": ["channel.raid"],
                     "settingsSchema": [
                         {
                             "id": "minViewers",
@@ -1908,7 +1861,6 @@ mod tests {
         assert_eq!(w.id, "raid_counter");
         assert_eq!(w.entry.as_deref(), Some("widgets/raid_counter/index.html"));
         assert_eq!(w.assets.as_deref(), Some("widgets/raid_counter"));
-        assert_eq!(w.accepted_events, vec!["channel.raid"]);
         let fields = w.settings_schema.as_ref().expect("settings_schema present");
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].id, "minViewers");
@@ -1916,46 +1868,10 @@ mod tests {
     }
 
     #[test]
-    fn parses_multi_widget_manifest_with_mixed_accepted_events() {
-        // Exercises the alert_feed shape: a widget that subscribes to
-        // multiple canonical event ids, alongside two single-event widgets.
-        let j = r#"{
-            "id": "scene_widgets",
-            "name": "Scene Widgets",
-            "version": "0.1.0",
-            "widgets": [
-                {
-                    "id": "recent_followers",
-                    "name": "Recent Followers",
-                    "entry": "widgets/recent_followers/index.html",
-                    "assets": "widgets/recent_followers",
-                    "acceptedEvents": ["channel.follow"]
-                },
-                {
-                    "id": "alert_feed",
-                    "name": "Alert Feed",
-                    "entry": "widgets/alert_feed/index.html",
-                    "assets": "widgets/alert_feed",
-                    "acceptedEvents": [
-                        "channel.follow",
-                        "channel.cheer",
-                        "channel.raid"
-                    ]
-                }
-            ]
-        }"#;
-        let m: ModuleManifest = serde_json::from_str(j).expect("parse");
-        assert_eq!(m.widgets.len(), 2);
-        assert_eq!(m.widgets[0].accepted_events.len(), 1);
-        assert_eq!(m.widgets[1].accepted_events.len(), 3);
-    }
-
-    #[test]
     fn resolved_alert_types_uses_explicit_field_when_set() {
         let w: ModuleWidget = serde_json::from_value(serde_json::json!({
             "id": "x",
             "name": "X",
-            "acceptedEvents": ["channel.follow"],
             "alertTypes": ["follow", "raid"]
         }))
         .expect("parse");
@@ -1963,59 +1879,14 @@ mod tests {
     }
 
     #[test]
-    fn resolved_alert_types_derives_from_accepted_events_when_absent() {
-        let w: ModuleWidget = serde_json::from_value(serde_json::json!({
-            "id": "x",
-            "name": "X",
-            "acceptedEvents": [
-                "channel.follow",
-                "channel.raid",
-                "channel.cheer"
-            ]
-        }))
-        .expect("parse");
-        assert_eq!(w.resolved_alert_types(), vec!["follow", "raid", "cheer"]);
-    }
-
-    #[test]
-    fn resolved_alert_types_skips_canonicals_with_no_mapping() {
-        // chat.message has no AlertContext type — should be skipped silently.
-        let w: ModuleWidget = serde_json::from_value(serde_json::json!({
-            "id": "x",
-            "name": "X",
-            "acceptedEvents": [
-                "user.message",
-                "channel.follow"
-            ]
-        }))
-        .expect("parse");
-        assert_eq!(w.resolved_alert_types(), vec!["follow"]);
-    }
-
-    #[test]
     fn resolved_alert_types_deduplicates() {
         let w: ModuleWidget = serde_json::from_value(serde_json::json!({
             "id": "x",
             "name": "X",
-            "acceptedEvents": [
-                "channel.follow",
-                "channel.follow"
-            ]
+            "alertTypes": ["follow", "follow"]
         }))
         .expect("parse");
         assert_eq!(w.resolved_alert_types(), vec!["follow"]);
-    }
-
-    #[test]
-    fn alert_type_for_canonical_recognizes_full_alert_set() {
-        assert_eq!(alert_type_for_event("channel.follow"), Some("follow"));
-        assert_eq!(alert_type_for_event("channel.cheer"), Some("cheer"));
-        assert_eq!(alert_type_for_event("channel.subscribe"), Some("subscribe"));
-        assert_eq!(alert_type_for_event("channel.subscriptionGift"), Some("sub_gift"));
-        assert_eq!(alert_type_for_event("channel.hypetrain"), Some("hypetrain"));
-        assert_eq!(alert_type_for_event("channel.raid"), Some("raid"));
-        assert_eq!(alert_type_for_event("stream.online"), Some("stream_online"));
-        assert_eq!(alert_type_for_event("user.message"), None);
     }
 
     #[test]
@@ -2055,7 +1926,6 @@ mod tests {
             "description": "Counts incoming raids.",
             "entry": "widgets/raid_counter/index.html",
             "assets": "widgets/raid_counter",
-            "acceptedEvents": ["channel.raid"],
             "settingsSchema": [
                 { "id": "minViewers", "type": "number", "label": "Minimum viewers", "defaultValue": 1 }
             ]
@@ -2068,10 +1938,7 @@ mod tests {
         assert_eq!(input.directory, "widgets/raid_counter");
         // Registered entry is assets-relative (design 5.2.5).
         assert_eq!(input.entry, "index.html");
-        assert_eq!(input.alert_types, vec!["raid"]);
-        // Forwarded verbatim: the scene fan-out compares these against a
-        // CloudEvent's `type`, and nothing else records them.
-        assert_eq!(input.accepted_events, vec!["channel.raid"]);
+        assert!(input.alert_types.is_empty());
         // Re-emitted from the parsed fields, so always the canonical array.
         assert!(input.settings_schema.starts_with('['));
         assert!(input.settings_schema.contains("minViewers"));
@@ -2173,17 +2040,14 @@ mod tests {
             "name": "Raid Counter",
             "entry": "widgets/raid_counter/index.html",
             "assets": "widgets/raid_counter",
-            "acceptedEvents": ["channel.raid"]
+            "hostsSurface": "alert"
         }"#;
         let w: ModuleWidget = serde_json::from_str(j).expect("parse");
         let s = serde_json::to_string(&w).expect("serialize");
         let reparsed: serde_json::Value = serde_json::from_str(&s).expect("reparse");
         // Confirm the camelCase rename survives the round trip.
-        assert_eq!(
-            reparsed.get("acceptedEvents").and_then(|v| v.as_array()).map(|a| a.len()),
-            Some(1)
-        );
-        assert!(reparsed.get("accepted_events").is_none());
+        assert_eq!(reparsed.get("hostsSurface").and_then(|v| v.as_str()), Some("alert"));
+        assert!(reparsed.get("hosts_surface").is_none());
     }
 
     #[test]

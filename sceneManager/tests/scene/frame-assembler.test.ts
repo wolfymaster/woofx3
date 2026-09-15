@@ -155,7 +155,6 @@ function widgetInstance(overrides: Partial<OverlayWidgetInstance>): OverlayWidge
     position: { x: 0, y: 0, width: 100, height: 100 },
     settings: {},
     resolved: true,
-    acceptedEvents: [],
     hostsSurface: "",
     frameUrl: "",
     ...overrides,

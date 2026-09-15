@@ -1,5 +1,4 @@
 import { describe, expect, it, mock } from "bun:test";
-import { EventType } from "@woofx3/common/cloudevents/Twitch";
 import { OverlayHost, parseWidgetCanonicalId, stableModuleKeyFrom } from "../../src/scene/scene-host";
 import { OverlayTokenResolver } from "../../src/scene/token-resolver";
 
@@ -87,7 +86,7 @@ describe("OverlayHost — frameUrl", () => {
       })),
       listWidgets: mock(async () => ({
         status: { code: "OK" as const, message: "" },
-        widgets: [{ moduleId: "woofx3", manifestId: "media_alert", entry: "", acceptedEvents: [EventType.Follow] }],
+        widgets: [{ moduleId: "woofx3", manifestId: "media_alert", entry: "" }],
       })),
     };
     const resolver = new OverlayTokenResolver(
@@ -97,43 +96,5 @@ describe("OverlayHost — frameUrl", () => {
     const host = new OverlayHost(resolver, db as any, fakeLogger());
     const state = await host.loadScene("ovl_token");
     expect(state?.instances[0]?.frameUrl).toBe("/scene/scene-1/widget/inst-1");
-    expect(state?.instances[0]?.acceptedEvents).toContain(EventType.Follow);
-  });
-
-  // A placement is a reference to a widget, not a copy of it. A list stored on
-  // the placement would freeze the event names at placement time, which is how
-  // renamed events left widgets silently dark.
-  it("takes acceptedEvents from the widget definition, ignoring any stored on the placement", async () => {
-    const db = {
-      getScene: mock(async () => ({
-        status: { code: "OK" as const, message: "" },
-        scene: {
-          id: "scene-1",
-          applicationId: "app-1",
-          name: "Main",
-          widgetsJson: JSON.stringify([
-            {
-              id: "inst-1",
-              widgetCanonicalId: "woofx3:widget:media_alert",
-              position: {},
-              settings: {},
-              acceptedEvents: ["follow.user.twitch"],
-            },
-          ]),
-          layoutJson: "{}",
-        },
-      })),
-      listWidgets: mock(async () => ({
-        status: { code: "OK" as const, message: "" },
-        widgets: [{ moduleId: "woofx3", manifestId: "media_alert", entry: "", acceptedEvents: [EventType.Follow] }],
-      })),
-    };
-    const resolver = new OverlayTokenResolver(
-      { resolveOverlayToken: async () => ({ status: { code: "OK" as const, message: "" }, sceneId: "scene-1", applicationId: "app-1" }) },
-      fakeLogger()
-    );
-    const host = new OverlayHost(resolver, db as any, fakeLogger());
-    const state = await host.loadScene("ovl_token");
-    expect(state?.instances[0]?.acceptedEvents).toEqual([EventType.Follow]);
   });
 });

@@ -45,5 +45,6 @@ func All() []*gormigrate.Migration {
 		AddWidgetAcceptedEvents(),
 		AddTriggerTransportHandler(),
 		AddWidgetSurfaces(),
+		DropWidgetAcceptedEvents(),
 	}
 }

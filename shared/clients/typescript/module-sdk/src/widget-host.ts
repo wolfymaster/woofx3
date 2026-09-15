@@ -46,15 +46,12 @@ export interface WidgetHostStorage {
 export type WidgetSurface = "scene" | "alert";
 
 /**
- * Generic engine-pushed event delivered to the widget via `onEvent`.
- *
- * `type` is the canonical trigger id from the widget's
- * `acceptedEvents` declaration (e.g.
- * `"channel.follow"`). The same shape covers
- * every event class — alerts are one example, not a special case.
+ * Event delivered to the widget via `onEvent`. A widget playing in an alert
+ * layout receives one `alert` event per alert, whose `data` is the CloudEvent
+ * that triggered the workflow (`{ type, data }`, or `null`).
  */
 export interface WidgetEvent {
-  /** Event type matching one of the widget's `acceptedEvents`. */
+  /** Event type, e.g. `"alert"`. */
   type: string;
   /** CloudEvent source (e.g. `"twitch"`, `"streamware"`). */
   source: string;
@@ -63,12 +60,6 @@ export interface WidgetEvent {
   /** Event payload — opaque at this boundary. Widgets parse based on
    *  the documented schema for `type`. */
   data: unknown;
-  /** Workflow action `parameters` envelope when the event was raised
-   *  via an `alert`-style action (e.g. `text`, `mediaUrl`, `audioUrl`,
-   *  `duration`). Absent for events not produced by an action with a
-   *  parameters bag. Widgets that consume alert-style configuration
-   *  read it from here in preference to their per-instance settings. */
-  parameters?: Record<string, unknown>;
   /** Host-assigned id for this specific delivery, unique per delivery
    *  attempt (a redelivered/retried event gets a fresh id). Echoed
    *  back on `event.complete`; also the correlation key for the
@@ -99,8 +90,7 @@ export type WidgetEventHandler = (event: DeliveredWidgetEvent) => void;
 /**
  * Per-widget event source the host shell wires up. Multiple widgets in
  * a scene share the underlying transport (the `/ws/module-state`
- * socket) but each gets its own filtered subscription —
- * `acceptedEvents` matching happens upstream of this callback.
+ * socket) but each gets its own subscription.
  */
 export interface WidgetEventSource {
   subscribe(handler: WidgetEventHandler): () => void;
@@ -141,10 +131,10 @@ export interface WidgetHost {
   getResourceUrl(path: string): string;
 
   /**
-   * Subscribe to engine-pushed events the widget declared interest in
-   * via its manifest's `acceptedEvents[]`. The handler fires for every
-   * matching event, decorated with `complete()`. Returns an
-   * unsubscribe function.
+   * Subscribe to the events the host delivers to this widget: in an alert
+   * layout, one `alert` event per alert. The handler fires for every
+   * delivered event, decorated with `complete()`. Returns an unsubscribe
+   * function.
    *
    * `queue` registers this instance's client-side dispatch policy
    * (retry timeout, max-in-flight, autoComplete, priority) with the

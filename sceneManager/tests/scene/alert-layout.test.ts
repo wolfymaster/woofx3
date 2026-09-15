@@ -8,7 +8,7 @@ import {
 import type { OverlayWidgetDefinition, OverlayWidgetInstance } from "../../src/scene/scene-host";
 
 function definition(manifestId: string, surfaces: string[]): OverlayWidgetDefinition {
-  return { moduleKey: "woofx3", manifestId, entry: "index.html", acceptedEvents: [], surfaces, hostsSurface: "" };
+  return { moduleKey: "woofx3", manifestId, entry: "index.html", surfaces, hostsSurface: "" };
 }
 
 const catalog = [definition("text", ["scene", "alert"]), definition("audio", ["alert"]), definition("clock", ["scene"])];
@@ -104,7 +104,6 @@ describe("alert widget targeting", () => {
       manifestId: "alert",
       position: { x: 0, y: 0, width: 0, height: 0 },
       settings,
-      acceptedEvents: [],
       hostsSurface,
       frameUrl: "",
       resolved: true,

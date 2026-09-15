@@ -55,13 +55,6 @@ export interface Widget {
    */
   entry: string;
   /**
-   * CloudEvent types (e.g. "channel.follow") the scene fan-out delivers to
-   * every placement of this widget. Held on the definition rather than on
-   * placements so a module update that changes them reaches every scene
-   * without rewriting any.
-   */
-  acceptedEvents: string[];
-  /**
    * Where this widget may be placed: "scene", "alert", or both. An alert
    * layout may only place widgets that list "alert".
    */
@@ -86,7 +79,6 @@ export interface WidgetInput {
    * index.html fallback.
    */
   entry: string;
-  acceptedEvents: string[];
   surfaces: string[];
   hostsSurface: string;
 }
@@ -173,7 +165,6 @@ export const Widget = {
       createdByType: "",
       createdByRef: "",
       entry: "",
-      acceptedEvents: [],
       surfaces: [],
       hostsSurface: "",
       ...msg,
@@ -219,9 +210,6 @@ export const Widget = {
     }
     if (msg.entry) {
       writer.writeString(12, msg.entry);
-    }
-    if (msg.acceptedEvents?.length) {
-      writer.writeRepeatedString(13, msg.acceptedEvents);
     }
     if (msg.surfaces?.length) {
       writer.writeRepeatedString(14, msg.surfaces);
@@ -286,10 +274,6 @@ export const Widget = {
           msg.entry = reader.readString();
           break;
         }
-        case 13: {
-          msg.acceptedEvents.push(reader.readString());
-          break;
-        }
         case 14: {
           msg.surfaces.push(reader.readString());
           break;
@@ -341,7 +325,6 @@ export const WidgetInput = {
       alertTypes: [],
       settingsSchema: "",
       entry: "",
-      acceptedEvents: [],
       surfaces: [],
       hostsSurface: "",
       ...msg,
@@ -375,9 +358,6 @@ export const WidgetInput = {
     }
     if (msg.entry) {
       writer.writeString(8, msg.entry);
-    }
-    if (msg.acceptedEvents?.length) {
-      writer.writeRepeatedString(9, msg.acceptedEvents);
     }
     if (msg.surfaces?.length) {
       writer.writeRepeatedString(10, msg.surfaces);
@@ -424,10 +404,6 @@ export const WidgetInput = {
         }
         case 8: {
           msg.entry = reader.readString();
-          break;
-        }
-        case 9: {
-          msg.acceptedEvents.push(reader.readString());
           break;
         }
         case 10: {
@@ -847,7 +823,6 @@ export const WidgetJSON = {
       createdByType: "",
       createdByRef: "",
       entry: "",
-      acceptedEvents: [],
       surfaces: [],
       hostsSurface: "",
       ...msg,
@@ -891,9 +866,6 @@ export const WidgetJSON = {
     }
     if (msg.entry) {
       json["entry"] = msg.entry;
-    }
-    if (msg.acceptedEvents?.length) {
-      json["acceptedEvents"] = msg.acceptedEvents;
     }
     if (msg.surfaces?.length) {
       json["surfaces"] = msg.surfaces;
@@ -952,10 +924,6 @@ export const WidgetJSON = {
     if (_entry_) {
       msg.entry = _entry_;
     }
-    const _acceptedEvents_ = json["acceptedEvents"] ?? json["accepted_events"];
-    if (_acceptedEvents_) {
-      msg.acceptedEvents = _acceptedEvents_;
-    }
     const _surfaces_ = json["surfaces"];
     if (_surfaces_) {
       msg.surfaces = _surfaces_;
@@ -998,7 +966,6 @@ export const WidgetInputJSON = {
       alertTypes: [],
       settingsSchema: "",
       entry: "",
-      acceptedEvents: [],
       surfaces: [],
       hostsSurface: "",
       ...msg,
@@ -1032,9 +999,6 @@ export const WidgetInputJSON = {
     }
     if (msg.entry) {
       json["entry"] = msg.entry;
-    }
-    if (msg.acceptedEvents?.length) {
-      json["acceptedEvents"] = msg.acceptedEvents;
     }
     if (msg.surfaces?.length) {
       json["surfaces"] = msg.surfaces;
@@ -1076,10 +1040,6 @@ export const WidgetInputJSON = {
     const _entry_ = json["entry"];
     if (_entry_) {
       msg.entry = _entry_;
-    }
-    const _acceptedEvents_ = json["acceptedEvents"] ?? json["accepted_events"];
-    if (_acceptedEvents_) {
-      msg.acceptedEvents = _acceptedEvents_;
     }
     const _surfaces_ = json["surfaces"];
     if (_surfaces_) {

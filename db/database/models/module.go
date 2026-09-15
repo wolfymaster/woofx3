@@ -215,9 +215,6 @@ type Widget struct {
 	// means the frame assembler falls back to "index.html".
 	Entry      string `gorm:"column:entry;type:text;not null;default:''"`
 	AlertTypes string `gorm:"column:alert_types;type:jsonb;not null;default:'[]'"`
-	// JSON-serialized CloudEvent types the scene fan-out delivers to this
-	// widget's placements. See module_widget.proto Widget.accepted_events.
-	AcceptedEvents string `gorm:"column:accepted_events;type:jsonb;not null;default:'[]'"`
 	SettingsSchema string `gorm:"column:settings_schema;type:jsonb;not null;default:'[]'"`
 	Surfaces       string `gorm:"column:surfaces;type:jsonb;not null;default:'[\"scene\"]'"`
 	HostsSurface   string `gorm:"column:hosts_surface;type:text;not null;default:''"`

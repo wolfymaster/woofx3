@@ -1318,14 +1318,6 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 		if err != nil {
 			return nil, fmt.Errorf("marshal alert_types for widget %q: %w", in.Name, err)
 		}
-		acceptedEvents := in.AcceptedEvents
-		if acceptedEvents == nil {
-			acceptedEvents = []string{}
-		}
-		acceptedEventsJSON, err := json.Marshal(acceptedEvents)
-		if err != nil {
-			return nil, fmt.Errorf("marshal accepted_events for widget %q: %w", in.Name, err)
-		}
 		if len(in.Surfaces) == 0 {
 			return nil, fmt.Errorf("widget %q declares no surfaces", in.Name)
 		}
@@ -1340,7 +1332,6 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 			Directory:      in.Directory,
 			Entry:          in.Entry,
 			AlertTypes:     string(alertTypesJSON),
-			AcceptedEvents: string(acceptedEventsJSON),
 			SettingsSchema: in.SettingsSchema,
 			Surfaces:       string(surfacesJSON),
 			HostsSurface:   in.HostsSurface,
@@ -1552,13 +1543,6 @@ func widgetToProto(w *models.Widget) *client.Widget {
 	if alertTypes == nil {
 		alertTypes = []string{}
 	}
-	var acceptedEvents []string
-	if w.AcceptedEvents != "" {
-		json.Unmarshal([]byte(w.AcceptedEvents), &acceptedEvents)
-	}
-	if acceptedEvents == nil {
-		acceptedEvents = []string{}
-	}
 	return &client.Widget{
 		Id:             w.ID.String(),
 		ModuleId:       moduleIDFromCreatedByRef(w.CreatedByRef),
@@ -1568,7 +1552,6 @@ func widgetToProto(w *models.Widget) *client.Widget {
 		Directory:      w.Directory,
 		Entry:          w.Entry,
 		AlertTypes:     alertTypes,
-		AcceptedEvents: acceptedEvents,
 		SettingsSchema: w.SettingsSchema,
 		Surfaces:       widgetSurfaces(w),
 		HostsSurface:   w.HostsSurface,

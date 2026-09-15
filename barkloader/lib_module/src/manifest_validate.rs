@@ -11,9 +11,9 @@
 //!
 //! Pass 2 resolves intra-manifest references — the `function` field of
 //! `function`-typed actions, `workflows[].trigger`,
-//! `workflows[].steps[].action`, `commands[].workflow`,
-//! `widgets[].acceptedEvents` — to canonical ids, either via the local
-//! symbol tables or by accepting an already-canonical id verbatim
+//! `workflows[].steps[].action`, `commands[].workflow` — to canonical
+//! ids, either via the local symbol tables or by accepting an
+//! already-canonical id verbatim
 //! (cross-module references).
 //!
 //! On success, returns a [`ResolvedManifest`] that the install path can
@@ -108,12 +108,6 @@ pub struct ResolvedWorkflow {
 #[derive(Debug, Clone)]
 pub struct ResolvedWidget {
     pub canonical_id: CanonicalId,
-    /// Event types the widget wants delivered, matched against a
-    /// CloudEvent's `type` by the scene fan-out. Plain event strings, not
-    /// canonical ids: any module, and any version of it, may emit
-    /// `channel.follow`, so binding a widget to one declaration would make
-    /// it stop receiving events the moment that module was reinstalled.
-    pub accepted_events: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -281,6 +275,7 @@ pub fn validate_with_provenance(
         |a: &ManifestAsset| &a.id,
     )?;
     validate_no_overlays(manifest)?;
+    validate_no_accepted_events(&manifest.widgets)?;
     validate_asset_paths(&manifest.assets)?;
     validate_widget_entries(&manifest.widgets)?;
     validate_widget_surfaces(&manifest.widgets, provenance)?;
@@ -302,9 +297,9 @@ pub fn validate_with_provenance(
     let commands = resolve_commands(&manifest.commands, &commands_table, &workflows_table)?;
     let workflows =
         resolve_workflows(&manifest.workflows, &workflows_table, &triggers_table, &actions_table)?;
-    let widgets = resolve_widgets(&manifest.widgets, &widgets_table, &triggers_table)?;
+    let widgets = resolve_widgets(&manifest.widgets, &widgets_table)?;
     validate_trigger_transports(manifest, provenance)?;
-    validate_no_ingress_bindings(manifest, &module_id, &workflows, &widgets)?;
+    validate_no_ingress_bindings(manifest, &module_id, &workflows)?;
 
     Ok(ResolvedManifest {
         module_id,
@@ -379,7 +374,7 @@ fn validate_trigger_transports(manifest: &ModuleManifest, provenance: InstallPro
     Ok(())
 }
 
-/// Reject author workflows and widgets bound to ingress. A webhook trigger's
+/// Reject author workflows bound to ingress. A webhook trigger's
 /// only consumer is its handler, so a binding would wait on an event nothing
 /// publishes. A cross-module reference can only be resolved at install time,
 /// where `execute_register_workflow` checks it.
@@ -387,7 +382,6 @@ fn validate_no_ingress_bindings(
     manifest: &ModuleManifest,
     module_id: &str,
     workflows: &[ResolvedWorkflow],
-    widgets: &[ResolvedWidget],
 ) -> Result<()> {
     for (workflow, resolved) in manifest.workflows.iter().zip(workflows) {
         let bound_to_ingress = match &resolved.trigger {
@@ -403,14 +397,6 @@ fn validate_no_ingress_bindings(
             return Err(anyhow!(
                 "workflow {:?}: cannot bind to a webhook trigger; bind to an event its handler returns",
                 workflow.id
-            ));
-        }
-    }
-    for (widget, resolved) in manifest.widgets.iter().zip(widgets) {
-        if let Some(event) = resolved.accepted_events.iter().find(|e| e.starts_with(WEBHOOK_EVENT_PREFIX)) {
-            return Err(anyhow!(
-                "widget {:?}: acceptedEvents cannot include the reserved webhook event {event:?}",
-                widget.id
             ));
         }
     }
@@ -788,9 +774,9 @@ fn validate_widget_surfaces(widgets: &[ModuleWidget], provenance: InstallProvena
                 "{label}: a widget cannot be placed on the surface it hosts ({hosted:?})"
             ));
         }
-        if w.entry.is_some() || !w.accepted_events.is_empty() {
+        if w.entry.is_some() {
             return Err(anyhow!(
-                "{label}: a widget that hosts a surface is drawn by the scene manager, so it declares no `entry` or `acceptedEvents`"
+                "{label}: a widget that hosts a surface is drawn by the scene manager, so it declares no `entry`"
             ));
         }
     }
@@ -992,6 +978,26 @@ fn validate_data_shape(shape: &ManifestDataShape, context: &str) -> Result<()> {
 /// a non-empty `path` that doesn't try to escape the module root.
 /// Existence inside the zip is checked at install time by the upload
 /// path (via `resolve_zip_file`) so this stays pure / IO-free.
+/// Reject a non-empty `acceptedEvents` on a widget.
+///
+/// Scenes are only ever sent alerts, and alerts reach alert widgets by name,
+/// so an event type here would route nothing. Rejecting it by name tells the
+/// author why, where serde dropping the field would leave a widget silently
+/// waiting on events that never come. An empty list asks for nothing and
+/// stays installable.
+fn validate_no_accepted_events(widgets: &[ModuleWidget]) -> Result<()> {
+    for (i, w) in widgets.iter().enumerate() {
+        if !w.accepted_events.is_empty() {
+            return Err(anyhow!(
+                "widget #{i} ({}): `acceptedEvents` is no longer supported. Scenes receive alerts \
+                 through alert widgets, by name; remove the field.",
+                w.id
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Reject the retired `overlays[]` surface.
 ///
 /// It never had a catalog registration or a serving route, so a declared
@@ -1224,40 +1230,15 @@ fn resolve_workflows(
     Ok(out)
 }
 
-fn resolve_widgets(
-    items: &[ModuleWidget],
-    widgets_table: &KindTable,
-    triggers_table: &KindTable,
-) -> Result<Vec<ResolvedWidget>> {
+fn resolve_widgets(items: &[ModuleWidget], widgets_table: &KindTable) -> Result<Vec<ResolvedWidget>> {
     let mut out = Vec::with_capacity(items.len());
     for (i, widget) in items.iter().enumerate() {
         let entry = widgets_table
             .entries
             .get(widget.id.trim())
             .ok_or_else(|| anyhow!("internal: widget #{i} missing from widget table"))?;
-        let mut accepted_events = Vec::with_capacity(widget.accepted_events.len());
-        for (ei, raw) in widget.accepted_events.iter().enumerate() {
-            let event = raw.trim();
-            let label = format!("widget #{i} ({}) acceptedEvents[{ei}]", widget.id);
-            if event.is_empty() {
-                return Err(anyhow!("{label}: event type must not be empty"));
-            }
-            // A canonical id here would be delivered to nothing: the fan-out
-            // compares these against a CloudEvent's `type`. Rejecting it is
-            // the difference between a failed install and a widget that
-            // silently never receives anything.
-            if event.contains(CANONICAL_ID_SEPARATOR) {
-                return Err(anyhow!(
-                    "{label}: expected an event type (e.g. \"channel.follow\"), got {event:?} — \
-                     acceptedEvents are matched against a CloudEvent's `type`, not resolved as \
-                     canonical ids"
-                ));
-            }
-            accepted_events.push(event.to_string());
-        }
         out.push(ResolvedWidget {
             canonical_id: entry.canonical_id.clone(),
-            accepted_events,
         });
     }
     Ok(out)
@@ -1631,15 +1612,6 @@ mod tests {
             let err = rejection(WEBHOOK_TRIGGER, &extra);
             assert!(err.contains("cannot bind to a webhook trigger"), "{trigger_ref}: {err}");
         }
-    }
-
-    #[test]
-    fn rejects_a_widget_accepting_a_webhook_event() {
-        let err = rejection(
-            WEBHOOK_TRIGGER,
-            r#", "widgets": [{ "id": "w1", "name": "W1", "acceptedEvents": ["webhook.test_mod.orders"] }]"#,
-        );
-        assert!(err.contains("acceptedEvents"), "{err}");
     }
 
     // ---------------------------------------------------------------
@@ -2420,52 +2392,28 @@ mod tests {
     }
 
     #[test]
-    fn resolves_command_workflow_and_keeps_accepted_events_verbatim() {
+    fn resolves_command_workflow() {
         let m = minimal(r#",
             "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus" }],
             "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [] }],
-            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix", "workflow": "w1" }],
-            "widgets": [{ "id": "wd1", "name": "Wd1", "acceptedEvents": ["channel.follow"] }]"#);
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix", "workflow": "w1" }]"#);
         let r = validate(&m).expect("ok");
         assert_eq!(
             r.commands[0].workflow.as_ref().unwrap().to_string(),
             "test_mod:workflow:w1"
         );
-        assert_eq!(r.widgets[0].accepted_events, vec!["channel.follow".to_string()]);
-    }
-
-    /// A widget may accept an event no installed module declares yet. That is
-    /// the point: the emitting module can be installed, removed and
-    /// reinstalled without the widget caring.
-    #[test]
-    fn accepted_events_need_not_match_any_declared_trigger() {
-        let m = minimal(r#",
-            "widgets": [{ "id": "wd1", "name": "Wd1", "acceptedEvents": ["channel.follow", "stream.online"] }]"#);
-        let r = validate(&m).expect("ok");
-        assert_eq!(
-            r.widgets[0].accepted_events,
-            vec!["channel.follow".to_string(), "stream.online".to_string()]
-        );
-    }
-
-    /// The old form is now a value that would be compared against a
-    /// CloudEvent `type` and match nothing. Fail the install rather than
-    /// register a widget that silently receives no events.
-    #[test]
-    fn rejects_a_canonical_id_in_accepted_events() {
-        let m = minimal(r#",
-            "widgets": [{ "id": "wd1", "name": "Wd1", "acceptedEvents": ["woofx3_twitch:trigger:channel.follow"] }]"#);
-        let err = validate(&m).unwrap_err().to_string();
-        assert!(err.contains("acceptedEvents"), "got: {err}");
-        assert!(err.contains("channel.follow"), "error should quote the offending value: {err}");
     }
 
     #[test]
-    fn rejects_an_empty_accepted_event() {
-        let m = minimal(r#",
-            "widgets": [{ "id": "wd1", "name": "Wd1", "acceptedEvents": [""] }]"#);
-        let err = validate(&m).unwrap_err().to_string();
-        assert!(err.contains("must not be empty"), "got: {err}");
+    fn rejects_accepted_events_on_a_widget() {
+        let err = validate(&minimal(r#",
+            "widgets": [{ "id": "wd1", "name": "Wd1", "acceptedEvents": ["channel.follow"] }]"#))
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("`acceptedEvents` is no longer supported"), "got: {err}");
+        validate(&minimal(r#",
+            "widgets": [{ "id": "wd1", "name": "Wd1", "acceptedEvents": [] }]"#))
+        .expect("an empty list asks for nothing");
     }
 
     #[test]

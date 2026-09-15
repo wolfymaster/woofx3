@@ -128,16 +128,9 @@ contract is the same.
 ## Widget authoring
 
 ```ts
-import type { WidgetHost, WidgetEvent } from "@woofx3/module-sdk";
+import type { WidgetHost } from "@woofx3/module-sdk";
 
 const host: WidgetHost = window.widgetHost!;
-
-// Subscribe to events the widget declared in `acceptedEvents[]`.
-host.onEvent((event: WidgetEvent) => {
-  if (event.type === "channel.follow") {
-    appendFollower(event.data);
-  }
-});
 
 // Read settings the scene editor populated.
 const accent = host.settings.accent ?? "#ff5e3a";

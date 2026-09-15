@@ -669,12 +669,6 @@ pub struct Widget {
     /// file inside the widget's assets.
     #[prost(string, tag="12")]
     pub entry: ::prost::alloc::string::String,
-    /// CloudEvent types (e.g. "channel.follow") the scene fan-out delivers to
-    /// every placement of this widget. Held on the definition rather than on
-    /// placements so a module update that changes them reaches every scene
-    /// without rewriting any.
-    #[prost(string, repeated, tag="13")]
-    pub accepted_events: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Where this widget may be placed: "scene", "alert", or both. An alert
     /// layout may only place widgets that list "alert".
     #[prost(string, repeated, tag="14")]
@@ -703,8 +697,6 @@ pub struct WidgetInput {
     /// index.html fallback.
     #[prost(string, tag="8")]
     pub entry: ::prost::alloc::string::String,
-    #[prost(string, repeated, tag="9")]
-    pub accepted_events: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, repeated, tag="10")]
     pub surfaces: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, tag="11")]

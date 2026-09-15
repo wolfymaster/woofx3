@@ -42,7 +42,6 @@ describe("P1 woofx3.widget — envelope guard", () => {
       type: "init",
       settings: { label: "x" },
       capabilities: ["storage"],
-      acceptedEvents: ["channel.follow"],
     },
     {
       proto: WIDGET_PROTOCOL,
@@ -172,7 +171,6 @@ describe("P2 woofx3.overlay-events — frame round-trip", () => {
       source: "twitch",
       time: "2026-06-12T00:00:00Z",
       data: { userName: "wolfy" },
-      parameters: { text: "welcome!", duration: 5 },
     },
     { kind: "scene.updated", sceneId: "scene-1", revision: 4 },
     { kind: "control", action: "token.revoked" },

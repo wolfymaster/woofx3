@@ -19,7 +19,6 @@ interface WidgetInstanceConfig {
   moduleId: string;
   position: { x: number; y: number; width: number; height: number };
   settings: Record<string, unknown>;
-  acceptedEvents: string[];
   /** "alert" for an alert widget, which the page draws itself; "" otherwise. */
   hostsSurface: string;
   frameUrl: string;

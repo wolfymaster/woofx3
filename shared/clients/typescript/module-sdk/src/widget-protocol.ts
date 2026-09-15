@@ -138,9 +138,9 @@ export interface EventQueueConfig {
 }
 
 /**
- * Open an event subscription. `types` optionally narrows beyond the
- * instance's `acceptedEvents`; when absent the host delivers every
- * accepted event. Deliveries arrive as `event.deliver` with the same
+ * Open an event subscription. `types` optionally narrows which event
+ * types are delivered; when absent the host delivers every event
+ * addressed to the instance. Deliveries arrive as `event.deliver` with the same
  * `subId`. `queue` registers this instance's dispatch policy with the
  * host's per-instance queue — this is the "widget registers itself
  * with a queue configuration" moment.
@@ -188,14 +188,12 @@ export interface WidgetStatusReportMessage extends WidgetProtocolEnvelope {
 /**
  * Handshake completion. `settings` / `capabilities` echo the boot
  * payload (boot is authoritative for the synchronous `host.settings`
- * surface); `acceptedEvents` is the instance's resolved event-type
- * allowlist for visibility on the widget side.
+ * surface).
  */
 export interface WidgetInitMessage extends WidgetProtocolEnvelope {
   type: "init";
   settings: Record<string, unknown>;
   capabilities: string[];
-  acceptedEvents: string[];
 }
 
 /** Handshake refusal (e.g. unsupported protocol version). Terminal:
