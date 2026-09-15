@@ -26,6 +26,7 @@ function makeBoot(overrides: Partial<WidgetBootPayload> = {}): WidgetBootPayload
     instanceId: "inst-1",
     moduleId: "mod-1",
     widgetCanonicalId: "mod-1:widget:w1",
+    surface: "scene",
     settings: { label: "watchers", accent: "#fff" },
     capabilities: ["storage", "events", "status"],
     resourceBaseUrl: "https://cdn.example.test/modules/mod-1/abc123/widgets/w1/",
