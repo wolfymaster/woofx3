@@ -22,9 +22,20 @@ import type { WebhookClient } from "../webhook-client";
 import type { WorkflowItem } from "./types";
 import { rebuildWorkflowDefinition, timestampToIso } from "./helpers";
 
+/**
+ * Runs a module function in the barkloader sandbox and waits for its return
+ * value. `BarkloaderClient` is the production implementation; a timeout
+ * rejects with its `InvokeTimeoutError`.
+ */
+export interface FunctionInvoker {
+  isConnected(): boolean;
+  invoke(func: string, event: Record<string, unknown>): Promise<unknown>;
+}
+
 export interface ApiOptions {
   db: DbClient;
   nats: NATSClient | null;
+  functions: FunctionInvoker | null;
   barkloaderUrl: string;
   streamwareUrl?: string;
   overlayPublicUrl?: string;
@@ -44,6 +55,7 @@ export class ApiRouteHost extends RpcTarget {
 
   protected db: DbClient;
   protected nats: NATSClient | null;
+  protected functions: FunctionInvoker | null;
   protected applicationId: string | null = null;
   protected barkloaderUrl: string;
   protected streamwareUrl: string;
@@ -194,7 +206,8 @@ export class ApiRouteHost extends RpcTarget {
     eventType: string,
     data: Record<string, unknown>,
     subject?: string,
-    platform?: string
+    platform?: string,
+    source = "api"
   ): Promise<void> {
     if (!this.nats) {
       this.logger.error("Cannot publish event - NATS client not available", { eventType });
@@ -209,7 +222,7 @@ export class ApiRouteHost extends RpcTarget {
     const event: Record<string, unknown> = {
       id: eventId,
       type: eventType,
-      source: "api",
+      source,
       time: new Date().toISOString(),
       ...(platform ? { platform } : {}),
       data,
@@ -243,6 +256,7 @@ export class ApiRouteHost extends RpcTarget {
     }
     this.db = opts.db;
     this.nats = opts.nats;
+    this.functions = opts.functions;
     this.barkloaderUrl = opts.barkloaderUrl;
     this.streamwareUrl = opts.streamwareUrl ?? "";
     this.overlayPublicUrl = opts.overlayPublicUrl ?? "http://127.0.0.1:9100";

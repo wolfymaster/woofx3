@@ -7,6 +7,13 @@ export interface ApiConfig {
   databaseProxyUrl: string;
   barkloaderUrl: string;
   /**
+   * Barkloader's WebSocket endpoint. The api runs module functions over it
+   * and waits for their result (a webhook handler's response, for one).
+   */
+  barkloaderWsUrl: string;
+  /** Token barkloader requires on that WebSocket. */
+  barkloaderKey: string;
+  /**
    * URL of the streamware service that serves scene overlays. The UI's
    * browser-source page iframes `${streamwareUrl}/overlay/scene/{id}`
    * for streamware-backed scenes. Defaults to localhost:9101 (the
@@ -38,6 +45,10 @@ export const ApiEnvSchema = z
     databaseProxyUrl: z.string().optional(),
     woofx3BarkloaderUrl: z.string().optional(),
     barkloaderUrl: z.string().optional(),
+    woofx3BarkloaderWsUrl: z.string().optional(),
+    barkloaderWsUrl: z.string().optional(),
+    woofx3BarkloaderKey: z.string().optional(),
+    barkloaderKey: z.string().optional(),
     woofx3StreamwareUrl: z.string().optional(),
     streamwareUrl: z.string().optional(),
     woofx3OverlayPublicUrl: z.string().optional(),
@@ -78,6 +89,8 @@ export function loadConfig(): ApiConfig {
   const rootDir = String(config.woofx3RootPath);
   const databaseProxyUrl = String(config.woofx3DatabaseProxyUrl ?? config.databaseProxyUrl ?? "");
   const barkloaderUrl = String(config.woofx3BarkloaderUrl ?? config.barkloaderUrl ?? "http://127.0.0.1:3005");
+  const barkloaderWsUrl = String(config.woofx3BarkloaderWsUrl ?? config.barkloaderWsUrl ?? "");
+  const barkloaderKey = String(config.woofx3BarkloaderKey ?? config.barkloaderKey ?? "");
   const streamwareUrl = String(
     config.woofx3StreamwareUrl ?? config.streamwareUrl ?? "http://127.0.0.1:9101",
   );
@@ -88,6 +101,12 @@ export function loadConfig(): ApiConfig {
 
   if (!databaseProxyUrl) {
     throw new Error("databaseProxyUrl (or DATABASE_PROXY_URL) is required");
+  }
+  if (!barkloaderWsUrl) {
+    throw new Error("barkloaderWsUrl (or WOOFX3_BARKLOADER_WS_URL) is required");
+  }
+  if (!barkloaderKey) {
+    throw new Error("barkloaderKey (or WOOFX3_BARKLOADER_KEY) is required");
   }
 
   // Tiger Style: fail fast at startup on malformed URLs rather than
@@ -113,6 +132,8 @@ export function loadConfig(): ApiConfig {
     port,
     databaseProxyUrl,
     barkloaderUrl,
+    barkloaderWsUrl,
+    barkloaderKey,
     streamwareUrl,
     overlayPublicUrl,
     rootDir,

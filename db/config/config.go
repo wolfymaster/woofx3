@@ -9,6 +9,9 @@ type DatabaseEnvConfig struct {
 	BadgerPath        string `env:"WOOFX3_BADGER_PATH,required"`
 	DatabaseProxyPort string `env:"WOOFX3_DATABASE_PROXY_PORT,default=8080"`
 	LogLevel          string `env:"WOOFX3_LOG_LEVEL"`
+	// SecretsKey seals `secret` module settings at rest: a base64-encoded
+	// 32-byte key. Injected like any other config so every instance shares it.
+	SecretsKey string `env:"WOOFX3_SECRETS_KEY,required"`
 	nats.Config
 }
 

@@ -33,7 +33,7 @@ use super::module_manifest::{
     CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, ManifestAction, ManifestActionImpl, ManifestAsset,
     ManifestCommand, ManifestConfigField, ManifestDataShape, ManifestFunction,
     ManifestResourceKind, ManifestSetting, ManifestTrigger, ManifestWorkflow, ModuleManifest,
-    ModuleWidget,
+    ModuleWidget, SECRET_SETTING_TYPE, WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE,
 };
 
 /// Resolved action implementation. Mirrors `ManifestActionImpl` but
@@ -302,6 +302,8 @@ pub fn validate_with_provenance(
     let workflows =
         resolve_workflows(&manifest.workflows, &workflows_table, &triggers_table, &actions_table)?;
     let widgets = resolve_widgets(&manifest.widgets, &widgets_table, &triggers_table)?;
+    validate_trigger_transports(manifest, provenance)?;
+    validate_no_ingress_bindings(manifest, &module_id, &workflows, &widgets)?;
 
     Ok(ResolvedManifest {
         module_id,
@@ -313,6 +315,105 @@ pub fn validate_with_provenance(
         widgets,
         assets,
     })
+}
+
+/// Event prefixes no bus-fired trigger may claim: the webhook placeholder
+/// and the outbox.
+///
+/// The outbox stays open to the system module, which owns the `db.workflow.*`
+/// triggers and declares no handlers. It is closed to uploads because a
+/// webhook handler may publish any event type its module declares as an
+/// eventbus trigger, so a `db.` trigger would let an upload forge outbox
+/// events.
+fn reserved_event_prefixes(provenance: InstallProvenance) -> &'static [&'static str] {
+    match provenance {
+        InstallProvenance::User => &[WEBHOOK_EVENT_PREFIX, "db."],
+        InstallProvenance::System => &[WEBHOOK_EVENT_PREFIX],
+    }
+}
+
+/// Enforce what each trigger transport may declare.
+///
+/// A webhook trigger is fired by its handler, never by the bus, and nothing
+/// binds to it, so the fields that describe a bus event or a builder binding
+/// mean nothing on it. They are rejected rather than silently ignored.
+fn validate_trigger_transports(manifest: &ModuleManifest, provenance: InstallProvenance) -> Result<()> {
+    for (i, trigger) in manifest.triggers.iter().enumerate() {
+        let label = format!("trigger #{i} ({})", trigger.id);
+        if trigger.trigger_type != WEBHOOK_TRIGGER_TYPE {
+            if !trigger.handler.is_empty() {
+                return Err(anyhow!("{label}: `handler` is only valid on `type: \"webhook\"` triggers"));
+            }
+            let event = if trigger.event.is_empty() { &trigger.id } else { &trigger.event };
+            if let Some(prefix) = reserved_event_prefixes(provenance).iter().find(|p| event.starts_with(**p)) {
+                return Err(anyhow!("{label}: event {event:?} uses the reserved prefix {prefix:?}"));
+            }
+            continue;
+        }
+
+        let handler = trigger.handler.trim();
+        if handler.is_empty() {
+            return Err(anyhow!("{label}: a webhook trigger must name its `handler` function"));
+        }
+        if !manifest.functions.iter().any(|f| f.id.trim() == handler) {
+            return Err(anyhow!("{label}: handler {handler:?} names no function in this manifest"));
+        }
+        if !trigger.event.is_empty() {
+            return Err(anyhow!(
+                "{label}: a webhook trigger cannot set `event`; the engine assigns it a reserved one"
+            ));
+        }
+        if trigger.schema.is_some() {
+            return Err(anyhow!("{label}: a webhook trigger cannot declare `schema`; nothing binds to it"));
+        }
+        if trigger.emits.is_some() {
+            return Err(anyhow!(
+                "{label}: a webhook trigger cannot declare `emits`; declare it on the eventbus trigger its handler returns"
+            ));
+        }
+        if trigger.allow_variants {
+            return Err(anyhow!("{label}: a webhook trigger cannot set `allowVariants`; nothing binds to it"));
+        }
+    }
+    Ok(())
+}
+
+/// Reject author workflows and widgets bound to ingress. A webhook trigger's
+/// only consumer is its handler, so a binding would wait on an event nothing
+/// publishes. A cross-module reference can only be resolved at install time,
+/// where `execute_register_workflow` checks it.
+fn validate_no_ingress_bindings(
+    manifest: &ModuleManifest,
+    module_id: &str,
+    workflows: &[ResolvedWorkflow],
+    widgets: &[ResolvedWidget],
+) -> Result<()> {
+    for (workflow, resolved) in manifest.workflows.iter().zip(workflows) {
+        let bound_to_ingress = match &resolved.trigger {
+            WorkflowTriggerRef::Event(event) => event.starts_with(WEBHOOK_EVENT_PREFIX),
+            WorkflowTriggerRef::Resource(canonical) => {
+                canonical.module_id() == module_id
+                    && manifest.triggers.iter().any(|t| {
+                        t.id == canonical.resource_id() && t.trigger_type == WEBHOOK_TRIGGER_TYPE
+                    })
+            }
+        };
+        if bound_to_ingress {
+            return Err(anyhow!(
+                "workflow {:?}: cannot bind to a webhook trigger; bind to an event its handler returns",
+                workflow.id
+            ));
+        }
+    }
+    for (widget, resolved) in manifest.widgets.iter().zip(widgets) {
+        if let Some(event) = resolved.accepted_events.iter().find(|e| e.starts_with(WEBHOOK_EVENT_PREFIX)) {
+            return Err(anyhow!(
+                "widget {:?}: acceptedEvents cannot include the reserved webhook event {event:?}",
+                widget.id
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// One unit of work in an install plan. Each variant names exactly one
@@ -736,7 +837,17 @@ fn validate_settings(settings: &[ManifestSetting]) -> Result<()> {
         if setting.label.trim().is_empty() {
             return Err(anyhow!("setting #{i} ({id}): `label` must be non-empty"));
         }
-        validate_field_type(&setting.setting_type, &format!("setting #{i} ({id})"))?;
+        // `secret` is a settings-only type: no trigger, action or widget field
+        // holds one, so it stays out of CONFIG_FIELD_TYPES.
+        if setting.setting_type == SECRET_SETTING_TYPE {
+            if setting.default_value.is_some() {
+                return Err(anyhow!(
+                    "setting #{i} ({id}): a `secret` setting cannot declare `defaultValue`; the manifest would ship the secret"
+                ));
+            }
+        } else {
+            validate_field_type(&setting.setting_type, &format!("setting #{i} ({id})"))?;
+        }
         if setting.setting_type == "button" && setting.action.is_null() {
             return Err(anyhow!("setting #{i} ({id}): `button` needs an `action`"));
         }
@@ -1266,6 +1377,160 @@ mod tests {
             let m = parse(&format!(r#"{{"id": "{id}", "name": "M", "version": "1.0.0"}}"#));
             validate(&m).unwrap_or_else(|e| panic!("{id} should install: {e}"));
         }
+    }
+
+    // ---------------------------------------------------------------
+    // Webhook triggers
+    // ---------------------------------------------------------------
+
+    const WEBHOOK_TRIGGER: &str =
+        r#"{ "id": "orders", "name": "Orders", "type": "webhook", "handler": "handle_order" }"#;
+
+    fn with_webhook_function(trigger: &str, extra: &str) -> ModuleManifest {
+        minimal(&format!(
+            r#", "triggers": [{trigger}],
+            "functions": [{{ "id": "handle_order", "name": "Handle", "runtime": "js", "path": "h.js" }}]{extra}"#
+        ))
+    }
+
+    fn rejection(trigger: &str, extra: &str) -> String {
+        validate(&with_webhook_function(trigger, extra))
+            .expect_err("manifest must be rejected")
+            .to_string()
+    }
+
+    #[test]
+    fn accepts_a_webhook_trigger_with_a_handler() {
+        validate(&with_webhook_function(WEBHOOK_TRIGGER, "")).expect("validate ok");
+    }
+
+    #[test]
+    fn rejects_a_webhook_trigger_without_a_handler() {
+        let err = rejection(r#"{ "id": "orders", "name": "Orders", "type": "webhook" }"#, "");
+        assert!(err.contains("must name its `handler`"), "{err}");
+    }
+
+    #[test]
+    fn rejects_a_handler_that_names_no_function() {
+        let err = rejection(
+            r#"{ "id": "orders", "name": "Orders", "type": "webhook", "handler": "missing" }"#,
+            "",
+        );
+        assert!(err.contains(r#""missing""#), "names the handler: {err}");
+    }
+
+    #[test]
+    fn rejects_a_handler_on_an_eventbus_trigger() {
+        let err = rejection(
+            r#"{ "id": "t1", "name": "T1", "type": "eventbus", "event": "store.order.created", "handler": "handle_order" }"#,
+            "",
+        );
+        assert!(err.contains("only valid on"), "{err}");
+    }
+
+    #[test]
+    fn rejects_bus_and_builder_fields_on_a_webhook_trigger() {
+        for (field, json) in [
+            ("`event`", r#""event": "store.order.created""#),
+            ("`schema`", r#""schema": [{ "id": "a", "label": "A", "type": "text" }]"#),
+            ("`emits`", r#""emits": { "fields": [{ "path": "a", "type": "string" }] }"#),
+            ("`allowVariants`", r#""allowVariants": true"#),
+        ] {
+            let trigger = format!(
+                r#"{{ "id": "orders", "name": "Orders", "type": "webhook", "handler": "handle_order", {json} }}"#
+            );
+            let err = rejection(&trigger, "");
+            assert!(err.contains(field), "{field}: {err}");
+        }
+    }
+
+    #[test]
+    fn rejects_reserved_prefixes_on_bus_triggers() {
+        for event in ["webhook.other_mod.orders", "db.module.trigger.registered"] {
+            let trigger = format!(r#"{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "{event}" }}"#);
+            let err = rejection(&trigger, "");
+            assert!(err.contains("reserved prefix"), "{event}: {err}");
+        }
+    }
+
+    // A trigger with no `event` fires on its id, so the id is checked too.
+    #[test]
+    fn rejects_a_reserved_prefix_reached_through_the_id_fallback() {
+        let err = rejection(r#"{ "id": "webhook.sneaky", "name": "T1", "type": "eventbus" }"#, "");
+        assert!(err.contains("reserved prefix"), "{err}");
+    }
+
+    fn system_module_with_trigger_event(event: &str) -> ModuleManifest {
+        parse(&format!(
+            r#"{{"id": "{SYSTEM_MODULE_ID}", "name": "woofx3", "version": "1.0.0",
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "{event}" }}]}}"#
+        ))
+    }
+
+    #[test]
+    fn accepts_an_outbox_trigger_from_the_system_module() {
+        let m = system_module_with_trigger_event("db.workflow.created.*");
+        validate_with_provenance(&m, InstallProvenance::System).expect("the system module binds the outbox");
+    }
+
+    #[test]
+    fn rejects_the_webhook_prefix_even_from_the_system_module() {
+        let m = system_module_with_trigger_event("webhook.other_mod.orders");
+        let err = validate_with_provenance(&m, InstallProvenance::System)
+            .expect_err("a webhook event is fired by its handler, never the bus")
+            .to_string();
+        assert!(err.contains("reserved prefix"), "{err}");
+    }
+
+    #[test]
+    fn rejects_a_workflow_bound_to_a_webhook_trigger() {
+        for trigger_ref in ["orders", "webhook.test_mod.orders"] {
+            let extra = format!(
+                r#", "actions": [{{ "id": "a1", "name": "A1", "type": "function", "function": "handle_order" }}],
+                "workflows": [{{ "id": "wf", "name": "WF", "trigger": "{trigger_ref}", "steps": [{{ "action": "a1" }}] }}]"#
+            );
+            let err = rejection(WEBHOOK_TRIGGER, &extra);
+            assert!(err.contains("cannot bind to a webhook trigger"), "{trigger_ref}: {err}");
+        }
+    }
+
+    #[test]
+    fn rejects_a_widget_accepting_a_webhook_event() {
+        let err = rejection(
+            WEBHOOK_TRIGGER,
+            r#", "widgets": [{ "id": "w1", "name": "W1", "acceptedEvents": ["webhook.test_mod.orders"] }]"#,
+        );
+        assert!(err.contains("acceptedEvents"), "{err}");
+    }
+
+    // ---------------------------------------------------------------
+    // Secret settings
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn accepts_a_secret_setting() {
+        let m = minimal(
+            r#", "settings": [{ "id": "webhookSecret", "label": "Webhook secret", "type": "secret" }]"#,
+        );
+        validate(&m).expect("validate ok");
+    }
+
+    #[test]
+    fn rejects_a_default_value_on_a_secret_setting() {
+        let m = minimal(
+            r#", "settings": [{ "id": "webhookSecret", "label": "Webhook secret", "type": "secret", "defaultValue": "shipped" }]"#,
+        );
+        let err = validate(&m).expect_err("must be rejected").to_string();
+        assert!(err.contains("defaultValue"), "{err}");
+    }
+
+    #[test]
+    fn rejects_secret_as_a_trigger_field_type() {
+        let m = minimal(
+            r#", "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "a.b",
+                "schema": [{ "id": "token", "label": "Token", "type": "secret" }] }]"#,
+        );
+        validate(&m).expect_err("secret is a settings-only type");
     }
 
     // ---------------------------------------------------------------

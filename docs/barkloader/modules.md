@@ -203,8 +203,9 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `id` | string | yes | Manifest-local trigger id. Combined with the module id and the `trigger` kind to form the canonical id (`{moduleId}:trigger:{id}`). Must match `[A-Za-z0-9._-]+`. |
 | `name` | string | yes | Display name. Used only for presentation; never used as an identifier. |
 | `description` | string | no | Human-readable summary. |
-| `type` | string | yes | Trigger transport: `eventbus`, `webhook`, `command`, `schedule`. Determines how install wires the trigger up. |
-| `event` | string | yes (for `eventbus`) | The NATS subject this trigger fires on (e.g. `channel.subscribe`). Stored on the trigger row as `event`. The trigger's `id` is the manifest-local identifier and is **not** the same as `event` — earlier versions conflated them. |
+| `type` | string | yes | Trigger transport: `eventbus`, `webhook`, `command`, `schedule`. Determines how install wires the trigger up. See [Webhook triggers](#webhook-triggers) for `webhook`. |
+| `event` | string | yes (for `eventbus`) | The NATS subject this trigger fires on (e.g. `channel.subscribe`). Stored on the trigger row as `event`. The trigger's `id` is the manifest-local identifier and is **not** the same as `event` — earlier versions conflated them. Must not start with `webhook.` or `db.`, which are reserved. Rejected on a `webhook` trigger. |
+| `handler` | string | yes (for `webhook`) | Manifest-local id of the function that handles inbound HTTP requests for a `webhook` trigger. Rejected on every other type. |
 | `taxonomy` | array of string | no | Open, multi-valued UI classification (e.g. `["platform.twitch.chat", "function.chat"]`). Sent to RegisterTrigger as `taxonomy`. See [Taxonomy](#taxonomy). **Legacy:** superseded by `category`. |
 | `category` | string | no | **Legacy.** UX / registry grouping (e.g. `platform.twitch`). Still accepted; folded into a single-element `taxonomy` at parse time when `taxonomy` is unset, otherwise falls back to `type`. New manifests should use `taxonomy` instead. |
 | `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this trigger to a workflow; see [Field declarations](#field-declarations). |
@@ -212,6 +213,32 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `allowVariants` | boolean | no | When true, the UI lets a user create multiple bound instances of this trigger (each with its own `schema` values). Used for trigger classes like cheer / subscribe that fan out per tier or threshold. |
 
 On install, when `databaseProxyUrl` is set in `.woofx3.json`, each trigger is registered via Twirp `module.ModuleService/RegisterTrigger`. The trigger row's `event` column carries the NATS subject from the manifest's `event` field; `manifest_id` carries the manifest's `id`; `config_schema` is the JSON-encoded `schema`; `emits` is the JSON-encoded `emits` (`{}` when the manifest declares none). `taxonomy` is resolved in priority order: a non-empty `taxonomy` array as given, else a non-empty `category` wrapped in a single-element array, else the `type` field — see [Taxonomy](#taxonomy).
+
+#### Webhook triggers
+
+A `type: "webhook"` trigger gives the module a public URL, minted by the control plane,
+and names the function that handles requests to it:
+
+```json
+{ "id": "orders", "name": "Store webhook", "type": "webhook", "handler": "handle_order" }
+```
+
+- **Nothing binds to it.** `event`, `schema`, `emits` and `allowVariants` are rejected on a
+  webhook trigger, and no workflow or widget may reference it or any `webhook.*` event.
+  Barkloader stores its `event` as the reserved `webhook.{moduleId}.{triggerId}`, which
+  nothing publishes.
+- **The handler runs in the request path.** `ctx.event.data` is the request,
+  `{ method, headers, query, body, rawBody }`, and the function returns
+  `{ status, headers?, body?, events? }`. See [Module SDK → Webhook handlers](./sdk.md#webhook-handlers).
+- **The handler verifies the request itself**, with [`ctx.crypto`](./sandbox.md#ctxcrypto) and
+  a key from module code or a [`secret` setting](#module-level-settings-settings).
+- **The engine acts on the result.** It checks the result, then publishes each returned
+  event before the provider gets its response. An event's `type` must be the `event` of an
+  `eventbus` trigger this module declares; that trigger is what workflows bind to. A handler
+  never publishes anything itself ([Engine integrity](../services/engine-integrity.md)).
+- **Limits:** 5 s per request; response body at most 64 KiB, with only `content-type` and
+  `x-*` headers; at most 16 events, each `data` at most 64 KiB. A result that breaks any rule
+  is a 500 and publishes nothing.
 
 ### Taxonomy
 
@@ -658,12 +685,13 @@ types have nothing to bind to.
 | `id` | string | yes | Manifest-local setting key, e.g. `clientId`. Combined with the module id to key the `module_settings` row (`module_id` + `key`, unique). This is the key a function reads via `ctx.module.settings.<id>`. |
 | `label` | string | yes | Display label for the settings UI. |
 | `description` | string | no | Defaults to `""`. |
-| `type` | string | yes | A [field type](#field-types) — in practice `text`, `number`, `toggle` or `button`. Validated at install. |
+| `type` | string | yes | A [field type](#field-types) — in practice `text`, `number`, `toggle` or `button` — or `secret` for a credential. `secret` is valid only here, never on a trigger, action or widget field. Validated at install. |
 | `required` | boolean | no | Defaults to `false`. Descriptive only today — **not enforced** anywhere in the install or read path; a module function reading an unset required setting just sees the type's zero value. |
-| `defaultValue` | string | no | Stored as a string regardless of `type`. If omitted, the effective default is `"0"` for `type: "number"`, `"false"` for `type: "toggle"`, and `""` otherwise. |
+| `defaultValue` | string | no | Stored as a string regardless of `type`. If omitted, the effective default is `"0"` for `type: "number"`, `"false"` for `type: "toggle"`, and `""` otherwise. Rejected on `type: "secret"`: the manifest would ship the secret. |
 | `action` | object | no | Required for `type: "button"`. `{ kind: "internal", request: {...}, timeoutMs? }` or `{ kind: "integration", integration: "..." }`. Buttons store no value and are skipped by `RegisterModuleSettings`. |
 
-Example — `modules/platform/spotify/manifest.json` (**woofx3-modules** repository):
+Example — credentials for a Spotify integration. The client id is plain configuration;
+the client secret and refresh token are credentials, so they are `secret`:
 
 ```json
 "settings": [
@@ -678,14 +706,14 @@ Example — `modules/platform/spotify/manifest.json` (**woofx3-modules** reposit
     "id": "clientSecret",
     "label": "Spotify Client Secret",
     "description": "Your Spotify application client secret.",
-    "type": "text",
+    "type": "secret",
     "required": true
   },
   {
     "id": "refreshToken",
-    "name": "Spotify Refresh Token",
+    "label": "Spotify Refresh Token",
     "description": "OAuth refresh token for the streamer's Spotify account.",
-    "type": "string",
+    "type": "secret",
     "required": true
   }
 ]
@@ -696,10 +724,12 @@ Example — `modules/platform/spotify/manifest.json` (**woofx3-modules** reposit
 On install, barkloader registers every declared setting into the `module_settings`
 table via the db-proxy `ModuleSettingService/RegisterModuleSettings` RPC, keyed by
 the manifest-local module id (not the composite `{id}:{version}:{hash}` key used for
-actions/widgets/background tasks). Registration is an upsert-if-absent
-(`ON CONFLICT DO NOTHING` server-side): re-installing or upgrading a module **never
+actions/widgets/background tasks). Re-installing or upgrading a module **never
 overwrites** a value the user already configured — only a brand-new key gets its
-manifest `default` (or type-based zero value) written.
+manifest `default` (or type-based zero value) written. The one exception is a
+setting whose declared `type` changed: its row takes the new type, and a value that
+becomes `secret` is sealed in place, while a secret that stops being one is cleared
+rather than decrypted into plain text.
 
 #### Reading settings at runtime — `ctx.module`
 
@@ -740,12 +770,11 @@ See [Sandbox runtime → `ctx.module`](./sandbox.md#ctxmodule) for the full sand
 contract, and [Module settings: the UI contract](../services/module-settings-ui.md)
 for how a streamer's UI reads and writes these values after install.
 
-> **No secrecy guarantees.** `module_settings.value` is a plain `TEXT` column with no
-> encryption, hashing, or field-level redaction — there is no `secret`/`sensitive`
-> flag anywhere in the manifest schema or the DB row. The `GET
-> /modules/{moduleId}/settings` API route returns every setting's value verbatim,
-> including things like `clientSecret`. Do not expose that route to untrusted
-> clients without an access-control layer in front of it.
+> **Secrets.** A `type: "secret"` setting is sealed at rest by db-proxy, returned by the
+> settings API only as `value: ""` plus `isSet`, and opened solely for this module's
+> own functions, where it arrives in `ctx.module.settings` as a string. Every other
+> type is plain `TEXT`, returned as-is. See
+> [Module settings: the UI contract → Secret settings](../services/module-settings-ui.md#secret-settings).
 
 > **`widget_settings` exists in the schema but is not wired up.** Migration 0020 also
 > created a `widget_settings` table and a matching Go model/repository, intended as a

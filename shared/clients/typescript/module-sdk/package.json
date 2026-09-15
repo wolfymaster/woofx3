@@ -1,6 +1,6 @@
 {
   "name": "@woofx3/module-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Type definitions, runtime stubs, and dev-loop helpers for authoring barkloader modules (functions + widgets) for the woofx3 streaming control plane.",
   "type": "module",
   "main": "./dist/index.js",

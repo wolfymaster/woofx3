@@ -32,6 +32,8 @@ type ModuleSettingService interface {
 	SetModuleSetting(context.Context, *SetModuleSettingRequest) (*ModuleSettingRecord, error)
 
 	RegisterModuleSettings(context.Context, *RegisterModuleSettingsRequest) (*RegisterModuleSettingsResponse, error)
+
+	GetModuleSecretValues(context.Context, *GetModuleSecretValuesRequest) (*GetModuleSecretValuesResponse, error)
 }
 
 // ====================================
@@ -40,7 +42,7 @@ type ModuleSettingService interface {
 
 type moduleSettingServiceProtobufClient struct {
 	client      HTTPClient
-	urls        [3]string
+	urls        [4]string
 	interceptor twirp.Interceptor
 	opts        twirp.ClientOptions
 }
@@ -68,10 +70,11 @@ func NewModuleSettingServiceProtobufClient(baseURL string, client HTTPClient, op
 	// Build method URLs: <baseURL>[<prefix>]/<package>.<Service>/<Method>
 	serviceURL := sanitizeBaseURL(baseURL)
 	serviceURL += baseServicePath(pathPrefix, "module_setting", "ModuleSettingService")
-	urls := [3]string{
+	urls := [4]string{
 		serviceURL + "ListModuleSettings",
 		serviceURL + "SetModuleSetting",
 		serviceURL + "RegisterModuleSettings",
+		serviceURL + "GetModuleSecretValues",
 	}
 
 	return &moduleSettingServiceProtobufClient{
@@ -220,13 +223,59 @@ func (c *moduleSettingServiceProtobufClient) callRegisterModuleSettings(ctx cont
 	return out, nil
 }
 
+func (c *moduleSettingServiceProtobufClient) GetModuleSecretValues(ctx context.Context, in *GetModuleSecretValuesRequest) (*GetModuleSecretValuesResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module_setting")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleSettingService")
+	ctx = ctxsetters.WithMethodName(ctx, "GetModuleSecretValues")
+	caller := c.callGetModuleSecretValues
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *GetModuleSecretValuesRequest) (*GetModuleSecretValuesResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetModuleSecretValuesRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetModuleSecretValuesRequest) when calling interceptor")
+					}
+					return c.callGetModuleSecretValues(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*GetModuleSecretValuesResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*GetModuleSecretValuesResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleSettingServiceProtobufClient) callGetModuleSecretValues(ctx context.Context, in *GetModuleSecretValuesRequest) (*GetModuleSecretValuesResponse, error) {
+	out := new(GetModuleSecretValuesResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[3], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
 // ================================
 // ModuleSettingService JSON Client
 // ================================
 
 type moduleSettingServiceJSONClient struct {
 	client      HTTPClient
-	urls        [3]string
+	urls        [4]string
 	interceptor twirp.Interceptor
 	opts        twirp.ClientOptions
 }
@@ -254,10 +303,11 @@ func NewModuleSettingServiceJSONClient(baseURL string, client HTTPClient, opts .
 	// Build method URLs: <baseURL>[<prefix>]/<package>.<Service>/<Method>
 	serviceURL := sanitizeBaseURL(baseURL)
 	serviceURL += baseServicePath(pathPrefix, "module_setting", "ModuleSettingService")
-	urls := [3]string{
+	urls := [4]string{
 		serviceURL + "ListModuleSettings",
 		serviceURL + "SetModuleSetting",
 		serviceURL + "RegisterModuleSettings",
+		serviceURL + "GetModuleSecretValues",
 	}
 
 	return &moduleSettingServiceJSONClient{
@@ -406,6 +456,52 @@ func (c *moduleSettingServiceJSONClient) callRegisterModuleSettings(ctx context.
 	return out, nil
 }
 
+func (c *moduleSettingServiceJSONClient) GetModuleSecretValues(ctx context.Context, in *GetModuleSecretValuesRequest) (*GetModuleSecretValuesResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "module_setting")
+	ctx = ctxsetters.WithServiceName(ctx, "ModuleSettingService")
+	ctx = ctxsetters.WithMethodName(ctx, "GetModuleSecretValues")
+	caller := c.callGetModuleSecretValues
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *GetModuleSecretValuesRequest) (*GetModuleSecretValuesResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetModuleSecretValuesRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetModuleSecretValuesRequest) when calling interceptor")
+					}
+					return c.callGetModuleSecretValues(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*GetModuleSecretValuesResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*GetModuleSecretValuesResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *moduleSettingServiceJSONClient) callGetModuleSecretValues(ctx context.Context, in *GetModuleSecretValuesRequest) (*GetModuleSecretValuesResponse, error) {
+	out := new(GetModuleSecretValuesResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[3], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
 // ===================================
 // ModuleSettingService Server Handler
 // ===================================
@@ -511,6 +607,9 @@ func (s *moduleSettingServiceServer) ServeHTTP(resp http.ResponseWriter, req *ht
 		return
 	case "RegisterModuleSettings":
 		s.serveRegisterModuleSettings(ctx, resp, req)
+		return
+	case "GetModuleSecretValues":
+		s.serveGetModuleSecretValues(ctx, resp, req)
 		return
 	default:
 		msg := fmt.Sprintf("no handler for path %q", req.URL.Path)
@@ -1059,6 +1158,186 @@ func (s *moduleSettingServiceServer) serveRegisterModuleSettingsProtobuf(ctx con
 	callResponseSent(ctx, s.hooks)
 }
 
+func (s *moduleSettingServiceServer) serveGetModuleSecretValues(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveGetModuleSecretValuesJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveGetModuleSecretValuesProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *moduleSettingServiceServer) serveGetModuleSecretValuesJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "GetModuleSecretValues")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(GetModuleSecretValuesRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.ModuleSettingService.GetModuleSecretValues
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *GetModuleSecretValuesRequest) (*GetModuleSecretValuesResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetModuleSecretValuesRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetModuleSecretValuesRequest) when calling interceptor")
+					}
+					return s.ModuleSettingService.GetModuleSecretValues(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*GetModuleSecretValuesResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*GetModuleSecretValuesResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *GetModuleSecretValuesResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *GetModuleSecretValuesResponse and nil error while calling GetModuleSecretValues. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *moduleSettingServiceServer) serveGetModuleSecretValuesProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "GetModuleSecretValues")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(GetModuleSecretValuesRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.ModuleSettingService.GetModuleSecretValues
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *GetModuleSecretValuesRequest) (*GetModuleSecretValuesResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*GetModuleSecretValuesRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*GetModuleSecretValuesRequest) when calling interceptor")
+					}
+					return s.ModuleSettingService.GetModuleSecretValues(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*GetModuleSecretValuesResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*GetModuleSecretValuesResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *GetModuleSecretValuesResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *GetModuleSecretValuesResponse and nil error while calling GetModuleSecretValues. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
 func (s *moduleSettingServiceServer) ServiceDescriptor() ([]byte, int) {
 	return twirpFileDescriptor7, 0
 }
@@ -1075,31 +1354,38 @@ func (s *moduleSettingServiceServer) PathPrefix() string {
 }
 
 var twirpFileDescriptor7 = []byte{
-	// 416 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x94, 0x41, 0xaf, 0xd2, 0x40,
-	0x14, 0x85, 0xd3, 0xf6, 0x61, 0x1e, 0xd7, 0xe4, 0xe5, 0x65, 0x6c, 0xb4, 0xd6, 0x40, 0x48, 0x35,
-	0x01, 0x4c, 0x6c, 0x23, 0x6c, 0xdc, 0x49, 0xdc, 0x91, 0xc8, 0xa6, 0xb8, 0x32, 0x21, 0x08, 0xf4,
-	0x52, 0x27, 0x40, 0xa7, 0x76, 0xa6, 0x60, 0x17, 0xba, 0xf7, 0x4f, 0xfa, 0x5b, 0x0c, 0xd3, 0x62,
-	0xe8, 0xd0, 0x2a, 0x6f, 0x37, 0x3d, 0xbd, 0xe7, 0xce, 0x99, 0x6f, 0x6e, 0x06, 0xcc, 0x1d, 0x0b,
-	0xd2, 0x2d, 0xce, 0x39, 0x0a, 0x41, 0xa3, 0xd0, 0x8d, 0x13, 0x26, 0x18, 0xb9, 0x2b, 0xab, 0xce,
-	0x2f, 0x0d, 0x9e, 0x4c, 0xa4, 0x34, 0xcd, 0x15, 0x1f, 0x57, 0x2c, 0x09, 0xc8, 0x1d, 0xe8, 0x34,
-	0xb0, 0xb4, 0x8e, 0xd6, 0x6b, 0xfa, 0x3a, 0x0d, 0xc8, 0x0b, 0x68, 0x16, 0x4e, 0x1a, 0x58, 0xba,
-	0x94, 0x6f, 0x73, 0x61, 0x1c, 0x90, 0x7b, 0x30, 0x36, 0x98, 0x59, 0x86, 0x94, 0x8f, 0x4b, 0x62,
-	0x42, 0x63, 0xbf, 0xd8, 0xa6, 0x68, 0xdd, 0x48, 0x2d, 0xff, 0x20, 0x2d, 0x00, 0xb9, 0x98, 0x8b,
-	0x2c, 0x46, 0xab, 0x21, 0x7f, 0x35, 0xa5, 0xf2, 0x29, 0x8b, 0xd1, 0x79, 0x07, 0xcf, 0x3f, 0x52,
-	0x2e, 0x4a, 0x71, 0xb8, 0x8f, 0xdf, 0x52, 0xe4, 0xa2, 0x1c, 0x40, 0x2b, 0x07, 0x70, 0x66, 0x60,
-	0x57, 0x39, 0x79, 0xcc, 0x22, 0x8e, 0xe4, 0x3d, 0xdc, 0x16, 0xc7, 0xe5, 0x96, 0xd6, 0x31, 0x7a,
-	0x8f, 0x07, 0x2f, 0x5d, 0x05, 0x4e, 0x05, 0x02, 0xff, 0xaf, 0xc9, 0xf9, 0x01, 0xcf, 0xa6, 0x28,
-	0x94, 0x9a, 0xff, 0xc7, 0x3a, 0x71, 0xd1, 0x2b, 0xb8, 0x18, 0xf5, 0x5c, 0x6e, 0x54, 0x2e, 0x33,
-	0x30, 0x27, 0x8b, 0x88, 0xae, 0x91, 0x8b, 0x62, 0xf7, 0x71, 0x14, 0xa7, 0xe2, 0xd4, 0x5e, 0xab,
-	0x68, 0xaf, 0xd7, 0xb7, 0x37, 0xd4, 0xf6, 0x3f, 0xa1, 0xe5, 0x63, 0x48, 0xb9, 0xc0, 0xe4, 0xe1,
-	0xe8, 0xc9, 0xe8, 0x0c, 0xae, 0x2e, 0xe1, 0xbe, 0xba, 0x80, 0x5b, 0x11, 0xfe, 0x8c, 0xee, 0x08,
-	0xda, 0x75, 0xfb, 0x17, 0x17, 0xd8, 0x06, 0x48, 0x8a, 0x0a, 0xcc, 0x13, 0x34, 0xfc, 0x33, 0x65,
-	0xf0, 0x5b, 0x07, 0xb3, 0x64, 0x9d, 0x62, 0xb2, 0xa7, 0x2b, 0x24, 0x1b, 0x20, 0x97, 0x73, 0x41,
-	0xfa, 0x6a, 0xc0, 0xda, 0xa9, 0xb3, 0x5f, 0x5f, 0x53, 0x5a, 0xa4, 0xfc, 0x02, 0xf7, 0xea, 0x94,
-	0x90, 0xae, 0xea, 0xaf, 0x99, 0x23, 0xfb, 0x9a, 0x89, 0x24, 0x07, 0x78, 0x5a, 0x4d, 0x8a, 0xbc,
-	0x51, 0xed, 0xff, 0xbc, 0x51, 0xdb, 0xbd, 0xb6, 0x3c, 0x3f, 0xda, 0x87, 0xfe, 0xe7, 0x6e, 0x48,
-	0xc5, 0xd7, 0x74, 0xe9, 0xae, 0xd8, 0xce, 0x3b, 0xb0, 0xed, 0x3a, 0xdb, 0x2d, 0x8e, 0xf5, 0xde,
-	0x81, 0xb1, 0xf5, 0xf7, 0xa1, 0x17, 0x2c, 0xbd, 0x10, 0x23, 0x6f, 0xff, 0x76, 0xf9, 0x48, 0xbe,
-	0x33, 0xc3, 0x3f, 0x01, 0x00, 0x00, 0xff, 0xff, 0x42, 0xb8, 0xc3, 0x91, 0x7f, 0x04, 0x00, 0x00,
+	// 514 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x94, 0xc1, 0x6e, 0xd3, 0x40,
+	0x10, 0x86, 0x65, 0xbb, 0x89, 0x92, 0xa9, 0x54, 0x55, 0x4b, 0x0a, 0x26, 0x90, 0x2a, 0x32, 0x48,
+	0x4d, 0x11, 0xb5, 0x45, 0x7b, 0x69, 0xe1, 0x40, 0x85, 0x84, 0x50, 0x25, 0x7a, 0xc0, 0x41, 0x1c,
+	0x90, 0xaa, 0x92, 0xc4, 0x93, 0xb0, 0x6a, 0xe2, 0x35, 0xde, 0x75, 0x82, 0x0f, 0xf0, 0x2c, 0xbc,
+	0x00, 0x6f, 0xc3, 0x03, 0xa1, 0xac, 0x37, 0x10, 0x6f, 0xed, 0xd6, 0xbd, 0x79, 0xff, 0xec, 0xcc,
+	0xfc, 0xfb, 0xcd, 0x4c, 0xa0, 0x35, 0x63, 0x41, 0x32, 0xc5, 0x4b, 0x8e, 0x42, 0xd0, 0x70, 0xe2,
+	0x46, 0x31, 0x13, 0x8c, 0x6c, 0xe5, 0x55, 0xe7, 0x97, 0x01, 0xf7, 0xce, 0xa5, 0xd4, 0xcf, 0x14,
+	0x1f, 0x47, 0x2c, 0x0e, 0xc8, 0x16, 0x98, 0x34, 0xb0, 0x8d, 0xae, 0xd1, 0x6b, 0xfa, 0x26, 0x0d,
+	0xc8, 0x23, 0x68, 0xaa, 0x48, 0x1a, 0xd8, 0xa6, 0x94, 0x1b, 0x99, 0x70, 0x16, 0x90, 0x6d, 0xb0,
+	0xae, 0x30, 0xb5, 0x2d, 0x29, 0x2f, 0x3f, 0x49, 0x0b, 0x6a, 0xf3, 0xc1, 0x34, 0x41, 0x7b, 0x43,
+	0x6a, 0xd9, 0x81, 0x74, 0x00, 0xe4, 0xc7, 0xa5, 0x48, 0x23, 0xb4, 0x6b, 0xf2, 0xa7, 0xa6, 0x54,
+	0x3e, 0xa6, 0x11, 0x92, 0x1d, 0xa8, 0x53, 0xbe, 0x74, 0x66, 0xd7, 0xbb, 0x46, 0xaf, 0xe1, 0xd7,
+	0x28, 0xef, 0xa3, 0x70, 0x8e, 0xe1, 0xe1, 0x7b, 0xca, 0x45, 0xce, 0x25, 0xf7, 0xf1, 0x5b, 0x82,
+	0x5c, 0xe4, 0x7d, 0x19, 0x79, 0x5f, 0xce, 0x05, 0xb4, 0x8b, 0x22, 0x79, 0xc4, 0x42, 0x8e, 0xe4,
+	0x35, 0x34, 0x14, 0x05, 0x6e, 0x1b, 0x5d, 0xab, 0xb7, 0x79, 0xf8, 0xc4, 0xd5, 0x98, 0x15, 0x90,
+	0xf1, 0xff, 0x05, 0x39, 0x3f, 0xe0, 0x41, 0x1f, 0x85, 0x76, 0xe7, 0x76, 0x5b, 0x2b, 0x5c, 0x66,
+	0x01, 0x2e, 0xab, 0x1c, 0xd7, 0x86, 0x86, 0xcb, 0xb9, 0x80, 0xd6, 0xf9, 0x20, 0xa4, 0x63, 0xe4,
+	0x42, 0x55, 0x3f, 0x0b, 0xa3, 0x44, 0xac, 0xd2, 0x1b, 0x05, 0xe9, 0xcd, 0xf2, 0xf4, 0x96, 0x9e,
+	0xfe, 0x27, 0x74, 0x7c, 0x9c, 0x50, 0x2e, 0x30, 0xbe, 0x3b, 0x7a, 0x72, 0xba, 0x06, 0xd7, 0x94,
+	0x70, 0x9f, 0x5e, 0x83, 0x5b, 0x60, 0x7e, 0x8d, 0xee, 0x29, 0xec, 0x96, 0xd5, 0x57, 0x0d, 0xdc,
+	0x05, 0x88, 0xd5, 0x0d, 0xcc, 0x1c, 0xd4, 0xfc, 0x35, 0xc5, 0x79, 0x05, 0x8f, 0xdf, 0xfd, 0xef,
+	0xcf, 0x28, 0x46, 0xf1, 0x69, 0xf9, 0xba, 0x6a, 0xb3, 0xf3, 0xdb, 0x80, 0x4e, 0x49, 0xb4, 0x2a,
+	0xff, 0x01, 0xea, 0x92, 0xd6, 0x6a, 0x7a, 0x4e, 0xf4, 0x07, 0xde, 0x18, 0xee, 0x66, 0xc7, 0xb7,
+	0xa1, 0x88, 0x53, 0x5f, 0x25, 0x6a, 0x9f, 0xc0, 0xe6, 0x9a, 0x5c, 0xb5, 0x93, 0x2f, 0xcd, 0x63,
+	0xe3, 0xf0, 0x8f, 0x05, 0xad, 0x1c, 0xa7, 0x3e, 0xc6, 0x73, 0x3a, 0x42, 0x72, 0x05, 0xe4, 0xfa,
+	0x12, 0x90, 0x7d, 0xdd, 0x6c, 0xe9, 0x8a, 0xb5, 0x9f, 0x55, 0xb9, 0xaa, 0x98, 0x7c, 0x81, 0x6d,
+	0x7d, 0x25, 0xc8, 0x9e, 0x1e, 0x5f, 0xb2, 0x34, 0xed, 0x2a, 0xeb, 0x47, 0x16, 0x70, 0xbf, 0x78,
+	0x2c, 0xc8, 0x81, 0x1e, 0x7e, 0xe3, 0xf8, 0xb6, 0xdd, 0xaa, 0xd7, 0xd5, 0xd3, 0x04, 0xec, 0x14,
+	0x36, 0x94, 0x3c, 0xaf, 0xd8, 0xf7, 0xac, 0xec, 0xc1, 0x9d, 0xa6, 0xe4, 0xcd, 0xfe, 0xe7, 0xbd,
+	0x09, 0x15, 0x5f, 0x93, 0xa1, 0x3b, 0x62, 0x33, 0x6f, 0xc1, 0xa6, 0xe3, 0x74, 0x36, 0x58, 0xba,
+	0xf4, 0x16, 0x8c, 0x8d, 0xbf, 0x1f, 0x79, 0xc1, 0xd0, 0x9b, 0x60, 0xe8, 0xcd, 0x5f, 0x0c, 0xeb,
+	0xf2, 0x1f, 0xfe, 0xe8, 0x6f, 0x00, 0x00, 0x00, 0xff, 0xff, 0x83, 0x97, 0xe0, 0xee, 0xf9, 0x05,
+	0x00, 0x00,
 }

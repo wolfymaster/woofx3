@@ -161,6 +161,7 @@ Write for senior engineers: **homogeneous** patterns, naming, and formatting acr
 - Communication is done via events over the message bus. The message bus follows the NATS interface, uses the NATS client, but operates locally. Events are formatted according to the CloudEvents specification (https://github.com/cloudevents/spec).
 - Shared clients and packages to keep types and events consistent between services. ie: shared/clients/cloudevents contains events in cloudevents format. 
 - Only DB communicates with databases. All services use GRPC clients to communicate with the db proxy.
+- **Modules request, the engine acts.** Module code is end-user code and must never drive the engine: it does not publish onto the bus, choose subjects or event types for the engine to publish verbatim, or dispatch workflows. A module function returns a value in a platform-defined shape (e.g. `ctx.response`), and the engine validates it and performs the effect, or refuses. Effects during execution go through narrow, engine-defined capabilities, never a general channel. Apply this to every module-facing surface: sandbox bindings, manifest fields, and function return contracts. See `docs/services/engine-integrity.md`.
 
 # Backlog
 

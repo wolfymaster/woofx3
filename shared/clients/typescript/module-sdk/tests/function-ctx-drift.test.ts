@@ -28,7 +28,7 @@ const lua = readFileSync(join(import.meta.dir, "..", "src", "function-ctx.lua"),
 
 /**
  * Property registrations on a ctx-namespace object look like:
- *   xxx.set("publish", …)
+ *   xxx.set("hmac", …)
  *   xxx.set("get", …)
  * etc. We scan the QuickJS adapter (the JS-facing source of truth) for
  * `obj.set("name", …)` calls inside `build_*_namespace` / extension
@@ -52,7 +52,7 @@ const KNOWN_TOP_LEVEL = new Set([
   // Built-in built by quickjs.rs:185-206
   "event",
   "user",
-  "events",
+  "crypto",
   "storage",
   "http",
   "env",
@@ -67,7 +67,7 @@ const KNOWN_TOP_LEVEL = new Set([
 ]);
 
 const KNOWN_NESTED: Record<string, string[]> = {
-  events: ["publish"],
+  crypto: ["hmac", "verifyEd25519", "timingSafeEqual"],
   storage: ["get", "set"],
   http: ["request"],
   env: ["get"],
@@ -190,7 +190,7 @@ describe("function ctx drift guard", () => {
     // (the contract is the same regardless of runtime).
     const quickjs = readRust("barkloader/lib_sandbox/src/runtime/quickjs.rs");
     const lua = readRust("barkloader/lib_sandbox/src/runtime/lua.rs");
-    for (const ns of ["events", "storage", "http", "env", "resources", "module"]) {
+    for (const ns of ["crypto", "storage", "http", "env", "resources", "module"]) {
       const inQ = quickjs.includes(`build_${ns}_namespace`) || quickjs.includes(`"${ns}"`);
       const inL = lua.includes(`build_${ns}_namespace`) || lua.includes(`"${ns}"`);
       if (!inQ || !inL) {

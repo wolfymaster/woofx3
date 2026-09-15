@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/wolfymaster/woofx3/common/runtime"
+	"github.com/wolfymaster/woofx3/db/app/secrets"
 	"github.com/wolfymaster/woofx3/db/app/types"
 	outbox "github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/config"
@@ -34,6 +35,7 @@ type DatabaseApp struct {
 	cleanupWorker   *outbox.CleanupWorker
 	metricsWorker   *outbox.MetricsWorker
 	eventPublisher  *outbox.EventPublisher
+	secrets         *secrets.Box
 }
 
 func NewDatabaseApp(cfg *DatabaseAppConfig) *DatabaseApp {
@@ -56,6 +58,7 @@ func (a *DatabaseApp) App() *types.App {
 		CleanupWorker:   a.cleanupWorker,
 		MetricsWorker:   a.metricsWorker,
 		EventPublisher:  a.eventPublisher,
+		Secrets:         a.secrets,
 	}
 }
 
@@ -77,6 +80,13 @@ func (a *DatabaseApp) EventCache() *outbox.EventCache {
 
 func (a *DatabaseApp) Init(ctx context.Context) error {
 	a.logger.Info("Initializing database application")
+
+	cfg := runtime.GetConfig[*config.DatabaseEnvConfig](a.Context())
+	secretBox, err := secrets.NewBox(cfg.SecretsKey)
+	if err != nil {
+		return err
+	}
+	a.secrets = secretBox
 
 	services := a.Context().Services
 

@@ -31,8 +31,9 @@ interface ModuleSetting {
   id: string;
   moduleId: string;
   key: string;
-  value: string;
+  value: string;       // always "" for a `secret` setting
   valueType: string;   // "string" | "number" | "boolean" — set at registration, not by the caller
+  isSet?: boolean;     // whether a value is stored; the only way to tell for a secret
 }
 interface ModuleSettingsResponse {
   settings: ModuleSetting[];
@@ -55,15 +56,30 @@ to at runtime), not the composite `{id}:{version}:{hash}` key used for actions/w
   error — `ListModuleSettings` on the db side is a plain filter query, not an
   existence check.
 
-## No secrecy guarantees
+## Secret settings
 
-There is no `secret`/`sensitive` flag anywhere in the manifest schema, the
-`module_settings` table, or these methods. `value` is stored as plaintext `TEXT` and
-returned verbatim by `getModuleSettings` — a `clientSecret` or `refreshToken` setting
-is exposed in cleartext to any caller exactly like a non-sensitive value such as
-`clientId`. If you're building a settings UI on top of this, do not assume the API
-will mask or omit credential-shaped values — any access control has to live in front
-of these methods, not inside them.
+A manifest setting declared `type: "secret"` holds a value the streamer enters and
+should never see again: a signing secret, an API key, a token.
+
+- **Stored sealed.** db-proxy encrypts the value (AES-256-GCM, bound to its module id
+  and key) before writing it. The key is `WOOFX3_SECRETS_KEY` (env) or `secretsKey`
+  (`.woofx3.json`): a base64-encoded 32-byte key, required at startup and injected
+  like any other config, so every instance shares it. Changing or losing it makes the
+  stored secrets unreadable; the streamer re-enters them.
+- **Write-only through these methods.** `getModuleSettings` returns a secret with
+  `value: ""` and `isSet`. `updateModuleSetting` seals a non-empty value and clears on
+  `""`. A caller cannot change a setting's type, so it cannot turn a secret into plain
+  text.
+- **Readable only by the owning module.** Barkloader opens the secrets (db-proxy
+  `GetModuleSecretValues`) while building `ctx.module.settings` for that module's own
+  functions.
+- **Upgrades.** A setting that becomes `secret` in a new manifest version has its
+  stored value sealed in place; a secret that stops being one is cleared, never
+  decrypted into plain text.
+- A `secret` setting cannot declare `defaultValue`: the manifest would ship the secret.
+
+Every other type is plain text, stored as `TEXT` and returned as-is. Never declare a
+credential as `text`.
 
 ## `widget_settings` — not implemented
 

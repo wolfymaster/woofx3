@@ -9,6 +9,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"gorm.io/gorm"
 
+	"github.com/wolfymaster/woofx3/db/app/secrets"
 	outbox "github.com/wolfymaster/woofx3/db/app/workers"
 )
 
@@ -28,4 +29,5 @@ type App struct {
 	CleanupWorker   *outbox.CleanupWorker
 	MetricsWorker   *outbox.MetricsWorker
 	EventPublisher  *outbox.EventPublisher
+	Secrets         *secrets.Box
 }

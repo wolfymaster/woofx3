@@ -19,8 +19,16 @@ export interface ModuleSettingRecord {
   id: string;
   moduleId: string;
   key: string;
+  /**
+   * Always empty for a `secret` setting: its value never leaves db-proxy in
+   * this record. See GetModuleSecretValues.
+   */
   value: string;
   valueType: string;
+  /**
+   * Whether a value is stored — the only way to tell for a secret.
+   */
+  isSet: boolean;
 }
 
 export interface ListModuleSettingsRequest {
@@ -51,6 +59,28 @@ export interface RegisterModuleSettingsRequest {
 
 export interface RegisterModuleSettingsResponse {
   registered: number;
+}
+
+export interface GetModuleSecretValuesRequest {
+  moduleId: string;
+}
+
+/**
+ * Decrypted `secret` settings by key. Only barkloader calls this, to build
+ * `ctx.module.settings` for the owning module's functions.
+ */
+export interface GetModuleSecretValuesResponse {
+  values: Record<
+    string,
+    GetModuleSecretValuesResponse.Values["value"] | undefined
+  >;
+}
+
+export declare namespace GetModuleSecretValuesResponse {
+  interface Values {
+    key: string;
+    value: string;
+  }
 }
 
 //========================================//
@@ -93,6 +123,18 @@ export async function RegisterModuleSettings(
   return RegisterModuleSettingsResponse.decode(response);
 }
 
+export async function GetModuleSecretValues(
+  getModuleSecretValuesRequest: GetModuleSecretValuesRequest,
+  config?: ClientConfiguration,
+): Promise<GetModuleSecretValuesResponse> {
+  const response = await PBrequest(
+    "/module_setting.ModuleSettingService/GetModuleSecretValues",
+    GetModuleSecretValuesRequest.encode(getModuleSecretValuesRequest),
+    config,
+  );
+  return GetModuleSecretValuesResponse.decode(response);
+}
+
 //========================================//
 //    ModuleSettingService JSON Client    //
 //========================================//
@@ -133,6 +175,18 @@ export async function RegisterModuleSettingsJSON(
   return RegisterModuleSettingsResponseJSON.decode(response);
 }
 
+export async function GetModuleSecretValuesJSON(
+  getModuleSecretValuesRequest: GetModuleSecretValuesRequest,
+  config?: ClientConfiguration,
+): Promise<GetModuleSecretValuesResponse> {
+  const response = await JSONrequest(
+    "/module_setting.ModuleSettingService/GetModuleSecretValues",
+    GetModuleSecretValuesRequestJSON.encode(getModuleSecretValuesRequest),
+    config,
+  );
+  return GetModuleSecretValuesResponseJSON.decode(response);
+}
+
 //========================================//
 //          ModuleSettingService          //
 //========================================//
@@ -150,6 +204,10 @@ export interface ModuleSettingService<Context = unknown> {
     registerModuleSettingsRequest: RegisterModuleSettingsRequest,
     context: Context,
   ) => Promise<RegisterModuleSettingsResponse> | RegisterModuleSettingsResponse;
+  GetModuleSecretValues: (
+    getModuleSecretValuesRequest: GetModuleSecretValuesRequest,
+    context: Context,
+  ) => Promise<GetModuleSecretValuesResponse> | GetModuleSecretValuesResponse;
 }
 
 export function createModuleSettingService<Context>(
@@ -194,6 +252,18 @@ export function createModuleSettingService<Context>(
           json: RegisterModuleSettingsResponseJSON,
         },
       },
+      GetModuleSecretValues: {
+        name: "GetModuleSecretValues",
+        handler: service.GetModuleSecretValues,
+        input: {
+          protobuf: GetModuleSecretValuesRequest,
+          json: GetModuleSecretValuesRequestJSON,
+        },
+        output: {
+          protobuf: GetModuleSecretValuesResponse,
+          json: GetModuleSecretValuesResponseJSON,
+        },
+      },
     },
   } as const;
 }
@@ -235,6 +305,7 @@ export const ModuleSettingRecord = {
       key: "",
       value: "",
       valueType: "",
+      isSet: false,
       ...msg,
     };
   },
@@ -260,6 +331,9 @@ export const ModuleSettingRecord = {
     }
     if (msg.valueType) {
       writer.writeString(5, msg.valueType);
+    }
+    if (msg.isSet) {
+      writer.writeBool(6, msg.isSet);
     }
     return writer;
   },
@@ -292,6 +366,10 @@ export const ModuleSettingRecord = {
         }
         case 5: {
           msg.valueType = reader.readString();
+          break;
+        }
+        case 6: {
+          msg.isSet = reader.readBool();
           break;
         }
         default: {
@@ -788,6 +866,207 @@ export const RegisterModuleSettingsResponse = {
   },
 };
 
+export const GetModuleSecretValuesRequest = {
+  /**
+   * Serializes GetModuleSecretValuesRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<GetModuleSecretValuesRequest>,
+  ): Uint8Array {
+    return GetModuleSecretValuesRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes GetModuleSecretValuesRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): GetModuleSecretValuesRequest {
+    return GetModuleSecretValuesRequest._readMessage(
+      GetModuleSecretValuesRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes GetModuleSecretValuesRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetModuleSecretValuesRequest>,
+  ): GetModuleSecretValuesRequest {
+    return {
+      moduleId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetModuleSecretValuesRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.moduleId) {
+      writer.writeString(1, msg.moduleId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetModuleSecretValuesRequest,
+    reader: protoscript.BinaryReader,
+  ): GetModuleSecretValuesRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.moduleId = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const GetModuleSecretValuesResponse = {
+  /**
+   * Serializes GetModuleSecretValuesResponse to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<GetModuleSecretValuesResponse>,
+  ): Uint8Array {
+    return GetModuleSecretValuesResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes GetModuleSecretValuesResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): GetModuleSecretValuesResponse {
+    return GetModuleSecretValuesResponse._readMessage(
+      GetModuleSecretValuesResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes GetModuleSecretValuesResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetModuleSecretValuesResponse>,
+  ): GetModuleSecretValuesResponse {
+    return {
+      values: {},
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetModuleSecretValuesResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.values) {
+      writer.writeRepeatedMessage(
+        1,
+        Object.entries(msg.values).map(([key, value]) => ({
+          key: key as any,
+          value: value as any,
+        })) as any,
+        GetModuleSecretValuesResponse.Values._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetModuleSecretValuesResponse,
+    reader: protoscript.BinaryReader,
+  ): GetModuleSecretValuesResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          const map = {} as GetModuleSecretValuesResponse.Values;
+          reader.readMessage(
+            map,
+            GetModuleSecretValuesResponse.Values._readMessage,
+          );
+          msg.values[map.key.toString()] = map.value;
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+
+  Values: {
+    /**
+     * @private
+     */
+    _writeMessage: function (
+      msg: PartialDeep<GetModuleSecretValuesResponse.Values>,
+      writer: protoscript.BinaryWriter,
+    ): protoscript.BinaryWriter {
+      if (msg.key) {
+        writer.writeString(1, msg.key);
+      }
+      if (msg.value) {
+        writer.writeString(2, msg.value);
+      }
+      return writer;
+    },
+
+    /**
+     * @private
+     */
+    _readMessage: function (
+      msg: GetModuleSecretValuesResponse.Values,
+      reader: protoscript.BinaryReader,
+    ): GetModuleSecretValuesResponse.Values {
+      while (reader.nextField()) {
+        const field = reader.getFieldNumber();
+        switch (field) {
+          case 1: {
+            msg.key = reader.readString();
+            break;
+          }
+          case 2: {
+            msg.value = reader.readString();
+            break;
+          }
+          default: {
+            reader.skipField();
+            break;
+          }
+        }
+      }
+      return msg;
+    },
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -822,6 +1101,7 @@ export const ModuleSettingRecordJSON = {
       key: "",
       value: "",
       valueType: "",
+      isSet: false,
       ...msg,
     };
   },
@@ -847,6 +1127,9 @@ export const ModuleSettingRecordJSON = {
     }
     if (msg.valueType) {
       json["valueType"] = msg.valueType;
+    }
+    if (msg.isSet) {
+      json["isSet"] = msg.isSet;
     }
     return json;
   },
@@ -877,6 +1160,10 @@ export const ModuleSettingRecordJSON = {
     const _valueType_ = json["valueType"] ?? json["value_type"];
     if (_valueType_) {
       msg.valueType = _valueType_;
+    }
+    const _isSet_ = json["isSet"] ?? json["is_set"];
+    if (_isSet_) {
+      msg.isSet = _isSet_;
     }
     return msg;
   },
@@ -1289,5 +1576,170 @@ export const RegisterModuleSettingsResponseJSON = {
       msg.registered = protoscript.parseNumber(_registered_);
     }
     return msg;
+  },
+};
+
+export const GetModuleSecretValuesRequestJSON = {
+  /**
+   * Serializes GetModuleSecretValuesRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<GetModuleSecretValuesRequest>): string {
+    return JSON.stringify(GetModuleSecretValuesRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes GetModuleSecretValuesRequest from JSON.
+   */
+  decode: function (json: string): GetModuleSecretValuesRequest {
+    return GetModuleSecretValuesRequestJSON._readMessage(
+      GetModuleSecretValuesRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes GetModuleSecretValuesRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetModuleSecretValuesRequest>,
+  ): GetModuleSecretValuesRequest {
+    return {
+      moduleId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetModuleSecretValuesRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.moduleId) {
+      json["moduleId"] = msg.moduleId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetModuleSecretValuesRequest,
+    json: any,
+  ): GetModuleSecretValuesRequest {
+    const _moduleId_ = json["moduleId"] ?? json["module_id"];
+    if (_moduleId_) {
+      msg.moduleId = _moduleId_;
+    }
+    return msg;
+  },
+};
+
+export const GetModuleSecretValuesResponseJSON = {
+  /**
+   * Serializes GetModuleSecretValuesResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<GetModuleSecretValuesResponse>): string {
+    return JSON.stringify(GetModuleSecretValuesResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes GetModuleSecretValuesResponse from JSON.
+   */
+  decode: function (json: string): GetModuleSecretValuesResponse {
+    return GetModuleSecretValuesResponseJSON._readMessage(
+      GetModuleSecretValuesResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes GetModuleSecretValuesResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetModuleSecretValuesResponse>,
+  ): GetModuleSecretValuesResponse {
+    return {
+      values: {},
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetModuleSecretValuesResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.values) {
+      const _values_ = Object.fromEntries(
+        Object.entries(msg.values)
+          .map(([key, value]) => ({ key: key as any, value: value as any }))
+          .map(GetModuleSecretValuesResponseJSON.Values._writeMessage)
+          .map(({ key, value }) => [key, value]),
+      );
+      if (Object.keys(_values_).length > 0) {
+        json["values"] = _values_;
+      }
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetModuleSecretValuesResponse,
+    json: any,
+  ): GetModuleSecretValuesResponse {
+    const _values_ = json["values"];
+    if (_values_) {
+      msg.values = Object.fromEntries(
+        Object.entries(_values_)
+          .map(([key, value]) => ({ key: key as any, value: value as any }))
+          .map(GetModuleSecretValuesResponseJSON.Values._readMessage)
+          .map(({ key, value }) => [key, value]),
+      );
+    }
+    return msg;
+  },
+
+  Values: {
+    /**
+     * @private
+     */
+    _writeMessage: function (
+      msg: PartialDeep<GetModuleSecretValuesResponse.Values>,
+    ): Record<string, unknown> {
+      const json: Record<string, unknown> = {};
+      if (msg.key) {
+        json["key"] = msg.key;
+      }
+      if (msg.value) {
+        json["value"] = msg.value;
+      }
+      return json;
+    },
+
+    /**
+     * @private
+     */
+    _readMessage: function (
+      msg: GetModuleSecretValuesResponse.Values,
+      json: any,
+    ): GetModuleSecretValuesResponse.Values {
+      const _key_ = json["key"];
+      if (_key_) {
+        msg.key = _key_;
+      }
+      const _value_ = json["value"];
+      if (_value_) {
+        msg.value = _value_;
+      }
+      return msg;
+    },
   },
 };

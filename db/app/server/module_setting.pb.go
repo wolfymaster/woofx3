@@ -22,12 +22,16 @@ const (
 )
 
 type ModuleSettingRecord struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ModuleId      string                 `protobuf:"bytes,2,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
-	Key           string                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
-	Value         string                 `protobuf:"bytes,4,opt,name=value,proto3" json:"value,omitempty"`
-	ValueType     string                 `protobuf:"bytes,5,opt,name=value_type,json=valueType,proto3" json:"value_type,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Id       string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ModuleId string                 `protobuf:"bytes,2,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
+	Key      string                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
+	// Always empty for a `secret` setting: its value never leaves db-proxy in
+	// this record. See GetModuleSecretValues.
+	Value     string `protobuf:"bytes,4,opt,name=value,proto3" json:"value,omitempty"`
+	ValueType string `protobuf:"bytes,5,opt,name=value_type,json=valueType,proto3" json:"value_type,omitempty"`
+	// Whether a value is stored — the only way to tell for a secret.
+	IsSet         bool `protobuf:"varint,6,opt,name=is_set,json=isSet,proto3" json:"is_set,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -95,6 +99,13 @@ func (x *ModuleSettingRecord) GetValueType() string {
 		return x.ValueType
 	}
 	return ""
+}
+
+func (x *ModuleSettingRecord) GetIsSet() bool {
+	if x != nil {
+		return x.IsSet
+	}
+	return false
 }
 
 type ListModuleSettingsRequest struct {
@@ -409,18 +420,109 @@ func (x *RegisterModuleSettingsResponse) GetRegistered() int32 {
 	return 0
 }
 
+type GetModuleSecretValuesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ModuleId      string                 `protobuf:"bytes,1,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetModuleSecretValuesRequest) Reset() {
+	*x = GetModuleSecretValuesRequest{}
+	mi := &file_module_setting_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetModuleSecretValuesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetModuleSecretValuesRequest) ProtoMessage() {}
+
+func (x *GetModuleSecretValuesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_module_setting_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetModuleSecretValuesRequest.ProtoReflect.Descriptor instead.
+func (*GetModuleSecretValuesRequest) Descriptor() ([]byte, []int) {
+	return file_module_setting_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *GetModuleSecretValuesRequest) GetModuleId() string {
+	if x != nil {
+		return x.ModuleId
+	}
+	return ""
+}
+
+// Decrypted `secret` settings by key. Only barkloader calls this, to build
+// `ctx.module.settings` for the owning module's functions.
+type GetModuleSecretValuesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Values        map[string]string      `protobuf:"bytes,1,rep,name=values,proto3" json:"values,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetModuleSecretValuesResponse) Reset() {
+	*x = GetModuleSecretValuesResponse{}
+	mi := &file_module_setting_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetModuleSecretValuesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetModuleSecretValuesResponse) ProtoMessage() {}
+
+func (x *GetModuleSecretValuesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_module_setting_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetModuleSecretValuesResponse.ProtoReflect.Descriptor instead.
+func (*GetModuleSecretValuesResponse) Descriptor() ([]byte, []int) {
+	return file_module_setting_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *GetModuleSecretValuesResponse) GetValues() map[string]string {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
 var File_module_setting_proto protoreflect.FileDescriptor
 
 const file_module_setting_proto_rawDesc = "" +
 	"\n" +
-	"\x14module_setting.proto\x12\x0emodule_setting\"\x89\x01\n" +
+	"\x14module_setting.proto\x12\x0emodule_setting\"\xa0\x01\n" +
 	"\x13ModuleSettingRecord\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tmodule_id\x18\x02 \x01(\tR\bmoduleId\x12\x10\n" +
 	"\x03key\x18\x03 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x04 \x01(\tR\x05value\x12\x1d\n" +
 	"\n" +
-	"value_type\x18\x05 \x01(\tR\tvalueType\"8\n" +
+	"value_type\x18\x05 \x01(\tR\tvalueType\x12\x15\n" +
+	"\x06is_set\x18\x06 \x01(\bR\x05isSet\"8\n" +
 	"\x19ListModuleSettingsRequest\x12\x1b\n" +
 	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\"]\n" +
 	"\x1aListModuleSettingsResponse\x12?\n" +
@@ -442,11 +544,19 @@ const file_module_setting_proto_rawDesc = "" +
 	"\x1eRegisterModuleSettingsResponse\x12\x1e\n" +
 	"\n" +
 	"registered\x18\x01 \x01(\x05R\n" +
-	"registered2\xde\x02\n" +
+	"registered\";\n" +
+	"\x1cGetModuleSecretValuesRequest\x12\x1b\n" +
+	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\"\xad\x01\n" +
+	"\x1dGetModuleSecretValuesResponse\x12Q\n" +
+	"\x06values\x18\x01 \x03(\v29.module_setting.GetModuleSecretValuesResponse.ValuesEntryR\x06values\x1a9\n" +
+	"\vValuesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xd4\x03\n" +
 	"\x14ModuleSettingService\x12k\n" +
 	"\x12ListModuleSettings\x12).module_setting.ListModuleSettingsRequest\x1a*.module_setting.ListModuleSettingsResponse\x12`\n" +
 	"\x10SetModuleSetting\x12'.module_setting.SetModuleSettingRequest\x1a#.module_setting.ModuleSettingRecord\x12w\n" +
-	"\x16RegisterModuleSettings\x12-.module_setting.RegisterModuleSettingsRequest\x1a..module_setting.RegisterModuleSettingsResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"\x16RegisterModuleSettings\x12-.module_setting.RegisterModuleSettingsRequest\x1a..module_setting.RegisterModuleSettingsResponse\x12t\n" +
+	"\x15GetModuleSecretValues\x12,.module_setting.GetModuleSecretValuesRequest\x1a-.module_setting.GetModuleSecretValuesResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_module_setting_proto_rawDescOnce sync.Once
@@ -460,7 +570,7 @@ func file_module_setting_proto_rawDescGZIP() []byte {
 	return file_module_setting_proto_rawDescData
 }
 
-var file_module_setting_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_module_setting_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_module_setting_proto_goTypes = []any{
 	(*ModuleSettingRecord)(nil),            // 0: module_setting.ModuleSettingRecord
 	(*ListModuleSettingsRequest)(nil),      // 1: module_setting.ListModuleSettingsRequest
@@ -469,21 +579,27 @@ var file_module_setting_proto_goTypes = []any{
 	(*ManifestSettingInput)(nil),           // 4: module_setting.ManifestSettingInput
 	(*RegisterModuleSettingsRequest)(nil),  // 5: module_setting.RegisterModuleSettingsRequest
 	(*RegisterModuleSettingsResponse)(nil), // 6: module_setting.RegisterModuleSettingsResponse
+	(*GetModuleSecretValuesRequest)(nil),   // 7: module_setting.GetModuleSecretValuesRequest
+	(*GetModuleSecretValuesResponse)(nil),  // 8: module_setting.GetModuleSecretValuesResponse
+	nil,                                    // 9: module_setting.GetModuleSecretValuesResponse.ValuesEntry
 }
 var file_module_setting_proto_depIdxs = []int32{
 	0, // 0: module_setting.ListModuleSettingsResponse.settings:type_name -> module_setting.ModuleSettingRecord
 	4, // 1: module_setting.RegisterModuleSettingsRequest.settings:type_name -> module_setting.ManifestSettingInput
-	1, // 2: module_setting.ModuleSettingService.ListModuleSettings:input_type -> module_setting.ListModuleSettingsRequest
-	3, // 3: module_setting.ModuleSettingService.SetModuleSetting:input_type -> module_setting.SetModuleSettingRequest
-	5, // 4: module_setting.ModuleSettingService.RegisterModuleSettings:input_type -> module_setting.RegisterModuleSettingsRequest
-	2, // 5: module_setting.ModuleSettingService.ListModuleSettings:output_type -> module_setting.ListModuleSettingsResponse
-	0, // 6: module_setting.ModuleSettingService.SetModuleSetting:output_type -> module_setting.ModuleSettingRecord
-	6, // 7: module_setting.ModuleSettingService.RegisterModuleSettings:output_type -> module_setting.RegisterModuleSettingsResponse
-	5, // [5:8] is the sub-list for method output_type
-	2, // [2:5] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	9, // 2: module_setting.GetModuleSecretValuesResponse.values:type_name -> module_setting.GetModuleSecretValuesResponse.ValuesEntry
+	1, // 3: module_setting.ModuleSettingService.ListModuleSettings:input_type -> module_setting.ListModuleSettingsRequest
+	3, // 4: module_setting.ModuleSettingService.SetModuleSetting:input_type -> module_setting.SetModuleSettingRequest
+	5, // 5: module_setting.ModuleSettingService.RegisterModuleSettings:input_type -> module_setting.RegisterModuleSettingsRequest
+	7, // 6: module_setting.ModuleSettingService.GetModuleSecretValues:input_type -> module_setting.GetModuleSecretValuesRequest
+	2, // 7: module_setting.ModuleSettingService.ListModuleSettings:output_type -> module_setting.ListModuleSettingsResponse
+	0, // 8: module_setting.ModuleSettingService.SetModuleSetting:output_type -> module_setting.ModuleSettingRecord
+	6, // 9: module_setting.ModuleSettingService.RegisterModuleSettings:output_type -> module_setting.RegisterModuleSettingsResponse
+	8, // 10: module_setting.ModuleSettingService.GetModuleSecretValues:output_type -> module_setting.GetModuleSecretValuesResponse
+	7, // [7:11] is the sub-list for method output_type
+	3, // [3:7] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_module_setting_proto_init() }
@@ -497,7 +613,7 @@ func file_module_setting_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_module_setting_proto_rawDesc), len(file_module_setting_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -89,20 +89,35 @@ fn build_lua_ctx(
     let user = lua.to_value(&invocation.user)?;
     ctx.set("user", user)?;
 
-    // events namespace
-    let events = lua.create_table()?;
+    // crypto namespace — see `runtime::crypto`. Pure computation: no host
+    // state.
+    let crypto = lua.create_table()?;
     {
-        let nats = invocation.host.nats.clone();
-        let publish = lua.create_function(move |_lua, (subject, data): (String, LuaValue)| {
-            let json_data: Value =
-                serde_json::to_value(&data).map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-            nats.publish(&subject, json_data)
-                .map_err(mlua::Error::RuntimeError)?;
-            Ok(())
+        let hmac = lua.create_function(
+            |_, (algorithm, key, data, encoding): (String, String, String, Option<String>)| {
+                let encoding = super::crypto::Encoding::parse(encoding.as_deref())
+                    .map_err(mlua::Error::RuntimeError)?;
+                super::crypto::hmac(&algorithm, &key, &data, encoding).map_err(mlua::Error::RuntimeError)
+            },
+        )?;
+        crypto.set("hmac", hmac)?;
+
+        let verify_ed25519 = lua.create_function(
+            |_, (public_key, signature, message, encoding): (String, String, String, Option<String>)| {
+                let encoding = super::crypto::Encoding::parse(encoding.as_deref())
+                    .map_err(mlua::Error::RuntimeError)?;
+                super::crypto::verify_ed25519(&public_key, &signature, &message, encoding)
+                    .map_err(mlua::Error::RuntimeError)
+            },
+        )?;
+        crypto.set("verifyEd25519", verify_ed25519)?;
+
+        let timing_safe_equal = lua.create_function(|_, (a, b): (String, String)| {
+            Ok(super::crypto::timing_safe_equal(&a, &b))
         })?;
-        events.set("publish", publish)?;
+        crypto.set("timingSafeEqual", timing_safe_equal)?;
     }
-    ctx.set("events", events)?;
+    ctx.set("crypto", crypto)?;
 
     // storage namespace
     let storage = lua.create_table()?;

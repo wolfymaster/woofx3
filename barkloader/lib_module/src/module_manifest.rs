@@ -62,7 +62,24 @@ pub struct ManifestTrigger {
     /// fans out into per-tier or per-threshold workflows.
     #[serde(default)]
     pub allow_variants: bool,
+    /// Manifest-local id of the function that handles inbound HTTP requests
+    /// for a `type: "webhook"` trigger. Required for webhook triggers and
+    /// rejected on every other type.
+    #[serde(default)]
+    pub handler: String,
 }
+
+/// `ManifestTrigger::trigger_type` of a trigger fired by inbound HTTP through
+/// its handler function rather than by an event on the bus.
+pub const WEBHOOK_TRIGGER_TYPE: &str = "webhook";
+
+/// Prefix of the reserved event every webhook trigger row carries. Nothing
+/// publishes it; it keeps the row out of the eventbus namespace.
+pub const WEBHOOK_EVENT_PREFIX: &str = "webhook.";
+
+/// `ManifestSetting::setting_type` of a value the end user enters as a secret.
+/// db-proxy seals it at rest and never returns it to the UI.
+pub const SECRET_SETTING_TYPE: &str = "secret";
 
 /// Action implementation — discriminated by `type` (matches an engine
 /// action handler). Each variant carries the handler-specific config at
@@ -867,27 +884,44 @@ impl ManifestTrigger {
     /// a separate concept used for reference tracking — it lives on the
     /// `module_resources` ledger and in workflow `$ref` fields, never on
     /// the trigger row itself.
-    pub fn to_input(&self) -> super::db_proxy::TriggerInputJson {
+    pub fn to_input(&self, module_id: &str) -> super::db_proxy::TriggerInputJson {
         let config_schema = encode_field_list(self.schema.as_deref());
-        // Manifest authors give us `event` (the NATS subject) and `id`
-        // (the manifest-local identifier). Older manifests put the
-        // subject in `id` and left `event` empty; for that case we fall
-        // back to `id` so existing test fixtures still load. New
-        // manifests should always set `event` explicitly.
-        let event = if self.event.is_empty() {
-            self.id.clone()
+        let transport = if self.trigger_type.is_empty() {
+            "eventbus".to_string()
         } else {
-            self.event.clone()
+            self.trigger_type.clone()
+        };
+        let handler = if self.trigger_type == WEBHOOK_TRIGGER_TYPE {
+            format!("{module_id}:function:{}", self.handler.trim())
+        } else {
+            String::new()
         };
         super::db_proxy::TriggerInputJson {
             taxonomy: self.resolve_taxonomy(),
             name: self.name.clone(),
             description: self.description.clone(),
-            event,
+            event: self.event_subject(module_id),
             config_schema,
             emits: encode_data_shape(self.emits.as_ref()),
             allow_variants: self.allow_variants,
             manifest_id: self.id.clone(),
+            transport,
+            handler,
+        }
+    }
+
+    /// The `event` stored on the trigger row. A webhook trigger gets a
+    /// reserved placeholder that nothing publishes: it keeps the row off the
+    /// `id` fallback below and out of the eventbus namespace.
+    pub fn event_subject(&self, module_id: &str) -> String {
+        if self.trigger_type == WEBHOOK_TRIGGER_TYPE {
+            return format!("{WEBHOOK_EVENT_PREFIX}{module_id}.{}", self.id);
+        }
+        // Older manifests put the subject in `id` and left `event` empty.
+        if self.event.is_empty() {
+            self.id.clone()
+        } else {
+            self.event.clone()
         }
     }
 }
@@ -1691,7 +1725,7 @@ mod tests {
         }))
         .expect("parse");
         assert_eq!(
-            t.to_input().taxonomy,
+            t.to_input("test_mod").taxonomy,
             vec!["platform.twitch.chat".to_string(), "function.chat".to_string()]
         );
     }
@@ -1788,7 +1822,7 @@ mod tests {
             }
         }))
         .expect("parse");
-        let emits = t.to_input().emits;
+        let emits = t.to_input("test_mod").emits;
         let parsed: serde_json::Value = serde_json::from_str(&emits).expect("valid json");
         assert_eq!(parsed["fields"][0]["path"], "bits");
         assert_eq!(parsed["fields"][0]["type"], "number");
@@ -1807,7 +1841,7 @@ mod tests {
         // parses this as an object, so an undeclared shape reads as "declared
         // nothing" with no null branch anywhere. A trigger that never declares
         // one keeps deriving its variables from `schema`.
-        assert_eq!(t.to_input().emits, "{}");
+        assert_eq!(t.to_input("test_mod").emits, "{}");
     }
 
     #[test]
@@ -1958,6 +1992,35 @@ mod tests {
         assert_eq!(alert_type_for_event("channel.raid"), Some("raid"));
         assert_eq!(alert_type_for_event("stream.online"), Some("stream_online"));
         assert_eq!(alert_type_for_event("user.message"), None);
+    }
+
+    #[test]
+    fn webhook_trigger_writes_its_transport_handler_and_reserved_event() {
+        let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
+            "id": "orders",
+            "name": "Orders",
+            "type": "webhook",
+            "handler": "handle_order"
+        }))
+        .expect("parse");
+        let input = t.to_input("example_store");
+        assert_eq!(input.event, "webhook.example_store.orders");
+        assert_eq!(input.transport, "webhook");
+        assert_eq!(input.handler, "example_store:function:handle_order");
+    }
+
+    #[test]
+    fn eventbus_trigger_writes_no_handler() {
+        let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
+            "id": "order_created",
+            "name": "Order created",
+            "event": "store.order.created"
+        }))
+        .expect("parse");
+        let input = t.to_input("example_store");
+        assert_eq!(input.event, "store.order.created");
+        assert_eq!(input.transport, "eventbus");
+        assert_eq!(input.handler, "");
     }
 
     #[test]

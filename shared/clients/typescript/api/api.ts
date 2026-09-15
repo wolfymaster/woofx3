@@ -25,12 +25,38 @@ export interface ModuleSetting {
   id: string;
   moduleId: string;
   key: string;
+  /** Always empty for a `secret` setting; its value never leaves the engine. */
   value: string;
   valueType: string;
+  /** Whether a value is stored — the only way to tell for a `secret` setting. */
+  isSet?: boolean;
 }
 
 export interface ModuleSettingsResponse {
   settings: ModuleSetting[];
+}
+
+/**
+ * An inbound HTTP request the control plane relays to a module's webhook
+ * handler. See `Woofx3EngineApi.handleInboundWebhook`.
+ */
+export interface InboundWebhookRequest {
+  /** Minted by the control plane per request; the handler's `ctx.event.id`. */
+  deliveryId: string;
+  method: "GET" | "POST";
+  /** Lowercased names; every request header except `cookie`. */
+  headers: Record<string, string>;
+  /** One value per key (the first occurrence). */
+  query: Record<string, string>;
+  /** The request body as UTF-8, exactly as received. */
+  rawBody: string;
+}
+
+/** The response the control plane sends back to the third party, unchanged. */
+export interface InboundWebhookResponse {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
 }
 
 export interface ModulesQuery {
@@ -1044,6 +1070,16 @@ export interface Woofx3EngineApi {
    * page to hand-fire events without a live Twitch session.
    */
   triggerEvent(eventType: string, eventData: Record<string, unknown>): Promise<{ success: boolean; message: string }>;
+
+  /**
+   * Run a module's webhook handler on an inbound request the control plane
+   * relayed. `triggerId` is the webhook trigger's canonical id,
+   * `{moduleId}:trigger:{triggerId}`. The engine checks the handler's result
+   * and publishes its events before returning. The response is the
+   * handler's own, or the status the engine chose when it could not run or
+   * accept the handler: 404, 500, 503 or 504.
+   */
+  handleInboundWebhook(triggerId: string, request: InboundWebhookRequest): Promise<InboundWebhookResponse>;
 
   // Workflow execution (user-facing)
   triggerWorkflowByName(

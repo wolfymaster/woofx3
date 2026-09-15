@@ -107,9 +107,23 @@ Debug adapter for unrecognized file extensions.
 
 Returns the raw source code and arguments as JSON without executing anything.
 
+## Modules request, the engine acts
+
+Module functions never drive the engine. A function returns a value in a platform-defined shape and the engine decides what to do with it; [`ctx.response`](#ctxresponse) is the model. Read [Engine integrity](../services/engine-integrity.md) before adding any host binding.
+
+## `ctx.crypto`
+
+Signature primitives for verifying inbound webhook requests. Pure computation over the arguments: nothing here reaches the engine. Implemented once in `barkloader/lib_sandbox/src/runtime/crypto.rs` and bound identically by both adapters.
+
+| Method | Returns | Notes |
+|---|---|---|
+| `hmac(algorithm, key, data, encoding?)` | digest string | `algorithm` is `"sha1"`, `"sha256"` or `"sha512"`; `key` and `data` are UTF-8; `encoding` is `"hex"` (default) or `"base64"`. Throws for an unknown algorithm or encoding. |
+| `verifyEd25519(publicKey, signature, message, encoding?)` | boolean | `publicKey` and `signature` are in `encoding` (default `"hex"`); `message` is UTF-8. Throws for a malformed public key, which is the author's mistake. A malformed or non-matching signature is `false`, since it is whatever the caller sent. |
+| `timingSafeEqual(a, b)` | boolean | Constant-time comparison; different lengths compare unequal. Use it to compare a computed signature with the one a request carries. |
+
 ## `ctx.module`
 
-Alongside `event`, `user`, `events`, `storage`, `http`, `env`, and `resources`, both
+Alongside `event`, `user`, `crypto`, `storage`, `http`, `env`, and `resources`, both
 the QuickJS and Lua adapters build a `module` namespace on `ctx`
 (`build_module_namespace` in `barkloader/lib_sandbox/src/runtime/quickjs.rs:429-456`;
 mirrored in `barkloader/lib_sandbox/src/runtime/lua.rs:186-207`), giving every

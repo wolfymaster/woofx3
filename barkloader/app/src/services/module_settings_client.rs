@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use tokio::runtime::Handle;
 
-use lib_module::db_proxy::{get_module_settings, set_module_setting};
+use lib_module::db_proxy::{get_module_secret_values, get_module_settings, set_module_setting};
 
 pub struct HttpSettingsClient {
     db_proxy_url: String,
@@ -22,14 +22,20 @@ impl SettingsClient for HttpSettingsClient {
     fn list_by_module(&self, module_id: &str) -> Result<HashMap<String, Value>, String> {
         let url = self.db_proxy_url.clone();
         let module_id = module_id.to_string();
-        let rows = Handle::current()
-            .block_on(async move { get_module_settings(&url, &module_id).await })
-            .map_err(|e| e.to_string())?;
+        let (rows, secrets) = Handle::current().block_on(async move {
+            let rows = get_module_settings(&url, &module_id).await.map_err(|e| e.to_string())?;
+            let secrets = get_module_secret_values(&url, &module_id).await.map_err(|e| e.to_string())?;
+            Ok::<_, String>((rows, secrets))
+        })?;
 
         let mut map = HashMap::new();
         for row in rows {
             let typed_value = coerce_value(&row.value, &row.value_type);
             map.insert(row.key, typed_value);
+        }
+        // A secret row lists with an empty value; the opened value replaces it.
+        for (key, value) in secrets {
+            map.insert(key, Value::String(value));
         }
         Ok(map)
     }
