@@ -302,7 +302,7 @@ pub fn validate_with_provenance(
     let workflows =
         resolve_workflows(&manifest.workflows, &workflows_table, &triggers_table, &actions_table)?;
     let widgets = resolve_widgets(&manifest.widgets, &widgets_table, &triggers_table)?;
-    validate_trigger_transports(manifest)?;
+    validate_trigger_transports(manifest, provenance)?;
     validate_no_ingress_bindings(manifest, &module_id, &workflows, &widgets)?;
 
     Ok(ResolvedManifest {
@@ -319,14 +319,25 @@ pub fn validate_with_provenance(
 
 /// Event prefixes no bus-fired trigger may claim: the webhook placeholder
 /// and the outbox.
-const RESERVED_EVENT_PREFIXES: [&str; 2] = [WEBHOOK_EVENT_PREFIX, "db."];
+///
+/// The outbox stays open to the system module, which owns the `db.workflow.*`
+/// triggers and declares no handlers. It is closed to uploads because a
+/// webhook handler may publish any event type its module declares as an
+/// eventbus trigger, so a `db.` trigger would let an upload forge outbox
+/// events.
+fn reserved_event_prefixes(provenance: InstallProvenance) -> &'static [&'static str] {
+    match provenance {
+        InstallProvenance::User => &[WEBHOOK_EVENT_PREFIX, "db."],
+        InstallProvenance::System => &[WEBHOOK_EVENT_PREFIX],
+    }
+}
 
 /// Enforce what each trigger transport may declare.
 ///
 /// A webhook trigger is fired by its handler, never by the bus, and nothing
 /// binds to it, so the fields that describe a bus event or a builder binding
 /// mean nothing on it. They are rejected rather than silently ignored.
-fn validate_trigger_transports(manifest: &ModuleManifest) -> Result<()> {
+fn validate_trigger_transports(manifest: &ModuleManifest, provenance: InstallProvenance) -> Result<()> {
     for (i, trigger) in manifest.triggers.iter().enumerate() {
         let label = format!("trigger #{i} ({})", trigger.id);
         if trigger.trigger_type != WEBHOOK_TRIGGER_TYPE {
@@ -334,7 +345,7 @@ fn validate_trigger_transports(manifest: &ModuleManifest) -> Result<()> {
                 return Err(anyhow!("{label}: `handler` is only valid on `type: \"webhook\"` triggers"));
             }
             let event = if trigger.event.is_empty() { &trigger.id } else { &trigger.event };
-            if let Some(prefix) = RESERVED_EVENT_PREFIXES.iter().find(|p| event.starts_with(**p)) {
+            if let Some(prefix) = reserved_event_prefixes(provenance).iter().find(|p| event.starts_with(**p)) {
                 return Err(anyhow!("{label}: event {event:?} uses the reserved prefix {prefix:?}"));
             }
             continue;
@@ -1446,6 +1457,28 @@ mod tests {
     #[test]
     fn rejects_a_reserved_prefix_reached_through_the_id_fallback() {
         let err = rejection(r#"{ "id": "webhook.sneaky", "name": "T1", "type": "eventbus" }"#, "");
+        assert!(err.contains("reserved prefix"), "{err}");
+    }
+
+    fn system_module_with_trigger_event(event: &str) -> ModuleManifest {
+        parse(&format!(
+            r#"{{"id": "{SYSTEM_MODULE_ID}", "name": "woofx3", "version": "1.0.0",
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "{event}" }}]}}"#
+        ))
+    }
+
+    #[test]
+    fn accepts_an_outbox_trigger_from_the_system_module() {
+        let m = system_module_with_trigger_event("db.workflow.created.*");
+        validate_with_provenance(&m, InstallProvenance::System).expect("the system module binds the outbox");
+    }
+
+    #[test]
+    fn rejects_the_webhook_prefix_even_from_the_system_module() {
+        let m = system_module_with_trigger_event("webhook.other_mod.orders");
+        let err = validate_with_provenance(&m, InstallProvenance::System)
+            .expect_err("a webhook event is fired by its handler, never the bus")
+            .to_string();
         assert!(err.contains("reserved prefix"), "{err}");
     }
 
