@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "actions": [
@@ -492,13 +492,20 @@
           "defaultValue": 100
         },
         {
+          "id": "loop",
+          "label": "Loop",
+          "type": "toggle",
+          "defaultValue": false,
+          "description": "Loop the video for as long as the rest of the alert lasts, instead of playing it once."
+        },
+        {
           "id": "duration",
           "label": "Duration",
           "type": "number",
           "unit": "seconds",
           "min": 0,
           "defaultValue": 0,
-          "description": "How long the video shows, looping if it is shorter. 0 plays the whole video once."
+          "description": "How long the video shows, looping if it is shorter. 0 plays it once, or loops for the rest of the alert when Loop is on."
         }
       ]
     },

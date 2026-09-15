@@ -34,11 +34,21 @@
       const settings = host.settings;
       const video = document.getElementById("video");
       const seconds = num(settings.duration, 0);
+      const loop = settings.loop === true;
       video.style.objectFit = ["contain", "cover", "fill"].includes(settings.fit) ? settings.fit : "contain";
       video.volume = volume(settings.volume);
       // A clip shorter than a set duration loops until the time is up.
-      video.loop = seconds > 0;
+      video.loop = loop || seconds > 0;
       video.src = mediaUrl(settings.src);
+
+      // Looping with no duration, the video has no length of its own: it
+      // plays for as long as the rest of the alert does.
+      if (loop && seconds <= 0) {
+        host.onEvent(() => {
+          play(video).catch(() => {});
+        });
+        return;
+      }
 
       host.onEvent((event) => {
         let finished = false;
