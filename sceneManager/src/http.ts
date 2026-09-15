@@ -7,7 +7,7 @@ import type { OverlayHost } from "./scene/scene-host";
 import type { SessionTokenService } from "./scene/session-token";
 import { handleSceneRoute } from "./routes/scene";
 import { handleSessionRefreshRoute } from "./routes/session";
-import { handleWidgetFrameRoute } from "./routes/widget";
+import { handleAlertWidgetFrameRoute, handleWidgetFrameRoute } from "./routes/widget";
 import { handleStaticAssetRoute } from "./routes/assets";
 import { handleStorageAssetRoute, isStorageAssetPath } from "./routes/storage";
 import {
@@ -107,6 +107,14 @@ export function createHttpServer(deps: HttpDeps) {
           const widgetMatch = /^\/scene\/([^/]+)\/widget\/([^/]+)$/.exec(url.pathname);
           if (widgetMatch && req.method === "GET") {
             return withCors(await handleWidgetFrameRoute(req, widgetMatch[1]!, widgetMatch[2]!, deps));
+          }
+
+          // GET /scene/{sceneId}/alert/{eventId}/widget/{widgetId}
+          const alertWidgetMatch = /^\/scene\/([^/]+)\/alert\/([^/]+)\/widget\/([^/]+)$/.exec(url.pathname);
+          if (alertWidgetMatch && req.method === "GET") {
+            return withCors(
+              await handleAlertWidgetFrameRoute(req, alertWidgetMatch[1]!, alertWidgetMatch[2]!, alertWidgetMatch[3]!, deps)
+            );
           }
 
           // POST /scene/{sceneId}/widget/{instanceId}/status

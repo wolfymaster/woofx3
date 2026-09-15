@@ -1,3 +1,48 @@
+// public/scene-manager/alert-timeline.ts
+var UNTIMED_ALERT_MS = 5000;
+var SUBSCRIBE_TIMEOUT_MS = 1e4;
+var MAX_ALERT_MS = 5 * 60000;
+
+class AlertTimeline {
+  startedAt;
+  widgets = new Map;
+  anyTimed = false;
+  constructor(widgetIds, startedAt) {
+    this.startedAt = startedAt;
+    for (const id of widgetIds) {
+      this.widgets.set(id, "loading");
+    }
+  }
+  subscribed(widgetId, timed) {
+    if (this.widgets.get(widgetId) !== "loading") {
+      return;
+    }
+    this.widgets.set(widgetId, timed ? "playing" : "untimed");
+    if (timed) {
+      this.anyTimed = true;
+    }
+  }
+  completed(widgetId) {
+    if (this.widgets.get(widgetId) === "playing") {
+      this.widgets.set(widgetId, "done");
+    }
+  }
+  isOver(now) {
+    const elapsed = now - this.startedAt;
+    if (elapsed >= MAX_ALERT_MS) {
+      return true;
+    }
+    for (const state of this.widgets.values()) {
+      if (state === "playing") {
+        return false;
+      }
+      if (state === "loading" && elapsed < SUBSCRIBE_TIMEOUT_MS) {
+        return false;
+      }
+    }
+    return this.anyTimed || elapsed >= UNTIMED_ALERT_MS;
+  }
+}
 // ../shared/clients/typescript/module-sdk/dist/widget-protocol.js
 var WIDGET_PROTOCOL = "woofx3.widget";
 var PROTOCOL_VERSION = 1;
@@ -242,6 +287,101 @@ function createFrameLoadHandler(bridge) {
       bridge.onFrameLoad();
     }
   };
+}
+
+// public/scene-manager/alert-widget.ts
+var TICK_MS = 250;
+
+class AlertWidget {
+  opts;
+  constructor(opts) {
+    this.opts = opts;
+  }
+  play(item) {
+    const delivery = parseDelivery(item.value);
+    if (!delivery) {
+      console.warn("[scene-manager] malformed alert delivery; skipping", { eventId: item.eventId });
+      setTimeout(() => this.opts.onFinished(item.eventId), 0);
+      return true;
+    }
+    this.run(item.eventId, delivery);
+    return true;
+  }
+  run(eventId, delivery) {
+    const { element, sceneBase, bridges } = this.opts;
+    const { layout } = delivery;
+    const stage = document.createElement("div");
+    stage.className = "alert-stage";
+    stage.style.width = `${layout.width}px`;
+    stage.style.height = `${layout.height}px`;
+    const scale = Math.min(element.clientWidth / layout.width, element.clientHeight / layout.height);
+    const offsetX = (element.clientWidth - layout.width * scale) / 2;
+    const offsetY = (element.clientHeight - layout.height * scale) / 2;
+    stage.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+    element.appendChild(stage);
+    const timeline = new AlertTimeline(layout.widgets.map((widget) => widget.id), Date.now());
+    const alertEvent = {
+      type: "alert",
+      source: "scene-manager",
+      time: new Date().toISOString(),
+      data: delivery.event,
+      eventId
+    };
+    const children = [];
+    for (const widget of layout.widgets) {
+      const instanceId = `${eventId}.${widget.id}`;
+      const nonce = this.opts.generateNonce();
+      const iframe = document.createElement("iframe");
+      iframe.className = "widget-frame";
+      iframe.style.left = `${widget.position.x}px`;
+      iframe.style.top = `${widget.position.y}px`;
+      iframe.style.width = `${widget.position.width}px`;
+      iframe.style.height = `${widget.position.height}px`;
+      iframe.setAttribute("sandbox", "allow-scripts");
+      const bridge = new WidgetBridge(instanceId, nonce, {
+        onStorageGet: () => null,
+        onStorageSubscribe: () => {},
+        onStorageUnsubscribe: () => {},
+        onStatusReport: (report) => this.opts.postStatus(instanceId, report),
+        onEventsSubscribe: (subId, queue) => {
+          timeline.subscribed(widget.id, queue?.autoComplete === false);
+          bridge.sendEvent(subId, alertEvent);
+        },
+        onEventsUnsubscribe: () => {},
+        onEventComplete: () => timeline.completed(widget.id),
+        onDispose: () => {}
+      });
+      iframe.addEventListener("load", createFrameLoadHandler(bridge));
+      iframe.src = `${sceneBase}/alert/${encodeURIComponent(eventId)}/widget/${encodeURIComponent(widget.id)}` + `?nonce=${encodeURIComponent(nonce)}`;
+      bridges.add(bridge);
+      stage.appendChild(iframe);
+      bridge.attach(iframe);
+      children.push(bridge);
+    }
+    const timer = setInterval(() => {
+      if (!timeline.isOver(Date.now())) {
+        return;
+      }
+      clearInterval(timer);
+      for (const bridge of children) {
+        bridge.dispose();
+        bridge.detach();
+        bridges.delete(bridge);
+      }
+      stage.remove();
+      this.opts.onFinished(eventId);
+    }, TICK_MS);
+  }
+}
+function parseDelivery(value) {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const { layout, event } = value;
+  if (!layout || !(layout.width > 0) || !(layout.height > 0) || !Array.isArray(layout.widgets)) {
+    return null;
+  }
+  return { layout, event: event ?? null };
 }
 
 // public/scene-manager/resolver.ts
@@ -539,6 +679,7 @@ function evaluateExpression(src, ctx) {
 
 // public/scene-manager/event-queue.ts
 var DEFAULT_MAX_IN_FLIGHT = 1;
+var REMEMBERED_FINISHED_EVENTS = 256;
 
 class InstanceQueue {
   config;
@@ -546,12 +687,16 @@ class InstanceQueue {
   onTimeout;
   pending = [];
   inFlight = new Map;
+  finished = new Set;
   constructor(config, deliver, onTimeout) {
     this.config = config;
     this.deliver = deliver;
     this.onTimeout = onTimeout;
   }
   enqueue(item) {
+    if (this.inFlight.has(item.eventId) || this.finished.has(item.eventId) || this.pending.some((pending) => pending.eventId === item.eventId)) {
+      return;
+    }
     const priority = this.priorityOf(item);
     const entry = { ...item, priority };
     if (!this.config.priorityExpr) {
@@ -571,6 +716,7 @@ class InstanceQueue {
       clearTimeout(timer);
     }
     if (this.inFlight.delete(eventId)) {
+      this.rememberFinished(eventId);
       this.pump();
     }
   }
@@ -600,11 +746,21 @@ class InstanceQueue {
       if (this.config.retryTimeoutMs) {
         timer = setTimeout(() => {
           this.inFlight.delete(item.eventId);
+          this.rememberFinished(item.eventId);
           this.onTimeout(item.eventId);
           this.pump();
         }, this.config.retryTimeoutMs);
       }
       this.inFlight.set(item.eventId, timer);
+    }
+  }
+  rememberFinished(eventId) {
+    this.finished.add(eventId);
+    if (this.finished.size > REMEMBERED_FINISHED_EVENTS) {
+      const oldest = this.finished.values().next().value;
+      if (oldest !== undefined) {
+        this.finished.delete(oldest);
+      }
     }
   }
 }
@@ -640,20 +796,13 @@ class EventQueueManager {
   }
 }
 function toWidgetEvent(item) {
-  const value = item.value;
-  const isPlainObject = typeof value === "object" && value !== null && !Array.isArray(value);
-  const { parameters, ...data } = isPlainObject ? value : {};
-  const event = {
+  return {
     type: item.type,
     source: "scene-manager",
     time: new Date().toISOString(),
-    data: isPlainObject ? data : value,
+    data: item.value,
     eventId: item.eventId
   };
-  if (parameters && typeof parameters === "object" && !Array.isArray(parameters)) {
-    event.parameters = parameters;
-  }
-  return event;
 }
 
 // public/scene-manager/ack-batcher.ts
@@ -1059,6 +1208,12 @@ function generateNonce() {
   crypto.getRandomValues(bytes);
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
+function placeAt(element, position) {
+  element.style.left = `${position.x}px`;
+  element.style.top = `${position.y}px`;
+  element.style.width = `${position.width}px`;
+  element.style.height = `${position.height}px`;
+}
 function renderConnected(connected) {
   const banner = document.getElementById("disconnected-banner");
   banner?.classList.toggle("visible", !connected);
@@ -1074,7 +1229,7 @@ function main() {
   }
   const sceneId = sceneData.id;
   const sceneBase = `/scene/${encodeURIComponent(sceneId)}`;
-  const bridgesByInstance = new Map;
+  const bridges = new Set;
   const queueManager = new EventQueueManager;
   const deliveredBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/delivered`);
   const completedBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/completed`);
@@ -1092,13 +1247,33 @@ function main() {
       })
     }).catch(() => {});
   }
+  const mountAlertWidget = (instance) => {
+    const element = document.createElement("div");
+    element.className = "alert-widget";
+    placeAt(element, instance.position);
+    container.appendChild(element);
+    const subId = `alert:${instance.id}`;
+    const alertWidget = new AlertWidget({
+      element,
+      sceneBase,
+      bridges,
+      generateNonce,
+      postStatus,
+      onFinished: (eventId) => {
+        queueManager.complete(subId, eventId);
+        completedBatcher.add(eventId, instance.id);
+      }
+    });
+    queueManager.register(subId, instance.id, { maxInFlight: 1 }, (item) => alertWidget.play(item), () => {});
+  };
   for (const instance of sceneData.widgets) {
+    if (instance.hostsSurface === "alert") {
+      mountAlertWidget(instance);
+      continue;
+    }
     const iframe = document.createElement("iframe");
     iframe.className = "widget-frame";
-    iframe.style.left = `${instance.position.x}px`;
-    iframe.style.top = `${instance.position.y}px`;
-    iframe.style.width = `${instance.position.width}px`;
-    iframe.style.height = `${instance.position.height}px`;
+    placeAt(iframe, instance.position);
     iframe.setAttribute("sandbox", "allow-scripts");
     const nonce = generateNonce();
     let currentSubId = null;
@@ -1131,12 +1306,12 @@ function main() {
     const bridge = new WidgetBridge(instance.id, nonce, callbacks);
     iframe.addEventListener("load", createFrameLoadHandler(bridge));
     iframe.src = `${instance.frameUrl}?nonce=${encodeURIComponent(nonce)}`;
-    bridgesByInstance.set(instance.id, bridge);
+    bridges.add(bridge);
     container.appendChild(iframe);
     bridge.attach(iframe);
   }
   window.addEventListener("message", (event) => {
-    for (const bridge of bridgesByInstance.values()) {
+    for (const bridge of bridges) {
       bridge.handleMessage(event);
     }
   });

@@ -40,7 +40,8 @@ message Widget {
   string settings_schema = 8;
   string created_by_type = 9;
   string created_by_ref = 10;
-  string surface = 11;
+  reserved 11;
+  reserved "surface";
   // Entry document path relative to the widget asset root (the
   // prefix-stripped repository keys under `directory`). Empty means
   // the frame assembler falls back to "index.html". Must resolve to a
@@ -51,6 +52,13 @@ message Widget {
   // placements so a module update that changes them reaches every scene
   // without rewriting any.
   repeated string accepted_events = 13;
+  // Where this widget may be placed: "scene", "alert", or both. An alert
+  // layout may only place widgets that list "alert".
+  repeated string surfaces = 14;
+  // The surface this widget's placements host, or empty. An "alert" widget
+  // on a scene is the area that plays alert layouts; it has no frame of its
+  // own.
+  string hosts_surface = 15;
 }
 
 message WidgetInput {
@@ -60,11 +68,14 @@ message WidgetInput {
   string directory = 4;
   repeated string alert_types = 5;
   string settings_schema = 6;
-  string surface = 7;
+  reserved 7;
+  reserved "surface";
   // Entry path relative to the widget asset root; empty means
   // index.html fallback.
   string entry = 8;
   repeated string accepted_events = 9;
+  repeated string surfaces = 10;
+  string hosts_surface = 11;
 }
 
 message RegisterWidgetsRequest {

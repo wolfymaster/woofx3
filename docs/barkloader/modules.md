@@ -283,6 +283,7 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `mediaType` | string | no | For `media` — `image`, `audio` or `video`. |
 | `kinds` | string[] | no | For `asset` — filter the picker by `ManifestAsset.kind`. |
 | `resourceKind` | string | no | Required for `resource_ref` — which resource kind the picker lists. |
+| `surface` | string | no | Required for `layout` — the surface whose widgets the layout places (`alert`). |
 | `action` | object | no | Required for `button` — the request the button fires. See [module-level settings](#module-level-settings-settings). |
 | `eventPath` | string | no | Trigger `schema` only. Dot path into the event payload this field maps to. |
 | `operator` | string | no | Trigger `schema` only. Comparison emitted with this field's value (e.g. `gte`, `eq`). |
@@ -294,19 +295,20 @@ The info icon next to a field's label appears if and only if `hint` or `exampleP
 
 #### Field types
 
-`number`, `range`, `text`, `select`, `media`, `toggle`, `color`, `asset`, `resource_ref`, `button`.
+`number`, `range`, `text`, `select`, `media`, `toggle`, `color`, `asset`, `resource_ref`, `button`, `layout`.
 
 The set is closed — an unrecognised token fails the install rather than falling back to a text input, because a silent fallback is indistinguishable from a working field.
 
 Note `text` and `toggle`, not `string` and `boolean`. These name **controls**. The `string` / `boolean` tokens belong to [`DataShape`](#emits-and-returns), which names **values**. The two vocabularies are deliberately different because the things they describe are different: a `toggle` renders a switch, a `boolean` is what comes back in a payload. Neither list is a superset of the other.
 
-Three of them carry extra requirements, each checked at install:
+Four of them carry extra requirements, each checked at install:
 
 | Type | Requires | Why |
 |---|---|---|
 | `select` | `options` or a `source` | A select with nothing to select is a dead control. |
 | `resource_ref` | `resourceKind` | A picker that does not say what to pick lists nothing. |
 | `button` | `action` | A button with nothing to fire does nothing. |
+| `layout` | `surface` | A canvas that does not say which widgets it may hold can place nothing. |
 
 #### Picker field types
 
@@ -607,6 +609,8 @@ calling `ctx.chat.sendMessage(...)` directly — see [`ctx.response`](./sandbox.
 | `entry` | string | no | HTML entry path in the ZIP. |
 | `assets` | string | no | Directory prefix in the ZIP for static assets (all files under this prefix are uploaded). |
 | `settingsSchema` | array | no | `ConfigField[]` describing the fields a user fills in when placing this widget on a scene; see [Field declarations](#field-declarations). Per-instance values flow back to the widget at render time as `widgetHost.settings`. |
+| `surfaces` | string[] | no | Where the widget may be placed: `"scene"`, `"alert"` (inside an alert layout), or both. Defaults to `["scene"]`. |
+| `hostsSurface` | string | no | Bundled system module only. Marks a widget whose placements host a surface: the `"alert"` widget is the area of a scene where alert layouts play. The scene manager draws it, so it declares no `entry` or `acceptedEvents`, and it cannot be placed on the surface it hosts. |
 | `acceptedEvents` | string[] | no | **Event types**, not trigger references: `["channel.follow", "channel.cheer"]`. They are stored verbatim and compared against a CloudEvent's `type` by the scene fan-out, so a canonical id here would match nothing and is rejected at install. Any module emitting the event satisfies the entry, at any version — which is what lets the emitting module be uninstalled and reinstalled without touching the widget. Widgets without an `acceptedEvents` declaration receive no events. |
 
 Files are stored under **`modules/{moduleId}/widgets/{widgetId}/…`**.
@@ -620,6 +624,7 @@ interface WidgetHost {
   readonly moduleId: string;
   readonly instanceId: string;            // stable per-placement id
   readonly settings: Readonly<Record<string, unknown>>; // resolved from settingsSchema
+  readonly surface: "scene" | "alert";    // placed on a scene, or playing in an alert
   readonly storage: WidgetHostStorage;    // get / subscribe over module storage
 
   onEvent(handler: (event: WidgetEvent) => void): () => void;

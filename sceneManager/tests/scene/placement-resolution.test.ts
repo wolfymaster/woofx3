@@ -8,7 +8,7 @@ function fakeLogger() {
 
 function hostWith(
   placements: unknown[],
-  catalog: Array<{ moduleId: string; manifestId: string; acceptedEvents?: string[] }>
+  catalog: Array<{ moduleId: string; manifestId: string; acceptedEvents?: string[]; hostsSurface?: string }>
 ) {
   const logger = fakeLogger();
   const db = {
@@ -48,6 +48,18 @@ const placement = (id: string, canonical: string) => ({
 });
 
 describe("scene placement resolution", () => {
+  it("gives each placement the surface its widget definition hosts", async () => {
+    const { host } = hostWith(
+      [placement("inst-1", "woofx3:widget:alert"), placement("inst-2", "woofx3:widget:text")],
+      [
+        { moduleId: "woofx3", manifestId: "alert", hostsSurface: "alert" },
+        { moduleId: "woofx3", manifestId: "text" },
+      ]
+    );
+    const state = await host.loadScene("ovl_token");
+    expect(state?.instances.map((i) => i.hostsSurface)).toEqual(["alert", ""]);
+  });
+
   it("gives each placement its widget definition's accepted events", async () => {
     const { host } = hostWith(
       [placement("inst-1", "woofx3:widget:media_alert"), placement("inst-2", "counter:widget:counter")],

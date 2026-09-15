@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <title>image</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+    }
+
+    #image {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+
+<body>
+  <img id="image" alt="" />
+
+  <script>
+    (function () {
+      const host = window.widgetHost;
+      if (!host) {
+        return;
+      }
+      const settings = host.settings;
+      const image = document.getElementById("image");
+      image.style.objectFit = ["contain", "cover", "fill"].includes(settings.fit) ? settings.fit : "contain";
+      image.src = mediaUrl(settings.src);
+
+      playForDuration(host, num(settings.duration, 0), () => {
+        image.style.visibility = "hidden";
+      });
+    })();
+
+    // In an alert, a duration gives this widget a length of its own: it
+    // completes when the time is up, and the alert waits for it. Without one
+    // it completes at once and stays up for as long as the alert does.
+    function playForDuration(host, seconds, hide) {
+      if (host.surface !== "alert") {
+        return;
+      }
+      if (seconds <= 0) {
+        host.onEvent(() => {});
+        return;
+      }
+      host.onEvent((event) => {
+        setTimeout(() => {
+          hide();
+          event.complete();
+        }, seconds * 1000);
+      }, { autoComplete: false });
+    }
+
+    // A media setting is a URL, or the asset picker's `{ url, ... }`.
+    function mediaUrl(value) {
+      if (typeof value === "string") {
+        return value;
+      }
+      if (value && typeof value.url === "string") {
+        return value.url;
+      }
+      return "";
+    }
+
+    function num(value, fallback) {
+      return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+    }
+  </script>
+</body>
+
+</html>

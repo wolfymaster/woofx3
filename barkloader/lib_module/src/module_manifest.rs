@@ -201,6 +201,10 @@ pub struct ManifestConfigField {
     /// Required for `type: "resource_ref"` - which resource kind to list.
     #[serde(default)]
     pub resource_kind: Option<String>,
+    /// Required for `type: "layout"` - the `WIDGET_SURFACES` token whose
+    /// widgets the layout places.
+    #[serde(default)]
+    pub surface: Option<String>,
     /// Present only on `type: "button"`, which collects no value and instead
     /// fires a request. Opaque here.
     #[serde(default)]
@@ -235,7 +239,7 @@ pub struct ManifestConfigFieldOption {
 /// `text` and `toggle` rather than `string` and `boolean`: these name the
 /// control, not the stored value, and the latter pair only ever appeared on
 /// module settings.
-pub const CONFIG_FIELD_TYPES: [&str; 10] = [
+pub const CONFIG_FIELD_TYPES: [&str; 11] = [
     "number",
     "range",
     "text",
@@ -246,7 +250,13 @@ pub const CONFIG_FIELD_TYPES: [&str; 10] = [
     "asset",
     "resource_ref",
     "button",
+    "layout",
 ];
+
+/// The places a widget can be put. Mirrors `WIDGET_SURFACES` in
+/// `shared/clients/typescript/api/ui-schema.ts` and `WidgetSurface` in the
+/// module SDK.
+pub const WIDGET_SURFACES: [&str; 2] = ["scene", "alert"];
 
 /// A flat list of the paths a runtime value carries, with their types.
 ///
@@ -514,6 +524,19 @@ pub struct ModuleWidget {
     /// imply, or wants to opt in to events the engine doesn't emit yet.
     #[serde(default)]
     pub alert_types: Vec<String>,
+    /// Where this widget may be placed: `WIDGET_SURFACES` tokens. Omitted
+    /// means a scene widget.
+    #[serde(default = "default_widget_surfaces")]
+    pub surfaces: Vec<String>,
+    /// The surface this widget's placements host. An `"alert"` widget on a
+    /// scene is the area alert layouts play in; the scene manager draws it,
+    /// so it has no entry of its own.
+    #[serde(default)]
+    pub hosts_surface: Option<String>,
+}
+
+fn default_widget_surfaces() -> Vec<String> {
+    vec!["scene".to_string()]
 }
 
 /// Background task declared in the module manifest. Barkloader's internal
@@ -1065,7 +1088,8 @@ impl ModuleWidget {
             directory,
             alert_types: self.resolved_alert_types(),
             settings_schema,
-            surface: "scene".to_string(),
+            surfaces: self.surfaces.clone(),
+            hosts_surface: self.hosts_surface.clone().unwrap_or_default(),
             entry,
             accepted_events: self.accepted_events.clone(),
         }
@@ -1278,8 +1302,8 @@ const ASSET_MARKER_PREFIX: &str = "${asset:";
 /// workflow JSON at install time.
 ///
 /// This exists because a workflow step's parameters can reach a widget
-/// whose own `<base href>` belongs to a *different* module (e.g. a
-/// generic `MediaWidget` rendering an asset declared by the module that
+/// whose own `<base href>` belongs to a *different* module (e.g. the
+/// bundled Audio widget playing a sound declared by the module that
 /// triggered the alert) — a bare relative filename has no way to carry
 /// "this belongs to module X" through to the browser. Baking the full
 /// repository key in at install time, with a recognizable

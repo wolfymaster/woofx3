@@ -36,6 +36,15 @@ export type TimeoutFn = (eventId: string) => void;
 
 const DEFAULT_MAX_IN_FLIGHT = 1;
 
+/**
+ * How many finished event ids an instance remembers. The server re-pushes an
+ * open delivery every few seconds until its completion ack lands (see
+ * delivery-store.ts), so a delivery that is still queued, still playing, or
+ * whose ack is in flight arrives again. Remembering it is what keeps one
+ * alert from playing twice.
+ */
+const REMEMBERED_FINISHED_EVENTS = 256;
+
 interface PendingItem extends QueuedEvent {
   priority: number;
 }
@@ -43,6 +52,7 @@ interface PendingItem extends QueuedEvent {
 class InstanceQueue {
   private readonly pending: PendingItem[] = [];
   private readonly inFlight = new Map<string, ReturnType<typeof setTimeout> | null>();
+  private readonly finished = new Set<string>();
 
   constructor(
     private readonly config: EventQueueConfig,
@@ -51,6 +61,13 @@ class InstanceQueue {
   ) {}
 
   enqueue(item: QueuedEvent): void {
+    if (
+      this.inFlight.has(item.eventId) ||
+      this.finished.has(item.eventId) ||
+      this.pending.some((pending) => pending.eventId === item.eventId)
+    ) {
+      return;
+    }
     const priority = this.priorityOf(item);
     const entry: PendingItem = { ...item, priority };
     if (!this.config.priorityExpr) {
@@ -75,6 +92,7 @@ class InstanceQueue {
       clearTimeout(timer);
     }
     if (this.inFlight.delete(eventId)) {
+      this.rememberFinished(eventId);
       this.pump();
     }
   }
@@ -109,11 +127,22 @@ class InstanceQueue {
       if (this.config.retryTimeoutMs) {
         timer = setTimeout(() => {
           this.inFlight.delete(item.eventId);
+          this.rememberFinished(item.eventId);
           this.onTimeout(item.eventId);
           this.pump();
         }, this.config.retryTimeoutMs);
       }
       this.inFlight.set(item.eventId, timer);
+    }
+  }
+
+  private rememberFinished(eventId: string): void {
+    this.finished.add(eventId);
+    if (this.finished.size > REMEMBERED_FINISHED_EVENTS) {
+      const oldest = this.finished.values().next().value;
+      if (oldest !== undefined) {
+        this.finished.delete(oldest);
+      }
     }
   }
 }
@@ -162,33 +191,13 @@ export class EventQueueManager {
   }
 }
 
-/**
- * Map a queued delivery onto the SDK's `WidgetEvent` shape.
- *
- * `parameters` must surface as a TOP-LEVEL field: that is where the
- * SDK documents it ("widgets that consume alert-style configuration
- * read it from here") and where streamware's broadcast put it, so it
- * is what existing widgets like media_alert read. The delivery
- * pipeline carries it nested instead — `nats-subscriptions.ts` packs
- * `{ ...event.data, parameters }` into the frame's single opaque
- * `value` so the persisted scene_event needs no extra column — so this
- * is the matching unpack. Without it every alert reaches the widget
- * with `parameters === undefined` and renders blank: no text, no
- * media, no audio, no duration.
- */
+/** Map a queued delivery onto the SDK's `WidgetEvent` shape. */
 export function toWidgetEvent(item: QueuedEvent): WidgetEvent {
-  const value = item.value;
-  const isPlainObject = typeof value === "object" && value !== null && !Array.isArray(value);
-  const { parameters, ...data } = isPlainObject ? (value as Record<string, unknown>) : {};
-  const event: WidgetEvent = {
+  return {
     type: item.type,
     source: "scene-manager",
     time: new Date().toISOString(),
-    data: isPlainObject ? data : value,
+    data: item.value,
     eventId: item.eventId,
   };
-  if (parameters && typeof parameters === "object" && !Array.isArray(parameters)) {
-    event.parameters = parameters as Record<string, unknown>;
-  }
-  return event;
 }

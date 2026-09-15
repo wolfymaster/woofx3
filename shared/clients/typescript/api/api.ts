@@ -997,7 +997,8 @@ export interface Woofx3EngineApi {
       directory: string;
       alertTypes: string[];
       settingsSchema: string;
-      surface: string;
+      surfaces: string[];
+      hostsSurface: string;
       createdByType: string;
       createdByRef: string;
     }>;

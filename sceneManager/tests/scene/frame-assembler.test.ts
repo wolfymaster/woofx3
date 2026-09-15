@@ -16,6 +16,7 @@ function minimalBoot(): FrameScaffold["boot"] {
     instanceId: "inst-1",
     moduleId: "mod",
     widgetCanonicalId: "mod:widget:w",
+    surface: "scene",
     settings: {},
     capabilities: ["storage", "events", "status"],
     resourceBaseUrl: "https://cdn.example.com/mod/w/",
@@ -155,6 +156,7 @@ function widgetInstance(overrides: Partial<OverlayWidgetInstance>): OverlayWidge
     settings: {},
     resolved: true,
     acceptedEvents: [],
+    hostsSurface: "",
     frameUrl: "",
     ...overrides,
   };

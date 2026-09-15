@@ -39,6 +39,13 @@ export interface WidgetHostStorage {
 }
 
 /**
+ * Where a widget is running: placed on a scene, or inside an alert layout.
+ * A scene widget stays up; an alert-layout widget plays once per alert.
+ * Mirrors `WIDGET_SURFACES` in barkloader's module_manifest.rs.
+ */
+export type WidgetSurface = "scene" | "alert";
+
+/**
  * Generic engine-pushed event delivered to the widget via `onEvent`.
  *
  * `type` is the canonical trigger id from the widget's
@@ -110,6 +117,7 @@ export interface WidgetHost {
   /** Per-instance settings resolved by the scene editor from the
    *  widget's `settingsSchema`. Frozen at load time. */
   readonly settings: Readonly<Record<string, unknown>>;
+  readonly surface: WidgetSurface;
 
   /** Module id this widget belongs to. Surfaced so widgets can scope
    *  storage calls without the shell having to bind it. */

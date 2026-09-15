@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "actions": [
@@ -19,9 +19,29 @@
     {
       "id": "alert",
       "name": "Alert",
-      "description": "Publish an on-stream alert. Parameters (mediaUrl, audioUrl, text, duration, options, ...) are forwarded to subscribers on the `ui.notify.alert` NATS subject; the UI / overlays render the alert.",
+      "description": "Play an on-stream alert: widgets placed on a canvas, shown on every alert widget with the target name on a running scene.",
       "type": "native",
       "handler": "alert",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Alert widget",
+          "type": "text",
+          "source": {
+            "kind": "alertWidgets"
+          },
+          "defaultValue": "default",
+          "description": "Plays on every alert widget with this name. Give alert widgets on several scenes the same name to show the same alerts on each."
+        },
+        {
+          "id": "layout",
+          "label": "Alert",
+          "type": "layout",
+          "surface": "alert",
+          "required": true,
+          "description": "What the alert shows. The alert widget scales the canvas to fit, and the alert lasts as long as its longest widget."
+        }
+      ],
       "taxonomy": [
         "system.workflow",
         "alert.renderer"
@@ -283,50 +303,288 @@
   ],
   "widgets": [
     {
-      "id": "media_alert",
-      "name": "Media Alert",
-      "description": "Renders alert text, media, and audio with expression-based template substitution. Handles the standard stream alert events (follow, cheer, subscription, raid, channel-point redemption, stream on/off).",
-      "entry": "widgets/media_alert/index.html",
-      "assets": "widgets/media_alert",
-      "acceptedEvents": [
-        "channel.follow",
-        "channel.cheer",
-        "channel.subscribe",
-        "channel.subscriptionGift",
-        "channelpoints.redeem",
-        "channel.raid",
-        "stream.online",
-        "stream.offline"
+      "id": "alert",
+      "name": "Alert",
+      "description": "Where alerts play on this scene. Alert actions target alert widgets by name, and play one alert at a time.",
+      "surfaces": [
+        "scene"
+      ],
+      "hostsSurface": "alert",
+      "settingsSchema": [
+        {
+          "id": "name",
+          "label": "Name",
+          "type": "text",
+          "required": true,
+          "defaultValue": "default",
+          "description": "Alert actions that target this name play here."
+        }
+      ]
+    },
+    {
+      "id": "text",
+      "name": "Text",
+      "description": "Styled text. Wrap words in {primary}...{primary} to show them in the highlight color.",
+      "entry": "widgets/text/index.html",
+      "assets": "widgets/text",
+      "surfaces": [
+        "scene",
+        "alert"
       ],
       "settingsSchema": [
         {
-          "id": "textTemplate",
+          "id": "text",
+          "label": "Text",
           "type": "text",
-          "label": "Alert text template",
-          "defaultValue": ""
+          "placeholder": "Thanks for the follow, {primary}name{primary}!",
+          "description": "Wrap words in {primary}...{primary} to show them in the highlight color."
         },
         {
-          "id": "mediaUrlTemplate",
-          "type": "text",
-          "label": "Media URL template",
-          "defaultValue": ""
+          "id": "color",
+          "label": "Color",
+          "type": "color",
+          "defaultValue": "#ffffff"
         },
         {
-          "id": "audioUrlTemplate",
+          "id": "highlightColor",
+          "label": "Highlight color",
+          "type": "color",
+          "defaultValue": "#ec6758"
+        },
+        {
+          "id": "fontFamily",
+          "label": "Font",
           "type": "text",
-          "label": "Audio URL template",
-          "defaultValue": ""
+          "defaultValue": "Roboto, system-ui, sans-serif"
+        },
+        {
+          "id": "fontSize",
+          "label": "Font size",
+          "type": "number",
+          "unit": "px",
+          "min": 1,
+          "defaultValue": 48
+        },
+        {
+          "id": "align",
+          "label": "Alignment",
+          "type": "select",
+          "defaultValue": "center",
+          "options": [
+            {
+              "value": "left",
+              "label": "Left"
+            },
+            {
+              "value": "center",
+              "label": "Center"
+            },
+            {
+              "value": "right",
+              "label": "Right"
+            }
+          ]
         },
         {
           "id": "duration",
+          "label": "Duration",
           "type": "number",
-          "label": "Display duration (seconds)",
-          "defaultValue": 5
+          "unit": "seconds",
+          "min": 0,
+          "defaultValue": 0,
+          "description": "In an alert: how long the text shows. 0 keeps it up for the whole alert."
         }
+      ]
+    },
+    {
+      "id": "image",
+      "name": "Image",
+      "description": "An image or animated GIF.",
+      "entry": "widgets/image/index.html",
+      "assets": "widgets/image",
+      "surfaces": [
+        "scene",
+        "alert"
       ],
-      "taxonomy": [
-        "system.scene",
-        "alert.renderer"
+      "settingsSchema": [
+        {
+          "id": "src",
+          "label": "Image",
+          "type": "media",
+          "mediaType": "image",
+          "required": true
+        },
+        {
+          "id": "fit",
+          "label": "Fit",
+          "type": "select",
+          "defaultValue": "contain",
+          "options": [
+            {
+              "value": "contain",
+              "label": "Fit inside"
+            },
+            {
+              "value": "cover",
+              "label": "Fill and crop"
+            },
+            {
+              "value": "fill",
+              "label": "Stretch"
+            }
+          ]
+        },
+        {
+          "id": "duration",
+          "label": "Duration",
+          "type": "number",
+          "unit": "seconds",
+          "min": 0,
+          "defaultValue": 0,
+          "description": "In an alert: how long the image shows. 0 keeps it up for the whole alert."
+        }
+      ]
+    },
+    {
+      "id": "video",
+      "name": "Video",
+      "description": "A video clip that plays once per alert.",
+      "entry": "widgets/video/index.html",
+      "assets": "widgets/video",
+      "surfaces": [
+        "alert"
+      ],
+      "settingsSchema": [
+        {
+          "id": "src",
+          "label": "Video",
+          "type": "media",
+          "mediaType": "video",
+          "required": true
+        },
+        {
+          "id": "fit",
+          "label": "Fit",
+          "type": "select",
+          "defaultValue": "contain",
+          "options": [
+            {
+              "value": "contain",
+              "label": "Fit inside"
+            },
+            {
+              "value": "cover",
+              "label": "Fill and crop"
+            },
+            {
+              "value": "fill",
+              "label": "Stretch"
+            }
+          ]
+        },
+        {
+          "id": "volume",
+          "label": "Volume",
+          "type": "number",
+          "unit": "%",
+          "min": 0,
+          "max": 100,
+          "defaultValue": 100
+        },
+        {
+          "id": "duration",
+          "label": "Duration",
+          "type": "number",
+          "unit": "seconds",
+          "min": 0,
+          "defaultValue": 0,
+          "description": "How long the video shows, looping if it is shorter. 0 plays the whole video once."
+        }
+      ]
+    },
+    {
+      "id": "audio",
+      "name": "Audio",
+      "description": "A sound that plays once per alert.",
+      "entry": "widgets/audio/index.html",
+      "assets": "widgets/audio",
+      "surfaces": [
+        "alert"
+      ],
+      "settingsSchema": [
+        {
+          "id": "src",
+          "label": "Sound",
+          "type": "media",
+          "mediaType": "audio",
+          "required": true
+        },
+        {
+          "id": "volume",
+          "label": "Volume",
+          "type": "number",
+          "unit": "%",
+          "min": 0,
+          "max": 100,
+          "defaultValue": 100
+        },
+        {
+          "id": "duration",
+          "label": "Duration",
+          "type": "number",
+          "unit": "seconds",
+          "min": 0,
+          "defaultValue": 0,
+          "description": "How long the sound plays. 0 plays all of it."
+        }
+      ]
+    },
+    {
+      "id": "lottie",
+      "name": "Lottie",
+      "description": "A Lottie animation, optionally with the text of one of its text layers replaced.",
+      "entry": "widgets/lottie/index.html",
+      "assets": "widgets/lottie",
+      "surfaces": [
+        "scene",
+        "alert"
+      ],
+      "settingsSchema": [
+        {
+          "id": "src",
+          "label": "Animation",
+          "type": "media",
+          "required": true,
+          "description": "A Lottie JSON file."
+        },
+        {
+          "id": "textLayer",
+          "label": "Text layer",
+          "type": "text",
+          "description": "The name of a text layer in the animation whose text to replace."
+        },
+        {
+          "id": "text",
+          "label": "Text",
+          "type": "text",
+          "description": "The text the layer shows instead."
+        },
+        {
+          "id": "loop",
+          "label": "Loop",
+          "type": "toggle",
+          "defaultValue": true,
+          "description": "On a scene: loop the animation."
+        },
+        {
+          "id": "duration",
+          "label": "Duration",
+          "type": "number",
+          "unit": "seconds",
+          "min": 0,
+          "defaultValue": 0,
+          "description": "In an alert: how long the animation plays, looping if it is shorter. 0 plays it through once."
+        }
       ]
     }
   ]

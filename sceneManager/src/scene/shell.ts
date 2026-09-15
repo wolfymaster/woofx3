@@ -24,6 +24,8 @@ export function renderSceneShell(config: SceneShellConfig): string {
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
   #widgets { position: relative; width: 100%; height: 100%; }
   .widget-frame { position: absolute; border: 0; }
+  .alert-widget { position: absolute; overflow: hidden; }
+  .alert-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 
   /* Connection indicator. Deliberately a small corner badge rather than
      a full-screen scrim: this sits on a live stream overlay, so a lost

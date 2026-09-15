@@ -1326,6 +1326,13 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 		if err != nil {
 			return nil, fmt.Errorf("marshal accepted_events for widget %q: %w", in.Name, err)
 		}
+		if len(in.Surfaces) == 0 {
+			return nil, fmt.Errorf("widget %q declares no surfaces", in.Name)
+		}
+		surfacesJSON, err := json.Marshal(in.Surfaces)
+		if err != nil {
+			return nil, fmt.Errorf("marshal surfaces for widget %q: %w", in.Name, err)
+		}
 		w := &models.Widget{
 			ID:             uuid.New(),
 			Name:           in.Name,
@@ -1335,7 +1342,8 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 			AlertTypes:     string(alertTypesJSON),
 			AcceptedEvents: string(acceptedEventsJSON),
 			SettingsSchema: in.SettingsSchema,
-			Surface:        in.Surface,
+			Surfaces:       string(surfacesJSON),
+			HostsSurface:   in.HostsSurface,
 			CreatedByType:  createdByType,
 			CreatedByRef:   createdByRef,
 			ManifestID:     in.ManifestId,
@@ -1562,10 +1570,23 @@ func widgetToProto(w *models.Widget) *client.Widget {
 		AlertTypes:     alertTypes,
 		AcceptedEvents: acceptedEvents,
 		SettingsSchema: w.SettingsSchema,
-		Surface:        w.Surface,
+		Surfaces:       widgetSurfaces(w),
+		HostsSurface:   w.HostsSurface,
 		CreatedByType:  w.CreatedByType,
 		CreatedByRef:   w.CreatedByRef,
 	}
+}
+
+// widgetSurfaces decodes a widget row's stored surface list.
+func widgetSurfaces(w *models.Widget) []string {
+	var surfaces []string
+	if w.Surfaces != "" {
+		json.Unmarshal([]byte(w.Surfaces), &surfaces)
+	}
+	if surfaces == nil {
+		surfaces = []string{}
+	}
+	return surfaces
 }
 
 // ---------------------------------------------------------------------

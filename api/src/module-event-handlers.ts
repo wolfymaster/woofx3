@@ -27,7 +27,7 @@ import type {
 import { asString } from "./outbox";
 import { subscribeProjections } from "./projection";
 import { EngineEventType } from "@woofx3/api/webhooks";
-import type { ConfigField } from "@woofx3/api/ui-schema";
+import { type ConfigField, isWidgetSurface } from "@woofx3/api/ui-schema";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 
@@ -92,7 +92,8 @@ interface RawWidget {
   alert_types?: unknown;
   alertTypes?: unknown;
   settings?: unknown;
-  surface?: unknown;
+  surfaces?: unknown;
+  hosts_surface?: unknown;
   created_by_type?: unknown;
   created_by_ref?: unknown;
 }
@@ -257,6 +258,7 @@ function mapWidget(raw: RawWidget): WidgetDefinition {
     directory: asString(raw.directory),
     alertTypes,
     settings: settingsRaw.map((s) => mapConfigField(s as RawConfigField)),
+    surfaces: asStringArray(raw.surfaces).filter(isWidgetSurface),
     createdByType: asString(raw.created_by_type),
     createdByRef: asString(raw.created_by_ref),
   };
@@ -272,13 +274,9 @@ function mapWidget(raw: RawWidget): WidgetDefinition {
   if (projectionKey !== "") {
     def.projectionKey = projectionKey;
   }
-  // Pass through the manifest's `surface` declaration. The UI defaults
-  // omitted values to "scene"; only forward the discriminator when the
-  // manifest explicitly opts into a non-default surface so the wire
-  // payload stays minimal for the common case.
-  const surface = asString(raw.surface);
-  if (surface === "dashboard" || surface === "scene") {
-    def.surface = surface;
+  const hostsSurface = asString(raw.hosts_surface);
+  if (isWidgetSurface(hostsSurface)) {
+    def.hostsSurface = hostsSurface;
   }
   return def;
 }

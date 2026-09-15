@@ -260,25 +260,11 @@ describe("EventQueueManager — routing and lifecycle", () => {
 describe("toWidgetEvent", () => {
   const frame = { eventId: "e1", type: "channel.follow", key: "channel.follow" };
 
-  it("lifts parameters to the top level where the SDK and widgets read them", () => {
-    // media_alert reads event.parameters for text/media/audio/duration;
-    // leaving them nested under data renders a blank alert.
-    const event = toWidgetEvent({ ...frame, value: { userName: "someone", parameters: { text: "hi", duration: 3 } } });
-    expect(event.parameters).toEqual({ text: "hi", duration: 3 });
-    expect(event.data).toEqual({ userName: "someone" });
+  it("carries the delivery's type, id and value", () => {
+    const event = toWidgetEvent({ ...frame, value: { userName: "someone" } });
     expect(event.type).toBe("channel.follow");
     expect(event.eventId).toBe("e1");
-  });
-
-  it("omits parameters entirely when the delivery carries none", () => {
-    const event = toWidgetEvent({ ...frame, value: { userName: "someone" } });
-    expect(event.parameters).toBeUndefined();
     expect(event.data).toEqual({ userName: "someone" });
-  });
-
-  it("ignores a non-object parameters value rather than forwarding junk", () => {
-    const event = toWidgetEvent({ ...frame, value: { userName: "someone", parameters: "nope" } });
-    expect(event.parameters).toBeUndefined();
   });
 
   it("passes a non-object value through as data untouched", () => {

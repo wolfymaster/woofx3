@@ -109,19 +109,16 @@ func NewBarkloaderAction() tasks.ActionFunc[AppServices] {
 // consume that subject and render the alert via a widget; the handler
 // itself is fire-and-forget and returns immediately.
 //
-// The published envelope is `{ parameters, event }`:
-//   - `parameters`: the workflow author's params verbatim (text, mediaUrl,
-//     audioUrl, duration, options, custom keys). Convention: include a
-//     `widget` key naming a streamware widget that knows how to render
-//     this alert. Substitution / pluralization / formatting happen inside
-//     the widget at render time.
+// The published envelope is `{ id, parameters, event }`:
+//   - `parameters`: the step's params with expressions resolved: `target`,
+//     the name of the alert widgets to play on, and `layout`, the widgets
+//     the alert shows.
 //   - `event`: the originating CloudEvent that triggered the workflow,
-//     attached so widgets can read raw event fields directly without the
-//     author having to manually map every field into parameters. `null`
-//     for non-event triggers (manual, scheduled, chat command).
+//     attached so layout widgets can read raw event fields. `null` for
+//     non-event triggers (manual, scheduled, chat command).
 //
-// The action carries no schema validation today — the contract is "the
-// widget reads what it needs from parameters + event."
+// The engine forwards `parameters` unchecked: the scene manager validates
+// the layout against the widget catalog before it frames anything.
 //
 // Canonical id of the corresponding action declaration row:
 // `woofx3:action:alert`, declared as a `native` action by the bundled

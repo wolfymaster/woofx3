@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <title>audio</title>
+</head>
+
+<body>
+  <script>
+    (function () {
+      const host = window.widgetHost;
+      if (!host || host.surface !== "alert") {
+        return;
+      }
+      const settings = host.settings;
+      const seconds = num(settings.duration, 0);
+      const audio = new Audio(mediaUrl(settings.src));
+      audio.preload = "auto";
+      audio.volume = volume(settings.volume);
+
+      host.onEvent((event) => {
+        let finished = false;
+        const finish = () => {
+          if (finished) {
+            return;
+          }
+          finished = true;
+          audio.pause();
+          event.complete();
+        };
+        if (seconds > 0) {
+          setTimeout(finish, seconds * 1000);
+        } else {
+          audio.addEventListener("ended", finish);
+        }
+        audio.addEventListener("error", finish);
+        audio.play().catch(finish);
+      }, { autoComplete: false });
+    })();
+
+    function volume(value) {
+      return Math.min(100, Math.max(0, num(value, 100))) / 100;
+    }
+
+    // A media setting is a URL, or the asset picker's `{ url, ... }`.
+    function mediaUrl(value) {
+      if (typeof value === "string") {
+        return value;
+      }
+      if (value && typeof value.url === "string") {
+        return value.url;
+      }
+      return "";
+    }
+
+    function num(value, fallback) {
+      return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+    }
+  </script>
+</body>
+
+</html>

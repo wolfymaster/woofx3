@@ -33,7 +33,7 @@ use super::module_manifest::{
     CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, ManifestAction, ManifestActionImpl, ManifestAsset,
     ManifestCommand, ManifestConfigField, ManifestDataShape, ManifestFunction,
     ManifestResourceKind, ManifestSetting, ManifestTrigger, ManifestWorkflow, ModuleManifest,
-    ModuleWidget, SECRET_SETTING_TYPE, WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE,
+    ModuleWidget, SECRET_SETTING_TYPE, WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE, WIDGET_SURFACES,
 };
 
 /// Resolved action implementation. Mirrors `ManifestActionImpl` but
@@ -283,6 +283,7 @@ pub fn validate_with_provenance(
     validate_no_overlays(manifest)?;
     validate_asset_paths(&manifest.assets)?;
     validate_widget_entries(&manifest.widgets)?;
+    validate_widget_surfaces(&manifest.widgets, provenance)?;
     validate_resource_kinds(&manifest.resources)?;
     validate_data_shapes(&manifest.triggers, &manifest.actions)?;
     validate_field_lists(manifest)?;
@@ -751,6 +752,61 @@ fn validate_widget_entries(widgets: &[ModuleWidget]) -> Result<()> {
     Ok(())
 }
 
+/// Enforce where each widget may be placed and what it may host.
+///
+/// Hosting is system-provenance only: the scene manager draws a hosting
+/// widget itself, so declaring one binds engine behavior the same way a
+/// `native` action does.
+fn validate_widget_surfaces(widgets: &[ModuleWidget], provenance: InstallProvenance) -> Result<()> {
+    for (i, w) in widgets.iter().enumerate() {
+        let label = format!("widget #{i} ({})", w.id);
+        if w.surfaces.is_empty() {
+            return Err(anyhow!(
+                "{label}: `surfaces` must name at least one of {}",
+                WIDGET_SURFACES.join(", ")
+            ));
+        }
+        let mut placed_on: HashSet<&str> = HashSet::with_capacity(w.surfaces.len());
+        for surface in &w.surfaces {
+            validate_surface(surface, &format!("{label}: `surfaces`"))?;
+            if !placed_on.insert(surface.as_str()) {
+                return Err(anyhow!("{label}: `surfaces` lists {surface:?} twice"));
+            }
+        }
+
+        let Some(hosted) = w.hosts_surface.as_deref() else {
+            continue;
+        };
+        if provenance != InstallProvenance::System {
+            return Err(anyhow!(
+                "{label}: `hostsSurface` may only be declared by a bundled system module"
+            ));
+        }
+        validate_surface(hosted, &format!("{label}: `hostsSurface`"))?;
+        if placed_on.contains(hosted) {
+            return Err(anyhow!(
+                "{label}: a widget cannot be placed on the surface it hosts ({hosted:?})"
+            ));
+        }
+        if w.entry.is_some() || !w.accepted_events.is_empty() {
+            return Err(anyhow!(
+                "{label}: a widget that hosts a surface is drawn by the scene manager, so it declares no `entry` or `acceptedEvents`"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_surface(surface: &str, context: &str) -> Result<()> {
+    if !WIDGET_SURFACES.contains(&surface) {
+        return Err(anyhow!(
+            "{context}: unknown surface {surface:?}; expected one of {}",
+            WIDGET_SURFACES.join(", ")
+        ));
+    }
+    Ok(())
+}
+
 /// Validate every field declaration on the manifest — a trigger's `schema`,
 /// an action's `schema`, a widget's `settingsSchema`, and `settings`.
 ///
@@ -817,6 +873,12 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
             return Err(anyhow!(
                 "{context} field #{i} ({id}): `button` needs an `action`"
             ));
+        }
+        if field.field_type == "layout" {
+            validate_surface(
+                field.surface.as_deref().unwrap_or_default(),
+                &format!("{context} field #{i} ({id}): `layout` needs a `surface`"),
+            )?;
         }
         if !seen.insert(id) {
             return Err(anyhow!("{context}: duplicate field `id` {id:?}"));
@@ -1480,6 +1542,83 @@ mod tests {
             .expect_err("a webhook event is fired by its handler, never the bus")
             .to_string();
         assert!(err.contains("reserved prefix"), "{err}");
+    }
+
+    // ---------------------------------------------------------------
+    // Widget surfaces
+    // ---------------------------------------------------------------
+
+    const ALERT_WIDGET: &str =
+        r#"{ "id": "alert", "name": "Alert", "surfaces": ["scene"], "hostsSurface": "alert" }"#;
+
+    fn widget_rejection(widget: &str) -> String {
+        validate(&minimal(&format!(r#", "widgets": [{widget}]"#)))
+            .expect_err("manifest must be rejected")
+            .to_string()
+    }
+
+    fn system_module_with_widget(widget: &str) -> ModuleManifest {
+        parse(&format!(
+            r#"{{"id": "{SYSTEM_MODULE_ID}", "name": "woofx3", "version": "1.0.0", "widgets": [{widget}]}}"#
+        ))
+    }
+
+    #[test]
+    fn a_widget_without_surfaces_is_a_scene_widget() {
+        let m = minimal(r#", "widgets": [{ "id": "w1", "name": "W1" }]"#);
+        assert_eq!(m.widgets[0].surfaces, vec!["scene"]);
+        validate(&m).expect("validate ok");
+    }
+
+    #[test]
+    fn accepts_a_widget_placed_on_scenes_and_alerts() {
+        let m = minimal(r#", "widgets": [{ "id": "w1", "name": "W1", "surfaces": ["scene", "alert"] }]"#);
+        validate(&m).expect("validate ok");
+    }
+
+    #[test]
+    fn rejects_unknown_empty_or_repeated_surfaces() {
+        for surfaces in [r#"["overlay"]"#, "[]", r#"["alert", "alert"]"#] {
+            let err = widget_rejection(&format!(r#"{{ "id": "w1", "name": "W1", "surfaces": {surfaces} }}"#));
+            assert!(err.contains("`surfaces`"), "{surfaces}: {err}");
+        }
+    }
+
+    #[test]
+    fn accepts_the_system_alert_widget() {
+        validate_with_provenance(&system_module_with_widget(ALERT_WIDGET), InstallProvenance::System)
+            .expect("the system module declares the alert widget");
+    }
+
+    #[test]
+    fn rejects_a_hosting_widget_from_an_upload() {
+        let err = widget_rejection(ALERT_WIDGET);
+        assert!(err.contains("`hostsSurface`"), "{err}");
+    }
+
+    #[test]
+    fn rejects_a_hosting_widget_placed_on_what_it_hosts_or_carrying_an_entry() {
+        for widget in [
+            r#"{ "id": "alert", "name": "Alert", "surfaces": ["scene", "alert"], "hostsSurface": "alert" }"#,
+            r#"{ "id": "alert", "name": "Alert", "hostsSurface": "alert", "entry": "w/index.html", "assets": "w" }"#,
+        ] {
+            let result = validate_with_provenance(&system_module_with_widget(widget), InstallProvenance::System);
+            assert!(result.is_err(), "{widget} must be rejected");
+        }
+    }
+
+    #[test]
+    fn a_layout_field_names_its_surface() {
+        let with_layout = |surface: &str| {
+            minimal(&format!(
+                r#", "actions": [{{ "id": "a1", "name": "A1", "type": "function", "function": "f1",
+                "schema": [{{ "id": "layout", "label": "Layout", "type": "layout"{surface} }}] }}],
+                "functions": [{{ "id": "f1", "name": "F1", "runtime": "js", "path": "f.js" }}]"#
+            ))
+        };
+        validate(&with_layout(r#", "surface": "alert""#)).expect("validate ok");
+        let err = validate(&with_layout("")).expect_err("a layout without a surface").to_string();
+        assert!(err.contains("`layout` needs a `surface`"), "{err}");
     }
 
     #[test]

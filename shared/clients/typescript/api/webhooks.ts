@@ -19,7 +19,7 @@ import type { WorkflowDefinition } from "./workflow-definition";
  * `EngineEventType.MODULE_INSTALLED` over the raw string in application
  * code so renames surface as compile errors instead of silent string drift.
  */
-import type { ConfigField } from "./ui-schema";
+import type { ConfigField, WidgetSurface } from "./ui-schema";
 
 export const EngineEventType = {
   MODULE_INSTALLED: "module.installed",
@@ -324,19 +324,13 @@ export interface WidgetDefinition {
    * settings in the trigger-style container came to render none of them.
    */
   settings: ConfigField[];
+  /** Where this widget may be placed. */
+  surfaces: WidgetSurface[];
   /**
-   * Render surface this widget targets.
-   *
-   * - `"scene"` (default when omitted): scene-overlay widget rendered by the
-   *   browser source / scene editor as an iframe inside an OBS canvas.
-   * - `"dashboard"`: control-plane widget rendered as a card in the
-   *   broadcaster's woofx3-ui dashboard at `/`.
-   *
-   * Optional and omitted on most legacy payloads — consumers must
-   * default to `"scene"` when absent so pre-extension manifests keep
-   * their meaning.
+   * The surface this widget's placements host, when it is a host: an
+   * `"alert"` widget is the area of a scene that plays alert layouts.
    */
-  surface?: "scene" | "dashboard";
+  hostsSurface?: WidgetSurface;
   createdByType: string;
   createdByRef: string;
 }

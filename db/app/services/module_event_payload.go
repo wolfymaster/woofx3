@@ -380,7 +380,8 @@ func buildWidgetRegisteredData(modulePrefix, moduleKey, moduleName, version stri
 			"entry":           w.Entry,
 			"alert_types":     alertTypes,
 			"settings_schema": w.SettingsSchema,
-			"surface":         w.Surface,
+			"surfaces":        widgetSurfaces(w),
+			"hosts_surface":   w.HostsSurface,
 			"created_by_type": w.CreatedByType,
 			"created_by_ref":  w.CreatedByRef,
 		}
@@ -419,7 +420,8 @@ func buildWidgetDeregisteredData(modulePrefix, moduleKey string, widgets []*mode
 			"entry":           w.Entry,
 			"alert_types":     alertTypes,
 			"settings_schema": w.SettingsSchema,
-			"surface":         w.Surface,
+			"surfaces":        widgetSurfaces(w),
+			"hosts_surface":   w.HostsSurface,
 			"created_by_ref":  w.CreatedByRef,
 		}
 		if pk := projectionKeyFor(w.CreatedByType, w.CreatedByRef, "widget", w.ManifestID); pk != "" {

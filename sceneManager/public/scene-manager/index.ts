@@ -5,6 +5,7 @@
 // queue, and drives the Disconnected banner from the SSE connection
 // state.
 
+import { AlertWidget } from "./alert-widget";
 import { createFrameLoadHandler, WidgetBridge, type WidgetBridgeCallbacks, type WidgetStatusReportPayload } from "./widget-bridge";
 import { EventQueueManager, toWidgetEvent } from "./event-queue";
 import { AckBatcher } from "./ack-batcher";
@@ -19,6 +20,8 @@ interface WidgetInstanceConfig {
   position: { x: number; y: number; width: number; height: number };
   settings: Record<string, unknown>;
   acceptedEvents: string[];
+  /** "alert" for an alert widget, which the page draws itself; "" otherwise. */
+  hostsSurface: string;
   frameUrl: string;
 }
 
@@ -42,6 +45,13 @@ function generateNonce(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function placeAt(element: HTMLElement, position: WidgetInstanceConfig["position"]): void {
+  element.style.left = `${position.x}px`;
+  element.style.top = `${position.y}px`;
+  element.style.width = `${position.width}px`;
+  element.style.height = `${position.height}px`;
 }
 
 function renderConnected(connected: boolean): void {
@@ -75,7 +85,7 @@ function main(): void {
   // /scene/{sceneId}/session/refresh.
   const sceneBase = `/scene/${encodeURIComponent(sceneId)}`;
 
-  const bridgesByInstance = new Map<string, WidgetBridge>();
+  const bridges = new Set<WidgetBridge>();
   const queueManager = new EventQueueManager();
   const deliveredBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/delivered`);
   const completedBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/completed`);
@@ -95,13 +105,43 @@ function main(): void {
     }).catch(() => {});
   }
 
+  const mountAlertWidget = (instance: WidgetInstanceConfig): void => {
+    const element = document.createElement("div");
+    element.className = "alert-widget";
+    placeAt(element, instance.position);
+    container.appendChild(element);
+
+    // The page plays alerts itself, so it registers the queue a framed
+    // widget would register on subscribe: one alert at a time.
+    const subId = `alert:${instance.id}`;
+    const alertWidget = new AlertWidget({
+      element,
+      sceneBase,
+      bridges,
+      generateNonce,
+      postStatus,
+      onFinished: (eventId) => {
+        queueManager.complete(subId, eventId);
+        completedBatcher.add(eventId, instance.id);
+      },
+    });
+    queueManager.register(
+      subId,
+      instance.id,
+      { maxInFlight: 1 },
+      (item) => alertWidget.play(item),
+      () => {}
+    );
+  };
+
   for (const instance of sceneData.widgets) {
+    if (instance.hostsSurface === "alert") {
+      mountAlertWidget(instance);
+      continue;
+    }
     const iframe = document.createElement("iframe");
     iframe.className = "widget-frame";
-    iframe.style.left = `${instance.position.x}px`;
-    iframe.style.top = `${instance.position.y}px`;
-    iframe.style.width = `${instance.position.width}px`;
-    iframe.style.height = `${instance.position.height}px`;
+    placeAt(iframe, instance.position);
     // No allow-same-origin: the frame runs with an opaque origin, and
     // trust is established entirely by postMessage source identity +
     // the per-frame nonce, never by same-origin access.
@@ -151,13 +191,13 @@ function main(): void {
     iframe.addEventListener("load", createFrameLoadHandler(bridge));
     iframe.src = `${instance.frameUrl}?nonce=${encodeURIComponent(nonce)}`;
 
-    bridgesByInstance.set(instance.id, bridge);
+    bridges.add(bridge);
     container.appendChild(iframe);
     bridge.attach(iframe);
   }
 
   window.addEventListener("message", (event) => {
-    for (const bridge of bridgesByInstance.values()) {
+    for (const bridge of bridges) {
       bridge.handleMessage(event);
     }
   });
