@@ -12,16 +12,16 @@ pub struct InstallCallback {
 
 pub async fn send_callback(callback_url: &str, result: InstallCallback) {
     let client = reqwest::Client::new();
-    match client.post(callback_url)
-        .json(&result)
-        .send()
-        .await
-    {
+    match client.post(callback_url).json(&result).send().await {
         Ok(resp) if resp.status().is_success() => {
             info!("Callback sent successfully to {}", callback_url);
         }
         Ok(resp) => {
-            error!("Callback to {} returned status {}", callback_url, resp.status());
+            error!(
+                "Callback to {} returned status {}",
+                callback_url,
+                resp.status()
+            );
         }
         Err(e) => {
             error!("Failed to send callback to {}: {}", callback_url, e);
@@ -39,7 +39,12 @@ pub async fn send_success_callback(callback_url: &str, module: &str, version: &s
     send_callback(callback_url, result).await;
 }
 
-pub async fn send_failure_callback(callback_url: &str, module: &str, version: &str, error_msg: &str) {
+pub async fn send_failure_callback(
+    callback_url: &str,
+    module: &str,
+    version: &str,
+    error_msg: &str,
+) {
     let result = InstallCallback {
         module: module.to_string(),
         version: version.to_string(),
@@ -88,7 +93,10 @@ async fn send_processing_callback(callback_url: &str, result: ProcessingCallback
             );
         }
         Err(e) => {
-            error!("Failed to send processing callback to {}: {}", callback_url, e);
+            error!(
+                "Failed to send processing callback to {}: {}",
+                callback_url, e
+            );
         }
     }
 }

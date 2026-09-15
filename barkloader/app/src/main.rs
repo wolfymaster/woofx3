@@ -1,23 +1,23 @@
+use crate::services::env_reader::OsEnvReader;
+use crate::services::http_client::ReqwestHttpClient;
+use crate::services::http_storage_client::HttpStorageClient;
+use crate::services::sandbox_resources::HttpResourceClient;
 use crate::util::{
     get_env_or_default, get_env_or_default_with_key, get_woofx3_json_value,
     validate_required_config, validate_required_woofx3_json_keys,
 };
 use actix_web::{App, HttpServer, middleware::Logger, web::Data};
 use anyhow::Result;
+use lib_module::db_proxy::RequestContext as DbRequestContext;
 use lib_repository::{Repository, RepositoryFactory, RepositoryImpl};
 use lib_sandbox::extensions::{
     ChatExtension, PlatformAlertsExtension, PlatformChatExtension, TwitchExtension,
 };
-use lib_sandbox::host::noop::{noop_host_context, NoopChatSender};
+use lib_sandbox::host::noop::{NoopChatSender, noop_host_context};
 use lib_sandbox::host::{ChatSender, ExtensionRegistry};
-use crate::services::env_reader::OsEnvReader;
-use crate::services::http_client::ReqwestHttpClient;
-use crate::services::http_storage_client::HttpStorageClient;
-use lib_module::db_proxy::RequestContext as DbRequestContext;
-use crate::services::sandbox_resources::HttpResourceClient;
 use lib_sandbox::{ModuleRegistry, SandboxFactory};
-use tracing::{info, warn};
 use std::sync::Arc;
+use tracing::{info, warn};
 use types::{AppContext, SharedRepository};
 
 mod bundled_modules;
@@ -46,7 +46,8 @@ async fn setup() -> Result<AppContext> {
 
         let mut chat_sender: Arc<dyn ChatSender> = Arc::new(NoopChatSender);
 
-        let messagebus_url = get_env_or_default_with_key("MESSAGEBUS_URL", Some("messagebusUrl"), "");
+        let messagebus_url =
+            get_env_or_default_with_key("MESSAGEBUS_URL", Some("messagebusUrl"), "");
         if !messagebus_url.is_empty() {
             match crate::services::nats::NatsService::connect(&messagebus_url).await {
                 Ok(nats) => {
@@ -63,7 +64,10 @@ async fn setup() -> Result<AppContext> {
                     ctx.nats = nats;
                 }
                 Err(e) => {
-                    warn!("Failed to connect to messagebus: {}; falling back to noop publisher", e);
+                    warn!(
+                        "Failed to connect to messagebus: {}; falling back to noop publisher",
+                        e
+                    );
                 }
             }
         } else {
@@ -90,7 +94,9 @@ async fn setup() -> Result<AppContext> {
         let resource_proxy_url = get_woofx3_json_value("databaseProxyUrl", "");
         let application_id = get_woofx3_json_value("applicationId", "");
         if application_id.is_empty() {
-            warn!("applicationId not set in .woofx3.json; ctx.resources/ctx.storage calls will be unscoped");
+            warn!(
+                "applicationId not set in .woofx3.json; ctx.resources/ctx.storage calls will be unscoped"
+            );
         }
         if !resource_proxy_url.is_empty() {
             info!(
@@ -98,18 +104,24 @@ async fn setup() -> Result<AppContext> {
                 resource_proxy_url
             );
             ctx.resources = Arc::new(
-                HttpResourceClient::new(resource_proxy_url.clone()).with_request_context(DbRequestContext {
-                    client_id: String::new(),
-                    application_id: application_id.clone(),
-                    module_key: String::new(),
-                }),
+                HttpResourceClient::new(resource_proxy_url.clone()).with_request_context(
+                    DbRequestContext {
+                        client_id: String::new(),
+                        application_id: application_id.clone(),
+                        module_key: String::new(),
+                    },
+                ),
             );
             ctx.settings = Arc::new(
-                crate::services::module_settings_client::HttpSettingsClient::new(resource_proxy_url.clone())
+                crate::services::module_settings_client::HttpSettingsClient::new(
+                    resource_proxy_url.clone(),
+                ),
             );
             ctx.storage = Arc::new(HttpStorageClient::new(resource_proxy_url, application_id));
         } else {
-            info!("databaseProxyUrl not set in .woofx3.json; using noop resource, settings, and storage clients");
+            info!(
+                "databaseProxyUrl not set in .woofx3.json; using noop resource, settings, and storage clients"
+            );
         }
 
         ctx.env = Arc::new(OsEnvReader);
@@ -120,9 +132,8 @@ async fn setup() -> Result<AppContext> {
 
     let sandbox = SandboxFactory::new(registry.clone(), host_ctx);
 
-    let scheduler = Arc::new(services::background_scheduler::BackgroundTaskScheduler::new(
-        sandbox.clone(),
-    ));
+    let scheduler =
+        Arc::new(services::background_scheduler::BackgroundTaskScheduler::new(sandbox.clone()));
 
     // db-proxy is required: sandbox registry metadata comes from module_functions
     // rows, and the storage provider is resolved from the engine's settings table.

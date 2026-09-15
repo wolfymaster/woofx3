@@ -13,7 +13,7 @@ export default class Source {
   constructor(
     private manager: Manager,
     private scene: Scene,
-    args: SourceArgs,
+    args: SourceArgs
   ) {
     this.id = args.id;
     this.sceneItemId = args.sceneItemId;
@@ -58,7 +58,7 @@ export default class Source {
     filterName: string,
     filterSetting: string,
     targetValue: number,
-    options?: SetAnimatedFilterOptions,
+    options?: SetAnimatedFilterOptions
   ) {
     try {
       const { filterSettings } = await this.manager.request("GetSourceFilter", {

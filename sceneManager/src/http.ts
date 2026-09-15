@@ -82,9 +82,7 @@ export function createHttpServer(deps: HttpDeps) {
           }
 
           if (isStorageAssetPath(url.pathname)) {
-            return withCors(
-              await handleStorageAssetRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger)
-            );
+            return withCors(await handleStorageAssetRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger));
           }
 
           if (url.pathname.startsWith("/assets/")) {
@@ -113,7 +111,13 @@ export function createHttpServer(deps: HttpDeps) {
           const alertWidgetMatch = /^\/scene\/([^/]+)\/alert\/([^/]+)\/widget\/([^/]+)$/.exec(url.pathname);
           if (alertWidgetMatch && req.method === "GET") {
             return withCors(
-              await handleAlertWidgetFrameRoute(req, alertWidgetMatch[1]!, alertWidgetMatch[2]!, alertWidgetMatch[3]!, deps)
+              await handleAlertWidgetFrameRoute(
+                req,
+                alertWidgetMatch[1]!,
+                alertWidgetMatch[2]!,
+                alertWidgetMatch[3]!,
+                deps
+              )
             );
           }
 

@@ -20,16 +20,13 @@
     "temporal-cli@latest",
     "gopls@latest",
     "twitch-cli@1.1.25",
-    "go-task@latest"
+    "go-task@latest",
+    "biome@2.4.10"
   ],
   "shell": {
-    "init_hook": [
-      "echo 'Welcome to devbox!' > /dev/null"
-    ],
+    "init_hook": ["echo 'Welcome to devbox!' > /dev/null"],
     "scripts": {
-      "test": [
-        "echo \"Error: no test specified\" && exit 1"
-      ]
+      "test": ["echo \"Error: no test specified\" && exit 1"]
     }
   },
   "env": {

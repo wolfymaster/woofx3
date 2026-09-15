@@ -8,7 +8,7 @@ import (
 )
 
 // AddApplicationIDColumns introduces an `application_id` column on
-// `triggers` and `actions`. Module catalog rows keep the default `''`
+// `triggers` and `actions`. Module catalog rows keep the default `”`
 // (instance-global). applicationId is carried on workflow/event payloads
 // at runtime, not on module resource declarations.
 func AddApplicationIDColumns() *gormigrate.Migration {

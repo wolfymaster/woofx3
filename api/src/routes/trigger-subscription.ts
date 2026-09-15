@@ -4,5 +4,5 @@ export const triggerSubscriptionRoutes = routeModule({
     onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
   }): Promise<void> {
     this.triggerSubscribers.add(callback);
-  }
+  },
 });

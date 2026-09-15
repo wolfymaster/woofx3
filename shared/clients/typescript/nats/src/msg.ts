@@ -1,5 +1,5 @@
 import type { Msg as NatsCoreMsg } from "@nats-io/nats-core";
-import type { Msg } from './types';
+import type { Msg } from "./types";
 
 /**
  * Implementation of the Msg interface. Wraps the underlying nats-core
@@ -40,7 +40,7 @@ export class MessageImpl implements Msg {
 export function createMessage(subject: string, data: string | Uint8Array | number[]): Msg {
   let bytes: Uint8Array;
 
-  if (typeof data === 'string') {
+  if (typeof data === "string") {
     bytes = new TextEncoder().encode(data);
   } else if (data instanceof Uint8Array) {
     bytes = data;
@@ -48,7 +48,7 @@ export function createMessage(subject: string, data: string | Uint8Array | numbe
     // Handle number[] from HTTP backend JSON serialization
     bytes = new Uint8Array(data);
   } else {
-    throw new Error('Unsupported data format');
+    throw new Error("Unsupported data format");
   }
 
   return new MessageImpl(subject, bytes);

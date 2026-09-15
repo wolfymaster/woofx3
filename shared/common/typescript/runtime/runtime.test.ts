@@ -13,7 +13,11 @@ type TestContext = {
   config?: { config: Record<string, unknown>; getConfig: (key: string) => unknown };
 };
 
-function createMockService(name: string, type: string, options?: { failConnect?: boolean; failDisconnect?: boolean }): Service<null> {
+function createMockService(
+  name: string,
+  type: string,
+  options?: { failConnect?: boolean; failDisconnect?: boolean }
+): Service<null> {
   let connected = false;
   return {
     name,

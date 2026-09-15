@@ -1,10 +1,10 @@
 use anyhow::Result;
 use async_nats::Client;
 use lib_sandbox::host::NatsPublisher;
-use tracing::{debug, warn};
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::runtime::Handle;
+use tracing::{debug, warn};
 
 pub struct NatsService {
     client: Client,

@@ -1,22 +1,22 @@
 {
-	"folders": [
-		{
-			"path": "../woofx3-ui"
-		},
-		{
-			"path": "."
-		},
-		{
-			"path": "../woofx3-marketplace-api"
-		},
-		{
-			"path": "../woofx3-modules"
-		}
-	],
-	"settings": {
-		"workbench.colorCustomizations": {
-			"statusBar.background": "#000000",
-			"statusBar.foreground": "#EC6758"
-		}
-	}
+  "folders": [
+    {
+      "path": "../woofx3-ui"
+    },
+    {
+      "path": "."
+    },
+    {
+      "path": "../woofx3-marketplace-api"
+    },
+    {
+      "path": "../woofx3-modules"
+    }
+  ],
+  "settings": {
+    "workbench.colorCustomizations": {
+      "statusBar.background": "#000000",
+      "statusBar.foreground": "#EC6758"
+    }
+  }
 }

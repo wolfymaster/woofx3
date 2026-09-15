@@ -2,18 +2,14 @@ import { useEffect, useState } from "react";
 import type { MetaFunction } from "@remix-run/node";
 import { useSearchParams } from "@remix-run/react";
 import { id, i, init, InstaQLEntity } from "@instantdb/react";
-import AlertAudio from '~/components/AlertAudio';
+import AlertAudio from "~/components/AlertAudio";
 import { AlertMessage } from "~/components/AlertMessage";
-import { TaskCompleted } from '~/types';
+import { TaskCompleted } from "~/types";
 import Animation from "~/components/Animation";
 import AlertMessageWrapper from "~/components/AlertWrapper";
 
-
 export const meta: MetaFunction = () => {
-  return [
-    { title: "woofx x streamlabs" },
-    { name: "description", content: "woofx3 x streamlabs" },
-  ];
+  return [{ title: "woofx x streamlabs" }, { name: "description", content: "woofx3 x streamlabs" }];
 };
 
 const APP_ID = "8c28dd52-4859-4560-8d45-2408b064b248";
@@ -47,10 +43,10 @@ export default function Index() {
       $: {
         where: {
           done: false,
-          woofx3Key: searchParams.get('woofx3Key') || '',
-        }
-      }
-    }
+          woofx3Key: searchParams.get("woofx3Key") || "",
+        },
+      },
+    },
   });
 
   useEffect(() => {
@@ -59,17 +55,19 @@ export default function Index() {
     }
   }, [currentMessageId, data]);
 
-  const message: Message|null = data?.messages?.find(msg => msg.id === currentMessageId) || null;
+  const message: Message | null = data?.messages?.find((msg) => msg.id === currentMessageId) || null;
 
   function onDone(task: TaskCompleted) {
-    console.log('all done');
+    console.log("all done");
     try {
       if (task.error) {
         console.error(`Error processing message ${task.id}:`, task.errorMsg);
       }
-      db.transact(db.tx.messages[task.id].update({
-        done: true,
-      }));
+      db.transact(
+        db.tx.messages[task.id].update({
+          done: true,
+        })
+      );
     } catch (err) {
       console.error("Transaction error:", err);
     } finally {
@@ -91,14 +89,8 @@ export default function Index() {
 
   return (
     <>
-    {message.type === 'play_audio' &&
-      <AlertAudio
-        id={message.id}
-        url={message.audioUrl}
-        onDone={onDone}
-      />}
-    {message.type === 'alert_message' &&
-      <AlertMessageWrapper message={message} onDone={onDone} />}
-  </>
+      {message.type === "play_audio" && <AlertAudio id={message.id} url={message.audioUrl} onDone={onDone} />}
+      {message.type === "alert_message" && <AlertMessageWrapper message={message} onDone={onDone} />}
+    </>
   );
 }

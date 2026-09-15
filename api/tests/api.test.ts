@@ -147,7 +147,7 @@ describe("Api.installModuleFromUrl", () => {
         moduleKey: MARKETPLACE_CTX.moduleKey,
         alreadyInstalled: true,
       },
-      MARKETPLACE_CTX.clientId,
+      MARKETPLACE_CTX.clientId
     );
   });
 
@@ -164,9 +164,9 @@ describe("Api.installModuleFromUrl", () => {
       throw new Error(`unexpected fetch: ${url}`);
     }) as any;
 
-    await expect(
-      api.installModuleFromUrl(DOWNLOAD_URL, MARKETPLACE_CTX.moduleKey, MARKETPLACE_CTX),
-    ).rejects.toThrow(/Marketplace fetch failed: 403/);
+    await expect(api.installModuleFromUrl(DOWNLOAD_URL, MARKETPLACE_CTX.moduleKey, MARKETPLACE_CTX)).rejects.toThrow(
+      /Marketplace fetch failed: 403/
+    );
 
     expect(webhookClient.send).toHaveBeenCalledTimes(1);
     const [event, clientId] = (webhookClient.send as any).mock.calls[0];
@@ -213,9 +213,7 @@ describe("Api.installModuleFromUrl", () => {
       });
     }) as any;
 
-    await expect(
-      api.installModuleFromUrl(DOWNLOAD_URL, MARKETPLACE_CTX.moduleKey, MARKETPLACE_CTX),
-    ).rejects.toThrow();
+    await expect(api.installModuleFromUrl(DOWNLOAD_URL, MARKETPLACE_CTX.moduleKey, MARKETPLACE_CTX)).rejects.toThrow();
 
     expect(webhookClient.send).toHaveBeenCalledTimes(1);
     const [event] = (webhookClient.send as any).mock.calls[0];
@@ -244,9 +242,9 @@ describe("Api.installModuleFromUrl", () => {
       return res;
     }) as any;
 
-    await expect(
-      api.installModuleFromUrl(DOWNLOAD_URL, MARKETPLACE_CTX.moduleKey, MARKETPLACE_CTX),
-    ).rejects.toThrow(/exceeds size cap/);
+    await expect(api.installModuleFromUrl(DOWNLOAD_URL, MARKETPLACE_CTX.moduleKey, MARKETPLACE_CTX)).rejects.toThrow(
+      /exceeds size cap/
+    );
 
     expect(bodyRead).toBe(false);
     expect(webhookClient.send).toHaveBeenCalledTimes(1);
@@ -265,9 +263,9 @@ describe("Api.installModuleFromUrl", () => {
       return new Response(buf, { status: 200, headers });
     }) as any;
 
-    await expect(
-      api.installModuleFromUrl(DOWNLOAD_URL, MARKETPLACE_CTX.moduleKey, MARKETPLACE_CTX),
-    ).rejects.toThrow(/exceeds size cap/);
+    await expect(api.installModuleFromUrl(DOWNLOAD_URL, MARKETPLACE_CTX.moduleKey, MARKETPLACE_CTX)).rejects.toThrow(
+      /exceeds size cap/
+    );
 
     expect(webhookClient.send).toHaveBeenCalledTimes(1);
   });
@@ -276,9 +274,9 @@ describe("Api.installModuleFromUrl", () => {
     const db = { getModuleByModuleKey: mock(async () => null) } as any;
     const { api } = makeApi({ db });
 
-    await expect(
-      api.installModuleFromUrl(DOWNLOAD_URL, "", { ...MARKETPLACE_CTX, moduleKey: "" }),
-    ).rejects.toThrow(/moduleKey is required/);
+    await expect(api.installModuleFromUrl(DOWNLOAD_URL, "", { ...MARKETPLACE_CTX, moduleKey: "" })).rejects.toThrow(
+      /moduleKey is required/
+    );
   });
 
   it("missing clientId: throws synchronously", async () => {
@@ -289,7 +287,7 @@ describe("Api.installModuleFromUrl", () => {
       api.installModuleFromUrl(DOWNLOAD_URL, MARKETPLACE_CTX.moduleKey, {
         ...MARKETPLACE_CTX,
         clientId: "",
-      }),
+      })
     ).rejects.toThrow(/clientId is required/);
   });
 });

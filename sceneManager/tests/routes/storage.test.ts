@@ -48,7 +48,9 @@ describe("handleStorageAssetRoute", () => {
   });
 
   it("relays inline bytes with their content type", async () => {
-    const fetchFn = upstream(new Response("<!doctype html>", { status: 200, headers: { "Content-Type": "text/html" } }));
+    const fetchFn = upstream(
+      new Response("<!doctype html>", { status: 200, headers: { "Content-Type": "text/html" } })
+    );
     const { req, url } = get("/assets/modules/m1/abc123/widgets/w1/index.html");
 
     const resp = await handleStorageAssetRoute(req, url, BARKLOADER_URL, logger, fetchFn as never);
@@ -72,7 +74,13 @@ describe("handleStorageAssetRoute", () => {
     const fetchFn = upstream(new Response("unreachable"));
     const url = new URL("http://scene.test/assets/user/app-1/res-1/photo.png");
 
-    const resp = await handleStorageAssetRoute(new Request(url, { method: "POST" }), url, BARKLOADER_URL, logger, fetchFn as never);
+    const resp = await handleStorageAssetRoute(
+      new Request(url, { method: "POST" }),
+      url,
+      BARKLOADER_URL,
+      logger,
+      fetchFn as never
+    );
 
     expect(resp.status).toBe(404);
     expect(fetchFn).not.toHaveBeenCalled();

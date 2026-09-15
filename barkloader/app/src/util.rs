@@ -1,8 +1,5 @@
-use anyhow::{anyhow, Context, Result};
-use std::{
-    env, fs,
-    path::Path,
-};
+use anyhow::{Context, Result, anyhow};
+use std::{env, fs, path::Path};
 use woofx3_runtime::Config;
 
 // get env var or default - first checks WOOFX3 config (.woofx3.json), then falls back to env
@@ -12,7 +9,11 @@ pub fn get_env_or_default(env_var: &str, default: &str) -> String {
 
 // Same as get_env_or_default but allows specifying an explicit .woofx3.json config key
 // when the env var name does not follow the WOOFX3_<camelCase> convention.
-pub fn get_env_or_default_with_key(env_var: &str, config_key: Option<&str>, default: &str) -> String {
+pub fn get_env_or_default_with_key(
+    env_var: &str,
+    config_key: Option<&str>,
+    default: &str,
+) -> String {
     if let Ok(config) = Config::load() {
         // If an explicit config key was provided, try it first
         if let Some(key) = config_key {

@@ -8,7 +8,7 @@ export default class Manager {
 
   constructor(
     private ws: OBSWebSocket,
-    private logger: Logger,
+    private logger: Logger
   ) {}
 
   async init() {
@@ -60,16 +60,13 @@ const OBS_CONNECT_TIMEOUT_MS = 3_000;
  * race the connect against a short timeout because obs-websocket-js
  * doesn't surface a timeout for a stalled TCP handshake.
  */
-export async function connectObs(
-  config: { url: string; token?: string },
-  logger: Logger,
-): Promise<Manager | null> {
+export async function connectObs(config: { url: string; token?: string }, logger: Logger): Promise<Manager | null> {
   const ws = new OBSWebSocket();
   try {
     await Promise.race([
       ws.connect(config.url, config.token),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`timeout after ${OBS_CONNECT_TIMEOUT_MS}ms`)), OBS_CONNECT_TIMEOUT_MS),
+        setTimeout(() => reject(new Error(`timeout after ${OBS_CONNECT_TIMEOUT_MS}ms`)), OBS_CONNECT_TIMEOUT_MS)
       ),
     ]);
     logger.info("Connected to OBS", { url: config.url });

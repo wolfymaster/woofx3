@@ -113,7 +113,7 @@ export const commandsRoutes = routeModule({
     if (invalidNames.length > 0) {
       throw new Error(
         `Invalid {variable} name(s) in argumentPattern: ${invalidNames.join(", ")}. ` +
-          "Each name must be one word or dot-separated words (e.g. \"songTitle\" or \"user.name\")."
+          'Each name must be one word or dot-separated words (e.g. "songTitle" or "user.name").'
       );
     }
 
@@ -157,7 +157,7 @@ export const commandsRoutes = routeModule({
     if (invalidNames.length > 0) {
       throw new Error(
         `Invalid {variable} name(s) in argumentPattern: ${invalidNames.join(", ")}. ` +
-          "Each name must be one word or dot-separated words (e.g. \"songTitle\" or \"user.name\")."
+          'Each name must be one word or dot-separated words (e.g. "songTitle" or "user.name").'
       );
     }
 
@@ -314,5 +314,5 @@ export const commandsRoutes = routeModule({
     });
     this.logger.info("Command deleted", { id });
     return { deleted: true };
-  }
+  },
 });

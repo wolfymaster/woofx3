@@ -69,7 +69,7 @@ interface ObsInput {
 export async function refreshOverlayBrowserSources(
   obs: ObsRequester | null,
   port: number,
-  logger: Logger,
+  logger: Logger
 ): Promise<number> {
   if (!obs) {
     return 0;

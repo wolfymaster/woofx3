@@ -127,8 +127,12 @@ describe("BroadcastReconnectCoordinator", () => {
 
     let bReloads = 0;
     let cReloads = 0;
-    b.onPeerReload(() => { bReloads += 1; });
-    c.onPeerReload(() => { cReloads += 1; });
+    b.onPeerReload(() => {
+      bReloads += 1;
+    });
+    c.onPeerReload(() => {
+      cReloads += 1;
+    });
 
     a.requestPeerReload();
     expect(bReloads).toBe(1);
@@ -146,7 +150,9 @@ describe("BroadcastReconnectCoordinator", () => {
     const bus = new FakeBus();
     const a = makeCoordinator(bus, "aaa", () => 0);
     let selfReloads = 0;
-    a.onPeerReload(() => { selfReloads += 1; });
+    a.onPeerReload(() => {
+      selfReloads += 1;
+    });
     a.requestPeerReload();
     expect(selfReloads).toBe(0);
     a.stop();
@@ -158,8 +164,12 @@ describe("BroadcastReconnectCoordinator", () => {
     const b = makeCoordinator(bus, "bbb", () => 0);
     let woke = 0;
     let reloads = 0;
-    b.onPeerConnected(() => { woke += 1; });
-    b.onPeerReload(() => { reloads += 1; });
+    b.onPeerConnected(() => {
+      woke += 1;
+    });
+    b.onPeerReload(() => {
+      reloads += 1;
+    });
 
     a.requestPeerReload();
     expect(reloads).toBe(1);

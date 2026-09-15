@@ -14,7 +14,10 @@ function fakeLogger() {
 function fakeDb({
   url = "https://convex.test/hook",
   secret = "shh",
-}: { url?: string | null; secret?: string | null } = {}): any {
+}: {
+  url?: string | null;
+  secret?: string | null;
+} = {}): any {
   return {
     getSetting: mock(async (key: string) => {
       if (key === "convex.webhook_url") return url;

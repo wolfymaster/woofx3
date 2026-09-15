@@ -51,7 +51,9 @@ pub enum UploadEndpoint {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReadEndpoint {
-    Presigned { url: String },
+    Presigned {
+        url: String,
+    },
     /// No signing concept (local disk); the caller serves the bytes itself.
     Unsupported,
 }

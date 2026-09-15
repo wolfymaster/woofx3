@@ -32,7 +32,10 @@ export default class TwitchEventBusService implements Service<TwitchEventBus> {
       throw new Error(
         `Twitch EventSub subscriptions incomplete (${this.client.establishedCount()}/${
           TwitchEventBus.expectedSubscriptionCount
-        } established): ${this.client.failedSubscriptions().map((f) => f.reason).join("; ")}`
+        } established): ${this.client
+          .failedSubscriptions()
+          .map((f) => f.reason)
+          .join("; ")}`
       );
     }
     this.healthcheck = true;

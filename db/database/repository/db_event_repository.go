@@ -108,4 +108,3 @@ func (r *DbEventRepository) CleanupOldEvents(olderThan time.Duration) error {
 			cutoff).
 		Delete(&models.WorkerEvent{}).Error
 }
-

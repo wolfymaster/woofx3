@@ -23,8 +23,12 @@ impl SettingsClient for HttpSettingsClient {
         let url = self.db_proxy_url.clone();
         let module_id = module_id.to_string();
         let (rows, secrets) = Handle::current().block_on(async move {
-            let rows = get_module_settings(&url, &module_id).await.map_err(|e| e.to_string())?;
-            let secrets = get_module_secret_values(&url, &module_id).await.map_err(|e| e.to_string())?;
+            let rows = get_module_settings(&url, &module_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            let secrets = get_module_secret_values(&url, &module_id)
+                .await
+                .map_err(|e| e.to_string())?;
             Ok::<_, String>((rows, secrets))
         })?;
 
@@ -55,7 +59,11 @@ fn coerce_value(raw: &str, value_type: &str) -> Value {
     match value_type {
         "number" => raw
             .parse::<f64>()
-            .map(|n| Value::Number(serde_json::Number::from_f64(n).unwrap_or(serde_json::Number::from(0))))
+            .map(|n| {
+                Value::Number(
+                    serde_json::Number::from_f64(n).unwrap_or(serde_json::Number::from(0)),
+                )
+            })
             .unwrap_or(Value::Number(serde_json::Number::from(0))),
         "boolean" => Value::Bool(raw == "true" || raw == "1"),
         _ => Value::String(raw.to_string()),

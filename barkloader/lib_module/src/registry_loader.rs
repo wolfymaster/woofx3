@@ -2,14 +2,14 @@
 //! function source bytes from the configured repository (file or S3).
 
 use crate::db_proxy::{
-    fetch_module_by_name, list_background_tasks, list_modules, BackgroundTaskJson, ModuleRecord,
+    BackgroundTaskJson, ModuleRecord, fetch_module_by_name, list_background_tasks, list_modules,
 };
 use crate::module_manifest::ManifestBackgroundTask;
 use lib_repository::Repository;
 use lib_sandbox::models::function::Function;
 use lib_sandbox::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule};
-use tracing::{error, info, warn};
 use std::collections::HashMap;
+use tracing::{error, info, warn};
 
 /// Host-owned background task registration. Implemented by the barkloader
 /// app's `BackgroundTaskScheduler` so `lib_module` does not depend on Actix
@@ -50,7 +50,10 @@ pub async fn hydrate_registry_from_db<R: Repository, S: BackgroundTaskRegistrar>
     let all_tasks = match list_background_tasks(db_proxy_url).await {
         Ok(tasks) => tasks,
         Err(e) => {
-            warn!("Failed to fetch background tasks from db; no tasks will be scheduled: {}", e);
+            warn!(
+                "Failed to fetch background tasks from db; no tasks will be scheduled: {}",
+                e
+            );
             Vec::new()
         }
     };

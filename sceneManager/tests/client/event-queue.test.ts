@@ -256,7 +256,6 @@ describe("EventQueueManager — routing and lifecycle", () => {
   });
 });
 
-
 describe("toWidgetEvent", () => {
   const frame = { eventId: "e1", type: "channel.follow", key: "channel.follow" };
 

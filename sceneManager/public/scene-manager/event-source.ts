@@ -32,9 +32,7 @@ export interface DeliveryFrame {
 
 /** The stream carries two frame kinds: per-event deliveries, and the
  *  `hello` control frame the server opens every stream with. */
-export type SceneFrame =
-  | { kind: "delivery"; frame: DeliveryFrame }
-  | { kind: "hello"; bootId: string };
+export type SceneFrame = { kind: "delivery"; frame: DeliveryFrame } | { kind: "hello"; bootId: string };
 
 export interface SceneEventSink {
   onFrame(frame: DeliveryFrame): void;

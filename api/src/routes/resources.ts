@@ -106,7 +106,6 @@ export function resourceToItem(sceneManagerUrl: string, row: resource.Resource):
 }
 
 export const resourcesRoutes = routeModule({
-
   /**
    * Reserve a row and hand back a grant to upload straight to storage.
    *
@@ -249,10 +248,7 @@ export const resourcesRoutes = routeModule({
   },
 
   /** Rename, or move by supplying a new parent. Null moves to the root. */
-  async updateResource(
-    id: string,
-    changes: { name?: string; parentId?: string | null },
-  ): Promise<ResourceItem> {
+  async updateResource(id: string, changes: { name?: string; parentId?: string | null }): Promise<ResourceItem> {
     const applicationId = await this.ensureApplicationId();
     const request: resource.UpdateResourceRequest = {
       id,
@@ -294,7 +290,7 @@ export const resourcesRoutes = routeModule({
       try {
         await this.barkloaderRequest(
           `/assets/resource/${encodeURIComponent(applicationId)}/${encodeURIComponent(storedId)}`,
-          { method: "DELETE" },
+          { method: "DELETE" }
         );
       } catch (err) {
         this.logger.error("Failed to purge stored objects for deleted resource", {

@@ -52,5 +52,5 @@ export const dashboardRoutes = routeModule({
       },
       recentActivity: [], // Could be populated from event history
     };
-  }
+  },
 });

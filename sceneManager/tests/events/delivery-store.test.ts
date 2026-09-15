@@ -30,7 +30,16 @@ describe("DeliveryStore.recordEvent + subscribe", () => {
     const db = {
       recordSceneEvent: mock(async () => ({
         status: { code: "OK" as const, message: "" },
-        sceneEvent: { id: "evt-1", sceneId: "scene-1", applicationId: "app-1", type: "widget.event", key: "count", value: "5", occurredAt: null, createdAt: null },
+        sceneEvent: {
+          id: "evt-1",
+          sceneId: "scene-1",
+          applicationId: "app-1",
+          type: "widget.event",
+          key: "count",
+          value: "5",
+          occurredAt: null,
+          createdAt: null,
+        },
       })),
     } as any;
     const store = new DeliveryStore(db, fakeLogger());
@@ -58,7 +67,16 @@ describe("DeliveryStore.recordEvent + subscribe", () => {
     const db = {
       recordSceneEvent: mock(async () => ({
         status: { code: "OK" as const, message: "" },
-        sceneEvent: { id: "evt-2", sceneId: "scene-1", applicationId: "app-1", type: "widget.event", key: "count", value: "1", occurredAt: null, createdAt: null },
+        sceneEvent: {
+          id: "evt-2",
+          sceneId: "scene-1",
+          applicationId: "app-1",
+          type: "widget.event",
+          key: "count",
+          value: "1",
+          occurredAt: null,
+          createdAt: null,
+        },
       })),
     } as any;
     const store = new DeliveryStore(db, fakeLogger());
@@ -99,7 +117,16 @@ describe("DeliveryStore.ackCompleted", () => {
     const db = {
       recordSceneEvent: mock(async () => ({
         status: { code: "OK" as const, message: "" },
-        sceneEvent: { id: "evt-3", sceneId: "scene-1", applicationId: "app-1", type: "widget.event", key: "count", value: "1", occurredAt: null, createdAt: null },
+        sceneEvent: {
+          id: "evt-3",
+          sceneId: "scene-1",
+          applicationId: "app-1",
+          type: "widget.event",
+          key: "count",
+          value: "1",
+          occurredAt: null,
+          createdAt: null,
+        },
       })),
       recordSceneEventCompletion: mock(async () => ({ code: "OK" as const, message: "" })),
     } as any;
@@ -131,7 +158,14 @@ describe("DeliveryStore.hydrate", () => {
       })),
       getSceneEvent: mock(async () => ({
         status: { code: "OK" as const, message: "" },
-        sceneEvent: { id: "evt-4", sceneId: "scene-1", applicationId: "app-1", type: "widget.event", key: "count", value: "42" },
+        sceneEvent: {
+          id: "evt-4",
+          sceneId: "scene-1",
+          applicationId: "app-1",
+          type: "widget.event",
+          key: "count",
+          value: "42",
+        },
       })),
     } as any;
     const store = new DeliveryStore(db, fakeLogger());
@@ -160,7 +194,11 @@ describe("DeliveryStore.hydrate", () => {
   });
 
   it("does not throw when the initial list call fails", async () => {
-    const db = { listOpenSceneEventDeliveries: mock(async () => { throw new Error("db down"); }) } as any;
+    const db = {
+      listOpenSceneEventDeliveries: mock(async () => {
+        throw new Error("db down");
+      }),
+    } as any;
     const store = new DeliveryStore(db, fakeLogger());
     await expect(store.hydrate()).resolves.toBeUndefined();
   });

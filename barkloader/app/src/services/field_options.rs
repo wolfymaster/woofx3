@@ -1,10 +1,10 @@
 use async_nats::Client;
 use futures::stream::StreamExt;
-use lib_sandbox::models::request::InvokeRequest;
 use lib_sandbox::SandboxFactory;
-use tracing::{error, info, warn};
+use lib_sandbox::models::request::InvokeRequest;
 use serde::Deserialize;
 use serde_json::json;
+use tracing::{error, info, warn};
 
 const SUBJECT: &str = "barkloader.module.field_options";
 
@@ -43,7 +43,10 @@ pub async fn run_field_options_responder(client: Client, sandbox: SandboxFactory
         let reply_subject = match msg.reply.clone() {
             Some(r) => r,
             None => {
-                warn!("field_options: received message on {} with no reply subject; ignoring", SUBJECT);
+                warn!(
+                    "field_options: received message on {} with no reply subject; ignoring",
+                    SUBJECT
+                );
                 continue;
             }
         };
@@ -53,9 +56,7 @@ pub async fn run_field_options_responder(client: Client, sandbox: SandboxFactory
                 Ok(e) => e,
                 Err(e) => {
                     warn!("field_options: failed to parse request envelope: {}", e);
-                    let _ = client
-                        .publish(reply_subject, b"[]".to_vec().into())
-                        .await;
+                    let _ = client.publish(reply_subject, b"[]".to_vec().into()).await;
                     continue;
                 }
             };
@@ -87,7 +88,10 @@ pub async fn run_field_options_responder(client: Client, sandbox: SandboxFactory
             let reply_bytes = match result {
                 Ok(value) => serde_json::to_vec(&value).unwrap_or_else(|_| b"[]".to_vec()),
                 Err(lib_sandbox::InvokeBlockingError::TaskJoin(e)) => {
-                    error!("field_options: spawn_blocking for {} failed: {}", function_id, e);
+                    error!(
+                        "field_options: spawn_blocking for {} failed: {}",
+                        function_id, e
+                    );
                     b"[]".to_vec()
                 }
                 Err(e) => {
@@ -96,8 +100,14 @@ pub async fn run_field_options_responder(client: Client, sandbox: SandboxFactory
                 }
             };
 
-            if let Err(e) = client_clone.publish(reply_subject, reply_bytes.into()).await {
-                error!("field_options: failed to send reply for {}: {}", function_id, e);
+            if let Err(e) = client_clone
+                .publish(reply_subject, reply_bytes.into())
+                .await
+            {
+                error!(
+                    "field_options: failed to send reply for {}: {}",
+                    function_id, e
+                );
             }
         });
     }

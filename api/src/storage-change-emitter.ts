@@ -87,18 +87,19 @@ export class StorageChangeEmitter {
  *
  * Exported for direct unit testing.
  */
-export function mapStorageChanged(
-  ce: CloudEventEnvelope<StorageChangedData>
-): ModuleStorageChangedEvent | null {
+export function mapStorageChanged(ce: CloudEventEnvelope<StorageChangedData>): ModuleStorageChangedEvent | null {
   const data = (ce.data ?? (ce as unknown as StorageChangedData)) as StorageChangedData;
   const moduleId = typeof data.moduleId === "string" ? data.moduleId : "";
   const key = typeof data.key === "string" ? data.key : "";
   if (!moduleId || !key) {
     return null;
   }
-  const occurredAt = typeof data.occurredAt === "string" && data.occurredAt
-    ? data.occurredAt
-    : (typeof ce.time === "string" ? ce.time : new Date().toISOString());
+  const occurredAt =
+    typeof data.occurredAt === "string" && data.occurredAt
+      ? data.occurredAt
+      : typeof ce.time === "string"
+        ? ce.time
+        : new Date().toISOString();
 
   const event: ModuleStorageChangedEvent = {
     type: EngineEventType.MODULE_STORAGE_CHANGED,

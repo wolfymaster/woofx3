@@ -1,13 +1,13 @@
 {
-    "compilerOptions": {
-      "baseUrl": ".",
-      "esModuleInterop": true,
-      "module": "esnext",
-      "moduleResolution": "node",
-      "paths": {
-        "@client/*": ["../db/*"],
-      },
-      "strict": true,
-      "target": "es2022",
-    }
+  "compilerOptions": {
+    "baseUrl": ".",
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "paths": {
+      "@client/*": ["../db/*"]
+    },
+    "strict": true,
+    "target": "es2022"
   }
+}
