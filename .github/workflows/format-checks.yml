@@ -1,0 +1,50 @@
+name: format checks
+
+# Fails when any hand-written source file would be reformatted. It runs
+# scripts/format.sh, the same definition `make format` uses, so what CI
+# accepts and what a developer's formatter produces cannot disagree about
+# scope.
+#
+# One job for every language rather than a step in each language's workflow:
+# the script owns the scope, and splitting it would need path filters that
+# drift from it. No path filter here for the same reason, and the whole check
+# takes seconds.
+
+on:
+  push:
+    branches: [main, master, release]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # cargo fmt reads source only, so unlike rust checks this needs no
+      # protoc and no dependency build.
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      # The version devbox.json pins, as in go checks. No cache: gofmt reads
+      # source only, and there is no root go.sum to key one by.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: false
+
+      # scripts/format.sh refuses any other release, since biome's output is
+      # only stable within one.
+      - name: Set up biome
+        uses: biomejs/setup-biome@v2
+        with:
+          version: 2.4.10
+
+      - name: Check formatting
+        run: make format-check
