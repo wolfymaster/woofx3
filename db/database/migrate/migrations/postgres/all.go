@@ -52,5 +52,6 @@ func All() []*gormigrate.Migration {
 		AddTriggerTransportHandler(),
 		AddWidgetSurfaces(),
 		DropWidgetAcceptedEvents(),
+		MigrateMediaAlertPlacements(),
 	}
 }
