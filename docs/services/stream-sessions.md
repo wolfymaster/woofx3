@@ -191,17 +191,34 @@ Uptime readers — `broadcast-shell.tsx:141`, `stream-status.tsx:21`,
 `stream-stats.tsx:85` — stay on `startedAt`. Uptime genuinely means the physical
 broadcast.
 
-## What this does not give you
+## Analytics is a separate subsystem
 
-**Aggregates still need somewhere to count.** Nothing in the system aggregates
-anything today: no totals of chats, subs or cheers exist. `widget_status` holds
-a last-reported value per key and explicitly discards history
-(`db/database/models/widget_status.go:14-17`); `alert.CountByApplicationID` is
-unbounded; the workflow engine's only aggregation lives inside a single waiting
-execution and dies with it.
+Nothing in the system aggregates anything today: no totals of chats, subs or
+cheers exist. `widget_status` holds a last-reported value per key and explicitly
+discards history (`db/database/models/widget_status.go:14-17`);
+`alert.CountByApplicationID` is unbounded; the workflow engine's only
+aggregation lives inside a single waiting execution and dies with it.
 
-A session id makes per-stream totals *possible* and cheap to query. It does not
-make them exist.
+Producing aggregate values from events and stream statistics is **Analytics**, a
+subsystem still to be built. Sessions are not that subsystem and do not
+partially implement it — a session id makes per-stream totals *possible* and
+cheap to query, it does not make them exist.
+
+What sessions give Analytics is the partition key. "Total chats" is meaningless
+without a definition of which chats, and that definition has to exist *at the
+moment each event is published*, because a boundary nobody recorded cannot be
+reconstructed afterwards — the timestamps alone cannot tell a deliberate break
+from an accidental one. Building sessions first means events are correctly
+attributed from the day the stamp lands, and Analytics inherits a corpus it can
+group rather than one it must guess at.
+
+One property to design against when that work starts: the id on an event is not
+a stable key (see [Splits are retroactive](#splits-are-retroactive-and-events-are-immutable)),
+so aggregation resolves it to a canonical session. Doing that per row does not
+scale to the volumes Analytics will read. The likely shapes are resolving once
+per segment rather than per event, or materialising a canonical id alongside the
+stamped one — either is cheap to add later, and neither is worth building before
+there is something counting.
 
 **The rules engine is unaffected.** `treats/` contains a README and no
 implementation, so there are no facts to retract at a session boundary. If facts
