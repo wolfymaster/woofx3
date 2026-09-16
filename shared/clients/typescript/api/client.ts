@@ -102,6 +102,14 @@ export interface EngineBrowserSession<T> {
   api: T;
   gateway: ApiGatewayContract;
   dispose(): void;
+  /**
+   * Register a callback for when this session's underlying connection breaks:
+   * the socket closed, or the peer went away. Nothing here reconnects — that
+   * policy belongs to the caller, which knows whether a reconnect is wanted
+   * and how long to wait. Note `dispose()` may also break the session, so a
+   * caller that tears down deliberately should ignore the resulting callback.
+   */
+  onBroken(callback: (error: unknown) => void): void;
 }
 
 /**
@@ -129,6 +137,12 @@ export function createEngineBrowserSession<T extends RpcCompatible<T>>(
     gateway,
     dispose() {
       (gateway as unknown as { [Symbol.dispose]?: () => void })[Symbol.dispose]?.();
+    },
+    onBroken(callback) {
+      // capnweb stubs carry onRpcBroken; ApiGatewayContract describes the
+      // remote interface and says nothing about stub mechanics, so this reaches
+      // for it the same way dispose() reaches for Symbol.dispose above.
+      (gateway as unknown as { onRpcBroken?: (cb: (error: unknown) => void) => void }).onRpcBroken?.(callback);
     },
   };
 }
