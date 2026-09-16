@@ -1,8 +1,11 @@
 # Stream sessions
 
-::: warning Design, not behaviour
-Nothing on this page is implemented. It describes an agreed design so the pieces
-can be built against one shape. Every "does" below should be read as "will do".
+::: warning Mostly design, not behaviour
+Two pieces exist: the extend-or-split policy
+(`api/src/stream-session-policy.ts`) and the stamping described under
+[Stamping](#stamping). Nothing produces a session id to stamp yet, so in
+practice every event still goes out without one. The rest of this page describes
+an agreed design so the remaining pieces can be built against one shape.
 :::
 
 A **stream session** identifies a broadcast and everything that happened during
@@ -115,10 +118,11 @@ a resolver what session it is in.
 
 ### It is stamped centrally
 
-Every event factory — Twitch, Chat, Module, Obs, Command — routes through the
-same `Event()` in `shared/common/typescript/cloudevents/BaseEvent.ts`, which
-already defaults `specversion`, `time`, `id` and `source`. The session is
-defaulted there, not in each factory's `encodeEvent`.
+Every event factory — Alert, Chat, Command, Module, Obs, Slobs and Twitch —
+routes through the same `Event()` in
+`shared/common/typescript/cloudevents/BaseEvent.ts`, which already defaults
+`specversion`, `time`, `id` and `source`. The session is defaulted there, not in
+each factory's `encodeEvent`.
 
 This is deliberately *unlike* `platform`, which is stamped by the Twitch factory
 only (`Twitch/index.ts:112-118`) and is therefore absent from every other
@@ -129,8 +133,13 @@ silently nothing elsewhere.
 must be told the current session — a module-level holder fed by a
 `session.started` / `session.ended` subscription, wired once in the shared
 runtime. Every service that publishes needs that wiring; a process that lacks it
-would emit unstamped events, which is the same invisible gap in a new place. The
-holder should fail loudly rather than emit without a session.
+would emit unstamped events, which is the same invisible gap in a new place.
+
+The holder therefore warns once per gap instead of passing silently. It does not
+throw: `Event()` sits on every publish path in every service, and events are
+legitimately published before the first `session.started` arrives, so a startup
+race would become a dead service rather than a missing attribute. The warning
+targets the case worth finding — a process nobody ever wired up.
 
 Two mirrors carry the field independently and are easy to forget:
 

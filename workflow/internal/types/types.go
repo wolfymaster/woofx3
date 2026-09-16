@@ -140,21 +140,31 @@ type Event struct {
 	// so this is how a workflow subscribed to `channel.follow` narrows to
 	// one platform. Empty for events with no originating platform (module
 	// lifecycle, db outbox, scheduler).
-	Platform string         `json:"platform,omitempty"`
-	Data     map[string]any `json:"data"`
-	Subject  string         `json:"subject,omitempty"`
+	Platform string `json:"platform,omitempty"`
+	// SessionID is the CloudEvents extension attribute naming the stream
+	// session the event happened during. Stamped by the publisher, so a
+	// workflow can scope to one broadcast without asking a resolver.
+	//
+	// Not a stable key: a session can be split or merged after the fact, so a
+	// reader aggregating over it resolves to a canonical session rather than
+	// grouping on this directly. Empty when the publishing process did not
+	// know a session. See docs/services/stream-sessions.md.
+	SessionID string         `json:"sessionId,omitempty"`
+	Data      map[string]any `json:"data"`
+	Subject   string         `json:"subject,omitempty"`
 }
 
 // TriggerFields is the `${trigger.*}` view of an event, shared by trigger
 // conditions and step expression resolution so the two cannot drift.
 func (e *Event) TriggerFields() map[string]any {
 	return map[string]any{
-		"id":       e.ID,
-		"type":     e.Type,
-		"source":   e.Source,
-		"time":     e.Time,
-		"platform": e.Platform,
-		"data":     e.Data,
+		"id":        e.ID,
+		"type":      e.Type,
+		"source":    e.Source,
+		"time":      e.Time,
+		"platform":  e.Platform,
+		"sessionId": e.SessionID,
+		"data":      e.Data,
 	}
 }
 

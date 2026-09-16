@@ -1,3 +1,5 @@
+import { getCurrentSessionId } from "./session";
+
 export interface BaseEvent<T> {
   specversion: string;
   type: string;
@@ -14,6 +16,20 @@ export interface BaseEvent<T> {
    * db outbox, scheduler).
    */
   platform?: string;
+  /**
+   * CloudEvents extension attribute naming the stream session this event
+   * happened during. Stamped centrally in `Event()` below, so every family
+   * carries it -- unlike `platform`, which each factory sets for itself and
+   * which only the Twitch one actually does.
+   *
+   * Not a stable key: a session can be split or merged afterwards, so a reader
+   * aggregating events resolves this to a canonical session rather than
+   * grouping on it directly. See docs/services/stream-sessions.md.
+   *
+   * Absent when the publishing process does not yet know a session -- before
+   * the first `session.started` reaches it, or if it was never wired up.
+   */
+  sessionId?: string;
   data: T;
 }
 
@@ -24,6 +40,10 @@ export default function Event<T>(opts: Partial<BaseEvent<T>>, data: T): BaseEven
     source: "unknown",
     id: "unknown",
     time: new Date(),
+    // Before the spread, so an explicit sessionId in opts still wins. Undefined
+    // drops out at JSON.stringify, so an unknown session omits the attribute
+    // rather than emitting a null.
+    sessionId: getCurrentSessionId(),
     data,
     ...opts,
   };
