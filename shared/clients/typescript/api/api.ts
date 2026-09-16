@@ -1,5 +1,6 @@
 // Shared API Types for woofx3 UI and Backend
 
+import type { StreamEventSubscriber } from "./stream-events";
 import type { ActionDefinition, ModuleResourceUsage, ResourceInstanceDefinition, TriggerDefinition } from "./webhooks";
 import type { WorkflowDefinition } from "./workflow-definition";
 
@@ -1230,6 +1231,15 @@ export interface Woofx3EngineApi {
   subscribeTriggerChanges(callback: {
     onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
   }): Promise<void>;
+
+  /** Push live stream events -- follows, subs, cheers, raids, stream on/off --
+   *  to the caller for the life of the session. Chat is deliberately not on
+   *  this channel; see ./stream-events.
+   *
+   *  Delivery is not gapless: nothing buffers events behind this, so a client
+   *  that connects late or reconnects has missed the gap and should re-read
+   *  point-in-time state rather than assume a continuous stream. */
+  subscribeStreamEvents(callback: StreamEventSubscriber): Promise<void>;
 
   getUserProfile(userId: string): Promise<{
     id: string;

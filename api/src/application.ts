@@ -51,6 +51,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { initOverlayTokenHandlers },
       { initSceneHandlers },
       { StorageChangeEmitter },
+      { StreamEventBroadcaster },
       { WebhookClient },
       { initWidgetStatusHandlers },
       { initWorkflowHandlers },
@@ -68,6 +69,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./overlay-token-handlers"),
       import("./scene-event-handlers"),
       import("./storage-change-emitter"),
+      import("./stream-event-broadcaster"),
       import("./webhook-client"),
       import("./widget-status-handlers"),
       import("./workflow-event-handlers"),
@@ -166,6 +168,14 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     await api.initSubscriptions();
 
     if (natsClient) {
+      // Started here rather than alongside AlertEmitter above: that block is
+      // gated on a default application already existing, and this needs only
+      // the bus — a dashboard should receive events before onboarding has
+      // resolved an applicationId.
+      const streamEventBroadcaster = new StreamEventBroadcaster(natsClient, logger);
+      await streamEventBroadcaster.start();
+      api.setStreamEventBroadcaster(streamEventBroadcaster);
+
       await initOverlayTokenHandlers(natsClient, webhookClient, logger);
       await initModuleHandlers(natsClient, webhookClient, logger);
       await initWorkflowHandlers(natsClient, webhookClient, logger);

@@ -18,6 +18,7 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { RpcTarget } from "capnweb";
 import type { DbClient } from "../db-client";
+import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
 import type { WebhookClient } from "../webhook-client";
 import type { WorkflowItem } from "./types";
 import { rebuildWorkflowDefinition, timestampToIso } from "./helpers";
@@ -51,6 +52,7 @@ export class ApiRouteHost extends RpcTarget {
     onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
   }>();
   protected webhookClient: WebhookClient | null = null;
+  protected streamEventBroadcaster: StreamEventBroadcaster | null = null;
   protected authInvalidate: (() => void) | null = null;
 
   protected db: DbClient;

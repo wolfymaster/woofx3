@@ -99,6 +99,7 @@ describe("the RPC surface a client sees", () => {
       "setApplicationId",
       "setWebhookClient",
       "setAuthInvalidate",
+      "setStreamEventBroadcaster",
       "initSubscriptions",
       "handleProcessingCallback",
     ].sort();
