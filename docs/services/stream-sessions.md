@@ -78,11 +78,21 @@ in the system consumes those outputs and knows nothing about grace windows.
 currentSession() -> sessionId
 ```
 
-It is **durable**. A pending decision held only in memory dies with the process,
-and a restart mid-gap would otherwise silently start a new session or lose one.
-Sessions and their segments persist in db-proxy; the engine keeps a cached
-accessor in the shape of `ensureApplicationId` (`api/src/routes/context.ts:161`),
-which is the established pattern for a cached scope id.
+The extend-or-split decision happens at `stream.online` and nowhere else.
+Because a session is always present and only ends when a new one replaces it,
+nothing is ever pending: there is no scheduled close to fire and no in-flight
+decision for a restart to lose.
+
+It is still **durable**, but for a simpler reason than a timer would need. What
+has to survive a restart is the session row and the end of its last segment,
+because that is the input the next decision reads. Sessions and their segments
+persist in db-proxy; the engine keeps a cached accessor in the shape of
+`ensureApplicationId` (`api/src/routes/context.ts:161`), the established pattern
+for a cached scope id.
+
+The cost of deciding only on the way up is that a session's end is recognised
+when the next broadcast begins, not when the last one stopped — so anything
+keyed on `session.ended`, clearing included, lags until then.
 
 ### Lifecycle events
 
