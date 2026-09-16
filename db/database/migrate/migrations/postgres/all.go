@@ -53,5 +53,6 @@ func All() []*gormigrate.Migration {
 		AddWidgetSurfaces(),
 		DropWidgetAcceptedEvents(),
 		MigrateMediaAlertPlacements(),
+		CreateStreamSessionsTables(),
 	}
 }

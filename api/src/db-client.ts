@@ -16,6 +16,7 @@ import * as permission from "@woofx3/db/permission.pb";
 import * as resource from "@woofx3/db/resource.pb";
 import * as scene from "@woofx3/db/scene.pb";
 import * as setting from "@woofx3/db/setting.pb";
+import * as stream_session from "@woofx3/db/stream_session.pb";
 import * as treat from "@woofx3/db/treat.pb";
 import * as user from "@woofx3/db/user.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
@@ -460,6 +461,54 @@ export class DbClient {
 
   async deleteAlert(req: alert.DeleteAlertRequest): Promise<common.ResponseStatus> {
     return alert.DeleteAlert(req, this.config);
+  }
+
+  /**
+   * The open session plus the two facts the extend-or-split decision reads.
+   *
+   * Returns the whole envelope rather than just the session: the three values
+   * are one consistent answer, and a caller that fetched them separately could
+   * see a segment close between the reads.
+   */
+  async ensureCurrentStreamSession(
+    req: stream_session.EnsureCurrentStreamSessionRequest
+  ): Promise<stream_session.StreamSessionStateResponse> {
+    const response = await stream_session.EnsureCurrentStreamSession(req, this.config);
+    unwrapVoid("ensureCurrentStreamSession", response);
+    return response;
+  }
+
+  /** Ends the open session and opens its successor, returning both. */
+  async splitStreamSession(
+    req: stream_session.SplitStreamSessionRequest
+  ): Promise<stream_session.SplitStreamSessionResponse> {
+    const response = await stream_session.SplitStreamSession(req, this.config);
+    unwrapVoid("splitStreamSession", response);
+    return response;
+  }
+
+  async openStreamSessionSegment(
+    req: stream_session.OpenStreamSessionSegmentRequest
+  ): Promise<stream_session.StreamSessionSegment> {
+    const response = await stream_session.OpenStreamSessionSegment(req, this.config);
+    return unwrap("openStreamSessionSegment", response, response.segment);
+  }
+
+  async closeStreamSessionSegment(
+    req: stream_session.CloseStreamSessionSegmentRequest
+  ): Promise<stream_session.StreamSessionSegment> {
+    const response = await stream_session.CloseStreamSessionSegment(req, this.config);
+    return unwrap("closeStreamSessionSegment", response, response.segment);
+  }
+
+  async getStreamSession(req: stream_session.GetStreamSessionRequest): Promise<stream_session.StreamSession> {
+    const response = await stream_session.GetStreamSession(req, this.config);
+    return unwrap("getStreamSession", response, response.session);
+  }
+
+  async listStreamSessions(req: stream_session.ListStreamSessionsRequest): Promise<stream_session.StreamSession[]> {
+    const response = await stream_session.ListStreamSessions(req, this.config);
+    return unwrap("listStreamSessions", response, response.sessions ?? []);
   }
 
   async upsertWidgetStatus(req: widget_status.UpsertWidgetStatusRequest): Promise<widget_status.WidgetStatusResponse> {

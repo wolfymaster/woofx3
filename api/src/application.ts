@@ -52,6 +52,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { initSceneHandlers },
       { StorageChangeEmitter },
       { StreamEventBroadcaster },
+      { StreamSessionResolver },
       { WebhookClient },
       { initWidgetStatusHandlers },
       { initWorkflowHandlers },
@@ -70,6 +71,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./scene-event-handlers"),
       import("./storage-change-emitter"),
       import("./stream-event-broadcaster"),
+      import("./stream-session-resolver"),
       import("./webhook-client"),
       import("./widget-status-handlers"),
       import("./workflow-event-handlers"),
@@ -147,6 +149,12 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
 
           storageChangeEmitter = new StorageChangeEmitter(natsClient, webhookClient, logger);
           await storageChangeEmitter.start();
+
+          // Needs the applicationId, so it belongs in this block rather than
+          // the NATS-only one below: a session is scoped to an application and
+          // there is nothing to resolve before onboarding.
+          const streamSessionResolver = new StreamSessionResolver(natsClient, db, existing.id, logger);
+          await streamSessionResolver.start();
         } else {
           logger.warn("Skipping AlertEmitter and StorageChangeEmitter; NATS client is not connected");
         }

@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package stream_session;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// A stream session is the logical span a broadcast belongs to. It is
+// deliberately not the same thing as "the stream is live": one session may
+// cover several online/offline cycles, because a stream can end by accident or
+// end briefly and be continuous with what follows.
+//
+// A session is always present. `stream.online` and `stream.offline` are inputs
+// to a decision rather than boundaries in themselves, so a session may be
+// entirely offline and no event ever carries an empty session.
+//
+// The extend-or-split policy lives in the engine
+// (`api/src/stream-session-policy.ts`); this service only persists what that
+// policy decides. See docs/services/stream-sessions.md.
+service StreamSessionService {
+  // The open session plus the two facts the extend-or-split decision reads.
+  // Opens a session when none is open, which is what makes "a session is
+  // always present" true rather than aspirational.
+  rpc EnsureCurrentStreamSession(EnsureCurrentStreamSessionRequest) returns (StreamSessionStateResponse);
+  // Ends the open session and opens its successor. There is no standalone
+  // "end": a session is always present and only ends when a later one replaces
+  // it, so closing without opening would leave the application with no session
+  // at all.
+  rpc SplitStreamSession(SplitStreamSessionRequest) returns (SplitStreamSessionResponse);
+  rpc OpenStreamSessionSegment(OpenStreamSessionSegmentRequest) returns (StreamSessionSegmentResponse);
+  rpc CloseStreamSessionSegment(CloseStreamSessionSegmentRequest) returns (StreamSessionSegmentResponse);
+  rpc GetStreamSession(GetStreamSessionRequest) returns (StreamSessionResponse);
+  rpc ListStreamSessions(ListStreamSessionsRequest) returns (ListStreamSessionsResponse);
+}
+
+message StreamSession {
+  string id = 1;
+  string application_id = 2;
+  // `open` while this is the session events are stamped with; `closed` once a
+  // later session has replaced it. At most one session per application is
+  // open, enforced by a partial unique index rather than by convention.
+  string status = 3;
+  google.protobuf.Timestamp started_at = 4;
+  // Set when the session was closed by a split. Absent while open.
+  google.protobuf.Timestamp ended_at = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+// One online span within a session: the stream went live at `started_at` and
+// went down at `ended_at`. Offline is the gap between segments, not a segment
+// of its own -- which is why a session with no segments is a session that has
+// never been live.
+//
+// Segments are the unit a retroactive split moves between sessions. Events are
+// never rewritten, so the session id on an event identifies the session that
+// owned its segment at the time of stamping.
+message StreamSessionSegment {
+  string id = 1;
+  string application_id = 2;
+  string stream_session_id = 3;
+  google.protobuf.Timestamp started_at = 4;
+  // Absent while the stream is live.
+  google.protobuf.Timestamp ended_at = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message EnsureCurrentStreamSessionRequest {
+  string application_id = 1;
+}
+
+// The open session and the inputs to the extend-or-split decision, fetched
+// together because the decision needs all three consistently.
+message StreamSessionStateResponse {
+  common.ResponseStatus status = 1;
+  StreamSession session = 2;
+  // True while the stream is live, i.e. a segment has no end stamp.
+  bool is_segment_open = 3;
+  // When the session's most recent segment ended. Absent when the session has
+  // never been live, which is a different case from "ended long ago" and must
+  // not be conflated with a zero timestamp.
+  google.protobuf.Timestamp last_segment_ended_at = 4;
+}
+
+message SplitStreamSessionRequest {
+  string application_id = 1;
+  // The boundary. Supplied by the caller rather than defaulted to NOW() so a
+  // split can be made from an event's own timestamp, and used as both the old
+  // session's end and the new one's start so no instant falls outside both.
+  google.protobuf.Timestamp at = 2;
+}
+
+message SplitStreamSessionResponse {
+  common.ResponseStatus status = 1;
+  StreamSession ended = 2;
+  StreamSession started = 3;
+}
+
+message OpenStreamSessionSegmentRequest {
+  string application_id = 1;
+  string stream_session_id = 2;
+  google.protobuf.Timestamp started_at = 3;
+}
+
+// Closes whichever segment is currently open for the application. Keyed on the
+// application rather than a segment id because the caller reacting to
+// `stream.offline` knows the channel, not which segment it opened.
+message CloseStreamSessionSegmentRequest {
+  string application_id = 1;
+  google.protobuf.Timestamp ended_at = 2;
+}
+
+message GetStreamSessionRequest {
+  string id = 1;
+}
+
+message StreamSessionResponse {
+  common.ResponseStatus status = 1;
+  StreamSession session = 2;
+}
+
+message StreamSessionSegmentResponse {
+  common.ResponseStatus status = 1;
+  StreamSessionSegment segment = 2;
+}
+
+message ListStreamSessionsRequest {
+  string application_id = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message ListStreamSessionsResponse {
+  common.ResponseStatus status = 1;
+  repeated StreamSession sessions = 2;
+  int64 total_count = 3;
+  int32 limit = 4;
+  int32 offset = 5;
+}

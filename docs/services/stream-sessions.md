@@ -1,11 +1,16 @@
 # Stream sessions
 
-::: warning Mostly design, not behaviour
-Two pieces exist: the extend-or-split policy
-(`api/src/stream-session-policy.ts`) and the stamping described under
-[Stamping](#stamping). Nothing produces a session id to stamp yet, so in
-practice every event still goes out without one. The rest of this page describes
-an agreed design so the remaining pieces can be built against one shape.
+::: warning Partly built
+**Built:** the extend-or-split policy, the resolver that applies it, the
+`stream_sessions` / `stream_session_segments` tables behind
+`StreamSessionService`, and central stamping in all three languages.
+
+**Not built:** the other end of the stamping contract. Only `api/` learns the
+current session, and it publishes through `publishEvent` rather than the
+`Event()` factory — so in practice no event carries a session id yet. Events
+from `twitch/`, `woofwoofwoof/` and `barkloader/` stay unstamped until each
+process subscribes to `session.started`. "Clearing ephemeral storage" and
+"Reaching the UI" below are still design.
 :::
 
 A **stream session** identifies a broadcast and everything that happened during
@@ -13,7 +18,7 @@ it. It is a *logical* span, not a physical one: a session may cover several
 `stream.online` → `stream.offline` cycles, because a stream can end by accident,
 end briefly, or be deliberately treated as continuous with the one before it.
 
-Its purpose is to answer three questions that nothing can answer today:
+Its purpose is to answer three questions:
 
 - **Which broadcast did this event belong to?** — so totals like "chats this
   stream" or "subs this stream" are a group-by rather than a guess.
@@ -43,9 +48,17 @@ This matters more than it sounds. Because there is always an answer:
 
 ### Segments
 
-A session owns an ordered list of **segments**, each one an online or offline
-span. Segments are what make the logical/physical distinction concrete, and they
-are what splitting and merging actually operate on.
+A session owns an ordered list of **segments**, each one an *online* span: the
+stream went live, then it went down. Offline is the gap between segments rather
+than a segment of its own.
+
+That is what makes "a session with no segments" mean precisely "a session that
+has never been live" — a state the extend-or-split decision treats differently
+from "went offline a long time ago", and which therefore must not be represented
+by a zero timestamp anywhere along the path.
+
+Segments are what make the logical/physical distinction concrete, and they are
+what splitting and merging actually operate on.
 
 ### Splits are retroactive, and events are immutable
 
@@ -73,13 +86,15 @@ deliberately undecided, and the design must not care when they are.
 
 ## The resolver
 
-One component owns the policy. Its inputs are the stream lifecycle events and
-the clock; its outputs are the current session and two events. Everything else
-in the system consumes those outputs and knows nothing about grace windows.
+One component owns this: `StreamSessionResolver`
+(`api/src/stream-session-resolver.ts`). Its inputs are the stream lifecycle
+events and the clock; its outputs are the current session and two events.
+Everything else in the system consumes those outputs and knows nothing about
+grace windows.
 
-```
-currentSession() -> sessionId
-```
+The rule is separate again, in `api/src/stream-session-policy.ts`, so it can
+change without touching either persistence or the bus. The resolver is the only
+thing that joins the two.
 
 The extend-or-split decision happens at `stream.online` and nowhere else.
 Because a session is always present and only ends when a new one replaces it,
@@ -88,10 +103,21 @@ decision for a restart to lose.
 
 It is still **durable**, but for a simpler reason than a timer would need. What
 has to survive a restart is the session row and the end of its last segment,
-because that is the input the next decision reads. Sessions and their segments
-persist in db-proxy; the engine keeps a cached accessor in the shape of
-`ensureApplicationId` (`api/src/routes/context.ts:161`), the established pattern
-for a cached scope id.
+because that is the input the next decision reads. Both live in db-proxy behind
+`StreamSessionService`.
+
+Two partial unique indexes hold the invariants the rest of the design leans on:
+at most one open session per application, and at most one open segment. They sit
+in the schema rather than in resolver code because a concurrent second writer
+should fail a write, not silently corrupt the history every future aggregate
+will be computed from. A duplicate `stream.online` is the ordinary case — Twitch
+redelivers notifications — and two open segments would give "when did the stream
+last go down" two answers.
+
+`EnsureCurrentStreamSession` returns the open session and both decision inputs
+in one call, opening a session when none is open. That is what makes "a session
+is always present" true rather than aspirational, and it gives the invariant one
+owner instead of every caller.
 
 The cost of deciding only on the way up is that a session's end is recognised
 when the next broadcast begins, not when the last one stopped — so anything
@@ -101,8 +127,18 @@ keyed on `session.ended`, clearing included, lags until then.
 
 | Subject | Fired when | Meaning for consumers |
 |---|---|---|
-| `session.started` | the resolver opens a new session | A new broadcast has logically begun. |
+| `session.started` | a new session opens, and again when the resolver starts | The session to stamp is now this one. |
 | `session.ended` | the resolver closes one | The previous broadcast is over. Ephemeral state scoped to it should be dropped. |
+
+`session.started` states the current session rather than marking a boundary. The
+resolver re-announces on startup so a process that restarted learns the session
+immediately, instead of publishing unstamped until the next broadcast — which on
+a quiet day is hours. Receiving the same id twice is expected; handling it must
+be idempotent.
+
+Neither event is itself session-stamped. An event that announces a session must
+not also claim to have happened during one, so the resolver hand-builds its
+envelope instead of routing through `Event()`.
 
 `session.ended` fires on a **split** — not on `stream.offline`. It may arrive
 long after a stream ended, and for a brief dropout it never arrives at all.
@@ -134,6 +170,11 @@ must be told the current session — a module-level holder fed by a
 `session.started` / `session.ended` subscription, wired once in the shared
 runtime. Every service that publishes needs that wiring; a process that lacks it
 would emit unstamped events, which is the same invisible gap in a new place.
+
+Only `api/` does this today, from inside the resolver itself. Until `twitch/`,
+`woofwoofwoof/` and `barkloader/` subscribe as well, their events carry no
+session — and `api/`'s own publishes go through `publishEvent`, which does not
+use the factory at all.
 
 The holder therefore warns once per gap instead of passing silently. It does not
 throw: `Event()` sits on every publish path in every service, and events are
@@ -254,8 +295,11 @@ are built later, the boundary is a natural lifecycle hook.
 
 Each step is independently useful and safe to stop after:
 
-1. **Resolver and tables.** Nothing consumes the session yet, so this carries no
-   risk and can be observed before anything depends on it.
-2. **Central stamping** — TypeScript, then the Go and Rust mirrors.
-3. **Storage rename and a clear RPC** called on `session.ended`.
-4. **The Convex field and the two UI call sites.**
+1. **Resolver and tables** — done.
+2. **Central stamping**, TypeScript plus the Go and Rust mirrors — done.
+3. **Feed the holders.** Each publishing process subscribes to `session.started`
+   and calls its language's `setCurrentSessionId`. Nothing carries a session id
+   until this lands, so it is the step that turns steps 1 and 2 into observable
+   behaviour.
+4. **Storage rename and a clear RPC** called on `session.ended`.
+5. **The Convex field and the two UI call sites.**

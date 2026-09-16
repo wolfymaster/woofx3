@@ -126,6 +126,18 @@ const (
 	SubjectDbOverlayTokenCreatedPattern Subject = "db.overlay_token.created.*"
 	SubjectDbOverlayTokenUpdatedPattern Subject = "db.overlay_token.updated.*"
 
+	// Stream session lifecycle, emitted by the resolver in api/. A session is
+	// the logical span a broadcast belongs to and is always present, so
+	// `session.started` names the session events are stamped with rather than
+	// marking a boundary -- it is re-announced when the resolver starts so a
+	// process that restarted learns the current session.
+	//
+	// `session.ended` fires on a split, NOT on `stream.offline`. Anything that
+	// clears session-scoped state must key on it, or a brief dropout wipes
+	// exactly the state sessions exist to preserve.
+	SubjectSessionStarted Subject = "session.started"
+	SubjectSessionEnded   Subject = "session.ended"
+
 	// System events
 	SubjectHeartbeat      Subject = "HEARTBEAT"
 	SubjectMessageBusInit Subject = "MESSAGEBUS_INIT"
