@@ -15,16 +15,25 @@ CloudEvents is the inter-service messaging format used throughout WoofX3. All ev
 Every CloudEvent shares the same envelope:
 
 ```typescript
-// shared/clients/typescript/cloudevents/BaseEvent.ts
+// shared/common/typescript/cloudevents/BaseEvent.ts
 interface BaseEvent<T> {
   specversion: string;  // always "1.0.0"
   type: string;         // NATS subject / event type
   source: string;       // originating service identifier
   id: string;           // unique event ID
   time: Date;           // event timestamp
+  platform?: string;    // extension attribute: where the event came from
   data: T;              // event-specific payload
 }
 ```
+
+`platform` is provenance rather than payload: `type` says what happened,
+`platform` says where, so a subscriber can take `channel.follow` from every
+platform and narrow only when it cares. It is absent on events with no
+originating platform — module lifecycle, db outbox, scheduler — and, today, also
+absent from every family except Twitch, because only that factory stamps it
+(`Twitch/index.ts:112-118`). See [Stream sessions](./stream-sessions.md) for why
+the next extension attribute is stamped centrally instead.
 
 ## EventFactory
 
