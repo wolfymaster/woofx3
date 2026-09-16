@@ -147,8 +147,15 @@ Two mirrors carry the field independently and are easy to forget:
   `workflow/internal/types/types.go:133-159`. That helper exists so trigger
   conditions and step expressions cannot drift, so one edit exposes
   `${trigger.sessionId}` to both.
-- **Rust** — `barkloader/lib_sandbox/src/runtime/storage_event.rs:30-42`
-  hand-builds its envelope and bypasses the TypeScript factories entirely.
+- **Rust** — `shared/common/rust/cloudevents`, the Rust half of the same
+  library. Rust publishers previously hand-built a `json!` literal per call
+  site, which had already produced two different `specversion` values; they now
+  route through `BaseEvent::new` for the same reason the TypeScript ones route
+  through `Event()`.
+
+  `heartbeat.rs` stays outside it deliberately. A readiness ping fires whether
+  or not anyone is broadcasting, so a session id on one would mean nothing, and
+  its shape is pinned against the Go `NewHeartbeatEvent` that consumers parse.
 
 There is no `BaseEvent` struct on the Go side; the de facto envelope is the
 `Event` struct above. There is also no TypeScript decode function — every

@@ -8,6 +8,7 @@ woofx3-twirp = { path = "../../shared/clients/rust/twirp" }
 woofx3 = { path = "../../shared/clients/rust/db" }
 woofx3-runtime = { path = "../../shared/common/rust/runtime" }
 woofx3-logging = { path = "../../shared/common/rust/logging" }
+woofx3-cloudevents = { path = "../../shared/common/rust/cloudevents" }
 actix-web = "4.10"
 actix-ws = "0.3"
 serde = { version = "1.0", features = ["derive"] }
