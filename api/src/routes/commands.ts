@@ -1,10 +1,15 @@
 import { routeModule } from "./context";
 import type { AvailableFunction, CommandSnapshot, CreateCommandInput, UpdateCommandInput } from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import CommandEvents from "@woofx3/common/cloudevents/Command";
 import { invalidCommandVariableNames } from "@woofx3/common/templates/command-variables";
 import type * as command from "@woofx3/db/command.pb";
 import { isPermissionDenied } from "../db-client";
 import { commandToSnapshot } from "./helpers";
+
+// The factory holds nothing but the CloudEvent `source`, so one instance serves
+// every call in this module.
+const commandEvents = new CommandEvents("api");
 
 export const commandsRoutes = routeModule({
   async listCommands(): Promise<CommandSnapshot[]> {
@@ -135,7 +140,7 @@ export const commandsRoutes = routeModule({
       argumentPattern,
     });
     const snapshot = commandToSnapshot(created);
-    await this.publishEvent("command.created", { command: snapshot });
+    await this.publishEventTuple(commandEvents.created({ command: snapshot }));
     void this.emitCommandWebhook({
       type: EngineEventType.COMMAND_CREATED,
       applicationId,
@@ -175,7 +180,7 @@ export const commandsRoutes = routeModule({
       argumentPattern,
     });
     const snapshot = commandToSnapshot(updated);
-    await this.publishEvent("command.updated", { command: snapshot });
+    await this.publishEventTuple(commandEvents.updated({ command: snapshot }));
     void this.emitCommandWebhook({
       type: EngineEventType.COMMAND_UPDATED,
       applicationId: snapshot.applicationId,
@@ -297,15 +302,26 @@ export const commandsRoutes = routeModule({
   },
 
   /**
-   * Delete a chat command. Emits `command.deleted` with just the id —
-   * downstream consumers maintain their own id→name index from
-   * created/updated events.
+   * Delete a chat command.
+   *
+   * Reads the command before deleting it, because `command.deleted` carries the
+   * name and once the row is gone there is nowhere left to recover it from.
+   * db-proxy has no lookup by id — `GetCommand` is keyed by name — so this
+   * lists and filters; deleting a command is an operator action, not a hot
+   * path, and the alternative is a new RPC for one call site.
+   *
+   * Deleting an id that does not exist fails rather than reporting success.
    */
   async deleteCommand(id: string, correlationKey?: string): Promise<{ deleted: boolean }> {
     const applicationId = await this.ensureApplicationId();
+    const existing = (await this.db.listCommands({ applicationId, includeDisabled: true })).find((c) => c.id === id);
+    if (!existing) {
+      throw new Error(`Command not found: ${id}`);
+    }
+
     await this.db.deleteCommand({ id });
 
-    await this.publishEvent("command.deleted", { id });
+    await this.publishEventTuple(commandEvents.deleted({ id, applicationId, command: existing.command }));
     void this.emitCommandWebhook({
       type: EngineEventType.COMMAND_DELETED,
       applicationId,

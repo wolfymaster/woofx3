@@ -1,5 +1,7 @@
+import Event from "@woofx3/common/cloudevents/BaseEvent";
 import { EventType as SessionEventType } from "@woofx3/common/cloudevents/Session/events";
 import { setCurrentSessionId } from "@woofx3/common/cloudevents/session";
+import { encode } from "@woofx3/common/cloudevents/utils";
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
@@ -183,22 +185,17 @@ export class StreamSessionResolver {
   }
 
   /**
-   * Hand-builds the envelope, matching `ApiRouteHost.publishEvent` -- the
-   * service's only other publish path.
+   * Publishes through the shared factory with the session deliberately cleared.
    *
-   * Deliberately not the shared `Event()` factory: that stamps `sessionId` from
-   * the ambient holder, and an event announcing a session must not also claim
-   * to have happened during one. This announcement is what establishes it.
+   * `Event()` stamps `sessionId` from the ambient holder, and an event
+   * announcing a session must not also claim to have happened during one --
+   * this announcement is what establishes it. An explicit `undefined` overrides
+   * the holder, and undefined drops out at serialization, so the attribute is
+   * absent rather than null.
    */
   private async publish(type: SessionEventType, data: Record<string, unknown>): Promise<void> {
-    const event = {
-      id: crypto.randomUUID(),
-      type,
-      source: "api",
-      time: new Date().toISOString(),
-      data,
-    };
-    await this.nats.publish(type, new TextEncoder().encode(JSON.stringify(event)));
+    const event = Event<Record<string, unknown>>({ type, source: "api", sessionId: undefined }, data);
+    await this.nats.publish(type, encode(event));
   }
 }
 

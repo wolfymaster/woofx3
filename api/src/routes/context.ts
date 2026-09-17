@@ -14,6 +14,8 @@ import type {
   WorkflowDeletedEvent,
   WorkflowUpdatedEvent,
 } from "@woofx3/api/webhooks";
+import Event from "@woofx3/common/cloudevents/BaseEvent";
+import { encode } from "@woofx3/common/cloudevents/utils";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { RpcTarget } from "capnweb";
@@ -205,6 +207,14 @@ export class ApiRouteHost extends RpcTarget {
     }
   }
 
+  /**
+   * Publish an event type no shared factory models -- a pass-through of a
+   * module-supplied type, or one that belongs to no family.
+   *
+   * Where a typed factory does exist, prefer `publishEventTuple`: it carries
+   * the payload interface, so a field the contract declares cannot be quietly
+   * left out.
+   */
   protected async publishEvent(
     eventType: string,
     data: Record<string, unknown>,
@@ -212,41 +222,35 @@ export class ApiRouteHost extends RpcTarget {
     platform?: string,
     source = "api"
   ): Promise<void> {
-    if (!this.nats) {
-      this.logger.error("Cannot publish event - NATS client not available", { eventType });
-      throw new Error("NATS client not available");
-    }
-
-    const eventId = crypto.randomUUID();
     // `platform` is a top-level CloudEvents extension attribute, not payload:
     // event types are platform-agnostic, so it is the only thing telling a
     // workflow where a `channel.follow` came from. Omitted rather than empty
     // for events with no originating platform.
-    const event: Record<string, unknown> = {
-      id: eventId,
-      type: eventType,
-      source,
-      time: new Date().toISOString(),
-      ...(platform ? { platform } : {}),
-      data,
-    };
+    const event = Event<Record<string, unknown>>({ type: eventType, source, ...(platform ? { platform } : {}) }, data);
+    await this.publishBytes(subject || eventType, encode(event), { eventType, eventId: event.id });
+  }
 
-    const eventData = new TextEncoder().encode(JSON.stringify(event));
-    const eventSubject = subject || eventType;
+  /**
+   * Publish an `EventTuple` from one of the shared event factories, which is
+   * how every other service publishes.
+   */
+  protected async publishEventTuple([subject, payload]: [string, Uint8Array]): Promise<void> {
+    await this.publishBytes(subject, payload, { eventType: subject });
+  }
 
-    this.logger.debug("Publishing event to NATS", {
-      eventType,
-      eventId,
-      subject: eventSubject,
-    });
+  private async publishBytes(
+    subject: string,
+    payload: Uint8Array,
+    log: { eventType: string; eventId?: string }
+  ): Promise<void> {
+    if (!this.nats) {
+      this.logger.error("Cannot publish event - NATS client not available", { eventType: log.eventType });
+      throw new Error("NATS client not available");
+    }
 
-    await this.nats.publish(eventSubject, eventData);
-
-    this.logger.info("Event published successfully", {
-      eventType,
-      eventId,
-      subject: eventSubject,
-    });
+    this.logger.debug("Publishing event to NATS", { ...log, subject });
+    await this.nats.publish(subject, payload);
+    this.logger.info("Event published successfully", { ...log, subject });
   }
 
   constructor(opts: ApiOptions) {
