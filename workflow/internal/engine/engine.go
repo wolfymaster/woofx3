@@ -22,6 +22,40 @@ type EventPublisher interface {
 	Publish(event *types.Event) error
 }
 
+// RunStep is one task's outcome as the engine knows it, in engine terms only.
+//
+// Inputs are the parameters as resolved for this run, which the definition
+// cannot reproduce -- it holds the unresolved template. Outputs are the task's
+// exports, which is what later steps' `${taskId.*}` expressions read, so they
+// are what a resume has to restore.
+type RunStep struct {
+	TaskID      string
+	Status      string
+	Attempt     int
+	StepIndex   int
+	Inputs      map[string]any
+	Outputs     map[string]any
+	Error       string
+	StartedAt   time.Time
+	CompletedAt *time.Time
+}
+
+// RunRecorder persists what a run did, so it can be read back after this
+// process is gone and resumed from where it failed.
+//
+// Deliberately free of any database type: the engine is generic over its
+// services and has no notion of storage, so an implementation lives outside it
+// and decides for itself what is worth keeping -- including whether to keep
+// anything at all for a given run.
+//
+// Every method is best-effort and must not block the run. The run is the
+// product; recording it is not worth failing a workflow that otherwise worked.
+type RunRecorder interface {
+	RunStarted(applicationID string, execution *types.WorkflowExecution)
+	RunSettled(applicationID string, execution *types.WorkflowExecution)
+	StepSettled(applicationID string, execution *types.WorkflowExecution, step RunStep)
+}
+
 type AssetURLResolver interface {
 	Resolve() string
 }
@@ -37,6 +71,7 @@ type Engine[TServices any] struct {
 	subWorkflowWaiters   map[string][]*SubWorkflowWaiter // subWorkflowExecutionID -> parent executions waiting for it
 	subWorkflowWaitersMu sync.RWMutex
 	publisher            EventPublisher
+	runRecorder          RunRecorder
 	assetURLResolver     AssetURLResolver
 	logger               tasks.Logger
 	ctx                  context.Context
@@ -121,6 +156,67 @@ func (e *Engine[TServices]) RegisterAction(name string, action tasks.ActionFunc[
 func (e *Engine[TServices]) SetPublisher(publisher EventPublisher) {
 	e.publisher = publisher
 	e.registerPublishAction()
+}
+
+// SetRunRecorder wires run persistence. Optional: with none set the engine runs
+// exactly as before and keeps no history.
+func (e *Engine[TServices]) SetRunRecorder(recorder RunRecorder) {
+	e.runRecorder = recorder
+}
+
+func (e *Engine[TServices]) recordRunStarted(execution *types.WorkflowExecution) {
+	if e.runRecorder == nil {
+		return
+	}
+	e.runRecorder.RunStarted(e.resolveApplicationID(execution.WorkflowID), execution)
+}
+
+func (e *Engine[TServices]) recordRunSettled(execution *types.WorkflowExecution) {
+	if e.runRecorder == nil {
+		return
+	}
+	e.runRecorder.RunSettled(e.resolveApplicationID(execution.WorkflowID), execution)
+}
+
+// recordStep reports a task that has reached a settled state.
+//
+// Outputs come from the task's exports, falling back to its raw result data --
+// the same precedence publishTaskResultExports uses to decide what later steps
+// can see, so what is recorded matches what a resume would restore.
+//
+// Attempt is always 1: the engine does not retry a task today. The column
+// carries it so that when retries arrive, a second attempt is a new row rather
+// than an overwrite of the evidence of the first.
+func (e *Engine[TServices]) recordStep(
+	execution *types.WorkflowExecution,
+	taskID string,
+	stepIndex int,
+	inputs map[string]any,
+	taskExec *types.TaskExecution,
+) {
+	if e.runRecorder == nil || taskExec == nil {
+		return
+	}
+
+	var outputs map[string]any
+	if taskExec.Result != nil {
+		outputs = taskExec.Result.Exports
+		if outputs == nil {
+			outputs = taskExec.Result.Data
+		}
+	}
+
+	e.runRecorder.StepSettled(e.resolveApplicationID(execution.WorkflowID), execution, RunStep{
+		TaskID:      taskID,
+		Status:      string(taskExec.Status),
+		Attempt:     1,
+		StepIndex:   stepIndex,
+		Inputs:      inputs,
+		Outputs:     outputs,
+		Error:       taskExec.Error,
+		StartedAt:   taskExec.StartedAt,
+		CompletedAt: taskExec.CompletedAt,
+	})
 }
 
 // SetAssetURLResolver wires the resolver backing `${woofx3_asset_url:...}`
@@ -361,6 +457,9 @@ func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event 
 	// built already running, and a caller waiting on this run needs to know a
 	// workflow matched its event before any task has had a chance to fail.
 	e.emitRunLifecycle(execution)
+	// Recorded at the same point, so the run exists before any step references
+	// it -- step rows carry a foreign key into this one.
+	e.recordRunStarted(execution)
 
 	graph, err := NewDependencyGraph(wf.Tasks)
 	if err != nil {
@@ -409,6 +508,10 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 			now := time.Now()
 			taskExec.CompletedAt = &now
 			execution.Tasks[taskDef.ID] = taskExec
+			// Recorded rather than omitted: that a branch was not taken is part
+			// of what the run did, and a timeline with the step missing reads
+			// as though it never existed.
+			e.recordStep(execution, taskDef.ID, i, nil, taskExec)
 			e.logger.Info("Task skipped (branch not taken)", "workflow", execution.WorkflowID, "task", taskDef.ID)
 			continue
 		}
@@ -454,6 +557,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 						"reason":  "condition evaluated to false",
 					},
 				}
+				e.recordStep(execution, taskDef.ID, i, nil, taskExec)
 				e.logger.Info("Task skipped (condition false)", "workflow", execution.WorkflowID, "task", taskDef.ID)
 				continue
 			}
@@ -612,7 +716,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 			continue
 		}
 
-		result, err := e.executeTask(taskDef, execution, triggerEvent, taskExports)
+		result, params, err := e.executeTask(taskDef, execution, triggerEvent, taskExports)
 
 		now := time.Now()
 		taskExec.CompletedAt = &now
@@ -621,6 +725,9 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 		if err != nil {
 			taskExec.Status = types.TaskStatusFailed
 			taskExec.Error = err.Error()
+			// Recorded before the run is marked failed, so the step that caused
+			// the failure is already there when a reader sees the failed run.
+			e.recordStep(execution, taskDef.ID, i, params, taskExec)
 			e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 			e.logger.Error("Task failed", "workflow", execution.WorkflowID, "execution", execution.ID, "task", taskDef.ID, "error", err)
 			e.checkSubWorkflowCompletion(execution.ID)
@@ -630,6 +737,9 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 		taskExec.Status = types.TaskStatusSuccess
 
 		publishTaskResultExports(taskExports, taskDef.ID, result)
+		// After publishing exports, so the recorded outputs are the same values
+		// later steps will resolve against.
+		e.recordStep(execution, taskDef.ID, i, params, taskExec)
 
 		if result != nil && result.Data != nil {
 			e.logger.Info("Task completed", "workflow", execution.WorkflowID, "execution", execution.ID, "task", taskDef.ID, "result", result.Data)
@@ -701,6 +811,11 @@ func (e *Engine[TServices]) executeConcurrentRun(
 				Status: types.TaskStatusSkipped,
 				Data:   map[string]any{"skipped": true, "reason": "condition evaluated to false"},
 			}
+			// `i` is already the absolute position in executionOrder here --
+			// this loop runs from run.Start to run.End. The apply loop below
+			// indexes into `results` instead, which is why that one adds
+			// run.Start and this one must not.
+			e.recordStep(execution, taskDef.ID, i, nil, taskExec)
 			e.logger.Info("Task skipped (condition false)", "workflow", execution.WorkflowID, "task", taskDef.ID)
 			continue
 		}
@@ -714,7 +829,10 @@ func (e *Engine[TServices]) executeConcurrentRun(
 	type outcome struct {
 		taskDef *types.TaskDefinition
 		result  *types.TaskResult
-		err     error
+		// params is carried out of the goroutine so the step can be recorded in
+		// the ordered pass below rather than concurrently.
+		params map[string]any
+		err    error
 	}
 	results := make([]outcome, len(toRun))
 	var wg sync.WaitGroup
@@ -726,8 +844,8 @@ func (e *Engine[TServices]) executeConcurrentRun(
 			// completed before this run began -- no member of the run is
 			// referenced by another (planConcurrentRun rejects the run
 			// otherwise), so there is nothing to synchronise on the read side.
-			result, err := e.executeTask(taskDef, execution, triggerEvent, taskExports)
-			results[idx] = outcome{taskDef: taskDef, result: result, err: err}
+			result, params, err := e.executeTask(taskDef, execution, triggerEvent, taskExports)
+			results[idx] = outcome{taskDef: taskDef, result: result, params: params, err: err}
 		}(idx, taskDef)
 	}
 	wg.Wait()
@@ -744,9 +862,15 @@ func (e *Engine[TServices]) executeConcurrentRun(
 		taskExec.CompletedAt = &now
 		taskExec.Result = out.result
 
+		// run.Start + i is the task's position in the execution order. The
+		// goroutines above finish in any order; this loop is where position is
+		// still known, which is why recording belongs here and not in them.
+		stepIndex := run.Start + i
+
 		if out.err != nil {
 			taskExec.Status = types.TaskStatusFailed
 			taskExec.Error = out.err.Error()
+			e.recordStep(execution, out.taskDef.ID, stepIndex, out.params, taskExec)
 			e.logger.Error("Task failed", "workflow", execution.WorkflowID, "execution", execution.ID, "task", out.taskDef.ID, "error", out.err)
 			if firstFailure == nil {
 				firstFailure = &results[i]
@@ -756,6 +880,7 @@ func (e *Engine[TServices]) executeConcurrentRun(
 
 		taskExec.Status = types.TaskStatusSuccess
 		publishTaskResultExports(taskExports, out.taskDef.ID, out.result)
+		e.recordStep(execution, out.taskDef.ID, stepIndex, out.params, taskExec)
 		e.logger.Info("Task completed", "workflow", execution.WorkflowID, "execution", execution.ID, "task", out.taskDef.ID)
 	}
 
@@ -816,6 +941,7 @@ func (e *Engine[TServices]) setExecutionStatus(
 		execution.CompletedAt = &now
 	}
 	e.emitRunLifecycle(execution)
+	e.recordRunSettled(execution)
 }
 
 // emitRunLifecycle publishes a run's current state, correlated with whoever
@@ -1116,6 +1242,7 @@ func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, ev
 	// through setExecutionStatus either way, and a terminal event with no
 	// matching start would read as a run that ended without ever beginning.
 	e.emitRunLifecycle(execution)
+	e.recordRunStarted(execution)
 
 	// Execute in a goroutine (async)
 	go e.executeWorkflowInternal(wf, execution, event)
@@ -1244,7 +1371,13 @@ func (e *Engine[TServices]) resumeExecution(w *WaitingExecution) {
 	e.executeTasksFromIndex(execution, w.ExecutionOrder, w.CurrentIndex+1, w.TaskExports, w.TriggerEvent)
 }
 
-func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution *types.WorkflowExecution, event *types.Event, taskExports map[string]map[string]any) (*types.TaskResult, error) {
+// executeTask runs one task and returns its result alongside the parameters it
+// was resolved with.
+//
+// The resolved parameters are returned even when the task fails, and that is
+// the point: a failed step is the one where "what was this actually asked to
+// do?" matters most, and the definition only holds the unresolved template.
+func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution *types.WorkflowExecution, event *types.Event, taskExports map[string]map[string]any) (*types.TaskResult, map[string]any, error) {
 	resolver := e.buildResolver(event, taskExports)
 
 	// Diagnostic: log what the resolver will see and what it produced.
@@ -1266,7 +1399,7 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 
 	resolvedParams, err := resolver.Resolve(taskDef.Parameters)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve parameters: %w", err)
+		return nil, nil, fmt.Errorf("failed to resolve parameters: %w", err)
 	}
 
 	e.logger.Info("Resolved task parameters",
@@ -1277,12 +1410,12 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 
 	params, ok := resolvedParams.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("resolved parameters must be a map")
+		return nil, nil, fmt.Errorf("resolved parameters must be a map")
 	}
 
 	task, err := e.taskRegistry.Create(taskDef, params)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create task: %w", err)
+		return nil, params, fmt.Errorf("failed to create task: %w", err)
 	}
 
 	// Resolve the owning workflow's applicationId so action handlers can
@@ -1305,7 +1438,7 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 
 	result, err := task.Execute(taskCtx)
 	if err != nil {
-		return result, err
+		return result, params, err
 	}
 
 	if result != nil && taskDef.Exports != nil && result.Data != nil {
@@ -1320,7 +1453,7 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 		}
 	}
 
-	return result, nil
+	return result, params, nil
 }
 
 // taskExportKeys returns just the step ids that have published exports,

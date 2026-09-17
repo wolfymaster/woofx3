@@ -54,14 +54,15 @@ func (p *NATSEventPublisher) Publish(event *types.Event) error {
 
 type WorkflowApp struct {
 	*runtime.BaseApplication
-	engine         *engine.Engine[AppServices]
-	logger         tasks.Logger
-	manager        *WorkflowManager
-	natsSvc        *service.NATSService
-	barkloaderSvc  *service.BarkloaderService
-	moduleDbClient dbv1.ModuleService
-	alertDbClient  dbv1.AlertService
-	scheduleReg    *triggers.ScheduleTriggerRegistrar
+	engine           *engine.Engine[AppServices]
+	logger           tasks.Logger
+	manager          *WorkflowManager
+	natsSvc          *service.NATSService
+	barkloaderSvc    *service.BarkloaderService
+	moduleDbClient   dbv1.ModuleService
+	alertDbClient    dbv1.AlertService
+	workflowDbClient dbv1.WorkflowService
+	scheduleReg      *triggers.ScheduleTriggerRegistrar
 }
 
 func NewWorkflowApp(logger tasks.Logger) *WorkflowApp {
@@ -94,6 +95,7 @@ func (a *WorkflowApp) SetServices(
 	a.barkloaderSvc = barkloaderSvc
 	a.moduleDbClient = dbClient.Module
 	a.alertDbClient = alertClient
+	a.workflowDbClient = dbClient.Workflow
 	a.manager.SetDbClient(dbClient.Workflow)
 	a.engine.SetAssetURLResolver(NewSceneManagerURLResolver(dbClient.Setting, sceneManagerURL, a.logger))
 }
@@ -170,6 +172,16 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	publisher := NewNATSEventPublisher(natsClient, a.logger)
 	a.engine.SetPublisher(publisher)
 	a.logger.Info("Event publisher configured with NATS")
+
+	// Run history. Optional on purpose: without a db proxy the engine runs
+	// exactly as before and simply keeps no record, which is better than
+	// refusing to run workflows because their history cannot be written.
+	if a.workflowDbClient != nil {
+		a.engine.SetRunRecorder(newDBRunRecorder(a.workflowDbClient, a.logger))
+		a.logger.Info("Run recorder configured")
+	} else {
+		a.logger.Warn("No workflow db client; runs will not be recorded")
+	}
 
 	// DB-proxy workflow lifecycle events (source of truth for registry updates).
 	// Subjects come from db/app/workers/publisher.go:58 as "db.workflow.{op}.{appId}".
