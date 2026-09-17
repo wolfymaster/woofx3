@@ -46,6 +46,13 @@ export const EngineEventType = {
   WORKFLOW_RUN_STARTED: "workflow.run.started",
   WORKFLOW_RUN_COMPLETED: "workflow.run.completed",
   WORKFLOW_RUN_FAILED: "workflow.run.failed",
+  // Persisted run history, projected from the db-proxy outbox. Distinct from
+  // the three above on purpose: those are live lifecycle notifications for a
+  // caller waiting on one run, these are database rows for the history nobody
+  // was watching. Same subject prefix, different source and different fate.
+  WORKFLOW_RUN_RECORDED: "workflow.run.recorded",
+  WORKFLOW_RUN_UPDATED: "workflow.run.updated",
+  WORKFLOW_RUN_STEP_RECORDED: "workflow.run.step.recorded",
   SCENE_CREATED: "scene.created",
   SCENE_UPDATED: "scene.updated",
   SCENE_DELETED: "scene.deleted",
@@ -973,6 +980,78 @@ export interface WorkflowRunFailedEvent {
 }
 
 /**
+ * A persisted run, as the database holds it.
+ *
+ * `triggerEvent` is the originating CloudEvent verbatim, the same way
+ * AlertSnapshot.payload carries an alert envelope: opaque here, and the thing
+ * a replay re-feeds to the engine unchanged.
+ */
+export interface WorkflowRunSnapshot {
+  id: string;
+  workflowId: string;
+  applicationId: string;
+  status: string;
+  /** What caused the run ("twitch", "chat", ...). Never "dashboard": those are not recorded. */
+  triggeredBy?: string;
+  /** JSON of the originating CloudEvent. */
+  triggerEvent?: string;
+  error?: string;
+  startedAt?: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * One task's outcome within a persisted run.
+ *
+ * `inputs` is the parameters as resolved at run time, which the definition
+ * cannot reproduce; `outputs` is the task's exports, which is what later steps
+ * resolved against and therefore what a resume restores. Both are JSON strings
+ * rather than objects: they are arbitrarily nested engine values and nothing
+ * between here and the timeline needs to read inside them.
+ */
+export interface WorkflowRunStepSnapshot {
+  id: string;
+  executionId: string;
+  applicationId: string;
+  taskId: string;
+  name?: string;
+  status: string;
+  attempt: number;
+  stepIndex: number;
+  inputs?: string;
+  outputs?: string;
+  error?: string;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Fired when the engine records a run it has started. */
+export interface WorkflowRunRecordedEvent {
+  type: typeof EngineEventType.WORKFLOW_RUN_RECORDED;
+  applicationId: string;
+  run: WorkflowRunSnapshot;
+}
+
+/** Fired when a recorded run reaches its terminal state. */
+export interface WorkflowRunUpdatedEvent {
+  type: typeof EngineEventType.WORKFLOW_RUN_UPDATED;
+  applicationId: string;
+  run: WorkflowRunSnapshot;
+}
+
+/** Fired when a step within a recorded run settles. */
+export interface WorkflowRunStepRecordedEvent {
+  type: typeof EngineEventType.WORKFLOW_RUN_STEP_RECORDED;
+  applicationId: string;
+  step: WorkflowRunStepSnapshot;
+}
+
+/**
  * Fired immediately after the engine records a freshly dispatched
  * alert. Lets the UI populate its alert-log page in real time
  * without polling.
@@ -1208,6 +1287,9 @@ export type CallbackEvent =
   | WorkflowRunStartedEvent
   | WorkflowRunCompletedEvent
   | WorkflowRunFailedEvent
+  | WorkflowRunRecordedEvent
+  | WorkflowRunUpdatedEvent
+  | WorkflowRunStepRecordedEvent
   | SceneCreatedEvent
   | SceneUpdatedEvent
   | SceneDeletedEvent
@@ -1261,6 +1343,9 @@ export type CallbackEventByType = {
   [EngineEventType.WORKFLOW_RUN_STARTED]: WorkflowRunStartedEvent;
   [EngineEventType.WORKFLOW_RUN_COMPLETED]: WorkflowRunCompletedEvent;
   [EngineEventType.WORKFLOW_RUN_FAILED]: WorkflowRunFailedEvent;
+  [EngineEventType.WORKFLOW_RUN_RECORDED]: WorkflowRunRecordedEvent;
+  [EngineEventType.WORKFLOW_RUN_UPDATED]: WorkflowRunUpdatedEvent;
+  [EngineEventType.WORKFLOW_RUN_STEP_RECORDED]: WorkflowRunStepRecordedEvent;
   [EngineEventType.SCENE_CREATED]: SceneCreatedEvent;
   [EngineEventType.SCENE_UPDATED]: SceneUpdatedEvent;
   [EngineEventType.SCENE_DELETED]: SceneDeletedEvent;

@@ -57,6 +57,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { initWidgetStatusHandlers },
       { initWorkflowHandlers },
       { WorkflowRunEmitter },
+      { initWorkflowRunHandlers },
       { default: BarkloaderClient },
     ] = await Promise.all([
       import("@woofx3/nats"),
@@ -77,6 +78,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./widget-status-handlers"),
       import("./workflow-event-handlers"),
       import("./workflow-run-emitter"),
+      import("./workflow-run-handlers"),
       import("@woofx3/barkloader"),
     ]);
 
@@ -192,6 +194,10 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       await initSceneHandlers(natsClient, webhookClient, logger);
       await initAlertLogHandlers(natsClient, webhookClient, logger);
       await initWidgetStatusHandlers(natsClient, webhookClient, logger);
+      // Run history, projected from the db-proxy outbox. Distinct from
+      // WorkflowRunEmitter below, which forwards live lifecycle for a caller
+      // waiting on one run: this carries persisted rows for the history.
+      await initWorkflowRunHandlers(natsClient, webhookClient, logger);
 
       // Needs only the bus and the webhook client, so it starts here rather
       // than in the applicationId-gated block above: each run event carries
