@@ -53,20 +53,40 @@ export interface RejectedLayoutWidget {
 }
 
 /**
+ * The outcome of validating an alert step's `layout`.
+ *
+ * Carries a `reason` rather than collapsing every failure to null: an unusable
+ * layout means an alert never plays, and the operator sees only a log line. One
+ * message covering "absent", "not an object" and three separate mistyped fields
+ * leaves them nothing to act on.
+ */
+export type AlertLayoutParse =
+  | { ok: true; layout: AlertLayout; rejected: RejectedLayoutWidget[] }
+  | { ok: false; reason: string };
+
+/**
  * Validate an alert step's `layout` against the widget catalog.
  *
  * Layouts are authored by users and by module manifests, so the scene manager
  * decides what it will frame: only catalog widgets that list the alert
  * surface, each under an id unique in the layout. A widget that fails is
- * dropped and reported rather than sinking the whole alert. Returns null when
- * the layout itself is unusable.
+ * dropped and reported rather than sinking the whole alert; only an unusable
+ * layout envelope fails outright, and it says which field was wrong.
  */
-export function parseAlertLayout(
-  raw: unknown,
-  catalog: OverlayWidgetDefinition[]
-): { layout: AlertLayout; rejected: RejectedLayoutWidget[] } | null {
-  if (!isRecord(raw) || !isPositiveNumber(raw.width) || !isPositiveNumber(raw.height) || !Array.isArray(raw.widgets)) {
-    return null;
+export function parseAlertLayout(raw: unknown, catalog: OverlayWidgetDefinition[]): AlertLayoutParse {
+  // Checked one field at a time so the caller can say which one. Collapsing
+  // these into a single condition is what made a dropped alert unactionable.
+  if (!isRecord(raw)) {
+    return { ok: false, reason: `layout must be an object, got ${describe(raw)}` };
+  }
+  if (!isPositiveNumber(raw.width)) {
+    return { ok: false, reason: `layout.width must be a positive number, got ${describe(raw.width)}` };
+  }
+  if (!isPositiveNumber(raw.height)) {
+    return { ok: false, reason: `layout.height must be a positive number, got ${describe(raw.height)}` };
+  }
+  if (!Array.isArray(raw.widgets)) {
+    return { ok: false, reason: `layout.widgets must be an array, got ${describe(raw.widgets)}` };
   }
 
   const byCanonicalId = new Map(catalog.map((row) => [`${row.moduleKey}:widget:${row.manifestId}`, row]));
@@ -114,7 +134,7 @@ export function parseAlertLayout(
       settings: isRecord(w.settings) ? w.settings : {},
     });
   }
-  return { layout: { width: raw.width, height: raw.height, widgets }, rejected };
+  return { ok: true, layout: { width: raw.width, height: raw.height, widgets }, rejected };
 }
 
 /**
@@ -159,4 +179,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isPositiveNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+/**
+ * Name what arrived, for a rejection message.
+ *
+ * Quotes strings and prints numbers, because the two failures worth telling
+ * apart both look identical otherwise: a dimension serialized as `"1920"`
+ * rather than `1920`, and one that is genuinely `0`.
+ */
+function describe(value: unknown): string {
+  if (value === undefined) {
+    return "nothing";
+  }
+  if (value === null) {
+    return "null";
+  }
+  if (Array.isArray(value)) {
+    return "an array";
+  }
+  if (typeof value === "string") {
+    return `the string ${JSON.stringify(value)}`;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return `${typeof value} ${String(value)}`;
+  }
+  return typeof value;
 }

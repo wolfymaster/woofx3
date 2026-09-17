@@ -90,8 +90,8 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     const parameters =
       typeof raw.parameters === "object" && raw.parameters !== null ? (raw.parameters as Record<string, unknown>) : {};
     const parsed = parseAlertLayout(parameters.layout, await host.loadWidgetCatalog());
-    if (!parsed) {
-      logger.warn("ui.notify.alert: parameters.layout is missing or malformed; dropping", { alertId });
+    if (!parsed.ok) {
+      logger.warn("ui.notify.alert: unusable parameters.layout; dropping", { alertId, reason: parsed.reason });
       return;
     }
     if (parsed.rejected.length > 0) {
