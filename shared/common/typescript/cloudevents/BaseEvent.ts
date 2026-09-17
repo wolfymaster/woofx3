@@ -38,7 +38,12 @@ export default function Event<T>(opts: Partial<BaseEvent<T>>, data: T): BaseEven
     specversion: "1.0.0",
     type: "unknown",
     source: "unknown",
-    id: "unknown",
+    // CloudEvents makes `source` + `id` the uniqueness key, so a fixed default
+    // would leave every event from a given source indistinguishable from every
+    // other -- no consumer could dedupe, and a module reading `ctx.event.id`
+    // would see the same value forever. No factory passes an id, so generating
+    // one here is what makes the key usable at all.
+    id: crypto.randomUUID(),
     time: new Date(),
     // Before the spread, so an explicit sessionId in opts still wins. Undefined
     // drops out at JSON.stringify, so an unknown session omits the attribute
