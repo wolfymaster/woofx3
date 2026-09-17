@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
 	barkloader "github.com/wolfymaster/woofx3/clients/barkloader"
+	dbv1 "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
@@ -135,10 +137,11 @@ func NewAlertAction() tasks.ActionFunc[AppServices] {
 		if err := validateAlertParams(params); err != nil {
 			return nil, fmt.Errorf("alert cannot be published: %w", err)
 		}
-		payload, err := buildAlertEnvelope(ctx.ApplicationID, params, ctx.TriggerEvent)
+		payload, envelopeID, err := buildAlertEnvelope(ctx.ApplicationID, params, ctx.TriggerEvent)
 		if err != nil {
 			return nil, err
 		}
+		recordAlertDispatch(ctx, envelopeID, payload)
 		if err := bus.Publish("ui.notify.alert", payload); err != nil {
 			return nil, fmt.Errorf("publish ui.notify.alert: %w", err)
 		}
@@ -155,7 +158,7 @@ func NewAlertAction() tasks.ActionFunc[AppServices] {
 // Empty string is omitted from the JSON so envelopes from non-workflow
 // publishers (manual / debug / ad-hoc) round-trip cleanly without
 // stamping a misleading id.
-func buildAlertEnvelope(applicationID string, params map[string]any, event *types.Event) ([]byte, error) {
+func buildAlertEnvelope(applicationID string, params map[string]any, event *types.Event) ([]byte, string, error) {
 	// Generate a stable envelope id at publish time so every consumer
 	// (api alert log, streamware broadcaster, overlay widget) keys on
 	// the same value. Honors a caller-supplied `parameters.id` so
@@ -178,9 +181,45 @@ func buildAlertEnvelope(applicationID string, params map[string]any, event *type
 	}
 	payload, err := json.Marshal(envelope)
 	if err != nil {
-		return nil, fmt.Errorf("marshal alert envelope: %w", err)
+		return nil, "", fmt.Errorf("marshal alert envelope: %w", err)
 	}
-	return payload, nil
+	return payload, envelopeID, nil
+}
+
+// recordAlertDispatch writes the alert to the engine's alert log.
+//
+// Before the publish, not after: a consumer that refuses the alert reports
+// against this row keyed on the envelope id, and a row that does not exist yet
+// cannot be updated.
+//
+// Best-effort, and deliberately so. An alert nobody logged is worth more than
+// an alert nobody saw, so a failure here is recorded and the dispatch
+// continues — which means every consumer downstream has to tolerate a missing
+// row rather than assume one.
+func recordAlertDispatch(ctx tasks.ActionContext[AppServices], envelopeID string, payload []byte) {
+	client := ctx.Services.AlertLog()
+	if client == nil {
+		return
+	}
+
+	sourceEventID := ""
+	if ctx.TriggerEvent != nil {
+		sourceEventID = ctx.TriggerEvent.ID
+	}
+
+	_, err := client.CreateAlert(context.Background(), &dbv1.CreateAlertRequest{
+		ApplicationId: ctx.ApplicationID,
+		Payload:       string(payload),
+		// Named for the workflow, but documented as the execution that fired
+		// the alert — and the run is the value that can answer "what produced
+		// this", which the definition id cannot.
+		WorkflowId:    ctx.ExecutionID,
+		SourceEventId: sourceEventID,
+		EnvelopeId:    envelopeID,
+	})
+	if err != nil && ctx.Logger != nil {
+		ctx.Logger.Warn("alert dispatch not recorded", "envelopeId", envelopeID, "error", err)
+	}
 }
 
 // validateAlertParams rejects an alert whose `layout` cannot be framed,

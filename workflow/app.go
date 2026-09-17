@@ -60,6 +60,7 @@ type WorkflowApp struct {
 	natsSvc        *service.NATSService
 	barkloaderSvc  *service.BarkloaderService
 	moduleDbClient dbv1.ModuleService
+	alertDbClient  dbv1.AlertService
 	scheduleReg    *triggers.ScheduleTriggerRegistrar
 }
 
@@ -86,11 +87,13 @@ func (a *WorkflowApp) SetServices(
 	natsSvc *service.NATSService,
 	barkloaderSvc *service.BarkloaderService,
 	dbClient *dbv1.DbProxyClient,
+	alertClient dbv1.AlertService,
 	sceneManagerURL string,
 ) {
 	a.natsSvc = natsSvc
 	a.barkloaderSvc = barkloaderSvc
 	a.moduleDbClient = dbClient.Module
+	a.alertDbClient = alertClient
 	a.manager.SetDbClient(dbClient.Workflow)
 	a.engine.SetAssetURLResolver(NewSceneManagerURLResolver(dbClient.Setting, sceneManagerURL, a.logger))
 }
@@ -119,6 +122,10 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	})
 	registerService("messageBus", func() *natsclient.Client {
 		return natsClient
+	})
+	alertDbClient := a.alertDbClient
+	registerService("alertLog", func() dbv1.AlertService {
+		return alertDbClient
 	})
 
 	// Dynamic per-workflow trigger subscriptions: the registry drives

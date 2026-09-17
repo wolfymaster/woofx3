@@ -26,7 +26,7 @@ func TestBuildAlertEnvelope_WithTriggerEvent(t *testing.T) {
 		"mediaUrl": "https://example.com/cheer.mp4",
 	}
 
-	payload, err := buildAlertEnvelope("app-uuid-1", params, event)
+	payload, _, err := buildAlertEnvelope("app-uuid-1", params, event)
 	if err != nil {
 		t.Fatalf("buildAlertEnvelope: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestBuildAlertEnvelope_OmitsEmptyApplicationID(t *testing.T) {
 	// fallback instead of recording a row attributed to "" — which
 	// would never round-trip cleanly through the db proxy's UUID
 	// column.
-	payload, err := buildAlertEnvelope("", map[string]any{"widget": "MediaWidget"}, nil)
+	payload, _, err := buildAlertEnvelope("", map[string]any{"widget": "MediaWidget"}, nil)
 	if err != nil {
 		t.Fatalf("buildAlertEnvelope: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestBuildAlertEnvelope_NilTriggerEvent(t *testing.T) {
 		"text":   "manual fire",
 	}
 
-	payload, err := buildAlertEnvelope("", params, nil)
+	payload, _, err := buildAlertEnvelope("", params, nil)
 	if err != nil {
 		t.Fatalf("buildAlertEnvelope: %v", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	barkloader "github.com/wolfymaster/woofx3/clients/barkloader"
+	dbv1 "github.com/wolfymaster/woofx3/clients/db"
 	natsclient "github.com/wolfymaster/woofx3/clients/nats"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 )
@@ -42,6 +43,7 @@ func resolveService[T any](name string) T {
 type AppServices struct {
 	barkloader *barkloader.Client
 	messageBus *natsclient.Client
+	alertLog   dbv1.AlertService
 }
 
 func (s AppServices) Barkloader() *barkloader.Client {
@@ -52,10 +54,18 @@ func (s AppServices) MessageBus() *natsclient.Client {
 	return s.messageBus
 }
 
+// AlertLog records dispatched alerts so a consumer can report back against
+// them. Nil when the engine is running without a db proxy, which callers must
+// tolerate rather than treat as fatal: an alert is worth more than its log.
+func (s AppServices) AlertLog() dbv1.AlertService {
+	return s.alertLog
+}
+
 func buildAppServices() AppServices {
 	return AppServices{
 		barkloader: resolveService[*barkloader.Client]("barkloader"),
 		messageBus: resolveService[*natsclient.Client]("messageBus"),
+		alertLog:   resolveService[dbv1.AlertService]("alertLog"),
 	}
 }
 

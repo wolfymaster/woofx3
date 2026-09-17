@@ -66,6 +66,10 @@ func main() {
 			// Database
 			httpClient := &http.Client{}
 			dbClient := db.NewDbProxyClient(cfg.DatabaseProxyURL, httpClient)
+			// The alert service is not on DbProxyClient, which predates it.
+			// Built here rather than added to that shared aggregator, so
+			// nothing else compiling against it is disturbed for one caller.
+			alertClient := db.NewAlertServiceProtobufClient(cfg.DatabaseProxyURL, httpClient)
 			dbProxyService := service.NewDbProxyService(dbClient, true)
 			logger.Info("Database client configured", "url", cfg.DatabaseProxyURL)
 
@@ -94,7 +98,7 @@ func main() {
 			// Wire runtime services into the application now that config is loaded
 			// and the post-config services have been constructed. natsSvc was
 			// constructed pre-config in main(); the others are local to this scope.
-			app.SetServices(natsSvc, barkloaderService, dbClient, cfg.SceneManagerURL)
+			app.SetServices(natsSvc, barkloaderService, dbClient, alertClient, cfg.SceneManagerURL)
 
 			return nil
 		},
