@@ -245,6 +245,24 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
         module_tbl.set("name", invocation.module_name.clone())?;
         module_tbl.set("version", invocation.module_version.clone())?;
 
+        // `ctx.module.setSetting(key, value)` — write-through to the module's
+        // own settings store, taking effect immediately. Set directly on the
+        // table like the fields above, so the `__index` hook below never sees
+        // it: Lua consults a metatable only for keys the table lacks.
+        //
+        // The `settings` snapshot is taken once per invocation, so a value
+        // written here is not reflected back into an object the function
+        // already holds. `key` does not have to be manifest-declared.
+        let settings_client = invocation.host.settings.clone();
+        let module_id_for_set = invocation.module_id.clone();
+        let set_setting_fn = lua.create_function(move |_, (key, value): (String, String)| {
+            settings_client
+                .set(&module_id_for_set, &key, &value)
+                .map_err(mlua::Error::RuntimeError)?;
+            Ok(())
+        })?;
+        module_tbl.set("setSetting", set_setting_fn)?;
+
         // `ctx.module.settings` is fetched lazily, on first access, rather
         // than unconditionally before the function body runs — most
         // invocations never read it, and the fetch is a synchronous host
@@ -429,6 +447,10 @@ mod tests {
     struct CountingSettingsClient {
         calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
         data: std::collections::HashMap<String, serde_json::Value>,
+        /// Every `set`, as (module_id, key, value). The module id is recorded
+        /// too because a binding that passes the wrong one still looks like it
+        /// worked from inside the sandbox.
+        writes: std::sync::Arc<std::sync::Mutex<Vec<(String, String, String)>>>,
     }
 
     impl crate::host::SettingsClient for CountingSettingsClient {
@@ -439,7 +461,12 @@ mod tests {
             self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(self.data.clone())
         }
-        fn set(&self, _module_id: &str, _key: &str, _value: &str) -> Result<(), String> {
+        fn set(&self, module_id: &str, key: &str, value: &str) -> Result<(), String> {
+            self.writes.lock().expect("writes lock").push((
+                module_id.to_string(),
+                key.to_string(),
+                value.to_string(),
+            ));
             Ok(())
         }
     }
@@ -451,6 +478,7 @@ mod tests {
         host.settings = std::sync::Arc::new(CountingSettingsClient {
             calls: calls.clone(),
             data: std::collections::HashMap::new(),
+            writes: Default::default(),
         });
         let adapter = LuaAdapter::new().unwrap();
         let invocation = InvocationContext {
@@ -480,6 +508,7 @@ mod tests {
         host.settings = std::sync::Arc::new(CountingSettingsClient {
             calls: calls.clone(),
             data,
+            writes: Default::default(),
         });
         let adapter = LuaAdapter::new().unwrap();
         let invocation = InvocationContext {
@@ -502,6 +531,50 @@ mod tests {
         assert_eq!(result["a"], "secret");
         assert_eq!(result["b"], "secret");
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    // A passthrough this thin is exactly what went undetected once already: the
+    // binding was registered in the QuickJS adapter and not this one, so the
+    // same module worked in JS and hit a nil index in Lua.
+    #[test]
+    fn lua_ctx_module_set_setting_writes_through_to_the_host() {
+        let writes: std::sync::Arc<std::sync::Mutex<Vec<(String, String, String)>>> =
+            Default::default();
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut host = noop_host_context();
+        host.settings = std::sync::Arc::new(CountingSettingsClient {
+            calls: calls.clone(),
+            data: std::collections::HashMap::new(),
+            writes: writes.clone(),
+        });
+        let adapter = LuaAdapter::new().unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host,
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+        };
+        let code = r#"
+            function run(ctx)
+                ctx.module.setSetting("apiKey", "secret")
+                return { ok = true }
+            end
+        "#;
+        adapter.execute(code, "run", &invocation).unwrap();
+
+        assert_eq!(
+            *writes.lock().expect("writes lock"),
+            vec![(
+                "mymod".to_string(),
+                "apiKey".to_string(),
+                "secret".to_string()
+            )]
+        );
+        // Set directly on the table, so it must not fall through to the
+        // `__index` hook that fetches settings.
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     #[test]

@@ -110,11 +110,16 @@
 ---belongs to. `settings` has one key per `module_settings` row
 ---registered for this module, coerced to string/number/boolean based
 ---on each setting's declared type.
+---
+---`setSetting` writes one immediately. Values go in as strings, and
+---`settings` is a snapshot taken once per invocation, so a value written
+---mid-invocation is not reflected back into it.
 ---@class CtxModule
 ---@field id string             manifest-local module id
 ---@field name string           display name from the manifest
 ---@field version string        semver string from the manifest
 ---@field settings table<string, string|number|boolean>
+---@field setSetting fun(key: string, value: string): nil
 
 ---@class CtxTwitchExtension
 ---@field clip fun(args?: any): nil

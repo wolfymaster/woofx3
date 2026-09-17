@@ -213,6 +213,17 @@ export interface CtxModule {
   /** Semver string from the manifest. */
   version: string;
   settings: Record<string, string | number | boolean>;
+  /**
+   * Write one of this module's settings. Takes effect immediately.
+   *
+   * Values are written as strings, while `settings` above reads back
+   * `string` / `number` / `boolean` coerced from each setting's declared type.
+   * `settings` is also a snapshot taken once per invocation, so a value written
+   * here is not reflected back into the object already handed to the function.
+   *
+   * The key does not have to be declared in the manifest.
+   */
+  setSetting(key: string, value: string): void;
 }
 
 // ── Extensions ──────────────────────────────────────────────────────

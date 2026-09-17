@@ -63,7 +63,7 @@ v0.1.0):
 | `ctx.http` | `request(url, method, opts?)` |
 | `ctx.env` | `get(key)` |
 | `ctx.resources` | `create(kind, instanceId, displayName?)`, `delete(canonicalId)`, `list(kind)` |
-| `ctx.module` | `id`, `name`, `version` (invoking module's identity), `settings` (resolved `module_settings` values — see [Module-level settings](./modules.md#module-level-settings-settings)) |
+| `ctx.module` | `id`, `name`, `version` (invoking module's identity), `settings` (resolved `module_settings` values — see [Module-level settings](./modules.md#module-level-settings-settings)), `setSetting(key, value)` |
 | `ctx.log` | `info(value)`, `warn(value)`, `error(value)` — forwards to the host's log, prefixed with the module id. No `console` global exists in this sandbox; this is the only way to emit a log line. |
 | `ctx.twitch?` | `clip(args?)`, `timeout(args)`, `updateStream(args)`, `addModerator(args)` |
 | `ctx.chat?` | `sendMessage(text)` |
