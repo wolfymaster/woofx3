@@ -92,6 +92,13 @@ pub struct WorkflowExecution {
     /// Execution details for each step
     #[prost(message, repeated, tag="13")]
     pub steps: ::prost::alloc::vec::Vec<ExecutionStep>,
+    /// The CloudEvent the run started from, verbatim. What a replay re-feeds to
+    /// the engine, so `${trigger.*}` resolves exactly as it did the first time.
+    #[prost(string, tag="14")]
+    pub trigger_event_json: ::prost::alloc::string::String,
+    /// What caused the run ("twitch", "chat", ...).
+    #[prost(string, tag="15")]
+    pub triggered_by: ::prost::alloc::string::String,
 }
 /// Execution details for a single step.
 ///

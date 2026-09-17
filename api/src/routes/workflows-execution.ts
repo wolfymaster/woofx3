@@ -1,6 +1,6 @@
-import { routeModule } from "./context";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import * as protoscript from "protoscript";
+import { routeModule } from "./context";
 
 export const workflowsExecutionRoutes = routeModule({
   async getAvailableWorkflows(): Promise<{
@@ -152,6 +152,49 @@ export const workflowsExecutionRoutes = routeModule({
       message: `Requested a run of "${foundWorkflow.name}"`,
       triggerId: correlationId,
     };
+  },
+
+  /**
+   * Run a recorded workflow run again: the whole run, or from one of its steps.
+   *
+   * Reads the run from the db proxy, which is the record of what happened, and
+   * hands the engine what it needs to reproduce it -- the original trigger event
+   * and each step's recorded outcome. Whether the replay can run is the
+   * engine's decision: it checks the resume step still exists in the current
+   * definition and that every step before it succeeded, and announces a refusal
+   * as a failed run against `triggerId`. So this returns once the request is on
+   * the bus rather than waiting to learn the outcome.
+   */
+  async replayWorkflowRun(
+    engineRunId: string,
+    fromTaskId?: string,
+    triggerId?: string,
+    triggeredBy?: string
+  ): Promise<{ triggerId: string }> {
+    const run = await this.db.getWorkflowExecution({ id: engineRunId });
+    const correlationId = triggerId || crypto.randomUUID();
+
+    await this.publishEvent(
+      "workflow.replay",
+      {
+        workflowId: run.workflowId,
+        triggerEvent: run.triggerEventJson,
+        fromTaskId: fromTaskId ?? "",
+        steps: (run.steps ?? []).map((step) => ({
+          taskId: step.stepId,
+          status: step.status,
+          attempt: step.attempt,
+          outputs: step.outputsJson,
+        })),
+      },
+      undefined,
+      undefined,
+      "api",
+      { triggerId: correlationId, triggeredBy }
+    );
+
+    this.logger.info("Workflow run replay requested", { engineRunId, fromTaskId, triggerId: correlationId });
+    return { triggerId: correlationId };
   },
 
   /**

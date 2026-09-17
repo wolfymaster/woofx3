@@ -3491,6 +3491,12 @@ impl serde::Serialize for WorkflowExecution {
         if !self.steps.is_empty() {
             len += 1;
         }
+        if !self.trigger_event_json.is_empty() {
+            len += 1;
+        }
+        if !self.triggered_by.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("workflow.WorkflowExecution", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -3531,6 +3537,12 @@ impl serde::Serialize for WorkflowExecution {
         if !self.steps.is_empty() {
             struct_ser.serialize_field("steps", &self.steps)?;
         }
+        if !self.trigger_event_json.is_empty() {
+            struct_ser.serialize_field("triggerEventJson", &self.trigger_event_json)?;
+        }
+        if !self.triggered_by.is_empty() {
+            struct_ser.serialize_field("triggeredBy", &self.triggered_by)?;
+        }
         struct_ser.end()
     }
 }
@@ -3561,6 +3573,10 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
             "updated_at",
             "updatedAt",
             "steps",
+            "trigger_event_json",
+            "triggerEventJson",
+            "triggered_by",
+            "triggeredBy",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -3578,6 +3594,8 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
             CreatedAt,
             UpdatedAt,
             Steps,
+            TriggerEventJson,
+            TriggeredBy,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -3612,6 +3630,8 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
                             "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
                             "updatedAt" | "updated_at" => Ok(GeneratedField::UpdatedAt),
                             "steps" => Ok(GeneratedField::Steps),
+                            "triggerEventJson" | "trigger_event_json" => Ok(GeneratedField::TriggerEventJson),
+                            "triggeredBy" | "triggered_by" => Ok(GeneratedField::TriggeredBy),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -3644,6 +3664,8 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
                 let mut created_at__ = None;
                 let mut updated_at__ = None;
                 let mut steps__ = None;
+                let mut trigger_event_json__ = None;
+                let mut triggered_by__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -3728,6 +3750,18 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
                             }
                             steps__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::TriggerEventJson => {
+                            if trigger_event_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("triggerEventJson"));
+                            }
+                            trigger_event_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::TriggeredBy => {
+                            if triggered_by__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("triggeredBy"));
+                            }
+                            triggered_by__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(WorkflowExecution {
@@ -3744,6 +3778,8 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
                     created_at: created_at__,
                     updated_at: updated_at__,
                     steps: steps__.unwrap_or_default(),
+                    trigger_event_json: trigger_event_json__.unwrap_or_default(),
+                    triggered_by: triggered_by__.unwrap_or_default(),
                 })
             }
         }

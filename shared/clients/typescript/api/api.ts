@@ -1096,6 +1096,20 @@ export interface Woofx3EngineApi {
     triggeredBy?: string
   ): Promise<TriggerWorkflowResponse>;
 
+  /**
+   * Run a recorded workflow run again, whole or from `fromTaskId`.
+   *
+   * Returns once the request is on the bus. The replay's progress -- or the
+   * engine's reason for refusing it -- is reported against `triggerId` on the
+   * `workflow.run.*` events.
+   */
+  replayWorkflowRun(
+    engineRunId: string,
+    fromTaskId?: string,
+    triggerId?: string,
+    triggeredBy?: string
+  ): Promise<{ triggerId: string }>;
+
   // Dashboard
   getDashboardStats(): Promise<DashboardStats>;
 

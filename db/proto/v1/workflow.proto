@@ -105,6 +105,11 @@ message WorkflowExecution {
     google.protobuf.Timestamp created_at = 11;
     google.protobuf.Timestamp updated_at = 12;
     repeated ExecutionStep steps = 13;  // Execution details for each step
+    // The CloudEvent the run started from, verbatim. What a replay re-feeds to
+    // the engine, so `${trigger.*}` resolves exactly as it did the first time.
+    string trigger_event_json = 14;
+    // What caused the run ("twitch", "chat", ...).
+    string triggered_by = 15;
 }
 
 // Execution details for a single step.

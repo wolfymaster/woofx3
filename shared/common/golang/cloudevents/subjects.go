@@ -41,6 +41,11 @@ const (
 	// Workflow events
 	SubjectWorkflowExecute Subject = "workflow.execute"
 
+	// Run a recorded run again, whole or from one of its steps. Carries the
+	// original trigger event and the recorded step outcomes, published by the
+	// api after reading them from the db proxy.
+	SubjectWorkflowReplay Subject = "workflow.replay"
+
 	// Workflow run lifecycle, emitted by the engine as a run starts and as it
 	// settles. Each carries the triggering event's `triggerId` unchanged, which
 	// is the only thing joining a run back to whoever asked for it: the run

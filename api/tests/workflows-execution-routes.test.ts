@@ -148,3 +148,94 @@ describe("triggerWorkflowByName", () => {
     expect(published[0]?.data.inputs).toEqual({ user: "wolfy" });
   });
 });
+
+describe("replayWorkflowRun", () => {
+  type ReplayPublished = {
+    eventType: string;
+    data: {
+      workflowId: string;
+      triggerEvent: string;
+      fromTaskId: string;
+      steps: Array<{ taskId: string; status: string; attempt: number; outputs: string }>;
+    };
+    correlation?: { triggerId?: string; triggeredBy?: string };
+  };
+
+  function setupReplay() {
+    const published: ReplayPublished[] = [];
+    const lookups: string[] = [];
+    const ctx = {
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      db: {
+        async getWorkflowExecution(req: { id: string }) {
+          lookups.push(req.id);
+          return {
+            id: req.id,
+            workflowId: "wf-1",
+            triggerEventJson: '{"id":"ev-1","type":"channel.follow"}',
+            steps: [
+              { stepId: "fetch", status: "success", attempt: 1, outputsJson: '{"user":"x"}' },
+              { stepId: "alert", status: "failed", attempt: 1, outputsJson: "{}" },
+            ],
+          };
+        },
+      },
+      async publishEvent(
+        eventType: string,
+        data: ReplayPublished["data"],
+        _subject?: string,
+        _platform?: string,
+        _source?: string,
+        correlation?: { triggerId?: string; triggeredBy?: string }
+      ) {
+        published.push({ eventType, data, correlation });
+      },
+    };
+    const route = workflowsExecutionRoutes.replayWorkflowRun as unknown as (
+      engineRunId: string,
+      fromTaskId?: string,
+      triggerId?: string,
+      triggeredBy?: string
+    ) => Promise<{ triggerId: string }>;
+    return { published, lookups, replay: (...args: Parameters<typeof route>) => route.call(ctx, ...args) };
+  }
+
+  // The db proxy is the record of what happened, so the replay is built from
+  // it rather than from whatever the dashboard happens to hold.
+  test("reads the run from the db proxy", async () => {
+    const { replay, lookups } = setupReplay();
+    await replay("run-1");
+    expect(lookups).toEqual(["run-1"]);
+  });
+
+  test("publishes the original trigger event and the recorded step outcomes", async () => {
+    const { replay, published } = setupReplay();
+    await replay("run-1", "alert", "corr-1", "dashboard");
+
+    expect(published).toHaveLength(1);
+    const [message] = published;
+    expect(message?.eventType).toBe("workflow.replay");
+    expect(message?.data.workflowId).toBe("wf-1");
+    expect(message?.data.triggerEvent).toBe('{"id":"ev-1","type":"channel.follow"}');
+    expect(message?.data.fromTaskId).toBe("alert");
+    expect(message?.data.steps).toEqual([
+      { taskId: "fetch", status: "success", attempt: 1, outputs: '{"user":"x"}' },
+      { taskId: "alert", status: "failed", attempt: 1, outputs: "{}" },
+    ]);
+    expect(message?.correlation).toEqual({ triggerId: "corr-1", triggeredBy: "dashboard" });
+  });
+
+  // An empty resume step means the whole run; the engine reads it that way.
+  test("replays the whole run when no step is named", async () => {
+    const { replay, published } = setupReplay();
+    await replay("run-1");
+    expect(published[0]?.data.fromTaskId).toBe("");
+  });
+
+  test("mints a correlation id when the caller supplies none", async () => {
+    const { replay, published } = setupReplay();
+    const result = await replay("run-1");
+    expect(result.triggerId).not.toBe("");
+    expect(published[0]?.correlation?.triggerId).toBe(result.triggerId);
+  });
+});

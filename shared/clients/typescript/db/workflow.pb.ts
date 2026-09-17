@@ -85,6 +85,15 @@ export interface WorkflowExecution {
   createdAt: protoscript.Timestamp;
   updatedAt: protoscript.Timestamp;
   steps: ExecutionStep[];
+  /**
+   * The CloudEvent the run started from, verbatim. What a replay re-feeds to
+   * the engine, so `${trigger.*}` resolves exactly as it did the first time.
+   */
+  triggerEventJson: string;
+  /**
+   * What caused the run ("twitch", "chat", ...).
+   */
+  triggeredBy: string;
 }
 
 export declare namespace WorkflowExecution {
@@ -1321,6 +1330,8 @@ export const WorkflowExecution = {
       createdAt: protoscript.Timestamp.initialize(),
       updatedAt: protoscript.Timestamp.initialize(),
       steps: [],
+      triggerEventJson: "",
+      triggeredBy: "",
       ...msg,
     };
   },
@@ -1405,6 +1416,12 @@ export const WorkflowExecution = {
         ExecutionStep._writeMessage,
       );
     }
+    if (msg.triggerEventJson) {
+      writer.writeString(14, msg.triggerEventJson);
+    }
+    if (msg.triggeredBy) {
+      writer.writeString(15, msg.triggeredBy);
+    }
     return writer;
   },
 
@@ -1477,6 +1494,14 @@ export const WorkflowExecution = {
           const m = ExecutionStep.initialize();
           reader.readMessage(m, ExecutionStep._readMessage);
           msg.steps.push(m);
+          break;
+        }
+        case 14: {
+          msg.triggerEventJson = reader.readString();
+          break;
+        }
+        case 15: {
+          msg.triggeredBy = reader.readString();
           break;
         }
         default: {
@@ -4094,6 +4119,8 @@ export const WorkflowExecutionJSON = {
       createdAt: protoscript.TimestampJSON.initialize(),
       updatedAt: protoscript.TimestampJSON.initialize(),
       steps: [],
+      triggerEventJson: "",
+      triggeredBy: "",
       ...msg,
     };
   },
@@ -4159,6 +4186,12 @@ export const WorkflowExecutionJSON = {
     }
     if (msg.steps?.length) {
       json["steps"] = msg.steps.map(ExecutionStepJSON._writeMessage);
+    }
+    if (msg.triggerEventJson) {
+      json["triggerEventJson"] = msg.triggerEventJson;
+    }
+    if (msg.triggeredBy) {
+      json["triggeredBy"] = msg.triggeredBy;
     }
     return json;
   },
@@ -4235,6 +4268,15 @@ export const WorkflowExecutionJSON = {
         ExecutionStepJSON._readMessage(m, item);
         msg.steps.push(m);
       }
+    }
+    const _triggerEventJson_ =
+      json["triggerEventJson"] ?? json["trigger_event_json"];
+    if (_triggerEventJson_) {
+      msg.triggerEventJson = _triggerEventJson_;
+    }
+    const _triggeredBy_ = json["triggeredBy"] ?? json["triggered_by"];
+    if (_triggeredBy_) {
+      msg.triggeredBy = _triggeredBy_;
     }
     return msg;
   },

@@ -232,6 +232,11 @@ type WorkflowExecution struct {
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	Steps         []*ExecutionStep       `protobuf:"bytes,13,rep,name=steps,proto3" json:"steps,omitempty"` // Execution details for each step
+	// The CloudEvent the run started from, verbatim. What a replay re-feeds to
+	// the engine, so `${trigger.*}` resolves exactly as it did the first time.
+	TriggerEventJson string `protobuf:"bytes,14,opt,name=trigger_event_json,json=triggerEventJson,proto3" json:"trigger_event_json,omitempty"`
+	// What caused the run ("twitch", "chat", ...).
+	TriggeredBy   string `protobuf:"bytes,15,opt,name=triggered_by,json=triggeredBy,proto3" json:"triggered_by,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -355,6 +360,20 @@ func (x *WorkflowExecution) GetSteps() []*ExecutionStep {
 		return x.Steps
 	}
 	return nil
+}
+
+func (x *WorkflowExecution) GetTriggerEventJson() string {
+	if x != nil {
+		return x.TriggerEventJson
+	}
+	return ""
+}
+
+func (x *WorkflowExecution) GetTriggeredBy() string {
+	if x != nil {
+		return x.TriggeredBy
+	}
+	return ""
 }
 
 // Execution details for a single step.
@@ -1942,7 +1961,7 @@ const file_workflow_proto_rawDesc = "" +
 	"\x0eVariablesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x05\x10\x06J\x04\b\a\x10\bR\n" +
-	"created_byR\x05steps\"\xd3\x05\n" +
+	"created_byR\x05steps\"\xa4\x06\n" +
 	"\x11WorkflowExecution\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
@@ -1962,7 +1981,9 @@ const file_workflow_proto_rawDesc = "" +
 	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12-\n" +
-	"\x05steps\x18\r \x03(\v2\x17.workflow.ExecutionStepR\x05steps\x1a9\n" +
+	"\x05steps\x18\r \x03(\v2\x17.workflow.ExecutionStepR\x05steps\x12,\n" +
+	"\x12trigger_event_json\x18\x0e \x01(\tR\x10triggerEventJson\x12!\n" +
+	"\ftriggered_by\x18\x0f \x01(\tR\vtriggeredBy\x1a9\n" +
 	"\vInputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a:\n" +

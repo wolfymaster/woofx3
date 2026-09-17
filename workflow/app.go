@@ -205,6 +205,12 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 		a.logger.Error("Failed to subscribe to workflow execute events", "error", err)
 	}
 
+	if _, err := natsClient.Subscribe(string(cloudevents.SubjectWorkflowReplay), func(msg natsclient.Msg) {
+		a.handleWorkflowReplayEvent(msg)
+	}); err != nil {
+		a.logger.Error("Failed to subscribe to workflow replay events", "error", err)
+	}
+
 	appServices := buildAppServices()
 
 	// Register the engine's built-in action handlers. The handler name
@@ -317,6 +323,82 @@ func (a *WorkflowApp) handleWorkflowExecuteEvent(msg natsclient.Msg) {
 			"trigger_id", event.TriggerID,
 			"error", err)
 	}
+}
+
+// replayMessage asks for a recorded run to run again.
+//
+// Decoded into a typed shape rather than through validateCloudEvent: its data is
+// a structured request, not an event any workflow reads, and the trigger event
+// and step outcomes inside it are what the replay is built from.
+type replayMessage struct {
+	ID          string `json:"id"`
+	TriggerID   string `json:"triggerId"`
+	TriggeredBy string `json:"triggeredBy"`
+	Data        struct {
+		WorkflowID   string `json:"workflowId"`
+		TriggerEvent string `json:"triggerEvent"`
+		FromTaskID   string `json:"fromTaskId"`
+		Steps        []struct {
+			TaskID  string `json:"taskId"`
+			Status  string `json:"status"`
+			Attempt int    `json:"attempt"`
+			Outputs string `json:"outputs"`
+		} `json:"steps"`
+	} `json:"data"`
+}
+
+// handleWorkflowReplayEvent runs a recorded run again. The engine decides
+// whether the replay can run and announces a refusal itself, so a rejected
+// replay is not logged a second time here.
+func (a *WorkflowApp) handleWorkflowReplayEvent(msg natsclient.Msg) {
+	var message replayMessage
+	if err := json.Unmarshal(msg.Data(), &message); err != nil {
+		a.logger.Error("Invalid workflow replay event", "error", err, "subject", msg.Subject())
+		return
+	}
+	if message.Data.WorkflowID == "" {
+		a.logger.Error("Workflow replay event names no workflow", "event_id", message.ID)
+		return
+	}
+
+	req := engine.ReplayRequest{
+		WorkflowID:  message.Data.WorkflowID,
+		FromTaskID:  message.Data.FromTaskID,
+		TriggerID:   message.TriggerID,
+		TriggeredBy: message.TriggeredBy,
+	}
+
+	if message.Data.TriggerEvent != "" {
+		var event types.Event
+		if err := json.Unmarshal([]byte(message.Data.TriggerEvent), &event); err != nil {
+			// Left nil rather than dropping the request: the engine refuses a
+			// replay with no trigger event and says why, which the caller sees.
+			a.logger.Warn("Recorded trigger event unreadable", "workflow_id", req.WorkflowID, "error", err)
+		} else {
+			req.TriggerEvent = &event
+		}
+	}
+
+	for _, step := range message.Data.Steps {
+		var outputs map[string]any
+		if step.Outputs != "" {
+			if err := json.Unmarshal([]byte(step.Outputs), &outputs); err != nil {
+				a.logger.Warn("Recorded step outputs unreadable", "task", step.TaskID, "error", err)
+			}
+		}
+		req.Steps = append(req.Steps, engine.ReplayStep{
+			TaskID:  step.TaskID,
+			Status:  step.Status,
+			Attempt: step.Attempt,
+			Outputs: outputs,
+		})
+	}
+
+	a.logger.Info("Replay requested",
+		"workflow_id", req.WorkflowID,
+		"from_task", req.FromTaskID,
+		"trigger_id", req.TriggerID)
+	_ = a.engine.Replay(req)
 }
 
 // validateCloudEvent validates that incoming data conforms to CloudEvents spec

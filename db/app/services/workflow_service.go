@@ -746,19 +746,21 @@ func (s *workflowService) executionToProto(exec *models.WorkflowExecution) *clie
 	}
 
 	return &client.WorkflowExecution{
-		Id:            exec.ID.String(),
-		WorkflowId:    exec.WorkflowID.String(),
-		Status:        string(exec.Status),
-		StartedBy:     exec.UserID.String(),
-		ApplicationId: exec.ApplicationID.String(),
-		Inputs:        inputs,
-		Outputs:       outputs,
-		Error:         exec.Error,
-		StartedAt:     startedAt,
-		CompletedAt:   completedAt,
-		CreatedAt:     createdAt,
-		UpdatedAt:     updatedAt,
-		Steps:         s.executionSteps(exec.ID),
+		Id:               exec.ID.String(),
+		WorkflowId:       exec.WorkflowID.String(),
+		Status:           string(exec.Status),
+		StartedBy:        exec.UserID.String(),
+		ApplicationId:    exec.ApplicationID.String(),
+		Inputs:           inputs,
+		Outputs:          outputs,
+		Error:            exec.Error,
+		StartedAt:        startedAt,
+		CompletedAt:      completedAt,
+		CreatedAt:        createdAt,
+		UpdatedAt:        updatedAt,
+		Steps:            s.executionSteps(exec.ID),
+		TriggerEventJson: exec.TriggerEvent,
+		TriggeredBy:      exec.TriggeredBy,
 	}
 }
 
