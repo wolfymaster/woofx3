@@ -92,6 +92,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     const parsed = parseAlertLayout(parameters.layout, await host.loadWidgetCatalog());
     if (!parsed.ok) {
       logger.warn("ui.notify.alert: unusable parameters.layout; dropping", { alertId, reason: parsed.reason });
+      await reportAlertNotPlayed(db, logger, { applicationId, alertId, reason: parsed.reason });
       return;
     }
     if (parsed.rejected.length > 0) {
@@ -101,7 +102,15 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       });
     }
     if (parsed.layout.widgets.length === 0) {
-      logger.warn("ui.notify.alert: layout has no widgets to play; dropping", { alertId });
+      // An empty layout is nearly always the consequence of the rejections
+      // above, so the reason carries them: "the layout contains no widgets" on
+      // its own sends the operator back to look for what it already knows.
+      const reason =
+        parsed.rejected.length > 0
+          ? `no widget in the layout can play in an alert: ${parsed.rejected.map((r) => r.reason).join("; ")}`
+          : "the layout contains no widgets";
+      logger.warn("ui.notify.alert: layout has no widgets to play; dropping", { alertId, reason });
+      await reportAlertNotPlayed(db, logger, { applicationId, alertId, reason });
       return;
     }
     const eventType = typeof raw.event?.type === "string" ? raw.event.type : "";
@@ -110,7 +119,10 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       layout: parsed.layout,
       event: eventType ? { type: eventType, data: raw.event?.data ?? null } : null,
     };
-    await fanOutAlert({ applicationId, target: alertTarget(parameters), delivery }, { host, deliveryStore, logger });
+    await fanOutAlert(
+      { applicationId, target: alertTarget(parameters), delivery },
+      { db, host, deliveryStore, logger }
+    );
   });
   logger.info("Subscribed to ui.notify.alert");
 
@@ -172,6 +184,53 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
 }
 
 /**
+ * The slice of the db client `reportAlertNotPlayed` needs. Declared
+ * structurally so a caller — or a test — does not have to stand up the other
+ * fourteen methods to report one outcome. The real `DbClient` satisfies it.
+ */
+interface AlertLifecycleWriter {
+  updateAlertLifecycle(req: {
+    applicationId: string;
+    envelopeId: string;
+    status: string;
+    error: string;
+  }): Promise<unknown>;
+}
+
+/**
+ * Record that an alert will not play, against the row the engine wrote as it
+ * published.
+ *
+ * Reported rather than only logged because the operator who fired the alert is
+ * not reading this service's log — and from the browser an alert that was
+ * refused is indistinguishable from one that was never sent.
+ *
+ * Swallows its own failure at debug. The engine's row is best-effort, so an
+ * alert published without one answers NOT_FOUND, which is the expected case and
+ * not worth a warning; the refusal itself has already been logged by the
+ * caller. Throwing here would kill the subscription over a bookkeeping miss.
+ */
+export async function reportAlertNotPlayed(
+  db: AlertLifecycleWriter,
+  logger: Logger,
+  alert: { applicationId: string; alertId: string; reason: string }
+): Promise<void> {
+  try {
+    await db.updateAlertLifecycle({
+      applicationId: alert.applicationId,
+      envelopeId: alert.alertId,
+      status: "failed",
+      error: alert.reason,
+    });
+  } catch (err) {
+    logger.debug("ui.notify.alert: refusal not recorded", {
+      alertId: alert.alertId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
  * Fan-out targeting: for every scene currently holding an open SSE
  * connection, deliver the alert to each alert widget answering to the
  * step's target name. Only running scenes are considered, which is what
@@ -180,9 +239,9 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
  */
 async function fanOutAlert(
   alert: { applicationId: string; target: string; delivery: AlertDelivery },
-  deps: { host: OverlayHost; deliveryStore: DeliveryStore; logger: Logger }
+  deps: { db: DbClient; host: OverlayHost; deliveryStore: DeliveryStore; logger: Logger }
 ): Promise<void> {
-  const { host, deliveryStore, logger } = deps;
+  const { db, host, deliveryStore, logger } = deps;
   const connectedSceneIds = deliveryStore.connectedSceneIds();
   let recorded = 0;
   for (const sceneId of connectedSceneIds) {
@@ -215,11 +274,21 @@ async function fanOutAlert(
   // widget name is easy to spot. Alert volume is low enough that one
   // line per undelivered alert is not spam.
   if (recorded === 0) {
+    const reason = `no alert widget named ${JSON.stringify(alert.target)} on a running scene`;
     logger.warn("alert matched no alert widget on a running scene; nothing delivered", {
       target: alert.target,
       alertId: alert.delivery.alertId,
       applicationId: alert.applicationId,
       connectedScenes: connectedSceneIds.length,
+    });
+    // Nothing was wrong with this alert — it was correct and nobody was
+    // listening. Reported all the same, because "it didn't appear" is the
+    // question being asked, and a misspelled target name looks identical to a
+    // scene nobody opened.
+    await reportAlertNotPlayed(db, logger, {
+      applicationId: alert.applicationId,
+      alertId: alert.delivery.alertId,
+      reason,
     });
   }
 }
