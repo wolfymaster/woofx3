@@ -30,11 +30,11 @@ func NewStorageService(db *badger.DB) *storageService {
 // storedItem is the JSON envelope persisted in badger. Mirrors StorageItem
 // minus the fields already implied by the badger key (key, application_id).
 type storedItem struct {
-	Value            string `json:"value"`
-	CreatedAt        int64  `json:"createdAt"`
-	ExpiresAt        int64  `json:"expiresAt"`
-	Namespace        string `json:"namespace"`
-	ClearOnStreamEnd bool   `json:"clearOnStreamEnd"`
+	Value             string `json:"value"`
+	CreatedAt         int64  `json:"createdAt"`
+	ExpiresAt         int64  `json:"expiresAt"`
+	Namespace         string `json:"namespace"`
+	ClearOnSessionEnd bool   `json:"clearOnSessionEnd"`
 }
 
 func storageKey(applicationID, key string) []byte {
@@ -82,13 +82,13 @@ func (s *storageService) Get(ctx context.Context, req *client.GetRequest) (*clie
 
 	return &client.GetResponse{
 		Item: &client.StorageItem{
-			Key:              req.Key,
-			Value:            item.Value,
-			CreatedAt:        item.CreatedAt,
-			ExpiresAt:        item.ExpiresAt,
-			Namespace:        item.Namespace,
-			ApplicationId:    req.ApplicationId,
-			ClearOnStreamEnd: item.ClearOnStreamEnd,
+			Key:               req.Key,
+			Value:             item.Value,
+			CreatedAt:         item.CreatedAt,
+			ExpiresAt:         item.ExpiresAt,
+			Namespace:         item.Namespace,
+			ApplicationId:     req.ApplicationId,
+			ClearOnSessionEnd: item.ClearOnSessionEnd,
 		},
 	}, nil
 }
@@ -107,11 +107,11 @@ func (s *storageService) Set(ctx context.Context, req *client.SetRequest) (*clie
 	// created_at is server-authoritative — callers (the sandbox `ctx.storage`
 	// binding) have no way to set it meaningfully today.
 	encoded, err := json.Marshal(storedItem{
-		Value:            req.Item.Value,
-		CreatedAt:        time.Now().Unix(),
-		ExpiresAt:        req.Item.ExpiresAt,
-		Namespace:        req.Item.Namespace,
-		ClearOnStreamEnd: req.Item.ClearOnStreamEnd,
+		Value:             req.Item.Value,
+		CreatedAt:         time.Now().Unix(),
+		ExpiresAt:         req.Item.ExpiresAt,
+		Namespace:         req.Item.Namespace,
+		ClearOnSessionEnd: req.Item.ClearOnSessionEnd,
 	})
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("encode storage item: %w", err))
@@ -147,13 +147,14 @@ func (s *storageService) Delete(ctx context.Context, req *client.DeleteRequest) 
 	return &client.DeleteResponse{}, nil
 }
 
-// deleteWhere scans every key under the application's prefix and deletes
-// the ones `shouldDelete` accepts. Shared by ClearNamespace / ClearExpired /
-// ClearAllForApplication — none of these are hot-path operations, so a
-// full per-application scan (rather than a secondary index) keeps this
-// simple.
-func (s *storageService) deleteWhere(applicationID string, shouldDelete func(item storedItem) bool) error {
-	return s.db.Update(func(txn *badger.Txn) error {
+// deleteWhere scans every key under the application's prefix, deletes the ones
+// `shouldDelete` accepts, and reports how many went. Shared by ClearNamespace /
+// ClearExpired / ClearAllForApplication / ClearSessionScoped — none of these
+// are hot-path operations, so a full per-application scan (rather than a
+// secondary index) keeps this simple.
+func (s *storageService) deleteWhere(applicationID string, shouldDelete func(item storedItem) bool) (int, error) {
+	deleted := 0
+	err := s.db.Update(func(txn *badger.Txn) error {
 		prefix := []byte(applicationID + "\x00")
 		opts := badger.DefaultIteratorOptions
 		opts.Prefix = prefix
@@ -181,15 +182,20 @@ func (s *storageService) deleteWhere(applicationID string, shouldDelete func(ite
 				return err
 			}
 		}
+		deleted = len(keysToDelete)
 		return nil
 	})
+	if err != nil {
+		return 0, err
+	}
+	return deleted, nil
 }
 
 func (s *storageService) ClearNamespace(ctx context.Context, req *client.ClearNamespaceRequest) (*client.ClearNamespaceResponse, error) {
 	if strings.TrimSpace(req.ApplicationId) == "" {
 		return nil, twirp.RequiredArgumentError("application_id")
 	}
-	err := s.deleteWhere(req.ApplicationId, func(item storedItem) bool {
+	_, err := s.deleteWhere(req.ApplicationId, func(item storedItem) bool {
 		return item.Namespace == req.Namespace
 	})
 	if err != nil {
@@ -202,7 +208,7 @@ func (s *storageService) ClearExpired(ctx context.Context, req *client.ClearExpi
 	if strings.TrimSpace(req.ApplicationId) == "" {
 		return nil, twirp.RequiredArgumentError("application_id")
 	}
-	err := s.deleteWhere(req.ApplicationId, func(item storedItem) bool {
+	_, err := s.deleteWhere(req.ApplicationId, func(item storedItem) bool {
 		return isExpired(item.ExpiresAt)
 	})
 	if err != nil {
@@ -215,11 +221,30 @@ func (s *storageService) ClearAllForApplication(ctx context.Context, req *client
 	if strings.TrimSpace(req.ApplicationId) == "" {
 		return nil, twirp.RequiredArgumentError("application_id")
 	}
-	err := s.deleteWhere(req.ApplicationId, func(storedItem) bool {
+	_, err := s.deleteWhere(req.ApplicationId, func(storedItem) bool {
 		return true
 	})
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("clear all for application: %w", err))
 	}
 	return &client.ClearAllForApplicationResponse{}, nil
+}
+
+// ClearSessionScoped drops every key the application flagged
+// `clear_on_session_end`. Called by the engine when a stream session ends.
+//
+// Clearing is the engine's job rather than a module's: the sandbox exposes only
+// `get` and `set`, so a module declares that a key is session-scoped and the
+// engine acts on the declaration.
+func (s *storageService) ClearSessionScoped(ctx context.Context, req *client.ClearSessionScopedRequest) (*client.ClearSessionScopedResponse, error) {
+	if strings.TrimSpace(req.ApplicationId) == "" {
+		return nil, twirp.RequiredArgumentError("application_id")
+	}
+	cleared, err := s.deleteWhere(req.ApplicationId, func(item storedItem) bool {
+		return item.ClearOnSessionEnd
+	})
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("clear session scoped: %w", err))
+	}
+	return &client.ClearSessionScopedResponse{Cleared: int32(cleared)}, nil
 }

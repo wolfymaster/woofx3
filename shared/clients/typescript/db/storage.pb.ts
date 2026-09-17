@@ -25,7 +25,13 @@ export interface StorageItem {
   expiresAt: bigint;
   namespace: string;
   applicationId: string;
-  clearOnStreamEnd: boolean;
+  /**
+   * Drop this key when the stream *session* ends. Not the same as the stream
+   * going offline: a session spans dropouts, so clearing when the broadcast
+   * stops would wipe exactly the state a brief reconnect is meant to preserve.
+   * See docs/services/stream-sessions.md.
+   */
+  clearOnSessionEnd: boolean;
 }
 
 /**
@@ -86,6 +92,22 @@ export interface ClearAllForApplicationRequest {
 }
 
 export interface ClearAllForApplicationResponse {}
+
+/**
+ * Clear every key flagged `clear_on_session_end`
+ */
+export interface ClearSessionScopedRequest {
+  applicationId: string;
+}
+
+export interface ClearSessionScopedResponse {
+  /**
+   * How many keys were dropped. Clearing fires automatically at a session
+   * boundary with nobody watching, so the count is the only evidence in a log
+   * that it ran and what it did.
+   */
+  cleared: number;
+}
 
 //========================================//
 //     StorageService Protobuf Client     //
@@ -179,6 +201,23 @@ export async function ClearAllForApplication(
     config,
   );
   return ClearAllForApplicationResponse.decode(response);
+}
+
+/**
+ * Clear every key flagged `clear_on_session_end`. The engine calls this when
+ * a stream session ends; a module declares the key is session-scoped and the
+ * engine acts on it, since the sandbox exposes no way to clear storage.
+ */
+export async function ClearSessionScoped(
+  clearSessionScopedRequest: ClearSessionScopedRequest,
+  config?: ClientConfiguration,
+): Promise<ClearSessionScopedResponse> {
+  const response = await PBrequest(
+    "/storage.StorageService/ClearSessionScoped",
+    ClearSessionScopedRequest.encode(clearSessionScopedRequest),
+    config,
+  );
+  return ClearSessionScopedResponse.decode(response);
 }
 
 //========================================//
@@ -275,6 +314,23 @@ export async function ClearAllForApplicationJSON(
   return ClearAllForApplicationResponseJSON.decode(response);
 }
 
+/**
+ * Clear every key flagged `clear_on_session_end`. The engine calls this when
+ * a stream session ends; a module declares the key is session-scoped and the
+ * engine acts on it, since the sandbox exposes no way to clear storage.
+ */
+export async function ClearSessionScopedJSON(
+  clearSessionScopedRequest: ClearSessionScopedRequest,
+  config?: ClientConfiguration,
+): Promise<ClearSessionScopedResponse> {
+  const response = await JSONrequest(
+    "/storage.StorageService/ClearSessionScoped",
+    ClearSessionScopedRequestJSON.encode(clearSessionScopedRequest),
+    config,
+  );
+  return ClearSessionScopedResponseJSON.decode(response);
+}
+
 //========================================//
 //             StorageService             //
 //========================================//
@@ -325,6 +381,15 @@ export interface StorageService<Context = unknown> {
     clearAllForApplicationRequest: ClearAllForApplicationRequest,
     context: Context,
   ) => Promise<ClearAllForApplicationResponse> | ClearAllForApplicationResponse;
+  /**
+   * Clear every key flagged `clear_on_session_end`. The engine calls this when
+   * a stream session ends; a module declares the key is session-scoped and the
+   * engine acts on it, since the sandbox exposes no way to clear storage.
+   */
+  ClearSessionScoped: (
+    clearSessionScopedRequest: ClearSessionScopedRequest,
+    context: Context,
+  ) => Promise<ClearSessionScopedResponse> | ClearSessionScopedResponse;
 }
 
 export function createStorageService<Context>(
@@ -384,6 +449,18 @@ export function createStorageService<Context>(
           json: ClearAllForApplicationResponseJSON,
         },
       },
+      ClearSessionScoped: {
+        name: "ClearSessionScoped",
+        handler: service.ClearSessionScoped,
+        input: {
+          protobuf: ClearSessionScopedRequest,
+          json: ClearSessionScopedRequestJSON,
+        },
+        output: {
+          protobuf: ClearSessionScopedResponse,
+          json: ClearSessionScopedResponseJSON,
+        },
+      },
     },
   } as const;
 }
@@ -424,7 +501,7 @@ export const StorageItem = {
       expiresAt: 0n,
       namespace: "",
       applicationId: "",
-      clearOnStreamEnd: false,
+      clearOnSessionEnd: false,
       ...msg,
     };
   },
@@ -454,8 +531,8 @@ export const StorageItem = {
     if (msg.applicationId) {
       writer.writeString(6, msg.applicationId);
     }
-    if (msg.clearOnStreamEnd) {
-      writer.writeBool(7, msg.clearOnStreamEnd);
+    if (msg.clearOnSessionEnd) {
+      writer.writeBool(7, msg.clearOnSessionEnd);
     }
     return writer;
   },
@@ -495,7 +572,7 @@ export const StorageItem = {
           break;
         }
         case 7: {
-          msg.clearOnStreamEnd = reader.readBool();
+          msg.clearOnSessionEnd = reader.readBool();
           break;
         }
         default: {
@@ -1249,6 +1326,146 @@ export const ClearAllForApplicationResponse = {
   },
 };
 
+export const ClearSessionScopedRequest = {
+  /**
+   * Serializes ClearSessionScopedRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<ClearSessionScopedRequest>): Uint8Array {
+    return ClearSessionScopedRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ClearSessionScopedRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): ClearSessionScopedRequest {
+    return ClearSessionScopedRequest._readMessage(
+      ClearSessionScopedRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ClearSessionScopedRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ClearSessionScopedRequest>,
+  ): ClearSessionScopedRequest {
+    return {
+      applicationId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ClearSessionScopedRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.applicationId) {
+      writer.writeString(1, msg.applicationId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ClearSessionScopedRequest,
+    reader: protoscript.BinaryReader,
+  ): ClearSessionScopedRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.applicationId = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ClearSessionScopedResponse = {
+  /**
+   * Serializes ClearSessionScopedResponse to protobuf.
+   */
+  encode: function (msg: PartialDeep<ClearSessionScopedResponse>): Uint8Array {
+    return ClearSessionScopedResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ClearSessionScopedResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): ClearSessionScopedResponse {
+    return ClearSessionScopedResponse._readMessage(
+      ClearSessionScopedResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ClearSessionScopedResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ClearSessionScopedResponse>,
+  ): ClearSessionScopedResponse {
+    return {
+      cleared: 0,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ClearSessionScopedResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.cleared) {
+      writer.writeInt32(1, msg.cleared);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ClearSessionScopedResponse,
+    reader: protoscript.BinaryReader,
+  ): ClearSessionScopedResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.cleared = reader.readInt32();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -1282,7 +1499,7 @@ export const StorageItemJSON = {
       expiresAt: 0n,
       namespace: "",
       applicationId: "",
-      clearOnStreamEnd: false,
+      clearOnSessionEnd: false,
       ...msg,
     };
   },
@@ -1312,8 +1529,8 @@ export const StorageItemJSON = {
     if (msg.applicationId) {
       json["applicationId"] = msg.applicationId;
     }
-    if (msg.clearOnStreamEnd) {
-      json["clearOnStreamEnd"] = msg.clearOnStreamEnd;
+    if (msg.clearOnSessionEnd) {
+      json["clearOnSessionEnd"] = msg.clearOnSessionEnd;
     }
     return json;
   },
@@ -1346,10 +1563,10 @@ export const StorageItemJSON = {
     if (_applicationId_) {
       msg.applicationId = _applicationId_;
     }
-    const _clearOnStreamEnd_ =
-      json["clearOnStreamEnd"] ?? json["clear_on_stream_end"];
-    if (_clearOnStreamEnd_) {
-      msg.clearOnStreamEnd = _clearOnStreamEnd_;
+    const _clearOnSessionEnd_ =
+      json["clearOnSessionEnd"] ?? json["clear_on_session_end"];
+    if (_clearOnSessionEnd_) {
+      msg.clearOnSessionEnd = _clearOnSessionEnd_;
     }
     return msg;
   },
@@ -1989,6 +2206,122 @@ export const ClearAllForApplicationResponseJSON = {
     msg: ClearAllForApplicationResponse,
     _json: any,
   ): ClearAllForApplicationResponse {
+    return msg;
+  },
+};
+
+export const ClearSessionScopedRequestJSON = {
+  /**
+   * Serializes ClearSessionScopedRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<ClearSessionScopedRequest>): string {
+    return JSON.stringify(ClearSessionScopedRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ClearSessionScopedRequest from JSON.
+   */
+  decode: function (json: string): ClearSessionScopedRequest {
+    return ClearSessionScopedRequestJSON._readMessage(
+      ClearSessionScopedRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ClearSessionScopedRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ClearSessionScopedRequest>,
+  ): ClearSessionScopedRequest {
+    return {
+      applicationId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ClearSessionScopedRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.applicationId) {
+      json["applicationId"] = msg.applicationId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ClearSessionScopedRequest,
+    json: any,
+  ): ClearSessionScopedRequest {
+    const _applicationId_ = json["applicationId"] ?? json["application_id"];
+    if (_applicationId_) {
+      msg.applicationId = _applicationId_;
+    }
+    return msg;
+  },
+};
+
+export const ClearSessionScopedResponseJSON = {
+  /**
+   * Serializes ClearSessionScopedResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<ClearSessionScopedResponse>): string {
+    return JSON.stringify(ClearSessionScopedResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ClearSessionScopedResponse from JSON.
+   */
+  decode: function (json: string): ClearSessionScopedResponse {
+    return ClearSessionScopedResponseJSON._readMessage(
+      ClearSessionScopedResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ClearSessionScopedResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ClearSessionScopedResponse>,
+  ): ClearSessionScopedResponse {
+    return {
+      cleared: 0,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ClearSessionScopedResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.cleared) {
+      json["cleared"] = msg.cleared;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ClearSessionScopedResponse,
+    json: any,
+  ): ClearSessionScopedResponse {
+    const _cleared_ = json["cleared"];
+    if (_cleared_) {
+      msg.cleared = protoscript.parseNumber(_cleared_);
+    }
     return msg;
   },
 };

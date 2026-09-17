@@ -211,17 +211,26 @@ validates the attribute on the way in.
 
 ## Clearing ephemeral storage
 
-The machinery already exists and has never been connected.
+`storage.proto` carries `clear_on_session_end` on every stored item, and
+`ClearSessionScoped` drops every key that flags it. The resolver calls that RPC
+when a session ends, *before* publishing `session.ended`, so nothing reacting to
+the announcement can read state that is about to disappear. A failed clear is
+logged and swallowed — a boundary that could not clear is still a boundary, and
+refusing to announce it would strand every other consumer over a storage fault.
 
-`db/proto/v1/storage.proto:36` defines `clear_on_stream_end`, persisted and
-round-tripped through `storage_service.go`, **read by nothing**. Alongside it,
-`ClearNamespace`, `ClearExpired` and `ClearAllForApplication` have no callers
-anywhere in the repository. What is missing is the signal, not the mechanism.
+The name carries the whole point. Clearing when the broadcast stops would wipe
+exactly the state a brief reconnect is meant to preserve, which is why a session
+is not the same thing as a stream.
 
-`session.ended` is that signal. The field should be renamed
-`clear_on_session_end`: nothing reads it, so the rename is safe — the wire
-protocol only cares about the field number — and leaving it named for stream end
-would describe the opposite of when it fires.
+`ClearNamespace`, `ClearExpired` and `ClearAllForApplication` still have no
+callers anywhere in the repository.
+
+::: warning Nothing sets the flag yet
+No writer populates `clear_on_session_end`, so `ClearSessionScoped` today
+correctly clears nothing: the mechanism and the signal both exist, and the
+*declaration* does not. Until a module can mark a key session-scoped, this runs
+against an empty set. See step 5 of the build order.
+:::
 
 Modules cannot clear their own storage and should not be able to: the sandbox
 exposes only `get` and `set`
@@ -233,9 +242,10 @@ which is the [engine integrity](./engine-integrity.md) rule working as intended
 
 Both are live today and both sit in the key format this work touches:
 
-- No writer populates `namespace`, `expires_at` or `clear_on_stream_end`.
-  `barkloader/lib_module/src/db_proxy.rs:1867-1873` sends only `key`, `value`
-  and `application_id`, so all three metadata fields are permanently empty.
+- No writer populates `namespace`, `expires_at` or `clear_on_session_end`.
+  `storage_set` in `barkloader/lib_module/src/db_proxy.rs` sends only `key`,
+  `value` and `application_id`, so all three metadata fields are permanently
+  empty. This is the one keeping `ClearSessionScoped` clearing nothing.
 - The storage key is `<application_id>\x00<key>`
   (`db/app/services/storage_service.go:40-42`) with **no module segment**, so
   two modules writing `"count"` collide.
@@ -306,5 +316,10 @@ Each step is independently useful and safe to stop after:
 3. **Feed the holders** — done. Every publishing process subscribes to
    `session.started` and sets its language's holder, which is what turned steps
    1 and 2 into observable behaviour.
-4. **Storage rename and a clear RPC** called on `session.ended`.
-5. **The Convex field and the two UI call sites.**
+4. **Storage rename and a clear RPC** called on `session.ended` — done, though
+   inert until something sets `clear_on_session_end`.
+5. **A module-facing way to declare a key session-scoped**, which is what makes
+   step 4 clear anything: a `set` that carries options, threaded through the
+   sandbox trait, both runtime bindings, `db_proxy.rs` and `HttpStorageClient`.
+   This changes an end-user-facing module contract, so it is its own step.
+6. **The Convex field and the two UI call sites.**

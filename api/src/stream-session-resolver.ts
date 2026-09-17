@@ -113,6 +113,7 @@ export class StreamSessionResolver {
       });
 
       if (endedSessionId) {
+        await this.clearSessionScopedStorage(endedSessionId);
         await this.publish(SessionEventType.SessionEnded, {
           sessionId: endedSessionId,
           applicationId: this.applicationId,
@@ -162,6 +163,26 @@ export class StreamSessionResolver {
       applicationId: this.applicationId,
       startedAt,
     });
+  }
+
+  /**
+   * Drop the module storage the ended session owned.
+   *
+   * Runs before the announcement, so nothing reacting to `session.ended` can
+   * read state that is about to disappear. A failure is logged and swallowed:
+   * a boundary that could not clear is still a boundary, and refusing to
+   * announce it would strand every other consumer over a storage fault.
+   */
+  private async clearSessionScopedStorage(endedSessionId: string): Promise<void> {
+    try {
+      const cleared = await this.db.clearSessionScoped({ applicationId: this.applicationId });
+      this.logger.info("Cleared session-scoped module storage", { endedSessionId, cleared });
+    } catch (err) {
+      this.logger.error("Failed to clear session-scoped module storage", {
+        endedSessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**

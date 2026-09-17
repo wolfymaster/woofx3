@@ -16,6 +16,7 @@ import * as permission from "@woofx3/db/permission.pb";
 import * as resource from "@woofx3/db/resource.pb";
 import * as scene from "@woofx3/db/scene.pb";
 import * as setting from "@woofx3/db/setting.pb";
+import * as storage from "@woofx3/db/storage.pb";
 import * as stream_session from "@woofx3/db/stream_session.pb";
 import * as treat from "@woofx3/db/treat.pb";
 import * as user from "@woofx3/db/user.pb";
@@ -461,6 +462,16 @@ export class DbClient {
 
   async deleteAlert(req: alert.DeleteAlertRequest): Promise<common.ResponseStatus> {
     return alert.DeleteAlert(req, this.config);
+  }
+
+  /**
+   * Drop every module storage key the application flagged session-scoped,
+   * returning how many went. The storage RPCs carry no status envelope, so
+   * there is nothing to unwrap.
+   */
+  async clearSessionScoped(req: storage.ClearSessionScopedRequest): Promise<number> {
+    const response = await storage.ClearSessionScoped(req, this.config);
+    return response.cleared ?? 0;
   }
 
   /**
