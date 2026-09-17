@@ -1212,6 +1212,7 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 
 	taskCtx := &tasks.TaskContext{
 		WorkflowID:    execution.WorkflowID,
+		ExecutionID:   execution.ID,
 		ApplicationID: applicationID,
 		TaskID:        taskDef.ID,
 		TriggerEvent:  event,

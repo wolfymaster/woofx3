@@ -64,6 +64,8 @@ func WithServices[TServices any](services TServices, action tasks.ActionFunc[TSe
 		ctx := tasks.ActionContext[TServices]{
 			Services:      services,
 			ApplicationID: incoming.ApplicationID,
+			WorkflowID:    incoming.WorkflowID,
+			ExecutionID:   incoming.ExecutionID,
 			TaskID:        incoming.TaskID,
 			TriggerEvent:  incoming.TriggerEvent,
 			Logger:        incoming.Logger,

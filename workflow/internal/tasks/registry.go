@@ -14,6 +14,12 @@ type Task interface {
 
 type TaskContext struct {
 	WorkflowID string
+	// ExecutionID identifies this run, as distinct from WorkflowID which
+	// identifies the definition. A side effect attributed only to the
+	// definition cannot be traced back to the run that produced it, which is
+	// the join any "what caused this" question needs. Empty for in-memory
+	// test workflows executed outside the engine.
+	ExecutionID string
 	// ApplicationID scopes the executing workflow to a specific
 	// application — populated by the engine from the workflow
 	// definition before each task runs. Action handlers stamp this
@@ -91,10 +97,18 @@ func (r *TaskRegistry) List() []string {
 
 type ActionContext[TServices any] struct {
 	Services TServices
-	// ApplicationID is forwarded from TaskContext so action handlers
-	// (e.g. NewAlertAction) can attribute their side effects to the
-	// owning application. Empty when unresolved.
+	// ApplicationID, WorkflowID and ExecutionID are forwarded from
+	// TaskContext so action handlers (e.g. NewAlertAction) can attribute
+	// their side effects — to the owning application, to the workflow that
+	// defined the step, and to the run that fired it. Empty when unresolved.
+	//
+	// Every field below is copied by hand in two places, ActionTask.Execute
+	// and WithServices. A field added to this struct alone therefore arrives
+	// as its zero value for every action, which reads as a data bug rather
+	// than the wiring omission it is.
 	ApplicationID string
+	WorkflowID    string
+	ExecutionID   string
 	TaskID        string
 	TriggerEvent  *types.Event
 	Logger        Logger
