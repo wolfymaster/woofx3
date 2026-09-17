@@ -220,13 +220,29 @@ export class ApiRouteHost extends RpcTarget {
     data: Record<string, unknown>,
     subject?: string,
     platform?: string,
-    source = "api"
+    source = "api",
+    correlation?: { triggerId?: string; triggeredBy?: string }
   ): Promise<void> {
     // `platform` is a top-level CloudEvents extension attribute, not payload:
     // event types are platform-agnostic, so it is the only thing telling a
     // workflow where a `channel.follow` came from. Omitted rather than empty
     // for events with no originating platform.
-    const event = Event<Record<string, unknown>>({ type: eventType, source, ...(platform ? { platform } : {}) }, data);
+    //
+    // `correlation` is likewise extension attributes rather than payload, and
+    // is grouped into one object because it travels together: a caller that
+    // supplies a triggerId is waiting on the run the event causes, and the
+    // engine echoes both onto the lifecycle events it emits. Omitted entirely
+    // for the events nobody is waiting on, which is most of them.
+    const event = Event<Record<string, unknown>>(
+      {
+        type: eventType,
+        source,
+        ...(platform ? { platform } : {}),
+        ...(correlation?.triggerId ? { triggerId: correlation.triggerId } : {}),
+        ...(correlation?.triggeredBy ? { triggeredBy: correlation.triggeredBy } : {}),
+      },
+      data
+    );
     await this.publishBytes(subject || eventType, encode(event), { eventType, eventId: event.id });
   }
 

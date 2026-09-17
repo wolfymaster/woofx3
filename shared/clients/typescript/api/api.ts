@@ -1047,8 +1047,20 @@ export interface Woofx3EngineApi {
    * the CloudEvent type and the NATS subject; workflows and modules
    * subscribed to that subject will fire. Used by the UI's Debug Tools
    * page to hand-fire events without a live Twitch session.
+   *
+   * `success` means the event reached the bus and nothing more -- whether a
+   * workflow matched it, and how that run ended, is decided afterwards in
+   * another process. A caller that needs to know supplies `triggerId`: the
+   * engine echoes it onto the `workflow.run.*` events it emits, which is what
+   * lets the outcome find its way back. `triggeredBy` names the origin
+   * ("dashboard", ...) for display.
    */
-  triggerEvent(eventType: string, eventData: Record<string, unknown>): Promise<{ success: boolean; message: string }>;
+  triggerEvent(
+    eventType: string,
+    eventData: Record<string, unknown>,
+    triggerId?: string,
+    triggeredBy?: string
+  ): Promise<{ success: boolean; message: string }>;
 
   /**
    * Run a module's webhook handler on an inbound request the control plane
@@ -1260,10 +1272,16 @@ export interface Woofx3EngineApi {
   ): Promise<{ success: boolean; message: string }>;
 
   /** Inject a synthetic Twitch event onto the bus. Intended for development
-   *  and for exercising alert overlays without a live stream. */
+   *  and for exercising alert overlays without a live stream.
+   *
+   *  `triggerId` and `triggeredBy` behave exactly as on `triggerEvent`: supply
+   *  a triggerId to be told how the resulting run ended, since this call's own
+   *  result only reports that the event was published. */
   simulateTwitchEvent(
     eventType: string,
-    eventData: Record<string, unknown>
+    eventData: Record<string, unknown>,
+    triggerId?: string,
+    triggeredBy?: string
   ): Promise<{ success: boolean; message: string }>;
 }
 

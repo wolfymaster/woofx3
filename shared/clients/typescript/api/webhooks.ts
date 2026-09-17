@@ -43,6 +43,9 @@ export const EngineEventType = {
   WORKFLOW_CREATED: "workflow.created",
   WORKFLOW_UPDATED: "workflow.updated",
   WORKFLOW_DELETED: "workflow.deleted",
+  WORKFLOW_RUN_STARTED: "workflow.run.started",
+  WORKFLOW_RUN_COMPLETED: "workflow.run.completed",
+  WORKFLOW_RUN_FAILED: "workflow.run.failed",
   SCENE_CREATED: "scene.created",
   SCENE_UPDATED: "scene.updated",
   SCENE_DELETED: "scene.deleted",
@@ -920,6 +923,56 @@ export interface AlertSnapshot {
 }
 
 /**
+ * Fired when the engine begins a workflow run.
+ *
+ * Worth as much as the terminal events: nothing else acknowledges that an
+ * event matched a workflow at all, so a caller waiting on an outcome cannot
+ * otherwise tell a slow run from one that never started.
+ *
+ * `triggerId` is echoed unchanged from the event that caused the run and is
+ * the only join back to whoever asked for it. Absent whenever nobody is
+ * waiting, which is nearly every run.
+ */
+export interface WorkflowRunStartedEvent {
+  type: typeof EngineEventType.WORKFLOW_RUN_STARTED;
+  applicationId: string;
+  workflowId: string;
+  executionId: string;
+  triggerId?: string;
+  triggeredBy?: string;
+  occurredAt: string;
+}
+
+/** Fired when a workflow run finishes with every task succeeding. */
+export interface WorkflowRunCompletedEvent {
+  type: typeof EngineEventType.WORKFLOW_RUN_COMPLETED;
+  applicationId: string;
+  workflowId: string;
+  executionId: string;
+  triggerId?: string;
+  triggeredBy?: string;
+  occurredAt: string;
+}
+
+/**
+ * Fired when a workflow run ends without completing.
+ *
+ * `error` is the engine's own reason, which for a refused alert step is the
+ * message `validateAlertParams` produced -- the same vocabulary the dashboard
+ * already turns into readable copy.
+ */
+export interface WorkflowRunFailedEvent {
+  type: typeof EngineEventType.WORKFLOW_RUN_FAILED;
+  applicationId: string;
+  workflowId: string;
+  executionId: string;
+  triggerId?: string;
+  triggeredBy?: string;
+  error: string;
+  occurredAt: string;
+}
+
+/**
  * Fired immediately after the engine records a freshly dispatched
  * alert. Lets the UI populate its alert-log page in real time
  * without polling.
@@ -1152,6 +1205,9 @@ export type CallbackEvent =
   | WorkflowCreatedEvent
   | WorkflowUpdatedEvent
   | WorkflowDeletedEvent
+  | WorkflowRunStartedEvent
+  | WorkflowRunCompletedEvent
+  | WorkflowRunFailedEvent
   | SceneCreatedEvent
   | SceneUpdatedEvent
   | SceneDeletedEvent
@@ -1202,6 +1258,9 @@ export type CallbackEventByType = {
   [EngineEventType.WORKFLOW_CREATED]: WorkflowCreatedEvent;
   [EngineEventType.WORKFLOW_UPDATED]: WorkflowUpdatedEvent;
   [EngineEventType.WORKFLOW_DELETED]: WorkflowDeletedEvent;
+  [EngineEventType.WORKFLOW_RUN_STARTED]: WorkflowRunStartedEvent;
+  [EngineEventType.WORKFLOW_RUN_COMPLETED]: WorkflowRunCompletedEvent;
+  [EngineEventType.WORKFLOW_RUN_FAILED]: WorkflowRunFailedEvent;
   [EngineEventType.SCENE_CREATED]: SceneCreatedEvent;
   [EngineEventType.SCENE_UPDATED]: SceneUpdatedEvent;
   [EngineEventType.SCENE_DELETED]: SceneDeletedEvent;

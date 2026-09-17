@@ -2,11 +2,13 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/wolfymaster/woofx3/common/cloudevents"
 	"github.com/wolfymaster/woofx3/common/logging"
 	"github.com/wolfymaster/woofx3/workflow/internal/eventmatch"
 	"github.com/wolfymaster/woofx3/workflow/internal/expression"
@@ -355,13 +357,15 @@ func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event 
 
 	e.logger.Info("Starting workflow execution", "workflow", wf.ID, "execution", executionID)
 
+	// Announced here rather than through setExecutionStatus: the execution was
+	// built already running, and a caller waiting on this run needs to know a
+	// workflow matched its event before any task has had a chance to fail.
+	e.emitRunLifecycle(execution)
+
 	graph, err := NewDependencyGraph(wf.Tasks)
 	if err != nil {
-		execution.Status = types.ExecutionStatusFailed
-		execution.Error = err.Error()
+		e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 		e.logger.Error("Failed to build dependency graph", "workflow", wf.ID, "execution", executionID, "error", err)
-		now := time.Now()
-		execution.CompletedAt = &now
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "build dependency graph")
 		return
@@ -369,11 +373,8 @@ func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event 
 
 	executionOrder, err := graph.GetExecutionOrder()
 	if err != nil {
-		execution.Status = types.ExecutionStatusFailed
-		execution.Error = err.Error()
+		e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 		e.logger.Error("Failed to resolve execution order", "workflow", wf.ID, "execution", executionID, "error", err)
-		now := time.Now()
-		execution.CompletedAt = &now
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "resolve execution order")
 		return
@@ -434,11 +435,9 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 			if err != nil {
 				taskExec.Status = types.TaskStatusFailed
 				taskExec.Error = err.Error()
-				execution.Status = types.ExecutionStatusFailed
-				execution.Error = err.Error()
 				now := time.Now()
 				taskExec.CompletedAt = &now
-				execution.CompletedAt = &now
+				e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 				e.logger.Error("Task condition evaluation failed", "workflow", execution.WorkflowID, "task", taskDef.ID, "error", err)
 				e.checkSubWorkflowCompletion(execution.ID)
 				return
@@ -468,11 +467,9 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 			if err != nil {
 				taskExec.Status = types.TaskStatusFailed
 				taskExec.Error = err.Error()
-				execution.Status = types.ExecutionStatusFailed
-				execution.Error = err.Error()
 				now := time.Now()
 				taskExec.CompletedAt = &now
-				execution.CompletedAt = &now
+				e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 				e.logger.Error("Condition evaluation failed", "workflow", execution.WorkflowID, "task", taskDef.ID, "error", err)
 				e.checkSubWorkflowCompletion(execution.ID)
 				return
@@ -513,10 +510,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 				if taskDef.Wait.OnTimeout == "fail" {
 					taskExec.Status = types.TaskStatusFailed
 					taskExec.Error = "wait timeout"
-					execution.Status = types.ExecutionStatusFailed
-					execution.Error = "wait timeout"
-					now := time.Now()
-					execution.CompletedAt = &now
+					e.setExecutionStatus(execution, types.ExecutionStatusFailed, errors.New("wait timeout"))
 					e.logger.Error("Wait task timed out", "workflow", execution.WorkflowID, "task", taskDef.ID)
 					e.checkSubWorkflowCompletion(execution.ID)
 					return
@@ -567,10 +561,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 			if workflowConfig == nil || workflowConfig.WorkflowID == "" {
 				taskExec.Status = types.TaskStatusFailed
 				taskExec.Error = "workflow task missing workflowId"
-				execution.Status = types.ExecutionStatusFailed
-				execution.Error = "workflow task missing workflowId"
-				now := time.Now()
-				execution.CompletedAt = &now
+				e.setExecutionStatus(execution, types.ExecutionStatusFailed, errors.New("workflow task missing workflowId"))
 				e.logger.Error("Workflow task missing workflowId", "workflow", execution.WorkflowID, "task", taskDef.ID)
 				e.checkSubWorkflowCompletion(execution.ID)
 				return
@@ -586,9 +577,9 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 				return
 			case "failed":
 				taskExec.Status = types.TaskStatusFailed
-				execution.Status = types.ExecutionStatusFailed
-				now := time.Now()
-				execution.CompletedAt = &now
+				// nil: the sub-workflow's own reason was already recorded and
+				// logged on its execution; this path never had one of its own.
+				e.setExecutionStatus(execution, types.ExecutionStatusFailed, nil)
 				e.logger.Error("Workflow task failed", "workflow", execution.WorkflowID, "task", taskDef.ID)
 				e.checkSubWorkflowCompletion(execution.ID)
 				return
@@ -630,10 +621,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 		if err != nil {
 			taskExec.Status = types.TaskStatusFailed
 			taskExec.Error = err.Error()
-			execution.Status = types.ExecutionStatusFailed
-			execution.Error = err.Error()
-			now := time.Now()
-			execution.CompletedAt = &now
+			e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 			e.logger.Error("Task failed", "workflow", execution.WorkflowID, "execution", execution.ID, "task", taskDef.ID, "error", err)
 			e.checkSubWorkflowCompletion(execution.ID)
 			return
@@ -650,9 +638,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 		}
 	}
 
-	execution.Status = types.ExecutionStatusCompleted
-	now := time.Now()
-	execution.CompletedAt = &now
+	e.setExecutionStatus(execution, types.ExecutionStatusCompleted, nil)
 
 	e.logger.Info("Workflow execution completed", "workflow", execution.WorkflowID, "execution", execution.ID, "status", execution.Status)
 
@@ -774,10 +760,7 @@ func (e *Engine[TServices]) executeConcurrentRun(
 	}
 
 	if firstFailure != nil {
-		execution.Status = types.ExecutionStatusFailed
-		execution.Error = firstFailure.err.Error()
-		now := time.Now()
-		execution.CompletedAt = &now
+		e.setExecutionStatus(execution, types.ExecutionStatusFailed, firstFailure.err)
 		e.checkSubWorkflowCompletion(execution.ID)
 		return false
 	}
@@ -791,11 +774,111 @@ func (e *Engine[TServices]) failExecution(execution *types.WorkflowExecution, ta
 	taskExec.Status = types.TaskStatusFailed
 	taskExec.Error = err.Error()
 	taskExec.CompletedAt = &now
-	execution.Status = types.ExecutionStatusFailed
-	execution.Error = err.Error()
-	execution.CompletedAt = &now
+	e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 	e.logger.Error(msg, "workflow", execution.WorkflowID, "task", taskID, "error", err)
 	e.checkSubWorkflowCompletion(execution.ID)
+}
+
+// setExecutionStatus records a run's state and announces it.
+//
+// Every assignment to execution.Status goes through here, and that is the
+// whole point: a dozen places in this file can end a run, and one of them
+// forgetting to announce it would leave whoever triggered that run waiting
+// forever, unable to tell a slow workflow from a dead one.
+//
+// A nil err leaves execution.Error untouched -- one caller fails a run without
+// a reason of its own, and inventing one would report something the engine
+// never knew.
+//
+// It deliberately does not call checkSubWorkflowCompletion. Most callers do and
+// the dependency-graph and execution-order failures in executeWorkflow never
+// have; folding it in here would change sub-workflow behaviour rather than just
+// reporting on it.
+//
+// Two kinds of transition stay outside this funnel on purpose, and should not be
+// "fixed" into it: moving to Waiting, which is not an outcome anyone is waiting
+// to hear, and the Running assignments that resume a paused run, which would
+// announce a second start for a run that already began.
+func (e *Engine[TServices]) setExecutionStatus(
+	execution *types.WorkflowExecution,
+	status types.ExecutionStatus,
+	err error,
+) {
+	execution.Status = status
+	if err != nil {
+		execution.Error = err.Error()
+	}
+	// Only genuinely terminal states get a completion time. Waiting does not
+	// reach here today, but stamping CompletedAt on a paused run would make it
+	// look finished to everything that reads these rows.
+	if status == types.ExecutionStatusCompleted || status == types.ExecutionStatusFailed {
+		now := time.Now()
+		execution.CompletedAt = &now
+	}
+	e.emitRunLifecycle(execution)
+}
+
+// emitRunLifecycle publishes a run's current state, correlated with whoever
+// asked for the run.
+//
+// Best-effort on purpose: a publish failure is logged and the run continues.
+// The run is the product; telling a dashboard about it is not worth failing a
+// workflow that otherwise did its job.
+func (e *Engine[TServices]) emitRunLifecycle(execution *types.WorkflowExecution) {
+	if e.publisher == nil {
+		return
+	}
+
+	var subject cloudevents.Subject
+	switch execution.Status {
+	case types.ExecutionStatusRunning:
+		subject = cloudevents.SubjectWorkflowRunStarted
+	case types.ExecutionStatusCompleted:
+		subject = cloudevents.SubjectWorkflowRunCompleted
+	case types.ExecutionStatusFailed:
+		subject = cloudevents.SubjectWorkflowRunFailed
+	default:
+		// A state with no lifecycle event of its own (waiting, and anything a
+		// later version adds). Silence is correct: a consumer keyed on the
+		// three below would otherwise have to guess what an unknown one means.
+		return
+	}
+
+	data := map[string]any{
+		"workflowId":  execution.WorkflowID,
+		"executionId": execution.ID,
+		// Resolved here rather than left to the consumer: the engine holds the
+		// definition and therefore the owning application, and a relay would
+		// otherwise have to guess it from a default-application lookup that is
+		// wrong the moment more than one application exists.
+		"applicationId": e.resolveApplicationID(execution.WorkflowID),
+	}
+	if execution.Error != "" {
+		data["error"] = execution.Error
+	}
+
+	event := &types.Event{
+		ID:     uuid.New().String(),
+		Type:   string(subject),
+		Source: "workflow",
+		Time:   time.Now(),
+		Data:   data,
+	}
+	// Copied from the trigger unchanged. TriggerID is the only join back to the
+	// request that caused this run, and carrying SessionID keeps a run
+	// attributable to the same broadcast as the event that started it.
+	if execution.TriggerEvent != nil {
+		event.TriggerID = execution.TriggerEvent.TriggerID
+		event.TriggeredBy = execution.TriggerEvent.TriggeredBy
+		event.SessionID = execution.TriggerEvent.SessionID
+	}
+
+	if err := e.publisher.Publish(event); err != nil {
+		e.logger.Warn("run lifecycle not published",
+			"execution", execution.ID,
+			"status", execution.Status,
+			"error", err)
+	}
 }
 
 func (e *Engine[TServices]) buildResolver(triggerEvent *types.Event, taskExports map[string]map[string]any) *expression.Resolver {
@@ -1029,6 +1112,11 @@ func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, ev
 
 	e.logger.Info("Starting sub-workflow execution", "workflow", wf.ID, "execution", executionID)
 
+	// Announced like a top-level run. This execution reports completed/failed
+	// through setExecutionStatus either way, and a terminal event with no
+	// matching start would read as a run that ended without ever beginning.
+	e.emitRunLifecycle(execution)
+
 	// Execute in a goroutine (async)
 	go e.executeWorkflowInternal(wf, execution, event)
 
@@ -1040,22 +1128,16 @@ func (e *Engine[TServices]) executeWorkflowInternal(wf *types.WorkflowDefinition
 
 	graph, err := NewDependencyGraph(wf.Tasks)
 	if err != nil {
-		execution.Status = types.ExecutionStatusFailed
-		execution.Error = err.Error()
+		e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 		e.logger.Error("Failed to build dependency graph", "workflow", wf.ID, "execution", execution.ID, "error", err)
-		now := time.Now()
-		execution.CompletedAt = &now
 		e.checkSubWorkflowCompletion(execution.ID)
 		return
 	}
 
 	executionOrder, err := graph.GetExecutionOrder()
 	if err != nil {
-		execution.Status = types.ExecutionStatusFailed
-		execution.Error = err.Error()
+		e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 		e.logger.Error("Failed to resolve execution order", "workflow", wf.ID, "execution", execution.ID, "error", err)
-		now := time.Now()
-		execution.CompletedAt = &now
 		e.checkSubWorkflowCompletion(execution.ID)
 		return
 	}
@@ -1121,10 +1203,10 @@ func (e *Engine[TServices]) resumeSubWorkflowExecution(waiter *SubWorkflowWaiter
 
 	// If the task failed, mark the execution as failed and return
 	if taskExec != nil && taskExec.Status == types.TaskStatusFailed {
-		execution.Status = types.ExecutionStatusFailed
-		execution.Error = taskExec.Error
-		now := time.Now()
-		execution.CompletedAt = &now
+		// The reason is already a string here, built by the switch above rather
+		// than carried as an error, so it is wrapped to keep the funnel's single
+		// signature without rewording what the parent task recorded.
+		e.setExecutionStatus(execution, types.ExecutionStatusFailed, errors.New(taskExec.Error))
 		e.logger.Error("Workflow execution failed due to sub-workflow failure", "workflow", waiter.ParentWorkflowID, "execution", waiter.ParentExecutionID, "task", waiter.TaskID, "error", taskExec.Error)
 		e.checkSubWorkflowCompletion(execution.ID)
 		return

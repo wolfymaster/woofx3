@@ -2,7 +2,9 @@ import { routeModule } from "./context";
 export const eventsRoutes = routeModule({
   async simulateTwitchEvent(
     eventType: string,
-    eventData: Record<string, unknown>
+    eventData: Record<string, unknown>,
+    triggerId?: string,
+    triggeredBy?: string
   ): Promise<{
     success: boolean;
     message: string;
@@ -12,8 +14,8 @@ export const eventsRoutes = routeModule({
     // not take. `eventType` is the registered trigger's event -- e.g.
     // `channel.follow` -- not a Twitch-prefixed name. The old `twitch.` prefix
     // matched no registered trigger in any vocabulary this engine has had.
-    this.logger.info("Simulating Twitch event", { eventType, eventData });
-    await this.publishEvent(eventType, eventData, eventType, "twitch");
+    this.logger.info("Simulating Twitch event", { eventType, eventData, triggerId });
+    await this.publishEvent(eventType, eventData, eventType, "twitch", "api", { triggerId, triggeredBy });
 
     this.logger.info("Twitch event simulated successfully", { eventType, subject: eventType });
     return {
@@ -28,12 +30,14 @@ export const eventsRoutes = routeModule({
    */
   async triggerEvent(
     eventType: string,
-    eventData: Record<string, unknown>
+    eventData: Record<string, unknown>,
+    triggerId?: string,
+    triggeredBy?: string
   ): Promise<{
     success: boolean;
     message: string;
   }> {
-    await this.publishEvent(eventType, eventData);
+    await this.publishEvent(eventType, eventData, undefined, undefined, "api", { triggerId, triggeredBy });
 
     return {
       success: true,

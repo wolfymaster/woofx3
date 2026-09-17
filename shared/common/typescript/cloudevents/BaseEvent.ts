@@ -30,6 +30,25 @@ export interface BaseEvent<T> {
    * the first `session.started` reaches it, or if it was never wired up.
    */
   sessionId?: string;
+  /**
+   * CloudEvents extension attribute correlating this event with whoever asked
+   * for it.
+   *
+   * Unlike `sessionId`, it is never stamped automatically: only a caller that
+   * intends to wait on the outcome supplies one. It travels unchanged onto the
+   * workflow run events the engine emits, which is what lets that caller learn
+   * what its event actually caused -- publishing is asynchronous, so the
+   * outcome is never in the publish call's own result.
+   */
+  triggerId?: string;
+  /**
+   * CloudEvents extension attribute naming what caused this event
+   * ("dashboard", "twitch", ...).
+   *
+   * Distinct from `source`, which names the service that published it: the api
+   * publishes on behalf of several different origins, and only this says which.
+   */
+  triggeredBy?: string;
   data: T;
 }
 

@@ -41,6 +41,18 @@ const (
 	// Workflow events
 	SubjectWorkflowExecute Subject = "workflow.execute"
 
+	// Workflow run lifecycle, emitted by the engine as a run starts and as it
+	// settles. Each carries the triggering event's `triggerId` unchanged, which
+	// is the only thing joining a run back to whoever asked for it: the run
+	// happens in another process, long after the publish call returned.
+	//
+	// `workflow.run.started` matters as much as the terminal pair. Nothing else
+	// acknowledges that an event matched a workflow at all, so without it a
+	// caller cannot tell a slow run from one that never began.
+	SubjectWorkflowRunStarted   Subject = "workflow.run.started"
+	SubjectWorkflowRunCompleted Subject = "workflow.run.completed"
+	SubjectWorkflowRunFailed    Subject = "workflow.run.failed"
+
 	// Unified widget event channel (R2 of the widget refactor).
 	// Single inbound subject for everything an overlay reports about a
 	// widget — alert lifecycle acks, counter increments, timer state,

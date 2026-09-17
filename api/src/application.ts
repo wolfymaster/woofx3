@@ -56,6 +56,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { WebhookClient },
       { initWidgetStatusHandlers },
       { initWorkflowHandlers },
+      { WorkflowRunEmitter },
       { default: BarkloaderClient },
     ] = await Promise.all([
       import("@woofx3/nats"),
@@ -75,6 +76,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./webhook-client"),
       import("./widget-status-handlers"),
       import("./workflow-event-handlers"),
+      import("./workflow-run-emitter"),
       import("@woofx3/barkloader"),
     ]);
 
@@ -190,6 +192,13 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       await initSceneHandlers(natsClient, webhookClient, logger);
       await initAlertLogHandlers(natsClient, webhookClient, logger);
       await initWidgetStatusHandlers(natsClient, webhookClient, logger);
+
+      // Needs only the bus and the webhook client, so it starts here rather
+      // than in the applicationId-gated block above: each run event carries
+      // its own applicationId, resolved by the engine that owns the workflow
+      // definition.
+      const workflowRunEmitter = new WorkflowRunEmitter(natsClient, webhookClient, logger);
+      await workflowRunEmitter.start();
     }
 
     const auth = new ClientAuth(db, logger);
