@@ -565,8 +565,9 @@ export async function UpdateWorkflowRunStatus(
 }
 
 /**
- * Record one step's outcome within a recorded run. Reported twice per
- * attempt -- on start and on settle -- and collapsed into a single row.
+ * Record one step's outcome within a recorded run. Upserted on
+ * (execution, task, attempt), so a repeated report of the same attempt
+ * replaces the row rather than adding another.
  */
 export async function RecordWorkflowRunStep(
   recordWorkflowRunStepRequest: RecordWorkflowRunStepRequest,
@@ -755,8 +756,9 @@ export async function UpdateWorkflowRunStatusJSON(
 }
 
 /**
- * Record one step's outcome within a recorded run. Reported twice per
- * attempt -- on start and on settle -- and collapsed into a single row.
+ * Record one step's outcome within a recorded run. Upserted on
+ * (execution, task, attempt), so a repeated report of the same attempt
+ * replaces the row rather than adding another.
  */
 export async function RecordWorkflowRunStepJSON(
   recordWorkflowRunStepRequest: RecordWorkflowRunStepRequest,
@@ -858,8 +860,9 @@ export interface WorkflowService<Context = unknown> {
     context: Context,
   ) => Promise<WorkflowExecutionResponse> | WorkflowExecutionResponse;
   /**
-   * Record one step's outcome within a recorded run. Reported twice per
-   * attempt -- on start and on settle -- and collapsed into a single row.
+   * Record one step's outcome within a recorded run. Upserted on
+   * (execution, task, attempt), so a repeated report of the same attempt
+   * replaces the row rather than adding another.
    */
   RecordWorkflowRunStep: (
     recordWorkflowRunStepRequest: RecordWorkflowRunStepRequest,

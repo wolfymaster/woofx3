@@ -65,8 +65,9 @@ type WorkflowService interface {
 	// Advance a recorded run to its terminal state.
 	UpdateWorkflowRunStatus(context.Context, *UpdateWorkflowRunStatusRequest) (*WorkflowExecutionResponse, error)
 
-	// Record one step's outcome within a recorded run. Reported twice per
-	// attempt -- on start and on settle -- and collapsed into a single row.
+	// Record one step's outcome within a recorded run. Upserted on
+	// (execution, task, attempt), so a repeated report of the same attempt
+	// replaces the row rather than adding another.
 	RecordWorkflowRunStep(context.Context, *RecordWorkflowRunStepRequest) (*ResponseStatus, error)
 }
 

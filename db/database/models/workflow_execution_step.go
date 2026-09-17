@@ -47,10 +47,10 @@ func (WorkflowExecutionStep) TableName() string {
 // UpsertWorkflowExecutionStep writes a step, replacing the existing row for the
 // same (execution, task, attempt).
 //
-// A task is reported more than once -- when it starts and again when it settles
-// -- and both reports describe the same attempt, so they have to collapse into
-// one row. Insert-only would leave the timeline showing each step twice with no
-// way to tell which report was final.
+// The engine reports a step once it settles, but delivery is at-least-once: a
+// retried RPC repeats the same report. Every copy describes the same attempt,
+// so they have to collapse into one row. Insert-only would leave the timeline
+// showing a step twice with no way to tell which copy was authoritative.
 func UpsertWorkflowExecutionStep(db *gorm.DB, step *WorkflowExecutionStep) error {
 	return db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{

@@ -15,8 +15,8 @@ import type { WebhookClient } from "./webhook-client";
 // The db proxy publishes run history on
 // `db.workflow_execution.{created,updated}.{appId}` and
 // `db.workflow_execution_step.recorded.{appId}`. The `recorded` operation is
-// not a typo for `created`: a step is upserted, reported once when it starts
-// and again when it settles, so neither "created" nor "updated" describes it.
+// not a typo for `created`: a step row is upserted, so a given report may have
+// created the row or replaced one, and neither word describes it.
 //
 // As with the alert and scene parsers, both Go's capitalised field names and
 // the snake_case JSON tags are accepted, so a change in how the outbox

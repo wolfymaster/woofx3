@@ -593,8 +593,8 @@ func (s *workflowService) UpdateWorkflowRunStatus(ctx context.Context, req *clie
 
 // RecordWorkflowRunStep records one step's outcome within a recorded run.
 //
-// Upserted rather than inserted: a step is reported twice per attempt, once
-// when it starts and once when it settles, and both describe the same attempt.
+// Upserted rather than inserted: delivery is at-least-once, and a retried call
+// repeats a report of an attempt that is already stored.
 func (s *workflowService) RecordWorkflowRunStep(ctx context.Context, req *client.RecordWorkflowRunStepRequest) (*client.ResponseStatus, error) {
 	executionID, err := uuid.Parse(req.ExecutionId)
 	if err != nil {

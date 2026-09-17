@@ -58,11 +58,10 @@ func CreateWorkflowRunHistory() *gormigrate.Migration {
 					CONSTRAINT workflow_execution_steps_attempt_positive
 						CHECK (attempt >= 1)
 				)`,
-				// One row per attempt at a task within a run. Without this, a
-				// retried task accumulates duplicate rows and the timeline shows
-				// the same step twice with no way to tell which outcome was final.
-				// It is also what lets a step be reported twice -- once running,
-				// once settled -- as a single row rather than two.
+				// One row per attempt at a task within a run. Delivery of a step
+				// report is at-least-once, and without this a repeated report
+				// accumulates duplicate rows, so the timeline shows the same step
+				// twice with no way to tell which copy was authoritative.
 				`CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_execution_steps_attempt
 					ON public.workflow_execution_steps (execution_id, task_id, attempt)`,
 				// The timeline's only read: every step of one run, in the order
