@@ -1862,6 +1862,7 @@ pub async fn storage_set(
     key: &str,
     value: &str,
     application_id: &str,
+    clear_on_session_end: bool,
 ) -> Result<()> {
     let url = format!("{}/twirp/storage.StorageService/Set", db_proxy_url);
     let body = serde_json::json!({
@@ -1869,6 +1870,7 @@ pub async fn storage_set(
             "key": key,
             "value": value,
             "application_id": application_id,
+            "clear_on_session_end": clear_on_session_end,
         }
     });
     let response = HTTP_CLIENT

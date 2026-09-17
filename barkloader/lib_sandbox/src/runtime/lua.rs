@@ -140,13 +140,25 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
 
         let host = invocation.host.clone();
         let module_id = invocation.module_id.clone();
-        let set_fn = lua.create_function(move |_, (key, value): (String, LuaValue)| {
-            let json_val: Value = serde_json::to_value(&value)
-                .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-            super::host_bindings::storage_set(&host, &module_id, &key, json_val)
+        let set_fn = lua.create_function(
+            move |_, (key, value, options): (String, LuaValue, Option<LuaValue>)| {
+                let json_val: Value = serde_json::to_value(&value)
+                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                let json_options: Option<Value> = options
+                    .map(|o| serde_json::to_value(&o))
+                    .transpose()
+                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                super::host_bindings::storage_set(
+                    &host,
+                    &module_id,
+                    &key,
+                    json_val,
+                    super::host_bindings::parse_storage_set_options(json_options.as_ref()),
+                )
                 .map_err(mlua::Error::RuntimeError)?;
-            Ok(())
-        })?;
+                Ok(())
+            },
+        )?;
         storage.set("set", set_fn)?;
     }
     ctx.set("storage", storage)?;

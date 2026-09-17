@@ -121,7 +121,22 @@ export interface WebhookHandlerResult {
  */
 export interface CtxStorage {
   get(key: string): unknown;
-  set(key: string, value: unknown): void;
+  set(key: string, value: unknown, options?: CtxStorageSetOptions): void;
+}
+
+/** How the engine should treat a stored value beyond its bytes. */
+export interface CtxStorageSetOptions {
+  /**
+   * Drop this key when the stream session ends. A session spans brief
+   * dropouts, so this is not the same as the stream going offline — a
+   * reconnect keeps the value.
+   *
+   * The module only declares the intent; the engine does the clearing, because
+   * the sandbox exposes no way to delete storage. Defaults to false: a key
+   * that outlives a session can still be cleared later, one wrongly dropped is
+   * gone.
+   */
+  clearOnSessionEnd?: boolean;
 }
 
 /** `ctx.http` — outbound HTTP client. */

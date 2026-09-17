@@ -10,7 +10,7 @@
 //! that encoding happens, symmetrically for get and set.
 
 use lib_module::db_proxy;
-use lib_sandbox::host::StorageClient;
+use lib_sandbox::host::{StorageClient, StorageSetOptions};
 use serde_json::Value;
 use tokio::runtime::Handle;
 
@@ -49,14 +49,21 @@ impl StorageClient for HttpStorageClient {
         }
     }
 
-    fn set(&self, key: &str, value: Value) -> Result<(), String> {
+    fn set(&self, key: &str, value: Value, options: StorageSetOptions) -> Result<(), String> {
         let url = self.db_proxy_url.clone();
         let application_id = self.application_id.clone();
         let key = key.to_string();
         let value_str = serde_json::to_string(&value).map_err(|e| e.to_string())?;
         Handle::current()
             .block_on(async move {
-                db_proxy::storage_set(&url, &key, &value_str, &application_id).await
+                db_proxy::storage_set(
+                    &url,
+                    &key,
+                    &value_str,
+                    &application_id,
+                    options.clear_on_session_end,
+                )
+                .await
             })
             .map_err(|e| e.to_string())
     }

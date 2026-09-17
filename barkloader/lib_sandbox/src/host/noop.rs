@@ -18,7 +18,7 @@ impl StorageClient for NoopStorageClient {
         Ok(None)
     }
 
-    fn set(&self, _key: &str, _value: Value) -> Result<(), String> {
+    fn set(&self, _key: &str, _value: Value, _options: StorageSetOptions) -> Result<(), String> {
         Ok(())
     }
 }

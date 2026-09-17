@@ -225,12 +225,12 @@ is not the same thing as a stream.
 `ClearNamespace`, `ClearExpired` and `ClearAllForApplication` still have no
 callers anywhere in the repository.
 
-::: warning Nothing sets the flag yet
-No writer populates `clear_on_session_end`, so `ClearSessionScoped` today
-correctly clears nothing: the mechanism and the signal both exist, and the
-*declaration* does not. Until a module can mark a key session-scoped, this runs
-against an empty set. See step 5 of the build order.
-:::
+A module declares the intent by passing `{ clearOnSessionEnd: true }` as the
+optional third argument to `ctx.storage.set`. Both sandbox runtimes accept it,
+and both read it through one parser in `host_bindings.rs` so they cannot drift.
+An unrecognised value falls back to durable rather than erroring: this is a hint
+about how to treat a value, not a request for an effect, and failing a module's
+write mid-stream over a malformed hint trades a small mistake for a large one.
 
 Modules cannot clear their own storage and should not be able to: the sandbox
 exposes only `get` and `set`
@@ -242,10 +242,11 @@ which is the [engine integrity](./engine-integrity.md) rule working as intended
 
 Both are live today and both sit in the key format this work touches:
 
-- No writer populates `namespace`, `expires_at` or `clear_on_session_end`.
-  `storage_set` in `barkloader/lib_module/src/db_proxy.rs` sends only `key`,
-  `value` and `application_id`, so all three metadata fields are permanently
-  empty. This is the one keeping `ClearSessionScoped` clearing nothing.
+- No writer populates `namespace` or `expires_at`. `storage_set` in
+  `barkloader/lib_module/src/db_proxy.rs` now sends `clear_on_session_end`, but
+  the other two metadata fields stay permanently empty — which is why
+  `ClearNamespace` and `ClearExpired` would have nothing to match even if
+  something called them.
 - The storage key is `<application_id>\x00<key>`
   (`db/app/services/storage_service.go:40-42`) with **no module segment**, so
   two modules writing `"count"` collide.
@@ -318,8 +319,8 @@ Each step is independently useful and safe to stop after:
    1 and 2 into observable behaviour.
 4. **Storage rename and a clear RPC** called on `session.ended` — done, though
    inert until something sets `clear_on_session_end`.
-5. **A module-facing way to declare a key session-scoped**, which is what makes
-   step 4 clear anything: a `set` that carries options, threaded through the
-   sandbox trait, both runtime bindings, `db_proxy.rs` and `HttpStorageClient`.
-   This changes an end-user-facing module contract, so it is its own step.
+5. **A module-facing way to declare a key session-scoped** — done.
+   `ctx.storage.set(key, value, { clearOnSessionEnd: true })` threads through
+   the sandbox trait, both runtime bindings, `db_proxy.rs` and
+   `HttpStorageClient`, which is what makes step 4 clear anything.
 6. **The Convex field and the two UI call sites.**

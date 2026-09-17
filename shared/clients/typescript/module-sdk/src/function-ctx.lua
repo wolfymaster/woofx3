@@ -56,9 +56,19 @@
 ---@field verifyEd25519 fun(public_key: string, signature: string, message: string, encoding?: "hex"|"base64"): boolean
 ---@field timingSafeEqual fun(a: string, b: string): boolean
 
+---How the engine should treat a stored value beyond its bytes.
+---
+---`clearOnSessionEnd` drops the key when the stream session ends, which is
+---not the same as the stream going offline: a session spans brief dropouts,
+---so a reconnect keeps the value. The module only declares the intent; the
+---engine does the clearing, since the sandbox exposes no way to delete
+---storage. Omitted means the value persists until something overwrites it.
+---@class CtxStorageSetOptions
+---@field clearOnSessionEnd boolean?
+
 ---@class CtxStorage
 ---@field get fun(key: string): any
----@field set fun(key: string, value: any): nil
+---@field set fun(key: string, value: any, options?: CtxStorageSetOptions): nil
 
 ---@class CtxHttp
 ---@field request fun(url: string, method: string, opts?: CtxHttpOptions): CtxHttpResponse
