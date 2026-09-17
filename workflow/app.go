@@ -183,8 +183,13 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 		}
 	}
 
-	// Explicit "execute this workflow now" commands (separate from lifecycle).
-	if err := a.subscribeToWorkflowEvents(natsClient, string(cloudevents.SubjectWorkflowExecute)); err != nil {
+	// Explicit "run this workflow now" commands. Separate from the CRUD
+	// lifecycle above and decoded differently: this subject carries an ordinary
+	// CloudEvent naming one workflow, not a registry change, so it cannot share
+	// handleWorkflowEvent.
+	if _, err := natsClient.Subscribe(string(cloudevents.SubjectWorkflowExecute), func(msg natsclient.Msg) {
+		a.handleWorkflowExecuteEvent(msg)
+	}); err != nil {
 		a.logger.Error("Failed to subscribe to workflow execute events", "error", err)
 	}
 
@@ -258,6 +263,47 @@ func (a *WorkflowApp) handleWorkflowEvent(msg natsclient.Msg) {
 		a.manager.HandleWorkflowDelete(changeData.WorkflowID)
 	} else {
 		a.logger.Warn("Unknown workflow operation", "operation", changeData.Operation)
+	}
+}
+
+// handleWorkflowExecuteEvent runs one workflow on request.
+//
+// Distinct from handleWorkflowEvent, which decodes a registry change: this
+// subject carries an ordinary CloudEvent whose data names the workflow to run.
+//
+// The event is handed to the engine unchanged rather than synthesized afresh,
+// so its correlation attributes reach the execution -- that is what lets the
+// caller who asked for this run be told how it ended, since the run happens
+// here long after their request returned.
+func (a *WorkflowApp) handleWorkflowExecuteEvent(msg natsclient.Msg) {
+	event, err := a.validateCloudEvent(msg.Data())
+	if err != nil {
+		a.logger.Error("Invalid workflow execute event",
+			"error", err,
+			"subject", msg.Subject())
+		return
+	}
+
+	workflowID, _ := event.Data["workflowId"].(string)
+	if workflowID == "" {
+		a.logger.Error("Workflow execute event names no workflow", "event_id", event.ID)
+		return
+	}
+
+	a.logger.Info("Running workflow on request",
+		"workflow_id", workflowID,
+		"trigger_id", event.TriggerID,
+		"triggered_by", event.TriggeredBy)
+
+	// A workflow absent from the registry is the common failure here -- it was
+	// deleted, disabled, or never reached this engine. The run simply does not
+	// happen, and the caller learns that from the silence rather than from a
+	// failed run, because there is no run to fail.
+	if err := a.engine.FireByWorkflowID(workflowID, event); err != nil {
+		a.logger.Error("Failed to run requested workflow",
+			"workflow_id", workflowID,
+			"trigger_id", event.TriggerID,
+			"error", err)
 	}
 }
 

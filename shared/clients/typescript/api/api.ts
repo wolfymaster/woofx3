@@ -616,9 +616,16 @@ export interface StreamStatus {
 }
 
 export interface TriggerWorkflowResponse {
+  /**
+   * Empty. A run is started asynchronously by the engine, which mints the
+   * execution id when it begins -- after this call has returned. Correlate on
+   * `triggerId` instead; it is the id the run's lifecycle is reported against.
+   */
   executionId: string;
   status: string;
   message: string;
+  /** Correlation handle for the requested run. See `executionId`. */
+  triggerId: string;
 }
 
 // ==================== API Interface ====================
@@ -1073,10 +1080,20 @@ export interface Woofx3EngineApi {
   handleInboundWebhook(triggerId: string, request: InboundWebhookRequest): Promise<InboundWebhookResponse>;
 
   // Workflow execution (user-facing)
+  /**
+   * Ask the engine to run one workflow, matched by id or by name.
+   *
+   * Returns once the request is on the bus, not once the run finishes. Supply
+   * `triggerId` to be told how that run ended: the engine echoes it onto the
+   * `workflow.run.*` events it emits. `userId` is recorded as provenance only
+   * and may be any string.
+   */
   triggerWorkflowByName(
-    workflowName: string,
+    workflowNameOrId: string,
     parameters?: Record<string, string>,
-    userId?: string
+    userId?: string,
+    triggerId?: string,
+    triggeredBy?: string
   ): Promise<TriggerWorkflowResponse>;
 
   // Dashboard

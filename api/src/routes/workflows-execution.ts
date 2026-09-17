@@ -77,17 +77,21 @@ export const workflowsExecutionRoutes = routeModule({
    * The UI can call this with a workflow name and parameters.
    */
   async triggerWorkflowByName(
-    workflowName: string,
+    workflowNameOrId: string,
     parameters: Record<string, string> = {},
-    userId?: string
+    userId?: string,
+    triggerId?: string,
+    triggeredBy?: string
   ): Promise<{
     executionId: string;
     status: string;
     message: string;
+    triggerId: string;
   }> {
-    this.logger.info("Triggering workflow by name", {
-      workflowName,
+    this.logger.info("Triggering workflow", {
+      workflowNameOrId,
       userId,
+      triggerId,
       parametersCount: Object.keys(parameters).length,
     });
     const applicationId = await this.ensureApplicationId();
@@ -101,53 +105,52 @@ export const workflowsExecutionRoutes = routeModule({
       sortDesc: false,
     };
     const workflowsResponse = await this.db.listWorkflows(workflowsReq);
-    const foundWorkflow = workflowsResponse.workflows.find(
-      (wf) => wf.name.toLowerCase() === workflowName.toLowerCase()
-    );
+    // Matched on either id or name: the dashboard holds ids, a chat command or
+    // a hand-written call holds names, and both reach this one method. Id is
+    // tried first because it is exact -- a name comparison is case-insensitive
+    // and two workflows may share one.
+    const needle = workflowNameOrId.toLowerCase();
+    const foundWorkflow =
+      workflowsResponse.workflows.find((wf) => wf.id === workflowNameOrId) ??
+      workflowsResponse.workflows.find((wf) => wf.name.toLowerCase() === needle);
     if (!foundWorkflow) {
-      throw new Error(`Workflow "${workflowName}" not found`);
+      throw new Error(`Workflow "${workflowNameOrId}" not found`);
     }
     if (!foundWorkflow.enabled) {
-      throw new Error(`Workflow "${workflowName}" is disabled`);
+      throw new Error(`Workflow "${workflowNameOrId}" is disabled`);
     }
 
-    // Execute the workflow
-    const correlationId = crypto.randomUUID();
-    const execReq: workflow.ExecuteWorkflowRequest = {
-      workflowId: foundWorkflow.id,
-      applicationId,
-      startedBy: userId || "ui",
-      inputs: parameters,
-      async: true,
-      correlationId,
-    };
-    let execResponse: { executionId: string; async: boolean };
-    try {
-      execResponse = await this.db.executeWorkflow(execReq);
-    } catch (err) {
-      // Caught only to attach the workflow this was for; db-proxy's reason
-      // travels on unchanged.
-      this.logger.error("Failed to execute workflow", {
-        workflowId: foundWorkflow.id,
-        workflowName,
-        error: err instanceof Error ? err.message : String(err),
-        correlationId,
-      });
-      throw err;
-    }
+    // Published for the engine to run, rather than written as a db-proxy
+    // execution row. The row had no consumer -- nothing turned a pending row
+    // into a run -- so it recorded an execution that never happened and left
+    // the caller holding an id matching nothing. The engine owns execution and
+    // reports the run's lifecycle itself.
+    const correlationId = triggerId || crypto.randomUUID();
+    await this.publishEvent(
+      "workflow.execute",
+      { workflowId: foundWorkflow.id, inputs: parameters, startedBy: userId ?? "" },
+      undefined,
+      undefined,
+      "api",
+      { triggerId: correlationId, triggeredBy }
+    );
 
-    this.logger.info("Workflow triggered successfully", {
+    this.logger.info("Workflow run requested", {
       workflowId: foundWorkflow.id,
-      workflowName,
-      executionId: execResponse.executionId,
-      correlationId,
-      async: execResponse.async,
+      workflowName: foundWorkflow.name,
+      triggerId: correlationId,
     });
 
     return {
-      executionId: execResponse.executionId,
-      status: execResponse.async ? "running" : "completed",
-      message: execResponse.async ? "Workflow started successfully" : "Workflow completed",
+      // Deliberately empty. The engine mints an execution id when the run
+      // actually begins, asynchronously and out of this call's reach; a
+      // fabricated one here would match no run, which is what it used to do.
+      // `triggerId` is the handle that does resolve -- the run's lifecycle is
+      // reported against it.
+      executionId: "",
+      status: "requested",
+      message: `Requested a run of "${foundWorkflow.name}"`,
+      triggerId: correlationId,
     };
   },
 
