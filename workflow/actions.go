@@ -117,8 +117,10 @@ func NewBarkloaderAction() tasks.ActionFunc[AppServices] {
 //     attached so layout widgets can read raw event fields. `null` for
 //     non-event triggers (manual, scheduled, chat command).
 //
-// The engine forwards `parameters` unchecked: the scene manager validates
-// the layout against the widget catalog before it frames anything.
+// The step fails rather than publishing when `layout` is structurally
+// unusable (see validateAlertParams). Everything else about `parameters` is
+// forwarded unchecked: the scene manager holds the widget catalog and decides
+// what it will actually frame.
 //
 // Canonical id of the corresponding action declaration row:
 // `woofx3:action:alert`, declared as a `native` action by the bundled
@@ -129,6 +131,9 @@ func NewAlertAction() tasks.ActionFunc[AppServices] {
 		bus := ctx.Services.MessageBus()
 		if bus == nil {
 			return nil, fmt.Errorf("message bus not available")
+		}
+		if err := validateAlertParams(params); err != nil {
+			return nil, fmt.Errorf("alert cannot be published: %w", err)
 		}
 		payload, err := buildAlertEnvelope(ctx.ApplicationID, params, ctx.TriggerEvent)
 		if err != nil {
@@ -176,6 +181,79 @@ func buildAlertEnvelope(applicationID string, params map[string]any, event *type
 		return nil, fmt.Errorf("marshal alert envelope: %w", err)
 	}
 	return payload, nil
+}
+
+// validateAlertParams rejects an alert whose `layout` cannot be framed,
+// before anything is published.
+//
+// The scene manager validates layouts properly — it is the side holding the
+// widget catalog — but it does so after this step has already reported
+// success, and its refusal reaches nobody but a log file. These four checks
+// need no catalog, so making them here turns the common authoring mistake (a
+// step saved against a module that has since changed) into a failed run with a
+// reason on it.
+//
+// Structural only, deliberately. Whether a widget exists, or may play in an
+// alert, stays with the scene manager.
+func validateAlertParams(params map[string]any) error {
+	layout, ok := params["layout"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("layout must be an object, got %s", describeParam(params["layout"]))
+	}
+	if !isPositiveNumber(layout["width"]) {
+		return fmt.Errorf("layout.width must be a positive number, got %s", describeParam(layout["width"]))
+	}
+	if !isPositiveNumber(layout["height"]) {
+		return fmt.Errorf("layout.height must be a positive number, got %s", describeParam(layout["height"]))
+	}
+	if _, ok := layout["widgets"].([]any); !ok {
+		return fmt.Errorf("layout.widgets must be an array, got %s", describeParam(layout["widgets"]))
+	}
+	return nil
+}
+
+// describeParam names what arrived, so a message tells an absent field apart
+// from a mistyped one. Mirrors `describe` in the scene manager's
+// alert-layout.ts, so an author sees the same vocabulary wherever the alert was
+// refused. A JSON null and an absent key are indistinguishable once unmarshalled
+// into map[string]any, and both read as "nothing".
+func describeParam(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return "nothing"
+	case string:
+		return fmt.Sprintf("the string %q", v)
+	case bool:
+		return fmt.Sprintf("bool %v", v)
+	case float64:
+		return fmt.Sprintf("number %v", v)
+	case int:
+		return fmt.Sprintf("number %d", v)
+	case []any:
+		return "an array"
+	case map[string]any:
+		return "an object"
+	default:
+		return fmt.Sprintf("%T", value)
+	}
+}
+
+// isPositiveNumber accepts the shapes a step parameter can arrive in. Steps are
+// persisted as JSON, so a dimension is a float64 in practice; the integer cases
+// are for definitions built in Go.
+//
+// No finiteness check: JSON cannot carry Inf or NaN, so neither can reach here.
+func isPositiveNumber(value any) bool {
+	switch v := value.(type) {
+	case float64:
+		return v > 0
+	case int:
+		return v > 0
+	case int64:
+		return v > 0
+	default:
+		return false
+	}
 }
 
 // buildModuleInvokeEvent shapes the sandbox `ctx.event` object module functions

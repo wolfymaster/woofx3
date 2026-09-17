@@ -238,6 +238,7 @@ export const workflowsRoutes = routeModule({
       startedAt: string;
       duration: number;
       trigger: string;
+      error: string;
     }>
   > {
     const applicationId = await this.ensureApplicationId();
@@ -295,6 +296,10 @@ export const workflowsRoutes = routeModule({
           startedAt,
           duration: Math.round(duration),
           trigger,
+          // Why a run failed, not just that it did. The engine records this on
+          // the execution as well as the failing step, and without it a failed
+          // run is a red badge with nothing to act on.
+          error: exec.error ?? "",
         };
       })
     );

@@ -142,3 +142,98 @@ func TestBuildModuleInvokeEvent_ParametersAndTrigger(t *testing.T) {
 		t.Errorf("data.user_name = %v, want alice", got["data"])
 	}
 }
+
+func TestValidateAlertParams_AcceptsAUsableLayout(t *testing.T) {
+	// Dimensions arrive as float64: steps are persisted as JSON.
+	params := map[string]any{
+		"layout": map[string]any{
+			"width":   1920.0,
+			"height":  1080.0,
+			"widgets": []any{map[string]any{"id": "t1"}},
+		},
+	}
+	if err := validateAlertParams(params); err != nil {
+		t.Fatalf("validateAlertParams: %v", err)
+	}
+}
+
+func TestValidateAlertParams_AcceptsIntegerDimensions(t *testing.T) {
+	// A definition built in Go rather than unmarshalled from a stored step.
+	params := map[string]any{
+		"layout": map[string]any{"width": 100, "height": 100, "widgets": []any{}},
+	}
+	if err := validateAlertParams(params); err != nil {
+		t.Fatalf("validateAlertParams: %v", err)
+	}
+}
+
+// An empty widget list is a usable envelope. Whether there is anything worth
+// playing is the scene manager's call — it holds the catalog and reports that
+// case separately — so refusing here would take a decision that is not ours.
+func TestValidateAlertParams_AcceptsAnEmptyWidgetList(t *testing.T) {
+	params := map[string]any{
+		"layout": map[string]any{"width": 10.0, "height": 10.0, "widgets": []any{}},
+	}
+	if err := validateAlertParams(params); err != nil {
+		t.Fatalf("validateAlertParams: %v", err)
+	}
+}
+
+// The message is the whole point: an author sees it on a failed run and has to
+// be able to act on it without reading engine source.
+func TestValidateAlertParams_NamesTheFieldAtFault(t *testing.T) {
+	cases := []struct {
+		name   string
+		params map[string]any
+		want   string
+	}{
+		{
+			name:   "no layout at all, which is what a stale module produces",
+			params: map[string]any{"target": "default"},
+			want:   "layout must be an object, got nothing",
+		},
+		{
+			name:   "layout is not an object",
+			params: map[string]any{"layout": "default"},
+			want:   `layout must be an object, got the string "default"`,
+		},
+		{
+			name:   "width is zero",
+			params: map[string]any{"layout": map[string]any{"width": 0.0, "height": 100.0, "widgets": []any{}}},
+			want:   "layout.width must be a positive number, got number 0",
+		},
+		{
+			// Reads as correct in a payload, which is why the value is quoted.
+			name:   "width arrived as a string",
+			params: map[string]any{"layout": map[string]any{"width": "1920", "height": 1080.0, "widgets": []any{}}},
+			want:   `layout.width must be a positive number, got the string "1920"`,
+		},
+		{
+			name:   "height is missing",
+			params: map[string]any{"layout": map[string]any{"width": 100.0, "widgets": []any{}}},
+			want:   "layout.height must be a positive number, got nothing",
+		},
+		{
+			name:   "widgets is missing",
+			params: map[string]any{"layout": map[string]any{"width": 100.0, "height": 100.0}},
+			want:   "layout.widgets must be an array, got nothing",
+		},
+		{
+			name:   "widgets is an object",
+			params: map[string]any{"layout": map[string]any{"width": 100.0, "height": 100.0, "widgets": map[string]any{}}},
+			want:   "layout.widgets must be an array, got an object",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateAlertParams(tc.params)
+			if err == nil {
+				t.Fatalf("expected an error, got nil")
+			}
+			if err.Error() != tc.want {
+				t.Errorf("error = %q, want %q", err.Error(), tc.want)
+			}
+		})
+	}
+}
