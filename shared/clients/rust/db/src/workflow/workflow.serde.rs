@@ -911,12 +911,6 @@ impl serde::Serialize for ExecutionStep {
         if !self.error.is_empty() {
             len += 1;
         }
-        if !self.inputs.is_empty() {
-            len += 1;
-        }
-        if !self.outputs.is_empty() {
-            len += 1;
-        }
         if self.started_at.is_some() {
             len += 1;
         }
@@ -924,6 +918,15 @@ impl serde::Serialize for ExecutionStep {
             len += 1;
         }
         if self.duration_ms != 0 {
+            len += 1;
+        }
+        if !self.inputs_json.is_empty() {
+            len += 1;
+        }
+        if !self.outputs_json.is_empty() {
+            len += 1;
+        }
+        if self.step_index != 0 {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("workflow.ExecutionStep", len)?;
@@ -942,12 +945,6 @@ impl serde::Serialize for ExecutionStep {
         if !self.error.is_empty() {
             struct_ser.serialize_field("error", &self.error)?;
         }
-        if !self.inputs.is_empty() {
-            struct_ser.serialize_field("inputs", &self.inputs)?;
-        }
-        if !self.outputs.is_empty() {
-            struct_ser.serialize_field("outputs", &self.outputs)?;
-        }
         if let Some(v) = self.started_at.as_ref() {
             struct_ser.serialize_field("startedAt", v)?;
         }
@@ -958,6 +955,15 @@ impl serde::Serialize for ExecutionStep {
             #[allow(clippy::needless_borrow)]
             #[allow(clippy::needless_borrows_for_generic_args)]
             struct_ser.serialize_field("durationMs", ToString::to_string(&self.duration_ms).as_str())?;
+        }
+        if !self.inputs_json.is_empty() {
+            struct_ser.serialize_field("inputsJson", &self.inputs_json)?;
+        }
+        if !self.outputs_json.is_empty() {
+            struct_ser.serialize_field("outputsJson", &self.outputs_json)?;
+        }
+        if self.step_index != 0 {
+            struct_ser.serialize_field("stepIndex", &self.step_index)?;
         }
         struct_ser.end()
     }
@@ -975,14 +981,18 @@ impl<'de> serde::Deserialize<'de> for ExecutionStep {
             "status",
             "attempt",
             "error",
-            "inputs",
-            "outputs",
             "started_at",
             "startedAt",
             "completed_at",
             "completedAt",
             "duration_ms",
             "durationMs",
+            "inputs_json",
+            "inputsJson",
+            "outputs_json",
+            "outputsJson",
+            "step_index",
+            "stepIndex",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -992,11 +1002,12 @@ impl<'de> serde::Deserialize<'de> for ExecutionStep {
             Status,
             Attempt,
             Error,
-            Inputs,
-            Outputs,
             StartedAt,
             CompletedAt,
             DurationMs,
+            InputsJson,
+            OutputsJson,
+            StepIndex,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -1023,11 +1034,12 @@ impl<'de> serde::Deserialize<'de> for ExecutionStep {
                             "status" => Ok(GeneratedField::Status),
                             "attempt" => Ok(GeneratedField::Attempt),
                             "error" => Ok(GeneratedField::Error),
-                            "inputs" => Ok(GeneratedField::Inputs),
-                            "outputs" => Ok(GeneratedField::Outputs),
                             "startedAt" | "started_at" => Ok(GeneratedField::StartedAt),
                             "completedAt" | "completed_at" => Ok(GeneratedField::CompletedAt),
                             "durationMs" | "duration_ms" => Ok(GeneratedField::DurationMs),
+                            "inputsJson" | "inputs_json" => Ok(GeneratedField::InputsJson),
+                            "outputsJson" | "outputs_json" => Ok(GeneratedField::OutputsJson),
+                            "stepIndex" | "step_index" => Ok(GeneratedField::StepIndex),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -1052,11 +1064,12 @@ impl<'de> serde::Deserialize<'de> for ExecutionStep {
                 let mut status__ = None;
                 let mut attempt__ = None;
                 let mut error__ = None;
-                let mut inputs__ = None;
-                let mut outputs__ = None;
                 let mut started_at__ = None;
                 let mut completed_at__ = None;
                 let mut duration_ms__ = None;
+                let mut inputs_json__ = None;
+                let mut outputs_json__ = None;
+                let mut step_index__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::StepId => {
@@ -1091,22 +1104,6 @@ impl<'de> serde::Deserialize<'de> for ExecutionStep {
                             }
                             error__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::Inputs => {
-                            if inputs__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("inputs"));
-                            }
-                            inputs__ = Some(
-                                map_.next_value::<std::collections::HashMap<_, _>>()?
-                            );
-                        }
-                        GeneratedField::Outputs => {
-                            if outputs__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("outputs"));
-                            }
-                            outputs__ = Some(
-                                map_.next_value::<std::collections::HashMap<_, _>>()?
-                            );
-                        }
                         GeneratedField::StartedAt => {
                             if started_at__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("startedAt"));
@@ -1127,6 +1124,26 @@ impl<'de> serde::Deserialize<'de> for ExecutionStep {
                                 Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
                             ;
                         }
+                        GeneratedField::InputsJson => {
+                            if inputs_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("inputsJson"));
+                            }
+                            inputs_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::OutputsJson => {
+                            if outputs_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("outputsJson"));
+                            }
+                            outputs_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::StepIndex => {
+                            if step_index__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("stepIndex"));
+                            }
+                            step_index__ = 
+                                Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
+                            ;
+                        }
                     }
                 }
                 Ok(ExecutionStep {
@@ -1135,11 +1152,12 @@ impl<'de> serde::Deserialize<'de> for ExecutionStep {
                     status: status__.unwrap_or_default(),
                     attempt: attempt__.unwrap_or_default(),
                     error: error__.unwrap_or_default(),
-                    inputs: inputs__.unwrap_or_default(),
-                    outputs: outputs__.unwrap_or_default(),
                     started_at: started_at__,
                     completed_at: completed_at__,
                     duration_ms: duration_ms__.unwrap_or_default(),
+                    inputs_json: inputs_json__.unwrap_or_default(),
+                    outputs_json: outputs_json__.unwrap_or_default(),
+                    step_index: step_index__.unwrap_or_default(),
                 })
             }
         }
@@ -2101,6 +2119,499 @@ impl<'de> serde::Deserialize<'de> for ListWorkflowsResponse {
         deserializer.deserialize_struct("workflow.ListWorkflowsResponse", FIELDS, GeneratedVisitor)
     }
 }
+impl serde::Serialize for RecordWorkflowRunRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.id.is_empty() {
+            len += 1;
+        }
+        if !self.workflow_id.is_empty() {
+            len += 1;
+        }
+        if !self.application_id.is_empty() {
+            len += 1;
+        }
+        if !self.triggered_by.is_empty() {
+            len += 1;
+        }
+        if !self.trigger_event_json.is_empty() {
+            len += 1;
+        }
+        if self.started_at.is_some() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("workflow.RecordWorkflowRunRequest", len)?;
+        if !self.id.is_empty() {
+            struct_ser.serialize_field("id", &self.id)?;
+        }
+        if !self.workflow_id.is_empty() {
+            struct_ser.serialize_field("workflowId", &self.workflow_id)?;
+        }
+        if !self.application_id.is_empty() {
+            struct_ser.serialize_field("applicationId", &self.application_id)?;
+        }
+        if !self.triggered_by.is_empty() {
+            struct_ser.serialize_field("triggeredBy", &self.triggered_by)?;
+        }
+        if !self.trigger_event_json.is_empty() {
+            struct_ser.serialize_field("triggerEventJson", &self.trigger_event_json)?;
+        }
+        if let Some(v) = self.started_at.as_ref() {
+            struct_ser.serialize_field("startedAt", v)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for RecordWorkflowRunRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "id",
+            "workflow_id",
+            "workflowId",
+            "application_id",
+            "applicationId",
+            "triggered_by",
+            "triggeredBy",
+            "trigger_event_json",
+            "triggerEventJson",
+            "started_at",
+            "startedAt",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Id,
+            WorkflowId,
+            ApplicationId,
+            TriggeredBy,
+            TriggerEventJson,
+            StartedAt,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "id" => Ok(GeneratedField::Id),
+                            "workflowId" | "workflow_id" => Ok(GeneratedField::WorkflowId),
+                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
+                            "triggeredBy" | "triggered_by" => Ok(GeneratedField::TriggeredBy),
+                            "triggerEventJson" | "trigger_event_json" => Ok(GeneratedField::TriggerEventJson),
+                            "startedAt" | "started_at" => Ok(GeneratedField::StartedAt),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = RecordWorkflowRunRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct workflow.RecordWorkflowRunRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<RecordWorkflowRunRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut id__ = None;
+                let mut workflow_id__ = None;
+                let mut application_id__ = None;
+                let mut triggered_by__ = None;
+                let mut trigger_event_json__ = None;
+                let mut started_at__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Id => {
+                            if id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::WorkflowId => {
+                            if workflow_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("workflowId"));
+                            }
+                            workflow_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ApplicationId => {
+                            if application_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("applicationId"));
+                            }
+                            application_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::TriggeredBy => {
+                            if triggered_by__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("triggeredBy"));
+                            }
+                            triggered_by__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::TriggerEventJson => {
+                            if trigger_event_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("triggerEventJson"));
+                            }
+                            trigger_event_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::StartedAt => {
+                            if started_at__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("startedAt"));
+                            }
+                            started_at__ = map_.next_value()?;
+                        }
+                    }
+                }
+                Ok(RecordWorkflowRunRequest {
+                    id: id__.unwrap_or_default(),
+                    workflow_id: workflow_id__.unwrap_or_default(),
+                    application_id: application_id__.unwrap_or_default(),
+                    triggered_by: triggered_by__.unwrap_or_default(),
+                    trigger_event_json: trigger_event_json__.unwrap_or_default(),
+                    started_at: started_at__,
+                })
+            }
+        }
+        deserializer.deserialize_struct("workflow.RecordWorkflowRunRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for RecordWorkflowRunStepRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.execution_id.is_empty() {
+            len += 1;
+        }
+        if !self.application_id.is_empty() {
+            len += 1;
+        }
+        if !self.task_id.is_empty() {
+            len += 1;
+        }
+        if !self.name.is_empty() {
+            len += 1;
+        }
+        if !self.status.is_empty() {
+            len += 1;
+        }
+        if self.attempt != 0 {
+            len += 1;
+        }
+        if self.step_index != 0 {
+            len += 1;
+        }
+        if !self.inputs_json.is_empty() {
+            len += 1;
+        }
+        if !self.outputs_json.is_empty() {
+            len += 1;
+        }
+        if !self.error.is_empty() {
+            len += 1;
+        }
+        if self.started_at.is_some() {
+            len += 1;
+        }
+        if self.completed_at.is_some() {
+            len += 1;
+        }
+        if self.duration_ms != 0 {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("workflow.RecordWorkflowRunStepRequest", len)?;
+        if !self.execution_id.is_empty() {
+            struct_ser.serialize_field("executionId", &self.execution_id)?;
+        }
+        if !self.application_id.is_empty() {
+            struct_ser.serialize_field("applicationId", &self.application_id)?;
+        }
+        if !self.task_id.is_empty() {
+            struct_ser.serialize_field("taskId", &self.task_id)?;
+        }
+        if !self.name.is_empty() {
+            struct_ser.serialize_field("name", &self.name)?;
+        }
+        if !self.status.is_empty() {
+            struct_ser.serialize_field("status", &self.status)?;
+        }
+        if self.attempt != 0 {
+            struct_ser.serialize_field("attempt", &self.attempt)?;
+        }
+        if self.step_index != 0 {
+            struct_ser.serialize_field("stepIndex", &self.step_index)?;
+        }
+        if !self.inputs_json.is_empty() {
+            struct_ser.serialize_field("inputsJson", &self.inputs_json)?;
+        }
+        if !self.outputs_json.is_empty() {
+            struct_ser.serialize_field("outputsJson", &self.outputs_json)?;
+        }
+        if !self.error.is_empty() {
+            struct_ser.serialize_field("error", &self.error)?;
+        }
+        if let Some(v) = self.started_at.as_ref() {
+            struct_ser.serialize_field("startedAt", v)?;
+        }
+        if let Some(v) = self.completed_at.as_ref() {
+            struct_ser.serialize_field("completedAt", v)?;
+        }
+        if self.duration_ms != 0 {
+            #[allow(clippy::needless_borrow)]
+            #[allow(clippy::needless_borrows_for_generic_args)]
+            struct_ser.serialize_field("durationMs", ToString::to_string(&self.duration_ms).as_str())?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for RecordWorkflowRunStepRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "execution_id",
+            "executionId",
+            "application_id",
+            "applicationId",
+            "task_id",
+            "taskId",
+            "name",
+            "status",
+            "attempt",
+            "step_index",
+            "stepIndex",
+            "inputs_json",
+            "inputsJson",
+            "outputs_json",
+            "outputsJson",
+            "error",
+            "started_at",
+            "startedAt",
+            "completed_at",
+            "completedAt",
+            "duration_ms",
+            "durationMs",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            ExecutionId,
+            ApplicationId,
+            TaskId,
+            Name,
+            Status,
+            Attempt,
+            StepIndex,
+            InputsJson,
+            OutputsJson,
+            Error,
+            StartedAt,
+            CompletedAt,
+            DurationMs,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "executionId" | "execution_id" => Ok(GeneratedField::ExecutionId),
+                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
+                            "taskId" | "task_id" => Ok(GeneratedField::TaskId),
+                            "name" => Ok(GeneratedField::Name),
+                            "status" => Ok(GeneratedField::Status),
+                            "attempt" => Ok(GeneratedField::Attempt),
+                            "stepIndex" | "step_index" => Ok(GeneratedField::StepIndex),
+                            "inputsJson" | "inputs_json" => Ok(GeneratedField::InputsJson),
+                            "outputsJson" | "outputs_json" => Ok(GeneratedField::OutputsJson),
+                            "error" => Ok(GeneratedField::Error),
+                            "startedAt" | "started_at" => Ok(GeneratedField::StartedAt),
+                            "completedAt" | "completed_at" => Ok(GeneratedField::CompletedAt),
+                            "durationMs" | "duration_ms" => Ok(GeneratedField::DurationMs),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = RecordWorkflowRunStepRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct workflow.RecordWorkflowRunStepRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<RecordWorkflowRunStepRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut execution_id__ = None;
+                let mut application_id__ = None;
+                let mut task_id__ = None;
+                let mut name__ = None;
+                let mut status__ = None;
+                let mut attempt__ = None;
+                let mut step_index__ = None;
+                let mut inputs_json__ = None;
+                let mut outputs_json__ = None;
+                let mut error__ = None;
+                let mut started_at__ = None;
+                let mut completed_at__ = None;
+                let mut duration_ms__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::ExecutionId => {
+                            if execution_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("executionId"));
+                            }
+                            execution_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::ApplicationId => {
+                            if application_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("applicationId"));
+                            }
+                            application_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::TaskId => {
+                            if task_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("taskId"));
+                            }
+                            task_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Name => {
+                            if name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("name"));
+                            }
+                            name__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Attempt => {
+                            if attempt__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("attempt"));
+                            }
+                            attempt__ = 
+                                Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
+                            ;
+                        }
+                        GeneratedField::StepIndex => {
+                            if step_index__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("stepIndex"));
+                            }
+                            step_index__ = 
+                                Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
+                            ;
+                        }
+                        GeneratedField::InputsJson => {
+                            if inputs_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("inputsJson"));
+                            }
+                            inputs_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::OutputsJson => {
+                            if outputs_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("outputsJson"));
+                            }
+                            outputs_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Error => {
+                            if error__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("error"));
+                            }
+                            error__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::StartedAt => {
+                            if started_at__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("startedAt"));
+                            }
+                            started_at__ = map_.next_value()?;
+                        }
+                        GeneratedField::CompletedAt => {
+                            if completed_at__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("completedAt"));
+                            }
+                            completed_at__ = map_.next_value()?;
+                        }
+                        GeneratedField::DurationMs => {
+                            if duration_ms__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("durationMs"));
+                            }
+                            duration_ms__ = 
+                                Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
+                            ;
+                        }
+                    }
+                }
+                Ok(RecordWorkflowRunStepRequest {
+                    execution_id: execution_id__.unwrap_or_default(),
+                    application_id: application_id__.unwrap_or_default(),
+                    task_id: task_id__.unwrap_or_default(),
+                    name: name__.unwrap_or_default(),
+                    status: status__.unwrap_or_default(),
+                    attempt: attempt__.unwrap_or_default(),
+                    step_index: step_index__.unwrap_or_default(),
+                    inputs_json: inputs_json__.unwrap_or_default(),
+                    outputs_json: outputs_json__.unwrap_or_default(),
+                    error: error__.unwrap_or_default(),
+                    started_at: started_at__,
+                    completed_at: completed_at__,
+                    duration_ms: duration_ms__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("workflow.RecordWorkflowRunStepRequest", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for UpdateWorkflowRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -2372,6 +2883,167 @@ impl<'de> serde::Deserialize<'de> for UpdateWorkflowRequest {
             }
         }
         deserializer.deserialize_struct("workflow.UpdateWorkflowRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for UpdateWorkflowRunStatusRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.id.is_empty() {
+            len += 1;
+        }
+        if !self.status.is_empty() {
+            len += 1;
+        }
+        if !self.error.is_empty() {
+            len += 1;
+        }
+        if !self.output_json.is_empty() {
+            len += 1;
+        }
+        if self.completed_at.is_some() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("workflow.UpdateWorkflowRunStatusRequest", len)?;
+        if !self.id.is_empty() {
+            struct_ser.serialize_field("id", &self.id)?;
+        }
+        if !self.status.is_empty() {
+            struct_ser.serialize_field("status", &self.status)?;
+        }
+        if !self.error.is_empty() {
+            struct_ser.serialize_field("error", &self.error)?;
+        }
+        if !self.output_json.is_empty() {
+            struct_ser.serialize_field("outputJson", &self.output_json)?;
+        }
+        if let Some(v) = self.completed_at.as_ref() {
+            struct_ser.serialize_field("completedAt", v)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for UpdateWorkflowRunStatusRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "id",
+            "status",
+            "error",
+            "output_json",
+            "outputJson",
+            "completed_at",
+            "completedAt",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Id,
+            Status,
+            Error,
+            OutputJson,
+            CompletedAt,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "id" => Ok(GeneratedField::Id),
+                            "status" => Ok(GeneratedField::Status),
+                            "error" => Ok(GeneratedField::Error),
+                            "outputJson" | "output_json" => Ok(GeneratedField::OutputJson),
+                            "completedAt" | "completed_at" => Ok(GeneratedField::CompletedAt),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = UpdateWorkflowRunStatusRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct workflow.UpdateWorkflowRunStatusRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<UpdateWorkflowRunStatusRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut id__ = None;
+                let mut status__ = None;
+                let mut error__ = None;
+                let mut output_json__ = None;
+                let mut completed_at__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Id => {
+                            if id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::Error => {
+                            if error__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("error"));
+                            }
+                            error__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::OutputJson => {
+                            if output_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("outputJson"));
+                            }
+                            output_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CompletedAt => {
+                            if completed_at__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("completedAt"));
+                            }
+                            completed_at__ = map_.next_value()?;
+                        }
+                    }
+                }
+                Ok(UpdateWorkflowRunStatusRequest {
+                    id: id__.unwrap_or_default(),
+                    status: status__.unwrap_or_default(),
+                    error: error__.unwrap_or_default(),
+                    output_json: output_json__.unwrap_or_default(),
+                    completed_at: completed_at__,
+                })
+            }
+        }
+        deserializer.deserialize_struct("workflow.UpdateWorkflowRunStatusRequest", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for Workflow {

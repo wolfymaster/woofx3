@@ -315,6 +315,87 @@ pub mod workflow_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn record_workflow_run(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RecordWorkflowRunRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::WorkflowExecutionResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/workflow.WorkflowService/RecordWorkflowRun",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("workflow.WorkflowService", "RecordWorkflowRun"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn update_workflow_run_status(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdateWorkflowRunStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::WorkflowExecutionResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/workflow.WorkflowService/UpdateWorkflowRunStatus",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "workflow.WorkflowService",
+                        "UpdateWorkflowRunStatus",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn record_workflow_run_step(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RecordWorkflowRunStepRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/workflow.WorkflowService/RecordWorkflowRunStep",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("workflow.WorkflowService", "RecordWorkflowRunStep"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -389,6 +470,27 @@ pub mod workflow_service_server {
         async fn cancel_workflow_execution(
             &self,
             request: tonic::Request<super::CancelWorkflowExecutionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        >;
+        async fn record_workflow_run(
+            &self,
+            request: tonic::Request<super::RecordWorkflowRunRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::WorkflowExecutionResponse>,
+            tonic::Status,
+        >;
+        async fn update_workflow_run_status(
+            &self,
+            request: tonic::Request<super::UpdateWorkflowRunStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::WorkflowExecutionResponse>,
+            tonic::Status,
+        >;
+        async fn record_workflow_run_step(
+            &self,
+            request: tonic::Request<super::RecordWorkflowRunStepRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
@@ -879,6 +981,152 @@ pub mod workflow_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = CancelWorkflowExecutionSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/workflow.WorkflowService/RecordWorkflowRun" => {
+                    #[allow(non_camel_case_types)]
+                    struct RecordWorkflowRunSvc<T: WorkflowService>(pub Arc<T>);
+                    impl<
+                        T: WorkflowService,
+                    > tonic::server::UnaryService<super::RecordWorkflowRunRequest>
+                    for RecordWorkflowRunSvc<T> {
+                        type Response = super::WorkflowExecutionResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RecordWorkflowRunRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as WorkflowService>::record_workflow_run(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RecordWorkflowRunSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/workflow.WorkflowService/UpdateWorkflowRunStatus" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateWorkflowRunStatusSvc<T: WorkflowService>(pub Arc<T>);
+                    impl<
+                        T: WorkflowService,
+                    > tonic::server::UnaryService<super::UpdateWorkflowRunStatusRequest>
+                    for UpdateWorkflowRunStatusSvc<T> {
+                        type Response = super::WorkflowExecutionResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::UpdateWorkflowRunStatusRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as WorkflowService>::update_workflow_run_status(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = UpdateWorkflowRunStatusSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/workflow.WorkflowService/RecordWorkflowRunStep" => {
+                    #[allow(non_camel_case_types)]
+                    struct RecordWorkflowRunStepSvc<T: WorkflowService>(pub Arc<T>);
+                    impl<
+                        T: WorkflowService,
+                    > tonic::server::UnaryService<super::RecordWorkflowRunStepRequest>
+                    for RecordWorkflowRunStepSvc<T> {
+                        type Response = super::super::common::ResponseStatus;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RecordWorkflowRunStepRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as WorkflowService>::record_workflow_run_step(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RecordWorkflowRunStepSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

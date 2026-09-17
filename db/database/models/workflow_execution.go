@@ -33,10 +33,18 @@ type WorkflowExecution struct {
 	Input         string                  `gorm:"type:jsonb" json:"input,omitempty"`
 	Output        string                  `gorm:"type:jsonb" json:"output,omitempty"`
 	Error         string                  `gorm:"type:text" json:"error,omitempty"`
-	StartedAt     *time.Time              `gorm:"index" json:"started_at,omitempty"`
-	CompletedAt   *time.Time              `gorm:"index" json:"completed_at,omitempty"`
-	CreatedAt     time.Time               `gorm:"not null;default:now()" json:"created_at"`
-	UpdatedAt     time.Time               `gorm:"not null;default:now()" json:"updated_at"`
+	// TriggerEvent is the originating CloudEvent, stored verbatim. A replay
+	// re-feeds it to the engine unchanged, so the run takes the path the
+	// original took; without it there is nothing to replay from.
+	TriggerEvent string `gorm:"type:jsonb" json:"trigger_event,omitempty"`
+	// TriggeredBy names what caused the run ("twitch", "dashboard", ...).
+	// Distinct from UserID, which records the account the run belongs to: a
+	// Twitch follow is attributable to an application, not to a person.
+	TriggeredBy string     `gorm:"type:text" json:"triggered_by,omitempty"`
+	StartedAt   *time.Time `gorm:"index" json:"started_at,omitempty"`
+	CompletedAt *time.Time `gorm:"index" json:"completed_at,omitempty"`
+	CreatedAt   time.Time  `gorm:"not null;default:now()" json:"created_at"`
+	UpdatedAt   time.Time  `gorm:"not null;default:now()" json:"updated_at"`
 
 	// Relationships
 	Workflow    *WorkflowDefinition `gorm:"foreignKey:WorkflowID" json:"workflow,omitempty"`

@@ -33,6 +33,21 @@ service WorkflowService {
     
     // Cancel a running workflow execution
     rpc CancelWorkflowExecution(CancelWorkflowExecutionRequest) returns (common.ResponseStatus);
+
+    // Record a run the engine has already started.
+    //
+    // Distinct from ExecuteWorkflow, which asks for a run to happen: this
+    // reports one already underway. The engine owns the id, and the run exists
+    // whether or not anyone asked for it -- most runs are started by an event
+    // nobody is waiting on. The owning user is resolved from application_id.
+    rpc RecordWorkflowRun(RecordWorkflowRunRequest) returns (WorkflowExecutionResponse);
+
+    // Advance a recorded run to its terminal state.
+    rpc UpdateWorkflowRunStatus(UpdateWorkflowRunStatusRequest) returns (WorkflowExecutionResponse);
+
+    // Record one step's outcome within a recorded run. Reported twice per
+    // attempt -- on start and on settle -- and collapsed into a single row.
+    rpc RecordWorkflowRunStep(RecordWorkflowRunStepRequest) returns (common.ResponseStatus);
 }
 
 // Workflow definition. Execution shape is `steps_json` + `trigger_json`
@@ -91,18 +106,34 @@ message WorkflowExecution {
     repeated ExecutionStep steps = 13;  // Execution details for each step
 }
 
-// Execution details for a single step
+// Execution details for a single step.
+//
+// `inputs_json` / `outputs_json` are raw JSON rather than string maps, for the
+// same reason `Workflow` carries `steps_json`: a task's resolved parameters and
+// its exports are arbitrarily nested engine values (an alert layout, say), and
+// a flat string map cannot hold them without mangling. The map fields were
+// never populated by anything, so their numbers are reserved rather than reused.
 message ExecutionStep {
     string step_id = 1;                // ID of the workflow step
     string name = 2;                   // Name of the step
     string status = 3;                 // Current status (pending, running, completed, failed, skipped)
     int32 attempt = 4;                 // Current attempt number (1-based)
     string error = 5;                  // Error message if the step failed
-    map<string, string> inputs = 6;    // Input variables for the step
-    map<string, string> outputs = 7;   // Output variables from the step
+    reserved 6, 7;                     // was: map<string, string> inputs / outputs
+    reserved "inputs", "outputs";
     google.protobuf.Timestamp started_at = 8;
     google.protobuf.Timestamp completed_at = 9;
     int64 duration_ms = 10;            // Duration in milliseconds
+    // Parameters as resolved at run time. The definition holds the unresolved
+    // template; this is the only record of what the task was actually asked to do.
+    string inputs_json = 11;
+    // The task's exports -- what later steps' `${taskId.*}` expressions resolve
+    // against, and therefore what a resume has to restore.
+    string outputs_json = 12;
+    // Position in the execution order this run used. Recorded because that
+    // order is derived from the dependency graph and changes when the workflow
+    // is edited.
+    int32 step_index = 13;
 }
 
 // Request to create a new workflow
@@ -244,6 +275,44 @@ message ListWorkflowExecutionsResponse {
     int32 total_count = 3;
     int32 page = 4;
     int32 page_size = 5;
+}
+
+// Request to record a run the engine has already started.
+message RecordWorkflowRunRequest {
+    string id = 1;                  // Engine-minted execution id
+    string workflow_id = 2;
+    string application_id = 3;      // The owning user is resolved from this
+    string triggered_by = 4;        // Provenance: "twitch", "dashboard", ...
+    // Originating CloudEvent, stored verbatim so a replay can re-feed it to
+    // the engine unchanged.
+    string trigger_event_json = 5;
+    google.protobuf.Timestamp started_at = 6;
+}
+
+// Request to advance a recorded run to its terminal state.
+message UpdateWorkflowRunStatusRequest {
+    string id = 1;
+    string status = 2;              // running, completed, failed, cancelled
+    string error = 3;
+    string output_json = 4;
+    google.protobuf.Timestamp completed_at = 5;
+}
+
+// Request to record one step's outcome within a recorded run.
+message RecordWorkflowRunStepRequest {
+    string execution_id = 1;
+    string application_id = 2;
+    string task_id = 3;
+    string name = 4;
+    string status = 5;              // pending, running, waiting, success, failed, skipped
+    int32 attempt = 6;              // 1-based
+    int32 step_index = 7;
+    string inputs_json = 8;
+    string outputs_json = 9;
+    string error = 10;
+    google.protobuf.Timestamp started_at = 11;
+    google.protobuf.Timestamp completed_at = 12;
+    int64 duration_ms = 13;
 }
 
 // Request to cancel a workflow execution

@@ -48,5 +48,6 @@ func All() []*gormigrate.Migration {
 		DropWidgetAcceptedEvents(),
 		MigrateMediaAlertPlacements(),
 		CreateStreamSessionsTables(),
+		CreateWorkflowRunHistory(),
 	}
 }

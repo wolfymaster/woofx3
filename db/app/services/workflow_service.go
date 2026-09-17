@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
@@ -477,6 +478,217 @@ func (s *workflowService) CancelWorkflowExecution(ctx context.Context, req *clie
 	}, nil
 }
 
+// RecordWorkflowRun records a run the engine has already started.
+//
+// Distinct from ExecuteWorkflow, which asked for a run and left a `pending` row
+// for something to pick up: nothing ever did. Here the engine owns the id and
+// is reporting a run already underway, so the row is written `running` -- there
+// is no queue and nothing downstream to start it.
+//
+// The owning user is resolved from the application rather than supplied by the
+// caller. A run triggered by a Twitch follow is attributable to an account but
+// to no person, and the engine has no notion of users at all.
+func (s *workflowService) RecordWorkflowRun(ctx context.Context, req *client.RecordWorkflowRunRequest) (*client.WorkflowExecutionResponse, error) {
+	id, err := uuid.Parse(req.Id)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
+	}
+	workflowID, err := uuid.Parse(req.WorkflowId)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("workflow_id", "invalid UUID format")
+	}
+
+	appIDStr, err := resolveApplicationID(ctx, s.executionRepo, req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	applicationID, err := uuid.Parse(appIDStr)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
+	}
+
+	app, err := models.GetApplicationByID(s.executionRepo, applicationID)
+	if err != nil {
+		return nil, twirp.NotFoundError("application not found")
+	}
+
+	startedAt := time.Now()
+	if req.StartedAt != nil {
+		startedAt = req.StartedAt.AsTime()
+	}
+
+	exec := &models.WorkflowExecution{
+		ID:            id,
+		WorkflowID:    workflowID,
+		ApplicationID: applicationID,
+		UserID:        app.UserID,
+		Status:        models.WorkflowStatusRunning,
+		Input:         "{}",
+		Output:        "{}",
+		TriggerEvent:  jsonOrEmptyObject(req.TriggerEventJson),
+		TriggeredBy:   req.TriggeredBy,
+		StartedAt:     &startedAt,
+	}
+	if err := exec.Create(s.executionRepo); err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to record workflow run: %w", err))
+	}
+
+	s.publishExecution(exec, "created")
+
+	return &client.WorkflowExecutionResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Workflow run recorded",
+		},
+		Execution: s.executionToProto(exec),
+	}, nil
+}
+
+// UpdateWorkflowRunStatus advances a recorded run to its terminal state.
+func (s *workflowService) UpdateWorkflowRunStatus(ctx context.Context, req *client.UpdateWorkflowRunStatusRequest) (*client.WorkflowExecutionResponse, error) {
+	id, err := uuid.Parse(req.Id)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
+	}
+
+	exec, err := models.GetWorkflowExecutionByID(s.executionRepo, id)
+	if err != nil {
+		return nil, twirp.NotFoundError("workflow execution not found")
+	}
+
+	exec.Status = models.WorkflowExecutionStatus(req.Status)
+	if req.Error != "" {
+		exec.Error = req.Error
+	}
+	if req.OutputJson != "" {
+		exec.Output = req.OutputJson
+	}
+
+	// Only a terminal state carries a completion time. A run still reported as
+	// running has not finished, and stamping one would make it look as though
+	// it had to everything that reads these rows.
+	switch exec.Status {
+	case models.WorkflowStatusCompleted, models.WorkflowStatusFailed, models.WorkflowStatusCancelled:
+		completedAt := time.Now()
+		if req.CompletedAt != nil {
+			completedAt = req.CompletedAt.AsTime()
+		}
+		exec.CompletedAt = &completedAt
+	}
+
+	if err := exec.Update(s.executionRepo); err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update workflow run: %w", err))
+	}
+
+	s.publishExecution(exec, "updated")
+
+	return &client.WorkflowExecutionResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Workflow run updated",
+		},
+		Execution: s.executionToProto(exec),
+	}, nil
+}
+
+// RecordWorkflowRunStep records one step's outcome within a recorded run.
+//
+// Upserted rather than inserted: a step is reported twice per attempt, once
+// when it starts and once when it settles, and both describe the same attempt.
+func (s *workflowService) RecordWorkflowRunStep(ctx context.Context, req *client.RecordWorkflowRunStepRequest) (*client.ResponseStatus, error) {
+	executionID, err := uuid.Parse(req.ExecutionId)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("execution_id", "invalid UUID format")
+	}
+
+	appIDStr, err := resolveApplicationID(ctx, s.executionRepo, req.ApplicationId)
+	if err != nil {
+		return nil, err
+	}
+	applicationID, err := uuid.Parse(appIDStr)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
+	}
+
+	if req.TaskId == "" {
+		return nil, twirp.RequiredArgumentError("task_id")
+	}
+
+	// The column requires a positive attempt. An unset field means the caller
+	// does not track retries, which is the first attempt.
+	attempt := int(req.Attempt)
+	if attempt < 1 {
+		attempt = 1
+	}
+
+	step := &models.WorkflowExecutionStep{
+		ID:            uuid.New(),
+		ExecutionID:   executionID,
+		ApplicationID: applicationID,
+		TaskID:        req.TaskId,
+		Name:          req.Name,
+		Status:        req.Status,
+		Attempt:       attempt,
+		StepIndex:     int(req.StepIndex),
+		Inputs:        jsonOrEmptyObject(req.InputsJson),
+		Outputs:       jsonOrEmptyObject(req.OutputsJson),
+		Error:         req.Error,
+		DurationMs:    req.DurationMs,
+	}
+	if req.StartedAt != nil {
+		startedAt := req.StartedAt.AsTime()
+		step.StartedAt = &startedAt
+	}
+	if req.CompletedAt != nil {
+		completedAt := req.CompletedAt.AsTime()
+		step.CompletedAt = &completedAt
+	}
+
+	if err := models.UpsertWorkflowExecutionStep(s.executionRepo, step); err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to record workflow run step: %w", err))
+	}
+
+	if s.publisher != nil {
+		s.publisher.Publish(workers.PublishOptions{
+			ApplicationID:   applicationID.String(),
+			EntityType:      "workflow_execution_step",
+			EntityID:        step.ID.String(),
+			Operation:       "recorded",
+			Data:            step,
+			AutoAcknowledge: true,
+		})
+	}
+
+	return &client.ResponseStatus{
+		Code:    client.ResponseStatus_OK,
+		Message: "Workflow run step recorded",
+	}, nil
+}
+
+// publishExecution announces a run row change on the outbox.
+func (s *workflowService) publishExecution(exec *models.WorkflowExecution, operation string) {
+	if s.publisher == nil {
+		return
+	}
+	s.publisher.Publish(workers.PublishOptions{
+		ApplicationID:   exec.ApplicationID.String(),
+		EntityType:      "workflow_execution",
+		EntityID:        exec.ID.String(),
+		Operation:       operation,
+		Data:            exec,
+		AutoAcknowledge: true,
+	})
+}
+
+// jsonOrEmptyObject keeps a JSONB column valid. An empty string is not JSON,
+// and a step with no parameters legitimately has nothing to record.
+func jsonOrEmptyObject(raw string) string {
+	if raw == "" {
+		return "{}"
+	}
+	return raw
+}
+
 // Helper functions to convert between database models and protobuf messages
 
 func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *client.Workflow {
@@ -546,6 +758,49 @@ func (s *workflowService) executionToProto(exec *models.WorkflowExecution) *clie
 		CompletedAt:   completedAt,
 		CreatedAt:     createdAt,
 		UpdatedAt:     updatedAt,
-		Steps:         []*client.ExecutionStep{}, // TODO: Populate execution steps
+		Steps:         s.executionSteps(exec.ID),
+	}
+}
+
+// executionSteps returns a run's steps in the order it ran them.
+//
+// A read failure yields no steps rather than failing the lookup: the run itself
+// is what the caller asked for, and a timeline missing its detail is more
+// useful than an error page.
+func (s *workflowService) executionSteps(executionID uuid.UUID) []*client.ExecutionStep {
+	steps, err := models.GetWorkflowExecutionSteps(s.executionRepo, executionID)
+	if err != nil {
+		log.Printf("workflow run steps unavailable for %s: %v", executionID, err)
+		return []*client.ExecutionStep{}
+	}
+
+	out := make([]*client.ExecutionStep, len(steps))
+	for i := range steps {
+		out[i] = stepToProto(&steps[i])
+	}
+	return out
+}
+
+func stepToProto(step *models.WorkflowExecutionStep) *client.ExecutionStep {
+	var startedAt, completedAt *timestamppb.Timestamp
+	if step.StartedAt != nil {
+		startedAt = timestamppb.New(*step.StartedAt)
+	}
+	if step.CompletedAt != nil {
+		completedAt = timestamppb.New(*step.CompletedAt)
+	}
+
+	return &client.ExecutionStep{
+		StepId:      step.TaskID,
+		Name:        step.Name,
+		Status:      step.Status,
+		Attempt:     int32(step.Attempt),
+		StepIndex:   int32(step.StepIndex),
+		InputsJson:  step.Inputs,
+		OutputsJson: step.Outputs,
+		Error:       step.Error,
+		StartedAt:   startedAt,
+		CompletedAt: completedAt,
+		DurationMs:  step.DurationMs,
 	}
 }
