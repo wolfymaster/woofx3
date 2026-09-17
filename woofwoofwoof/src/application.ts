@@ -8,6 +8,7 @@ import {
   type CommandUpdatedMessage,
 } from "@woofx3/common/cloudevents/Command";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
+import { subscribeToSessionUpdates } from "@woofx3/common/cloudevents/session-subscriber";
 import { SpanKind, withSpan } from "@woofx3/common/logging";
 import { type ChatMessageMessage, EventType } from "@woofx3/common/cloudevents/Twitch";
 import type { ApplicationContext } from "@woofx3/common/runtime";
@@ -56,6 +57,11 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
   }
 
   async init(ctx: Context) {
+    // Before the commander or any subscriber below can publish. Every event
+    // this service emits is stamped with the session this holder learns from
+    // the bus.
+    await subscribeToSessionUpdates(ctx.services.messageBus.client, ctx.logger);
+
     const db = ctx.services.db.client;
 
     const commander = new Commands(

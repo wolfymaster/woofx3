@@ -212,6 +212,12 @@ async fn setup() -> Result<AppContext> {
 
     // Spawn the generic field-options NATS responder when NATS is available.
     if let Some(raw_client) = nats_raw_client {
+        // Events this process publishes are stamped with the stream session
+        // this subscriber learns from the bus; without it they go out with
+        // none.
+        tokio::spawn(services::session::run_session_subscriber(
+            raw_client.clone(),
+        ));
         tokio::spawn(services::field_options::run_field_options_responder(
             raw_client,
             sandbox.clone(),

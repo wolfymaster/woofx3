@@ -3,14 +3,12 @@
 ::: warning Partly built
 **Built:** the extend-or-split policy, the resolver that applies it, the
 `stream_sessions` / `stream_session_segments` tables behind
-`StreamSessionService`, and central stamping in all three languages.
+`StreamSessionService`, central stamping in all three languages, and the
+`session.started` subscription in every process that publishes — so events now
+carry a session id end to end.
 
-**Not built:** the other end of the stamping contract. Only `api/` learns the
-current session, and it publishes through `publishEvent` rather than the
-`Event()` factory — so in practice no event carries a session id yet. Events
-from `twitch/`, `woofwoofwoof/` and `barkloader/` stay unstamped until each
-process subscribes to `session.started`. "Clearing ephemeral storage" and
-"Reaching the UI" below are still design.
+**Not built:** "Clearing ephemeral storage" and "Reaching the UI" below are
+still design.
 :::
 
 A **stream session** identifies a broadcast and everything that happened during
@@ -137,8 +135,9 @@ a quiet day is hours. Receiving the same id twice is expected; handling it must
 be idempotent.
 
 Neither event is itself session-stamped. An event that announces a session must
-not also claim to have happened during one, so the resolver hand-builds its
-envelope instead of routing through `Event()`.
+not also claim to have happened during one, so the resolver passes an explicit
+`sessionId: undefined` to override the ambient holder. Undefined drops out at
+serialization, leaving the attribute absent rather than null.
 
 `session.ended` fires on a **split** — not on `stream.offline`. It may arrive
 long after a stream ended, and for a brief dropout it never arrives at all.
@@ -166,15 +165,22 @@ family. Repeating that pattern would produce a session id on Twitch events and
 silently nothing elsewhere.
 
 `Event()` is a pure function with no ambient context, so each publishing process
-must be told the current session — a module-level holder fed by a
-`session.started` / `session.ended` subscription, wired once in the shared
-runtime. Every service that publishes needs that wiring; a process that lacks it
-would emit unstamped events, which is the same invisible gap in a new place.
+must be told the current session — a module-level holder fed from the bus by
+`subscribeToSessionUpdates` (`cloudevents/session-subscriber.ts`), and by
+`services::session` on the Rust side. Every service that publishes needs that
+wiring; a process that lacks it emits unstamped events, which is the same
+invisible gap in a new place.
 
-Only `api/` does this today, from inside the resolver itself. Until `twitch/`,
-`woofwoofwoof/` and `barkloader/` subscribe as well, their events carry no
-session — and `api/`'s own publishes go through `publishEvent`, which does not
-use the factory at all.
+The subscription is to `session.started` **only**. `session.ended` means a
+finished session's state should be dropped, not that a publisher should forget
+what to stamp: the resolver emits `ended` immediately followed by `started` for
+the successor, so clearing on `ended` would publish unstamped events in the gap
+between the two messages. A session is always present, so the holder should
+never empty once filled.
+
+All four publishing processes subscribe — `twitch/`, `woofwoofwoof/` and
+`barkloader/` from the bus, and `api/` from the resolver directly, since it is
+the process emitting the announcement.
 
 The holder therefore warns once per gap instead of passing silently. It does not
 throw: `Event()` sits on every publish path in every service, and events are
@@ -297,9 +303,8 @@ Each step is independently useful and safe to stop after:
 
 1. **Resolver and tables** — done.
 2. **Central stamping**, TypeScript plus the Go and Rust mirrors — done.
-3. **Feed the holders.** Each publishing process subscribes to `session.started`
-   and calls its language's `setCurrentSessionId`. Nothing carries a session id
-   until this lands, so it is the step that turns steps 1 and 2 into observable
-   behaviour.
+3. **Feed the holders** — done. Every publishing process subscribes to
+   `session.started` and sets its language's holder, which is what turned steps
+   1 and 2 into observable behaviour.
 4. **Storage rename and a clear RPC** called on `session.ended`.
 5. **The Convex field and the two UI call sites.**

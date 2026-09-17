@@ -1,5 +1,6 @@
 import type { ApiClient, HelixUser } from "@twurple/api";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
+import { subscribeToSessionUpdates } from "@woofx3/common/cloudevents/session-subscriber";
 import { type Span, type SharedLogger, SpanKind, withSpan } from "@woofx3/common/logging";
 import type { Application, IApplication } from "@woofx3/common/runtime";
 import { GetSetting, SetSetting } from "@woofx3/db/setting.pb";
@@ -50,6 +51,11 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
   }
 
   async init(ctx: TwitchApiContext) {
+    // Before anything starts publishing. Every event this service emits is
+    // stamped with the session this holder learns from the bus, and
+    // TwitchEventBus begins emitting the moment it starts.
+    await subscribeToSessionUpdates(ctx.services.messageBus.client, ctx.logger);
+
     const dbBaseURL = ctx.services.dbProxy.client.baseURL;
     const twitchClient = new TwitchClient({
       channel: ctx.config.getConfig("woofx3TwitchChannelName") as string,
