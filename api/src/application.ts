@@ -153,7 +153,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
           // Needs the applicationId, so it belongs in this block rather than
           // the NATS-only one below: a session is scoped to an application and
           // there is nothing to resolve before onboarding.
-          const streamSessionResolver = new StreamSessionResolver(natsClient, db, existing.id, logger);
+          const streamSessionResolver = new StreamSessionResolver(natsClient, db, existing.id, logger, webhookClient);
           await streamSessionResolver.start();
         } else {
           logger.warn("Skipping AlertEmitter and StorageChangeEmitter; NATS client is not connected");

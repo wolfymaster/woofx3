@@ -55,6 +55,7 @@ export const EngineEventType = {
   WIDGET_STATUS_CHANGED: "module.widget.status.changed",
   STREAM_ONLINE: "stream.online",
   STREAM_OFFLINE: "stream.offline",
+  SESSION_STARTED: "session.started",
   OVERLAY_TOKEN_MINTED: "overlay.token.minted",
   OVERLAY_TOKEN_REVOKED: "overlay.token.revoked",
   COMMAND_CREATED: "command.created",
@@ -1099,6 +1100,32 @@ export interface StreamOfflineEvent {
 }
 
 /**
+ * Names the stream session the engine is currently stamping events with.
+ *
+ * A session is the *logical* span a broadcast belongs to: it survives brief
+ * dropouts, so it is not the same thing as `stream.online`. This is emitted by
+ * the resolver that owns that decision, in the same step where it adopts the
+ * session — deliberately not folded into `stream.online`, because both
+ * subscribe to the same bus subject with no ordering between them, and a split
+ * would then report the previous session.
+ *
+ * Re-sent when the engine restarts, so a consumer that missed the original
+ * still converges. Treat it as "the current session is this one", not as a
+ * boundary: receiving the same id twice is expected.
+ *
+ * A session *ending* is not delivered here. `instanceLiveState` is a
+ * latest-value row, so a reader can see the session change but never that one
+ * ended; anything that must react to an ending needs the bus event.
+ */
+export interface SessionStartedEvent {
+  type: typeof EngineEventType.SESSION_STARTED;
+  applicationId: string;
+  sessionId: string;
+  /** ISO-8601. When the session began, which may predate the current stream. */
+  startedAt: string;
+}
+
+/**
  * Discriminated union of every event the engine can deliver via webhook.
  * Consumers should narrow on `event.type` — TypeScript will pick the right
  * branch without casts.
@@ -1137,6 +1164,7 @@ export type CallbackEvent =
   | WidgetStatusChangedEvent
   | StreamOnlineEvent
   | StreamOfflineEvent
+  | SessionStartedEvent
   | OverlayTokenMintedEvent
   | OverlayTokenRevokedEvent
   | CommandCreatedEvent
@@ -1186,6 +1214,7 @@ export type CallbackEventByType = {
   [EngineEventType.WIDGET_STATUS_CHANGED]: WidgetStatusChangedEvent;
   [EngineEventType.STREAM_ONLINE]: StreamOnlineEvent;
   [EngineEventType.STREAM_OFFLINE]: StreamOfflineEvent;
+  [EngineEventType.SESSION_STARTED]: SessionStartedEvent;
   [EngineEventType.OVERLAY_TOKEN_MINTED]: OverlayTokenMintedEvent;
   [EngineEventType.OVERLAY_TOKEN_REVOKED]: OverlayTokenRevokedEvent;
   [EngineEventType.COMMAND_CREATED]: CommandCreatedEvent;

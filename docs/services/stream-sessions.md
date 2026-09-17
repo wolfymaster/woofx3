@@ -253,27 +253,40 @@ Both are live today and both sit in the key format this work touches:
 
 ## Reaching the UI
 
-The engine owns the boundary; Convex receives it. `instanceLiveState` gains one
-optional `sessionId`, written by the three paths that already maintain that row:
-`onStreamOnline` and `onStreamOffline` (`convex/http.ts:974`, `:987`) and
-`recordPoll` (`convex/streamStatus.ts:26`), all in the woofx3-ui repository.
+The engine owns the boundary; Convex receives it. `instanceLiveState` gains two
+optional fields, `sessionId` and `sessionStartedAt`, written by one dedicated
+path: the resolver emits a `SESSION_STARTED` webhook as it adopts a session, and
+`onSessionStarted` (`convex/instanceLiveState.ts`, in the woofx3-ui repository)
+patches just those two keys.
+
+It is deliberately *not* folded into the `stream.online` webhook. That handler
+and the resolver are separate subscribers to the same bus subject with no
+ordering between them, so on a split the stream handler can still be holding the
+session that was just replaced.
+
+The three existing writers need no change. `ctx.db.patch` is a shallow merge and
+all of them omit these keys, so the fields survive untouched — including through
+`onStreamOffline`, which is correct rather than an oversight: a session outlives
+its broadcast and may be entirely offline, so clearing them there would destroy
+the property sessions exist for.
 
 `instanceLiveState` is a latest-value row. A reader can observe that the session
 *changed* but never that one *ended*, so anything that must react to an ending
 needs the bus event rather than the row.
 
-Two existing consumers are hand-rolling this concept against the wrong key and
-should move to the session:
+Two consumers were hand-rolling this concept against the wrong key and have
+moved:
 
-- `stream-stats.tsx:51-54` resets its tallies when `startedAt` changes. A
-  dropout gives a new `startedAt`, so the tallies wipe mid-stream.
-- `convex/pins.ts:118` decides whether a stored Twitch message id is still
-  pinnable by comparing against the broadcast start, when what it means is
-  "same session".
+- `stream-stats.tsx` reset its tallies whenever `startedAt` changed, so a
+  dropout wiped them mid-stream. It keys on `sessionId` now.
+- `convex/pins.ts` decided whether a stored Twitch message id was still pinnable
+  by comparing against the broadcast start. It compares against the session's
+  start now — a *timestamp*, which is why the row carries `sessionStartedAt` and
+  not only an id: `planRepin` needs a boundary to compare `pinnedAt` against,
+  and an identifier cannot serve as one.
 
-Uptime readers — `broadcast-shell.tsx:141`, `stream-status.tsx:21`,
-`stream-stats.tsx:85` — stay on `startedAt`. Uptime genuinely means the physical
-broadcast.
+Uptime readers — `broadcast-shell.tsx`, `stream-status.tsx`, `stream-stats.tsx`
+— stay on `startedAt`. Uptime genuinely means the physical broadcast.
 
 ## Analytics is a separate subsystem
 
@@ -323,4 +336,8 @@ Each step is independently useful and safe to stop after:
    `ctx.storage.set(key, value, { clearOnSessionEnd: true })` threads through
    the sandbox trait, both runtime bindings, `db_proxy.rs` and
    `HttpStorageClient`, which is what makes step 4 clear anything.
-6. **The Convex field and the two UI call sites.**
+6. **The Convex field and the two UI call sites** — done. `instanceLiveState`
+   carries `sessionId` and `sessionStartedAt`, fed by a `SESSION_STARTED`
+   webhook the resolver emits as it adopts a session. `stream-stats.tsx` keys
+   its tallies on the session, and `convex/pins.ts` compares against the
+   session's start rather than the broadcast's.

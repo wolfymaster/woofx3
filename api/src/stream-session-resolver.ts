@@ -1,3 +1,4 @@
+import { EngineEventType } from "@woofx3/api/webhooks";
 import Event from "@woofx3/common/cloudevents/BaseEvent";
 import { EventType as SessionEventType } from "@woofx3/common/cloudevents/Session/events";
 import { setCurrentSessionId } from "@woofx3/common/cloudevents/session";
@@ -7,6 +8,7 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
 import { DbError, type DbClient } from "./db-client";
+import type { WebhookClient } from "./webhook-client";
 import { timestampFromDate, timestampToIso } from "./routes/helpers";
 import { decideOnStreamOnline } from "./stream-session-policy";
 
@@ -30,7 +32,8 @@ export class StreamSessionResolver {
     private nats: NATSClient,
     private db: DbClient,
     private applicationId: string,
-    private logger: SharedLogger
+    private logger: SharedLogger,
+    private webhook: WebhookClient | null = null
   ) {}
 
   /** The session events should be stamped with, or null before `start()` resolved one. */
@@ -163,6 +166,38 @@ export class StreamSessionResolver {
       applicationId: this.applicationId,
       startedAt,
     });
+    await this.announceToUi(sessionId, startedAt);
+  }
+
+  /**
+   * Tell the UI which session it is in.
+   *
+   * Sent from here rather than folded into the `stream.online` webhook because
+   * that handler and this resolver are separate subscribers to the same bus
+   * subject with no ordering between them — on a split, the stream handler can
+   * still be holding the session this one just replaced.
+   *
+   * Failure is logged and swallowed. The bus event is the contract; this is a
+   * projection of it, and a webhook that did not land must not stop the engine
+   * adopting the session.
+   */
+  private async announceToUi(sessionId: string, startedAt: string): Promise<void> {
+    if (!this.webhook) {
+      return;
+    }
+    try {
+      await this.webhook.send({
+        type: EngineEventType.SESSION_STARTED,
+        applicationId: this.applicationId,
+        sessionId,
+        startedAt,
+      });
+    } catch (err) {
+      this.logger.error("Failed to announce the stream session to the UI", {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
