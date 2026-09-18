@@ -67,6 +67,11 @@ type TaskDefinition struct {
 	OnTrue         []string          `json:"onTrue,omitempty" yaml:"onTrue,omitempty"`
 	OnFalse        []string          `json:"onFalse,omitempty" yaml:"onFalse,omitempty"`
 	Workflow       *WorkflowConfig   `json:"workflow,omitempty" yaml:"workflow,omitempty"`
+	// Disabled switches the task off without removing it from the workflow. A
+	// disabled `condition` settles as false without evaluating, so its onTrue
+	// branch is skipped and `${id.result}` reads false; any other disabled
+	// task is skipped. See docs/workflow/tasks.md.
+	Disabled bool `json:"disabled,omitempty" yaml:"disabled,omitempty"`
 }
 
 type WaitConfig struct {

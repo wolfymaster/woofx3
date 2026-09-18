@@ -75,6 +75,13 @@ export interface TaskDefinition {
   exports?: Record<string, string>;
   onError?: "fail" | "continue";
   timeout?: Duration;
+  /**
+   * Switches the task off without removing it. A disabled `condition` resolves
+   * as false without evaluating, so its `onTrue` tasks are skipped and
+   * `${id.result}` reads false; any other disabled task is skipped. Mirrors
+   * `TaskDefinition.Disabled` in workflow/internal/types/types.go.
+   */
+  disabled?: boolean;
 
   condition?: ConditionConfig;
   conditions?: ConditionConfig[];

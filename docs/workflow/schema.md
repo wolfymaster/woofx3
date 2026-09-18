@@ -91,6 +91,7 @@ A single unit of work within a workflow. Tasks execute in dependency order deter
 | `exports` | `map<string, string>` | No | Extracts values from the task result and makes them available to downstream tasks. Keys are the export names, values are dot-notation paths into the task's result data. |
 | `onError` | `string` | No | Error handling strategy. `"fail"` (default) stops the workflow. `"continue"` marks the task as failed but continues execution. |
 | `timeout` | [Duration](#duration) | No | Maximum time the task is allowed to run before being considered failed. |
+| `disabled` | `boolean` | No | Switches the task off without removing it. A disabled `condition` resolves as false without evaluating; any other disabled task is skipped. See [Disabling a task](./tasks.md#disabling-a-task). |
 
 ### Condition Properties
 

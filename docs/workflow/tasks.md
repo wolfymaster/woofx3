@@ -4,6 +4,31 @@ Tasks are the units of execution within a workflow. Each task has a `type` that 
 
 > **Strings inside `parameters` carry `${…}` expressions resolved by the engine before the task runs.** The grammar is path-only — no operators, no ternary. See [Expressions](./expressions.md) for what's in scope and where to use the streamware-side `{…}` syntax instead.
 
+## Disabling a task
+
+Any task can carry `"disabled": true`. It stays in the workflow, keeps its place in the dependency graph, and is recorded in the run history, but does no work. Nothing it would read is evaluated, so a disabled task cannot fail the run.
+
+What "does no work" means depends on the type:
+
+| Type | When disabled |
+|------|---------------|
+| `condition` | Resolves as **false**, exactly as if its conditions had failed: the task succeeds, exports `result: false`, its `onTrue` tasks are skipped and its `onFalse` tasks run. A guard reading `${id.result}` sees `false`. The recorded step is indistinguishable from a condition that evaluated false, so a resumed run re-derives the same branch. |
+| any other type | Skipped, with the same status and history record as a task whose guard evaluated false. Its guard is not evaluated and it exports nothing. |
+
+```json
+{
+  "id": "on-cheer",
+  "type": "condition",
+  "disabled": true,
+  "condition": { "field": "${trigger.data.bits}", "operator": "gte", "value": 100 },
+  "onTrue": ["play-alert"]
+}
+```
+
+This is how a single trigger inside a workflow is switched off: the trigger's `condition` task is disabled, so the event still starts the run but that trigger's branch never fires.
+
+A skip does not propagate. A task that `dependsOn` a disabled task still runs, and finds no exports from it; a task listed in a disabled condition's `onTrue` is skipped because the condition resolved false, not because of the dependency.
+
 ## action
 
 Executes a registered action. Actions are the primary way workflows interact with external systems.
