@@ -71,6 +71,13 @@ func (s *resourceService) CreateResource(ctx context.Context, req *client.Create
 	if req.Size < 0 {
 		return nil, twirp.InvalidArgumentError("size", "must not be negative")
 	}
+	id := uuid.New()
+	if req.Id != nil {
+		id, err = uuid.Parse(*req.Id)
+		if err != nil {
+			return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
+		}
+	}
 
 	parentID, err := s.resolveParent(applicationID, req.ParentId)
 	if err != nil {
@@ -82,7 +89,7 @@ func (s *resourceService) CreateResource(ctx context.Context, req *client.Create
 
 	now := time.Now().UTC()
 	row := &models.Resource{
-		ID:            uuid.New(),
+		ID:            id,
 		ApplicationID: applicationID,
 		ParentID:      parentID,
 		IsFolder:      false,

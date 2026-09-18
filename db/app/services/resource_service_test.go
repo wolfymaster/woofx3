@@ -141,6 +141,55 @@ func TestCreateResourceRequiresRepositoryKey(t *testing.T) {
 	assertTwirpCode(t, err, twirp.InvalidArgument)
 }
 
+func TestCreateResourceUsesCallerChosenID(t *testing.T) {
+	svc, appID := newResourceSvc(t)
+	id := uuid.New().String()
+	key := "user/" + appID.String() + "/" + id + "/clip.png"
+
+	resp, err := svc.CreateResource(context.Background(), &client.CreateResourceRequest{
+		Id:            &id,
+		ApplicationId: appID.String(),
+		Name:          "clip.png",
+		Kind:          models.ResourceKindImage,
+		RepositoryKey: key,
+	})
+	if err != nil {
+		t.Fatalf("CreateResource: %v", err)
+	}
+	if resp.Resource.Id != id {
+		t.Fatalf("id = %q, want caller-chosen %q", resp.Resource.Id, id)
+	}
+	if resp.Resource.RepositoryKey != key {
+		t.Fatalf("repository key = %q, want %q", resp.Resource.RepositoryKey, key)
+	}
+
+	got, err := svc.GetResource(context.Background(), &client.GetResourceRequest{
+		Id:            id,
+		ApplicationId: appID.String(),
+	})
+	if err != nil {
+		t.Fatalf("GetResource(%s): %v", id, err)
+	}
+	if got.Resource.RepositoryKey != key {
+		t.Fatalf("stored repository key = %q, want %q", got.Resource.RepositoryKey, key)
+	}
+}
+
+func TestCreateResourceRejectsMalformedID(t *testing.T) {
+	svc, appID := newResourceSvc(t)
+
+	for _, id := range []string{"", "not-a-uuid"} {
+		_, err := svc.CreateResource(context.Background(), &client.CreateResourceRequest{
+			Id:            strptr(id),
+			ApplicationId: appID.String(),
+			Name:          "clip.png",
+			Kind:          models.ResourceKindImage,
+			RepositoryKey: "user/x/y/clip.png",
+		})
+		assertTwirpCode(t, err, twirp.InvalidArgument)
+	}
+}
+
 func TestSiblingNamesMustBeUniqueWithinAFolder(t *testing.T) {
 	svc, appID := newResourceSvc(t)
 	folder := createFolder(t, svc, appID, "clips", nil)

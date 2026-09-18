@@ -199,19 +199,6 @@ export class DbClient {
     return unwrap("updateResource", response, response.resource);
   }
 
-  /**
-   * Update, or null when it did not happen. Used where a caller has a
-   * reasonable answer without the update -- recording the repository key on a
-   * freshly created row, which can fall back to the row it just made.
-   */
-  async tryUpdateResource(req: resource.UpdateResourceRequest): Promise<resource.Resource | null> {
-    const response = await resource.UpdateResource(req, this.config);
-    if (response.status?.code !== "OK" || !response.resource) {
-      return null;
-    }
-    return response.resource;
-  }
-
   /** Returns the repository keys of everything removed, for the caller to purge. */
   async deleteResource(req: resource.DeleteResourceRequest): Promise<string[]> {
     const response = await resource.DeleteResource(req, this.config);

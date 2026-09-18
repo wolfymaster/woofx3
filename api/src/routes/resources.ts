@@ -107,13 +107,19 @@ export function resourceToItem(sceneManagerUrl: string, row: resource.Resource):
 
 export const resourcesRoutes = routeModule({
   /**
-   * Reserve a row and hand back a grant to upload straight to storage.
+   * Hand back a grant to upload straight to storage, and reserve the row
+   * the upload will belong to.
    *
-   * The row is created first so the resource id can be part of the
-   * repository key, which is what keeps one resource's objects (the
-   * upload and any derived thumbnail) together under one prefix. The row
-   * starts "pending": it exists, but nothing is servable from it until
-   * the caller reports the bytes landed.
+   * The resource id is minted here rather than by db-proxy because the
+   * repository key embeds it -- that is what keeps one resource's objects
+   * (the upload and any derived thumbnail) together under one prefix --
+   * and db-proxy refuses a file row without its key. So the grant comes
+   * first and the row is created already holding the real key. A grant
+   * whose row then fails to create (a sibling name clash, say) is
+   * harmless: nothing was written under it and it expires on its own.
+   *
+   * The row starts "pending": it exists, but nothing is servable from it
+   * until the caller reports the bytes landed.
    */
   async requestUploadUrl(input: {
     name: string;
@@ -130,18 +136,7 @@ export const resourcesRoutes = routeModule({
       throw new Error("contentType is required");
     }
 
-    const created = await this.db.createResource({
-      applicationId,
-      parentId: input.parentId ?? undefined,
-      name: input.name,
-      kind: kindForContentType(input.contentType),
-      contentType: input.contentType,
-      repositoryKey: "",
-      size: BigInt(input.size ?? 0),
-      status: "pending",
-    });
-    const resourceId = created.id ?? "";
-
+    const resourceId = crypto.randomUUID();
     const response = await this.barkloaderRequest("/assets/upload-url", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -161,16 +156,24 @@ export const resourcesRoutes = routeModule({
       expiresAt: number;
     };
 
-    // Record where the bytes are going. Without this the row could never
-    // be resolved back to an object.
-    const updated = await this.db.tryUpdateResource({
+    // deleteResource recovers the resource id from this prefix to purge
+    // storage, so a key outside it would orphan the bytes on delete.
+    const expectedPrefix = `user/${applicationId}/${resourceId}/`;
+    if (typeof grant.repositoryKey !== "string" || !grant.repositoryKey.startsWith(expectedPrefix)) {
+      throw new Error(`Upload grant repository key is not under ${expectedPrefix}: ${String(grant.repositoryKey)}`);
+    }
+
+    const row = await this.db.createResource({
       id: resourceId,
       applicationId,
+      parentId: input.parentId ?? undefined,
+      name: input.name,
+      kind: kindForContentType(input.contentType),
+      contentType: input.contentType,
       repositoryKey: grant.repositoryKey,
-    } as resource.UpdateResourceRequest);
-    // Falling back to the row just created: the key is recorded for later
-    // resolution, not needed to answer this call.
-    const row = updated ?? created;
+      size: BigInt(input.size ?? 0),
+      status: "pending",
+    });
 
     this.logger.info("Issued upload grant", { resourceId, name: input.name });
     return {
