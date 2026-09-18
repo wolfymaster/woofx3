@@ -60,6 +60,16 @@ export interface Trigger {
    * (`{moduleId}:function:{id}`). Empty for every other transport.
    */
   handler: string;
+  /**
+   * The module author's one-line English template for a configured instance
+   * of this trigger, e.g. "{reward} is redeemed". Each `{fieldId}` names a
+   * field in config_schema; the UI substitutes the configured value, that
+   * field's `anyText`, or its `missingText`. Validated at install: non-empty,
+   * braces balanced and unnested, every placeholder a declared field id.
+   * Empty means the author declared none. Never set on a webhook trigger,
+   * which nothing configures.
+   */
+  sentence: string;
 }
 
 export interface TriggerInput {
@@ -73,6 +83,7 @@ export interface TriggerInput {
   emits: string;
   transport: string;
   handler: string;
+  sentence: string;
 }
 
 export interface RegisterTriggersRequest {
@@ -155,6 +166,7 @@ export const Trigger = {
       emits: "",
       transport: "",
       handler: "",
+      sentence: "",
       ...msg,
     };
   },
@@ -204,6 +216,9 @@ export const Trigger = {
     }
     if (msg.handler) {
       writer.writeString(16, msg.handler);
+    }
+    if (msg.sentence) {
+      writer.writeString(17, msg.sentence);
     }
     return writer;
   },
@@ -270,6 +285,10 @@ export const Trigger = {
           msg.handler = reader.readString();
           break;
         }
+        case 17: {
+          msg.sentence = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -316,6 +335,7 @@ export const TriggerInput = {
       emits: "",
       transport: "",
       handler: "",
+      sentence: "",
       ...msg,
     };
   },
@@ -356,6 +376,9 @@ export const TriggerInput = {
     }
     if (msg.handler) {
       writer.writeString(11, msg.handler);
+    }
+    if (msg.sentence) {
+      writer.writeString(12, msg.sentence);
     }
     return writer;
   },
@@ -408,6 +431,10 @@ export const TriggerInput = {
         }
         case 11: {
           msg.handler = reader.readString();
+          break;
+        }
+        case 12: {
+          msg.sentence = reader.readString();
           break;
         }
         default: {
@@ -751,6 +778,7 @@ export const TriggerJSON = {
       emits: "",
       transport: "",
       handler: "",
+      sentence: "",
       ...msg,
     };
   },
@@ -798,6 +826,9 @@ export const TriggerJSON = {
     }
     if (msg.handler) {
       json["handler"] = msg.handler;
+    }
+    if (msg.sentence) {
+      json["sentence"] = msg.sentence;
     }
     return json;
   },
@@ -858,6 +889,10 @@ export const TriggerJSON = {
     if (_handler_) {
       msg.handler = _handler_;
     }
+    const _sentence_ = json["sentence"];
+    if (_sentence_) {
+      msg.sentence = _sentence_;
+    }
     return msg;
   },
 };
@@ -895,6 +930,7 @@ export const TriggerInputJSON = {
       emits: "",
       transport: "",
       handler: "",
+      sentence: "",
       ...msg,
     };
   },
@@ -935,6 +971,9 @@ export const TriggerInputJSON = {
     }
     if (msg.handler) {
       json["handler"] = msg.handler;
+    }
+    if (msg.sentence) {
+      json["sentence"] = msg.sentence;
     }
     return json;
   },
@@ -982,6 +1021,10 @@ export const TriggerInputJSON = {
     const _handler_ = json["handler"];
     if (_handler_) {
       msg.handler = _handler_;
+    }
+    const _sentence_ = json["sentence"];
+    if (_sentence_) {
+      msg.sentence = _sentence_;
     }
     return msg;
   },

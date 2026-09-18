@@ -127,6 +127,16 @@ export interface TriggerDefinition {
    * `./ui-schema`.
    */
   emits?: string;
+  /**
+   * The module author's one-line English template for a configured instance
+   * of this trigger, e.g. `"{reward} is redeemed"`. Each `{fieldId}` names a
+   * field in `configSchema`; render it by substituting the configured value,
+   * that field's `anyText` when it is set to "any", or its `missingText` while
+   * a required field has no value. Barkloader guarantees at install that the
+   * braces are balanced and every placeholder names a field. Absent means the
+   * author declared none.
+   */
+  sentence?: string;
   allowVariants: boolean;
   createdByType: string;
   createdByRef: string;

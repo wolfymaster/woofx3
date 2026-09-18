@@ -49,5 +49,6 @@ func All() []*gormigrate.Migration {
 		MigrateMediaAlertPlacements(),
 		CreateStreamSessionsTables(),
 		CreateWorkflowRunHistory(),
+		AddTriggerSentence(),
 	}
 }

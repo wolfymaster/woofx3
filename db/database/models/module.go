@@ -105,7 +105,12 @@ type Trigger struct {
 	// when this trigger fires. Nothing validates a payload against it — see
 	// module_trigger.proto Trigger.emits for why it is not called a schema
 	// and why it is separate from ConfigSchema.
-	Emits         string `gorm:"column:emits;type:jsonb;not null;default:'{}'"`
+	Emits string `gorm:"column:emits;type:jsonb;not null;default:'{}'"`
+	// Sentence is the module author's one-line English template for a
+	// configured instance of this trigger, e.g. "{reward} is redeemed", where
+	// each `{fieldId}` names a field in ConfigSchema. Empty means the author
+	// declared none. See module_trigger.proto Trigger.sentence.
+	Sentence      string `gorm:"column:sentence;type:text;not null;default:''"`
 	AllowVariants bool   `gorm:"column:allow_variants;default:false"`
 	CreatedByType string `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
 	CreatedByRef  string `gorm:"column:created_by_ref;type:text;not null;default:''"`

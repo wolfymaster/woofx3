@@ -100,6 +100,23 @@ describe("parseModuleTriggerRegistered", () => {
     expect(result.event.triggers[1]).not.toHaveProperty("emits");
   });
 
+  test("carries a declared sentence and omits the empty column default", () => {
+    const ce = {
+      data: {
+        module_key: "k",
+        triggers: [
+          { id: "uuid-1", name: "a", sentence: "{reward} is redeemed" },
+          { id: "uuid-2", name: "b", sentence: "" },
+        ],
+      },
+    };
+
+    const result = parseModuleTriggerRegistered(ce);
+
+    expect(result.event.triggers[0]?.sentence).toBe("{reward} is redeemed");
+    expect(result.event.triggers[1]).not.toHaveProperty("sentence");
+  });
+
   test("carries transport through, and omits it when the engine sent none", () => {
     const ce = {
       data: {

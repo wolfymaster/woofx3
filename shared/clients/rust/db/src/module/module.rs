@@ -126,6 +126,15 @@ pub struct Trigger {
     /// (`{moduleId}:function:{id}`). Empty for every other transport.
     #[prost(string, tag="16")]
     pub handler: ::prost::alloc::string::String,
+    /// The module author's one-line English template for a configured instance
+    /// of this trigger, e.g. "{reward} is redeemed". Each `{fieldId}` names a
+    /// field in config_schema; the UI substitutes the configured value, that
+    /// field's `anyText`, or its `missingText`. Validated at install: non-empty,
+    /// braces balanced and unnested, every placeholder a declared field id.
+    /// Empty means the author declared none. Never set on a webhook trigger,
+    /// which nothing configures.
+    #[prost(string, tag="17")]
+    pub sentence: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct TriggerInput {
@@ -153,6 +162,9 @@ pub struct TriggerInput {
     /// see Trigger.handler
     #[prost(string, tag="11")]
     pub handler: ::prost::alloc::string::String,
+    /// see Trigger.sentence
+    #[prost(string, tag="12")]
+    pub sentence: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterTriggersRequest {

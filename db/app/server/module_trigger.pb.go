@@ -60,7 +60,15 @@ type Trigger struct {
 	Transport string `protobuf:"bytes,15,opt,name=transport,proto3" json:"transport,omitempty"`
 	// Canonical id of a webhook trigger's handler function
 	// (`{moduleId}:function:{id}`). Empty for every other transport.
-	Handler       string `protobuf:"bytes,16,opt,name=handler,proto3" json:"handler,omitempty"`
+	Handler string `protobuf:"bytes,16,opt,name=handler,proto3" json:"handler,omitempty"`
+	// The module author's one-line English template for a configured instance
+	// of this trigger, e.g. "{reward} is redeemed". Each `{fieldId}` names a
+	// field in config_schema; the UI substitutes the configured value, that
+	// field's `anyText`, or its `missingText`. Validated at install: non-empty,
+	// braces balanced and unnested, every placeholder a declared field id.
+	// Empty means the author declared none. Never set on a webhook trigger,
+	// which nothing configures.
+	Sentence      string `protobuf:"bytes,17,opt,name=sentence,proto3" json:"sentence,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -186,6 +194,13 @@ func (x *Trigger) GetHandler() string {
 	return ""
 }
 
+func (x *Trigger) GetSentence() string {
+	if x != nil {
+		return x.Sentence
+	}
+	return ""
+}
+
 type TriggerInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
@@ -198,6 +213,7 @@ type TriggerInput struct {
 	Emits         string                 `protobuf:"bytes,9,opt,name=emits,proto3" json:"emits,omitempty"`          // JSON string — see Trigger.emits
 	Transport     string                 `protobuf:"bytes,10,opt,name=transport,proto3" json:"transport,omitempty"` // see Trigger.transport
 	Handler       string                 `protobuf:"bytes,11,opt,name=handler,proto3" json:"handler,omitempty"`     // see Trigger.handler
+	Sentence      string                 `protobuf:"bytes,12,opt,name=sentence,proto3" json:"sentence,omitempty"`   // see Trigger.sentence
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -298,6 +314,13 @@ func (x *TriggerInput) GetTransport() string {
 func (x *TriggerInput) GetHandler() string {
 	if x != nil {
 		return x.Handler
+	}
+	return ""
+}
+
+func (x *TriggerInput) GetSentence() string {
+	if x != nil {
+		return x.Sentence
 	}
 	return ""
 }
@@ -520,7 +543,7 @@ var File_module_trigger_proto protoreflect.FileDescriptor
 
 const file_module_trigger_proto_rawDesc = "" +
 	"\n" +
-	"\x14module_trigger.proto\x12\x06module\x1a\fcommon.proto\"\x9a\x03\n" +
+	"\x14module_trigger.proto\x12\x06module\x1a\fcommon.proto\"\xb6\x03\n" +
 	"\aTrigger\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x05 \x01(\tR\x04name\x12 \n" +
@@ -536,7 +559,8 @@ const file_module_trigger_proto_rawDesc = "" +
 	"\btaxonomy\x18\r \x03(\tR\btaxonomy\x12\x14\n" +
 	"\x05emits\x18\x0e \x01(\tR\x05emits\x12\x1c\n" +
 	"\ttransport\x18\x0f \x01(\tR\ttransport\x12\x18\n" +
-	"\ahandler\x18\x10 \x01(\tR\ahandlerJ\x04\b\x04\x10\x05R\bcategory\"\xc1\x02\n" +
+	"\ahandler\x18\x10 \x01(\tR\ahandler\x12\x1a\n" +
+	"\bsentence\x18\x11 \x01(\tR\bsentenceJ\x04\b\x04\x10\x05R\bcategory\"\xdd\x02\n" +
 	"\fTriggerInput\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x14\n" +
@@ -549,7 +573,8 @@ const file_module_trigger_proto_rawDesc = "" +
 	"\x05emits\x18\t \x01(\tR\x05emits\x12\x1c\n" +
 	"\ttransport\x18\n" +
 	" \x01(\tR\ttransport\x12\x18\n" +
-	"\ahandler\x18\v \x01(\tR\ahandlerJ\x04\b\x01\x10\x02R\bcategory\"\xb7\x02\n" +
+	"\ahandler\x18\v \x01(\tR\ahandler\x12\x1a\n" +
+	"\bsentence\x18\f \x01(\tR\bsentenceJ\x04\b\x01\x10\x02R\bcategory\"\xb7\x02\n" +
 	"\x17RegisterTriggersRequest\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +
