@@ -9,7 +9,14 @@ import { handleSceneRoute } from "./routes/scene";
 import { handleSessionRefreshRoute } from "./routes/session";
 import { handleAlertWidgetFrameRoute, handleWidgetFrameRoute } from "./routes/widget";
 import { handleStaticAssetRoute } from "./routes/assets";
-import { handleStorageAssetRoute, isStorageAssetPath } from "./routes/storage";
+import {
+  handleStorageAssetRoute,
+  handleUploadRoute,
+  isStorageAssetPath,
+  isUploadPath,
+  MAX_UPLOAD_BYTES,
+  UPLOAD_ALLOWED_METHODS,
+} from "./routes/storage";
 import {
   handleEventCompletedRoute,
   handleEventDeliveredRoute,
@@ -42,9 +49,21 @@ const CORS_HEADERS: Record<string, string> = {
   "Cross-Origin-Resource-Policy": "cross-origin",
 };
 
-function withCors(res: Response): Response {
+// Upload grants are bearer capabilities carried in the URL, not cookies,
+// so allowing any origin to PUT grants nothing the token did not already.
+const UPLOAD_CORS_HEADERS: Record<string, string> = {
+  ...CORS_HEADERS,
+  "Access-Control-Allow-Methods": UPLOAD_ALLOWED_METHODS,
+};
+
+/** CORS headers for a path: its preflight answer and its responses. */
+export function corsHeadersFor(pathname: string): Record<string, string> {
+  return isUploadPath(pathname) ? UPLOAD_CORS_HEADERS : CORS_HEADERS;
+}
+
+function withCors(res: Response, corsHeaders: Record<string, string> = CORS_HEADERS): Response {
   const headers = new Headers(res.headers);
-  for (const [name, value] of Object.entries(CORS_HEADERS)) {
+  for (const [name, value] of Object.entries(corsHeaders)) {
     headers.set(name, value);
   }
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
@@ -67,11 +86,16 @@ export function createHttpServer(deps: HttpDeps) {
     // routes/events.ts) with room to spare, but still finite so a
     // genuinely dead socket gets reclaimed rather than leaked.
     idleTimeout: 120,
+    // Bun's 128 MiB default would cut off uploads the relay below is
+    // meant to accept. Bun only offers this limit server-wide, so the
+    // small-JSON routes inherit the same ceiling; that is the trade for
+    // one upload limit rather than two that disagree.
+    maxRequestBodySize: MAX_UPLOAD_BYTES,
     fetch: async (req) => {
       const url = new URL(req.url);
 
       if (req.method === "OPTIONS") {
-        return new Response(null, { status: 204, headers: CORS_HEADERS });
+        return new Response(null, { status: 204, headers: corsHeadersFor(url.pathname) });
       }
 
       return withSpan(
@@ -79,6 +103,13 @@ export function createHttpServer(deps: HttpDeps) {
         async (): Promise<Response> => {
           if (url.pathname === "/health") {
             return withCors(Response.json({ status: "ok" }));
+          }
+
+          if (isUploadPath(url.pathname)) {
+            return withCors(
+              await handleUploadRoute(req, url, ctx.runtimeConfig.barkloaderUrl, ctx.logger),
+              UPLOAD_CORS_HEADERS
+            );
           }
 
           if (isStorageAssetPath(url.pathname)) {
