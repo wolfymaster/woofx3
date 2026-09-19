@@ -50,8 +50,12 @@ ENV PACKAGE_SKIP_ARCHIVE=1
 ENV RUST_LINUX_TARGET=x86_64-unknown-linux-gnu
 
 WORKDIR /src/build
+# Parallel rustc jobs for barkloader. Unset uses every core; a build host
+# short on memory passes a smaller number (--build-arg BUILD_JOBS=2), since
+# the release build of the AWS SDK and mlua is what runs out first.
+ARG BUILD_JOBS
 RUN chmod +x main.sh scripts/*.sh \
-    && ./main.sh --target linux-amd64 \
+    && CARGO_BUILD_JOBS="${BUILD_JOBS:-$(nproc)}" ./main.sh --target linux-amd64 \
     && ls -la /src/build/dist/linux-amd64/ \
     && test -f /src/build/dist/linux-amd64/orchestrator \
     && test -x /src/build/dist/linux-amd64/orchestrator
