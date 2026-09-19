@@ -88,3 +88,20 @@ only once the engine can be depended on, and `503` until then:
 
 `GET /health` stays a liveness check: it answers as soon as the api process
 does.
+
+## The Twitch link
+
+An engine exists before its streamer connects Twitch, so `twitch` and
+`woofwoofwoof` start **idle** when no account is linked: they stay up, report
+ready on their heartbeat, and say they are waiting for a Twitch link. Neither
+needs `WOOFX3_TWITCH_CHANNEL_NAME`; without one, the channel is whoever links
+the account. `twitchapi` requests answered while idle report that Twitch is not
+linked.
+
+Linking in the UI writes the token to engine settings and publishes
+`setting.integration.token.updated`, which is what moves both services from
+waiting to connected, with no restart.
+
+**Known gap:** relinking or unlinking *while twitch is already connected* does
+not rebuild its EventSub connection; it keeps the one it has until the engine
+restarts. woofwoofwoof's chat client does reload on that event.
