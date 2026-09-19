@@ -101,3 +101,29 @@ describe("registerClient on an engine without a registration token", () => {
     expect(logger.warn).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("registerClient and application-scoped components", () => {
+  it("starts them for the application the registration resolved", async () => {
+    const { gateway: gw } = gateway(null);
+    const start = mock(async (_applicationId: string) => {});
+    gw.setApplicationScope({ start } as never);
+
+    await gw.registerClient("ui", { userId: "u1" });
+
+    expect(start).toHaveBeenCalledWith("app-1");
+  });
+
+  it("still registers when they fail to start, and says so", async () => {
+    const { gateway: gw, logger } = gateway(null);
+    gw.setApplicationScope({
+      start: async () => {
+        throw new Error("NATS not ready");
+      },
+    } as never);
+
+    const result = await gw.registerClient("ui", { userId: "u1" });
+
+    expect(result.clientId).toBe("c1");
+    expect((logger as never as { error: ReturnType<typeof mock> }).error).toHaveBeenCalledTimes(1);
+  });
+});

@@ -4,6 +4,7 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
 import { ApiSession } from "./api-session";
+import type { ApplicationScope } from "./application-scope";
 import type { ClientAuth } from "./auth";
 import type { DbClient } from "./db-client";
 import type { WebhookClient } from "./webhook-client";
@@ -21,6 +22,7 @@ export class RegistrationRefused extends Error {
 
 export class ApiGateway extends RpcTarget implements ApiGatewayContract {
   private webhookClient: WebhookClient | null = null;
+  private applicationScope: ApplicationScope | null = null;
 
   /**
    * @param registrationToken The secret a caller must present to register
@@ -45,6 +47,10 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
 
   setWebhookClient(client: WebhookClient): void {
     this.webhookClient = client;
+  }
+
+  setApplicationScope(scope: ApplicationScope): void {
+    this.applicationScope = scope;
   }
 
   async authenticate(clientId: string, clientSecret: string): Promise<ApiSession> {
@@ -102,6 +108,22 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     }
     if (this.webhookClient && callbackUrl) {
       await this.webhookClient.refreshCallbackUrls();
+    }
+
+    // After the client exists, so the Convex webhook client it starts can
+    // read the callback this registration just stored. A failure here does
+    // not fail the registration: the client is already created, and a
+    // caller that retried would register a second one. The next
+    // registration or a restart starts the components again.
+    if (this.applicationScope) {
+      try {
+        await this.applicationScope.start(app.id);
+      } catch (err) {
+        this.logger.error("Application-scoped components failed to start after registration", {
+          applicationId: app.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
 
     return {

@@ -61,6 +61,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { initWorkflowRunHandlers },
       { default: BarkloaderClient },
       { checkReadiness, HEARTBEAT_SUBJECT, HeartbeatTracker },
+      { ApplicationScope },
     ] = await Promise.all([
       import("@woofx3/nats"),
       import("./alert-log-handlers"),
@@ -83,6 +84,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./workflow-run-handlers"),
       import("@woofx3/barkloader"),
       import("./readiness"),
+      import("./application-scope"),
     ]);
 
     const config = ctx.runtimeConfig;
@@ -146,9 +148,28 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     const webhookClient = new WebhookClient(db, logger, null);
     api.setWebhookClient(webhookClient);
 
-    let convexWebhookClient: InstanceType<typeof ConvexWebhookClient> | null = null;
-    let alertEmitter: InstanceType<typeof AlertEmitter> | null = null;
-    let storageChangeEmitter: InstanceType<typeof StorageChangeEmitter> | null = null;
+    // Components that exist per application. They start here when the
+    // engine is already registered, and otherwise at the first
+    // registerClient, which creates the application (see ApiGateway).
+    const applicationScope = new ApplicationScope(async (applicationId) => {
+      const convexWebhookClient = new ConvexWebhookClient({ db, logger, applicationId });
+      await convexWebhookClient.loadConfig();
+
+      if (!natsClient) {
+        logger.warn("Skipping AlertEmitter and StorageChangeEmitter; NATS client is not connected");
+        return;
+      }
+      const alertEmitter = new AlertEmitter(natsClient, convexWebhookClient, applicationId, logger);
+      await alertEmitter.start();
+
+      const storageChangeEmitter = new StorageChangeEmitter(natsClient, webhookClient, logger);
+      await storageChangeEmitter.start();
+
+      // A session is scoped to an application; there is nothing to resolve
+      // before onboarding.
+      const streamSessionResolver = new StreamSessionResolver(natsClient, db, applicationId, logger, webhookClient);
+      await streamSessionResolver.start();
+    }, logger);
 
     try {
       const existing = await db.getDefaultApplication();
@@ -156,31 +177,9 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
         api.setApplicationId(existing.id);
         await webhookClient.refreshCallbackUrls();
         logger.info("Warmed applicationId cache from existing default", { applicationId: existing.id });
-
-        convexWebhookClient = new ConvexWebhookClient({
-          db,
-          logger,
-          applicationId: existing.id,
-        });
-        await convexWebhookClient.loadConfig();
-
-        if (natsClient) {
-          alertEmitter = new AlertEmitter(natsClient, convexWebhookClient, existing.id, logger);
-          await alertEmitter.start();
-
-          storageChangeEmitter = new StorageChangeEmitter(natsClient, webhookClient, logger);
-          await storageChangeEmitter.start();
-
-          // Needs the applicationId, so it belongs in this block rather than
-          // the NATS-only one below: a session is scoped to an application and
-          // there is nothing to resolve before onboarding.
-          const streamSessionResolver = new StreamSessionResolver(natsClient, db, existing.id, logger, webhookClient);
-          await streamSessionResolver.start();
-        } else {
-          logger.warn("Skipping AlertEmitter and StorageChangeEmitter; NATS client is not connected");
-        }
+        await applicationScope.start(existing.id);
       } else {
-        logger.info("No default application yet; waiting for UI onboarding");
+        logger.info("No default application yet; application-scoped components start at the first registration");
       }
     } catch (err) {
       logger.warn("Default-application warmup failed (continuing)", {
@@ -228,6 +227,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     api.setAuthInvalidate(() => auth.invalidateCache());
     const gateway = new ApiGateway(api, auth, db, logger, config.registrationToken);
     gateway.setWebhookClient(webhookClient);
+    gateway.setApplicationScope(applicationScope);
 
     this.server = createHttpServer({
       port: config.port,
