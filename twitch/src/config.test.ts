@@ -23,4 +23,14 @@ describe("TwitchEnvSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  test("accepts no channel: the channel is whoever links Twitch", () => {
+    const result = TwitchEnvSchema.safeParse({
+      woofx3MessagebusUrl: "nats://localhost:4222",
+      woofx3DatabaseProxyUrl: "http://db",
+      woofx3TwitchClientId: "cid",
+      woofx3TwitchClientSecret: "sec",
+    });
+    expect(result.success).toBe(true);
+  });
 });

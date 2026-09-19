@@ -24,17 +24,26 @@ interface TwitchApiRequest {
   args?: Record<string, unknown>;
 }
 
+/**
+ * The error name TwitchClient.init rejects with while no Twitch account is
+ * linked. Must match TWITCH_NOT_LINKED in shared/clients/typescript/twitch;
+ * not imported, because tests replace that module with a default-only mock.
+ */
+const TWITCH_NOT_LINKED = "TwitchNotLinked";
+
 export type TwitchApiServices = {
   dbProxy: DbProxyService;
   messageBus: MessageBusService;
 };
 
 export type TwitchApiContext = {
-  broadcaster: HelixUser;
+  /** Absent until a Twitch account is linked; see `TwitchApi.connect`. */
+  broadcaster?: HelixUser;
   logger: SharedLogger;
   services: TwitchApiServices;
   twitchEventBus?: TwitchEventBus;
-  twitchApi: TwitchApiClient;
+  /** Absent until a Twitch account is linked. */
+  twitchApi?: TwitchApiClient;
   config: {
     getConfig: (key: string) => unknown;
   };
@@ -50,15 +59,53 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     this.context = { services: {} } as unknown as TwitchApiContext;
   }
 
+  /**
+   * "waiting" until a Twitch account is linked, then "connected". A fresh
+   * engine exists before its streamer links Twitch, so waiting is a normal,
+   * healthy state rather than a failure to restart out of.
+   */
+  private link: "waiting" | "connecting" | "connected" = "waiting";
+  private eventBus: TwitchEventBus | null = null;
+
   async init(ctx: TwitchApiContext) {
     // Before anything starts publishing. Every event this service emits is
     // stamped with the session this holder learns from the bus, and
     // TwitchEventBus begins emitting the moment it starts.
     await subscribeToSessionUpdates(ctx.services.messageBus.client, ctx.logger);
 
+    await ctx.services.messageBus.client.subscribe("twitchapi", (msg: Msg) => {
+      void withSpan("twitchapi.request", (span) => this.handleTwitchApiRequest(ctx, msg, span), {
+        attributes: { "messaging.destination.name": "twitchapi", "messaging.system": "nats" },
+        kind: SpanKind.CONSUMER,
+      }).catch((err) => {
+        ctx.logger.error("twitchapi: request handling failed", { err });
+      });
+    });
+
+    // Published when the streamer links (or relinks) Twitch in the UI. It is
+    // what moves a waiting service to connected without a restart.
+    await ctx.services.messageBus.client.subscribe("setting.integration.token.updated", async (msg: Msg) => {
+      const integration = msg.json<{ data?: { integration?: string } }>()?.data?.integration;
+      if (integration !== "twitch" || this.link !== "waiting") {
+        return;
+      }
+      await this.connect(ctx);
+    });
+
+    await this.connect(ctx);
+  }
+
+  /**
+   * Connect to Twitch with the linked account, or stay waiting when none is
+   * linked. The channel is the configured one when set, else the account
+   * that linked Twitch.
+   */
+  private async connect(ctx: TwitchApiContext): Promise<void> {
+    this.link = "connecting";
     const dbBaseURL = ctx.services.dbProxy.client.baseURL;
+    const channel = ctx.config.getConfig("woofx3TwitchChannelName") as string | undefined;
     const twitchClient = new TwitchClient({
-      channel: ctx.config.getConfig("woofx3TwitchChannelName") as string,
+      channel: channel || undefined,
       getSetting: async (key) => {
         const response = await GetSetting({ applicationId: "", key }, { baseURL: dbBaseURL });
         return response.setting.value.stringValue ?? undefined;
@@ -68,11 +115,21 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       },
     });
 
-    await twitchClient.init({
-      clientId: ctx.config.getConfig("woofx3TwitchClientId") as string,
-      clientSecret: ctx.config.getConfig("woofx3TwitchClientSecret") as string,
-      redirectUri: ctx.config.getConfig("woofx3TwitchRedirectUrl") as string,
-    });
+    try {
+      await twitchClient.init({
+        clientId: ctx.config.getConfig("woofx3TwitchClientId") as string,
+        clientSecret: ctx.config.getConfig("woofx3TwitchClientSecret") as string,
+        redirectUri: ctx.config.getConfig("woofx3TwitchRedirectUrl") as string,
+      });
+    } catch (err) {
+      if (err instanceof Error && err.name === TWITCH_NOT_LINKED) {
+        this.link = "waiting";
+        ctx.logger.info("twitch: no Twitch account linked yet; waiting for a Twitch link");
+        return;
+      }
+      this.link = "waiting";
+      throw err;
+    }
 
     const apiClient = twitchClient.ApiClient();
     const listener = twitchClient.EventBusListener();
@@ -91,8 +148,8 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       // Deliberately not fatal: the `twitchapi` request/reply surface is
       // still worth serving, and Twurple keeps retrying refused
       // subscriptions. But the service must not claim to be healthy while
-      // it is receiving no Twitch events — see `isEventBusReady`, which
-      // feeds the heartbeat's `ready` flag.
+      // it is receiving no Twitch events — see `isReady`, which feeds the
+      // heartbeat's `ready` flag.
       ctx.logger.error("Twitch EventSub subscriptions incomplete; service is NOT ready", {
         established: twitchEventBus.establishedCount(),
         expected: TwitchEventBus.expectedSubscriptionCount,
@@ -103,15 +160,9 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     ctx.broadcaster = broadcaster;
     ctx.twitchApi = new TwitchApiClientImpl(apiClient, broadcaster);
     ctx.twitchEventBus = twitchEventBus;
-
-    await ctx.services.messageBus.client.subscribe("twitchapi", (msg: Msg) => {
-      void withSpan("twitchapi.request", (span) => this.handleTwitchApiRequest(ctx, msg, span), {
-        attributes: { "messaging.destination.name": "twitchapi", "messaging.system": "nats" },
-        kind: SpanKind.CONSUMER,
-      }).catch((err) => {
-        ctx.logger.error("twitchapi: request handling failed", { err });
-      });
-    });
+    this.eventBus = twitchEventBus;
+    this.link = "connected";
+    ctx.logger.info("twitch: connected", { broadcasterId: broadcaster.id });
   }
 
   /**
@@ -133,18 +184,22 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
   }
 
   /**
-   * Readiness reported on the heartbeat. False until Twitch has confirmed
-   * every EventSub subscription: an unsubscribed listener is silent, not
-   * merely degraded, so reporting ready would hide a total outage of the
-   * Twitch integration.
+   * Readiness reported on the heartbeat. Waiting for a Twitch link is ready:
+   * nothing is wrong, there is only nothing to connect to yet. Once
+   * connecting, false until Twitch has confirmed every EventSub
+   * subscription: an unsubscribed listener is silent, not merely degraded,
+   * so reporting ready would hide a total outage of the Twitch integration.
    */
-  isEventBusReady(): boolean {
-    return this.context.twitchEventBus?.isReady() ?? false;
+  isReady(): boolean {
+    if (this.link === "waiting") {
+      return true;
+    }
+    return this.eventBus?.isReady() ?? false;
   }
 
   async run(ctx: TwitchApiContext) {
     console.log(chalk.redBright(`===================== STARTING TWITCH ===========================  `));
-    console.log(chalk.redBright(`Broadcaster Id: ${ctx.broadcaster.id}`));
+    console.log(chalk.redBright(`Broadcaster Id: ${ctx.broadcaster?.id ?? "(waiting for a Twitch link)"}`));
   }
 
   async terminate(ctx: TwitchApiContext) {
@@ -168,6 +223,13 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     if (!request?.command) {
       if (isRequest) {
         this.respondError(msg, "Missing command");
+      }
+      return;
+    }
+
+    if (!ctx.twitchApi) {
+      if (isRequest) {
+        this.respondError(msg, "Twitch is not linked yet: the streamer has to connect Twitch first");
       }
       return;
     }

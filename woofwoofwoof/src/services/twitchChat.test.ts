@@ -16,6 +16,7 @@ mock.module("@woofx3/twitch", () => ({
     ChatClient() {
       return { connect: chatConnectMock, quit: chatQuitMock };
     }
+    broadcaster = async () => ({ id: "42", name: "linked-login" });
   },
 }));
 
@@ -120,5 +121,63 @@ describe("TwitchChatClientService", () => {
     await svc.disconnect();
 
     expect(chatQuitMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("TwitchChatClientService before and after Twitch is linked", () => {
+  const config = {
+    credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
+    getSetting: async () => undefined,
+  };
+
+  function notLinked(): Error {
+    const err = new Error("Missing broadcaster token in db proxy setting: twitch_token");
+    err.name = "TwitchNotLinked";
+    return err;
+  }
+
+  beforeEach(() => {
+    initMock.mockClear();
+    chatConnectMock.mockClear();
+  });
+
+  test("waits, healthy but not connected, while no account is linked", async () => {
+    initMock.mockImplementationOnce(async () => {
+      throw notLinked();
+    });
+    const svc = new TwitchChatClientService(config);
+
+    await svc.connect();
+
+    expect(svc.waitingForLink).toBe(true);
+    expect(svc.healthcheck).toBe(true);
+    expect(svc.connected).toBe(false);
+    expect(svc.channel()).toBeNull();
+    await expect(svc.say("hello")).rejects.toThrow("not connected");
+  });
+
+  test("connects on reload once the account is linked, joining the linked channel", async () => {
+    initMock.mockImplementationOnce(async () => {
+      throw notLinked();
+    });
+    const svc = new TwitchChatClientService(config);
+    await svc.connect();
+
+    await svc.reload();
+
+    expect(svc.waitingForLink).toBe(false);
+    expect(svc.connected).toBe(true);
+    expect(svc.channel()).toBe("linked-login");
+    expect(chatConnectMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("still fails on anything other than a missing link", async () => {
+    initMock.mockImplementationOnce(async () => {
+      throw new Error("Twitch is down");
+    });
+    const svc = new TwitchChatClientService(config);
+
+    await expect(svc.connect()).rejects.toThrow("Twitch is down");
+    expect(svc.healthcheck).toBe(false);
   });
 });
