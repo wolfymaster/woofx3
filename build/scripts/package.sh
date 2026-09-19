@@ -69,6 +69,10 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 export WOOFX3_ROOT_PATH="${WOOFX3_ROOT_PATH:-$DIR}"
 
+# Migrate before any service starts, as the container entrypoint does: a
+# failed migration stops here rather than booting against a stale schema.
+"$DIR/migrate" -cmd up
+
 # Start the orchestrator
 exec "$DIR/orchestrator"
 EOF
@@ -79,6 +83,7 @@ EOF
 @echo off
 cd /d "%~dp0"
 if not defined WOOFX3_ROOT_PATH set WOOFX3_ROOT_PATH=%cd%
+migrate.exe -cmd up || exit /b 1
 orchestrator.exe
 EOF
             ;;
