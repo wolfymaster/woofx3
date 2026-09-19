@@ -214,12 +214,14 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
 
     this.server = createHttpServer({
       port: config.port,
+      hostname: config.host,
       logger,
       gateway,
       onProcessingCallback: (body) => api.handleProcessingCallback(body as never),
     });
 
     logger.info("API server started", {
+      host: config.host,
       port: config.port,
       httpEndpoint: `http://localhost:${config.port}/api`,
       wsEndpoint: `ws://localhost:${config.port}/api`,

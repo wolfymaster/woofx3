@@ -3,6 +3,12 @@ import { z } from "zod";
 
 export interface ApiConfig {
   port: number;
+  /**
+   * Interface the HTTP server binds. Loopback unless configured otherwise:
+   * a deployed engine is reached through its in-container edge, and every
+   * other listener stays off the host's shared network.
+   */
+  host: string;
   rootDir: string;
   databaseProxyUrl: string;
   barkloaderUrl: string;
@@ -34,6 +40,8 @@ export const ApiEnvSchema = z
   .object({
     woofx3ApiPort: z.union([z.number(), z.string()]).optional(),
     apiPort: z.union([z.number(), z.string()]).optional(),
+    woofx3ApiHost: z.string().optional(),
+    apiHost: z.string().optional(),
     woofx3DatabaseProxyUrl: z.string().optional(),
     databaseProxyUrl: z.string().optional(),
     woofx3BarkloaderUrl: z.string().optional(),
@@ -81,6 +89,7 @@ export function loadConfig(): ApiConfig {
   const config = result.config;
 
   const port = Number(config.woofx3ApiPort ?? config.apiPort ?? 8080);
+  const host = String(config.woofx3ApiHost || config.apiHost || "127.0.0.1");
   const rootDir = String(config.woofx3RootPath);
   const databaseProxyUrl = String(config.woofx3DatabaseProxyUrl ?? config.databaseProxyUrl ?? "");
   const barkloaderUrl = String(config.woofx3BarkloaderUrl ?? config.barkloaderUrl ?? "http://127.0.0.1:3005");
@@ -126,6 +135,7 @@ export function loadConfig(): ApiConfig {
 
   return {
     port,
+    host,
     databaseProxyUrl,
     barkloaderUrl,
     barkloaderWsUrl,

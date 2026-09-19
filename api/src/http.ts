@@ -5,6 +5,7 @@ import type { ApiGateway } from "./gateway";
 
 export interface HttpDeps {
   port: number;
+  hostname: string;
   logger: SharedLogger;
   gateway: ApiGateway;
   /**
@@ -136,13 +137,14 @@ class BunWebSocketAdapter {
  * ambiently, matching `sceneManager/src/http.ts`'s `createHttpServer`.
  */
 export function createHttpServer(deps: HttpDeps) {
-  const { port, logger, gateway, onProcessingCallback } = deps;
+  const { port, hostname, logger, gateway, onProcessingCallback } = deps;
 
   // Map to track WebSocket adapters by their Bun WebSocket (capnweb path)
   const wsAdapters = new WeakMap<ServerWebSocket<unknown>, BunWebSocketAdapter>();
 
   return Bun.serve({
     port,
+    hostname,
     async fetch(req, server) {
       const url = new URL(req.url);
 

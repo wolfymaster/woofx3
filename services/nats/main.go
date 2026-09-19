@@ -118,6 +118,10 @@ func findPort(cfg *Configuration) (host string, wsPort int, err error) {
 
 func createServer(cfg *Configuration, logger *slog.Logger, host string, wsPort int) (*server.Server, error) {
 	opts := &server.Options{
+		// The client (TCP) listener binds the same host as the WebSocket one;
+		// left unset, NATS binds it on every interface.
+		Host:   host,
+		Port:   cfg.Port,
 		NoLog:  cfg.NoLog,
 		NoSigs: cfg.NoSigs,
 		Websocket: server.WebsocketOpts{
@@ -134,7 +138,7 @@ func createServer(cfg *Configuration, logger *slog.Logger, host string, wsPort i
 	if !ns.ReadyForConnections(5 * time.Second) {
 		return nil, &configError{msg: "NATS server not ready within timeout"}
 	}
-	logger.Info("NATS server started", "host", opts.Host, "websocket_port", opts.Websocket.Port)
+	logger.Info("NATS server started", "host", opts.Host, "port", opts.Port, "websocket_port", opts.Websocket.Port)
 	return ns, nil
 }
 
