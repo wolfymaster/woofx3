@@ -25,8 +25,10 @@ fi
 
 woofx3_set_output_dir "$CONFIG_FILE"
 
-# Get go services from config
-readarray -t GO_SERVICES < <(jq -c '.services[] | select(.type == "go" and .enabled == true)' "$CONFIG_FILE")
+# Go services from config, plus Go tools: binaries shipped beside the services
+# (the migrate tool the entrypoint runs before boot) that the orchestrator
+# never starts, because it reads only `.services`.
+readarray -t GO_SERVICES < <(jq -c '(.services[] | select(.type == "go" and .enabled == true)), (.tools[]? | select(.type == "go"))' "$CONFIG_FILE")
 
 if [[ ${#GO_SERVICES[@]} -eq 0 ]]; then
     log_info "No enabled go services found"

@@ -62,6 +62,15 @@
       "output": "woofwoofwoof"
     }
   ],
+  "tools": [
+    {
+      "name": "migrate",
+      "type": "go",
+      "path": "../db",
+      "entry": "./database/migrate",
+      "output": "migrate"
+    }
+  ],
   "build": {
     "output_dir": "./dist",
     "targets": ["linux-amd64", "windows-amd64"]
