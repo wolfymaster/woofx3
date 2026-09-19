@@ -11,6 +11,11 @@
 # Pin Bun with: docker build --build-arg BUN_VERSION=1.1.34 ...
 
 ARG BUN_VERSION=1.1.34
+# The in-container edge (see build/config/Caddyfile.edge). Bumping the version
+# means bumping the checksum: the SHA-512 of caddy_<version>_linux_amd64.tar.gz
+# from that release's caddy_<version>_checksums.txt.
+ARG CADDY_VERSION=2.11.4
+ARG CADDY_SHA512=8220d1f013b6f27510247b2360c9e0ca9f018feebd82515f07635318b34ff9777ccc8fd0b6e6f2486ce3a33fe389fbb7db12d05baa474f4587509fb4f5ebf1c9
 
 FROM oven/bun:${BUN_VERSION} AS bun-toolchain
 
@@ -51,6 +56,15 @@ RUN chmod +x main.sh scripts/*.sh \
     && test -f /src/build/dist/linux-amd64/orchestrator \
     && test -x /src/build/dist/linux-amd64/orchestrator
 
+ARG CADDY_VERSION
+ARG CADDY_SHA512
+RUN curl -fsSLo /tmp/caddy.tar.gz \
+        "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" \
+    && echo "${CADDY_SHA512}  /tmp/caddy.tar.gz" | sha512sum -c - \
+    && tar -xzf /tmp/caddy.tar.gz -C /src/build/dist/linux-amd64 caddy \
+    && rm /tmp/caddy.tar.gz \
+    && /src/build/dist/linux-amd64/caddy version
+
 # bookworm-slim: same glibc family as the builder; full dynamic linker paths for mixed static/dynamic binaries.
 FROM debian:bookworm-slim AS runtime
 
@@ -73,5 +87,9 @@ WORKDIR /app
 ENV WOOFX3_ROOT=/app
 
 USER 65532:65532
+
+# The edge (Caddy) is the only listener beyond loopback; Railway and other
+# hosts set PORT, and it defaults to 8080.
+EXPOSE 8080
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/app/entrypoint.sh"]

@@ -20,6 +20,9 @@ log_error() {
 woofx3_set_output_dir "$CONFIG_FILE"
 
 TEMPLATE_CONFIG="$SCRIPT_DIR/../config/.woofx3.json"
+# The edge's routing config. Caddy itself is a prebuilt binary the container
+# image installs; a package without it runs its services directly.
+EDGE_CONFIG="$SCRIPT_DIR/../config/Caddyfile.edge"
 if [[ ! -f "$TEMPLATE_CONFIG" ]]; then
     log_error "Missing packaging template: $TEMPLATE_CONFIG"
     log_error "Add a non-secret build/config/.woofx3.json for release archives."
@@ -52,6 +55,7 @@ for target in "${TARGETS[@]}"; do
 
     # Copy non-secret template config for runtime use (operators replace secrets)
     cp "$TEMPLATE_CONFIG" "$TARGET_DIR/.woofx3.json"
+    cp "$EDGE_CONFIG" "$TARGET_DIR/Caddyfile.edge"
     
     # Create a simple startup script
     case "$target" in

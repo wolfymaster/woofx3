@@ -60,6 +60,13 @@
       "enabled": true,
       "entry": "src/woofwoofwoof.ts",
       "output": "woofwoofwoof"
+    },
+    {
+      "name": "edge",
+      "type": "binary",
+      "enabled": true,
+      "output": "caddy",
+      "args": ["run", "--config", "Caddyfile.edge", "--adapter", "caddyfile"]
     }
   ],
   "tools": [
