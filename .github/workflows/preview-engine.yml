@@ -1,0 +1,124 @@
+name: Preview engine
+
+# A throwaway engine per pull request, at https://pr-<n>-woofx3.on.woofx3.tv.
+#
+# Opt in by labelling a pull request `preview-engine`: this builds and pushes
+# ghcr.io/wolfymaster/woofx3:pr-<n>-<sha7>, then asks the woofx3 maintenance
+# API to create (or redeploy) that pull request's engine and comments where it
+# is. Closing the pull request removes it.
+#
+# Not usable yet. It needs, and does nothing without:
+#   - the maintenance API deployed, with MAINTENANCE_API_URL (a repository
+#     variable) and MAINTENANCE_API_KEY (a secret, scoped previews:write);
+#   - ghcr.io/wolfymaster/woofx3 public, so the host can pull without
+#     registry credentials (see docs/operations/releases.md).
+# Until then the label is simply never applied.
+
+on:
+  pull_request:
+    types: [labeled, synchronize, closed]
+  workflow_dispatch:
+    inputs:
+      pr-number:
+        description: Pull request to build a preview engine for
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: write
+
+concurrency:
+  group: preview-engine-${{ github.event.pull_request.number || inputs.pr-number }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: ghcr.io/wolfymaster/woofx3
+  BUN_VERSION: "1.1.34"
+
+jobs:
+  deploy:
+    name: Build and deploy the preview engine
+    # Labelling with anything else, or pushing to a pull request that never
+    # opted in, must not build an image.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.action == 'labeled' && github.event.label.name == 'preview-engine') ||
+      (github.event.action == 'synchronize' &&
+       contains(github.event.pull_request.labels.*.name, 'preview-engine'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Settle the pull request and tag
+        id: preview
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr-number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          # The dispatch input is free text; everything downstream builds an
+          # image tag and a slug out of it.
+          case "$PR_NUMBER" in
+            ''|*[!0-9]*) echo "pull request number must be digits, got: $PR_NUMBER" >&2; exit 1 ;;
+          esac
+          echo "pr=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "version=pr-${PR_NUMBER}-${HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The image reports its own tag as its version, which is what the
+      # maintenance API waits for on /ready.
+      - name: Build and push the preview image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.production
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ steps.preview.outputs.version }}
+          build-args: |
+            BUN_VERSION=${{ env.BUN_VERSION }}
+            WOOFX3_VERSION=${{ steps.preview.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create or redeploy the preview engine
+        env:
+          MAINTENANCE_API_URL: ${{ vars.MAINTENANCE_API_URL }}
+          MAINTENANCE_API_KEY: ${{ secrets.MAINTENANCE_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.preview.outputs.pr }}
+          VERSION: ${{ steps.preview.outputs.version }}
+        run: .github/scripts/preview-engine.sh up "$PR_NUMBER" "$VERSION"
+
+  teardown:
+    name: Remove the preview engine
+    # Closing the pull request is what ends a preview, merged or not.
+    # Removing the label deliberately does not: a preview outlives it and is
+    # reaped at its TTL.
+    if: >-
+      github.event.action == 'closed' &&
+      contains(github.event.pull_request.labels.*.name, 'preview-engine')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Remove the preview engine
+        env:
+          MAINTENANCE_API_URL: ${{ vars.MAINTENANCE_API_URL }}
+          MAINTENANCE_API_KEY: ${{ secrets.MAINTENANCE_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: .github/scripts/preview-engine.sh down "$PR_NUMBER"
