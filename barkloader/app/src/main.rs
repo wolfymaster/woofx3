@@ -3,8 +3,8 @@ use crate::services::http_client::ReqwestHttpClient;
 use crate::services::http_storage_client::HttpStorageClient;
 use crate::services::sandbox_resources::HttpResourceClient;
 use crate::util::{
-    get_env_or_default, get_env_or_default_with_key, get_woofx3_json_value,
-    validate_required_config, validate_required_woofx3_json_keys,
+    get_config_value, get_env_or_default, get_env_or_default_with_key, validate_required_config,
+    validate_required_config_keys,
 };
 use actix_web::{App, HttpServer, middleware::Logger, web::Data};
 use anyhow::Result;
@@ -91,12 +91,10 @@ async fn setup() -> Result<AppContext> {
         // the engine's own applicationId: today one barkloader process
         // serves exactly one application, so a single startup-time value
         // (rather than a per-invocation one) correctly scopes both.
-        let resource_proxy_url = get_woofx3_json_value("databaseProxyUrl", "");
-        let application_id = get_woofx3_json_value("applicationId", "");
+        let resource_proxy_url = get_config_value("databaseProxyUrl", "");
+        let application_id = get_config_value("applicationId", "");
         if application_id.is_empty() {
-            warn!(
-                "applicationId not set in .woofx3.json; ctx.resources/ctx.storage calls will be unscoped"
-            );
+            warn!("applicationId not configured; ctx.resources/ctx.storage calls will be unscoped");
         }
         if !resource_proxy_url.is_empty() {
             info!(
@@ -140,9 +138,9 @@ async fn setup() -> Result<AppContext> {
     // Establish the connection before reading either -- everything below this point
     // treats db-proxy as available, the same contract the Go and TypeScript runtimes
     // give their applications by gating init behind the registered `db` service.
-    let db_proxy_url = get_woofx3_json_value("databaseProxyUrl", "");
+    let db_proxy_url = get_config_value("databaseProxyUrl", "");
     if db_proxy_url.is_empty() {
-        anyhow::bail!("databaseProxyUrl in .woofx3.json is required for barkloader");
+        anyhow::bail!("databaseProxyUrl (WOOFX3_DATABASE_PROXY_URL) is required for barkloader");
     }
     crate::services::storage_settings::wait_for_db_proxy(&db_proxy_url).await;
 
@@ -271,7 +269,7 @@ async fn main() -> std::io::Result<()> {
         drop(logging);
         std::process::exit(1);
     }
-    if let Err(e) = validate_required_woofx3_json_keys(&["databaseProxyUrl"]) {
+    if let Err(e) = validate_required_config_keys(&["databaseProxyUrl"]) {
         tracing::error!("{}", e);
         drop(logging);
         std::process::exit(1);
