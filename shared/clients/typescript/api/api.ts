@@ -1,5 +1,6 @@
 // Shared API Types for woofx3 UI and Backend
 
+import type { RegisterClientOptions } from "./rpc";
 import type { StreamEventSubscriber } from "./stream-events";
 import type { ActionDefinition, ModuleResourceUsage, ResourceInstanceDefinition, TriggerDefinition } from "./webhooks";
 import type { WorkflowDefinition } from "./workflow-definition";
@@ -643,9 +644,8 @@ export interface Woofx3EngineGateway {
   authenticate(clientId: string, clientSecret: string): Woofx3EngineApi;
   registerClient(
     description: string,
-    callbackUrl?: string,
-    callbackToken?: string
-  ): Promise<{ clientId: string; clientSecret: string }>;
+    options: RegisterClientOptions
+  ): Promise<{ clientId: string; clientSecret: string; applicationId: string }>;
 }
 
 /**

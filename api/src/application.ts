@@ -226,7 +226,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
 
     const auth = new ClientAuth(db, logger);
     api.setAuthInvalidate(() => auth.invalidateCache());
-    const gateway = new ApiGateway(api, auth, db, logger);
+    const gateway = new ApiGateway(api, auth, db, logger, config.registrationToken);
     gateway.setWebhookClient(webhookClient);
 
     this.server = createHttpServer({

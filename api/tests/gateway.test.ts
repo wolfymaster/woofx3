@@ -39,7 +39,7 @@ describe("ApiGateway.registerClient", () => {
     const webhook = new WebhookClient(db, logger, null);
     api.setWebhookClient(webhook);
     const auth = { validate: mock(async () => ({ valid: true })) } as any;
-    const gateway = new ApiGateway(api, auth, db, logger);
+    const gateway = new ApiGateway(api, auth, db, logger, null);
     gateway.setWebhookClient(webhook);
 
     const res = await gateway.registerClient("test-ui", {
@@ -78,7 +78,7 @@ describe("ApiGateway.registerClient", () => {
     });
     const webhook = new WebhookClient(db, logger, null);
     api.setWebhookClient(webhook);
-    const gateway = new ApiGateway(api, { validate: mock(async () => ({ valid: true })) } as any, db, logger);
+    const gateway = new ApiGateway(api, { validate: mock(async () => ({ valid: true })) } as any, db, logger, null);
     gateway.setWebhookClient(webhook);
 
     const res = await gateway.registerClient("test", { userId: "convex_user_42" });
@@ -99,7 +99,7 @@ describe("ApiGateway.registerClient", () => {
       apiUrl: "http://api.test",
       logger,
     });
-    const gateway = new ApiGateway(api, { validate: mock(async () => ({ valid: true })) } as any, db, logger);
+    const gateway = new ApiGateway(api, { validate: mock(async () => ({ valid: true })) } as any, db, logger, null);
 
     await expect(gateway.registerClient("test", { userId: "" })).rejects.toThrow();
   });

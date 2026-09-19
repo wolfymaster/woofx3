@@ -5,6 +5,11 @@ import { UNVERSIONED } from "./version";
 export interface ApiConfig {
   /** The running release (`WOOFX3_VERSION`); see UNVERSIONED. */
   version: string;
+  /**
+   * Secret a caller must present to register (`WOOFX3_REGISTRATION_TOKEN`),
+   * or null when registration is open.
+   */
+  registrationToken: string | null;
   port: number;
   /**
    * Interface the HTTP server binds. Loopback unless configured otherwise:
@@ -46,6 +51,7 @@ export const ApiEnvSchema = z
     woofx3ApiHost: z.string().optional(),
     apiHost: z.string().optional(),
     woofx3Version: z.union([z.string(), z.number()]).optional(),
+    woofx3RegistrationToken: z.union([z.string(), z.number()]).optional(),
     woofx3DatabaseProxyUrl: z.string().optional(),
     databaseProxyUrl: z.string().optional(),
     woofx3BarkloaderUrl: z.string().optional(),
@@ -95,6 +101,10 @@ export function loadConfig(): ApiConfig {
   const port = Number(config.woofx3ApiPort ?? config.apiPort ?? 8080);
   const host = String(config.woofx3ApiHost || config.apiHost || "127.0.0.1");
   const version = String(config.woofx3Version || UNVERSIONED);
+  const registrationToken =
+    config.woofx3RegistrationToken === undefined || String(config.woofx3RegistrationToken).trim() === ""
+      ? null
+      : String(config.woofx3RegistrationToken);
   const rootDir = String(config.woofx3RootPath);
   const databaseProxyUrl = String(config.woofx3DatabaseProxyUrl ?? config.databaseProxyUrl ?? "");
   const barkloaderUrl = String(config.woofx3BarkloaderUrl ?? config.barkloaderUrl ?? "http://127.0.0.1:3005");
@@ -140,6 +150,7 @@ export function loadConfig(): ApiConfig {
 
   return {
     version,
+    registrationToken,
     port,
     host,
     databaseProxyUrl,
