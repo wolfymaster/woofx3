@@ -669,6 +669,8 @@ export interface Woofx3EngineGateway {
 export interface EngineInfo {
   engineSceneOverlayBaseUrl: string;
   overlayPublicUrl: string;
+  /** The release this engine runs (its image tag), or "dev" for an unversioned build. */
+  version: string;
 }
 
 /**

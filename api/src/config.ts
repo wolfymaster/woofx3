@@ -1,7 +1,10 @@
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
+import { UNVERSIONED } from "./version";
 
 export interface ApiConfig {
+  /** The running release (`WOOFX3_VERSION`); see UNVERSIONED. */
+  version: string;
   port: number;
   /**
    * Interface the HTTP server binds. Loopback unless configured otherwise:
@@ -42,6 +45,7 @@ export const ApiEnvSchema = z
     apiPort: z.union([z.number(), z.string()]).optional(),
     woofx3ApiHost: z.string().optional(),
     apiHost: z.string().optional(),
+    woofx3Version: z.union([z.string(), z.number()]).optional(),
     woofx3DatabaseProxyUrl: z.string().optional(),
     databaseProxyUrl: z.string().optional(),
     woofx3BarkloaderUrl: z.string().optional(),
@@ -90,6 +94,7 @@ export function loadConfig(): ApiConfig {
 
   const port = Number(config.woofx3ApiPort ?? config.apiPort ?? 8080);
   const host = String(config.woofx3ApiHost || config.apiHost || "127.0.0.1");
+  const version = String(config.woofx3Version || UNVERSIONED);
   const rootDir = String(config.woofx3RootPath);
   const databaseProxyUrl = String(config.woofx3DatabaseProxyUrl ?? config.databaseProxyUrl ?? "");
   const barkloaderUrl = String(config.woofx3BarkloaderUrl ?? config.barkloaderUrl ?? "http://127.0.0.1:3005");
@@ -134,6 +139,7 @@ export function loadConfig(): ApiConfig {
         : undefined;
 
   return {
+    version,
     port,
     host,
     databaseProxyUrl,

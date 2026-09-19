@@ -54,6 +54,7 @@ jobs:
             ${{ env.IMAGE_NAME }}:latest
           build-args: |
             BUN_VERSION=${{ env.BUN_VERSION }}
+            WOOFX3_VERSION=${{ steps.meta.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

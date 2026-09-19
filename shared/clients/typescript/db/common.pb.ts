@@ -33,7 +33,11 @@ export interface ResponseStatus {
 
 export declare namespace ResponseStatus {
   export type Code =
-    "OK" | "INVALID_ARGUMENT" | "NOT_FOUND" | "PERMISSION_DENIED" | "INTERNAL";
+    | "OK"
+    | "INVALID_ARGUMENT"
+    | "NOT_FOUND"
+    | "PERMISSION_DENIED"
+    | "INTERNAL";
 }
 
 /**
@@ -46,6 +50,29 @@ export interface PingRequest {}
  */
 export interface PingResponse {
   status: ResponseStatus;
+}
+
+export interface MigrationStatusRequest {}
+
+/**
+ * How much of its migration chain the database behind this db-proxy has
+ * applied, measured against the chain this db-proxy build ships. An engine is
+ * not ready until nothing is pending.
+ */
+export interface MigrationStatusResponse {
+  status: ResponseStatus;
+  /**
+   * Newest migration in the chain the database has applied; empty when none.
+   */
+  applied: string;
+  /**
+   * Newest migration in the chain.
+   */
+  latest: string;
+  /**
+   * Migrations in the chain the database has not applied.
+   */
+  pending: number;
 }
 
 //========================================//
@@ -67,6 +94,21 @@ export async function Ping(
   return PingResponse.decode(response);
 }
 
+/**
+ * MigrationStatus reports how far the database is migrated.
+ */
+export async function MigrationStatus(
+  migrationStatusRequest: MigrationStatusRequest,
+  config?: ClientConfiguration,
+): Promise<MigrationStatusResponse> {
+  const response = await PBrequest(
+    "/common.CommonService/MigrationStatus",
+    MigrationStatusRequest.encode(migrationStatusRequest),
+    config,
+  );
+  return MigrationStatusResponse.decode(response);
+}
+
 //========================================//
 //       CommonService JSON Client        //
 //========================================//
@@ -86,6 +128,21 @@ export async function PingJSON(
   return PingResponseJSON.decode(response);
 }
 
+/**
+ * MigrationStatus reports how far the database is migrated.
+ */
+export async function MigrationStatusJSON(
+  migrationStatusRequest: MigrationStatusRequest,
+  config?: ClientConfiguration,
+): Promise<MigrationStatusResponse> {
+  const response = await JSONrequest(
+    "/common.CommonService/MigrationStatus",
+    MigrationStatusRequestJSON.encode(migrationStatusRequest),
+    config,
+  );
+  return MigrationStatusResponseJSON.decode(response);
+}
+
 //========================================//
 //             CommonService              //
 //========================================//
@@ -101,6 +158,13 @@ export interface CommonService<Context = unknown> {
     pingRequest: PingRequest,
     context: Context,
   ) => Promise<PingResponse> | PingResponse;
+  /**
+   * MigrationStatus reports how far the database is migrated.
+   */
+  MigrationStatus: (
+    migrationStatusRequest: MigrationStatusRequest,
+    context: Context,
+  ) => Promise<MigrationStatusResponse> | MigrationStatusResponse;
 }
 
 export function createCommonService<Context>(service: CommonService<Context>) {
@@ -112,6 +176,18 @@ export function createCommonService<Context>(service: CommonService<Context>) {
         handler: service.Ping,
         input: { protobuf: PingRequest, json: PingRequestJSON },
         output: { protobuf: PingResponse, json: PingResponseJSON },
+      },
+      MigrationStatus: {
+        name: "MigrationStatus",
+        handler: service.MigrationStatus,
+        input: {
+          protobuf: MigrationStatusRequest,
+          json: MigrationStatusRequestJSON,
+        },
+        output: {
+          protobuf: MigrationStatusResponse,
+          json: MigrationStatusResponseJSON,
+        },
       },
     },
   } as const;
@@ -454,6 +530,147 @@ export const PingResponse = {
   },
 };
 
+export const MigrationStatusRequest = {
+  /**
+   * Serializes MigrationStatusRequest to protobuf.
+   */
+  encode: function (_msg?: PartialDeep<MigrationStatusRequest>): Uint8Array {
+    return new Uint8Array();
+  },
+
+  /**
+   * Deserializes MigrationStatusRequest from protobuf.
+   */
+  decode: function (_bytes?: ByteSource): MigrationStatusRequest {
+    return {};
+  },
+
+  /**
+   * Initializes MigrationStatusRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<MigrationStatusRequest>,
+  ): MigrationStatusRequest {
+    return {
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    _msg: PartialDeep<MigrationStatusRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    _msg: MigrationStatusRequest,
+    _reader: protoscript.BinaryReader,
+  ): MigrationStatusRequest {
+    return _msg;
+  },
+};
+
+export const MigrationStatusResponse = {
+  /**
+   * Serializes MigrationStatusResponse to protobuf.
+   */
+  encode: function (msg: PartialDeep<MigrationStatusResponse>): Uint8Array {
+    return MigrationStatusResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes MigrationStatusResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): MigrationStatusResponse {
+    return MigrationStatusResponse._readMessage(
+      MigrationStatusResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes MigrationStatusResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<MigrationStatusResponse>,
+  ): MigrationStatusResponse {
+    return {
+      status: ResponseStatus.initialize(),
+      applied: "",
+      latest: "",
+      pending: 0,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<MigrationStatusResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, ResponseStatus._writeMessage);
+    }
+    if (msg.applied) {
+      writer.writeString(2, msg.applied);
+    }
+    if (msg.latest) {
+      writer.writeString(3, msg.latest);
+    }
+    if (msg.pending) {
+      writer.writeInt32(4, msg.pending);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: MigrationStatusResponse,
+    reader: protoscript.BinaryReader,
+  ): MigrationStatusResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          msg.applied = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.latest = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.pending = reader.readInt32();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -740,6 +957,137 @@ export const PingResponseJSON = {
     const _status_ = json["status"];
     if (_status_) {
       ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    return msg;
+  },
+};
+
+export const MigrationStatusRequestJSON = {
+  /**
+   * Serializes MigrationStatusRequest to JSON.
+   */
+  encode: function (_msg?: PartialDeep<MigrationStatusRequest>): string {
+    return "{}";
+  },
+
+  /**
+   * Deserializes MigrationStatusRequest from JSON.
+   */
+  decode: function (_json?: string): MigrationStatusRequest {
+    return {};
+  },
+
+  /**
+   * Initializes MigrationStatusRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<MigrationStatusRequest>,
+  ): MigrationStatusRequest {
+    return {
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    _msg: PartialDeep<MigrationStatusRequest>,
+  ): Record<string, unknown> {
+    return {};
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: MigrationStatusRequest,
+    _json: any,
+  ): MigrationStatusRequest {
+    return msg;
+  },
+};
+
+export const MigrationStatusResponseJSON = {
+  /**
+   * Serializes MigrationStatusResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<MigrationStatusResponse>): string {
+    return JSON.stringify(MigrationStatusResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes MigrationStatusResponse from JSON.
+   */
+  decode: function (json: string): MigrationStatusResponse {
+    return MigrationStatusResponseJSON._readMessage(
+      MigrationStatusResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes MigrationStatusResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<MigrationStatusResponse>,
+  ): MigrationStatusResponse {
+    return {
+      status: ResponseStatusJSON.initialize(),
+      applied: "",
+      latest: "",
+      pending: 0,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<MigrationStatusResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.applied) {
+      json["applied"] = msg.applied;
+    }
+    if (msg.latest) {
+      json["latest"] = msg.latest;
+    }
+    if (msg.pending) {
+      json["pending"] = msg.pending;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: MigrationStatusResponse,
+    json: any,
+  ): MigrationStatusResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _applied_ = json["applied"];
+    if (_applied_) {
+      msg.applied = _applied_;
+    }
+    const _latest_ = json["latest"];
+    if (_latest_) {
+      msg.latest = _latest_;
+    }
+    const _pending_ = json["pending"];
+    if (_pending_) {
+      msg.pending = protoscript.parseNumber(_pending_);
     }
     return msg;
   },

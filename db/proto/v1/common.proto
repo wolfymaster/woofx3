@@ -34,8 +34,26 @@ message PingResponse {
   ResponseStatus status = 1;
 }
 
+message MigrationStatusRequest {}
+
+// How much of its migration chain the database behind this db-proxy has
+// applied, measured against the chain this db-proxy build ships. An engine is
+// not ready until nothing is pending.
+message MigrationStatusResponse {
+  ResponseStatus status = 1;
+  // Newest migration in the chain the database has applied; empty when none.
+  string applied = 2;
+  // Newest migration in the chain.
+  string latest = 3;
+  // Migrations in the chain the database has not applied.
+  int32 pending = 4;
+}
+
 // CommonService provides common utility endpoints
 service CommonService {
   // Ping checks if the service is accessible and returns a success response
   rpc Ping(PingRequest) returns (PingResponse);
+
+  // MigrationStatus reports how far the database is migrated.
+  rpc MigrationStatus(MigrationStatusRequest) returns (MigrationStatusResponse);
 }

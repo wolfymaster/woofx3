@@ -86,6 +86,12 @@ RUN install -d -o 65532 -g 65532 /app/data
 WORKDIR /app
 ENV WOOFX3_ROOT=/app
 
+# The release this image is, reported by GET /ready and getEngineInfo. The
+# release workflow passes the tag; "dev" must match UNVERSIONED in
+# api/src/version.ts. Declared late so changing it rebuilds only this layer.
+ARG WOOFX3_VERSION=dev
+ENV WOOFX3_VERSION=${WOOFX3_VERSION}
+
 USER 65532:65532
 
 # The edge (Caddy) is the only listener beyond loopback; Railway and other

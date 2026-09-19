@@ -62,3 +62,29 @@ The image runs as UID 65532 and keeps its state in `/app/data`. A host that
 mounts a root-owned volume there must start the container as root (Railway:
 `RAILWAY_RUN_UID=0`); the entrypoint then hands `/app/data` to 65532 and drops
 privileges before migrating or starting anything.
+
+## Readiness and version
+
+`GET /ready` (served by the api, reachable through the edge) answers `200`
+only once the engine can be depended on, and `503` until then:
+
+```json
+{
+  "ready": true,
+  "version": "v0.1.0",
+  "migrations": { "applied": "0042_workflow_run_history", "latest": "0042_workflow_run_history", "pending": 0 },
+  "services": { "dbProxy": true, "barkloader": true }
+}
+```
+
+- `services.dbProxy` — db-proxy answered its `CommonService.MigrationStatus` RPC.
+- `migrations` — how much of the chain this release ships the database has
+  applied; ready needs `pending: 0`. All three fields are `null` while db-proxy
+  cannot be asked.
+- `services.barkloader` — barkloader's last `HEARTBEAT` said ready, less than
+  30 seconds ago (it reports ready once its bundled modules are installed).
+- `version` — the image's `WOOFX3_VERSION` build argument (the release tag), or
+  `dev` for an unversioned build. `getEngineInfo` returns it too.
+
+`GET /health` stays a liveness check: it answers as soon as the api process
+does.

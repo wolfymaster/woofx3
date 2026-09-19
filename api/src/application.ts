@@ -2,6 +2,7 @@ import type { ApplicationContext, Application as RuntimeApplication, IApplicatio
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { ApiConfig } from "./config";
 import type DbService from "./db-service";
+import type { Msg } from "@woofx3/nats/src/types";
 
 export type ApiServices = {
   db: DbService;
@@ -59,6 +60,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { WorkflowRunEmitter },
       { initWorkflowRunHandlers },
       { default: BarkloaderClient },
+      { checkReadiness, HEARTBEAT_SUBJECT, HeartbeatTracker },
     ] = await Promise.all([
       import("@woofx3/nats"),
       import("./alert-log-handlers"),
@@ -80,6 +82,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./workflow-run-emitter"),
       import("./workflow-run-handlers"),
       import("@woofx3/barkloader"),
+      import("./readiness"),
     ]);
 
     const config = ctx.runtimeConfig;
@@ -124,7 +127,21 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       sceneManagerUrl: config.sceneManagerUrl,
       apiUrl: config.apiUrl,
       logger,
+      version: config.version,
     });
+
+    // Barkloader readiness for GET /ready, from the heartbeats every service
+    // publishes. Without NATS nothing arrives, and /ready stays not-ready.
+    const heartbeats = new HeartbeatTracker();
+    if (natsClient) {
+      await natsClient.subscribe(HEARTBEAT_SUBJECT, (msg: Msg) => {
+        try {
+          heartbeats.record(msg.json(), Date.now());
+        } catch {
+          // A heartbeat that is not JSON is not a heartbeat.
+        }
+      });
+    }
 
     const webhookClient = new WebhookClient(db, logger, null);
     api.setWebhookClient(webhookClient);
@@ -215,6 +232,13 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     this.server = createHttpServer({
       port: config.port,
       hostname: config.host,
+      readiness: () =>
+        checkReadiness({
+          version: config.version,
+          migrationStatus: () => db.migrationStatus(),
+          heartbeats,
+          now: Date.now,
+        }),
       logger,
       gateway,
       onProcessingCallback: (body) => api.handleProcessingCallback(body as never),
