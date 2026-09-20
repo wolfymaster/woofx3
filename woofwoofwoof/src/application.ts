@@ -1,4 +1,6 @@
 import type { BarkloaderMessageResponse } from "@woofx3/barkloader";
+import type { ActionStep } from "@woofx3/common/cloudevents/Action";
+import { commandNameToSubjectSegment } from "@woofx3/common/cloudevents/slug";
 import { parseCommandVariables } from "@woofx3/common/templates/command-variables";
 import { EventType as ChatEventType, type SendMessageMessage } from "@woofx3/common/cloudevents/Chat";
 import {
@@ -424,10 +426,12 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       variables,
     };
 
-    if (command.type === "function") {
-      // typeValue is the function name to invoke in barkloader. Fall back
-      // to the command name for legacy rows where typeValue is empty.
-      const funcName = command.typeValue || command.command;
+    const actions = parseCommandActions(command, ctx);
+    if (actions.length === 0) {
+      // Nothing to run. The command still matches, and still announces itself
+      // on chat.command.<slug> for workflows listening to it.
+      ctx.commander.add(command.command, "", commanderOpts);
+    } else {
       ctx.commander.add(
         command.command,
         async (
@@ -436,43 +440,44 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
           vars?: Record<string, unknown>,
           invocation?: { rawMessage: string; args: string[] }
         ) => {
+          // The same ChatCommandEventData the CloudEvent carries, so an action
+          // reading `${trigger.data.chatter}` sees what a workflow triggered by
+          // this command sees.
+          const eventData = {
+            command: command.command,
+            rawMessage: invocation?.rawMessage ?? text,
+            text,
+            args: invocation?.args ?? [],
+            variables: vars ?? {},
+            chatter: user ?? "",
+            platform: "twitch" as const,
+          };
+          const [topic, payload] = ctx.events.Action().execute({
+            label: `command:${command.command}`,
+            applicationId: command.applicationId,
+            actions,
+            event: {
+              id: crypto.randomUUID(),
+              type: `chat.command.${commandNameToSubjectSegment(command.command)}`,
+              source: "woofwoofwoof",
+              time: new Date().toISOString(),
+              data: eventData,
+            },
+          });
           try {
-            // Same ChatCommandEventData shape the CloudEvent/workflow path
-            // produces (see ChatCommandEventData in
-            // shared/common/typescript/cloudevents/Chat/commands.ts) — a
-            // module function sees an identical ctx.event.data regardless of
-            // which path invoked it.
-            const eventData = {
+            await ctx.services.messageBus.client.publish(topic, payload);
+          } catch (err) {
+            ctx.logger.error("Failed to dispatch command actions", {
               command: command.command,
-              rawMessage: invocation?.rawMessage ?? text,
-              text,
-              args: invocation?.args ?? [],
-              variables: vars ?? {},
-              chatter: user ?? "",
-              platform: "twitch" as const,
-            };
-            const result = await ctx.services.barkloader.client.invoke(funcName, { data: eventData });
-            const response = extractResponseMessage(result);
-            if (response && !response.success) {
-              ctx.logger.warn("Module function reported failure", {
-                function: funcName,
-                message: response.message,
-              });
-            }
-            return response?.message ?? "";
-          } catch (err: unknown) {
-            if (err instanceof Error) {
-              console.error("Failed to invoke Barkloader function", err.message);
-            } else {
-              console.error("Failed to invoke Barkloader function", err);
-            }
-            return "";
+              error: err instanceof Error ? err.message : String(err),
+            });
           }
+          // Nothing to say from here: a command that answers in chat does it
+          // with a chat.reply action, which the engine runs like any other.
+          return "";
         },
         commanderOpts
       );
-    } else {
-      ctx.commander.add(command.command, command.typeValue, commanderOpts);
     }
 
     this.commandsByEngineId.set(command.id, command);
@@ -492,24 +497,23 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
   }
 }
 
-// Recognizes the standard ctx.response(success, message) shape a barkloader
-// module function returns (see shared/clients/typescript/module-sdk/src/
-// function-ctx.d.ts CtxResponse) and pulls out the chat message. Anything
-// else — null/undefined, or any other object shape (e.g. an unmigrated
-// function's own ad hoc diagnostics) — is treated as "no message", never
-// stringified/sent. `proto`/`v` mirror the woofx3.widget envelope
-// convention used elsewhere in this repo.
-function extractResponseMessage(result: unknown): { success: boolean; message: string } | null {
-  if (
-    result &&
-    typeof result === "object" &&
-    (result as Record<string, unknown>).proto === "woofx3.response" &&
-    typeof (result as Record<string, unknown>).message === "string"
-  ) {
-    const r = result as { success?: unknown; message: string };
-    return { success: r.success === true, message: r.message };
+// A command's actions as stored: JSON text, the same way a workflow stores its
+// steps. Unreadable JSON runs nothing rather than taking the command down with
+// it -- the command still matches and still fires its trigger event.
+function parseCommandActions(command: Command, ctx: Context): ActionStep[] {
+  if (!command.actionsJson) {
+    return [];
   }
-  return null;
+  try {
+    const parsed = JSON.parse(command.actionsJson);
+    return Array.isArray(parsed) ? (parsed as ActionStep[]) : [];
+  } catch (err) {
+    ctx.logger.error("Command actions are not readable JSON", {
+      command: command.command,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
 }
 
 // Bridge the engine's CommandSnapshot (shared API shape) into the
@@ -520,8 +524,7 @@ function snapshotToCommand(snapshot: {
   id: string;
   applicationId: string;
   command: string;
-  type: string;
-  typeValue: string;
+  actions: ActionStep[];
   cooldown: number;
   priority: number;
   enabled: boolean;
@@ -534,8 +537,7 @@ function snapshotToCommand(snapshot: {
     id: snapshot.id,
     applicationId: snapshot.applicationId,
     command: snapshot.command,
-    type: snapshot.type,
-    typeValue: snapshot.typeValue,
+    actionsJson: JSON.stringify(snapshot.actions ?? []),
     cooldown: snapshot.cooldown,
     priority: snapshot.priority,
     enabled: snapshot.enabled,

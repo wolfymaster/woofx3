@@ -12,12 +12,6 @@ pub struct Command {
     /// Name of the command (without the prefix)
     #[prost(string, tag="3")]
     pub command: ::prost::alloc::string::String,
-    /// Type of command ("text" or "function")
-    #[prost(string, tag="4")]
-    pub r#type: ::prost::alloc::string::String,
-    /// Value of the command type
-    #[prost(string, tag="5")]
-    pub type_value: ::prost::alloc::string::String,
     /// Cooldown between command uses in seconds. 0 = never throttle.
     #[prost(int32, tag="6")]
     pub cooldown: i32,
@@ -52,6 +46,14 @@ pub struct Command {
     /// to both "text" and "function" command types.
     #[prost(string, tag="21")]
     pub argument_pattern: ::prost::alloc::string::String,
+    /// The actions this command runs, in order, as a JSON array. Same shape as
+    /// a workflow's `steps_json` because it is the same thing: each entry is
+    /// {id?, action, function?, parameters?, $ref?, dependsOn?}. Replying in
+    /// chat is an action (`chat.reply`) rather than a kind of command, which is
+    /// what lets a command do anything a workflow step can. An empty array is a
+    /// command that only announces itself on `chat.command.<slug>`.
+    #[prost(string, tag="22")]
+    pub actions_json: ::prost::alloc::string::String,
 }
 /// Request to get a single command by ID
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -98,10 +100,6 @@ pub struct CreateCommandRequest {
     pub enabled: bool,
     #[prost(int32, tag="4")]
     pub cooldown: i32,
-    #[prost(string, tag="5")]
-    pub r#type: ::prost::alloc::string::String,
-    #[prost(string, tag="6")]
-    pub type_value: ::prost::alloc::string::String,
     #[prost(int32, tag="7")]
     pub priority: i32,
     #[prost(string, tag="9")]
@@ -116,6 +114,9 @@ pub struct CreateCommandRequest {
     pub usernames: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, tag="14")]
     pub argument_pattern: ::prost::alloc::string::String,
+    /// See Command.actions_json.
+    #[prost(string, tag="15")]
+    pub actions_json: ::prost::alloc::string::String,
 }
 /// Request to update an existing command
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -128,10 +129,6 @@ pub struct UpdateCommandRequest {
     pub enabled: bool,
     #[prost(int32, tag="4")]
     pub cooldown: i32,
-    #[prost(string, tag="5")]
-    pub r#type: ::prost::alloc::string::String,
-    #[prost(string, tag="6")]
-    pub type_value: ::prost::alloc::string::String,
     #[prost(int32, tag="7")]
     pub priority: i32,
     #[prost(string, tag="8")]
@@ -142,6 +139,9 @@ pub struct UpdateCommandRequest {
     pub usernames: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, tag="11")]
     pub argument_pattern: ::prost::alloc::string::String,
+    /// See Command.actions_json.
+    #[prost(string, tag="12")]
+    pub actions_json: ::prost::alloc::string::String,
 }
 /// Request to delete a command
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

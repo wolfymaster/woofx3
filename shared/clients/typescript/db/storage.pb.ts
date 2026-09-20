@@ -16,7 +16,11 @@ import type { ClientConfiguration } from "twirpscript";
 //========================================//
 
 /**
- * Storage item with metadata
+ * Storage item with metadata.
+ *
+ * A value is addressed by (application_id, namespace, key). The namespace is
+ * the owning module's manifest id, so two modules using the same key never see
+ * each other's values; it is required on every read and write.
  */
 export interface StorageItem {
   key: string;
@@ -40,6 +44,7 @@ export interface StorageItem {
 export interface GetRequest {
   key: string;
   applicationId: string;
+  namespace: string;
 }
 
 export interface GetResponse {
@@ -56,11 +61,35 @@ export interface SetRequest {
 export interface SetResponse {}
 
 /**
+ * Write `item` only if the key holds `expected_value` now -- or holds nothing,
+ * when `expect_absent` is set.
+ */
+export interface CompareAndSetRequest {
+  item: StorageItem;
+  expectedValue: string;
+  expectAbsent: boolean;
+}
+
+export interface CompareAndSetResponse {
+  /**
+   * Whether the write happened.
+   */
+  swapped: boolean;
+  /**
+   * What the key holds now: the value just written, or the one that stopped
+   * the write, which is what a caller retries from. Absent when the key holds
+   * nothing.
+   */
+  current: StorageItem;
+}
+
+/**
  * Delete a key
  */
 export interface DeleteRequest {
   key: string;
   applicationId: string;
+  namespace: string;
 }
 
 export interface DeleteResponse {}
@@ -107,6 +136,12 @@ export interface ClearSessionScopedResponse {
    * that it ran and what it did.
    */
   cleared: number;
+  /**
+   * Which keys were dropped, by namespace and key, so the engine can announce
+   * each one as changed: a screen showing a session value has to learn that it
+   * went back to nothing.
+   */
+  clearedItems: StorageItem[];
 }
 
 //========================================//
@@ -141,6 +176,24 @@ export async function Set(
     config,
   );
   return SetResponse.decode(response);
+}
+
+/**
+ * Write a value only if the key currently holds the expected one, in one
+ * transaction. The only safe way to update a value from its previous one --
+ * a counter, a queue -- when two callers may do it at once; a Get followed by
+ * a Set loses one of the two writes.
+ */
+export async function CompareAndSet(
+  compareAndSetRequest: CompareAndSetRequest,
+  config?: ClientConfiguration,
+): Promise<CompareAndSetResponse> {
+  const response = await PBrequest(
+    "/storage.StorageService/CompareAndSet",
+    CompareAndSetRequest.encode(compareAndSetRequest),
+    config,
+  );
+  return CompareAndSetResponse.decode(response);
 }
 
 /**
@@ -255,6 +308,24 @@ export async function SetJSON(
 }
 
 /**
+ * Write a value only if the key currently holds the expected one, in one
+ * transaction. The only safe way to update a value from its previous one --
+ * a counter, a queue -- when two callers may do it at once; a Get followed by
+ * a Set loses one of the two writes.
+ */
+export async function CompareAndSetJSON(
+  compareAndSetRequest: CompareAndSetRequest,
+  config?: ClientConfiguration,
+): Promise<CompareAndSetResponse> {
+  const response = await JSONrequest(
+    "/storage.StorageService/CompareAndSet",
+    CompareAndSetRequestJSON.encode(compareAndSetRequest),
+    config,
+  );
+  return CompareAndSetResponseJSON.decode(response);
+}
+
+/**
  * Delete a key
  */
 export async function DeleteJSON(
@@ -354,6 +425,16 @@ export interface StorageService<Context = unknown> {
     context: Context,
   ) => Promise<SetResponse> | SetResponse;
   /**
+   * Write a value only if the key currently holds the expected one, in one
+   * transaction. The only safe way to update a value from its previous one --
+   * a counter, a queue -- when two callers may do it at once; a Get followed by
+   * a Set loses one of the two writes.
+   */
+  CompareAndSet: (
+    compareAndSetRequest: CompareAndSetRequest,
+    context: Context,
+  ) => Promise<CompareAndSetResponse> | CompareAndSetResponse;
+  /**
    * Delete a key
    */
   Delete: (
@@ -409,6 +490,18 @@ export function createStorageService<Context>(
         handler: service.Set,
         input: { protobuf: SetRequest, json: SetRequestJSON },
         output: { protobuf: SetResponse, json: SetResponseJSON },
+      },
+      CompareAndSet: {
+        name: "CompareAndSet",
+        handler: service.CompareAndSet,
+        input: {
+          protobuf: CompareAndSetRequest,
+          json: CompareAndSetRequestJSON,
+        },
+        output: {
+          protobuf: CompareAndSetResponse,
+          json: CompareAndSetResponseJSON,
+        },
       },
       Delete: {
         name: "Delete",
@@ -613,6 +706,7 @@ export const GetRequest = {
     return {
       key: "",
       applicationId: "",
+      namespace: "",
       ...msg,
     };
   },
@@ -629,6 +723,9 @@ export const GetRequest = {
     }
     if (msg.applicationId) {
       writer.writeString(2, msg.applicationId);
+    }
+    if (msg.namespace) {
+      writer.writeString(3, msg.namespace);
     }
     return writer;
   },
@@ -649,6 +746,10 @@ export const GetRequest = {
         }
         case 2: {
           msg.applicationId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.namespace = reader.readString();
           break;
         }
         default: {
@@ -842,6 +943,170 @@ export const SetResponse = {
   },
 };
 
+export const CompareAndSetRequest = {
+  /**
+   * Serializes CompareAndSetRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<CompareAndSetRequest>): Uint8Array {
+    return CompareAndSetRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CompareAndSetRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): CompareAndSetRequest {
+    return CompareAndSetRequest._readMessage(
+      CompareAndSetRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CompareAndSetRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompareAndSetRequest>,
+  ): CompareAndSetRequest {
+    return {
+      item: StorageItem.initialize(),
+      expectedValue: "",
+      expectAbsent: false,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompareAndSetRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.item) {
+      writer.writeMessage(1, msg.item, StorageItem._writeMessage);
+    }
+    if (msg.expectedValue) {
+      writer.writeString(2, msg.expectedValue);
+    }
+    if (msg.expectAbsent) {
+      writer.writeBool(3, msg.expectAbsent);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompareAndSetRequest,
+    reader: protoscript.BinaryReader,
+  ): CompareAndSetRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.item, StorageItem._readMessage);
+          break;
+        }
+        case 2: {
+          msg.expectedValue = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.expectAbsent = reader.readBool();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const CompareAndSetResponse = {
+  /**
+   * Serializes CompareAndSetResponse to protobuf.
+   */
+  encode: function (msg: PartialDeep<CompareAndSetResponse>): Uint8Array {
+    return CompareAndSetResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes CompareAndSetResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): CompareAndSetResponse {
+    return CompareAndSetResponse._readMessage(
+      CompareAndSetResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes CompareAndSetResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompareAndSetResponse>,
+  ): CompareAndSetResponse {
+    return {
+      swapped: false,
+      current: StorageItem.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompareAndSetResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.swapped) {
+      writer.writeBool(1, msg.swapped);
+    }
+    if (msg.current) {
+      writer.writeMessage(2, msg.current, StorageItem._writeMessage);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompareAndSetResponse,
+    reader: protoscript.BinaryReader,
+  ): CompareAndSetResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.swapped = reader.readBool();
+          break;
+        }
+        case 2: {
+          reader.readMessage(msg.current, StorageItem._readMessage);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 export const DeleteRequest = {
   /**
    * Serializes DeleteRequest to protobuf.
@@ -870,6 +1135,7 @@ export const DeleteRequest = {
     return {
       key: "",
       applicationId: "",
+      namespace: "",
       ...msg,
     };
   },
@@ -886,6 +1152,9 @@ export const DeleteRequest = {
     }
     if (msg.applicationId) {
       writer.writeString(2, msg.applicationId);
+    }
+    if (msg.namespace) {
+      writer.writeString(3, msg.namespace);
     }
     return writer;
   },
@@ -906,6 +1175,10 @@ export const DeleteRequest = {
         }
         case 2: {
           msg.applicationId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.namespace = reader.readString();
           break;
         }
         default: {
@@ -1425,6 +1698,7 @@ export const ClearSessionScopedResponse = {
   ): ClearSessionScopedResponse {
     return {
       cleared: 0,
+      clearedItems: [],
       ...msg,
     };
   },
@@ -1438,6 +1712,13 @@ export const ClearSessionScopedResponse = {
   ): protoscript.BinaryWriter {
     if (msg.cleared) {
       writer.writeInt32(1, msg.cleared);
+    }
+    if (msg.clearedItems?.length) {
+      writer.writeRepeatedMessage(
+        2,
+        msg.clearedItems as any,
+        StorageItem._writeMessage,
+      );
     }
     return writer;
   },
@@ -1454,6 +1735,12 @@ export const ClearSessionScopedResponse = {
       switch (field) {
         case 1: {
           msg.cleared = reader.readInt32();
+          break;
+        }
+        case 2: {
+          const m = StorageItem.initialize();
+          reader.readMessage(m, StorageItem._readMessage);
+          msg.clearedItems.push(m);
           break;
         }
         default: {
@@ -1597,6 +1884,7 @@ export const GetRequestJSON = {
     return {
       key: "",
       applicationId: "",
+      namespace: "",
       ...msg,
     };
   },
@@ -1614,6 +1902,9 @@ export const GetRequestJSON = {
     if (msg.applicationId) {
       json["applicationId"] = msg.applicationId;
     }
+    if (msg.namespace) {
+      json["namespace"] = msg.namespace;
+    }
     return json;
   },
 
@@ -1628,6 +1919,10 @@ export const GetRequestJSON = {
     const _applicationId_ = json["applicationId"] ?? json["application_id"];
     if (_applicationId_) {
       msg.applicationId = _applicationId_;
+    }
+    const _namespace_ = json["namespace"];
+    if (_namespace_) {
+      msg.namespace = _namespace_;
     }
     return msg;
   },
@@ -1786,6 +2081,152 @@ export const SetResponseJSON = {
   },
 };
 
+export const CompareAndSetRequestJSON = {
+  /**
+   * Serializes CompareAndSetRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<CompareAndSetRequest>): string {
+    return JSON.stringify(CompareAndSetRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes CompareAndSetRequest from JSON.
+   */
+  decode: function (json: string): CompareAndSetRequest {
+    return CompareAndSetRequestJSON._readMessage(
+      CompareAndSetRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CompareAndSetRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompareAndSetRequest>,
+  ): CompareAndSetRequest {
+    return {
+      item: StorageItemJSON.initialize(),
+      expectedValue: "",
+      expectAbsent: false,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompareAndSetRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.item) {
+      const _item_ = StorageItemJSON._writeMessage(msg.item);
+      if (Object.keys(_item_).length > 0) {
+        json["item"] = _item_;
+      }
+    }
+    if (msg.expectedValue) {
+      json["expectedValue"] = msg.expectedValue;
+    }
+    if (msg.expectAbsent) {
+      json["expectAbsent"] = msg.expectAbsent;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompareAndSetRequest,
+    json: any,
+  ): CompareAndSetRequest {
+    const _item_ = json["item"];
+    if (_item_) {
+      StorageItemJSON._readMessage(msg.item, _item_);
+    }
+    const _expectedValue_ = json["expectedValue"] ?? json["expected_value"];
+    if (_expectedValue_) {
+      msg.expectedValue = _expectedValue_;
+    }
+    const _expectAbsent_ = json["expectAbsent"] ?? json["expect_absent"];
+    if (_expectAbsent_) {
+      msg.expectAbsent = _expectAbsent_;
+    }
+    return msg;
+  },
+};
+
+export const CompareAndSetResponseJSON = {
+  /**
+   * Serializes CompareAndSetResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<CompareAndSetResponse>): string {
+    return JSON.stringify(CompareAndSetResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes CompareAndSetResponse from JSON.
+   */
+  decode: function (json: string): CompareAndSetResponse {
+    return CompareAndSetResponseJSON._readMessage(
+      CompareAndSetResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes CompareAndSetResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<CompareAndSetResponse>,
+  ): CompareAndSetResponse {
+    return {
+      swapped: false,
+      current: StorageItemJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<CompareAndSetResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.swapped) {
+      json["swapped"] = msg.swapped;
+    }
+    if (msg.current) {
+      const _current_ = StorageItemJSON._writeMessage(msg.current);
+      if (Object.keys(_current_).length > 0) {
+        json["current"] = _current_;
+      }
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: CompareAndSetResponse,
+    json: any,
+  ): CompareAndSetResponse {
+    const _swapped_ = json["swapped"];
+    if (_swapped_) {
+      msg.swapped = _swapped_;
+    }
+    const _current_ = json["current"];
+    if (_current_) {
+      StorageItemJSON._readMessage(msg.current, _current_);
+    }
+    return msg;
+  },
+};
+
 export const DeleteRequestJSON = {
   /**
    * Serializes DeleteRequest to JSON.
@@ -1811,6 +2252,7 @@ export const DeleteRequestJSON = {
     return {
       key: "",
       applicationId: "",
+      namespace: "",
       ...msg,
     };
   },
@@ -1828,6 +2270,9 @@ export const DeleteRequestJSON = {
     if (msg.applicationId) {
       json["applicationId"] = msg.applicationId;
     }
+    if (msg.namespace) {
+      json["namespace"] = msg.namespace;
+    }
     return json;
   },
 
@@ -1842,6 +2287,10 @@ export const DeleteRequestJSON = {
     const _applicationId_ = json["applicationId"] ?? json["application_id"];
     if (_applicationId_) {
       msg.applicationId = _applicationId_;
+    }
+    const _namespace_ = json["namespace"];
+    if (_namespace_) {
+      msg.namespace = _namespace_;
     }
     return msg;
   },
@@ -2294,6 +2743,7 @@ export const ClearSessionScopedResponseJSON = {
   ): ClearSessionScopedResponse {
     return {
       cleared: 0,
+      clearedItems: [],
       ...msg,
     };
   },
@@ -2308,6 +2758,11 @@ export const ClearSessionScopedResponseJSON = {
     if (msg.cleared) {
       json["cleared"] = msg.cleared;
     }
+    if (msg.clearedItems?.length) {
+      json["clearedItems"] = msg.clearedItems.map(
+        StorageItemJSON._writeMessage,
+      );
+    }
     return json;
   },
 
@@ -2321,6 +2776,14 @@ export const ClearSessionScopedResponseJSON = {
     const _cleared_ = json["cleared"];
     if (_cleared_) {
       msg.cleared = protoscript.parseNumber(_cleared_);
+    }
+    const _clearedItems_ = json["clearedItems"] ?? json["cleared_items"];
+    if (_clearedItems_) {
+      for (const item of _clearedItems_) {
+        const m = StorageItemJSON.initialize();
+        StorageItemJSON._readMessage(m, item);
+        msg.clearedItems.push(m);
+      }
     }
     return msg;
   },

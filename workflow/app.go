@@ -211,6 +211,13 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 		a.logger.Error("Failed to subscribe to workflow replay events", "error", err)
 	}
 
+	// "Run these actions now", from a caller that has actions and no workflow.
+	if _, err := natsClient.Subscribe(string(cloudevents.SubjectActionExecute), func(msg natsclient.Msg) {
+		a.handleActionExecuteEvent(msg)
+	}); err != nil {
+		a.logger.Error("Failed to subscribe to action execute events", "error", err)
+	}
+
 	appServices := buildAppServices()
 
 	// Register the engine's built-in action handlers. The handler name
@@ -221,6 +228,7 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	// point -- declaration and implementation stop living in one file.
 	a.engine.RegisterAction("function", WithServices(appServices, NewBarkloaderAction()))
 	a.engine.RegisterAction("alert", WithServices(appServices, NewAlertAction()))
+	a.engine.RegisterAction("chat.reply", WithServices(appServices, NewChatReplyAction()))
 	a.engine.RegisterAction("print", func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
 		a.logger.Info("Action: print", "params", params)
 		return params, nil
@@ -323,6 +331,50 @@ func (a *WorkflowApp) handleWorkflowExecuteEvent(msg natsclient.Msg) {
 			"trigger_id", event.TriggerID,
 			"error", err)
 	}
+}
+
+// actionExecuteMessage asks for a list of actions to run.
+//
+// Decoded into a typed shape rather than through validateCloudEvent: the
+// actions are a request, not an event any workflow reads. The trigger event
+// inside it is what the actions resolve their `${trigger.data...}` against, so
+// it travels whole rather than being rebuilt from this envelope.
+type actionExecuteMessage struct {
+	ID   string `json:"id"`
+	Data struct {
+		Label         string                 `json:"label"`
+		ApplicationID string                 `json:"applicationId"`
+		Actions       []types.TaskDefinition `json:"actions"`
+		Event         *types.Event           `json:"event"`
+	} `json:"data"`
+}
+
+// handleActionExecuteEvent runs an action list on request.
+func (a *WorkflowApp) handleActionExecuteEvent(msg natsclient.Msg) {
+	var message actionExecuteMessage
+	if err := json.Unmarshal(msg.Data(), &message); err != nil {
+		a.logger.Error("Invalid action execute event", "error", err, "subject", msg.Subject())
+		return
+	}
+
+	executionID, err := a.engine.RunActions(engine.ActionRun{
+		Label:         message.Data.Label,
+		ApplicationID: message.Data.ApplicationID,
+		Actions:       message.Data.Actions,
+		Event:         message.Data.Event,
+	})
+	if err != nil {
+		a.logger.Error("Failed to run requested actions",
+			"label", message.Data.Label,
+			"event_id", message.ID,
+			"error", err)
+		return
+	}
+
+	a.logger.Info("Running actions on request",
+		"label", message.Data.Label,
+		"actions", len(message.Data.Actions),
+		"execution", executionID)
 }
 
 // replayMessage asks for a recorded run to run again.

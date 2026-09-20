@@ -22,6 +22,12 @@ func (r *ModuleResourceInstanceRepository) Create(instance *models.ModuleResourc
 	return r.db.Create(instance).Error
 }
 
+// Update saves an instance's editable fields. Identity columns are untouched by
+// callers, so a save cannot move an instance out from under what references it.
+func (r *ModuleResourceInstanceRepository) Update(instance *models.ModuleResourceInstance) error {
+	return r.db.Save(instance).Error
+}
+
 func (r *ModuleResourceInstanceRepository) Delete(instance *models.ModuleResourceInstance) error {
 	return r.db.Delete(instance).Error
 }

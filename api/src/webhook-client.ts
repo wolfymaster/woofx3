@@ -19,6 +19,7 @@ export type {
   ModuleAssetRegisteredEvent,
   ModuleResourceInstanceCreatedEvent,
   ModuleResourceInstanceDeletedEvent,
+  ModuleResourceInstanceUpdatedEvent,
   ResourceInstanceDefinition,
   ModuleDeletedEvent,
   ModuleDeleteFailedEvent,

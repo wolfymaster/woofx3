@@ -1760,7 +1760,7 @@ const file_module_proto_rawDesc = "" +
 	"\atrigger\x18\x02 \x01(\v2\x0f.module.TriggerR\atrigger\"h\n" +
 	"\x0eActionResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12&\n" +
-	"\x06action\x18\x02 \x01(\v2\x0e.module.ActionR\x06action2\xbb\x1c\n" +
+	"\x06action\x18\x02 \x01(\v2\x0e.module.ActionR\x06action2\x9e\x1d\n" +
 	"\rModuleService\x12C\n" +
 	"\fCreateModule\x12\x1b.module.CreateModuleRequest\x1a\x16.module.ModuleResponse\x12C\n" +
 	"\fUpdateModule\x12\x1b.module.UpdateModuleRequest\x1a\x16.module.ModuleResponse\x12C\n" +
@@ -1800,7 +1800,8 @@ const file_module_proto_rawDesc = "" +
 	"\x18CheckModuleResourceUsage\x12'.module.CheckModuleResourceUsageRequest\x1a(.module.CheckModuleResourceUsageResponse\x12S\n" +
 	"\x14CompleteModuleDelete\x12#.module.CompleteModuleDeleteRequest\x1a\x16.common.ResponseStatus\x12a\n" +
 	"\x16CreateResourceInstance\x12%.module.CreateResourceInstanceRequest\x1a .module.ResourceInstanceResponse\x12W\n" +
-	"\x16DeleteResourceInstance\x12%.module.DeleteResourceInstanceRequest\x1a\x16.common.ResponseStatus\x12[\n" +
+	"\x16DeleteResourceInstance\x12%.module.DeleteResourceInstanceRequest\x1a\x16.common.ResponseStatus\x12a\n" +
+	"\x16UpdateResourceInstance\x12%.module.UpdateResourceInstanceRequest\x1a .module.ResourceInstanceResponse\x12[\n" +
 	"\x13GetResourceInstance\x12\".module.GetResourceInstanceRequest\x1a .module.ResourceInstanceResponse\x12p\n" +
 	"\x1bListResourceInstancesByKind\x12*.module.ListResourceInstancesByKindRequest\x1a%.module.ListResourceInstancesResponse\x12t\n" +
 	"\x1dListResourceInstancesByModule\x12,.module.ListResourceInstancesByModuleRequest\x1a%.module.ListResourceInstancesResponse\x12j\n" +
@@ -1867,20 +1868,21 @@ var file_module_proto_goTypes = []any{
 	(*UpdateModuleResourceVersionRequest)(nil),   // 44: module.UpdateModuleResourceVersionRequest
 	(*CreateResourceInstanceRequest)(nil),        // 45: module.CreateResourceInstanceRequest
 	(*DeleteResourceInstanceRequest)(nil),        // 46: module.DeleteResourceInstanceRequest
-	(*GetResourceInstanceRequest)(nil),           // 47: module.GetResourceInstanceRequest
-	(*ListResourceInstancesByKindRequest)(nil),   // 48: module.ListResourceInstancesByKindRequest
-	(*ListResourceInstancesByModuleRequest)(nil), // 49: module.ListResourceInstancesByModuleRequest
-	(*ListAllResourceInstancesRequest)(nil),      // 50: module.ListAllResourceInstancesRequest
-	(*ListTriggersResponse)(nil),                 // 51: module.ListTriggersResponse
-	(*ListActionsResponse)(nil),                  // 52: module.ListActionsResponse
-	(*ListWidgetsResponse)(nil),                  // 53: module.ListWidgetsResponse
-	(*WidgetResponse)(nil),                       // 54: module.WidgetResponse
-	(*ListBackgroundTasksResponse)(nil),          // 55: module.ListBackgroundTasksResponse
-	(*ListAssetsResponse)(nil),                   // 56: module.ListAssetsResponse
-	(*ModuleResourceResponse)(nil),               // 57: module.ModuleResourceResponse
-	(*ListModuleResourcesResponse)(nil),          // 58: module.ListModuleResourcesResponse
-	(*ResourceInstanceResponse)(nil),             // 59: module.ResourceInstanceResponse
-	(*ListResourceInstancesResponse)(nil),        // 60: module.ListResourceInstancesResponse
+	(*UpdateResourceInstanceRequest)(nil),        // 47: module.UpdateResourceInstanceRequest
+	(*GetResourceInstanceRequest)(nil),           // 48: module.GetResourceInstanceRequest
+	(*ListResourceInstancesByKindRequest)(nil),   // 49: module.ListResourceInstancesByKindRequest
+	(*ListResourceInstancesByModuleRequest)(nil), // 50: module.ListResourceInstancesByModuleRequest
+	(*ListAllResourceInstancesRequest)(nil),      // 51: module.ListAllResourceInstancesRequest
+	(*ListTriggersResponse)(nil),                 // 52: module.ListTriggersResponse
+	(*ListActionsResponse)(nil),                  // 53: module.ListActionsResponse
+	(*ListWidgetsResponse)(nil),                  // 54: module.ListWidgetsResponse
+	(*WidgetResponse)(nil),                       // 55: module.WidgetResponse
+	(*ListBackgroundTasksResponse)(nil),          // 56: module.ListBackgroundTasksResponse
+	(*ListAssetsResponse)(nil),                   // 57: module.ListAssetsResponse
+	(*ModuleResourceResponse)(nil),               // 58: module.ModuleResourceResponse
+	(*ListModuleResourcesResponse)(nil),          // 59: module.ListModuleResourcesResponse
+	(*ResourceInstanceResponse)(nil),             // 60: module.ResourceInstanceResponse
+	(*ListResourceInstancesResponse)(nil),        // 61: module.ListResourceInstancesResponse
 }
 var file_module_proto_depIdxs = []int32{
 	1,  // 0: module.Module.functions:type_name -> module.ModuleFunction
@@ -1940,54 +1942,56 @@ var file_module_proto_depIdxs = []int32{
 	19, // 54: module.ModuleService.CompleteModuleDelete:input_type -> module.CompleteModuleDeleteRequest
 	45, // 55: module.ModuleService.CreateResourceInstance:input_type -> module.CreateResourceInstanceRequest
 	46, // 56: module.ModuleService.DeleteResourceInstance:input_type -> module.DeleteResourceInstanceRequest
-	47, // 57: module.ModuleService.GetResourceInstance:input_type -> module.GetResourceInstanceRequest
-	48, // 58: module.ModuleService.ListResourceInstancesByKind:input_type -> module.ListResourceInstancesByKindRequest
-	49, // 59: module.ModuleService.ListResourceInstancesByModule:input_type -> module.ListResourceInstancesByModuleRequest
-	50, // 60: module.ModuleService.ListAllResourceInstances:input_type -> module.ListAllResourceInstancesRequest
-	12, // 61: module.ModuleService.CreateModule:output_type -> module.ModuleResponse
-	12, // 62: module.ModuleService.UpdateModule:output_type -> module.ModuleResponse
-	25, // 63: module.ModuleService.DeleteModule:output_type -> common.ResponseStatus
-	12, // 64: module.ModuleService.GetModule:output_type -> module.ModuleResponse
-	12, // 65: module.ModuleService.GetModuleByName:output_type -> module.ModuleResponse
-	12, // 66: module.ModuleService.GetModuleByModuleKey:output_type -> module.ModuleResponse
-	12, // 67: module.ModuleService.GetModuleByModuleId:output_type -> module.ModuleResponse
-	13, // 68: module.ModuleService.ListModules:output_type -> module.ListModulesResponse
-	12, // 69: module.ModuleService.SetModuleState:output_type -> module.ModuleResponse
-	51, // 70: module.ModuleService.RegisterTriggers:output_type -> module.ListTriggersResponse
-	51, // 71: module.ModuleService.ListTriggers:output_type -> module.ListTriggersResponse
-	22, // 72: module.ModuleService.GetTriggerByCanonicalId:output_type -> module.TriggerResponse
-	25, // 73: module.ModuleService.DeleteTriggersByModuleId:output_type -> common.ResponseStatus
-	52, // 74: module.ModuleService.RegisterActions:output_type -> module.ListActionsResponse
-	52, // 75: module.ModuleService.ListActions:output_type -> module.ListActionsResponse
-	23, // 76: module.ModuleService.GetActionByCanonicalId:output_type -> module.ActionResponse
-	25, // 77: module.ModuleService.DeleteActionsByModuleId:output_type -> common.ResponseStatus
-	53, // 78: module.ModuleService.RegisterWidgets:output_type -> module.ListWidgetsResponse
-	53, // 79: module.ModuleService.ListWidgets:output_type -> module.ListWidgetsResponse
-	54, // 80: module.ModuleService.GetWidgetByCanonicalId:output_type -> module.WidgetResponse
-	25, // 81: module.ModuleService.DeleteWidgetsByModuleId:output_type -> common.ResponseStatus
-	55, // 82: module.ModuleService.RegisterBackgroundTasks:output_type -> module.ListBackgroundTasksResponse
-	55, // 83: module.ModuleService.ListBackgroundTasks:output_type -> module.ListBackgroundTasksResponse
-	25, // 84: module.ModuleService.DeleteBackgroundTasksByModuleId:output_type -> common.ResponseStatus
-	56, // 85: module.ModuleService.RegisterAssets:output_type -> module.ListAssetsResponse
-	56, // 86: module.ModuleService.ListAssets:output_type -> module.ListAssetsResponse
-	25, // 87: module.ModuleService.DeleteAssetsByModuleId:output_type -> common.ResponseStatus
-	57, // 88: module.ModuleService.CreateModuleResource:output_type -> module.ModuleResourceResponse
-	58, // 89: module.ModuleService.ListModuleResources:output_type -> module.ListModuleResourcesResponse
-	25, // 90: module.ModuleService.DeleteModuleResources:output_type -> common.ResponseStatus
-	25, // 91: module.ModuleService.DeleteResourceByManifestId:output_type -> common.ResponseStatus
-	25, // 92: module.ModuleService.ArchiveResourceByManifestId:output_type -> common.ResponseStatus
-	57, // 93: module.ModuleService.UpdateModuleResourceVersion:output_type -> module.ModuleResourceResponse
-	25, // 94: module.ModuleService.CompleteModuleInstall:output_type -> common.ResponseStatus
-	18, // 95: module.ModuleService.CheckModuleResourceUsage:output_type -> module.CheckModuleResourceUsageResponse
-	25, // 96: module.ModuleService.CompleteModuleDelete:output_type -> common.ResponseStatus
-	59, // 97: module.ModuleService.CreateResourceInstance:output_type -> module.ResourceInstanceResponse
-	25, // 98: module.ModuleService.DeleteResourceInstance:output_type -> common.ResponseStatus
-	59, // 99: module.ModuleService.GetResourceInstance:output_type -> module.ResourceInstanceResponse
-	60, // 100: module.ModuleService.ListResourceInstancesByKind:output_type -> module.ListResourceInstancesResponse
-	60, // 101: module.ModuleService.ListResourceInstancesByModule:output_type -> module.ListResourceInstancesResponse
-	60, // 102: module.ModuleService.ListAllResourceInstances:output_type -> module.ListResourceInstancesResponse
-	61, // [61:103] is the sub-list for method output_type
-	19, // [19:61] is the sub-list for method input_type
+	47, // 57: module.ModuleService.UpdateResourceInstance:input_type -> module.UpdateResourceInstanceRequest
+	48, // 58: module.ModuleService.GetResourceInstance:input_type -> module.GetResourceInstanceRequest
+	49, // 59: module.ModuleService.ListResourceInstancesByKind:input_type -> module.ListResourceInstancesByKindRequest
+	50, // 60: module.ModuleService.ListResourceInstancesByModule:input_type -> module.ListResourceInstancesByModuleRequest
+	51, // 61: module.ModuleService.ListAllResourceInstances:input_type -> module.ListAllResourceInstancesRequest
+	12, // 62: module.ModuleService.CreateModule:output_type -> module.ModuleResponse
+	12, // 63: module.ModuleService.UpdateModule:output_type -> module.ModuleResponse
+	25, // 64: module.ModuleService.DeleteModule:output_type -> common.ResponseStatus
+	12, // 65: module.ModuleService.GetModule:output_type -> module.ModuleResponse
+	12, // 66: module.ModuleService.GetModuleByName:output_type -> module.ModuleResponse
+	12, // 67: module.ModuleService.GetModuleByModuleKey:output_type -> module.ModuleResponse
+	12, // 68: module.ModuleService.GetModuleByModuleId:output_type -> module.ModuleResponse
+	13, // 69: module.ModuleService.ListModules:output_type -> module.ListModulesResponse
+	12, // 70: module.ModuleService.SetModuleState:output_type -> module.ModuleResponse
+	52, // 71: module.ModuleService.RegisterTriggers:output_type -> module.ListTriggersResponse
+	52, // 72: module.ModuleService.ListTriggers:output_type -> module.ListTriggersResponse
+	22, // 73: module.ModuleService.GetTriggerByCanonicalId:output_type -> module.TriggerResponse
+	25, // 74: module.ModuleService.DeleteTriggersByModuleId:output_type -> common.ResponseStatus
+	53, // 75: module.ModuleService.RegisterActions:output_type -> module.ListActionsResponse
+	53, // 76: module.ModuleService.ListActions:output_type -> module.ListActionsResponse
+	23, // 77: module.ModuleService.GetActionByCanonicalId:output_type -> module.ActionResponse
+	25, // 78: module.ModuleService.DeleteActionsByModuleId:output_type -> common.ResponseStatus
+	54, // 79: module.ModuleService.RegisterWidgets:output_type -> module.ListWidgetsResponse
+	54, // 80: module.ModuleService.ListWidgets:output_type -> module.ListWidgetsResponse
+	55, // 81: module.ModuleService.GetWidgetByCanonicalId:output_type -> module.WidgetResponse
+	25, // 82: module.ModuleService.DeleteWidgetsByModuleId:output_type -> common.ResponseStatus
+	56, // 83: module.ModuleService.RegisterBackgroundTasks:output_type -> module.ListBackgroundTasksResponse
+	56, // 84: module.ModuleService.ListBackgroundTasks:output_type -> module.ListBackgroundTasksResponse
+	25, // 85: module.ModuleService.DeleteBackgroundTasksByModuleId:output_type -> common.ResponseStatus
+	57, // 86: module.ModuleService.RegisterAssets:output_type -> module.ListAssetsResponse
+	57, // 87: module.ModuleService.ListAssets:output_type -> module.ListAssetsResponse
+	25, // 88: module.ModuleService.DeleteAssetsByModuleId:output_type -> common.ResponseStatus
+	58, // 89: module.ModuleService.CreateModuleResource:output_type -> module.ModuleResourceResponse
+	59, // 90: module.ModuleService.ListModuleResources:output_type -> module.ListModuleResourcesResponse
+	25, // 91: module.ModuleService.DeleteModuleResources:output_type -> common.ResponseStatus
+	25, // 92: module.ModuleService.DeleteResourceByManifestId:output_type -> common.ResponseStatus
+	25, // 93: module.ModuleService.ArchiveResourceByManifestId:output_type -> common.ResponseStatus
+	58, // 94: module.ModuleService.UpdateModuleResourceVersion:output_type -> module.ModuleResourceResponse
+	25, // 95: module.ModuleService.CompleteModuleInstall:output_type -> common.ResponseStatus
+	18, // 96: module.ModuleService.CheckModuleResourceUsage:output_type -> module.CheckModuleResourceUsageResponse
+	25, // 97: module.ModuleService.CompleteModuleDelete:output_type -> common.ResponseStatus
+	60, // 98: module.ModuleService.CreateResourceInstance:output_type -> module.ResourceInstanceResponse
+	25, // 99: module.ModuleService.DeleteResourceInstance:output_type -> common.ResponseStatus
+	60, // 100: module.ModuleService.UpdateResourceInstance:output_type -> module.ResourceInstanceResponse
+	60, // 101: module.ModuleService.GetResourceInstance:output_type -> module.ResourceInstanceResponse
+	61, // 102: module.ModuleService.ListResourceInstancesByKind:output_type -> module.ListResourceInstancesResponse
+	61, // 103: module.ModuleService.ListResourceInstancesByModule:output_type -> module.ListResourceInstancesResponse
+	61, // 104: module.ModuleService.ListAllResourceInstances:output_type -> module.ListResourceInstancesResponse
+	62, // [62:105] is the sub-list for method output_type
+	19, // [19:62] is the sub-list for method input_type
 	19, // [19:19] is the sub-list for extension type_name
 	19, // [19:19] is the sub-list for extension extendee
 	0,  // [0:19] is the sub-list for field type_name

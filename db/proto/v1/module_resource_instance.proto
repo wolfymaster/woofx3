@@ -42,6 +42,11 @@ message ModuleResourceInstance {
   // name), `module_key` is what downstream consumers should resolve the
   // owning module by.
   string module_key = 10;
+  // What the instance was created with: the values of its kind's `schema`
+  // fields, as a JSON object (e.g. {"lifetime":"session","initialValue":0}).
+  // Stored and returned verbatim -- the engine never interprets it, the owning
+  // module does (`ctx.resources.get`). "{}" when the kind declares no fields.
+  string settings_json = 11;
 }
 
 message CreateResourceInstanceRequest {
@@ -64,11 +69,26 @@ message CreateResourceInstanceRequest {
   // JSON-encoded connection configuration (URL, headers, auth, etc.).
   // Required when connection_kind is set.
   string connection_config = 8;
+  // See ModuleResourceInstance.settings_json. Must be a JSON object when set.
+  string settings_json = 9;
 }
 
 message ResourceInstanceResponse {
   common.ResponseStatus status = 1;
   ModuleResourceInstance instance = 2;
+}
+
+// Change what an instance is called, or the settings it runs with. Identity --
+// module, kind and instance id -- never changes: those are what everything
+// referencing the instance holds.
+//
+// Full replace: both fields are what the instance should have, not a patch.
+message UpdateResourceInstanceRequest {
+  string canonical_id = 1;
+  string display_name = 2;
+  // See ModuleResourceInstance.settings_json. Must be a JSON object when set.
+  string settings_json = 3;
+  common.RequestContext request_context = 4;
 }
 
 message DeleteResourceInstanceRequest {

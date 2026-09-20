@@ -21,7 +21,11 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Storage item with metadata
+// Storage item with metadata.
+//
+// A value is addressed by (application_id, namespace, key). The namespace is
+// the owning module's manifest id, so two modules using the same key never see
+// each other's values; it is required on every read and write.
 type StorageItem struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -123,6 +127,7 @@ type GetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	Namespace     string                 `protobuf:"bytes,3,opt,name=namespace,proto3" json:"namespace,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -167,6 +172,13 @@ func (x *GetRequest) GetKey() string {
 func (x *GetRequest) GetApplicationId() string {
 	if x != nil {
 		return x.ApplicationId
+	}
+	return ""
+}
+
+func (x *GetRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
 	}
 	return ""
 }
@@ -296,18 +308,137 @@ func (*SetResponse) Descriptor() ([]byte, []int) {
 	return file_storage_proto_rawDescGZIP(), []int{4}
 }
 
+// Write `item` only if the key holds `expected_value` now -- or holds nothing,
+// when `expect_absent` is set.
+type CompareAndSetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Item          *StorageItem           `protobuf:"bytes,1,opt,name=item,proto3" json:"item,omitempty"`
+	ExpectedValue string                 `protobuf:"bytes,2,opt,name=expected_value,json=expectedValue,proto3" json:"expected_value,omitempty"`
+	ExpectAbsent  bool                   `protobuf:"varint,3,opt,name=expect_absent,json=expectAbsent,proto3" json:"expect_absent,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompareAndSetRequest) Reset() {
+	*x = CompareAndSetRequest{}
+	mi := &file_storage_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompareAndSetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompareAndSetRequest) ProtoMessage() {}
+
+func (x *CompareAndSetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_storage_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompareAndSetRequest.ProtoReflect.Descriptor instead.
+func (*CompareAndSetRequest) Descriptor() ([]byte, []int) {
+	return file_storage_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *CompareAndSetRequest) GetItem() *StorageItem {
+	if x != nil {
+		return x.Item
+	}
+	return nil
+}
+
+func (x *CompareAndSetRequest) GetExpectedValue() string {
+	if x != nil {
+		return x.ExpectedValue
+	}
+	return ""
+}
+
+func (x *CompareAndSetRequest) GetExpectAbsent() bool {
+	if x != nil {
+		return x.ExpectAbsent
+	}
+	return false
+}
+
+type CompareAndSetResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Whether the write happened.
+	Swapped bool `protobuf:"varint,1,opt,name=swapped,proto3" json:"swapped,omitempty"`
+	// What the key holds now: the value just written, or the one that stopped
+	// the write, which is what a caller retries from. Absent when the key holds
+	// nothing.
+	Current       *StorageItem `protobuf:"bytes,2,opt,name=current,proto3" json:"current,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompareAndSetResponse) Reset() {
+	*x = CompareAndSetResponse{}
+	mi := &file_storage_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompareAndSetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompareAndSetResponse) ProtoMessage() {}
+
+func (x *CompareAndSetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_storage_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompareAndSetResponse.ProtoReflect.Descriptor instead.
+func (*CompareAndSetResponse) Descriptor() ([]byte, []int) {
+	return file_storage_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CompareAndSetResponse) GetSwapped() bool {
+	if x != nil {
+		return x.Swapped
+	}
+	return false
+}
+
+func (x *CompareAndSetResponse) GetCurrent() *StorageItem {
+	if x != nil {
+		return x.Current
+	}
+	return nil
+}
+
 // Delete a key
 type DeleteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	Namespace     string                 `protobuf:"bytes,3,opt,name=namespace,proto3" json:"namespace,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeleteRequest) Reset() {
 	*x = DeleteRequest{}
-	mi := &file_storage_proto_msgTypes[5]
+	mi := &file_storage_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -319,7 +450,7 @@ func (x *DeleteRequest) String() string {
 func (*DeleteRequest) ProtoMessage() {}
 
 func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_proto_msgTypes[5]
+	mi := &file_storage_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -332,7 +463,7 @@ func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteRequest.ProtoReflect.Descriptor instead.
 func (*DeleteRequest) Descriptor() ([]byte, []int) {
-	return file_storage_proto_rawDescGZIP(), []int{5}
+	return file_storage_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *DeleteRequest) GetKey() string {
@@ -349,6 +480,13 @@ func (x *DeleteRequest) GetApplicationId() string {
 	return ""
 }
 
+func (x *DeleteRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
 type DeleteResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -357,7 +495,7 @@ type DeleteResponse struct {
 
 func (x *DeleteResponse) Reset() {
 	*x = DeleteResponse{}
-	mi := &file_storage_proto_msgTypes[6]
+	mi := &file_storage_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -369,7 +507,7 @@ func (x *DeleteResponse) String() string {
 func (*DeleteResponse) ProtoMessage() {}
 
 func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_proto_msgTypes[6]
+	mi := &file_storage_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -382,7 +520,7 @@ func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteResponse.ProtoReflect.Descriptor instead.
 func (*DeleteResponse) Descriptor() ([]byte, []int) {
-	return file_storage_proto_rawDescGZIP(), []int{6}
+	return file_storage_proto_rawDescGZIP(), []int{8}
 }
 
 // Clear all keys in a namespace
@@ -396,7 +534,7 @@ type ClearNamespaceRequest struct {
 
 func (x *ClearNamespaceRequest) Reset() {
 	*x = ClearNamespaceRequest{}
-	mi := &file_storage_proto_msgTypes[7]
+	mi := &file_storage_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -408,7 +546,7 @@ func (x *ClearNamespaceRequest) String() string {
 func (*ClearNamespaceRequest) ProtoMessage() {}
 
 func (x *ClearNamespaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_proto_msgTypes[7]
+	mi := &file_storage_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -421,7 +559,7 @@ func (x *ClearNamespaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearNamespaceRequest.ProtoReflect.Descriptor instead.
 func (*ClearNamespaceRequest) Descriptor() ([]byte, []int) {
-	return file_storage_proto_rawDescGZIP(), []int{7}
+	return file_storage_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ClearNamespaceRequest) GetNamespace() string {
@@ -446,7 +584,7 @@ type ClearNamespaceResponse struct {
 
 func (x *ClearNamespaceResponse) Reset() {
 	*x = ClearNamespaceResponse{}
-	mi := &file_storage_proto_msgTypes[8]
+	mi := &file_storage_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -458,7 +596,7 @@ func (x *ClearNamespaceResponse) String() string {
 func (*ClearNamespaceResponse) ProtoMessage() {}
 
 func (x *ClearNamespaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_proto_msgTypes[8]
+	mi := &file_storage_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -471,7 +609,7 @@ func (x *ClearNamespaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearNamespaceResponse.ProtoReflect.Descriptor instead.
 func (*ClearNamespaceResponse) Descriptor() ([]byte, []int) {
-	return file_storage_proto_rawDescGZIP(), []int{8}
+	return file_storage_proto_rawDescGZIP(), []int{10}
 }
 
 // Clear all expired keys
@@ -484,7 +622,7 @@ type ClearExpiredRequest struct {
 
 func (x *ClearExpiredRequest) Reset() {
 	*x = ClearExpiredRequest{}
-	mi := &file_storage_proto_msgTypes[9]
+	mi := &file_storage_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -496,7 +634,7 @@ func (x *ClearExpiredRequest) String() string {
 func (*ClearExpiredRequest) ProtoMessage() {}
 
 func (x *ClearExpiredRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_proto_msgTypes[9]
+	mi := &file_storage_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -509,7 +647,7 @@ func (x *ClearExpiredRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearExpiredRequest.ProtoReflect.Descriptor instead.
 func (*ClearExpiredRequest) Descriptor() ([]byte, []int) {
-	return file_storage_proto_rawDescGZIP(), []int{9}
+	return file_storage_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ClearExpiredRequest) GetApplicationId() string {
@@ -527,7 +665,7 @@ type ClearExpiredResponse struct {
 
 func (x *ClearExpiredResponse) Reset() {
 	*x = ClearExpiredResponse{}
-	mi := &file_storage_proto_msgTypes[10]
+	mi := &file_storage_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -539,7 +677,7 @@ func (x *ClearExpiredResponse) String() string {
 func (*ClearExpiredResponse) ProtoMessage() {}
 
 func (x *ClearExpiredResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_proto_msgTypes[10]
+	mi := &file_storage_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -552,7 +690,7 @@ func (x *ClearExpiredResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearExpiredResponse.ProtoReflect.Descriptor instead.
 func (*ClearExpiredResponse) Descriptor() ([]byte, []int) {
-	return file_storage_proto_rawDescGZIP(), []int{10}
+	return file_storage_proto_rawDescGZIP(), []int{12}
 }
 
 // Clear all keys for an application
@@ -565,7 +703,7 @@ type ClearAllForApplicationRequest struct {
 
 func (x *ClearAllForApplicationRequest) Reset() {
 	*x = ClearAllForApplicationRequest{}
-	mi := &file_storage_proto_msgTypes[11]
+	mi := &file_storage_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -577,7 +715,7 @@ func (x *ClearAllForApplicationRequest) String() string {
 func (*ClearAllForApplicationRequest) ProtoMessage() {}
 
 func (x *ClearAllForApplicationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_proto_msgTypes[11]
+	mi := &file_storage_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -590,7 +728,7 @@ func (x *ClearAllForApplicationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearAllForApplicationRequest.ProtoReflect.Descriptor instead.
 func (*ClearAllForApplicationRequest) Descriptor() ([]byte, []int) {
-	return file_storage_proto_rawDescGZIP(), []int{11}
+	return file_storage_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ClearAllForApplicationRequest) GetApplicationId() string {
@@ -608,7 +746,7 @@ type ClearAllForApplicationResponse struct {
 
 func (x *ClearAllForApplicationResponse) Reset() {
 	*x = ClearAllForApplicationResponse{}
-	mi := &file_storage_proto_msgTypes[12]
+	mi := &file_storage_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -620,7 +758,7 @@ func (x *ClearAllForApplicationResponse) String() string {
 func (*ClearAllForApplicationResponse) ProtoMessage() {}
 
 func (x *ClearAllForApplicationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_proto_msgTypes[12]
+	mi := &file_storage_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -633,7 +771,7 @@ func (x *ClearAllForApplicationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearAllForApplicationResponse.ProtoReflect.Descriptor instead.
 func (*ClearAllForApplicationResponse) Descriptor() ([]byte, []int) {
-	return file_storage_proto_rawDescGZIP(), []int{12}
+	return file_storage_proto_rawDescGZIP(), []int{14}
 }
 
 // Clear every key flagged `clear_on_session_end`
@@ -646,7 +784,7 @@ type ClearSessionScopedRequest struct {
 
 func (x *ClearSessionScopedRequest) Reset() {
 	*x = ClearSessionScopedRequest{}
-	mi := &file_storage_proto_msgTypes[13]
+	mi := &file_storage_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -658,7 +796,7 @@ func (x *ClearSessionScopedRequest) String() string {
 func (*ClearSessionScopedRequest) ProtoMessage() {}
 
 func (x *ClearSessionScopedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_proto_msgTypes[13]
+	mi := &file_storage_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -671,7 +809,7 @@ func (x *ClearSessionScopedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearSessionScopedRequest.ProtoReflect.Descriptor instead.
 func (*ClearSessionScopedRequest) Descriptor() ([]byte, []int) {
-	return file_storage_proto_rawDescGZIP(), []int{13}
+	return file_storage_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ClearSessionScopedRequest) GetApplicationId() string {
@@ -686,14 +824,18 @@ type ClearSessionScopedResponse struct {
 	// How many keys were dropped. Clearing fires automatically at a session
 	// boundary with nobody watching, so the count is the only evidence in a log
 	// that it ran and what it did.
-	Cleared       int32 `protobuf:"varint,1,opt,name=cleared,proto3" json:"cleared,omitempty"`
+	Cleared int32 `protobuf:"varint,1,opt,name=cleared,proto3" json:"cleared,omitempty"`
+	// Which keys were dropped, by namespace and key, so the engine can announce
+	// each one as changed: a screen showing a session value has to learn that it
+	// went back to nothing.
+	ClearedItems  []*StorageItem `protobuf:"bytes,2,rep,name=cleared_items,json=clearedItems,proto3" json:"cleared_items,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ClearSessionScopedResponse) Reset() {
 	*x = ClearSessionScopedResponse{}
-	mi := &file_storage_proto_msgTypes[14]
+	mi := &file_storage_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -705,7 +847,7 @@ func (x *ClearSessionScopedResponse) String() string {
 func (*ClearSessionScopedResponse) ProtoMessage() {}
 
 func (x *ClearSessionScopedResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_proto_msgTypes[14]
+	mi := &file_storage_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -718,7 +860,7 @@ func (x *ClearSessionScopedResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearSessionScopedResponse.ProtoReflect.Descriptor instead.
 func (*ClearSessionScopedResponse) Descriptor() ([]byte, []int) {
-	return file_storage_proto_rawDescGZIP(), []int{14}
+	return file_storage_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ClearSessionScopedResponse) GetCleared() int32 {
@@ -726,6 +868,13 @@ func (x *ClearSessionScopedResponse) GetCleared() int32 {
 		return x.Cleared
 	}
 	return 0
+}
+
+func (x *ClearSessionScopedResponse) GetClearedItems() []*StorageItem {
+	if x != nil {
+		return x.ClearedItems
+	}
+	return nil
 }
 
 var File_storage_proto protoreflect.FileDescriptor
@@ -742,20 +891,29 @@ const file_storage_proto_rawDesc = "" +
 	"expires_at\x18\x04 \x01(\x03R\texpiresAt\x12\x1c\n" +
 	"\tnamespace\x18\x05 \x01(\tR\tnamespace\x12%\n" +
 	"\x0eapplication_id\x18\x06 \x01(\tR\rapplicationId\x12/\n" +
-	"\x14clear_on_session_end\x18\a \x01(\bR\x11clearOnSessionEnd\"E\n" +
+	"\x14clear_on_session_end\x18\a \x01(\bR\x11clearOnSessionEnd\"c\n" +
 	"\n" +
 	"GetRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"7\n" +
+	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x1c\n" +
+	"\tnamespace\x18\x03 \x01(\tR\tnamespace\"7\n" +
 	"\vGetResponse\x12(\n" +
 	"\x04item\x18\x01 \x01(\v2\x14.storage.StorageItemR\x04item\"6\n" +
 	"\n" +
 	"SetRequest\x12(\n" +
 	"\x04item\x18\x01 \x01(\v2\x14.storage.StorageItemR\x04item\"\r\n" +
-	"\vSetResponse\"H\n" +
+	"\vSetResponse\"\x8c\x01\n" +
+	"\x14CompareAndSetRequest\x12(\n" +
+	"\x04item\x18\x01 \x01(\v2\x14.storage.StorageItemR\x04item\x12%\n" +
+	"\x0eexpected_value\x18\x02 \x01(\tR\rexpectedValue\x12#\n" +
+	"\rexpect_absent\x18\x03 \x01(\bR\fexpectAbsent\"a\n" +
+	"\x15CompareAndSetResponse\x12\x18\n" +
+	"\aswapped\x18\x01 \x01(\bR\aswapped\x12.\n" +
+	"\acurrent\x18\x02 \x01(\v2\x14.storage.StorageItemR\acurrent\"f\n" +
 	"\rDeleteRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"\x10\n" +
+	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x1c\n" +
+	"\tnamespace\x18\x03 \x01(\tR\tnamespace\"\x10\n" +
 	"\x0eDeleteResponse\"\\\n" +
 	"\x15ClearNamespaceRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12%\n" +
@@ -768,12 +926,14 @@ const file_storage_proto_rawDesc = "" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\" \n" +
 	"\x1eClearAllForApplicationResponse\"B\n" +
 	"\x19ClearSessionScopedRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\"6\n" +
+	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\"q\n" +
 	"\x1aClearSessionScopedResponse\x12\x18\n" +
-	"\acleared\x18\x01 \x01(\x05R\acleared2\xa7\x04\n" +
+	"\acleared\x18\x01 \x01(\x05R\acleared\x129\n" +
+	"\rcleared_items\x18\x02 \x03(\v2\x14.storage.StorageItemR\fclearedItems2\xf9\x04\n" +
 	"\x0eStorageService\x122\n" +
 	"\x03Get\x12\x13.storage.GetRequest\x1a\x14.storage.GetResponse\"\x00\x122\n" +
-	"\x03Set\x12\x13.storage.SetRequest\x1a\x14.storage.SetResponse\"\x00\x12;\n" +
+	"\x03Set\x12\x13.storage.SetRequest\x1a\x14.storage.SetResponse\"\x00\x12P\n" +
+	"\rCompareAndSet\x12\x1d.storage.CompareAndSetRequest\x1a\x1e.storage.CompareAndSetResponse\"\x00\x12;\n" +
 	"\x06Delete\x12\x16.storage.DeleteRequest\x1a\x17.storage.DeleteResponse\"\x00\x12S\n" +
 	"\x0eClearNamespace\x12\x1e.storage.ClearNamespaceRequest\x1a\x1f.storage.ClearNamespaceResponse\"\x00\x12M\n" +
 	"\fClearExpired\x12\x1c.storage.ClearExpiredRequest\x1a\x1d.storage.ClearExpiredResponse\"\x00\x12k\n" +
@@ -792,46 +952,53 @@ func file_storage_proto_rawDescGZIP() []byte {
 	return file_storage_proto_rawDescData
 }
 
-var file_storage_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_storage_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_storage_proto_goTypes = []any{
 	(*StorageItem)(nil),                    // 0: storage.StorageItem
 	(*GetRequest)(nil),                     // 1: storage.GetRequest
 	(*GetResponse)(nil),                    // 2: storage.GetResponse
 	(*SetRequest)(nil),                     // 3: storage.SetRequest
 	(*SetResponse)(nil),                    // 4: storage.SetResponse
-	(*DeleteRequest)(nil),                  // 5: storage.DeleteRequest
-	(*DeleteResponse)(nil),                 // 6: storage.DeleteResponse
-	(*ClearNamespaceRequest)(nil),          // 7: storage.ClearNamespaceRequest
-	(*ClearNamespaceResponse)(nil),         // 8: storage.ClearNamespaceResponse
-	(*ClearExpiredRequest)(nil),            // 9: storage.ClearExpiredRequest
-	(*ClearExpiredResponse)(nil),           // 10: storage.ClearExpiredResponse
-	(*ClearAllForApplicationRequest)(nil),  // 11: storage.ClearAllForApplicationRequest
-	(*ClearAllForApplicationResponse)(nil), // 12: storage.ClearAllForApplicationResponse
-	(*ClearSessionScopedRequest)(nil),      // 13: storage.ClearSessionScopedRequest
-	(*ClearSessionScopedResponse)(nil),     // 14: storage.ClearSessionScopedResponse
+	(*CompareAndSetRequest)(nil),           // 5: storage.CompareAndSetRequest
+	(*CompareAndSetResponse)(nil),          // 6: storage.CompareAndSetResponse
+	(*DeleteRequest)(nil),                  // 7: storage.DeleteRequest
+	(*DeleteResponse)(nil),                 // 8: storage.DeleteResponse
+	(*ClearNamespaceRequest)(nil),          // 9: storage.ClearNamespaceRequest
+	(*ClearNamespaceResponse)(nil),         // 10: storage.ClearNamespaceResponse
+	(*ClearExpiredRequest)(nil),            // 11: storage.ClearExpiredRequest
+	(*ClearExpiredResponse)(nil),           // 12: storage.ClearExpiredResponse
+	(*ClearAllForApplicationRequest)(nil),  // 13: storage.ClearAllForApplicationRequest
+	(*ClearAllForApplicationResponse)(nil), // 14: storage.ClearAllForApplicationResponse
+	(*ClearSessionScopedRequest)(nil),      // 15: storage.ClearSessionScopedRequest
+	(*ClearSessionScopedResponse)(nil),     // 16: storage.ClearSessionScopedResponse
 }
 var file_storage_proto_depIdxs = []int32{
 	0,  // 0: storage.GetResponse.item:type_name -> storage.StorageItem
 	0,  // 1: storage.SetRequest.item:type_name -> storage.StorageItem
-	1,  // 2: storage.StorageService.Get:input_type -> storage.GetRequest
-	3,  // 3: storage.StorageService.Set:input_type -> storage.SetRequest
-	5,  // 4: storage.StorageService.Delete:input_type -> storage.DeleteRequest
-	7,  // 5: storage.StorageService.ClearNamespace:input_type -> storage.ClearNamespaceRequest
-	9,  // 6: storage.StorageService.ClearExpired:input_type -> storage.ClearExpiredRequest
-	11, // 7: storage.StorageService.ClearAllForApplication:input_type -> storage.ClearAllForApplicationRequest
-	13, // 8: storage.StorageService.ClearSessionScoped:input_type -> storage.ClearSessionScopedRequest
-	2,  // 9: storage.StorageService.Get:output_type -> storage.GetResponse
-	4,  // 10: storage.StorageService.Set:output_type -> storage.SetResponse
-	6,  // 11: storage.StorageService.Delete:output_type -> storage.DeleteResponse
-	8,  // 12: storage.StorageService.ClearNamespace:output_type -> storage.ClearNamespaceResponse
-	10, // 13: storage.StorageService.ClearExpired:output_type -> storage.ClearExpiredResponse
-	12, // 14: storage.StorageService.ClearAllForApplication:output_type -> storage.ClearAllForApplicationResponse
-	14, // 15: storage.StorageService.ClearSessionScoped:output_type -> storage.ClearSessionScopedResponse
-	9,  // [9:16] is the sub-list for method output_type
-	2,  // [2:9] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	0,  // 2: storage.CompareAndSetRequest.item:type_name -> storage.StorageItem
+	0,  // 3: storage.CompareAndSetResponse.current:type_name -> storage.StorageItem
+	0,  // 4: storage.ClearSessionScopedResponse.cleared_items:type_name -> storage.StorageItem
+	1,  // 5: storage.StorageService.Get:input_type -> storage.GetRequest
+	3,  // 6: storage.StorageService.Set:input_type -> storage.SetRequest
+	5,  // 7: storage.StorageService.CompareAndSet:input_type -> storage.CompareAndSetRequest
+	7,  // 8: storage.StorageService.Delete:input_type -> storage.DeleteRequest
+	9,  // 9: storage.StorageService.ClearNamespace:input_type -> storage.ClearNamespaceRequest
+	11, // 10: storage.StorageService.ClearExpired:input_type -> storage.ClearExpiredRequest
+	13, // 11: storage.StorageService.ClearAllForApplication:input_type -> storage.ClearAllForApplicationRequest
+	15, // 12: storage.StorageService.ClearSessionScoped:input_type -> storage.ClearSessionScopedRequest
+	2,  // 13: storage.StorageService.Get:output_type -> storage.GetResponse
+	4,  // 14: storage.StorageService.Set:output_type -> storage.SetResponse
+	6,  // 15: storage.StorageService.CompareAndSet:output_type -> storage.CompareAndSetResponse
+	8,  // 16: storage.StorageService.Delete:output_type -> storage.DeleteResponse
+	10, // 17: storage.StorageService.ClearNamespace:output_type -> storage.ClearNamespaceResponse
+	12, // 18: storage.StorageService.ClearExpired:output_type -> storage.ClearExpiredResponse
+	14, // 19: storage.StorageService.ClearAllForApplication:output_type -> storage.ClearAllForApplicationResponse
+	16, // 20: storage.StorageService.ClearSessionScoped:output_type -> storage.ClearSessionScopedResponse
+	13, // [13:21] is the sub-list for method output_type
+	5,  // [5:13] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_storage_proto_init() }
@@ -845,7 +1012,7 @@ func file_storage_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_storage_proto_rawDesc), len(file_storage_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

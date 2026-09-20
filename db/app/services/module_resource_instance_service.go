@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -64,12 +65,18 @@ func (s *moduleService) CreateResourceInstance(ctx context.Context, req *client.
 	}
 	moduleID := module.ID
 
+	settings, err := normalizeInstanceSettings(req.SettingsJson)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("settings_json", err.Error())
+	}
+
 	inst := &models.ModuleResourceInstance{
 		ID:          uuid.New(),
 		ModuleID:    moduleID,
 		Kind:        kind,
 		InstanceID:  instanceID,
 		DisplayName: req.DisplayName,
+		Settings:    settings,
 	}
 	if err := s.instanceRepo.Create(inst); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("create resource instance: %w", err))
@@ -81,6 +88,40 @@ func (s *moduleService) CreateResourceInstance(ctx context.Context, req *client.
 		Status: &client.ResponseStatus{
 			Code:    client.ResponseStatus_OK,
 			Message: "Resource instance created successfully",
+		},
+		Instance: resourceInstanceToProto(module, inst),
+	}, nil
+}
+
+// UpdateResourceInstance changes an instance's name and settings. What it is
+// addressed by does not change, so every workflow, command and widget holding
+// its canonical id keeps working.
+func (s *moduleService) UpdateResourceInstance(ctx context.Context, req *client.UpdateResourceInstanceRequest) (*client.ResourceInstanceResponse, error) {
+	if s.instanceRepo == nil {
+		return nil, twirp.NewError(twirp.Internal, "resource instance repository not configured")
+	}
+	module, inst, err := s.resolveInstanceFromCanonical(req.CanonicalId)
+	if err != nil {
+		return nil, err
+	}
+
+	settings, err := normalizeInstanceSettings(req.SettingsJson)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("settings_json", err.Error())
+	}
+
+	inst.DisplayName = req.DisplayName
+	inst.Settings = settings
+	if err := s.instanceRepo.Update(inst); err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("update resource instance: %w", err))
+	}
+
+	s.publishInstanceEvent(req.RequestContext, module, inst, "updated")
+
+	return &client.ResourceInstanceResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Resource instance updated successfully",
 		},
 		Instance: resourceInstanceToProto(module, inst),
 	}, nil
@@ -275,17 +316,42 @@ func resourceInstanceToProto(module *models.Module, inst *models.ModuleResourceI
 		moduleKey = module.ModuleKey
 	}
 	return &client.ModuleResourceInstance{
-		Id:          inst.ID.String(),
-		ModuleId:    inst.ModuleID.String(),
-		ModuleName:  moduleName,
-		Kind:        inst.Kind,
-		InstanceId:  inst.InstanceID,
-		DisplayName: inst.DisplayName,
-		CanonicalId: canonicalID,
-		CreatedAt:   timestamppb.New(inst.CreatedAt),
-		UpdatedAt:   timestamppb.New(inst.UpdatedAt),
-		ModuleKey:   moduleKey,
+		Id:           inst.ID.String(),
+		ModuleId:     inst.ModuleID.String(),
+		ModuleName:   moduleName,
+		Kind:         inst.Kind,
+		InstanceId:   inst.InstanceID,
+		DisplayName:  inst.DisplayName,
+		CanonicalId:  canonicalID,
+		CreatedAt:    timestamppb.New(inst.CreatedAt),
+		UpdatedAt:    timestamppb.New(inst.UpdatedAt),
+		ModuleKey:    moduleKey,
+		SettingsJson: instanceSettingsOrEmpty(inst.Settings),
 	}
+}
+
+// normalizeInstanceSettings accepts what the create form produced. The engine
+// does not know what a kind's settings mean, but it does refuse anything that
+// is not a JSON object, so every reader can decode one without a special case.
+func normalizeInstanceSettings(raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "{}", nil
+	}
+	var settings map[string]any
+	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+		return "", fmt.Errorf("must be a JSON object: %w", err)
+	}
+	if settings == nil {
+		return "{}", nil
+	}
+	return raw, nil
+}
+
+func instanceSettingsOrEmpty(settings string) string {
+	if strings.TrimSpace(settings) == "" {
+		return "{}"
+	}
+	return settings
 }
 
 // buildResourceInstanceData is the snake_case payload for
@@ -303,13 +369,14 @@ func buildResourceInstanceData(module *models.Module, inst *models.ModuleResourc
 		canonicalID = canonicalIDFor(moduleName, inst.Kind, inst.InstanceID)
 	}
 	return map[string]interface{}{
-		"id":           inst.ID.String(),
-		"module_id":    inst.ModuleID.String(),
-		"module_name":  moduleName,
-		"kind":         inst.Kind,
-		"instance_id":  inst.InstanceID,
-		"display_name": inst.DisplayName,
-		"canonical_id": canonicalID,
-		"module_key":   moduleKey,
+		"id":            inst.ID.String(),
+		"module_id":     inst.ModuleID.String(),
+		"module_name":   moduleName,
+		"kind":          inst.Kind,
+		"instance_id":   inst.InstanceID,
+		"display_name":  inst.DisplayName,
+		"canonical_id":  canonicalID,
+		"module_key":    moduleKey,
+		"settings_json": instanceSettingsOrEmpty(inst.Settings),
 	}
 }

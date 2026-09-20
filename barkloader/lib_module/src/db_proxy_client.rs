@@ -170,12 +170,13 @@ pub trait ModuleDbProxy: Send + Sync {
         &self,
         request: woofx3::db::workflow::CreateWorkflowRequest,
     ) -> Result<()>;
+    /// `actions_json` is the JSON array of actions the command runs, in order
+    /// -- the same shape a workflow's steps have.
     async fn register_command(
         &self,
         application_id: &str,
         command: &str,
-        command_type: &str,
-        type_value: &str,
+        actions_json: &str,
         module_name: &str,
     ) -> Result<()>;
 
@@ -517,16 +518,14 @@ impl ModuleDbProxy for HttpDbProxyClient {
         &self,
         application_id: &str,
         command: &str,
-        command_type: &str,
-        type_value: &str,
+        actions_json: &str,
         module_name: &str,
     ) -> Result<()> {
         db_proxy::create_command(
             &self.base_url,
             application_id,
             command,
-            command_type,
-            type_value,
+            actions_json,
             module_name,
         )
         .await
@@ -859,8 +858,7 @@ mod test_support {
             &self,
             _application_id: &str,
             _command: &str,
-            _command_type: &str,
-            _type_value: &str,
+            _actions_json: &str,
             _module_name: &str,
         ) -> Result<()> {
             self.record("register_command")

@@ -16,12 +16,6 @@ impl serde::Serialize for Command {
         if !self.command.is_empty() {
             len += 1;
         }
-        if !self.r#type.is_empty() {
-            len += 1;
-        }
-        if !self.type_value.is_empty() {
-            len += 1;
-        }
         if self.cooldown != 0 {
             len += 1;
         }
@@ -52,6 +46,9 @@ impl serde::Serialize for Command {
         if !self.argument_pattern.is_empty() {
             len += 1;
         }
+        if !self.actions_json.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("command.Command", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -61,12 +58,6 @@ impl serde::Serialize for Command {
         }
         if !self.command.is_empty() {
             struct_ser.serialize_field("command", &self.command)?;
-        }
-        if !self.r#type.is_empty() {
-            struct_ser.serialize_field("type", &self.r#type)?;
-        }
-        if !self.type_value.is_empty() {
-            struct_ser.serialize_field("typeValue", &self.type_value)?;
         }
         if self.cooldown != 0 {
             struct_ser.serialize_field("cooldown", &self.cooldown)?;
@@ -98,6 +89,9 @@ impl serde::Serialize for Command {
         if !self.argument_pattern.is_empty() {
             struct_ser.serialize_field("argumentPattern", &self.argument_pattern)?;
         }
+        if !self.actions_json.is_empty() {
+            struct_ser.serialize_field("actionsJson", &self.actions_json)?;
+        }
         struct_ser.end()
     }
 }
@@ -112,9 +106,6 @@ impl<'de> serde::Deserialize<'de> for Command {
             "application_id",
             "applicationId",
             "command",
-            "type",
-            "type_value",
-            "typeValue",
             "cooldown",
             "priority",
             "enabled",
@@ -130,6 +121,8 @@ impl<'de> serde::Deserialize<'de> for Command {
             "usernames",
             "argument_pattern",
             "argumentPattern",
+            "actions_json",
+            "actionsJson",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -137,8 +130,6 @@ impl<'de> serde::Deserialize<'de> for Command {
             Id,
             ApplicationId,
             Command,
-            Type,
-            TypeValue,
             Cooldown,
             Priority,
             Enabled,
@@ -149,6 +140,7 @@ impl<'de> serde::Deserialize<'de> for Command {
             GroupIds,
             Usernames,
             ArgumentPattern,
+            ActionsJson,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -173,8 +165,6 @@ impl<'de> serde::Deserialize<'de> for Command {
                             "id" => Ok(GeneratedField::Id),
                             "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "command" => Ok(GeneratedField::Command),
-                            "type" => Ok(GeneratedField::Type),
-                            "typeValue" | "type_value" => Ok(GeneratedField::TypeValue),
                             "cooldown" => Ok(GeneratedField::Cooldown),
                             "priority" => Ok(GeneratedField::Priority),
                             "enabled" => Ok(GeneratedField::Enabled),
@@ -185,6 +175,7 @@ impl<'de> serde::Deserialize<'de> for Command {
                             "groupIds" | "group_ids" => Ok(GeneratedField::GroupIds),
                             "usernames" => Ok(GeneratedField::Usernames),
                             "argumentPattern" | "argument_pattern" => Ok(GeneratedField::ArgumentPattern),
+                            "actionsJson" | "actions_json" => Ok(GeneratedField::ActionsJson),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -207,8 +198,6 @@ impl<'de> serde::Deserialize<'de> for Command {
                 let mut id__ = None;
                 let mut application_id__ = None;
                 let mut command__ = None;
-                let mut r#type__ = None;
-                let mut type_value__ = None;
                 let mut cooldown__ = None;
                 let mut priority__ = None;
                 let mut enabled__ = None;
@@ -219,6 +208,7 @@ impl<'de> serde::Deserialize<'de> for Command {
                 let mut group_ids__ = None;
                 let mut usernames__ = None;
                 let mut argument_pattern__ = None;
+                let mut actions_json__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -238,18 +228,6 @@ impl<'de> serde::Deserialize<'de> for Command {
                                 return Err(serde::de::Error::duplicate_field("command"));
                             }
                             command__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::Type => {
-                            if r#type__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("type"));
-                            }
-                            r#type__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::TypeValue => {
-                            if type_value__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("typeValue"));
-                            }
-                            type_value__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Cooldown => {
                             if cooldown__.is_some() {
@@ -315,14 +293,18 @@ impl<'de> serde::Deserialize<'de> for Command {
                             }
                             argument_pattern__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::ActionsJson => {
+                            if actions_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("actionsJson"));
+                            }
+                            actions_json__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Command {
                     id: id__.unwrap_or_default(),
                     application_id: application_id__.unwrap_or_default(),
                     command: command__.unwrap_or_default(),
-                    r#type: r#type__.unwrap_or_default(),
-                    type_value: type_value__.unwrap_or_default(),
                     cooldown: cooldown__.unwrap_or_default(),
                     priority: priority__.unwrap_or_default(),
                     enabled: enabled__.unwrap_or_default(),
@@ -333,6 +315,7 @@ impl<'de> serde::Deserialize<'de> for Command {
                     group_ids: group_ids__.unwrap_or_default(),
                     usernames: usernames__.unwrap_or_default(),
                     argument_pattern: argument_pattern__.unwrap_or_default(),
+                    actions_json: actions_json__.unwrap_or_default(),
                 })
             }
         }
@@ -467,12 +450,6 @@ impl serde::Serialize for CreateCommandRequest {
         if self.cooldown != 0 {
             len += 1;
         }
-        if !self.r#type.is_empty() {
-            len += 1;
-        }
-        if !self.type_value.is_empty() {
-            len += 1;
-        }
         if self.priority != 0 {
             len += 1;
         }
@@ -494,6 +471,9 @@ impl serde::Serialize for CreateCommandRequest {
         if !self.argument_pattern.is_empty() {
             len += 1;
         }
+        if !self.actions_json.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("command.CreateCommandRequest", len)?;
         if !self.application_id.is_empty() {
             struct_ser.serialize_field("applicationId", &self.application_id)?;
@@ -506,12 +486,6 @@ impl serde::Serialize for CreateCommandRequest {
         }
         if self.cooldown != 0 {
             struct_ser.serialize_field("cooldown", &self.cooldown)?;
-        }
-        if !self.r#type.is_empty() {
-            struct_ser.serialize_field("type", &self.r#type)?;
-        }
-        if !self.type_value.is_empty() {
-            struct_ser.serialize_field("typeValue", &self.type_value)?;
         }
         if self.priority != 0 {
             struct_ser.serialize_field("priority", &self.priority)?;
@@ -534,6 +508,9 @@ impl serde::Serialize for CreateCommandRequest {
         if !self.argument_pattern.is_empty() {
             struct_ser.serialize_field("argumentPattern", &self.argument_pattern)?;
         }
+        if !self.actions_json.is_empty() {
+            struct_ser.serialize_field("actionsJson", &self.actions_json)?;
+        }
         struct_ser.end()
     }
 }
@@ -549,9 +526,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
             "command",
             "enabled",
             "cooldown",
-            "type",
-            "type_value",
-            "typeValue",
             "priority",
             "created_by_type",
             "createdByType",
@@ -563,6 +537,8 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
             "usernames",
             "argument_pattern",
             "argumentPattern",
+            "actions_json",
+            "actionsJson",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -571,8 +547,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
             Command,
             Enabled,
             Cooldown,
-            Type,
-            TypeValue,
             Priority,
             CreatedByType,
             CreatedByRef,
@@ -580,6 +554,7 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
             GroupIds,
             Usernames,
             ArgumentPattern,
+            ActionsJson,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -605,8 +580,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                             "command" => Ok(GeneratedField::Command),
                             "enabled" => Ok(GeneratedField::Enabled),
                             "cooldown" => Ok(GeneratedField::Cooldown),
-                            "type" => Ok(GeneratedField::Type),
-                            "typeValue" | "type_value" => Ok(GeneratedField::TypeValue),
                             "priority" => Ok(GeneratedField::Priority),
                             "createdByType" | "created_by_type" => Ok(GeneratedField::CreatedByType),
                             "createdByRef" | "created_by_ref" => Ok(GeneratedField::CreatedByRef),
@@ -614,6 +587,7 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                             "groupIds" | "group_ids" => Ok(GeneratedField::GroupIds),
                             "usernames" => Ok(GeneratedField::Usernames),
                             "argumentPattern" | "argument_pattern" => Ok(GeneratedField::ArgumentPattern),
+                            "actionsJson" | "actions_json" => Ok(GeneratedField::ActionsJson),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -637,8 +611,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                 let mut command__ = None;
                 let mut enabled__ = None;
                 let mut cooldown__ = None;
-                let mut r#type__ = None;
-                let mut type_value__ = None;
                 let mut priority__ = None;
                 let mut created_by_type__ = None;
                 let mut created_by_ref__ = None;
@@ -646,6 +618,7 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                 let mut group_ids__ = None;
                 let mut usernames__ = None;
                 let mut argument_pattern__ = None;
+                let mut actions_json__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::ApplicationId => {
@@ -673,18 +646,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                             cooldown__ = 
                                 Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
                             ;
-                        }
-                        GeneratedField::Type => {
-                            if r#type__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("type"));
-                            }
-                            r#type__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::TypeValue => {
-                            if type_value__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("typeValue"));
-                            }
-                            type_value__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Priority => {
                             if priority__.is_some() {
@@ -730,6 +691,12 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                             }
                             argument_pattern__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::ActionsJson => {
+                            if actions_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("actionsJson"));
+                            }
+                            actions_json__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(CreateCommandRequest {
@@ -737,8 +704,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                     command: command__.unwrap_or_default(),
                     enabled: enabled__.unwrap_or_default(),
                     cooldown: cooldown__.unwrap_or_default(),
-                    r#type: r#type__.unwrap_or_default(),
-                    type_value: type_value__.unwrap_or_default(),
                     priority: priority__.unwrap_or_default(),
                     created_by_type: created_by_type__.unwrap_or_default(),
                     created_by_ref: created_by_ref__.unwrap_or_default(),
@@ -746,6 +711,7 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                     group_ids: group_ids__.unwrap_or_default(),
                     usernames: usernames__.unwrap_or_default(),
                     argument_pattern: argument_pattern__.unwrap_or_default(),
+                    actions_json: actions_json__.unwrap_or_default(),
                 })
             }
         }
@@ -1207,12 +1173,6 @@ impl serde::Serialize for UpdateCommandRequest {
         if self.cooldown != 0 {
             len += 1;
         }
-        if !self.r#type.is_empty() {
-            len += 1;
-        }
-        if !self.type_value.is_empty() {
-            len += 1;
-        }
         if self.priority != 0 {
             len += 1;
         }
@@ -1228,6 +1188,9 @@ impl serde::Serialize for UpdateCommandRequest {
         if !self.argument_pattern.is_empty() {
             len += 1;
         }
+        if !self.actions_json.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("command.UpdateCommandRequest", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -1240,12 +1203,6 @@ impl serde::Serialize for UpdateCommandRequest {
         }
         if self.cooldown != 0 {
             struct_ser.serialize_field("cooldown", &self.cooldown)?;
-        }
-        if !self.r#type.is_empty() {
-            struct_ser.serialize_field("type", &self.r#type)?;
-        }
-        if !self.type_value.is_empty() {
-            struct_ser.serialize_field("typeValue", &self.type_value)?;
         }
         if self.priority != 0 {
             struct_ser.serialize_field("priority", &self.priority)?;
@@ -1262,6 +1219,9 @@ impl serde::Serialize for UpdateCommandRequest {
         if !self.argument_pattern.is_empty() {
             struct_ser.serialize_field("argumentPattern", &self.argument_pattern)?;
         }
+        if !self.actions_json.is_empty() {
+            struct_ser.serialize_field("actionsJson", &self.actions_json)?;
+        }
         struct_ser.end()
     }
 }
@@ -1276,9 +1236,6 @@ impl<'de> serde::Deserialize<'de> for UpdateCommandRequest {
             "command",
             "enabled",
             "cooldown",
-            "type",
-            "type_value",
-            "typeValue",
             "priority",
             "visibility",
             "group_ids",
@@ -1286,6 +1243,8 @@ impl<'de> serde::Deserialize<'de> for UpdateCommandRequest {
             "usernames",
             "argument_pattern",
             "argumentPattern",
+            "actions_json",
+            "actionsJson",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -1294,13 +1253,12 @@ impl<'de> serde::Deserialize<'de> for UpdateCommandRequest {
             Command,
             Enabled,
             Cooldown,
-            Type,
-            TypeValue,
             Priority,
             Visibility,
             GroupIds,
             Usernames,
             ArgumentPattern,
+            ActionsJson,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -1326,13 +1284,12 @@ impl<'de> serde::Deserialize<'de> for UpdateCommandRequest {
                             "command" => Ok(GeneratedField::Command),
                             "enabled" => Ok(GeneratedField::Enabled),
                             "cooldown" => Ok(GeneratedField::Cooldown),
-                            "type" => Ok(GeneratedField::Type),
-                            "typeValue" | "type_value" => Ok(GeneratedField::TypeValue),
                             "priority" => Ok(GeneratedField::Priority),
                             "visibility" => Ok(GeneratedField::Visibility),
                             "groupIds" | "group_ids" => Ok(GeneratedField::GroupIds),
                             "usernames" => Ok(GeneratedField::Usernames),
                             "argumentPattern" | "argument_pattern" => Ok(GeneratedField::ArgumentPattern),
+                            "actionsJson" | "actions_json" => Ok(GeneratedField::ActionsJson),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -1356,13 +1313,12 @@ impl<'de> serde::Deserialize<'de> for UpdateCommandRequest {
                 let mut command__ = None;
                 let mut enabled__ = None;
                 let mut cooldown__ = None;
-                let mut r#type__ = None;
-                let mut type_value__ = None;
                 let mut priority__ = None;
                 let mut visibility__ = None;
                 let mut group_ids__ = None;
                 let mut usernames__ = None;
                 let mut argument_pattern__ = None;
+                let mut actions_json__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -1390,18 +1346,6 @@ impl<'de> serde::Deserialize<'de> for UpdateCommandRequest {
                             cooldown__ = 
                                 Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
                             ;
-                        }
-                        GeneratedField::Type => {
-                            if r#type__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("type"));
-                            }
-                            r#type__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::TypeValue => {
-                            if type_value__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("typeValue"));
-                            }
-                            type_value__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Priority => {
                             if priority__.is_some() {
@@ -1435,6 +1379,12 @@ impl<'de> serde::Deserialize<'de> for UpdateCommandRequest {
                             }
                             argument_pattern__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::ActionsJson => {
+                            if actions_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("actionsJson"));
+                            }
+                            actions_json__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(UpdateCommandRequest {
@@ -1442,13 +1392,12 @@ impl<'de> serde::Deserialize<'de> for UpdateCommandRequest {
                     command: command__.unwrap_or_default(),
                     enabled: enabled__.unwrap_or_default(),
                     cooldown: cooldown__.unwrap_or_default(),
-                    r#type: r#type__.unwrap_or_default(),
-                    type_value: type_value__.unwrap_or_default(),
                     priority: priority__.unwrap_or_default(),
                     visibility: visibility__.unwrap_or_default(),
                     group_ids: group_ids__.unwrap_or_default(),
                     usernames: usernames__.unwrap_or_default(),
                     argument_pattern: argument_pattern__.unwrap_or_default(),
+                    actions_json: actions_json__.unwrap_or_default(),
                 })
             }
         }

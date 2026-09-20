@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	barkloader "github.com/wolfymaster/woofx3/clients/barkloader"
@@ -11,6 +12,52 @@ import (
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
+
+// NewChatReplyAction is the engine handler registered as `chat.reply`.
+//
+// Sends one message to chat, by publishing the same `message.send` event the
+// sandbox's chat extension publishes (see barkloader's BusChatSender) — the
+// chat client lives in woofwoofwoof, which is the only process holding it.
+//
+// Native rather than a module function so that replying in chat needs no
+// module installed: it is what a chat command has always done, and what makes
+// "a command runs actions" lose nothing next to the response text it replaces.
+//
+// Canonical id of the corresponding action declaration row:
+// `woofx3:action:chat.reply`.
+func NewChatReplyAction() tasks.ActionFunc[AppServices] {
+	return func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
+		message, _ := params["message"].(string)
+		if message == "" {
+			return nil, fmt.Errorf("message parameter is required")
+		}
+
+		bus := ctx.Services.MessageBus()
+		if bus == nil {
+			return nil, fmt.Errorf("message bus not available")
+		}
+
+		platform, _ := params["platform"].(string)
+		if platform == "" {
+			platform = "twitch"
+		}
+
+		payload, err := json.Marshal(map[string]any{
+			"id":     uuid.NewString(),
+			"type":   "message.send",
+			"source": "workflow",
+			"time":   time.Now().UTC().Format(time.RFC3339),
+			"data":   map[string]any{"platform": platform, "message": message},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marshal message.send: %w", err)
+		}
+		if err := bus.Publish("message.send", payload); err != nil {
+			return nil, fmt.Errorf("publish message.send: %w", err)
+		}
+		return map[string]any{"message": message}, nil
+	}
+}
 
 // NewBarkloaderAction is the engine handler registered as `function`.
 // A workflow step with `type: "action"` and `action: "function"` reads

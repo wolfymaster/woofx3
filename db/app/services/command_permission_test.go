@@ -68,8 +68,7 @@ func (f *commandPermFixture) createCommand(t *testing.T, name string, groupIDs, 
 	_, err := f.svc.CreateCommand(context.Background(), &client.CreateCommandRequest{
 		ApplicationId: f.appID.String(),
 		Command:       name,
-		Type:          "text",
-		TypeValue:     "hello",
+		ActionsJson:   `[{"id":"action-1","action":"chat.reply","parameters":{"message":"hello"}}]`,
 		Enabled:       true,
 		GroupIds:      groupIDs,
 		Usernames:     usernames,
@@ -166,7 +165,7 @@ func TestCommandPermissions_PublicVisibilitySkipsPolicy(t *testing.T) {
 	_, err := f.svc.CreateCommand(context.Background(), &client.CreateCommandRequest{
 		ApplicationId: f.appID.String(),
 		Command:       "uptime",
-		Type:          "text",
+		ActionsJson:   "[]",
 		Enabled:       true,
 		Visibility:    commandVisibilityPublic,
 	})
@@ -206,10 +205,10 @@ func TestCommandPermissions_ClearingGrantsRestoresUnrestricted(t *testing.T) {
 		t.Fatalf("get command: %v", err)
 	}
 	if _, err := f.svc.UpdateCommand(context.Background(), &client.UpdateCommandRequest{
-		Id:      cmd.ID.String(),
-		Command: "vanish",
-		Type:    "text",
-		Enabled: true,
+		Id:          cmd.ID.String(),
+		Command:     "vanish",
+		ActionsJson: "[]",
+		Enabled:     true,
 	}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -235,11 +234,11 @@ func TestCommandPermissions_RenameMovesPolicy(t *testing.T) {
 		t.Fatalf("get command: %v", err)
 	}
 	if _, err := f.svc.UpdateCommand(context.Background(), &client.UpdateCommandRequest{
-		Id:       cmd.ID.String(),
-		Command:  "poof",
-		Type:     "text",
-		Enabled:  true,
-		GroupIds: []string{mods.ID.String()},
+		Id:          cmd.ID.String(),
+		Command:     "poof",
+		ActionsJson: "[]",
+		Enabled:     true,
+		GroupIds:    []string{mods.ID.String()},
 	}); err != nil {
 		t.Fatalf("rename: %v", err)
 	}

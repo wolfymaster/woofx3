@@ -23,8 +23,6 @@ export interface Command {
   id: string;
   applicationId: string;
   command: string;
-  type: string;
-  typeValue: string;
   cooldown: number;
   priority: number;
   enabled: boolean;
@@ -50,6 +48,15 @@ export interface Command {
    * to both "text" and "function" command types.
    */
   argumentPattern: string;
+  /**
+   * The actions this command runs, in order, as a JSON array. Same shape as
+   * a workflow's `steps_json` because it is the same thing: each entry is
+   * {id?, action, function?, parameters?, $ref?, dependsOn?}. Replying in
+   * chat is an action (`chat.reply`) rather than a kind of command, which is
+   * what lets a command do anything a workflow step can. An empty array is a
+   * command that only announces itself on `chat.command.<slug>`.
+   */
+  actionsJson: string;
 }
 
 /**
@@ -93,8 +100,6 @@ export interface CreateCommandRequest {
   command: string;
   enabled: boolean;
   cooldown: number;
-  type: string;
-  typeValue: string;
   priority: number;
   createdByType: string;
   createdByRef: string;
@@ -102,6 +107,10 @@ export interface CreateCommandRequest {
   groupIds: string[];
   usernames: string[];
   argumentPattern: string;
+  /**
+   * See Command.actions_json.
+   */
+  actionsJson: string;
 }
 
 /**
@@ -112,13 +121,15 @@ export interface UpdateCommandRequest {
   command: string;
   enabled: boolean;
   cooldown: number;
-  type: string;
-  typeValue: string;
   priority: number;
   visibility: string;
   groupIds: string[];
   usernames: string[];
   argumentPattern: string;
+  /**
+   * See Command.actions_json.
+   */
+  actionsJson: string;
 }
 
 /**
@@ -416,8 +427,6 @@ export const Command = {
       id: "",
       applicationId: "",
       command: "",
-      type: "",
-      typeValue: "",
       cooldown: 0,
       priority: 0,
       enabled: false,
@@ -428,6 +437,7 @@ export const Command = {
       groupIds: [],
       usernames: [],
       argumentPattern: "",
+      actionsJson: "",
       ...msg,
     };
   },
@@ -447,12 +457,6 @@ export const Command = {
     }
     if (msg.command) {
       writer.writeString(3, msg.command);
-    }
-    if (msg.type) {
-      writer.writeString(4, msg.type);
-    }
-    if (msg.typeValue) {
-      writer.writeString(5, msg.typeValue);
     }
     if (msg.cooldown) {
       writer.writeInt32(6, msg.cooldown);
@@ -488,6 +492,9 @@ export const Command = {
     if (msg.argumentPattern) {
       writer.writeString(21, msg.argumentPattern);
     }
+    if (msg.actionsJson) {
+      writer.writeString(22, msg.actionsJson);
+    }
     return writer;
   },
 
@@ -511,14 +518,6 @@ export const Command = {
         }
         case 3: {
           msg.command = reader.readString();
-          break;
-        }
-        case 4: {
-          msg.type = reader.readString();
-          break;
-        }
-        case 5: {
-          msg.typeValue = reader.readString();
           break;
         }
         case 6: {
@@ -559,6 +558,10 @@ export const Command = {
         }
         case 21: {
           msg.argumentPattern = reader.readString();
+          break;
+        }
+        case 22: {
+          msg.actionsJson = reader.readString();
           break;
         }
         default: {
@@ -925,8 +928,6 @@ export const CreateCommandRequest = {
       command: "",
       enabled: false,
       cooldown: 0,
-      type: "",
-      typeValue: "",
       priority: 0,
       createdByType: "",
       createdByRef: "",
@@ -934,6 +935,7 @@ export const CreateCommandRequest = {
       groupIds: [],
       usernames: [],
       argumentPattern: "",
+      actionsJson: "",
       ...msg,
     };
   },
@@ -957,12 +959,6 @@ export const CreateCommandRequest = {
     if (msg.cooldown) {
       writer.writeInt32(4, msg.cooldown);
     }
-    if (msg.type) {
-      writer.writeString(5, msg.type);
-    }
-    if (msg.typeValue) {
-      writer.writeString(6, msg.typeValue);
-    }
     if (msg.priority) {
       writer.writeInt32(7, msg.priority);
     }
@@ -983,6 +979,9 @@ export const CreateCommandRequest = {
     }
     if (msg.argumentPattern) {
       writer.writeString(14, msg.argumentPattern);
+    }
+    if (msg.actionsJson) {
+      writer.writeString(15, msg.actionsJson);
     }
     return writer;
   },
@@ -1013,14 +1012,6 @@ export const CreateCommandRequest = {
           msg.cooldown = reader.readInt32();
           break;
         }
-        case 5: {
-          msg.type = reader.readString();
-          break;
-        }
-        case 6: {
-          msg.typeValue = reader.readString();
-          break;
-        }
         case 7: {
           msg.priority = reader.readInt32();
           break;
@@ -1047,6 +1038,10 @@ export const CreateCommandRequest = {
         }
         case 14: {
           msg.argumentPattern = reader.readString();
+          break;
+        }
+        case 15: {
+          msg.actionsJson = reader.readString();
           break;
         }
         default: {
@@ -1091,13 +1086,12 @@ export const UpdateCommandRequest = {
       command: "",
       enabled: false,
       cooldown: 0,
-      type: "",
-      typeValue: "",
       priority: 0,
       visibility: "",
       groupIds: [],
       usernames: [],
       argumentPattern: "",
+      actionsJson: "",
       ...msg,
     };
   },
@@ -1121,12 +1115,6 @@ export const UpdateCommandRequest = {
     if (msg.cooldown) {
       writer.writeInt32(4, msg.cooldown);
     }
-    if (msg.type) {
-      writer.writeString(5, msg.type);
-    }
-    if (msg.typeValue) {
-      writer.writeString(6, msg.typeValue);
-    }
     if (msg.priority) {
       writer.writeInt32(7, msg.priority);
     }
@@ -1141,6 +1129,9 @@ export const UpdateCommandRequest = {
     }
     if (msg.argumentPattern) {
       writer.writeString(11, msg.argumentPattern);
+    }
+    if (msg.actionsJson) {
+      writer.writeString(12, msg.actionsJson);
     }
     return writer;
   },
@@ -1171,14 +1162,6 @@ export const UpdateCommandRequest = {
           msg.cooldown = reader.readInt32();
           break;
         }
-        case 5: {
-          msg.type = reader.readString();
-          break;
-        }
-        case 6: {
-          msg.typeValue = reader.readString();
-          break;
-        }
         case 7: {
           msg.priority = reader.readInt32();
           break;
@@ -1197,6 +1180,10 @@ export const UpdateCommandRequest = {
         }
         case 11: {
           msg.argumentPattern = reader.readString();
+          break;
+        }
+        case 12: {
+          msg.actionsJson = reader.readString();
           break;
         }
         default: {
@@ -1306,8 +1293,6 @@ export const CommandJSON = {
       id: "",
       applicationId: "",
       command: "",
-      type: "",
-      typeValue: "",
       cooldown: 0,
       priority: 0,
       enabled: false,
@@ -1318,6 +1303,7 @@ export const CommandJSON = {
       groupIds: [],
       usernames: [],
       argumentPattern: "",
+      actionsJson: "",
       ...msg,
     };
   },
@@ -1335,12 +1321,6 @@ export const CommandJSON = {
     }
     if (msg.command) {
       json["command"] = msg.command;
-    }
-    if (msg.type) {
-      json["type"] = msg.type;
-    }
-    if (msg.typeValue) {
-      json["typeValue"] = msg.typeValue;
     }
     if (msg.cooldown) {
       json["cooldown"] = msg.cooldown;
@@ -1372,6 +1352,9 @@ export const CommandJSON = {
     if (msg.argumentPattern) {
       json["argumentPattern"] = msg.argumentPattern;
     }
+    if (msg.actionsJson) {
+      json["actionsJson"] = msg.actionsJson;
+    }
     return json;
   },
 
@@ -1390,14 +1373,6 @@ export const CommandJSON = {
     const _command_ = json["command"];
     if (_command_) {
       msg.command = _command_;
-    }
-    const _type_ = json["type"];
-    if (_type_) {
-      msg.type = _type_;
-    }
-    const _typeValue_ = json["typeValue"] ?? json["type_value"];
-    if (_typeValue_) {
-      msg.typeValue = _typeValue_;
     }
     const _cooldown_ = json["cooldown"];
     if (_cooldown_) {
@@ -1439,6 +1414,10 @@ export const CommandJSON = {
       json["argumentPattern"] ?? json["argument_pattern"];
     if (_argumentPattern_) {
       msg.argumentPattern = _argumentPattern_;
+    }
+    const _actionsJson_ = json["actionsJson"] ?? json["actions_json"];
+    if (_actionsJson_) {
+      msg.actionsJson = _actionsJson_;
     }
     return msg;
   },
@@ -1752,8 +1731,6 @@ export const CreateCommandRequestJSON = {
       command: "",
       enabled: false,
       cooldown: 0,
-      type: "",
-      typeValue: "",
       priority: 0,
       createdByType: "",
       createdByRef: "",
@@ -1761,6 +1738,7 @@ export const CreateCommandRequestJSON = {
       groupIds: [],
       usernames: [],
       argumentPattern: "",
+      actionsJson: "",
       ...msg,
     };
   },
@@ -1784,12 +1762,6 @@ export const CreateCommandRequestJSON = {
     if (msg.cooldown) {
       json["cooldown"] = msg.cooldown;
     }
-    if (msg.type) {
-      json["type"] = msg.type;
-    }
-    if (msg.typeValue) {
-      json["typeValue"] = msg.typeValue;
-    }
     if (msg.priority) {
       json["priority"] = msg.priority;
     }
@@ -1810,6 +1782,9 @@ export const CreateCommandRequestJSON = {
     }
     if (msg.argumentPattern) {
       json["argumentPattern"] = msg.argumentPattern;
+    }
+    if (msg.actionsJson) {
+      json["actionsJson"] = msg.actionsJson;
     }
     return json;
   },
@@ -1836,14 +1811,6 @@ export const CreateCommandRequestJSON = {
     const _cooldown_ = json["cooldown"];
     if (_cooldown_) {
       msg.cooldown = protoscript.parseNumber(_cooldown_);
-    }
-    const _type_ = json["type"];
-    if (_type_) {
-      msg.type = _type_;
-    }
-    const _typeValue_ = json["typeValue"] ?? json["type_value"];
-    if (_typeValue_) {
-      msg.typeValue = _typeValue_;
     }
     const _priority_ = json["priority"];
     if (_priority_) {
@@ -1873,6 +1840,10 @@ export const CreateCommandRequestJSON = {
       json["argumentPattern"] ?? json["argument_pattern"];
     if (_argumentPattern_) {
       msg.argumentPattern = _argumentPattern_;
+    }
+    const _actionsJson_ = json["actionsJson"] ?? json["actions_json"];
+    if (_actionsJson_) {
+      msg.actionsJson = _actionsJson_;
     }
     return msg;
   },
@@ -1907,13 +1878,12 @@ export const UpdateCommandRequestJSON = {
       command: "",
       enabled: false,
       cooldown: 0,
-      type: "",
-      typeValue: "",
       priority: 0,
       visibility: "",
       groupIds: [],
       usernames: [],
       argumentPattern: "",
+      actionsJson: "",
       ...msg,
     };
   },
@@ -1937,12 +1907,6 @@ export const UpdateCommandRequestJSON = {
     if (msg.cooldown) {
       json["cooldown"] = msg.cooldown;
     }
-    if (msg.type) {
-      json["type"] = msg.type;
-    }
-    if (msg.typeValue) {
-      json["typeValue"] = msg.typeValue;
-    }
     if (msg.priority) {
       json["priority"] = msg.priority;
     }
@@ -1957,6 +1921,9 @@ export const UpdateCommandRequestJSON = {
     }
     if (msg.argumentPattern) {
       json["argumentPattern"] = msg.argumentPattern;
+    }
+    if (msg.actionsJson) {
+      json["actionsJson"] = msg.actionsJson;
     }
     return json;
   },
@@ -1984,14 +1951,6 @@ export const UpdateCommandRequestJSON = {
     if (_cooldown_) {
       msg.cooldown = protoscript.parseNumber(_cooldown_);
     }
-    const _type_ = json["type"];
-    if (_type_) {
-      msg.type = _type_;
-    }
-    const _typeValue_ = json["typeValue"] ?? json["type_value"];
-    if (_typeValue_) {
-      msg.typeValue = _typeValue_;
-    }
     const _priority_ = json["priority"];
     if (_priority_) {
       msg.priority = protoscript.parseNumber(_priority_);
@@ -2012,6 +1971,10 @@ export const UpdateCommandRequestJSON = {
       json["argumentPattern"] ?? json["argument_pattern"];
     if (_argumentPattern_) {
       msg.argumentPattern = _argumentPattern_;
+    }
+    const _actionsJson_ = json["actionsJson"] ?? json["actions_json"];
+    if (_actionsJson_) {
+      msg.actionsJson = _actionsJson_;
     }
     return msg;
   },

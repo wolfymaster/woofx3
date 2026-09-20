@@ -1018,6 +1018,32 @@ pub mod module_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn update_resource_instance(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdateResourceInstanceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ResourceInstanceResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/UpdateResourceInstance",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("module.ModuleService", "UpdateResourceInstance"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn get_resource_instance(
             &mut self,
             request: impl tonic::IntoRequest<super::GetResourceInstanceRequest>,
@@ -1375,6 +1401,13 @@ pub mod module_service_server {
             request: tonic::Request<super::DeleteResourceInstanceRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        >;
+        async fn update_resource_instance(
+            &self,
+            request: tonic::Request<super::UpdateResourceInstanceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ResourceInstanceResponse>,
             tonic::Status,
         >;
         async fn get_resource_instance(
@@ -3283,6 +3316,55 @@ pub mod module_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = DeleteResourceInstanceSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/module.ModuleService/UpdateResourceInstance" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateResourceInstanceSvc<T: ModuleService>(pub Arc<T>);
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<super::UpdateResourceInstanceRequest>
+                    for UpdateResourceInstanceSvc<T> {
+                        type Response = super::ResourceInstanceResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::UpdateResourceInstanceRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::update_resource_instance(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = UpdateResourceInstanceSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -13,6 +13,7 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 - **[Engine integrity](/services/engine-integrity)** - Modules request, the engine acts: module code never drives the bus directly
 - **[CloudEvents](/services/cloudevents)** - Inter-service messaging format and the canonical NATS subject list
 - **[Widget event channel](/services/widget-events)** - The unified `widget.event` channel and `widgetHost` API contract
+- **[Widget storage](/services/widget-storage)** - Design: how an overlay widget reads and follows a module's stored values
 - **[Asset delivery](/services/asset-delivery)** - How module and user assets reach the browser: URL shape, the sceneManager relay, and barkloader's presigned redirects
 - **[Engine settings the UI configures](/services/engine-settings-ui)** - DB-backed settings (asset base URLs, etc.) surfaced through `getEngineInfo()` / `set*()` on `Woofx3EngineApi`
 - **[Chat commands & groups: the UI contract](/services/commands-ui)** - Endpoints and webhook callbacks for managing chat commands and the user groups that gate them

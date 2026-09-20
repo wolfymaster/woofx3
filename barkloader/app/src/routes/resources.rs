@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
 use crate::callback::{send_processing_failure_callback, send_processing_success_callback};
+use crate::services::storage_settings::get_setting;
 use crate::services::thumbnail::{self, ThumbnailOutcome};
 use crate::services::upload_token::{self, TokenError};
 use crate::types::{AppContext, SharedRepository};
@@ -47,6 +48,19 @@ const MAX_PROXIED_UPLOAD_BYTES: usize = 512 * 1024 * 1024;
 /// The only processing utility implemented today. Named rather than
 /// implied so adding a second one is an additive change.
 const UTILITY_THUMBNAIL: &str = "thumbnail";
+
+/// Where the browser is told to send the bytes: `relay` (default) or `direct`.
+///
+/// A presigned PUT straight at the bucket is only usable from a browser if
+/// that bucket carries a CORS policy allowing PUT from the dashboard's origin,
+/// which the operator has to add by hand — an unconfigured bucket refuses the
+/// preflight and the upload fails before a byte is sent, with nothing here able
+/// to see it happen. Relaying goes through an edge that already answers the
+/// preflight, so an upload works against any backend with no bucket
+/// configuration. `direct` opts back into spending the bucket's bandwidth
+/// rather than the engine's, for an operator who has configured CORS.
+const SETTING_UPLOAD_MODE: &str = "storage.uploadMode";
+const UPLOAD_MODE_DIRECT: &str = "direct";
 
 #[derive(Deserialize)]
 struct UploadUrlRequest {
@@ -100,6 +114,26 @@ struct ProcessAcceptedResponse {
     repository_key: String,
 }
 
+/// Whether grants should presign straight at the backend instead of relaying.
+/// Unreadable settings mean relay: it works everywhere, so it is the safe
+/// answer when the answer is unknown.
+async fn direct_upload_enabled(ctx: &AppContext) -> bool {
+    let Some(db_proxy_url) = ctx.db_proxy_url.as_deref() else {
+        return false;
+    };
+    match get_setting(db_proxy_url, SETTING_UPLOAD_MODE).await {
+        Ok(Some(value)) => value.trim().eq_ignore_ascii_case(UPLOAD_MODE_DIRECT),
+        Ok(None) => false,
+        Err(err) => {
+            warn!(
+                "Failed to read {}: {}; relaying this upload",
+                SETTING_UPLOAD_MODE, err
+            );
+            false
+        }
+    }
+}
+
 /// Issue an upload grant for one `user/` key.
 #[post("/assets/upload-url")]
 async fn upload_url_handler(ctx: Data<AppContext>, body: Json<UploadUrlRequest>) -> HttpResponse {
@@ -126,13 +160,17 @@ async fn upload_url_handler(ctx: Data<AppContext>, body: Json<UploadUrlRequest>)
     let expires_at = now.saturating_add(ttl.as_secs() as i64);
 
     let repository = ctx.repository.current();
-    let endpoint = repository
-        .presign_upload(UploadRequest {
-            key: &key,
-            content_type: request.content_type.as_deref(),
-            ttl,
-        })
-        .await;
+    let endpoint = if direct_upload_enabled(&ctx).await {
+        repository
+            .presign_upload(UploadRequest {
+                key: &key,
+                content_type: request.content_type.as_deref(),
+                ttl,
+            })
+            .await
+    } else {
+        Ok(UploadEndpoint::Unsupported)
+    };
 
     let (upload_url, headers) = match endpoint {
         Ok(UploadEndpoint::Presigned { url, headers }) => (
@@ -143,8 +181,9 @@ async fn upload_url_handler(ctx: Data<AppContext>, body: Json<UploadUrlRequest>)
                 .collect(),
         ),
         Ok(UploadEndpoint::Unsupported) => {
-            // Local disk: mint our own grant and point the caller at the
-            // PUT endpoint below. Same shape, same single request.
+            // Relaying, either by configuration or because the backend cannot
+            // presign at all (local disk): mint our own grant and point the
+            // caller at the PUT endpoint below. Same shape, same single request.
             let secret = upload_secret();
             let issued =
                 upload_token::issue(&secret, &key, request.content_type.as_deref(), ttl, now);
@@ -186,9 +225,9 @@ async fn upload_url_handler(ctx: Data<AppContext>, body: Json<UploadUrlRequest>)
     })
 }
 
-/// Accept the bytes for a token-guarded upload. Only reached on the
-/// file backend; the token names the key, so the request body is the
-/// only thing the client controls here.
+/// Accept the bytes for a token-guarded upload. Reached whenever the grant
+/// relays rather than presigns; the token names the key, so the request body
+/// is the only thing the client controls here.
 ///
 /// The body is read as a stream rather than through the `Bytes`
 /// extractor, whose default 256 KiB limit would refuse most media long

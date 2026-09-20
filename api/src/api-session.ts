@@ -58,8 +58,20 @@ export class ApiSession extends RpcTarget {
     });
   }
 
-  async createResourceInstance(moduleName: string, kind: string, instanceId: string, displayName: string) {
-    return this.api.createResourceInstance(moduleName, kind, instanceId, displayName, {
+  async createResourceInstance(
+    moduleName: string,
+    kind: string,
+    instanceId: string,
+    displayName: string,
+    settings: Record<string, unknown> = {}
+  ) {
+    return this.api.createResourceInstance(moduleName, kind, instanceId, displayName, settings, {
+      clientId: this.clientId,
+    });
+  }
+
+  async updateResourceInstance(canonicalId: string, displayName: string, settings: Record<string, unknown> = {}) {
+    return this.api.updateResourceInstance(canonicalId, displayName, settings, {
       clientId: this.clientId,
     });
   }
@@ -107,6 +119,8 @@ export const RPC_METHODS = [
   "updateModuleSetting",
   "getModuleManifest",
   "createResourceInstance",
+  "updateResourceInstance",
+  "getResourceValues",
   "deleteResourceInstance",
   "listAllResourceInstances",
   "listResourceInstancesForModule",
@@ -154,6 +168,7 @@ export const RPC_METHODS = [
   "triggerEvent",
   "handleInboundWebhook",
   "triggerWorkflowByName",
+  "runActions",
   "replayWorkflowRun",
   "getDashboardStats",
   "replayAlert",

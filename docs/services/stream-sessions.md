@@ -7,8 +7,7 @@
 `session.started` subscription in every process that publishes — so events now
 carry a session id end to end.
 
-**Not built:** "Clearing ephemeral storage" and "Reaching the UI" below are
-still design.
+**Not built:** "Reaching the UI" below is still design.
 :::
 
 A **stream session** identifies a broadcast and everything that happened during
@@ -218,6 +217,12 @@ the announcement can read state that is about to disappear. A failed clear is
 logged and swallowed — a boundary that could not clear is still a boundary, and
 refusing to announce it would strand every other consumer over a storage fault.
 
+Each key it clears is announced as `module.storage.<module>.changed` with a
+null value, exactly as a module's own write is. Without that, anything showing a
+session value — a counter on the dashboard, a widget on stream — would keep
+showing the last one after the value was gone. Readers treat a missing value as
+the instance's starting value.
+
 The name carries the whole point. Clearing when the broadcast stops would wipe
 exactly the state a brief reconnect is meant to preserve, which is why a session
 is not the same thing as a stream.
@@ -233,23 +238,19 @@ about how to treat a value, not a request for an effect, and failing a module's
 write mid-stream over a malformed hint trades a small mistake for a large one.
 
 Modules cannot clear their own storage and should not be able to: the sandbox
-exposes only `get` and `set`
-(`barkloader/lib_sandbox/src/host/mod.rs:15-18`). Clearing is the engine's job,
+exposes only `get`, `set` and `compareAndSet`, none of which deletes. Clearing is
+the engine's job,
 which is the [engine integrity](./engine-integrity.md) rule working as intended
 — a module declares that a key is session-scoped, and the engine acts on it.
 
-### Two defects in the same code path
+### Storage is per module
 
-Both are live today and both sit in the key format this work touches:
+The storage key is `<application_id>\x00<namespace>\x00<key>`, where the
+namespace is the owning module's manifest id, so two modules writing `"count"`
+hold two separate values. Every read and write must name its namespace; the
+sandbox supplies the calling module's, never one the module chooses.
 
-- No writer populates `namespace` or `expires_at`. `storage_set` in
-  `barkloader/lib_module/src/db_proxy.rs` now sends `clear_on_session_end`, but
-  the other two metadata fields stay permanently empty — which is why
-  `ClearNamespace` and `ClearExpired` would have nothing to match even if
-  something called them.
-- The storage key is `<application_id>\x00<key>`
-  (`db/app/services/storage_service.go:40-42`) with **no module segment**, so
-  two modules writing `"count"` collide.
+`expires_at` is still never populated, so `ClearExpired` has nothing to match.
 
 ## Reaching the UI
 

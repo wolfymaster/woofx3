@@ -4,6 +4,7 @@ import SlobsEvents from "./Slobs";
 import ChatEvents from "./Chat";
 import ChatCommandEvents from "./Chat/commands";
 import CommandEvents from "./Command";
+import ActionEvents from "./Action";
 import AlertEvents from "./Alert";
 import ObsEvents from "./Obs";
 import ModuleEvents from "./Module";
@@ -21,6 +22,10 @@ export default class EventFactory {
 
   Twitch() {
     return new TwitchEvents(this.source);
+  }
+
+  Action() {
+    return new ActionEvents(this.source);
   }
 
   TwitchApi() {

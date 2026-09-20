@@ -165,17 +165,23 @@ func (e *Engine[TServices]) SetRunRecorder(recorder RunRecorder) {
 }
 
 func (e *Engine[TServices]) recordRunStarted(execution *types.WorkflowExecution) {
+	if execution.Ephemeral {
+		return
+	}
 	if e.runRecorder == nil {
 		return
 	}
-	e.runRecorder.RunStarted(e.resolveApplicationID(execution.WorkflowID), execution)
+	e.runRecorder.RunStarted(e.resolveApplicationID(execution), execution)
 }
 
 func (e *Engine[TServices]) recordRunSettled(execution *types.WorkflowExecution) {
+	if execution.Ephemeral {
+		return
+	}
 	if e.runRecorder == nil {
 		return
 	}
-	e.runRecorder.RunSettled(e.resolveApplicationID(execution.WorkflowID), execution)
+	e.runRecorder.RunSettled(e.resolveApplicationID(execution), execution)
 }
 
 // recordStep reports a task that has reached a settled state.
@@ -194,7 +200,7 @@ func (e *Engine[TServices]) recordStep(
 	inputs map[string]any,
 	taskExec *types.TaskExecution,
 ) {
-	if e.runRecorder == nil || taskExec == nil {
+	if e.runRecorder == nil || taskExec == nil || execution.Ephemeral {
 		return
 	}
 
@@ -206,7 +212,7 @@ func (e *Engine[TServices]) recordStep(
 		}
 	}
 
-	e.runRecorder.StepSettled(e.resolveApplicationID(execution.WorkflowID), execution, RunStep{
+	e.runRecorder.StepSettled(e.resolveApplicationID(execution), execution, RunStep{
 		TaskID:      taskID,
 		Status:      string(taskExec.Status),
 		Attempt:     1,
@@ -426,13 +432,15 @@ func (e *Engine[TServices]) evaluateTrigger(wf *types.WorkflowDefinition, event 
 // beginExecution creates a run, registers it, and announces it.
 func (e *Engine[TServices]) beginExecution(wf *types.WorkflowDefinition, event *types.Event) *types.WorkflowExecution {
 	execution := &types.WorkflowExecution{
-		ID:           uuid.New().String(),
-		WorkflowID:   wf.ID,
-		Status:       types.ExecutionStatusRunning,
-		TriggerEvent: event,
-		StartedAt:    time.Now(),
-		Tasks:        make(map[string]*types.TaskExecution),
-		Variables:    make(map[string]any),
+		ID:            uuid.New().String(),
+		WorkflowID:    wf.ID,
+		ApplicationID: wf.ApplicationID,
+		Status:        types.ExecutionStatusRunning,
+		TriggerEvent:  event,
+		StartedAt:     time.Now(),
+		Tasks:         make(map[string]*types.TaskExecution),
+		Variables:     make(map[string]any),
+		Ephemeral:     wf.Ephemeral,
 	}
 
 	e.executionsMu.Lock()
@@ -1057,7 +1065,7 @@ func (e *Engine[TServices]) setExecutionStatus(
 // The run is the product; telling a dashboard about it is not worth failing a
 // workflow that otherwise did its job.
 func (e *Engine[TServices]) emitRunLifecycle(execution *types.WorkflowExecution) {
-	if e.publisher == nil {
+	if e.publisher == nil || execution.Ephemeral {
 		return
 	}
 
@@ -1083,7 +1091,7 @@ func (e *Engine[TServices]) emitRunLifecycle(execution *types.WorkflowExecution)
 		// definition and therefore the owning application, and a relay would
 		// otherwise have to guess it from a default-application lookup that is
 		// wrong the moment more than one application exists.
-		"applicationId": e.resolveApplicationID(execution.WorkflowID),
+		"applicationId": e.resolveApplicationID(execution),
 	}
 	if execution.Error != "" {
 		data["error"] = execution.Error
@@ -1129,11 +1137,14 @@ func (e *Engine[TServices]) buildResolver(triggerEvent *types.Event, taskExports
 	return resolver
 }
 
-// resolveApplicationID looks up the owning workflow's applicationId from the
-// registry. Mirrors the fallback used for action-handler attribution
-// (executeTask below) — a missing definition just yields "".
-func (e *Engine[TServices]) resolveApplicationID(workflowID string) string {
-	if def, err := e.workflowRegistry.Get(workflowID); err == nil && def != nil {
+// resolveApplicationID reports the application a run belongs to, preferring what
+// the run already carries and falling back to the registry for a run started
+// before executions carried it. A missing definition just yields "".
+func (e *Engine[TServices]) resolveApplicationID(execution *types.WorkflowExecution) string {
+	if execution.ApplicationID != "" {
+		return execution.ApplicationID
+	}
+	if def, err := e.workflowRegistry.Get(execution.WorkflowID); err == nil && def != nil {
 		return def.ApplicationID
 	}
 	return ""
@@ -1532,7 +1543,7 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 	// the published envelope). A missing definition is non-fatal — we
 	// just leave ApplicationID empty and let downstream consumers fall
 	// back to their own resolution.
-	applicationID := e.resolveApplicationID(execution.WorkflowID)
+	applicationID := e.resolveApplicationID(execution)
 
 	taskCtx := &tasks.TaskContext{
 		WorkflowID:    execution.WorkflowID,

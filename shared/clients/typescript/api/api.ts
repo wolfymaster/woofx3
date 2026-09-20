@@ -183,33 +183,68 @@ export interface TwitchAccessToken {
   userId: string;
 }
 
-// ==================== Commands ====================
+// ==================== Actions ====================
 
 /**
- * "text" responses are always template-resolved (`{user}`-style
- * substitution) before being sent to chat - there is no separate
- * "static"/"dynamic"/"eval" distinction, since plain literal text is just a
- * template with no `{...}` expressions in it. "function" invokes a
- * barkloader module function (`typeValue` is its qualified name) and uses
- * its return value as the response.
+ * One action to run: the same shape a workflow step has, because it is the
+ * same thing. `action` names the engine handler (`function`, `alert`,
+ * `print`, ...); `function` carries the canonical function id when the
+ * handler is `function`; `$ref` records which module action this came from,
+ * for the reference graph.
+ *
+ * Parameters may contain `${trigger.data...}` expressions, resolved against
+ * the event the actions run for.
  */
-export type CommandType = "text" | "function";
+export interface ActionStep {
+  /** Defaults to the step's position ("action-1", ...) when omitted. */
+  id?: string;
+  action: string;
+  function?: string;
+  parameters?: Record<string, unknown>;
+  $ref?: string;
+  /** Omit to run after the previous action; `[]` to run alongside it. */
+  dependsOn?: string[];
+}
+
+/**
+ * A request to run actions that belong to no workflow.
+ *
+ * The run is not recorded and reports no lifecycle: both are keyed by a
+ * workflow id, and there is no workflow here. `triggerId` is the caller's own
+ * correlation handle, echoed into the engine's logs.
+ */
+export interface RunActionsInput {
+  actions: ActionStep[];
+  /** Names the run in the engine's logs, e.g. `command:hug`. */
+  label?: string;
+  /** What the actions resolve `${trigger.data...}` against. */
+  event?: {
+    type?: string;
+    source?: string;
+    data?: Record<string, unknown>;
+  };
+  triggerId?: string;
+}
+
+// ==================== Commands ====================
 
 /** "public" always allows any user; "restricted" requires the invoking user
  * to belong to one of groupIds or be listed in usernames. */
 export type CommandVisibility = "public" | "restricted";
 
 /**
- * Snapshot of a chat command as the engine stores it. `typeValue` carries
- * the type-discriminated payload: response text (with `{template}`
- * variables) for `text`, function name for `function`.
+ * Snapshot of a chat command as the engine stores it.
+ *
+ * A command runs `actions`, in order. Replying in chat is an action like any
+ * other (`chat.reply`), which is what lets a command do anything a workflow
+ * step can. An empty list is a command that only announces itself on
+ * `chat.command.<slug>` for workflows to react to.
  */
 export interface CommandSnapshot {
   id: string;
   applicationId: string;
   command: string;
-  type: CommandType;
-  typeValue: string;
+  actions: ActionStep[];
   cooldown: number;
   priority: number;
   enabled: boolean;
@@ -219,10 +254,9 @@ export interface CommandSnapshot {
   /**
    * Optional "{variable}" placeholders declaring named arguments, e.g.
    * "{songTitle}" or "{userA} {userB}" - `command` itself never contains
-   * braces, it's always the bare trigger word ("sr", "hug"). Applies to
-   * both "text" and "function" types: "text" responses can reference
-   * `{songTitle}` the same way they reference `{user}`; "function"
-   * commands receive the extracted values in their invoke payload.
+   * braces, it's always the bare trigger word ("sr", "hug"). The extracted
+   * values reach the command's actions on the trigger event, as
+   * `${trigger.data.variables.songTitle}`.
    *
    * Extraction rule: exactly one variable captures the entire remainder of
    * the message (not split on whitespace) - `!sr {songTitle}` against
@@ -242,8 +276,7 @@ export interface CommandSnapshot {
 
 export interface CreateCommandInput {
   command: string;
-  type: CommandType;
-  typeValue: string;
+  actions: ActionStep[];
   cooldown: number;
   priority?: number;
   enabled: boolean;
@@ -281,9 +314,8 @@ export interface FieldOptionsDescriptor {
 
 /**
  * One function registered by an installed module. Aggregated across all
- * modules by `listAvailableFunctions`. `qualifiedName` is the form that
- * chat-command rows store as `typeValue` (matches barkloader's
- * `module/function` lookup path in ModuleRegistry).
+ * modules by `listAvailableFunctions`. `qualifiedName` is barkloader's
+ * `module/function` lookup path in ModuleRegistry.
  */
 export interface AvailableFunction {
   id: string;
@@ -309,8 +341,7 @@ export interface AvailableFunction {
  */
 export interface UpdateCommandInput {
   command: string;
-  type: CommandType;
-  typeValue: string;
+  actions: ActionStep[];
   cooldown: number;
   priority: number;
   enabled: boolean;
@@ -871,7 +902,30 @@ export interface Woofx3EngineApi {
     moduleName: string,
     kind: string,
     instanceId: string,
-    displayName: string
+    displayName: string,
+    /** Values for the kind's `schema` fields. Kept verbatim; the owning module reads them. */
+    settings?: Record<string, unknown>
+  ): Promise<ResourceInstanceDefinition>;
+
+  /**
+   * The current value of each resource instance, keyed by canonical id; `null`
+   * for an instance that holds nothing yet (or whose session value was cleared).
+   *
+   * An instance's value lives in its owning module's storage at
+   * `state:<canonicalId>` — the convention every resource kind follows (see
+   * docs/barkloader/modules.md), and the key a module updates.
+   */
+  getResourceValues(canonicalIds: string[]): Promise<Record<string, unknown>>;
+
+  /**
+   * Renames an instance or replaces the settings it runs with. Identity is
+   * fixed, so everything referencing it keeps working. Fires
+   * `MODULE_RESOURCE_INSTANCE_UPDATED` on success.
+   */
+  updateResourceInstance(
+    canonicalId: string,
+    displayName: string,
+    settings?: Record<string, unknown>
   ): Promise<ResourceInstanceDefinition>;
 
   /**
@@ -1097,6 +1151,16 @@ export interface Woofx3EngineApi {
   ): Promise<TriggerWorkflowResponse>;
 
   /**
+   * Run a list of actions now, without a workflow to hang them on.
+   *
+   * The actions run in the order given, through the same executor and action
+   * handlers a workflow uses, so anything a workflow step can do is available
+   * here. Returns once the request is on the bus: the run happens in the
+   * workflow engine, asynchronously, and is not recorded.
+   */
+  runActions(input: RunActionsInput): Promise<{ requested: true; triggerId: string }>;
+
+  /**
    * Run a recorded workflow run again, whole or from `fromTaskId`.
    *
    * Returns once the request is on the bus. The replay's progress -- or the
@@ -1216,7 +1280,8 @@ export interface Woofx3EngineApi {
     commands: Array<{
       id: string;
       name: string;
-      type: string;
+      /** How many actions it runs. The actions themselves are on listCommands. */
+      actions: number;
       cooldown: number;
       enabled: boolean;
     }>;

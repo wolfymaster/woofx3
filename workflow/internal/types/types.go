@@ -21,6 +21,10 @@ type WorkflowDefinition struct {
 	Trigger       *TriggerConfig   `json:"trigger" yaml:"trigger"`
 	Tasks         []TaskDefinition `json:"tasks" yaml:"tasks"`
 	Options       *WorkflowOptions `json:"options,omitempty" yaml:"options,omitempty"`
+	// Ephemeral marks a definition assembled for one run and never registered
+	// -- an action list run on request (Engine.RunActions). Not serialized:
+	// nothing persists such a definition, so nothing reads it back.
+	Ephemeral bool `json:"-" yaml:"-"`
 }
 
 type TriggerConfig struct {
@@ -215,15 +219,24 @@ const (
 )
 
 type WorkflowExecution struct {
-	ID           string
-	WorkflowID   string
-	Status       ExecutionStatus
-	TriggerEvent *Event
-	StartedAt    time.Time
-	CompletedAt  *time.Time
-	Tasks        map[string]*TaskExecution
-	Variables    map[string]any
-	Error        string
+	ID         string
+	WorkflowID string
+	// ApplicationID is carried on the run rather than looked up from the
+	// registry each time it is needed: an ad-hoc run (see Engine.RunActions)
+	// belongs to no registered workflow, and a registered one can be deleted
+	// while a run of it is still in flight.
+	ApplicationID string
+	Status        ExecutionStatus
+	TriggerEvent  *Event
+	StartedAt     time.Time
+	CompletedAt   *time.Time
+	Tasks         map[string]*TaskExecution
+	Variables     map[string]any
+	Error         string
+	// Ephemeral marks a run of a task list that has no workflow row behind it.
+	// Such a run is not recorded and announces no lifecycle: both are keyed by
+	// workflow id, and there is no workflow here to attribute them to.
+	Ephemeral bool
 }
 
 type TaskExecution struct {

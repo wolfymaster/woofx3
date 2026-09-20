@@ -29,9 +29,38 @@ pub struct StorageSetOptions {
     pub clear_on_session_end: bool,
 }
 
+/// What a compare-and-set did.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompareAndSetOutcome {
+    /// Whether the value was written.
+    pub swapped: bool,
+    /// What the key holds now: the value just written, or the one that stopped
+    /// the write -- which is what a caller retries from. `None` when empty.
+    pub current: Option<Value>,
+}
+
+/// Module storage. Every call names the namespace it reads or writes -- the
+/// owning module's manifest id -- so one module can never reach another's
+/// values, even under the same key.
 pub trait StorageClient: Send + Sync {
-    fn get(&self, key: &str) -> Result<Option<Value>, String>;
-    fn set(&self, key: &str, value: Value, options: StorageSetOptions) -> Result<(), String>;
+    fn get(&self, namespace: &str, key: &str) -> Result<Option<Value>, String>;
+    fn set(
+        &self,
+        namespace: &str,
+        key: &str,
+        value: Value,
+        options: StorageSetOptions,
+    ) -> Result<(), String>;
+    /// Write `value` only if the key holds `expected` now (or nothing, when
+    /// `expected` is `None`), in one transaction.
+    fn compare_and_set(
+        &self,
+        namespace: &str,
+        key: &str,
+        expected: Option<&Value>,
+        value: Value,
+        options: StorageSetOptions,
+    ) -> Result<CompareAndSetOutcome, String>;
 }
 
 pub trait EnvReader: Send + Sync {
@@ -57,6 +86,10 @@ pub struct ResourceInstance {
     pub kind: String,
     pub instance_id: String,
     pub display_name: String,
+    /// What the instance was created with: the values of its kind's `schema`
+    /// fields, as an object. The owning module is the only reader that knows
+    /// what they mean.
+    pub settings: Value,
 }
 
 /// Sandbox-side surface for the runtime-instance system. Concrete
@@ -85,8 +118,11 @@ pub trait ResourceClient: Send + Sync {
         kind: &str,
         instance_id: &str,
         display_name: &str,
+        settings: &Value,
     ) -> Result<ResourceInstance, String>;
     fn delete(&self, canonical_id: &str) -> Result<(), String>;
+    /// One instance by canonical id, or `None` when nothing has that id.
+    fn get(&self, canonical_id: &str) -> Result<Option<ResourceInstance>, String>;
     fn list_by_kind(&self, kind: &str) -> Result<Vec<ResourceInstance>, String>;
 }
 

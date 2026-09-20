@@ -6,7 +6,8 @@ use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use aws_config::{BehaviorVersion, Region, meta::region::RegionProviderChain};
 use aws_sdk_s3::{
-    Client, config::Credentials, presigning::PresigningConfig, primitives::ByteStream,
+    Client, config::Credentials, config::http::HttpResponse, error::SdkError,
+    operation::head_object::HeadObjectError, presigning::PresigningConfig, primitives::ByteStream,
 };
 use mime_guess::MimeGuess;
 use tracing::{info, warn};
@@ -110,6 +111,24 @@ impl S3Repository {
             _ => trimmed.to_string(),
         }
     }
+}
+
+/// Did `head_object` report the key as absent, rather than fail?
+///
+/// Decided on the typed error, falling back to the raw status for a backend
+/// whose error code the SDK does not map. Deliberately not on the message:
+/// `Display` is backend-specific, and R2 renders a 404 head_object as the bare
+/// text "service error", so matching on it reads a miss as a genuine fault --
+/// which made every first upload fail its "has this key been used" check.
+fn head_object_missed(err: &SdkError<HeadObjectError, HttpResponse>) -> bool {
+    if err
+        .as_service_error()
+        .is_some_and(HeadObjectError::is_not_found)
+    {
+        return true;
+    }
+    err.raw_response()
+        .is_some_and(|response| response.status().as_u16() == 404)
 }
 
 #[async_trait]
@@ -256,16 +275,8 @@ impl Repository for S3Repository {
             .await
         {
             Ok(_) => Ok(true),
-            Err(err) => {
-                // The SDK surfaces 404 as a NotFound service error.
-                // Anything else is a genuine failure.
-                let err_str = err.to_string();
-                if err_str.contains("NotFound") || err_str.contains("404") {
-                    Ok(false)
-                } else {
-                    Err(anyhow!("S3 head_object {} failed: {}", full_key, err))
-                }
-            }
+            Err(err) if head_object_missed(&err) => Ok(false),
+            Err(err) => Err(anyhow!("S3 head_object {} failed: {}", full_key, err)),
         }
     }
 

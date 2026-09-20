@@ -142,31 +142,35 @@ type CommandSource struct {
 	SourceCreatedByRef  string
 }
 
-// ExtractCommandEdges yields at most one edge per command: if the command's
-// type is a known resource kind and its type_value names a target, we record
-// a single reference to that target.
-func ExtractCommandEdges(
-	src CommandSource,
-	cmdType string,
-	typeValue string,
-) []models.ResourceReference {
-	if typeValue == "" {
+// ExtractCommandEdges records what a command's actions reference: the module
+// function a `function` step invokes, and the module action any step came from.
+//
+// Malformed JSON yields no edges rather than an error: the graph is a
+// convenience for the UI, and refusing to save a command because its reference
+// graph could not be built would be the wrong trade.
+func ExtractCommandEdges(src CommandSource, actionsJSON string) []models.ResourceReference {
+	if strings.TrimSpace(actionsJSON) == "" {
 		return nil
 	}
-	var targetType string
-	switch cmdType {
-	case "action":
-		targetType = TargetTypeAction
-	case "function":
-		targetType = TargetTypeFunction
-	case "workflow":
-		targetType = TargetTypeWorkflow
-	default:
+	var actions []struct {
+		Action   string `json:"action"`
+		Function string `json:"function"`
+		Ref      string `json:"$ref"`
+	}
+	if err := json.Unmarshal([]byte(actionsJSON), &actions); err != nil {
 		return nil
 	}
-	return []models.ResourceReference{
-		newEdgeFromCommand(src, targetType, typeValue, "type_value"),
+
+	var edges []models.ResourceReference
+	for _, action := range actions {
+		if action.Ref != "" {
+			edges = append(edges, newEdgeFromCommand(src, TargetTypeAction, action.Ref, "actions"))
+		}
+		if action.Action == "function" && action.Function != "" {
+			edges = append(edges, newEdgeFromCommand(src, TargetTypeFunction, action.Function, "actions"))
+		}
 	}
+	return edges
 }
 
 func newEdge(src WorkflowSource, targetType, targetName, context string) models.ResourceReference {

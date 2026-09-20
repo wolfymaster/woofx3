@@ -50,5 +50,7 @@ func All() []*gormigrate.Migration {
 		CreateStreamSessionsTables(),
 		CreateWorkflowRunHistory(),
 		AddTriggerSentence(),
+		CommandActions(),
+		ResourceInstanceSettings(),
 	}
 }

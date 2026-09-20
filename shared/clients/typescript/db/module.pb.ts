@@ -733,6 +733,20 @@ export async function DeleteResourceInstance(
   return common.ResponseStatus.decode(response);
 }
 
+export async function UpdateResourceInstance(
+  updateResourceInstanceRequest: module_resource_instance.UpdateResourceInstanceRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource_instance.ResourceInstanceResponse> {
+  const response = await PBrequest(
+    "/module.ModuleService/UpdateResourceInstance",
+    module_resource_instance.UpdateResourceInstanceRequest.encode(
+      updateResourceInstanceRequest,
+    ),
+    config,
+  );
+  return module_resource_instance.ResourceInstanceResponse.decode(response);
+}
+
 export async function GetResourceInstance(
   getResourceInstanceRequest: module_resource_instance.GetResourceInstanceRequest,
   config?: ClientConfiguration,
@@ -1279,6 +1293,20 @@ export async function DeleteResourceInstanceJSON(
   return common.ResponseStatusJSON.decode(response);
 }
 
+export async function UpdateResourceInstanceJSON(
+  updateResourceInstanceRequest: module_resource_instance.UpdateResourceInstanceRequest,
+  config?: ClientConfiguration,
+): Promise<module_resource_instance.ResourceInstanceResponse> {
+  const response = await JSONrequest(
+    "/module.ModuleService/UpdateResourceInstance",
+    module_resource_instance.UpdateResourceInstanceRequestJSON.encode(
+      updateResourceInstanceRequest,
+    ),
+    config,
+  );
+  return module_resource_instance.ResourceInstanceResponseJSON.decode(response);
+}
+
 export async function GetResourceInstanceJSON(
   getResourceInstanceRequest: module_resource_instance.GetResourceInstanceRequest,
   config?: ClientConfiguration,
@@ -1530,6 +1558,12 @@ export interface ModuleService<Context = unknown> {
     deleteResourceInstanceRequest: module_resource_instance.DeleteResourceInstanceRequest,
     context: Context,
   ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  UpdateResourceInstance: (
+    updateResourceInstanceRequest: module_resource_instance.UpdateResourceInstanceRequest,
+    context: Context,
+  ) =>
+    | Promise<module_resource_instance.ResourceInstanceResponse>
+    | module_resource_instance.ResourceInstanceResponse;
   GetResourceInstance: (
     getResourceInstanceRequest: module_resource_instance.GetResourceInstanceRequest,
     context: Context,
@@ -1972,6 +2006,18 @@ export function createModuleService<Context>(service: ModuleService<Context>) {
         output: {
           protobuf: common.ResponseStatus,
           json: common.ResponseStatusJSON,
+        },
+      },
+      UpdateResourceInstance: {
+        name: "UpdateResourceInstance",
+        handler: service.UpdateResourceInstance,
+        input: {
+          protobuf: module_resource_instance.UpdateResourceInstanceRequest,
+          json: module_resource_instance.UpdateResourceInstanceRequestJSON,
+        },
+        output: {
+          protobuf: module_resource_instance.ResourceInstanceResponse,
+          json: module_resource_instance.ResourceInstanceResponseJSON,
         },
       },
       GetResourceInstance: {

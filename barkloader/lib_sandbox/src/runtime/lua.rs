@@ -129,8 +129,9 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
     let storage = lua.create_table()?;
     {
         let store = invocation.host.storage.clone();
+        let namespace = invocation.module_id.clone();
         let get_fn = lua.create_function(move |lua, key: String| -> mlua::Result<LuaValue> {
-            match store.get(&key) {
+            match store.get(&namespace, &key) {
                 Ok(Some(v)) => lua.to_value(&v),
                 Ok(None) => Ok(LuaValue::Nil),
                 Err(e) => Err(mlua::Error::RuntimeError(e)),
@@ -160,6 +161,38 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
             },
         )?;
         storage.set("set", set_fn)?;
+
+        let host = invocation.host.clone();
+        let module_id = invocation.module_id.clone();
+        let compare_and_set_fn = lua.create_function(
+            move |lua,
+                  (key, expected, value, options): (
+                String,
+                LuaValue,
+                LuaValue,
+                Option<LuaValue>,
+            )| {
+                let json_expected: Value = serde_json::to_value(&expected)
+                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                let json_val: Value = serde_json::to_value(&value)
+                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                let json_options: Option<Value> = options
+                    .map(|o| serde_json::to_value(&o))
+                    .transpose()
+                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                let outcome = super::host_bindings::storage_compare_and_set(
+                    &host,
+                    &module_id,
+                    &key,
+                    Some(json_expected),
+                    json_val,
+                    super::host_bindings::parse_storage_set_options(json_options.as_ref()),
+                )
+                .map_err(mlua::Error::RuntimeError)?;
+                lua.to_value(&outcome)
+            },
+        )?;
+        storage.set("compareAndSet", compare_and_set_fn)?;
     }
     ctx.set("storage", storage)?;
 
@@ -201,14 +234,25 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
         let host = invocation.host.clone();
         let module_name = invocation.module_id.clone();
         let create_fn = lua.create_function(
-            move |lua, (kind, instance_id, display_name): (String, String, Option<String>)| {
+            move |lua,
+                  (kind, instance_id, display_name, settings): (
+                String,
+                String,
+                Option<String>,
+                Option<LuaValue>,
+            )| {
                 let display = display_name.unwrap_or_default();
+                let json_settings: Option<Value> = settings
+                    .map(|s| serde_json::to_value(&s))
+                    .transpose()
+                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
                 match super::host_bindings::resources_create(
                     &host,
                     &module_name,
                     &kind,
                     &instance_id,
                     &display,
+                    json_settings,
                 ) {
                     Ok(v) => lua.to_value(&v),
                     Err(e) => Err(mlua::Error::RuntimeError(e)),
@@ -225,6 +269,15 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
             Ok(())
         })?;
         resources.set("delete", delete_fn)?;
+
+        let host = invocation.host.clone();
+        let get_fn = lua.create_function(move |lua, canonical_id: String| {
+            match super::host_bindings::resources_get(&host, &canonical_id) {
+                Ok(v) => lua.to_value(&v),
+                Err(e) => Err(mlua::Error::RuntimeError(e)),
+            }
+        })?;
+        resources.set("get", get_fn)?;
 
         let host = invocation.host.clone();
         let list_fn =

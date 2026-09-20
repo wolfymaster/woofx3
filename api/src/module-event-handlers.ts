@@ -14,6 +14,7 @@ import type {
   ModuleInstallFailedEvent,
   ModuleResourceInstanceCreatedEvent,
   ModuleResourceInstanceDeletedEvent,
+  ModuleResourceInstanceUpdatedEvent,
   ModuleResourceUsage,
   ModuleTriggerDeregisteredEvent,
   ModuleTriggerRegisteredEvent,
@@ -512,6 +513,7 @@ interface RawResourceInstance {
   canonical_id?: unknown;
   module_prefix?: unknown;
   module_key?: unknown;
+  settings_json?: unknown;
 }
 
 function mapResourceInstance(raw: RawResourceInstance): ResourceInstanceDefinition {
@@ -524,7 +526,25 @@ function mapResourceInstance(raw: RawResourceInstance): ResourceInstanceDefiniti
     displayName: asString(raw.display_name),
     canonicalId: asString(raw.canonical_id),
     moduleKey: asString(raw.module_key),
+    settings: parseInstanceSettings(raw.settings_json),
   };
+}
+
+/**
+ * An instance's settings arrive as JSON text (the engine stores them opaque).
+ * Anything that is not an object reads as no settings, the same answer a kind
+ * that declares no fields gives.
+ */
+export function parseInstanceSettings(raw: unknown): Record<string, unknown> {
+  if (typeof raw !== "string" || raw.trim() === "") {
+    return {};
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }
 
 export function parseModuleResourceInstanceCreated(ce: Record<string, unknown>): {
@@ -536,6 +556,20 @@ export function parseModuleResourceInstanceCreated(ce: Record<string, unknown>):
     clientId: asString(ce.client_id),
     event: {
       type: EngineEventType.MODULE_RESOURCE_INSTANCE_CREATED,
+      instance: mapResourceInstance(payload),
+    },
+  };
+}
+
+export function parseModuleResourceInstanceUpdated(ce: Record<string, unknown>): {
+  clientId: string;
+  event: ModuleResourceInstanceUpdatedEvent;
+} {
+  const payload = readPayload(ce) as RawResourceInstance;
+  return {
+    clientId: asString(ce.client_id),
+    event: {
+      type: EngineEventType.MODULE_RESOURCE_INSTANCE_UPDATED,
       instance: mapResourceInstance(payload),
     },
   };
@@ -791,6 +825,14 @@ export async function initModuleHandlers(
       name: "db.module.resource.instance.created",
       parse: (ce) => {
         const { clientId, event } = parseModuleResourceInstanceCreated(ce);
+        return event ? { event, clientId } : null;
+      },
+    },
+    {
+      subject: "db.module.resource.instance.updated.*",
+      name: "db.module.resource.instance.updated",
+      parse: (ce) => {
+        const { clientId, event } = parseModuleResourceInstanceUpdated(ce);
         return event ? { event, clientId } : null;
       },
     },

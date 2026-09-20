@@ -59,6 +59,33 @@ Logs the parameters for debugging.
 
 Returns all parameters as-is.
 
+#### `chat.reply`
+
+Sends one message to chat, by publishing `message.send` — the same event the
+sandbox's chat extension publishes, consumed by woofwoofwoof, which holds the
+chat client.
+
+```json
+{
+  "id": "say-thanks",
+  "type": "action",
+  "action": "chat.reply",
+  "parameters": {
+    "message": "thanks for the ${trigger.data.amount} bits, ${trigger.data.userName}!"
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | `string` | Yes | Must be `"chat.reply"`. Set at the task top level. |
+| `parameters.message` | `string` | Yes | What to say. Supports expressions. |
+| `parameters.platform` | `string` | No | Where to say it. Defaults to `"twitch"`. |
+
+Native rather than a module function, so replying in chat needs no module
+installed. This is what a chat command's reply is made of — see
+[Chat commands](../services/commands-ui.md).
+
 #### `function`
 
 Invokes a function registered in the Barkloader module system.

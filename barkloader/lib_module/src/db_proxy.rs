@@ -2,6 +2,7 @@ use anyhow::{Result, anyhow};
 
 use super::manifest_validate::InstallProvenance;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
@@ -516,9 +517,7 @@ pub struct CreateCommandJson {
     pub command: String,
     pub enabled: bool,
     pub cooldown: i32,
-    #[serde(rename = "type")]
-    pub command_type: String,
-    pub type_value: String,
+    pub actions_json: String,
     pub priority: i32,
     pub created_by_type: String,
     pub created_by_ref: String,
@@ -601,8 +600,7 @@ pub async fn create_command(
     db_proxy_url: &str,
     application_id: &str,
     command: &str,
-    command_type: &str,
-    type_value: &str,
+    actions_json: &str,
     module_name: &str,
 ) -> Result<()> {
     let url = format!(
@@ -614,8 +612,7 @@ pub async fn create_command(
         command: command.to_string(),
         enabled: true,
         cooldown: 0,
-        command_type: command_type.to_string(),
-        type_value: type_value.to_string(),
+        actions_json: actions_json.to_string(),
         priority: 0,
         created_by_type: "MODULE".to_string(),
         created_by_ref: module_name.to_string(),
@@ -1626,6 +1623,9 @@ pub struct ResourceInstanceJson {
     pub instance_id: String,
     pub display_name: String,
     pub canonical_id: String,
+    /// The instance's settings as a JSON object string; "{}" when none.
+    #[serde(default)]
+    pub settings_json: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1655,6 +1655,7 @@ pub async fn create_resource_instance(
     kind: &str,
     instance_id: &str,
     display_name: &str,
+    settings_json: &str,
     request_context: Option<&RequestContext>,
 ) -> Result<ResourceInstanceJson> {
     let url = format!(
@@ -1667,6 +1668,7 @@ pub async fn create_resource_instance(
         "kind": kind,
         "instance_id": instance_id,
         "display_name": display_name,
+        "settings_json": settings_json,
         "request_context": request_context,
     });
     let response = HTTP_CLIENT
@@ -1730,6 +1732,41 @@ pub async fn delete_resource_instance(
         ));
     }
     Ok(())
+}
+
+/// Twirp JSON for `module.ModuleService/GetResourceInstance`. `None` when no
+/// instance has the id, which is an answer rather than a failure: a workflow
+/// can name an instance that was deleted after it was configured.
+pub async fn get_resource_instance(
+    db_proxy_url: &str,
+    canonical_id: &str,
+) -> Result<Option<ResourceInstanceJson>> {
+    let url = format!(
+        "{}/twirp/module.ModuleService/GetResourceInstance",
+        db_proxy_url
+    );
+    let body = serde_json::json!({ "canonical_id": canonical_id });
+    let response = HTTP_CLIENT
+        .clone()
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("GetResourceInstance request failed: {}", e))?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("GetResourceInstance failed {}: {}", status, text));
+    }
+    let parsed: ResourceInstanceResponseJson = response
+        .json()
+        .await
+        .map_err(|e| anyhow!("parse GetResourceInstance response: {}", e))?;
+    Ok(parsed.instance)
 }
 
 /// Twirp JSON for `module.ModuleService/ListResourceInstancesByKind`.
@@ -1806,13 +1843,14 @@ pub async fn list_resource_instances_by_module(
 }
 
 // -----------------------------------------------------------------------
-// Module storage (`ctx.storage.get`/`ctx.storage.set`).
+// Module storage (`ctx.storage.*`).
 //
-// Backs the CtxStorage sandbox host surface — a module-scoped persistent
-// KV store, one badger row per (application_id, key). `value` here is
-// always the JSON-encoded form of whatever the module stored; encoding/
-// decoding to/from serde_json::Value happens in the HttpStorageClient
-// bridge, not here.
+// Backs the CtxStorage sandbox host surface: a persistent KV store addressed
+// by (application_id, namespace, key), where the namespace is the owning
+// module's manifest id, so two modules using one key never share a value.
+// `value` here is always the JSON-encoded form of whatever the module stored;
+// encoding/decoding to/from serde_json::Value happens in the
+// HttpStorageClient bridge, not here.
 // -----------------------------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1829,14 +1867,15 @@ struct GetStorageResponseJson {
     item: Option<StorageItemJson>,
 }
 
-/// Twirp JSON for `storage.StorageService/Get`.
-pub async fn storage_get(
-    db_proxy_url: &str,
-    key: &str,
-    application_id: &str,
-) -> Result<Option<StorageItemJson>> {
-    let url = format!("{}/twirp/storage.StorageService/Get", db_proxy_url);
-    let body = serde_json::json!({ "key": key, "application_id": application_id });
+/// Where a stored value lives, and how it is kept.
+pub struct StorageAddress<'a> {
+    pub application_id: &'a str,
+    pub namespace: &'a str,
+    pub key: &'a str,
+}
+
+async fn post_storage(db_proxy_url: &str, method: &str, body: Value) -> Result<reqwest::Response> {
+    let url = format!("{}/twirp/storage.StorageService/{}", db_proxy_url, method);
     let response = HTTP_CLIENT
         .clone()
         .post(&url)
@@ -1844,15 +1883,28 @@ pub async fn storage_get(
         .json(&body)
         .send()
         .await
-        .map_err(|e| anyhow!("Storage Get request failed: {}", e))?;
+        .map_err(|e| anyhow!("Storage {} request failed: {}", method, e))?;
 
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        return Err(anyhow!("Storage Get failed {}: {}", status, text));
+        return Err(anyhow!("Storage {} failed {}: {}", method, status, text));
     }
+    Ok(response)
+}
 
-    let parsed: GetStorageResponseJson = response
+/// Twirp JSON for `storage.StorageService/Get`.
+pub async fn storage_get(
+    db_proxy_url: &str,
+    address: &StorageAddress<'_>,
+) -> Result<Option<StorageItemJson>> {
+    let body = serde_json::json!({
+        "key": address.key,
+        "namespace": address.namespace,
+        "application_id": address.application_id,
+    });
+    let parsed: GetStorageResponseJson = post_storage(db_proxy_url, "Get", body)
+        .await?
         .json()
         .await
         .map_err(|e| anyhow!("parse Storage Get response: {}", e))?;
@@ -1862,35 +1914,58 @@ pub async fn storage_get(
 /// Twirp JSON for `storage.StorageService/Set`.
 pub async fn storage_set(
     db_proxy_url: &str,
-    key: &str,
+    address: &StorageAddress<'_>,
     value: &str,
-    application_id: &str,
     clear_on_session_end: bool,
 ) -> Result<()> {
-    let url = format!("{}/twirp/storage.StorageService/Set", db_proxy_url);
     let body = serde_json::json!({
         "item": {
-            "key": key,
+            "key": address.key,
+            "namespace": address.namespace,
             "value": value,
-            "application_id": application_id,
+            "application_id": address.application_id,
             "clear_on_session_end": clear_on_session_end,
         }
     });
-    let response = HTTP_CLIENT
-        .clone()
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| anyhow!("Storage Set request failed: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(anyhow!("Storage Set failed {}: {}", status, text));
-    }
+    post_storage(db_proxy_url, "Set", body).await?;
     Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompareAndSetResponseJson {
+    #[serde(default)]
+    pub swapped: bool,
+    #[serde(default)]
+    pub current: Option<StorageItemJson>,
+}
+
+/// Twirp JSON for `storage.StorageService/CompareAndSet`. `expected` is the
+/// JSON-encoded value the key must hold for the write to happen, or `None` to
+/// write only when the key holds nothing.
+pub async fn storage_compare_and_set(
+    db_proxy_url: &str,
+    address: &StorageAddress<'_>,
+    expected: Option<&str>,
+    value: &str,
+    clear_on_session_end: bool,
+) -> Result<CompareAndSetResponseJson> {
+    let body = serde_json::json!({
+        "item": {
+            "key": address.key,
+            "namespace": address.namespace,
+            "value": value,
+            "application_id": address.application_id,
+            "clear_on_session_end": clear_on_session_end,
+        },
+        "expected_value": expected.unwrap_or_default(),
+        "expect_absent": expected.is_none(),
+    });
+    post_storage(db_proxy_url, "CompareAndSet", body)
+        .await?
+        .json()
+        .await
+        .map_err(|e| anyhow!("parse Storage CompareAndSet response: {}", e))
 }
 
 pub async fn register_background_tasks(

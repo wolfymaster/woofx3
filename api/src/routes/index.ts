@@ -4,6 +4,7 @@ import { subscriptionsRoutes } from "./subscriptions";
 import { streamEventsRoutes } from "./stream-events";
 import { triggerSubscriptionRoutes } from "./trigger-subscription";
 import { workflowsExecutionRoutes } from "./workflows-execution";
+import { actionsRoutes } from "./actions";
 import { commandsRoutes } from "./commands";
 import { groupsRoutes } from "./groups";
 import { fieldOptionsRoutes } from "./field-options";
@@ -27,6 +28,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof triggerSubscriptionRoutes &
   typeof streamEventsRoutes &
   typeof workflowsExecutionRoutes &
+  typeof actionsRoutes &
   typeof commandsRoutes &
   typeof groupsRoutes &
   typeof fieldOptionsRoutes &
@@ -80,6 +82,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(workflowsExecutionRoutes),
     instrumentRoutes(commandsRoutes),
     instrumentRoutes(groupsRoutes),
+    instrumentRoutes(actionsRoutes),
     instrumentRoutes(fieldOptionsRoutes),
     instrumentRoutes(userActionsRoutes),
     instrumentRoutes(eventsRoutes),

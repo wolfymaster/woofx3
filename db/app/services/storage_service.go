@@ -13,12 +13,11 @@ import (
 )
 
 // StorageService backs `ctx.storage` for sandboxed module functions (see
-// barkloader's CtxStorage / storage.proto). Keys are scoped per
-// application (badger key = "<application_id>\x00<key>") so one barkloader
-// process serving multiple applications never lets one tenant see
-// another's values. `namespace` is caller-supplied metadata used only by
-// ClearNamespace's bulk delete — it is not part of the lookup key, since
-// Get/Delete requests don't carry it.
+// barkloader's CtxStorage / storage.proto). A value is addressed by
+// application, namespace and key (badger key =
+// "<application_id>\x00<namespace>\x00<key>"): the application keeps tenants
+// apart, and the namespace -- the owning module's manifest id -- keeps modules
+// apart, so two modules using the same key never read each other's values.
 type storageService struct {
 	db *badger.DB
 }
@@ -37,8 +36,66 @@ type storedItem struct {
 	ClearOnSessionEnd bool   `json:"clearOnSessionEnd"`
 }
 
-func storageKey(applicationID, key string) []byte {
-	return []byte(applicationID + "\x00" + key)
+func storageKey(applicationID, namespace, key string) []byte {
+	return []byte(applicationID + "\x00" + namespace + "\x00" + key)
+}
+
+// splitStorageKey recovers the namespace and key from a badger key, for the
+// bulk operations that report what they touched.
+func splitStorageKey(raw []byte) (namespace, key string) {
+	parts := strings.SplitN(string(raw), "\x00", 3)
+	if len(parts) != 3 {
+		return "", string(raw)
+	}
+	return parts[1], parts[2]
+}
+
+// requireAddress refuses a read or write that does not say whose value it is.
+func requireAddress(applicationID, namespace, key, prefix string) error {
+	if strings.TrimSpace(key) == "" {
+		return twirp.RequiredArgumentError(prefix + "key")
+	}
+	if strings.TrimSpace(applicationID) == "" {
+		return twirp.RequiredArgumentError(prefix + "application_id")
+	}
+	if strings.TrimSpace(namespace) == "" {
+		return twirp.RequiredArgumentError(prefix + "namespace")
+	}
+	return nil
+}
+
+// readItem returns the live item at a badger key, or nil when there is none or
+// it has expired.
+func readItem(txn *badger.Txn, key []byte) (*storedItem, error) {
+	entry, err := txn.Get(key)
+	if err == badger.ErrKeyNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var decoded storedItem
+	if err := entry.Value(func(val []byte) error {
+		return json.Unmarshal(val, &decoded)
+	}); err != nil {
+		return nil, err
+	}
+	if isExpired(decoded.ExpiresAt) {
+		return nil, nil
+	}
+	return &decoded, nil
+}
+
+func toStorageItem(applicationID, namespace, key string, item *storedItem) *client.StorageItem {
+	return &client.StorageItem{
+		Key:               key,
+		Value:             item.Value,
+		CreatedAt:         item.CreatedAt,
+		ExpiresAt:         item.ExpiresAt,
+		Namespace:         namespace,
+		ApplicationId:     applicationID,
+		ClearOnSessionEnd: item.ClearOnSessionEnd,
+	}
 }
 
 // isExpired reports whether a stored item is past its expiry. expiresAt == 0
@@ -48,77 +105,40 @@ func isExpired(expiresAt int64) bool {
 }
 
 func (s *storageService) Get(ctx context.Context, req *client.GetRequest) (*client.GetResponse, error) {
-	if strings.TrimSpace(req.Key) == "" {
-		return nil, twirp.RequiredArgumentError("key")
-	}
-	if strings.TrimSpace(req.ApplicationId) == "" {
-		return nil, twirp.RequiredArgumentError("application_id")
+	if err := requireAddress(req.ApplicationId, req.Namespace, req.Key, ""); err != nil {
+		return nil, err
 	}
 
 	var item *storedItem
 	err := s.db.View(func(txn *badger.Txn) error {
-		entry, err := txn.Get(storageKey(req.ApplicationId, req.Key))
-		if err == badger.ErrKeyNotFound {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return entry.Value(func(val []byte) error {
-			var decoded storedItem
-			if err := json.Unmarshal(val, &decoded); err != nil {
-				return err
-			}
-			item = &decoded
-			return nil
-		})
+		var err error
+		item, err = readItem(txn, storageKey(req.ApplicationId, req.Namespace, req.Key))
+		return err
 	})
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("get storage item: %w", err))
 	}
-	if item == nil || isExpired(item.ExpiresAt) {
+	if item == nil {
 		return &client.GetResponse{}, nil
 	}
-
-	return &client.GetResponse{
-		Item: &client.StorageItem{
-			Key:               req.Key,
-			Value:             item.Value,
-			CreatedAt:         item.CreatedAt,
-			ExpiresAt:         item.ExpiresAt,
-			Namespace:         item.Namespace,
-			ApplicationId:     req.ApplicationId,
-			ClearOnSessionEnd: item.ClearOnSessionEnd,
-		},
-	}, nil
+	return &client.GetResponse{Item: toStorageItem(req.ApplicationId, req.Namespace, req.Key, item)}, nil
 }
 
 func (s *storageService) Set(ctx context.Context, req *client.SetRequest) (*client.SetResponse, error) {
 	if req.Item == nil {
 		return nil, twirp.RequiredArgumentError("item")
 	}
-	if strings.TrimSpace(req.Item.Key) == "" {
-		return nil, twirp.RequiredArgumentError("item.key")
-	}
-	if strings.TrimSpace(req.Item.ApplicationId) == "" {
-		return nil, twirp.RequiredArgumentError("item.application_id")
+	if err := requireAddress(req.Item.ApplicationId, req.Item.Namespace, req.Item.Key, "item."); err != nil {
+		return nil, err
 	}
 
-	// created_at is server-authoritative — callers (the sandbox `ctx.storage`
-	// binding) have no way to set it meaningfully today.
-	encoded, err := json.Marshal(storedItem{
-		Value:             req.Item.Value,
-		CreatedAt:         time.Now().Unix(),
-		ExpiresAt:         req.Item.ExpiresAt,
-		Namespace:         req.Item.Namespace,
-		ClearOnSessionEnd: req.Item.ClearOnSessionEnd,
-	})
+	encoded, err := encodeItem(req.Item)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("encode storage item: %w", err))
 	}
 
 	err = s.db.Update(func(txn *badger.Txn) error {
-		return txn.Set(storageKey(req.Item.ApplicationId, req.Item.Key), encoded)
+		return txn.Set(storageKey(req.Item.ApplicationId, req.Item.Namespace, req.Item.Key), encoded)
 	})
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("set storage item: %w", err))
@@ -126,16 +146,89 @@ func (s *storageService) Set(ctx context.Context, req *client.SetRequest) (*clie
 	return &client.SetResponse{}, nil
 }
 
-func (s *storageService) Delete(ctx context.Context, req *client.DeleteRequest) (*client.DeleteResponse, error) {
-	if strings.TrimSpace(req.Key) == "" {
-		return nil, twirp.RequiredArgumentError("key")
+// encodeItem is the envelope persisted for a write. created_at is
+// server-authoritative: callers (the sandbox `ctx.storage` binding) have no way
+// to set it meaningfully.
+func encodeItem(item *client.StorageItem) ([]byte, error) {
+	return json.Marshal(storedItem{
+		Value:             item.Value,
+		CreatedAt:         time.Now().Unix(),
+		ExpiresAt:         item.ExpiresAt,
+		Namespace:         item.Namespace,
+		ClearOnSessionEnd: item.ClearOnSessionEnd,
+	})
+}
+
+// CompareAndSet writes only if the key holds what the caller expects, in one
+// transaction.
+//
+// Badger detects a concurrent write to the same key at commit and refuses the
+// later transaction; that refusal is reported as a failed swap with the value
+// now stored, which is exactly what the caller retries from.
+func (s *storageService) CompareAndSet(ctx context.Context, req *client.CompareAndSetRequest) (*client.CompareAndSetResponse, error) {
+	if req.Item == nil {
+		return nil, twirp.RequiredArgumentError("item")
 	}
-	if strings.TrimSpace(req.ApplicationId) == "" {
-		return nil, twirp.RequiredArgumentError("application_id")
+	if err := requireAddress(req.Item.ApplicationId, req.Item.Namespace, req.Item.Key, "item."); err != nil {
+		return nil, err
+	}
+	key := storageKey(req.Item.ApplicationId, req.Item.Namespace, req.Item.Key)
+
+	encoded, err := encodeItem(req.Item)
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("encode storage item: %w", err))
+	}
+
+	var current *storedItem
+	swapped := false
+	err = s.db.Update(func(txn *badger.Txn) error {
+		existing, err := readItem(txn, key)
+		if err != nil {
+			return err
+		}
+		matches := existing == nil && req.ExpectAbsent ||
+			existing != nil && !req.ExpectAbsent && existing.Value == req.ExpectedValue
+		if !matches {
+			current = existing
+			return nil
+		}
+		if err := txn.Set(key, encoded); err != nil {
+			return err
+		}
+		var written storedItem
+		if err := json.Unmarshal(encoded, &written); err != nil {
+			return err
+		}
+		current = &written
+		swapped = true
+		return nil
+	})
+	if err == badger.ErrConflict {
+		swapped = false
+		err = s.db.View(func(txn *badger.Txn) error {
+			var readErr error
+			current, readErr = readItem(txn, key)
+			return readErr
+		})
+	}
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("compare and set storage item: %w", err))
+	}
+
+	response := &client.CompareAndSetResponse{Swapped: swapped}
+	if current != nil {
+		response.Current = toStorageItem(req.Item.ApplicationId, req.Item.Namespace, req.Item.Key, current)
+	}
+	return response, nil
+}
+
+func (s *storageService) Delete(ctx context.Context, req *client.DeleteRequest) (*client.DeleteResponse, error) {
+	if err := requireAddress(req.ApplicationId, req.Namespace, req.Key, ""); err != nil {
+		return nil, err
 	}
 
 	err := s.db.Update(func(txn *badger.Txn) error {
-		err := txn.Delete(storageKey(req.ApplicationId, req.Key))
+		err := txn.Delete(storageKey(req.ApplicationId, req.Namespace, req.Key))
 		if err == badger.ErrKeyNotFound {
 			return nil
 		}
@@ -148,12 +241,12 @@ func (s *storageService) Delete(ctx context.Context, req *client.DeleteRequest) 
 }
 
 // deleteWhere scans every key under the application's prefix, deletes the ones
-// `shouldDelete` accepts, and reports how many went. Shared by ClearNamespace /
-// ClearExpired / ClearAllForApplication / ClearSessionScoped — none of these
-// are hot-path operations, so a full per-application scan (rather than a
-// secondary index) keeps this simple.
-func (s *storageService) deleteWhere(applicationID string, shouldDelete func(item storedItem) bool) (int, error) {
-	deleted := 0
+// `shouldDelete` accepts, and reports each one it removed as (namespace, key).
+// Shared by ClearNamespace / ClearExpired / ClearAllForApplication /
+// ClearSessionScoped — none of these are hot-path operations, so a full
+// per-application scan (rather than a secondary index) keeps this simple.
+func (s *storageService) deleteWhere(applicationID string, shouldDelete func(item storedItem) bool) ([]*client.StorageItem, error) {
+	var deleted []*client.StorageItem
 	err := s.db.Update(func(txn *badger.Txn) error {
 		prefix := []byte(applicationID + "\x00")
 		opts := badger.DefaultIteratorOptions
@@ -181,12 +274,17 @@ func (s *storageService) deleteWhere(applicationID string, shouldDelete func(ite
 			if err := txn.Delete(key); err != nil {
 				return err
 			}
+			namespace, itemKey := splitStorageKey(key)
+			deleted = append(deleted, &client.StorageItem{
+				Key:           itemKey,
+				Namespace:     namespace,
+				ApplicationId: applicationID,
+			})
 		}
-		deleted = len(keysToDelete)
 		return nil
 	})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	return deleted, nil
 }
@@ -246,5 +344,5 @@ func (s *storageService) ClearSessionScoped(ctx context.Context, req *client.Cle
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("clear session scoped: %w", err))
 	}
-	return &client.ClearSessionScopedResponse{Cleared: int32(cleared)}, nil
+	return &client.ClearSessionScopedResponse{Cleared: int32(len(cleared)), ClearedItems: cleared}, nil
 }

@@ -50,6 +50,13 @@ export interface ModuleResourceInstance {
    * owning module by.
    */
   moduleKey: string;
+  /**
+   * What the instance was created with: the values of its kind's `schema`
+   * fields, as a JSON object (e.g. {"lifetime":"session","initialValue":0}).
+   * Stored and returned verbatim -- the engine never interprets it, the owning
+   * module does (`ctx.resources.get`). "{}" when the kind declares no fields.
+   */
+  settingsJson: string;
 }
 
 export interface CreateResourceInstanceRequest {
@@ -80,11 +87,32 @@ export interface CreateResourceInstanceRequest {
    * Required when connection_kind is set.
    */
   connectionConfig: string;
+  /**
+   * See ModuleResourceInstance.settings_json. Must be a JSON object when set.
+   */
+  settingsJson: string;
 }
 
 export interface ResourceInstanceResponse {
   status: common.ResponseStatus;
   instance: ModuleResourceInstance;
+}
+
+/**
+ * Change what an instance is called, or the settings it runs with. Identity --
+ * module, kind and instance id -- never changes: those are what everything
+ * referencing the instance holds.
+ *
+ * Full replace: both fields are what the instance should have, not a patch.
+ */
+export interface UpdateResourceInstanceRequest {
+  canonicalId: string;
+  displayName: string;
+  /**
+   * See ModuleResourceInstance.settings_json. Must be a JSON object when set.
+   */
+  settingsJson: string;
+  requestContext: common.RequestContext;
 }
 
 export interface DeleteResourceInstanceRequest {
@@ -195,6 +223,7 @@ export const ModuleResourceInstance = {
       createdAt: protoscript.Timestamp.initialize(),
       updatedAt: protoscript.Timestamp.initialize(),
       moduleKey: "",
+      settingsJson: "",
       ...msg,
     };
   },
@@ -243,6 +272,9 @@ export const ModuleResourceInstance = {
     }
     if (msg.moduleKey) {
       writer.writeString(10, msg.moduleKey);
+    }
+    if (msg.settingsJson) {
+      writer.writeString(11, msg.settingsJson);
     }
     return writer;
   },
@@ -297,6 +329,10 @@ export const ModuleResourceInstance = {
           msg.moduleKey = reader.readString();
           break;
         }
+        case 11: {
+          msg.settingsJson = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -345,6 +381,7 @@ export const CreateResourceInstanceRequest = {
       moduleName: "",
       connectionKind: "",
       connectionConfig: "",
+      settingsJson: "",
       ...msg,
     };
   },
@@ -383,6 +420,9 @@ export const CreateResourceInstanceRequest = {
     }
     if (msg.connectionConfig) {
       writer.writeString(8, msg.connectionConfig);
+    }
+    if (msg.settingsJson) {
+      writer.writeString(9, msg.settingsJson);
     }
     return writer;
   },
@@ -430,6 +470,10 @@ export const CreateResourceInstanceRequest = {
         }
         case 8: {
           msg.connectionConfig = reader.readString();
+          break;
+        }
+        case 9: {
+          msg.settingsJson = reader.readString();
           break;
         }
         default: {
@@ -512,6 +556,109 @@ export const ResourceInstanceResponse = {
         }
         case 2: {
           reader.readMessage(msg.instance, ModuleResourceInstance._readMessage);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const UpdateResourceInstanceRequest = {
+  /**
+   * Serializes UpdateResourceInstanceRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<UpdateResourceInstanceRequest>,
+  ): Uint8Array {
+    return UpdateResourceInstanceRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes UpdateResourceInstanceRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): UpdateResourceInstanceRequest {
+    return UpdateResourceInstanceRequest._readMessage(
+      UpdateResourceInstanceRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes UpdateResourceInstanceRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<UpdateResourceInstanceRequest>,
+  ): UpdateResourceInstanceRequest {
+    return {
+      canonicalId: "",
+      displayName: "",
+      settingsJson: "",
+      requestContext: common.RequestContext.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<UpdateResourceInstanceRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.canonicalId) {
+      writer.writeString(1, msg.canonicalId);
+    }
+    if (msg.displayName) {
+      writer.writeString(2, msg.displayName);
+    }
+    if (msg.settingsJson) {
+      writer.writeString(3, msg.settingsJson);
+    }
+    if (msg.requestContext) {
+      writer.writeMessage(
+        4,
+        msg.requestContext,
+        common.RequestContext._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: UpdateResourceInstanceRequest,
+    reader: protoscript.BinaryReader,
+  ): UpdateResourceInstanceRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.canonicalId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.displayName = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.settingsJson = reader.readString();
+          break;
+        }
+        case 4: {
+          reader.readMessage(
+            msg.requestContext,
+            common.RequestContext._readMessage,
+          );
           break;
         }
         default: {
@@ -1456,6 +1603,7 @@ export const ModuleResourceInstanceJSON = {
       createdAt: protoscript.TimestampJSON.initialize(),
       updatedAt: protoscript.TimestampJSON.initialize(),
       moduleKey: "",
+      settingsJson: "",
       ...msg,
     };
   },
@@ -1496,6 +1644,9 @@ export const ModuleResourceInstanceJSON = {
     }
     if (msg.moduleKey) {
       json["moduleKey"] = msg.moduleKey;
+    }
+    if (msg.settingsJson) {
+      json["settingsJson"] = msg.settingsJson;
     }
     return json;
   },
@@ -1547,6 +1698,10 @@ export const ModuleResourceInstanceJSON = {
     if (_moduleKey_) {
       msg.moduleKey = _moduleKey_;
     }
+    const _settingsJson_ = json["settingsJson"] ?? json["settings_json"];
+    if (_settingsJson_) {
+      msg.settingsJson = _settingsJson_;
+    }
     return msg;
   },
 };
@@ -1584,6 +1739,7 @@ export const CreateResourceInstanceRequestJSON = {
       moduleName: "",
       connectionKind: "",
       connectionConfig: "",
+      settingsJson: "",
       ...msg,
     };
   },
@@ -1623,6 +1779,9 @@ export const CreateResourceInstanceRequestJSON = {
     }
     if (msg.connectionConfig) {
       json["connectionConfig"] = msg.connectionConfig;
+    }
+    if (msg.settingsJson) {
+      json["settingsJson"] = msg.settingsJson;
     }
     return json;
   },
@@ -1669,6 +1828,10 @@ export const CreateResourceInstanceRequestJSON = {
       json["connectionConfig"] ?? json["connection_config"];
     if (_connectionConfig_) {
       msg.connectionConfig = _connectionConfig_;
+    }
+    const _settingsJson_ = json["settingsJson"] ?? json["settings_json"];
+    if (_settingsJson_) {
+      msg.settingsJson = _settingsJson_;
     }
     return msg;
   },
@@ -1741,6 +1904,96 @@ export const ResourceInstanceResponseJSON = {
     const _instance_ = json["instance"];
     if (_instance_) {
       ModuleResourceInstanceJSON._readMessage(msg.instance, _instance_);
+    }
+    return msg;
+  },
+};
+
+export const UpdateResourceInstanceRequestJSON = {
+  /**
+   * Serializes UpdateResourceInstanceRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<UpdateResourceInstanceRequest>): string {
+    return JSON.stringify(UpdateResourceInstanceRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes UpdateResourceInstanceRequest from JSON.
+   */
+  decode: function (json: string): UpdateResourceInstanceRequest {
+    return UpdateResourceInstanceRequestJSON._readMessage(
+      UpdateResourceInstanceRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes UpdateResourceInstanceRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<UpdateResourceInstanceRequest>,
+  ): UpdateResourceInstanceRequest {
+    return {
+      canonicalId: "",
+      displayName: "",
+      settingsJson: "",
+      requestContext: common.RequestContextJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<UpdateResourceInstanceRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.canonicalId) {
+      json["canonicalId"] = msg.canonicalId;
+    }
+    if (msg.displayName) {
+      json["displayName"] = msg.displayName;
+    }
+    if (msg.settingsJson) {
+      json["settingsJson"] = msg.settingsJson;
+    }
+    if (msg.requestContext) {
+      const _requestContext_ = common.RequestContextJSON._writeMessage(
+        msg.requestContext,
+      );
+      if (Object.keys(_requestContext_).length > 0) {
+        json["requestContext"] = _requestContext_;
+      }
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: UpdateResourceInstanceRequest,
+    json: any,
+  ): UpdateResourceInstanceRequest {
+    const _canonicalId_ = json["canonicalId"] ?? json["canonical_id"];
+    if (_canonicalId_) {
+      msg.canonicalId = _canonicalId_;
+    }
+    const _displayName_ = json["displayName"] ?? json["display_name"];
+    if (_displayName_) {
+      msg.displayName = _displayName_;
+    }
+    const _settingsJson_ = json["settingsJson"] ?? json["settings_json"];
+    if (_settingsJson_) {
+      msg.settingsJson = _settingsJson_;
+    }
+    const _requestContext_ = json["requestContext"] ?? json["request_context"];
+    if (_requestContext_) {
+      common.RequestContextJSON._readMessage(
+        msg.requestContext,
+        _requestContext_,
+      );
     }
     return msg;
   },
