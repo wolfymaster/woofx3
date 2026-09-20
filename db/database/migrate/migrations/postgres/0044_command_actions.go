@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/go-gormigrate/gormigrate/v2"
@@ -19,17 +20,39 @@ func CommandActions() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "0044_command_actions",
 		Migrate: func(tx *gorm.DB) error {
-			log.Println("Converting commands to action lists...")
+			// Migrations do not run in a transaction (gormigrate.DefaultOptions),
+			// so a run that died after the drops leaves the rewrite done but
+			// unrecorded, and the next run replays this from the top. Decide off
+			// the columns actually present rather than assuming a fresh schema.
+			hasLegacy, err := columnExists(tx, "public", "commands", "type")
+			if err != nil {
+				return err
+			}
+			hasActions, err := columnExists(tx, "public", "commands", "actions")
+			if err != nil {
+				return err
+			}
+			if !hasLegacy && !hasActions {
+				return fmt.Errorf(
+					"public.commands has neither type nor actions: nothing left to say what its commands used to do",
+				)
+			}
+
 			if err := tx.Exec(`ALTER TABLE public.commands
 				ADD COLUMN IF NOT EXISTS actions JSONB NOT NULL DEFAULT '[]'::jsonb`).Error; err != nil {
 				return err
 			}
 
-			converted, err := commandactions.Convert(tx, "public.commands")
-			if err != nil {
-				return err
+			if hasLegacy {
+				log.Println("Converting commands to action lists...")
+				converted, err := commandactions.Convert(tx, "public.commands")
+				if err != nil {
+					return err
+				}
+				log.Printf("Converted %d command row(s) to action lists", converted)
+			} else {
+				log.Println("Commands already carry action lists; skipping the rewrite")
 			}
-			log.Printf("Converted %d command row(s) to action lists", converted)
 
 			for _, statement := range []string{
 				`ALTER TABLE public.commands DROP COLUMN IF EXISTS type`,
