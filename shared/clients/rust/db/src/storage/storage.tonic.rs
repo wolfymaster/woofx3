@@ -132,6 +132,30 @@ pub mod storage_service_client {
                 .insert(GrpcMethod::new("storage.StorageService", "Set"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn compare_and_set(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CompareAndSetRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CompareAndSetResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/storage.StorageService/CompareAndSet",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("storage.StorageService", "CompareAndSet"));
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteRequest>,
@@ -274,6 +298,13 @@ pub mod storage_service_server {
             &self,
             request: tonic::Request<super::SetRequest>,
         ) -> std::result::Result<tonic::Response<super::SetResponse>, tonic::Status>;
+        async fn compare_and_set(
+            &self,
+            request: tonic::Request<super::CompareAndSetRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CompareAndSetResponse>,
+            tonic::Status,
+        >;
         async fn delete(
             &self,
             request: tonic::Request<super::DeleteRequest>,
@@ -456,6 +487,52 @@ pub mod storage_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = SetSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/storage.StorageService/CompareAndSet" => {
+                    #[allow(non_camel_case_types)]
+                    struct CompareAndSetSvc<T: StorageService>(pub Arc<T>);
+                    impl<
+                        T: StorageService,
+                    > tonic::server::UnaryService<super::CompareAndSetRequest>
+                    for CompareAndSetSvc<T> {
+                        type Response = super::CompareAndSetResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CompareAndSetRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as StorageService>::compare_and_set(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CompareAndSetSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

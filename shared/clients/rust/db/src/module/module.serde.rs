@@ -3306,6 +3306,9 @@ impl serde::Serialize for CreateResourceInstanceRequest {
         if !self.connection_config.is_empty() {
             len += 1;
         }
+        if !self.settings_json.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.CreateResourceInstanceRequest", len)?;
         if !self.module_id.is_empty() {
             struct_ser.serialize_field("moduleId", &self.module_id)?;
@@ -3330,6 +3333,9 @@ impl serde::Serialize for CreateResourceInstanceRequest {
         }
         if !self.connection_config.is_empty() {
             struct_ser.serialize_field("connectionConfig", &self.connection_config)?;
+        }
+        if !self.settings_json.is_empty() {
+            struct_ser.serialize_field("settingsJson", &self.settings_json)?;
         }
         struct_ser.end()
     }
@@ -3356,6 +3362,8 @@ impl<'de> serde::Deserialize<'de> for CreateResourceInstanceRequest {
             "connectionKind",
             "connection_config",
             "connectionConfig",
+            "settings_json",
+            "settingsJson",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -3368,6 +3376,7 @@ impl<'de> serde::Deserialize<'de> for CreateResourceInstanceRequest {
             ModuleName,
             ConnectionKind,
             ConnectionConfig,
+            SettingsJson,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -3397,6 +3406,7 @@ impl<'de> serde::Deserialize<'de> for CreateResourceInstanceRequest {
                             "moduleName" | "module_name" => Ok(GeneratedField::ModuleName),
                             "connectionKind" | "connection_kind" => Ok(GeneratedField::ConnectionKind),
                             "connectionConfig" | "connection_config" => Ok(GeneratedField::ConnectionConfig),
+                            "settingsJson" | "settings_json" => Ok(GeneratedField::SettingsJson),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -3424,6 +3434,7 @@ impl<'de> serde::Deserialize<'de> for CreateResourceInstanceRequest {
                 let mut module_name__ = None;
                 let mut connection_kind__ = None;
                 let mut connection_config__ = None;
+                let mut settings_json__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::ModuleId => {
@@ -3474,6 +3485,12 @@ impl<'de> serde::Deserialize<'de> for CreateResourceInstanceRequest {
                             }
                             connection_config__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::SettingsJson => {
+                            if settings_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("settingsJson"));
+                            }
+                            settings_json__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(CreateResourceInstanceRequest {
@@ -3485,6 +3502,7 @@ impl<'de> serde::Deserialize<'de> for CreateResourceInstanceRequest {
                     module_name: module_name__.unwrap_or_default(),
                     connection_kind: connection_kind__.unwrap_or_default(),
                     connection_config: connection_config__.unwrap_or_default(),
+                    settings_json: settings_json__.unwrap_or_default(),
                 })
             }
         }
@@ -7377,6 +7395,9 @@ impl serde::Serialize for ModuleResourceInstance {
         if !self.module_key.is_empty() {
             len += 1;
         }
+        if !self.settings_json.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.ModuleResourceInstance", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -7408,6 +7429,9 @@ impl serde::Serialize for ModuleResourceInstance {
         if !self.module_key.is_empty() {
             struct_ser.serialize_field("moduleKey", &self.module_key)?;
         }
+        if !self.settings_json.is_empty() {
+            struct_ser.serialize_field("settingsJson", &self.settings_json)?;
+        }
         struct_ser.end()
     }
 }
@@ -7436,6 +7460,8 @@ impl<'de> serde::Deserialize<'de> for ModuleResourceInstance {
             "updatedAt",
             "module_key",
             "moduleKey",
+            "settings_json",
+            "settingsJson",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -7450,6 +7476,7 @@ impl<'de> serde::Deserialize<'de> for ModuleResourceInstance {
             CreatedAt,
             UpdatedAt,
             ModuleKey,
+            SettingsJson,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -7481,6 +7508,7 @@ impl<'de> serde::Deserialize<'de> for ModuleResourceInstance {
                             "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
                             "updatedAt" | "updated_at" => Ok(GeneratedField::UpdatedAt),
                             "moduleKey" | "module_key" => Ok(GeneratedField::ModuleKey),
+                            "settingsJson" | "settings_json" => Ok(GeneratedField::SettingsJson),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -7510,6 +7538,7 @@ impl<'de> serde::Deserialize<'de> for ModuleResourceInstance {
                 let mut created_at__ = None;
                 let mut updated_at__ = None;
                 let mut module_key__ = None;
+                let mut settings_json__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -7572,6 +7601,12 @@ impl<'de> serde::Deserialize<'de> for ModuleResourceInstance {
                             }
                             module_key__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::SettingsJson => {
+                            if settings_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("settingsJson"));
+                            }
+                            settings_json__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(ModuleResourceInstance {
@@ -7585,6 +7620,7 @@ impl<'de> serde::Deserialize<'de> for ModuleResourceInstance {
                     created_at: created_at__,
                     updated_at: updated_at__,
                     module_key: module_key__.unwrap_or_default(),
+                    settings_json: settings_json__.unwrap_or_default(),
                 })
             }
         }
@@ -10281,6 +10317,152 @@ impl<'de> serde::Deserialize<'de> for UpdateModuleResourceVersionRequest {
             }
         }
         deserializer.deserialize_struct("module.UpdateModuleResourceVersionRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for UpdateResourceInstanceRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.canonical_id.is_empty() {
+            len += 1;
+        }
+        if !self.display_name.is_empty() {
+            len += 1;
+        }
+        if !self.settings_json.is_empty() {
+            len += 1;
+        }
+        if self.request_context.is_some() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("module.UpdateResourceInstanceRequest", len)?;
+        if !self.canonical_id.is_empty() {
+            struct_ser.serialize_field("canonicalId", &self.canonical_id)?;
+        }
+        if !self.display_name.is_empty() {
+            struct_ser.serialize_field("displayName", &self.display_name)?;
+        }
+        if !self.settings_json.is_empty() {
+            struct_ser.serialize_field("settingsJson", &self.settings_json)?;
+        }
+        if let Some(v) = self.request_context.as_ref() {
+            struct_ser.serialize_field("requestContext", v)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for UpdateResourceInstanceRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "canonical_id",
+            "canonicalId",
+            "display_name",
+            "displayName",
+            "settings_json",
+            "settingsJson",
+            "request_context",
+            "requestContext",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            CanonicalId,
+            DisplayName,
+            SettingsJson,
+            RequestContext,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "canonicalId" | "canonical_id" => Ok(GeneratedField::CanonicalId),
+                            "displayName" | "display_name" => Ok(GeneratedField::DisplayName),
+                            "settingsJson" | "settings_json" => Ok(GeneratedField::SettingsJson),
+                            "requestContext" | "request_context" => Ok(GeneratedField::RequestContext),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = UpdateResourceInstanceRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct module.UpdateResourceInstanceRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<UpdateResourceInstanceRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut canonical_id__ = None;
+                let mut display_name__ = None;
+                let mut settings_json__ = None;
+                let mut request_context__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::CanonicalId => {
+                            if canonical_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("canonicalId"));
+                            }
+                            canonical_id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::DisplayName => {
+                            if display_name__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("displayName"));
+                            }
+                            display_name__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::SettingsJson => {
+                            if settings_json__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("settingsJson"));
+                            }
+                            settings_json__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::RequestContext => {
+                            if request_context__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("requestContext"));
+                            }
+                            request_context__ = map_.next_value()?;
+                        }
+                    }
+                }
+                Ok(UpdateResourceInstanceRequest {
+                    canonical_id: canonical_id__.unwrap_or_default(),
+                    display_name: display_name__.unwrap_or_default(),
+                    settings_json: settings_json__.unwrap_or_default(),
+                    request_context: request_context__,
+                })
+            }
+        }
+        deserializer.deserialize_struct("module.UpdateResourceInstanceRequest", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for UsageRef {

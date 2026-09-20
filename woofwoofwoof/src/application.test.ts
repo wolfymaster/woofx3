@@ -232,66 +232,15 @@ describe("WoofWoofWoof application", () => {
     expect(payload.args).toEqual({ title: "Allowed" });
   });
 
-  test("database-defined function commands delegate execution to Barkloader", async () => {
-    const remoteCmd = {
+  test("a command's actions are dispatched to the engine, carrying the command event", async () => {
+    const songCmd = {
       id: "c1",
       applicationId: "app-1",
-      command: "remote",
-      type: "function",
-      typeValue: "",
-      cooldown: 0,
-      priority: 0,
-      enabled: true,
-      createdBy: "",
-      createdAt: {} as never,
-      createdByType: "",
-      createdByRef: "",
-    } as unknown as Command;
-
-    const app = new WoofWoofWoof();
-    const base = buildTestContext({
-      listCommands: async () => ({
-        status: { code: "OK", message: "" },
-        commands: [remoteCmd],
-      }),
-    });
-    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
-    await app.init(ctx);
-    await app.run(ctx);
-
-    const handler = getChatHandler(base);
-
-    await handler({
-      json: () => ({
-        data: { message: "!remote hello world", chatterName: "user1" },
-      }),
-    });
-
-    expect(base.barkInvoke).toHaveBeenCalled();
-    const [func, event] = base.barkInvoke.mock.calls[0];
-    expect(func).toBe("remote");
-    // Same ChatCommandEventData-shaped payload regardless of whether the
-    // command declares an argumentPattern — variables is just empty here.
-    expect(event).toEqual({
-      data: {
-        command: "remote",
-        rawMessage: "!remote hello world",
-        text: "hello world",
-        args: ["hello", "world"],
-        variables: {},
-        chatter: "user1",
-        platform: "twitch",
-      },
-    });
-  });
-
-  test("function commands with a declared argumentPattern populate ctx.event.data.variables", async () => {
-    const customSongCmd = {
-      id: "c2",
-      applicationId: "app-1",
       command: "customsong",
-      type: "function",
-      typeValue: "song_request",
+      actionsJson: JSON.stringify([
+        { id: "action-1", action: "function", function: "song_request" },
+        { id: "action-2", action: "chat.reply", parameters: { message: "queued ${trigger.data.variables.songTitle}" } },
+      ]),
       cooldown: 0,
       priority: 0,
       enabled: true,
@@ -304,10 +253,7 @@ describe("WoofWoofWoof application", () => {
 
     const app = new WoofWoofWoof();
     const base = buildTestContext({
-      listCommands: async () => ({
-        status: { code: "OK", message: "" },
-        commands: [customSongCmd],
-      }),
+      listCommands: async () => ({ status: { code: "OK", message: "" }, commands: [songCmd] }),
     });
     const ctx = { ...app.context, ...base } as InitCtx & typeof base;
     await app.init(ctx);
@@ -315,34 +261,79 @@ describe("WoofWoofWoof application", () => {
 
     const handler = getChatHandler(base);
     await handler({
-      json: () => ({
-        data: { message: "!customsong Life is a highway", chatterName: "user1" },
-      }),
+      json: () => ({ data: { message: "!customsong Life is a highway", chatterName: "user1" } }),
     });
 
-    expect(base.barkInvoke).toHaveBeenCalled();
-    const [func, event] = base.barkInvoke.mock.calls[0];
-    expect(func).toBe("song_request");
-    expect(event).toEqual({
+    const dispatch = base.publishLog.find((p) => p.topic === "action.execute");
+    expect(dispatch).toBeDefined();
+    if (!dispatch) {
+      throw new Error("expected an action.execute publish");
+    }
+    const payload = JSON.parse(new TextDecoder().decode(dispatch.data)) as {
       data: {
-        command: "customsong",
-        rawMessage: "!customsong Life is a highway",
-        text: "Life is a highway",
-        args: ["Life", "is", "a", "highway"],
-        variables: { songTitle: "Life is a highway" },
-        chatter: "user1",
-        platform: "twitch",
-      },
+        label: string;
+        applicationId: string;
+        actions: { action: string; function?: string }[];
+        event: { type: string; data: Record<string, unknown> };
+      };
+    };
+    expect(payload.data.label).toBe("command:customsong");
+    expect(payload.data.applicationId).toBe("app-1");
+    expect(payload.data.actions.map((a) => a.action)).toEqual(["function", "chat.reply"]);
+    expect(payload.data.actions[0]?.function).toBe("song_request");
+    // The actions resolve against the same payload a workflow triggered by
+    // this command sees, argument_pattern captures included.
+    expect(payload.data.event.type).toBe("chat.command.customsong");
+    expect(payload.data.event.data).toEqual({
+      command: "customsong",
+      rawMessage: "!customsong Life is a highway",
+      text: "Life is a highway",
+      args: ["Life", "is", "a", "highway"],
+      variables: { songTitle: "Life is a highway" },
+      chatter: "user1",
+      platform: "twitch",
     });
+    // Nothing is said from here: a reply is the chat.reply action's job.
+    expect(base.chatSay).not.toHaveBeenCalled();
   });
 
-  test("sends exactly the message from a ctx.response()-shaped success result", async () => {
-    const remoteCmd = {
+  test("a command with no actions announces itself and runs nothing", async () => {
+    const triggerOnly = {
+      id: "c2",
+      applicationId: "app-1",
+      command: "raid",
+      actionsJson: "[]",
+      cooldown: 0,
+      priority: 0,
+      enabled: true,
+      createdBy: "",
+      createdAt: {} as never,
+      createdByType: "",
+      createdByRef: "",
+    } as unknown as Command;
+
+    const app = new WoofWoofWoof();
+    const base = buildTestContext({
+      listCommands: async () => ({ status: { code: "OK", message: "" }, commands: [triggerOnly] }),
+    });
+    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
+    await app.init(ctx);
+    await app.run(ctx);
+
+    const handler = getChatHandler(base);
+    await handler({ json: () => ({ data: { message: "!raid", chatterName: "user1" } }) });
+
+    expect(base.publishLog.find((p) => p.topic === "action.execute")).toBeUndefined();
+    expect(base.publishLog.find((p) => p.topic === "chat.command.raid")).toBeDefined();
+    expect(base.chatSay).not.toHaveBeenCalled();
+  });
+
+  test("a command whose actions are unreadable runs nothing rather than breaking the command", async () => {
+    const brokenCmd = {
       id: "c3",
       applicationId: "app-1",
-      command: "remote",
-      type: "function",
-      typeValue: "",
+      command: "broken",
+      actionsJson: "{not json",
       cooldown: 0,
       priority: 0,
       enabled: true,
@@ -354,95 +345,17 @@ describe("WoofWoofWoof application", () => {
 
     const app = new WoofWoofWoof();
     const base = buildTestContext({
-      listCommands: async () => ({ status: { code: "OK", message: "" }, commands: [remoteCmd] }),
+      listCommands: async () => ({ status: { code: "OK", message: "" }, commands: [brokenCmd] }),
     });
-    base.barkInvoke.mockImplementationOnce(async () => ({
-      proto: "woofx3.response",
-      v: 1,
-      success: true,
-      message: "done!",
-    }));
     const ctx = { ...app.context, ...base } as InitCtx & typeof base;
     await app.init(ctx);
     await app.run(ctx);
 
     const handler = getChatHandler(base);
-    await handler({ json: () => ({ data: { message: "!remote hi", chatterName: "user1" } }) });
+    await handler({ json: () => ({ data: { message: "!broken", chatterName: "user1" } }) });
 
-    expect(base.chatSay).toHaveBeenCalledTimes(1);
-    expect(base.chatSay.mock.calls[0]?.[1]).toBe("done!");
-    expect(base.loggerWarn).not.toHaveBeenCalled();
-  });
-
-  test("still sends the message when ctx.response() reports failure, and logs a warning", async () => {
-    const remoteCmd = {
-      id: "c4",
-      applicationId: "app-1",
-      command: "remote",
-      type: "function",
-      typeValue: "",
-      cooldown: 0,
-      priority: 0,
-      enabled: true,
-      createdBy: "",
-      createdAt: {} as never,
-      createdByType: "",
-      createdByRef: "",
-    } as unknown as Command;
-
-    const app = new WoofWoofWoof();
-    const base = buildTestContext({
-      listCommands: async () => ({ status: { code: "OK", message: "" }, commands: [remoteCmd] }),
-    });
-    base.barkInvoke.mockImplementationOnce(async () => ({
-      proto: "woofx3.response",
-      v: 1,
-      success: false,
-      message: "could not do the thing",
-    }));
-    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
-    await app.init(ctx);
-    await app.run(ctx);
-
-    const handler = getChatHandler(base);
-    await handler({ json: () => ({ data: { message: "!remote hi", chatterName: "user1" } }) });
-
-    expect(base.chatSay).toHaveBeenCalledTimes(1);
-    expect(base.chatSay.mock.calls[0]?.[1]).toBe("could not do the thing");
-    expect(base.loggerWarn).toHaveBeenCalled();
-  });
-
-  test("sends no chat message when the function returns a non-standard shape", async () => {
-    const remoteCmd = {
-      id: "c5",
-      applicationId: "app-1",
-      command: "remote",
-      type: "function",
-      typeValue: "",
-      cooldown: 0,
-      priority: 0,
-      enabled: true,
-      createdBy: "",
-      createdAt: {} as never,
-      createdByType: "",
-      createdByRef: "",
-    } as unknown as Command;
-
-    const app = new WoofWoofWoof();
-    const base = buildTestContext({
-      listCommands: async () => ({ status: { code: "OK", message: "" }, commands: [remoteCmd] }),
-    });
-    // Legacy ad hoc diagnostic shape (pre-ctx.response() convention) — must
-    // NOT be stringified into "[object Object]" and sent to chat.
-    base.barkInvoke.mockImplementationOnce(async () => ({ sent: false, error: "empty query" }));
-    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
-    await app.init(ctx);
-    await app.run(ctx);
-
-    const handler = getChatHandler(base);
-    await handler({ json: () => ({ data: { message: "!remote hi", chatterName: "user1" } }) });
-
-    expect(base.chatSay).not.toHaveBeenCalled();
+    expect(base.publishLog.find((p) => p.topic === "action.execute")).toBeUndefined();
+    expect(base.publishLog.find((p) => p.topic === "chat.command.broken")).toBeDefined();
   });
 
   test("Barkloader forwards outbound chat lines into Twitch when a command is present", async () => {

@@ -190,6 +190,38 @@ describe("stream.online", () => {
     expect(getCurrentSessionId()).toBe("session-2");
   });
 
+  // A session value that goes away has to be announced, or everything showing
+  // it (a counter on the dashboard, a widget on stream) keeps the stale value.
+  test("announces each session value it clears, before the session ends", async () => {
+    const { resolver, nats, handlers } = setup({
+      ensureCurrentStreamSession: mock(async () => ({
+        status: { code: "OK" },
+        session: session("session-1"),
+        isSegmentOpen: false,
+        lastSegmentEndedAt: timestampFor("2026-01-01T00:00:00.000Z"),
+      })),
+      clearSessionScoped: mock(async () => [
+        { namespace: "woofx3", key: "state:woofx3:counter:deaths", applicationId: APPLICATION_ID },
+      ]),
+    });
+    await resolver.start();
+    nats.publish.mockClear();
+
+    await handlers.get(EventType.StreamOnline)?.(
+      makeMsg(EventType.StreamOnline, { startedAt: "2026-01-01T02:00:00.000Z" })
+    );
+
+    const subjects = nats.publish.mock.calls.map(([subject]: [string]) => subject);
+    expect(subjects[0]).toBe("module.storage.woofx3.changed");
+    expect(subjects.indexOf("module.storage.woofx3.changed")).toBeLessThan(
+      subjects.indexOf(SessionEventType.SessionEnded)
+    );
+    expect(published(nats)[0]).toMatchObject({
+      type: "module.storage.changed",
+      data: { moduleId: "woofx3", key: "state:woofx3:counter:deaths", value: null },
+    });
+  });
+
   // Twitch redelivers notifications; a duplicate must not read as a gap.
   test("a redelivered notification while live extends rather than splitting", async () => {
     const { resolver, db, handlers } = setup({

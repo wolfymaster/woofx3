@@ -28,8 +28,6 @@ type Command struct {
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                            // Unique identifier for the command
 	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // ID of the application this command belongs to
 	Command       string                 `protobuf:"bytes,3,opt,name=command,proto3" json:"command,omitempty"`                                  // Name of the command (without the prefix)
-	Type          string                 `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`                                        // Type of command ("text" or "function")
-	TypeValue     string                 `protobuf:"bytes,5,opt,name=type_value,json=typeValue,proto3" json:"type_value,omitempty"`             // Value of the command type
 	Cooldown      int32                  `protobuf:"varint,6,opt,name=cooldown,proto3" json:"cooldown,omitempty"`                               // Cooldown between command uses in seconds. 0 = never throttle.
 	Priority      int32                  `protobuf:"varint,7,opt,name=priority,proto3" json:"priority,omitempty"`                               // Priority of the command
 	Enabled       bool                   `protobuf:"varint,13,opt,name=enabled,proto3" json:"enabled,omitempty"`                                // Whether the command is enabled
@@ -51,8 +49,15 @@ type Command struct {
 	// command takes no named arguments (today's default behavior). Applies
 	// to both "text" and "function" command types.
 	ArgumentPattern string `protobuf:"bytes,21,opt,name=argument_pattern,json=argumentPattern,proto3" json:"argument_pattern,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// The actions this command runs, in order, as a JSON array. Same shape as
+	// a workflow's `steps_json` because it is the same thing: each entry is
+	// {id?, action, function?, parameters?, $ref?, dependsOn?}. Replying in
+	// chat is an action (`chat.reply`) rather than a kind of command, which is
+	// what lets a command do anything a workflow step can. An empty array is a
+	// command that only announces itself on `chat.command.<slug>`.
+	ActionsJson   string `protobuf:"bytes,22,opt,name=actions_json,json=actionsJson,proto3" json:"actions_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Command) Reset() {
@@ -102,20 +107,6 @@ func (x *Command) GetApplicationId() string {
 func (x *Command) GetCommand() string {
 	if x != nil {
 		return x.Command
-	}
-	return ""
-}
-
-func (x *Command) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
-func (x *Command) GetTypeValue() string {
-	if x != nil {
-		return x.TypeValue
 	}
 	return ""
 }
@@ -186,6 +177,13 @@ func (x *Command) GetUsernames() []string {
 func (x *Command) GetArgumentPattern() string {
 	if x != nil {
 		return x.ArgumentPattern
+	}
+	return ""
+}
+
+func (x *Command) GetActionsJson() string {
+	if x != nil {
+		return x.ActionsJson
 	}
 	return ""
 }
@@ -417,8 +415,6 @@ type CreateCommandRequest struct {
 	Command         string                 `protobuf:"bytes,2,opt,name=command,proto3" json:"command,omitempty"`
 	Enabled         bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	Cooldown        int32                  `protobuf:"varint,4,opt,name=cooldown,proto3" json:"cooldown,omitempty"`
-	Type            string                 `protobuf:"bytes,5,opt,name=type,proto3" json:"type,omitempty"`
-	TypeValue       string                 `protobuf:"bytes,6,opt,name=type_value,json=typeValue,proto3" json:"type_value,omitempty"`
 	Priority        int32                  `protobuf:"varint,7,opt,name=priority,proto3" json:"priority,omitempty"`
 	CreatedByType   string                 `protobuf:"bytes,9,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
 	CreatedByRef    string                 `protobuf:"bytes,10,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
@@ -426,8 +422,10 @@ type CreateCommandRequest struct {
 	GroupIds        []string               `protobuf:"bytes,12,rep,name=group_ids,json=groupIds,proto3" json:"group_ids,omitempty"`
 	Usernames       []string               `protobuf:"bytes,13,rep,name=usernames,proto3" json:"usernames,omitempty"`
 	ArgumentPattern string                 `protobuf:"bytes,14,opt,name=argument_pattern,json=argumentPattern,proto3" json:"argument_pattern,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// See Command.actions_json.
+	ActionsJson   string `protobuf:"bytes,15,opt,name=actions_json,json=actionsJson,proto3" json:"actions_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateCommandRequest) Reset() {
@@ -488,20 +486,6 @@ func (x *CreateCommandRequest) GetCooldown() int32 {
 	return 0
 }
 
-func (x *CreateCommandRequest) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
-func (x *CreateCommandRequest) GetTypeValue() string {
-	if x != nil {
-		return x.TypeValue
-	}
-	return ""
-}
-
 func (x *CreateCommandRequest) GetPriority() int32 {
 	if x != nil {
 		return x.Priority
@@ -551,6 +535,13 @@ func (x *CreateCommandRequest) GetArgumentPattern() string {
 	return ""
 }
 
+func (x *CreateCommandRequest) GetActionsJson() string {
+	if x != nil {
+		return x.ActionsJson
+	}
+	return ""
+}
+
 // Request to update an existing command
 type UpdateCommandRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
@@ -558,15 +549,15 @@ type UpdateCommandRequest struct {
 	Command         string                 `protobuf:"bytes,2,opt,name=command,proto3" json:"command,omitempty"`
 	Enabled         bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	Cooldown        int32                  `protobuf:"varint,4,opt,name=cooldown,proto3" json:"cooldown,omitempty"`
-	Type            string                 `protobuf:"bytes,5,opt,name=type,proto3" json:"type,omitempty"`
-	TypeValue       string                 `protobuf:"bytes,6,opt,name=type_value,json=typeValue,proto3" json:"type_value,omitempty"`
 	Priority        int32                  `protobuf:"varint,7,opt,name=priority,proto3" json:"priority,omitempty"`
 	Visibility      string                 `protobuf:"bytes,8,opt,name=visibility,proto3" json:"visibility,omitempty"`
 	GroupIds        []string               `protobuf:"bytes,9,rep,name=group_ids,json=groupIds,proto3" json:"group_ids,omitempty"`
 	Usernames       []string               `protobuf:"bytes,10,rep,name=usernames,proto3" json:"usernames,omitempty"`
 	ArgumentPattern string                 `protobuf:"bytes,11,opt,name=argument_pattern,json=argumentPattern,proto3" json:"argument_pattern,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// See Command.actions_json.
+	ActionsJson   string `protobuf:"bytes,12,opt,name=actions_json,json=actionsJson,proto3" json:"actions_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateCommandRequest) Reset() {
@@ -627,20 +618,6 @@ func (x *UpdateCommandRequest) GetCooldown() int32 {
 	return 0
 }
 
-func (x *UpdateCommandRequest) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
-func (x *UpdateCommandRequest) GetTypeValue() string {
-	if x != nil {
-		return x.TypeValue
-	}
-	return ""
-}
-
 func (x *UpdateCommandRequest) GetPriority() int32 {
 	if x != nil {
 		return x.Priority
@@ -672,6 +649,13 @@ func (x *UpdateCommandRequest) GetUsernames() []string {
 func (x *UpdateCommandRequest) GetArgumentPattern() string {
 	if x != nil {
 		return x.ArgumentPattern
+	}
+	return ""
+}
+
+func (x *UpdateCommandRequest) GetActionsJson() string {
+	if x != nil {
+		return x.ActionsJson
 	}
 	return ""
 }
@@ -725,14 +709,11 @@ var File_command_proto protoreflect.FileDescriptor
 
 const file_command_proto_rawDesc = "" +
 	"\n" +
-	"\rcommand.proto\x12\acommand\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x80\x04\n" +
+	"\rcommand.proto\x12\acommand\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8e\x04\n" +
 	"\aCommand\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x18\n" +
-	"\acommand\x18\x03 \x01(\tR\acommand\x12\x12\n" +
-	"\x04type\x18\x04 \x01(\tR\x04type\x12\x1d\n" +
-	"\n" +
-	"type_value\x18\x05 \x01(\tR\ttypeValue\x12\x1a\n" +
+	"\acommand\x18\x03 \x01(\tR\acommand\x12\x1a\n" +
 	"\bcooldown\x18\x06 \x01(\x05R\bcooldown\x12\x1a\n" +
 	"\bpriority\x18\a \x01(\x05R\bpriority\x12\x18\n" +
 	"\aenabled\x18\r \x01(\bR\aenabled\x129\n" +
@@ -745,7 +726,9 @@ const file_command_proto_rawDesc = "" +
 	"visibility\x12\x1b\n" +
 	"\tgroup_ids\x18\x13 \x03(\tR\bgroupIds\x12\x1c\n" +
 	"\tusernames\x18\x14 \x03(\tR\tusernames\x12)\n" +
-	"\x10argument_pattern\x18\x15 \x01(\tR\x0fargumentPatternJ\x04\b\x0e\x10\x0fR\n" +
+	"\x10argument_pattern\x18\x15 \x01(\tR\x0fargumentPattern\x12!\n" +
+	"\factions_json\x18\x16 \x01(\tR\vactionsJsonJ\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x0e\x10\x0fR\x04typeR\n" +
+	"type_valueR\n" +
 	"created_by\"\x82\x01\n" +
 	"\x11GetCommandRequest\x12\x18\n" +
 	"\acommand\x18\x01 \x01(\tR\acommand\x12%\n" +
@@ -760,15 +743,12 @@ const file_command_proto_rawDesc = "" +
 	"\x10include_disabled\x18\x02 \x01(\bR\x0fincludeDisabled\"t\n" +
 	"\x14ListCommandsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12,\n" +
-	"\bcommands\x18\x02 \x03(\v2\x10.command.CommandR\bcommands\"\xc2\x03\n" +
+	"\bcommands\x18\x02 \x03(\v2\x10.command.CommandR\bcommands\"\xd0\x03\n" +
 	"\x14CreateCommandRequest\x12%\n" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12\x18\n" +
 	"\aenabled\x18\x03 \x01(\bR\aenabled\x12\x1a\n" +
-	"\bcooldown\x18\x04 \x01(\x05R\bcooldown\x12\x12\n" +
-	"\x04type\x18\x05 \x01(\tR\x04type\x12\x1d\n" +
-	"\n" +
-	"type_value\x18\x06 \x01(\tR\ttypeValue\x12\x1a\n" +
+	"\bcooldown\x18\x04 \x01(\x05R\bcooldown\x12\x1a\n" +
 	"\bpriority\x18\a \x01(\x05R\bpriority\x12&\n" +
 	"\x0fcreated_by_type\x18\t \x01(\tR\rcreatedByType\x12$\n" +
 	"\x0ecreated_by_ref\x18\n" +
@@ -778,16 +758,15 @@ const file_command_proto_rawDesc = "" +
 	"visibility\x12\x1b\n" +
 	"\tgroup_ids\x18\f \x03(\tR\bgroupIds\x12\x1c\n" +
 	"\tusernames\x18\r \x03(\tR\tusernames\x12)\n" +
-	"\x10argument_pattern\x18\x0e \x01(\tR\x0fargumentPatternJ\x04\b\b\x10\tR\n" +
-	"created_by\"\xcb\x02\n" +
+	"\x10argument_pattern\x18\x0e \x01(\tR\x0fargumentPattern\x12!\n" +
+	"\factions_json\x18\x0f \x01(\tR\vactionsJsonJ\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\b\x10\tR\x04typeR\n" +
+	"type_valueR\n" +
+	"created_by\"\xd9\x02\n" +
 	"\x14UpdateCommandRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12\x18\n" +
 	"\aenabled\x18\x03 \x01(\bR\aenabled\x12\x1a\n" +
-	"\bcooldown\x18\x04 \x01(\x05R\bcooldown\x12\x12\n" +
-	"\x04type\x18\x05 \x01(\tR\x04type\x12\x1d\n" +
-	"\n" +
-	"type_value\x18\x06 \x01(\tR\ttypeValue\x12\x1a\n" +
+	"\bcooldown\x18\x04 \x01(\x05R\bcooldown\x12\x1a\n" +
 	"\bpriority\x18\a \x01(\x05R\bpriority\x12\x1e\n" +
 	"\n" +
 	"visibility\x18\b \x01(\tR\n" +
@@ -795,7 +774,9 @@ const file_command_proto_rawDesc = "" +
 	"\tgroup_ids\x18\t \x03(\tR\bgroupIds\x12\x1c\n" +
 	"\tusernames\x18\n" +
 	" \x03(\tR\tusernames\x12)\n" +
-	"\x10argument_pattern\x18\v \x01(\tR\x0fargumentPattern\"&\n" +
+	"\x10argument_pattern\x18\v \x01(\tR\x0fargumentPattern\x12!\n" +
+	"\factions_json\x18\f \x01(\tR\vactionsJsonJ\x04\b\x05\x10\x06J\x04\b\x06\x10\aR\x04typeR\n" +
+	"type_value\"&\n" +
 	"\x14DeleteCommandRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id2\xfd\x02\n" +
 	"\x0eCommandService\x12B\n" +

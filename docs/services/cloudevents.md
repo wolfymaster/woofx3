@@ -163,7 +163,51 @@ interface SubscriptionGift {
 }
 ```
 
+### Shared chat
+
+During a Twitch shared chat session, activity in the other participants' channels also shows up in this broadcaster's chat. Twitch delivers it as a `shared_chat_*` chat notification with `source_broadcaster_user_id` set to the channel it happened in.
+
+Those notices are published as separate `shared*` events, never as the plain event, so a partner's sub or raid does not fire this channel's alerts. Each carries the plain event's payload plus the chat notification fields, including `sourceBroadcasterId` and `sourceBroadcasterName`.
+
+| Method | NATS Subject / Type | Twitch notice types |
+|--------|---------------------|---------------------|
+| `sharedSubscribe` | `channel.sharedSubscribe` | `shared_chat_sub`, `shared_chat_sub_gift` |
+| `sharedSubscriptionGift` | `channel.sharedSubscriptionGift` | `shared_chat_community_sub_gift` |
+| `sharedRaid` | `channel.sharedRaid` | `shared_chat_raid` |
+| `sharedResub` | `channel.sharedResub` | `shared_chat_resub` |
+| `sharedGiftPaidUpgrade` | `channel.sharedGiftPaidUpgrade` | `shared_chat_gift_paid_upgrade` |
+| `sharedPrimePaidUpgrade` | `channel.sharedPrimePaidUpgrade` | `shared_chat_prime_paid_upgrade` |
+| `sharedPayItForward` | `channel.sharedPayItForward` | `shared_chat_pay_it_forward` |
+| `sharedAnnouncement` | `channel.sharedAnnouncement` | `shared_chat_announcement` |
+
+A raid on this channel is published once, as `channel.raid`, from the `channel.raid` EventSub subscription. The matching `raid` chat notice is not published.
+
 ---
+
+## Running actions without a workflow
+
+`action.execute` asks the workflow engine to run a list of actions that
+belongs to no workflow — a chat command's actions, or anything else with
+actions to run and nothing to hang them on. Published by the engine api's
+`runActions(input)` RPC and by woofwoofwoof when a chat command matches;
+consumed by the workflow service, which runs them through the same executor,
+resolver and action handlers a workflow run uses.
+
+```jsonc
+// subject: "action.execute"
+{
+  "label": "command:hug",        // names the run in the engine's logs
+  "applicationId": "...",
+  "actions": [                   // run in order; a step may declare dependsOn
+    { "id": "action-1", "action": "chat.reply", "parameters": { "message": "hugs ${trigger.data.chatter}" } }
+  ],
+  "event": { "id": "...", "type": "chat.command.hug", "source": "woofwoofwoof", "time": "...", "data": { } }
+}
+```
+
+`event` is what the actions resolve `${trigger.data...}` against. The run is
+not recorded and emits no `workflow.run.*` lifecycle: both are keyed by a
+workflow id this run does not have.
 
 ## Twitch API Commands
 

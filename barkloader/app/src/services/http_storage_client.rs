@@ -10,7 +10,7 @@
 //! that encoding happens, symmetrically for get and set.
 
 use lib_module::db_proxy;
-use lib_sandbox::host::{StorageClient, StorageSetOptions};
+use lib_sandbox::host::{CompareAndSetOutcome, StorageClient, StorageSetOptions};
 use serde_json::Value;
 use tokio::runtime::Handle;
 
@@ -32,39 +32,87 @@ impl HttpStorageClient {
     }
 }
 
-impl StorageClient for HttpStorageClient {
-    fn get(&self, key: &str) -> Result<Option<Value>, String> {
-        let url = self.db_proxy_url.clone();
-        let application_id = self.application_id.clone();
-        let key_owned = key.to_string();
-        let item = Handle::current()
-            .block_on(async move { db_proxy::storage_get(&url, &key_owned, &application_id).await })
-            .map_err(|e| e.to_string())?;
-
-        match item {
-            Some(item) => serde_json::from_str(&item.value)
-                .map(Some)
-                .map_err(|e| format!("decode stored value for key {:?}: {}", key, e)),
-            None => Ok(None),
+impl HttpStorageClient {
+    fn address<'a>(&'a self, namespace: &'a str, key: &'a str) -> db_proxy::StorageAddress<'a> {
+        db_proxy::StorageAddress {
+            application_id: &self.application_id,
+            namespace,
+            key,
         }
     }
+}
 
-    fn set(&self, key: &str, value: Value, options: StorageSetOptions) -> Result<(), String> {
+fn decode(raw: &str, key: &str) -> Result<Value, String> {
+    serde_json::from_str(raw).map_err(|e| format!("decode stored value for key {:?}: {}", key, e))
+}
+
+impl StorageClient for HttpStorageClient {
+    fn get(&self, namespace: &str, key: &str) -> Result<Option<Value>, String> {
         let url = self.db_proxy_url.clone();
-        let application_id = self.application_id.clone();
-        let key = key.to_string();
+        let item = Handle::current()
+            .block_on(async { db_proxy::storage_get(&url, &self.address(namespace, key)).await })
+            .map_err(|e| e.to_string())?;
+
+        item.map(|item| decode(&item.value, key)).transpose()
+    }
+
+    fn set(
+        &self,
+        namespace: &str,
+        key: &str,
+        value: Value,
+        options: StorageSetOptions,
+    ) -> Result<(), String> {
+        let url = self.db_proxy_url.clone();
         let value_str = serde_json::to_string(&value).map_err(|e| e.to_string())?;
         Handle::current()
-            .block_on(async move {
+            .block_on(async {
                 db_proxy::storage_set(
                     &url,
-                    &key,
+                    &self.address(namespace, key),
                     &value_str,
-                    &application_id,
                     options.clear_on_session_end,
                 )
                 .await
             })
             .map_err(|e| e.to_string())
+    }
+
+    fn compare_and_set(
+        &self,
+        namespace: &str,
+        key: &str,
+        expected: Option<&Value>,
+        value: Value,
+        options: StorageSetOptions,
+    ) -> Result<CompareAndSetOutcome, String> {
+        let url = self.db_proxy_url.clone();
+        // Encoded the same way `set` encodes, so a value read back and passed
+        // as `expected` compares equal to what is stored.
+        let expected_str = expected
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| e.to_string())?;
+        let value_str = serde_json::to_string(&value).map_err(|e| e.to_string())?;
+        let response = Handle::current()
+            .block_on(async {
+                db_proxy::storage_compare_and_set(
+                    &url,
+                    &self.address(namespace, key),
+                    expected_str.as_deref(),
+                    &value_str,
+                    options.clear_on_session_end,
+                )
+                .await
+            })
+            .map_err(|e| e.to_string())?;
+
+        Ok(CompareAndSetOutcome {
+            swapped: response.swapped,
+            current: response
+                .current
+                .map(|item| decode(&item.value, key))
+                .transpose()?,
+        })
     }
 }

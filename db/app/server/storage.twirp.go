@@ -34,6 +34,12 @@ type StorageService interface {
 	// Set a key-value pair
 	Set(context.Context, *SetRequest) (*SetResponse, error)
 
+	// Write a value only if the key currently holds the expected one, in one
+	// transaction. The only safe way to update a value from its previous one --
+	// a counter, a queue -- when two callers may do it at once; a Get followed by
+	// a Set loses one of the two writes.
+	CompareAndSet(context.Context, *CompareAndSetRequest) (*CompareAndSetResponse, error)
+
 	// Delete a key
 	Delete(context.Context, *DeleteRequest) (*DeleteResponse, error)
 
@@ -58,7 +64,7 @@ type StorageService interface {
 
 type storageServiceProtobufClient struct {
 	client      HTTPClient
-	urls        [7]string
+	urls        [8]string
 	interceptor twirp.Interceptor
 	opts        twirp.ClientOptions
 }
@@ -86,9 +92,10 @@ func NewStorageServiceProtobufClient(baseURL string, client HTTPClient, opts ...
 	// Build method URLs: <baseURL>[<prefix>]/<package>.<Service>/<Method>
 	serviceURL := sanitizeBaseURL(baseURL)
 	serviceURL += baseServicePath(pathPrefix, "storage", "StorageService")
-	urls := [7]string{
+	urls := [8]string{
 		serviceURL + "Get",
 		serviceURL + "Set",
+		serviceURL + "CompareAndSet",
 		serviceURL + "Delete",
 		serviceURL + "ClearNamespace",
 		serviceURL + "ClearExpired",
@@ -196,6 +203,52 @@ func (c *storageServiceProtobufClient) callSet(ctx context.Context, in *SetReque
 	return out, nil
 }
 
+func (c *storageServiceProtobufClient) CompareAndSet(ctx context.Context, in *CompareAndSetRequest) (*CompareAndSetResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "storage")
+	ctx = ctxsetters.WithServiceName(ctx, "StorageService")
+	ctx = ctxsetters.WithMethodName(ctx, "CompareAndSet")
+	caller := c.callCompareAndSet
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *CompareAndSetRequest) (*CompareAndSetResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*CompareAndSetRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*CompareAndSetRequest) when calling interceptor")
+					}
+					return c.callCompareAndSet(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*CompareAndSetResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*CompareAndSetResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *storageServiceProtobufClient) callCompareAndSet(ctx context.Context, in *CompareAndSetRequest) (*CompareAndSetResponse, error) {
+	out := new(CompareAndSetResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[2], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
 func (c *storageServiceProtobufClient) Delete(ctx context.Context, in *DeleteRequest) (*DeleteResponse, error) {
 	ctx = ctxsetters.WithPackageName(ctx, "storage")
 	ctx = ctxsetters.WithServiceName(ctx, "StorageService")
@@ -227,7 +280,7 @@ func (c *storageServiceProtobufClient) Delete(ctx context.Context, in *DeleteReq
 
 func (c *storageServiceProtobufClient) callDelete(ctx context.Context, in *DeleteRequest) (*DeleteResponse, error) {
 	out := new(DeleteResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[2], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[3], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -273,7 +326,7 @@ func (c *storageServiceProtobufClient) ClearNamespace(ctx context.Context, in *C
 
 func (c *storageServiceProtobufClient) callClearNamespace(ctx context.Context, in *ClearNamespaceRequest) (*ClearNamespaceResponse, error) {
 	out := new(ClearNamespaceResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[3], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[4], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -319,7 +372,7 @@ func (c *storageServiceProtobufClient) ClearExpired(ctx context.Context, in *Cle
 
 func (c *storageServiceProtobufClient) callClearExpired(ctx context.Context, in *ClearExpiredRequest) (*ClearExpiredResponse, error) {
 	out := new(ClearExpiredResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[4], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[5], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -365,7 +418,7 @@ func (c *storageServiceProtobufClient) ClearAllForApplication(ctx context.Contex
 
 func (c *storageServiceProtobufClient) callClearAllForApplication(ctx context.Context, in *ClearAllForApplicationRequest) (*ClearAllForApplicationResponse, error) {
 	out := new(ClearAllForApplicationResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[5], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[6], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -411,7 +464,7 @@ func (c *storageServiceProtobufClient) ClearSessionScoped(ctx context.Context, i
 
 func (c *storageServiceProtobufClient) callClearSessionScoped(ctx context.Context, in *ClearSessionScopedRequest) (*ClearSessionScopedResponse, error) {
 	out := new(ClearSessionScopedResponse)
-	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[6], in, out)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[7], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -432,7 +485,7 @@ func (c *storageServiceProtobufClient) callClearSessionScoped(ctx context.Contex
 
 type storageServiceJSONClient struct {
 	client      HTTPClient
-	urls        [7]string
+	urls        [8]string
 	interceptor twirp.Interceptor
 	opts        twirp.ClientOptions
 }
@@ -460,9 +513,10 @@ func NewStorageServiceJSONClient(baseURL string, client HTTPClient, opts ...twir
 	// Build method URLs: <baseURL>[<prefix>]/<package>.<Service>/<Method>
 	serviceURL := sanitizeBaseURL(baseURL)
 	serviceURL += baseServicePath(pathPrefix, "storage", "StorageService")
-	urls := [7]string{
+	urls := [8]string{
 		serviceURL + "Get",
 		serviceURL + "Set",
+		serviceURL + "CompareAndSet",
 		serviceURL + "Delete",
 		serviceURL + "ClearNamespace",
 		serviceURL + "ClearExpired",
@@ -570,6 +624,52 @@ func (c *storageServiceJSONClient) callSet(ctx context.Context, in *SetRequest) 
 	return out, nil
 }
 
+func (c *storageServiceJSONClient) CompareAndSet(ctx context.Context, in *CompareAndSetRequest) (*CompareAndSetResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "storage")
+	ctx = ctxsetters.WithServiceName(ctx, "StorageService")
+	ctx = ctxsetters.WithMethodName(ctx, "CompareAndSet")
+	caller := c.callCompareAndSet
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *CompareAndSetRequest) (*CompareAndSetResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*CompareAndSetRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*CompareAndSetRequest) when calling interceptor")
+					}
+					return c.callCompareAndSet(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*CompareAndSetResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*CompareAndSetResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *storageServiceJSONClient) callCompareAndSet(ctx context.Context, in *CompareAndSetRequest) (*CompareAndSetResponse, error) {
+	out := new(CompareAndSetResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[2], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
 func (c *storageServiceJSONClient) Delete(ctx context.Context, in *DeleteRequest) (*DeleteResponse, error) {
 	ctx = ctxsetters.WithPackageName(ctx, "storage")
 	ctx = ctxsetters.WithServiceName(ctx, "StorageService")
@@ -601,7 +701,7 @@ func (c *storageServiceJSONClient) Delete(ctx context.Context, in *DeleteRequest
 
 func (c *storageServiceJSONClient) callDelete(ctx context.Context, in *DeleteRequest) (*DeleteResponse, error) {
 	out := new(DeleteResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[2], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[3], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -647,7 +747,7 @@ func (c *storageServiceJSONClient) ClearNamespace(ctx context.Context, in *Clear
 
 func (c *storageServiceJSONClient) callClearNamespace(ctx context.Context, in *ClearNamespaceRequest) (*ClearNamespaceResponse, error) {
 	out := new(ClearNamespaceResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[3], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[4], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -693,7 +793,7 @@ func (c *storageServiceJSONClient) ClearExpired(ctx context.Context, in *ClearEx
 
 func (c *storageServiceJSONClient) callClearExpired(ctx context.Context, in *ClearExpiredRequest) (*ClearExpiredResponse, error) {
 	out := new(ClearExpiredResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[4], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[5], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -739,7 +839,7 @@ func (c *storageServiceJSONClient) ClearAllForApplication(ctx context.Context, i
 
 func (c *storageServiceJSONClient) callClearAllForApplication(ctx context.Context, in *ClearAllForApplicationRequest) (*ClearAllForApplicationResponse, error) {
 	out := new(ClearAllForApplicationResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[5], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[6], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -785,7 +885,7 @@ func (c *storageServiceJSONClient) ClearSessionScoped(ctx context.Context, in *C
 
 func (c *storageServiceJSONClient) callClearSessionScoped(ctx context.Context, in *ClearSessionScopedRequest) (*ClearSessionScopedResponse, error) {
 	out := new(ClearSessionScopedResponse)
-	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[6], in, out)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[7], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -902,6 +1002,9 @@ func (s *storageServiceServer) ServeHTTP(resp http.ResponseWriter, req *http.Req
 		return
 	case "Set":
 		s.serveSet(ctx, resp, req)
+		return
+	case "CompareAndSet":
+		s.serveCompareAndSet(ctx, resp, req)
 		return
 	case "Delete":
 		s.serveDelete(ctx, resp, req)
@@ -1262,6 +1365,186 @@ func (s *storageServiceServer) serveSetProtobuf(ctx context.Context, resp http.R
 	}
 	if respContent == nil {
 		s.writeError(ctx, resp, twirp.InternalError("received a nil *SetResponse and nil error while calling Set. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *storageServiceServer) serveCompareAndSet(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveCompareAndSetJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveCompareAndSetProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *storageServiceServer) serveCompareAndSetJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "CompareAndSet")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(CompareAndSetRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.StorageService.CompareAndSet
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *CompareAndSetRequest) (*CompareAndSetResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*CompareAndSetRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*CompareAndSetRequest) when calling interceptor")
+					}
+					return s.StorageService.CompareAndSet(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*CompareAndSetResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*CompareAndSetResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *CompareAndSetResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *CompareAndSetResponse and nil error while calling CompareAndSet. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *storageServiceServer) serveCompareAndSetProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "CompareAndSet")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(CompareAndSetRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.StorageService.CompareAndSet
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *CompareAndSetRequest) (*CompareAndSetResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*CompareAndSetRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*CompareAndSetRequest) when calling interceptor")
+					}
+					return s.StorageService.CompareAndSet(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*CompareAndSetResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*CompareAndSetResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *CompareAndSetResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *CompareAndSetResponse and nil error while calling CompareAndSet. nil responses are not supported"))
 		return
 	}
 
@@ -2201,41 +2484,48 @@ func (s *storageServiceServer) PathPrefix() string {
 }
 
 var twirpFileDescriptor14 = []byte{
-	// 561 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xa4, 0x95, 0xcf, 0x6e, 0xd3, 0x40,
-	0x10, 0xc6, 0x71, 0xf3, 0x8f, 0x4c, 0x48, 0x54, 0xb6, 0x21, 0x18, 0xab, 0x29, 0x91, 0x11, 0x34,
-	0x5c, 0x62, 0x91, 0x4a, 0xe5, 0x00, 0x97, 0x14, 0xd2, 0xd2, 0x03, 0x20, 0xd9, 0x37, 0x84, 0x14,
-	0x39, 0xf6, 0x34, 0x58, 0x75, 0xbc, 0xc6, 0xde, 0xa4, 0xed, 0x13, 0xf1, 0x6c, 0xbc, 0x05, 0xf2,
-	0x7a, 0xed, 0x64, 0x89, 0x43, 0xa9, 0x7a, 0xf3, 0xce, 0xcc, 0xf7, 0x7d, 0xda, 0x9d, 0x9f, 0x64,
-	0x68, 0xc6, 0x8c, 0x46, 0xf6, 0x0c, 0x07, 0x61, 0x44, 0x19, 0x25, 0x35, 0x71, 0xd4, 0x7f, 0x2b,
-	0xd0, 0xb0, 0xd2, 0xef, 0x73, 0x86, 0x73, 0xb2, 0x0b, 0xa5, 0x4b, 0xbc, 0x51, 0x95, 0x9e, 0xd2,
-	0xaf, 0x9b, 0xc9, 0x27, 0x69, 0x43, 0x65, 0x69, 0xfb, 0x0b, 0x54, 0x77, 0x78, 0x2d, 0x3d, 0x90,
-	0x2e, 0x80, 0x13, 0xa1, 0xcd, 0xd0, 0x9d, 0xd8, 0x4c, 0x2d, 0xf5, 0x94, 0x7e, 0xc9, 0xac, 0x8b,
-	0xca, 0x88, 0x25, 0x6d, 0xbc, 0x0e, 0xbd, 0x08, 0xe3, 0xa4, 0x5d, 0x4e, 0xdb, 0xa2, 0x32, 0x62,
-	0x64, 0x1f, 0xea, 0x81, 0x3d, 0xc7, 0x38, 0xb4, 0x1d, 0x54, 0x2b, 0xdc, 0x77, 0x55, 0x20, 0x2f,
-	0xa1, 0x65, 0x87, 0xa1, 0xef, 0x39, 0x36, 0xf3, 0x68, 0x30, 0xf1, 0x5c, 0xb5, 0xca, 0x47, 0x9a,
-	0x6b, 0xd5, 0x73, 0x97, 0x18, 0xd0, 0x76, 0x7c, 0xb4, 0xa3, 0x09, 0x0d, 0x26, 0x31, 0xc6, 0x71,
-	0x32, 0x8b, 0x81, 0xab, 0xd6, 0x7a, 0x4a, 0xff, 0xa1, 0xf9, 0x98, 0xf7, 0xbe, 0x06, 0x56, 0xda,
-	0x19, 0x07, 0xae, 0x3e, 0x06, 0x38, 0x43, 0x66, 0xe2, 0xcf, 0x05, 0xc6, 0xac, 0xe0, 0xa6, 0x9b,
-	0xb9, 0x3b, 0x05, 0xb9, 0xfa, 0x5b, 0x68, 0x70, 0x9b, 0x38, 0xa4, 0x41, 0x8c, 0xa4, 0x0f, 0x65,
-	0x8f, 0xe1, 0x9c, 0x1b, 0x35, 0x86, 0xed, 0x41, 0xf6, 0xd0, 0x6b, 0xaf, 0x6a, 0xf2, 0x09, 0xfd,
-	0x18, 0xc0, 0x5a, 0xe5, 0xff, 0xbf, 0xae, 0x09, 0x0d, 0x6b, 0x15, 0xa8, 0x7f, 0x82, 0xe6, 0x47,
-	0xf4, 0x91, 0xe1, 0xbd, 0x6f, 0xb2, 0x0b, 0xad, 0xcc, 0x49, 0x78, 0x7f, 0x87, 0x27, 0x1f, 0x92,
-	0x77, 0xfb, 0x92, 0x2d, 0x23, 0xcb, 0x90, 0x36, 0xa6, 0xdc, 0xbe, 0xb1, 0xc2, 0x3c, 0x15, 0x3a,
-	0x7f, 0xbb, 0x8b, 0xdc, 0xf7, 0xb0, 0xc7, 0x3b, 0x63, 0x8e, 0x88, 0x9b, 0xa5, 0x6e, 0xfa, 0x2a,
-	0x45, 0xbe, 0x1d, 0x68, 0xcb, 0x6a, 0xe1, 0x7a, 0x0a, 0x5d, 0x5e, 0x1f, 0xf9, 0xfe, 0x29, 0x8d,
-	0x46, 0x2b, 0xcd, 0x1d, 0xfd, 0x7b, 0x70, 0xb0, 0xcd, 0x47, 0x24, 0x9d, 0xc0, 0x33, 0x3e, 0x21,
-	0x68, 0xb3, 0x1c, 0x1a, 0xde, 0xf9, 0x16, 0xc7, 0xa0, 0x15, 0x79, 0x08, 0xcc, 0x54, 0xa8, 0x71,
-	0xa2, 0x31, 0x55, 0x57, 0xcc, 0xec, 0x38, 0xfc, 0x55, 0x86, 0x96, 0x80, 0xc6, 0xc2, 0x68, 0xe9,
-	0x39, 0x48, 0x86, 0x50, 0x3a, 0x43, 0x46, 0xf6, 0x72, 0xa8, 0x56, 0xdc, 0x6b, 0x6d, 0xb9, 0x28,
-	0x2e, 0xf0, 0x20, 0xd1, 0x58, 0x92, 0xc6, 0x2a, 0xd2, 0x58, 0x92, 0xe6, 0x1d, 0x54, 0x53, 0x80,
-	0x48, 0x27, 0x9f, 0x90, 0xd8, 0xd4, 0x9e, 0x6e, 0xd4, 0x73, 0xb1, 0x05, 0x2d, 0x99, 0x06, 0x72,
-	0x90, 0x0f, 0x17, 0x42, 0xa8, 0x3d, 0xdf, 0xda, 0xcf, 0x4d, 0x3f, 0xc3, 0xa3, 0x75, 0x14, 0xc8,
-	0xbe, 0x2c, 0x91, 0xf9, 0xd2, 0xba, 0x5b, 0xba, 0xb9, 0xdd, 0xa5, 0x20, 0x76, 0x63, 0xf3, 0xe4,
-	0x95, 0x2c, 0xdd, 0x86, 0x98, 0x76, 0x78, 0xeb, 0x5c, 0x1e, 0x36, 0x01, 0xb2, 0x09, 0x00, 0xd1,
-	0x65, 0x83, 0x22, 0xc2, 0xb4, 0x17, 0xff, 0x9c, 0xc9, 0x02, 0x4e, 0x5e, 0x7f, 0x3b, 0x9c, 0x79,
-	0xec, 0xc7, 0x62, 0x3a, 0x70, 0xe8, 0xdc, 0xb8, 0xa2, 0xfe, 0xc5, 0xcd, 0xdc, 0x8e, 0x19, 0x46,
-	0xc6, 0x15, 0xa5, 0x17, 0xd7, 0x47, 0x86, 0x3b, 0x35, 0x66, 0x18, 0x18, 0xcb, 0x37, 0xd3, 0x2a,
-	0xff, 0x4f, 0x1c, 0xfd, 0x09, 0x00, 0x00, 0xff, 0xff, 0xac, 0x91, 0xc5, 0x25, 0x38, 0x06, 0x00,
-	0x00,
+	// 685 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x55, 0x4d, 0x4f, 0xdb, 0x40,
+	0x10, 0xad, 0x13, 0x20, 0x30, 0xc1, 0x11, 0x5d, 0x02, 0x75, 0x2d, 0x42, 0x23, 0xa3, 0x96, 0xf4,
+	0x92, 0xa8, 0x20, 0xb5, 0xaa, 0xda, 0x4b, 0xa0, 0x80, 0x38, 0xf4, 0x43, 0xb6, 0xd4, 0x43, 0x55,
+	0xc9, 0xda, 0xd8, 0x03, 0xb5, 0x70, 0x6c, 0xe3, 0xdd, 0xf0, 0xf1, 0x1f, 0xfa, 0x47, 0xfb, 0x13,
+	0x7a, 0xab, 0xbc, 0x5e, 0x3b, 0x71, 0xe2, 0x40, 0xa9, 0xd4, 0x9b, 0xe7, 0xcd, 0xcc, 0x7b, 0xb3,
+	0xbb, 0x6f, 0x12, 0x50, 0x19, 0x0f, 0x63, 0x7a, 0x8e, 0xdd, 0x28, 0x0e, 0x79, 0x48, 0x6a, 0x32,
+	0x34, 0x7e, 0x29, 0x50, 0xb7, 0xd2, 0xef, 0x53, 0x8e, 0x43, 0xb2, 0x06, 0xd5, 0x0b, 0xbc, 0xd5,
+	0x94, 0xb6, 0xd2, 0x59, 0x31, 0x93, 0x4f, 0xd2, 0x84, 0xc5, 0x2b, 0xea, 0x8f, 0x50, 0xab, 0x08,
+	0x2c, 0x0d, 0x48, 0x0b, 0xc0, 0x89, 0x91, 0x72, 0x74, 0x6d, 0xca, 0xb5, 0x6a, 0x5b, 0xe9, 0x54,
+	0xcd, 0x15, 0x89, 0xf4, 0x79, 0x92, 0xc6, 0x9b, 0xc8, 0x8b, 0x91, 0x25, 0xe9, 0x85, 0x34, 0x2d,
+	0x91, 0x3e, 0x27, 0x5b, 0xb0, 0x12, 0xd0, 0x21, 0xb2, 0x88, 0x3a, 0xa8, 0x2d, 0x0a, 0xde, 0x31,
+	0x40, 0x9e, 0x43, 0x83, 0x46, 0x91, 0xef, 0x39, 0x94, 0x7b, 0x61, 0x60, 0x7b, 0xae, 0xb6, 0x24,
+	0x4a, 0xd4, 0x09, 0xf4, 0xd4, 0x25, 0x3d, 0x68, 0x3a, 0x3e, 0xd2, 0xd8, 0x0e, 0x03, 0x9b, 0x21,
+	0x63, 0x49, 0x2d, 0x06, 0xae, 0x56, 0x6b, 0x2b, 0x9d, 0x65, 0xf3, 0xb1, 0xc8, 0x7d, 0x0e, 0xac,
+	0x34, 0x73, 0x14, 0xb8, 0x86, 0x03, 0x70, 0x82, 0xdc, 0xc4, 0xcb, 0x11, 0x32, 0x5e, 0x72, 0xd2,
+	0x59, 0xdd, 0x4a, 0x99, 0x6e, 0x61, 0xf8, 0xea, 0xd4, 0xf0, 0xc6, 0x1b, 0xa8, 0x0b, 0x11, 0x16,
+	0x85, 0x01, 0x43, 0xd2, 0x81, 0x05, 0x8f, 0xe3, 0x50, 0xc8, 0xd4, 0xf7, 0x9a, 0xdd, 0xec, 0x19,
+	0x26, 0xee, 0xdc, 0x14, 0x15, 0xc6, 0x6b, 0x00, 0x6b, 0x3c, 0xdd, 0xdf, 0xf7, 0xa9, 0x50, 0xb7,
+	0xc6, 0x82, 0xc6, 0x4f, 0x05, 0x9a, 0x87, 0xe1, 0x30, 0xa2, 0x31, 0xf6, 0x03, 0xf7, 0x5f, 0x18,
+	0x93, 0x7b, 0xc0, 0x9b, 0x08, 0x9d, 0xe4, 0x71, 0x27, 0x9f, 0x5e, 0xcd, 0xd0, 0xaf, 0xc2, 0x02,
+	0x3b, 0x20, 0x01, 0x9b, 0x0e, 0x18, 0x06, 0xa9, 0x0b, 0x96, 0xcd, 0xd5, 0x14, 0xec, 0x0b, 0xcc,
+	0xa0, 0xb0, 0x31, 0x35, 0x8d, 0xbc, 0x18, 0x0d, 0x6a, 0xec, 0x9a, 0x46, 0x11, 0xba, 0x62, 0xa2,
+	0x65, 0x33, 0x0b, 0x49, 0x17, 0x6a, 0xce, 0x28, 0x8e, 0x13, 0xc6, 0xca, 0x1d, 0xb3, 0x66, 0x45,
+	0xc6, 0x19, 0xa8, 0x1f, 0xd0, 0x47, 0x8e, 0xff, 0xf9, 0x65, 0xd7, 0xa0, 0x91, 0xe9, 0xc8, 0xbb,
+	0xfe, 0x0e, 0x1b, 0x87, 0x89, 0xcb, 0x3e, 0x65, 0x35, 0xd9, 0x04, 0x05, 0x22, 0xe5, 0x7e, 0x7f,
+	0x97, 0x4d, 0x63, 0x68, 0xb0, 0x39, 0xcd, 0x2e, 0x75, 0xdf, 0xc3, 0xba, 0xc8, 0x1c, 0x89, 0x85,
+	0x72, 0x33, 0xd5, 0x59, 0x5e, 0xa5, 0x8c, 0x77, 0x13, 0x9a, 0xc5, 0x6e, 0xc9, 0x7a, 0x0c, 0x2d,
+	0x81, 0xf7, 0x7d, 0xff, 0x38, 0x8c, 0xfb, 0xe3, 0x9e, 0x07, 0xf2, 0xb7, 0x61, 0x7b, 0x1e, 0x8f,
+	0x54, 0x3a, 0x80, 0xa7, 0xa2, 0x42, 0xee, 0xa6, 0xe5, 0x84, 0xd1, 0x83, 0x4f, 0x71, 0x09, 0x7a,
+	0x19, 0xc7, 0xd8, 0x5d, 0x62, 0xff, 0xa5, 0xbb, 0x16, 0xcd, 0x2c, 0x24, 0x6f, 0x41, 0x95, 0x9f,
+	0x76, 0x62, 0x76, 0xa6, 0x55, 0xda, 0xd5, 0xb9, 0x1e, 0x5b, 0x95, 0xa5, 0x49, 0xc0, 0xf6, 0x7e,
+	0x2f, 0x40, 0x43, 0x66, 0x2d, 0x8c, 0xaf, 0x3c, 0x07, 0xc9, 0x1e, 0x54, 0x4f, 0x90, 0x93, 0xf5,
+	0xbc, 0x7b, 0xfc, 0x03, 0xa3, 0x37, 0x8b, 0xa0, 0x3c, 0xfb, 0xa3, 0xa4, 0xc7, 0x2a, 0xf4, 0x58,
+	0x65, 0x3d, 0x56, 0xa1, 0xe7, 0x0b, 0xa8, 0x85, 0x35, 0x22, 0xad, 0xbc, 0xb0, 0x6c, 0xd9, 0xf5,
+	0xed, 0x79, 0xe9, 0x9c, 0xf1, 0x1d, 0x2c, 0xa5, 0x6e, 0x26, 0x9b, 0x79, 0x6d, 0x61, 0x8d, 0xf4,
+	0x27, 0x33, 0x78, 0xde, 0x6c, 0x41, 0xa3, 0x68, 0x4d, 0x32, 0x21, 0x58, 0xb6, 0x11, 0xfa, 0xb3,
+	0xb9, 0xf9, 0x9c, 0xf4, 0x23, 0xac, 0x4e, 0xfa, 0x92, 0x6c, 0x15, 0x5b, 0x8a, 0x66, 0xd7, 0x5b,
+	0x73, 0xb2, 0x39, 0xdd, 0x85, 0x5c, 0x9f, 0x19, 0x1b, 0x92, 0x17, 0xc5, 0xd6, 0x79, 0x7e, 0xd7,
+	0x77, 0xef, 0xad, 0xcb, 0xc5, 0x6c, 0x20, 0xb3, 0x6e, 0x24, 0x46, 0x91, 0xa0, 0xcc, 0xee, 0xfa,
+	0xce, 0x9d, 0x35, 0x99, 0xc0, 0xc1, 0xcb, 0x6f, 0xbb, 0xe7, 0x1e, 0xff, 0x31, 0x1a, 0x74, 0x9d,
+	0x70, 0xd8, 0xbb, 0x0e, 0xfd, 0xb3, 0xdb, 0x21, 0x65, 0x1c, 0xe3, 0xde, 0x75, 0x18, 0x9e, 0xdd,
+	0xec, 0xf7, 0xdc, 0x41, 0xef, 0x1c, 0x83, 0xde, 0xd5, 0xab, 0xc1, 0x92, 0xf8, 0x8b, 0xdf, 0xff,
+	0x13, 0x00, 0x00, 0xff, 0xff, 0x46, 0xf7, 0xdc, 0x55, 0xf3, 0x07, 0x00, 0x00,
 }

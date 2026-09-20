@@ -37,6 +37,7 @@ export const EngineEventType = {
   MODULE_ASSET_REGISTERED: "module.asset.registered",
   MODULE_ASSET_DEREGISTERED: "module.asset.deregistered",
   MODULE_RESOURCE_INSTANCE_CREATED: "module.resource.instance.created",
+  MODULE_RESOURCE_INSTANCE_UPDATED: "module.resource.instance.updated",
   MODULE_RESOURCE_INSTANCE_DELETED: "module.resource.instance.deleted",
   MODULE_STORAGE_CHANGED: "module.storage.changed",
   ENGINE_RESPONSE_RECEIVED: "engine.response.received",
@@ -556,6 +557,11 @@ export interface ResourceInstanceDefinition {
    * `createdByRef`.
    */
   moduleKey: string;
+  /**
+   * What the instance was created with: the values of its kind's `schema`
+   * fields. The engine keeps them without interpreting them.
+   */
+  settings: Record<string, unknown>;
 }
 
 /**
@@ -566,6 +572,15 @@ export interface ResourceInstanceDefinition {
  */
 export interface ModuleResourceInstanceCreatedEvent {
   type: typeof EngineEventType.MODULE_RESOURCE_INSTANCE_CREATED;
+  instance: ResourceInstanceDefinition;
+}
+
+/**
+ * Fired when an instance is renamed or its settings change. Identity never
+ * changes, so consumers keyed on the canonical id patch in place.
+ */
+export interface ModuleResourceInstanceUpdatedEvent {
+  type: typeof EngineEventType.MODULE_RESOURCE_INSTANCE_UPDATED;
   instance: ResourceInstanceDefinition;
 }
 
@@ -794,8 +809,15 @@ export interface CommandWebhookSnapshot {
   id: string;
   applicationId: string;
   command: string;
-  type: "text" | "function";
-  typeValue: string;
+  /** The actions this command runs, in order -- `ActionStep` in api.ts. */
+  actions: Array<{
+    id?: string;
+    action: string;
+    function?: string;
+    parameters?: Record<string, unknown>;
+    $ref?: string;
+    dependsOn?: string[];
+  }>;
   cooldown: number;
   priority: number;
   enabled: boolean;
@@ -1284,6 +1306,7 @@ export type CallbackEvent =
   | ModuleAssetRegisteredEvent
   | ModuleAssetDeregisteredEvent
   | ModuleResourceInstanceCreatedEvent
+  | ModuleResourceInstanceUpdatedEvent
   | ModuleResourceInstanceDeletedEvent
   | ModuleStorageChangedEvent
   | ModuleInstalledEvent
@@ -1340,6 +1363,7 @@ export type CallbackEventByType = {
   [EngineEventType.MODULE_ASSET_REGISTERED]: ModuleAssetRegisteredEvent;
   [EngineEventType.MODULE_ASSET_DEREGISTERED]: ModuleAssetDeregisteredEvent;
   [EngineEventType.MODULE_RESOURCE_INSTANCE_CREATED]: ModuleResourceInstanceCreatedEvent;
+  [EngineEventType.MODULE_RESOURCE_INSTANCE_UPDATED]: ModuleResourceInstanceUpdatedEvent;
   [EngineEventType.MODULE_RESOURCE_INSTANCE_DELETED]: ModuleResourceInstanceDeletedEvent;
   [EngineEventType.MODULE_STORAGE_CHANGED]: ModuleStorageChangedEvent;
   [EngineEventType.MODULE_INSTALLED]: ModuleInstalledEvent;

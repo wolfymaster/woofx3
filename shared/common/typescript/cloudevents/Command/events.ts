@@ -12,8 +12,16 @@ export interface CommandSnapshot {
   id: string;
   applicationId: string;
   command: string;
-  type: string;
-  typeValue: string;
+  /** The actions this command runs, in order. Shape: `ActionStep` in
+   *  shared/clients/typescript/api/api.ts -- the same shape a workflow step has. */
+  actions: Array<{
+    id?: string;
+    action: string;
+    function?: string;
+    parameters?: Record<string, unknown>;
+    $ref?: string;
+    dependsOn?: string[];
+  }>;
   cooldown: number;
   priority: number;
   enabled: boolean;

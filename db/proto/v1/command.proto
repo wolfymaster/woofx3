@@ -28,8 +28,8 @@ message Command {
     string id = 1;                  // Unique identifier for the command
     string application_id = 2;      // ID of the application this command belongs to
     string command = 3;             // Name of the command (without the prefix)
-    string type = 4;                // Type of command ("text" or "function")
-    string type_value = 5;          // Value of the command type
+    reserved 4, 5;                  // was: string type, string type_value - a command runs actions now
+    reserved "type", "type_value";
     int32 cooldown = 6;             // Cooldown between command uses in seconds. 0 = never throttle.
     int32 priority = 7;             // Priority of the command
 
@@ -56,6 +56,14 @@ message Command {
     // command takes no named arguments (today's default behavior). Applies
     // to both "text" and "function" command types.
     string argument_pattern = 21;
+
+    // The actions this command runs, in order, as a JSON array. Same shape as
+    // a workflow's `steps_json` because it is the same thing: each entry is
+    // {id?, action, function?, parameters?, $ref?, dependsOn?}. Replying in
+    // chat is an action (`chat.reply`) rather than a kind of command, which is
+    // what lets a command do anything a workflow step can. An empty array is a
+    // command that only announces itself on `chat.command.<slug>`.
+    string actions_json = 22;
 }
 
 // Request to get a single command by ID
@@ -89,8 +97,8 @@ message CreateCommandRequest {
     string command = 2;
     bool enabled = 3;
     int32 cooldown = 4;
-    string type = 5;
-    string type_value = 6;
+    reserved 5, 6;                   // was: string type, string type_value
+    reserved "type", "type_value";
     int32 priority = 7;
     reserved 8;                      // was: string created_by, replaced by created_by_type/created_by_ref
     reserved "created_by";
@@ -100,6 +108,8 @@ message CreateCommandRequest {
     repeated string group_ids = 12;
     repeated string usernames = 13;
     string argument_pattern = 14;
+    // See Command.actions_json.
+    string actions_json = 15;
 }
 
 // Request to update an existing command
@@ -108,13 +118,15 @@ message UpdateCommandRequest {
     string command = 2;
     bool enabled = 3;
     int32 cooldown = 4;
-    string type = 5;
-    string type_value = 6;
+    reserved 5, 6;                   // was: string type, string type_value
+    reserved "type", "type_value";
     int32 priority = 7;
     string visibility = 8;
     repeated string group_ids = 9;
     repeated string usernames = 10;
     string argument_pattern = 11;
+    // See Command.actions_json.
+    string actions_json = 12;
 }
 
 // Request to delete a command

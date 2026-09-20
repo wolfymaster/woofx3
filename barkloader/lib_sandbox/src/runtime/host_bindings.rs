@@ -24,10 +24,14 @@ use crate::host::{HostContext, StorageSetOptions};
 use serde_json::Value;
 use std::collections::HashMap;
 
-/// `ctx.storage.set(key, value, options?)`: write through to the store, then
-/// emit the `module.storage.<module_id>.changed` event. Both steps, in this
-/// order, every time — that pairing is the actual behavior worth keeping
-/// in one place.
+/// `ctx.storage.set(key, value, options?)`: write through to the store under
+/// the module's own namespace, then emit the `module.storage.<module_id>.changed`
+/// event. Both steps, in this order, every time — that pairing is the actual
+/// behavior worth keeping in one place.
+///
+/// The namespace is the module id the invocation is bound to, never something
+/// the module supplies: that is what stops one module from writing another's
+/// values.
 pub fn storage_set(
     host: &HostContext,
     module_id: &str,
@@ -35,9 +39,38 @@ pub fn storage_set(
     value: Value,
     options: StorageSetOptions,
 ) -> Result<(), String> {
-    host.storage.set(key, value.clone(), options)?;
+    host.storage.set(module_id, key, value.clone(), options)?;
     super::storage_event::publish_storage_changed(&host.nats, module_id, key, &value);
     Ok(())
+}
+
+/// `ctx.storage.compareAndSet(key, expected, value, options?)`: write only if
+/// the key holds `expected` (or nothing, when `expected` is null), and announce
+/// the change only when the write happened.
+///
+/// Returns `{ swapped, current }` for the module to marshal back: `current` is
+/// what the key holds now, which is what a caller that lost the race retries
+/// from.
+pub fn storage_compare_and_set(
+    host: &HostContext,
+    module_id: &str,
+    key: &str,
+    expected: Option<Value>,
+    value: Value,
+    options: StorageSetOptions,
+) -> Result<Value, String> {
+    let expected = expected.filter(|expected| !expected.is_null());
+    let outcome =
+        host.storage
+            .compare_and_set(module_id, key, expected.as_ref(), value, options)?;
+    if outcome.swapped {
+        let written = outcome.current.clone().unwrap_or(Value::Null);
+        super::storage_event::publish_storage_changed(&host.nats, module_id, key, &written);
+    }
+    Ok(serde_json::json!({
+        "swapped": outcome.swapped,
+        "current": outcome.current.unwrap_or(Value::Null),
+    }))
 }
 
 /// Read the optional third argument of `ctx.storage.set`.
@@ -72,11 +105,31 @@ pub fn resources_create(
     kind: &str,
     instance_id: &str,
     display_name: &str,
+    settings: Option<Value>,
 ) -> Result<Value, String> {
-    let inst = host
-        .resources
-        .create(owning_module_name, kind, instance_id, display_name)?;
+    // Settings are an object or nothing; the engine refuses anything else, so
+    // refuse it here where the module author can see which call was wrong.
+    let settings = match settings {
+        None | Some(Value::Null) => Value::Object(Default::default()),
+        Some(Value::Object(map)) => Value::Object(map),
+        Some(_) => return Err("resources.create: settings must be an object".to_string()),
+    };
+    let inst = host.resources.create(
+        owning_module_name,
+        kind,
+        instance_id,
+        display_name,
+        &settings,
+    )?;
     serde_json::to_value(&inst).map_err(|e| e.to_string())
+}
+
+/// `ctx.resources.get(canonicalId)`: the instance, settings included, or null.
+pub fn resources_get(host: &HostContext, canonical_id: &str) -> Result<Value, String> {
+    match host.resources.get(canonical_id)? {
+        Some(inst) => serde_json::to_value(&inst).map_err(|e| e.to_string()),
+        None => Ok(Value::Null),
+    }
 }
 
 /// `ctx.resources.list(kind)`: call the resource client, then serialize
@@ -127,6 +180,166 @@ pub fn build_response_value(success: bool, message: String) -> Value {
 mod tests {
     use super::*;
     use crate::host::noop::noop_host_context;
+
+    use crate::host::{CompareAndSetOutcome, NatsPublisher, StorageClient};
+    use std::sync::{Arc, Mutex};
+
+    /// Records every storage call's namespace and holds one value, so a test
+    /// can see both where a write went and whether a compare-and-set matched.
+    #[derive(Default)]
+    struct RecordingStorage {
+        namespaces: Mutex<Vec<String>>,
+        value: Mutex<Option<Value>>,
+    }
+
+    impl StorageClient for RecordingStorage {
+        fn get(&self, namespace: &str, _key: &str) -> Result<Option<Value>, String> {
+            self.namespaces.lock().unwrap().push(namespace.to_string());
+            Ok(self.value.lock().unwrap().clone())
+        }
+
+        fn set(
+            &self,
+            namespace: &str,
+            _key: &str,
+            value: Value,
+            _options: StorageSetOptions,
+        ) -> Result<(), String> {
+            self.namespaces.lock().unwrap().push(namespace.to_string());
+            *self.value.lock().unwrap() = Some(value);
+            Ok(())
+        }
+
+        fn compare_and_set(
+            &self,
+            namespace: &str,
+            _key: &str,
+            expected: Option<&Value>,
+            value: Value,
+            _options: StorageSetOptions,
+        ) -> Result<CompareAndSetOutcome, String> {
+            self.namespaces.lock().unwrap().push(namespace.to_string());
+            let mut stored = self.value.lock().unwrap();
+            if stored.as_ref() == expected {
+                *stored = Some(value.clone());
+                return Ok(CompareAndSetOutcome {
+                    swapped: true,
+                    current: Some(value),
+                });
+            }
+            Ok(CompareAndSetOutcome {
+                swapped: false,
+                current: stored.clone(),
+            })
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingNats {
+        subjects: Mutex<Vec<String>>,
+    }
+
+    impl NatsPublisher for RecordingNats {
+        fn publish(&self, subject: &str, _data: Value) -> Result<(), String> {
+            self.subjects.lock().unwrap().push(subject.to_string());
+            Ok(())
+        }
+    }
+
+    fn recording_host() -> (HostContext, Arc<RecordingStorage>, Arc<RecordingNats>) {
+        let storage = Arc::new(RecordingStorage::default());
+        let nats = Arc::new(RecordingNats::default());
+        let mut host = noop_host_context();
+        host.storage = storage.clone();
+        host.nats = nats.clone();
+        (host, storage, nats)
+    }
+
+    // The namespace comes from the invocation, never from the module, which is
+    // what keeps one module out of another's values.
+    #[test]
+    fn storage_writes_under_the_invoking_module() {
+        let (host, storage, _) = recording_host();
+        storage_set(
+            &host,
+            "woofx3",
+            "state",
+            Value::from(1),
+            StorageSetOptions::default(),
+        )
+        .unwrap();
+        storage_compare_and_set(
+            &host,
+            "woofx3",
+            "state",
+            Some(Value::from(1)),
+            Value::from(2),
+            StorageSetOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            *storage.namespaces.lock().unwrap(),
+            vec!["woofx3", "woofx3"]
+        );
+    }
+
+    #[test]
+    fn compare_and_set_announces_only_a_write_that_happened() {
+        let (host, storage, nats) = recording_host();
+        *storage.value.lock().unwrap() = Some(Value::from(5));
+
+        let lost = storage_compare_and_set(
+            &host,
+            "woofx3",
+            "state",
+            Some(Value::from(4)),
+            Value::from(6),
+            StorageSetOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(lost["swapped"], false);
+        assert_eq!(
+            lost["current"], 5,
+            "a lost race reports the value to retry from"
+        );
+        assert!(
+            nats.subjects.lock().unwrap().is_empty(),
+            "nothing changed, so nothing is announced"
+        );
+
+        let won = storage_compare_and_set(
+            &host,
+            "woofx3",
+            "state",
+            Some(Value::from(5)),
+            Value::from(6),
+            StorageSetOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(won["swapped"], true);
+        assert_eq!(won["current"], 6);
+        assert_eq!(
+            *nats.subjects.lock().unwrap(),
+            vec!["module.storage.woofx3.changed"]
+        );
+    }
+
+    // A module creating a value passes null for "nothing there yet".
+    #[test]
+    fn compare_and_set_treats_a_null_expectation_as_empty() {
+        let (host, storage, _) = recording_host();
+        let created = storage_compare_and_set(
+            &host,
+            "woofx3",
+            "state",
+            Some(Value::Null),
+            Value::from(0),
+            StorageSetOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(created["swapped"], true);
+        assert_eq!(*storage.value.lock().unwrap(), Some(Value::from(0)));
+    }
 
     #[test]
     fn format_log_value_returns_strings_verbatim() {
@@ -218,7 +431,7 @@ mod tests {
         // no real resource backend) always errors — confirms the error
         // path passes through untouched rather than getting swallowed.
         let host = noop_host_context();
-        let err = resources_create(&host, "mymod", "counter", "c1", "Counter One")
+        let err = resources_create(&host, "mymod", "counter", "c1", "Counter One", None)
             .expect_err("noop resource client errors");
         assert_eq!(err, "resource client not configured");
     }
@@ -238,6 +451,7 @@ mod tests {
             kind: &str,
             instance_id: &str,
             display_name: &str,
+            settings: &Value,
         ) -> Result<crate::host::ResourceInstance, String> {
             Ok(crate::host::ResourceInstance {
                 canonical_id: format!("{owning_module_name}:{kind}:{instance_id}"),
@@ -245,10 +459,17 @@ mod tests {
                 kind: kind.to_string(),
                 instance_id: instance_id.to_string(),
                 display_name: display_name.to_string(),
+                settings: settings.clone(),
             })
         }
         fn delete(&self, _canonical_id: &str) -> Result<(), String> {
             Ok(())
+        }
+        fn get(
+            &self,
+            _canonical_id: &str,
+        ) -> Result<Option<crate::host::ResourceInstance>, String> {
+            Ok(None)
         }
         fn list_by_kind(&self, _kind: &str) -> Result<Vec<crate::host::ResourceInstance>, String> {
             Ok(Vec::new())
@@ -259,10 +480,45 @@ mod tests {
     fn resources_create_serializes_the_instance_on_success() {
         let mut host = noop_host_context();
         host.resources = std::sync::Arc::new(StaticResourceClient);
-        let v = resources_create(&host, "mymod", "counter", "c1", "Counter One")
+        let v = resources_create(&host, "mymod", "counter", "c1", "Counter One", None)
             .expect("static client succeeds");
         assert_eq!(v["kind"], "counter");
         assert_eq!(v["instance_id"], "c1");
         assert_eq!(v["canonical_id"], "mymod:counter:c1");
+        assert_eq!(
+            v["settings"],
+            serde_json::json!({}),
+            "no settings reads as an empty object"
+        );
+    }
+
+    #[test]
+    fn resources_create_carries_settings_and_refuses_a_non_object() {
+        let mut host = noop_host_context();
+        host.resources = std::sync::Arc::new(StaticResourceClient);
+        let settings = serde_json::json!({"lifetime": "session", "initialValue": 3});
+        let v = resources_create(&host, "mymod", "counter", "c1", "", Some(settings.clone()))
+            .expect("static client succeeds");
+        assert_eq!(v["settings"], settings);
+
+        let err = resources_create(
+            &host,
+            "mymod",
+            "counter",
+            "c1",
+            "",
+            Some(serde_json::json!([1])),
+        )
+        .expect_err("an array is not settings");
+        assert!(err.contains("settings must be an object"), "{err}");
+    }
+
+    #[test]
+    fn resources_get_reads_null_for_a_missing_instance() {
+        let host = noop_host_context();
+        assert_eq!(
+            resources_get(&host, "mymod:counter:gone").unwrap(),
+            Value::Null
+        );
     }
 }

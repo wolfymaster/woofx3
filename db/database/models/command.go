@@ -11,8 +11,11 @@ type Command struct {
 	ID            uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
 	ApplicationID uuid.UUID `gorm:"column:application_id;type:uuid;not null;index:idx_commands_application_id;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
 	Command       string    `gorm:"column:command;type:varchar(255);not null"`
-	Type          string    `gorm:"column:type;type:varchar(50);not null"`
-	TypeValue     string    `gorm:"column:type_value;type:varchar(500)"`
+	// Actions is the JSON array of steps this command runs, in order. Same
+	// shape as workflow_definitions.steps, because it is the same thing -- see
+	// command.proto's actions_json comment. "[]" is a command that only
+	// announces itself on chat.command.<slug>.
+	Actions       string    `gorm:"column:actions;type:jsonb;not null;default:'[]'"`
 	Cooldown      int       `gorm:"column:cooldown;default:0"`
 	Priority      int       `gorm:"column:priority;default:0"`
 	Enabled       bool      `gorm:"column:enabled;default:true"`

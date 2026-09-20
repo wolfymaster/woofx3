@@ -1,5 +1,11 @@
 import { routeModule } from "./context";
-import type { AvailableFunction, CommandSnapshot, CreateCommandInput, UpdateCommandInput } from "@woofx3/api";
+import type {
+  ActionStep,
+  AvailableFunction,
+  CommandSnapshot,
+  CreateCommandInput,
+  UpdateCommandInput,
+} from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import CommandEvents from "@woofx3/common/cloudevents/Command";
 import { invalidCommandVariableNames } from "@woofx3/common/templates/command-variables";
@@ -10,6 +16,49 @@ import { commandToSnapshot } from "./helpers";
 // The factory holds nothing but the CloudEvent `source`, so one instance serves
 // every call in this module.
 const commandEvents = new CommandEvents("api");
+
+/**
+ * Serialize a command's actions for storage, refusing a list the engine could
+ * not run.
+ *
+ * Validated here rather than at run time because a command runs in chat, where
+ * a malformed step is a message that silently never arrives; refusing the save
+ * puts the error in front of the person who can fix it.
+ */
+/** How many actions a command runs, for a listing that shows no detail. */
+function parseActionCount(actionsJson: string | undefined): number {
+  if (!actionsJson) {
+    return 0;
+  }
+  try {
+    const parsed = JSON.parse(actionsJson);
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function serializeActions(actions: ActionStep[] | undefined): string {
+  if (!actions || actions.length === 0) {
+    return "[]";
+  }
+  const ids = new Set<string>();
+  for (const [index, action] of actions.entries()) {
+    if (!action?.action) {
+      throw new Error(`Action ${index + 1} names no action to run.`);
+    }
+    if (action.action === "function" && !action.function) {
+      throw new Error(`Action ${index + 1} is a function step with no function to call.`);
+    }
+    if (action.id) {
+      if (ids.has(action.id)) {
+        throw new Error(`Two actions share the id "${action.id}".`);
+      }
+      ids.add(action.id);
+    }
+  }
+  return JSON.stringify(actions);
+}
 
 export const commandsRoutes = routeModule({
   async listCommands(): Promise<CommandSnapshot[]> {
@@ -25,7 +74,8 @@ export const commandsRoutes = routeModule({
     commands: Array<{
       id: string;
       name: string;
-      type: string;
+      /** How many actions it runs. The list itself is on listCommands. */
+      actions: number;
       cooldown: number;
       enabled: boolean;
     }>;
@@ -42,7 +92,7 @@ export const commandsRoutes = routeModule({
       commands: commands.map((cmd) => ({
         id: cmd.id,
         name: cmd.command,
-        type: cmd.type,
+        actions: parseActionCount(cmd.actionsJson),
         cooldown: cmd.cooldown,
         enabled: cmd.enabled,
       })),
@@ -129,8 +179,7 @@ export const commandsRoutes = routeModule({
       command: input.command,
       enabled: input.enabled,
       cooldown: input.cooldown,
-      type: input.type,
-      typeValue: input.typeValue,
+      actionsJson: serializeActions(input.actions),
       priority: input.priority ?? 0,
       createdByType: "USER",
       createdByRef: "",
@@ -171,8 +220,7 @@ export const commandsRoutes = routeModule({
       command: input.command,
       enabled: input.enabled,
       cooldown: input.cooldown,
-      type: input.type,
-      typeValue: input.typeValue,
+      actionsJson: serializeActions(input.actions),
       priority: input.priority,
       visibility: input.visibility,
       groupIds: input.groupIds ?? [],

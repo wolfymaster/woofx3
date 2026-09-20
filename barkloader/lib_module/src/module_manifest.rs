@@ -1198,28 +1198,27 @@ impl ManifestCommand {
     ) -> Result<()> {
         let command_name = self.pattern.strip_prefix('!').unwrap_or(&self.pattern);
 
-        let command_type = if resolved_workflow.is_some() {
-            "function"
-        } else {
-            "text"
+        // A declared workflow becomes a workflow step, which is what the engine
+        // runs it as. Without one the command has nothing to run: it still
+        // matches and still announces itself on `chat.command.<slug>`, which is
+        // what a module command with no workflow has always amounted to.
+        let actions = match resolved_workflow {
+            Some(workflow) => serde_json::json!([{
+                "id": "action-1",
+                "type": "workflow",
+                "workflow": { "workflowId": workflow, "waitUntilCompletion": false },
+            }]),
+            None => serde_json::json!([]),
         };
-
-        let type_value = if let Some(workflow) = resolved_workflow {
-            workflow.to_string()
-        } else {
-            format!(
-                "Module command: {} ({}). Configure a workflow to handle this command.",
-                self.name, self.pattern
-            )
-        };
+        let actions_json = serde_json::to_string(&actions)?;
 
         db_proxy
-            .register_command("", command_name, command_type, &type_value, module_name)
+            .register_command("", command_name, &actions_json, module_name)
             .await?;
 
         info!(
-            "Registered command: {} [{}] (pattern={}, type={}, workflow={:?})",
-            self.name, self.id, self.pattern, command_type, resolved_workflow,
+            "Registered command: {} [{}] (pattern={}, workflow={:?})",
+            self.name, self.id, self.pattern, resolved_workflow,
         );
         Ok(())
     }

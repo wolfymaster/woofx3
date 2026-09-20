@@ -54,6 +54,7 @@ service ModuleService {
   // The engine learns identity here; semantics live in the owning module.
   rpc CreateResourceInstance(CreateResourceInstanceRequest) returns (ResourceInstanceResponse);
   rpc DeleteResourceInstance(DeleteResourceInstanceRequest) returns (common.ResponseStatus);
+  rpc UpdateResourceInstance(UpdateResourceInstanceRequest) returns (ResourceInstanceResponse);
   rpc GetResourceInstance(GetResourceInstanceRequest) returns (ResourceInstanceResponse);
   rpc ListResourceInstancesByKind(ListResourceInstancesByKindRequest) returns (ListResourceInstancesResponse);
   rpc ListResourceInstancesByModule(ListResourceInstancesByModuleRequest) returns (ListResourceInstancesResponse);

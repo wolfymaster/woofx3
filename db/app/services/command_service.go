@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/google/uuid"
@@ -131,7 +132,16 @@ func (s *commandService) everyoneGroupIDs(groupIDs []uuid.UUID) (map[uuid.UUID]b
 	return out, nil
 }
 
-func (s *commandService) syncCommandEdges(cmd *models.Command, cmdType, typeValue, createdByType, createdByRef string) {
+// defaultActionsJSON keeps the column and the wire holding a JSON array rather
+// than an empty string, so every reader can decode without a special case.
+func defaultActionsJSON(actions string) string {
+	if strings.TrimSpace(actions) == "" {
+		return "[]"
+	}
+	return actions
+}
+
+func (s *commandService) syncCommandEdges(cmd *models.Command, actionsJSON, createdByType, createdByRef string) {
 	if s.refRepo == nil {
 		return
 	}
@@ -143,7 +153,7 @@ func (s *commandService) syncCommandEdges(cmd *models.Command, cmdType, typeValu
 		SourceCreatedByType: createdByType,
 		SourceCreatedByRef:  createdByRef,
 	}
-	edges := refsvc.ExtractCommandEdges(src, cmdType, typeValue)
+	edges := refsvc.ExtractCommandEdges(src, actionsJSON)
 	if err := s.refRepo.ReplaceEdgesForSource("command", cmd.ID, edges); err != nil {
 		log.Printf("command_service: ReplaceEdgesForSource failed for command %s: %v", cmd.ID, err)
 	}
@@ -170,8 +180,7 @@ func (s *commandService) toProtoCommand(cmd *models.Command) (*client.Command, e
 		Id:              cmd.ID.String(),
 		ApplicationId:   cmd.ApplicationID.String(),
 		Command:         cmd.Command,
-		Type:            cmd.Type,
-		TypeValue:       cmd.TypeValue,
+		ActionsJson:     defaultActionsJSON(cmd.Actions),
 		Cooldown:        int32(cmd.Cooldown),
 		CreatedByType:   cmd.CreatedByType,
 		CreatedByRef:    cmd.CreatedByRef,
@@ -211,8 +220,7 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 		ID:              uuid.New(),
 		ApplicationID:   applicationID,
 		Command:         cmd.Command,
-		Type:            cmd.Type,
-		TypeValue:       cmd.TypeValue,
+		Actions:         defaultActionsJSON(cmd.ActionsJson),
 		Cooldown:        int(cmd.Cooldown),
 		Priority:        int(cmd.Priority),
 		Enabled:         cmd.Enabled,
@@ -227,7 +235,7 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 		return nil, err
 	}
 
-	s.syncCommandEdges(&m, m.Type, m.TypeValue, m.CreatedByType, m.CreatedByRef)
+	s.syncCommandEdges(&m, m.Actions, m.CreatedByType, m.CreatedByRef)
 
 	if err := s.syncCommandPermissions(applicationID, &m, cmd.GroupIds, cmd.Usernames); err != nil {
 		return nil, err
@@ -315,10 +323,7 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 
 	oldCommandName := m.Command
 	m.Command = req.Command
-	if req.Type != "" {
-		m.Type = req.Type
-	}
-	m.TypeValue = req.TypeValue
+	m.Actions = defaultActionsJSON(req.ActionsJson)
 	m.Cooldown = int(req.Cooldown)
 	m.Priority = int(req.Priority)
 	m.Enabled = req.Enabled
@@ -332,7 +337,7 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 		return nil, err
 	}
 
-	s.syncCommandEdges(m, m.Type, m.TypeValue, m.CreatedByType, m.CreatedByRef)
+	s.syncCommandEdges(m, m.Actions, m.CreatedByType, m.CreatedByRef)
 
 	// A rename changes the "command/<name>" Casbin object string - clear the
 	// old object's rows too, since syncCommandPermissions only re-derives

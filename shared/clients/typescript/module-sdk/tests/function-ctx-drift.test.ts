@@ -68,10 +68,10 @@ const KNOWN_TOP_LEVEL = new Set([
 
 const KNOWN_NESTED: Record<string, string[]> = {
   crypto: ["hmac", "verifyEd25519", "timingSafeEqual"],
-  storage: ["get", "set"],
+  storage: ["get", "set", "compareAndSet"],
   http: ["request"],
   env: ["get"],
-  resources: ["create", "delete", "list"],
+  resources: ["create", "delete", "get", "list"],
   // `module` appears here *and* in KNOWN_DATA_FIELDS below: it is the one
   // namespace that mixes plain properties with a callable, and the two maps
   // check different declaration shapes.
@@ -89,7 +89,7 @@ const KNOWN_DATA_FIELDS: Record<string, string[]> = {
 };
 
 const KNOWN_EXTENSIONS: Record<string, string[]> = {
-  twitch: ["clip", "timeout", "updateStream", "addModerator"],
+  twitch: ["clip", "timeout", "updateStream", "addModerator", "shoutout"],
   chat: ["sendMessage"],
   // platform.alerts and platform.chat — the dotted namespace is built
   // by `ensure_namespace_object` (quickjs.rs:209-229).

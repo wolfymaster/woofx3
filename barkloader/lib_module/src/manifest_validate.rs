@@ -1512,6 +1512,29 @@ fn resolve_local_or_canonical(
 mod tests {
     use super::*;
 
+    /// The bundled system module installs at every boot, so a manifest it cannot
+    /// validate fails there rather than here. Checked against the real file.
+    #[test]
+    fn the_bundled_woofx3_manifest_validates() {
+        let raw = include_str!("../../../modules/woofx3/manifest.json");
+        let manifest: ModuleManifest =
+            serde_json::from_str(raw).expect("bundled woofx3 manifest parses");
+        validate_with_provenance(&manifest, InstallProvenance::System)
+            .expect("bundled woofx3 manifest validates as a system module");
+
+        let counter = manifest
+            .resources
+            .iter()
+            .find(|kind| kind.kind == "counter")
+            .expect("woofx3 declares the counter resource kind");
+        let fields: Vec<&str> = counter
+            .schema
+            .iter()
+            .map(|field| field.id.as_str())
+            .collect();
+        assert_eq!(fields, ["lifetime", "initialValue", "step"]);
+    }
+
     fn parse(json: &str) -> ModuleManifest {
         serde_json::from_str(json).expect("manifest parse")
     }

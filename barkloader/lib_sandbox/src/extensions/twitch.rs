@@ -8,6 +8,7 @@ const COMMANDS: &[CommandEntry] = &[
     ("timeout", "timeout", true),
     ("updateStream", "updateStream", true),
     ("addModerator", "addChannelModerator", true),
+    ("shoutout", "shoutout", true),
 ];
 
 pub struct TwitchExtension(SubjectExtension);

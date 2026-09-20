@@ -89,6 +89,18 @@ export default class TwitchEvents {
     return this.encodeEvent(TwitchEvent.EventType.WatchStreak, event);
   }
 
+  sharedSubscribe(event: TwitchEvent.SharedSubscribe): EventTuple {
+    return this.encodeEvent(TwitchEvent.EventType.SharedSubscribe, event);
+  }
+
+  sharedSubscriptionGift(event: TwitchEvent.SharedSubscriptionGift): EventTuple {
+    return this.encodeEvent(TwitchEvent.EventType.SharedSubscriptionGift, event);
+  }
+
+  sharedRaid(event: TwitchEvent.SharedRaid): EventTuple {
+    return this.encodeEvent(TwitchEvent.EventType.SharedRaid, event);
+  }
+
   sharedResub(event: TwitchEvent.SharedResub): EventTuple {
     return this.encodeEvent(TwitchEvent.EventType.SharedResub, event);
   }

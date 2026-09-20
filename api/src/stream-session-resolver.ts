@@ -5,6 +5,7 @@ import { setCurrentSessionId } from "@woofx3/common/cloudevents/session";
 import { encode } from "@woofx3/common/cloudevents/utils";
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import type { SharedLogger } from "@woofx3/common/logging";
+import type * as storage from "@woofx3/db/storage.pb";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
 import { DbError, type DbClient } from "./db-client";
@@ -211,12 +212,41 @@ export class StreamSessionResolver {
   private async clearSessionScopedStorage(endedSessionId: string): Promise<void> {
     try {
       const cleared = await this.db.clearSessionScoped({ applicationId: this.applicationId });
-      this.logger.info("Cleared session-scoped module storage", { endedSessionId, cleared });
+      this.logger.info("Cleared session-scoped module storage", { endedSessionId, cleared: cleared.length });
+      await this.announceCleared(cleared);
     } catch (err) {
       this.logger.error("Failed to clear session-scoped module storage", {
         endedSessionId,
         error: err instanceof Error ? err.message : String(err),
       });
+    }
+  }
+
+  /**
+   * Announce each cleared key the way a module's own write is announced
+   * (barkloader's storage_event.rs), with a null value.
+   *
+   * Without this, anything showing a session value -- a counter on the
+   * dashboard, a widget on stream -- keeps showing the last one after the value
+   * is gone. One failed announcement does not stop the rest.
+   */
+  private async announceCleared(cleared: storage.StorageItem[]): Promise<void> {
+    const occurredAt = new Date().toISOString();
+    for (const item of cleared) {
+      const subject = `module.storage.${item.namespace}.changed`;
+      const event = Event(
+        { type: "module.storage.changed", source: "api" },
+        { moduleId: item.namespace, key: item.key, value: null, occurredAt }
+      );
+      try {
+        await this.nats.publish(subject, encode(event));
+      } catch (err) {
+        this.logger.warn("Failed to announce a cleared session value", {
+          namespace: item.namespace,
+          key: item.key,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   }
 

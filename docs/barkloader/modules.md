@@ -319,7 +319,7 @@ These three `type` values render dedicated pickers in the UI rather than freefor
 |--------|-------------|---------------|----------------|
 | `color` | — | CSS color string (`"#7ad7ff"`). | Native browser color picker. |
 | `asset` | `kinds?: string[]` | Asset canonical id (`"twitch_platform:asset:bell.mp3"`). | Scoped to **this module's** `assets[]`, optionally filtered by `kinds`. |
-| `resource_ref` | `kind: string` (required) | Instance canonical id (`"counter:counter:death_count"`). Stored verbatim; the function receives it via `ctx.event.parameters.<id>`. | Cross-module: every installed module's instances of the given `kind`. Backed by `ListResourceInstancesByKind` and refreshed live via the `module.resource.instance.{created,deleted}` webhook events. |
+| `resource_ref` | `kind: string` (required) | Instance canonical id (`"woofx3:counter:death_count"`). Stored verbatim; the function receives it via `ctx.event.parameters.<id>`. | Cross-module: every installed module's instances of the given `kind`. Backed by `ListResourceInstancesByKind` and refreshed live via the `module.resource.instance.{created,deleted}` webhook events. |
 
 `resource_ref` is the discriminator that lets actions and widgets reference runtime instances (counters, future timers/polls/leaderboards, etc.) without the engine learning what each kind means. See [Runtime resource instances](#runtime-resource-instances).
 
@@ -882,21 +882,25 @@ visible in the barkloader logs without instrumenting the module itself.
 
 ## Runtime resource instances
 
-Resource instances are runtime-created rows that record one specific instance of a declared kind — for example, a `death_count` counter or a `goal_progress` counter, both of kind `counter` declared by the counter module. Instances live in the `module_resource_instances` table; the owning module owns the underlying value (typically in BadgerDB).
+Resource instances are runtime-created rows that record one specific instance of a declared kind — for example, a `death_count` counter or a `goal_progress` counter, both of kind `counter` declared by the bundled `woofx3` module. Instances live in the `module_resource_instances` table; the owning module owns the underlying value (in module storage).
+
+A kind's `schema` is its create-instance form. Whatever that form produced — a counter's lifetime and starting value, say — is kept on the instance as its **settings**: a JSON object the engine stores verbatim and never interprets. The owning module reads it back with `ctx.resources.get`.
+
+Settings can be changed afterwards (`updateResourceInstance`), along with the display name. Identity — module, kind and instance id — never changes, so everything holding the canonical id keeps working. A setting that describes how a value is *stored*, such as a counter's lifetime, applies from the module's next write, since the engine does not know which stored keys a setting governs.
 
 ### Lifecycle
 
 | Step | API | Owner |
 |------|-----|--------|
 | Module declares it provides a kind | `manifest.resources[].kind` | Module manifest |
-| User triggers instance creation (UI, chat command, etc.) | `ctx.resources.create(kind, instanceId, displayName)` | Module function |
+| User triggers instance creation (UI, chat command, etc.) | `createResourceInstance(...)` engine RPC, or `ctx.resources.create(kind, instanceId, displayName, settings?)` | Dashboard / module function |
 | Engine persists the row + emits NATS event | `module.ModuleService/CreateResourceInstance` | DB proxy |
 | Other parts of the system reference the instance | `resource_ref(kind=...)` ConfigField → canonical id | UI / workflow editor |
 | Owning function performs work using the canonical id | `ctx.event.parameters.target` | Module function |
 | User triggers instance deletion | `ctx.resources.delete(canonicalId)` | Module function |
 | Engine cascades on module uninstall | FK `module_resource_instances.module_id → modules.id ON DELETE CASCADE` | DB |
 
-The owning module's storage is the source of truth for instance values. The engine's row is metadata only (id, kind, instanceId, displayName).
+The owning module's storage is the source of truth for instance values. The engine's row is identity plus the settings the instance was created with (id, kind, instanceId, displayName, settings).
 
 ### `ctx.resources` surface
 
@@ -904,11 +908,14 @@ Available in both QuickJS and Lua function runtimes:
 
 | Call | Returns | Notes |
 |------|---------|-------|
-| `ctx.resources.create(kind, instanceId, displayName)` | `{ canonicalId, moduleName, kind, instanceId, displayName }` | The owning module is implicit (taken from the function's canonical path). Modules can only create instances of kinds they declared in `resources[]`. |
+| `ctx.resources.create(kind, instanceId, displayName?, settings?)` | `{ canonical_id, module_name, kind, instance_id, display_name, settings }` | The owning module is implicit (taken from the function's canonical path). `settings` must be an object. |
+| `ctx.resources.get(canonicalId)` | the same shape, or `null` | How a function reads the settings of the instance it was asked to act on. `null` when nothing has the id — a workflow can name an instance deleted after it was configured. |
 | `ctx.resources.delete(canonicalId)` | `void` | Idempotent from the caller's perspective when the row exists; surfaces an error if it doesn't. |
-| `ctx.resources.list(kind)` | `Array<{ canonicalId, moduleName, kind, instanceId, displayName }>` | Returns every instance of the kind across every installed module. |
+| `ctx.resources.list(kind)` | an array of the same shape | Returns every instance of the kind across every installed module. |
 
-**Storage-key convention:** by convention, modules key their per-instance state at `state:<canonicalId>` (e.g. `state:counter:counter:death_count`). This keeps the module storage namespace flat while allowing many kinds to coexist. The convention isn't engine-enforced — modules may key however they like — but matching it lets widgets that subscribe to `module.storage.changed` filter by canonical id without reverse-mapping.
+**Where an instance's value lives:** at `state:<canonicalId>` in the owning module's storage (e.g. `state:woofx3:counter:death_count`). This is the contract, not a suggestion: the engine's `getResourceValues` reads it, and the dashboard's value mirror keys on it, so a kind that stores its value anywhere else shows nothing on its first-party page.
+
+**Storage is per module.** Every key a function reads or writes belongs to its own module — the store addresses a value by application, module and key — so two modules using the same key hold two separate values. Update a value from its previous one with `ctx.storage.compareAndSet(key, expected, value, options?)`, which writes only if the key still holds `expected` (or nothing, for `null`) and otherwise returns `{ swapped: false, current }` to retry from. A `get` followed by a `set` loses one of two concurrent updates.
 
 ### NATS subjects
 

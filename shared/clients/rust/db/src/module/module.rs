@@ -483,6 +483,12 @@ pub struct ModuleResourceInstance {
     /// owning module by.
     #[prost(string, tag="10")]
     pub module_key: ::prost::alloc::string::String,
+    /// What the instance was created with: the values of its kind's `schema`
+    /// fields, as a JSON object (e.g. {"lifetime":"session","initialValue":0}).
+    /// Stored and returned verbatim -- the engine never interprets it, the owning
+    /// module does (`ctx.resources.get`). "{}" when the kind declares no fields.
+    #[prost(string, tag="11")]
+    pub settings_json: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateResourceInstanceRequest {
@@ -513,6 +519,9 @@ pub struct CreateResourceInstanceRequest {
     /// Required when connection_kind is set.
     #[prost(string, tag="8")]
     pub connection_config: ::prost::alloc::string::String,
+    /// See ModuleResourceInstance.settings_json. Must be a JSON object when set.
+    #[prost(string, tag="9")]
+    pub settings_json: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ResourceInstanceResponse {
@@ -520,6 +529,23 @@ pub struct ResourceInstanceResponse {
     pub status: ::core::option::Option<super::common::ResponseStatus>,
     #[prost(message, optional, tag="2")]
     pub instance: ::core::option::Option<ModuleResourceInstance>,
+}
+/// Change what an instance is called, or the settings it runs with. Identity --
+/// module, kind and instance id -- never changes: those are what everything
+/// referencing the instance holds.
+///
+/// Full replace: both fields are what the instance should have, not a patch.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UpdateResourceInstanceRequest {
+    #[prost(string, tag="1")]
+    pub canonical_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub display_name: ::prost::alloc::string::String,
+    /// See ModuleResourceInstance.settings_json. Must be a JSON object when set.
+    #[prost(string, tag="3")]
+    pub settings_json: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="4")]
+    pub request_context: ::core::option::Option<super::common::RequestContext>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeleteResourceInstanceRequest {

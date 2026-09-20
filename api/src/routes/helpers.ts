@@ -1,4 +1,4 @@
-import type { CommandSnapshot, CommandType, Scene, WorkflowDefinition } from "@woofx3/api";
+import type { ActionStep, CommandSnapshot, Scene, WorkflowDefinition } from "@woofx3/api";
 import type * as command from "@woofx3/db/command.pb";
 import type * as scene from "@woofx3/db/scene.pb";
 import * as protoscript from "protoscript";
@@ -167,18 +167,32 @@ export function rebuildWorkflowDefinition(wf: {
 }
 
 /**
- * Narrow the engine's protobuf Command type to the shared API
- * CommandSnapshot. The proto's `type` field is a free-form string but the
- * UI only ever creates one of three known values; we cast through
- * `CommandType` so consumers don't have to re-validate.
+ * Narrow the engine's protobuf Command to the shared API CommandSnapshot.
+ *
+ * `actionsJson` is stored as JSON text (the same way a workflow stores its
+ * steps) and decoded here, so every consumer receives the list rather than a
+ * string it has to parse. Unreadable JSON decodes to no actions: a command
+ * that cannot say what it runs runs nothing, which is visible in the UI,
+ * rather than failing the whole listing it appears in.
  */
+function parseActions(actionsJson: string | undefined): ActionStep[] {
+  if (!actionsJson) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(actionsJson);
+    return Array.isArray(parsed) ? (parsed as ActionStep[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function commandToSnapshot(c: command.Command): CommandSnapshot {
   return {
     id: c.id,
     applicationId: c.applicationId,
     command: c.command,
-    type: c.type as CommandType,
-    typeValue: c.typeValue,
+    actions: parseActions(c.actionsJson),
     cooldown: c.cooldown,
     priority: c.priority,
     enabled: c.enabled,

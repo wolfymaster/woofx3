@@ -48,6 +48,7 @@ async function requestEngineModuleUninstall(
   return { requested: true };
 }
 
+import { parseInstanceSettings } from "../module-event-handlers";
 import { readModuleCatalogFields } from "./helpers";
 import type { UninstallModuleResponse } from "./types";
 
@@ -421,9 +422,13 @@ export const modulesRoutes = routeModule({
     kind: string,
     instanceId: string,
     displayName: string,
+    settings: Record<string, unknown>,
     context: { clientId: string }
   ): Promise<ResourceInstanceDefinition> {
     const applicationId = await this.ensureApplicationId();
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+      throw new Error("createResourceInstance: settings must be an object");
+    }
     const result = await this.db.createResourceInstance({
       moduleId: "",
       moduleName,
@@ -432,6 +437,7 @@ export const modulesRoutes = routeModule({
       displayName,
       connectionKind: "",
       connectionConfig: "",
+      settingsJson: JSON.stringify(settings),
       requestContext: { clientId: context.clientId, applicationId, moduleKey: "" },
     });
     return {
@@ -443,6 +449,69 @@ export const modulesRoutes = routeModule({
       displayName: result.instance.displayName,
       canonicalId: result.instance.canonicalId,
       moduleKey: result.instance.moduleKey,
+      settings: parseInstanceSettings(result.instance.settingsJson),
+    };
+  },
+
+  /**
+   * The current value of each resource instance, keyed by canonical id.
+   *
+   * Reads `state:<canonicalId>` in the owning module's storage, the key every
+   * resource kind keeps its value under. The owning module is the canonical
+   * id's first segment, which is also its storage namespace. An instance with
+   * no value yet reads as `null`, the same answer a cleared session value
+   * gives — callers show the kind's initial value for both.
+   */
+  async getResourceValues(canonicalIds: string[]): Promise<Record<string, unknown>> {
+    if (!Array.isArray(canonicalIds)) {
+      throw new Error("getResourceValues: canonicalIds must be an array");
+    }
+    const applicationId = await this.ensureApplicationId();
+    const values: Record<string, unknown> = {};
+    await Promise.all(
+      canonicalIds.map(async (canonicalId) => {
+        const moduleName = canonicalId.split(":")[0];
+        if (!moduleName) {
+          throw new Error(`getResourceValues: "${canonicalId}" is not a canonical id`);
+        }
+        const value = await this.db.getModuleStorageValue(applicationId, moduleName, `state:${canonicalId}`);
+        values[canonicalId] = value ?? null;
+      })
+    );
+    return values;
+  },
+
+  /**
+   * Rename a resource instance, or change the settings it runs with. What it is
+   * addressed by never changes, so everything holding its canonical id keeps
+   * working. Fires `MODULE_RESOURCE_INSTANCE_UPDATED`.
+   */
+  async updateResourceInstance(
+    canonicalId: string,
+    displayName: string,
+    settings: Record<string, unknown>,
+    context: { clientId: string }
+  ): Promise<ResourceInstanceDefinition> {
+    const applicationId = await this.ensureApplicationId();
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+      throw new Error("updateResourceInstance: settings must be an object");
+    }
+    const result = await this.db.updateResourceInstance({
+      canonicalId,
+      displayName,
+      settingsJson: JSON.stringify(settings),
+      requestContext: { clientId: context.clientId, applicationId, moduleKey: "" },
+    });
+    return {
+      id: result.instance.id,
+      moduleId: result.instance.moduleId,
+      moduleName: result.instance.moduleName,
+      kind: result.instance.kind,
+      instanceId: result.instance.instanceId,
+      displayName: result.instance.displayName,
+      canonicalId: result.instance.canonicalId,
+      moduleKey: result.instance.moduleKey,
+      settings: parseInstanceSettings(result.instance.settingsJson),
     };
   },
 
@@ -478,6 +547,7 @@ export const modulesRoutes = routeModule({
       displayName: instance.displayName,
       canonicalId: instance.canonicalId,
       moduleKey: instance.moduleKey,
+      settings: parseInstanceSettings(instance.settingsJson),
     }));
   },
 
@@ -521,6 +591,7 @@ export const modulesRoutes = routeModule({
       displayName: instance.displayName,
       canonicalId: instance.canonicalId,
       moduleKey: instance.moduleKey || resolvedKey,
+      settings: parseInstanceSettings(instance.settingsJson),
     }));
   },
 });

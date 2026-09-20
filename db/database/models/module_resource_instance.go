@@ -27,8 +27,12 @@ type ModuleResourceInstance struct {
 	Kind        string    `gorm:"column:kind;type:text;not null;index"`
 	InstanceID  string    `gorm:"column:instance_id;type:text;not null"`
 	DisplayName string    `gorm:"column:display_name;type:text;not null;default:''"`
-	CreatedAt   time.Time `gorm:"column:created_at;default:CURRENT_TIMESTAMP;not null"`
-	UpdatedAt   time.Time `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;not null"`
+	// Settings is what the instance was created with, as a JSON object: the
+	// values of its kind's `schema` fields. Opaque here -- the owning module
+	// reads it, the engine only keeps it.
+	Settings  string    `gorm:"column:settings;type:jsonb;not null;default:'{}'"`
+	CreatedAt time.Time `gorm:"column:created_at;default:CURRENT_TIMESTAMP;not null"`
+	UpdatedAt time.Time `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;not null"`
 }
 
 func (ModuleResourceInstance) TableName() string {

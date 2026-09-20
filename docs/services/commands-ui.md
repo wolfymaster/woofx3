@@ -15,11 +15,11 @@ same file; webhook event types live in `shared/clients/typescript/api/webhooks.t
 
 ## Concepts
 
-- **Command**: a `!name` chat trigger. `type` is `"text"` (a response
-  string, always resolved for `{template}` variables before being sent) or
-  `"function"` (invokes a barkloader module function and uses its return
-  value as the response — `typeValue` is the function's qualified name,
-  e.g. `"my_module/say_hello"`, sourced from `listAvailableFunctions()`).
+- **Command**: a `!name` chat trigger that runs an ordered list of
+  **actions** — the same actions a workflow step runs. Answering in chat is
+  the `woofx3:action:chat.reply` action; calling a module function is the
+  `function` action. A command with no actions still matches and still fires
+  its `chat.command.<slug>` event, which is what a trigger-only command is.
 - **Group**: a named role (e.g. "moderator", "vip"). Users are added to
   groups by username; commands are granted to one or more groups and/or
   specific usernames. This is the *only* permission concept the UI deals
@@ -36,8 +36,8 @@ same file; webhook event types live in `shared/clients/typescript/api/webhooks.t
   observe for that case; it's purely a runtime behavior.
 - **Argument pattern**: optional `{variable}` placeholders declaring named
   arguments a command accepts, e.g. `{songTitle}` or `{userA} {userB}`.
-  Applies to both `"text"` and `"function"` types — see "Argument
-  extraction" below.
+  The captured values reach the command's actions on the trigger event, as
+  `${trigger.data.variables.songTitle}` — see "Argument extraction" below.
 
 ## Commands: API contract
 
@@ -54,8 +54,7 @@ interface CommandSnapshot {
   id: string;
   applicationId: string;
   command: string;            // without the "!" prefix
-  type: "text" | "function";
-  typeValue: string;          // response text ("text") or qualified function name ("function")
+  actions: ActionStep[];      // what it runs, in order; [] = trigger-only
   cooldown: number;           // seconds, 0 = never throttle
   priority: number;
   enabled: boolean;
@@ -67,8 +66,7 @@ interface CommandSnapshot {
 
 interface CreateCommandInput {
   command: string;
-  type: "text" | "function";
-  typeValue: string;
+  actions: ActionStep[];
   cooldown: number;
   priority?: number;          // defaults to 0
   enabled: boolean;
@@ -86,8 +84,7 @@ interface CreateCommandInput {
 // not a sparse patch.
 interface UpdateCommandInput {
   command: string;
-  type: "text" | "function";
-  typeValue: string;
+  actions: ActionStep[];
   cooldown: number;
   priority: number;
   enabled: boolean;
@@ -99,10 +96,27 @@ interface UpdateCommandInput {
 }
 ```
 
+One action, which is one step of what a command does:
+
+```ts
+interface ActionStep {
+  id?: string;                // defaults to its position ("action-1", ...)
+  action: string;             // engine handler: "chat.reply", "function", "alert", ...
+  function?: string;          // canonical function id, when action === "function"
+  parameters?: Record<string, unknown>;  // may hold ${trigger.data...} expressions
+  $ref?: string;              // canonical id of the module action this came from
+  dependsOn?: string[];       // omit to run after the previous action; [] to run alongside it
+}
+```
+
+Build these from the action catalog (`getActions()`), the same list the
+workflow builder offers. The engine refuses a command whose action names no
+handler, or whose `function` step names no function.
+
 `listAvailableFunctions()` returns every function exposed by every installed
-module — populate the `"function"`-type command's dropdown from
-`qualifiedName` (what you write into `typeValue`) and `name` (what you
-display):
+module. A command reaches a function through a `function` action rather than
+through this list, so this is now only useful for surfaces that need the raw
+function inventory:
 
 ```ts
 interface AvailableFunction {
@@ -111,7 +125,7 @@ interface AvailableFunction {
   moduleName: string;
   manifestId: string;
   name: string;            // display
-  qualifiedName: string;   // → CreateCommandInput.typeValue for type: "function"
+  qualifiedName: string;   // barkloader's module/function invoke path
   runtime: string;
 }
 ```
@@ -124,13 +138,13 @@ interface AvailableFunction {
   conflict resolution between commands (there's no scenario today where two
   commands can match the same invocation) — safe to omit / default to `0`
   in the UI unless a future ordering feature needs it.
-- **No server-side validation** of `typeValue` non-emptiness. An empty
-  `"text"` response is a **valid, intentional** configuration: the command
-  matches, still fires the `chat.command.<name>` event (see
-  "Triggering workflows from commands" below), but sends nothing to chat.
-  Don't add client-side validation that rejects this — it's how a
-  UI author builds a "trigger-only" command that exists purely to drive a
-  workflow.
+- **An empty `actions` array is a valid, intentional configuration**: the
+  command matches, still fires the `chat.command.<name>` event (see
+  "Triggering workflows from commands" below), and does nothing else. Don't
+  add client-side validation that rejects it — it is how a trigger-only
+  command is built. The engine does validate each action it is given: a step
+  with no `action`, a `function` step with no `function`, or two steps
+  sharing an id are refused on save.
 - **Group/user assignment writes are full-replace**, not incremental: the
   `groupIds`/`usernames` arrays on `createCommand`/`updateCommand` are the
   complete desired set each time, not a diff. Send the full array your form
@@ -146,17 +160,13 @@ interface AvailableFunction {
 contains `{...}`. The `{variable}` syntax lives entirely in the separate
 `argumentPattern` field, which the UI should present as part of authoring a
 command (e.g. a field right below the command-name input, with a live
-preview of the parsed variable names). It applies to **both** command
-types:
+preview of the parsed variable names).
 
-- `"text"`: the response can reference the same `{variable}` names via the
-  existing `{template}` syntax — e.g. `argumentPattern: "{songTitle}"` with
-  `typeValue: "queued: {songTitle}"`.
-- `"function"`: the invoked module function receives the extracted values
-  in its payload (this is an engine-internal wire detail, not something the
-  UI constructs — documented here only so you know why declaring
-  `argumentPattern` on a function-type command is meaningful and not
-  text-only).
+The captured values ride on the trigger event the command's actions run
+against, so any action can reference them: `argumentPattern: "{songTitle}"`
+with a `chat.reply` whose message is
+`"queued: ${trigger.data.variables.songTitle}"`. A `function` action's module
+function receives the same values in its invoke payload.
 
 **Extraction rule** (applied to whatever text follows the command word in
 chat):
@@ -177,11 +187,9 @@ chat):
 `^\w+(\.\w+)*$` (letters, digits, underscore; segments joined by literal
 dots). No spaces, brackets, or other punctuation. `{songTitle}` and
 `{user.name}` are valid; `{song title}`, `{song-title}`, `{song[0]}` are
-rejected. Dot-separated names build a nested object for the `text`
-resolver — `argumentPattern: "{user.name}"` lets a response reference
-`{user.name}` using the resolver's existing dotted-path traversal (the same
-mechanism that already lets a response reference `{user}`, just one level
-deeper).
+rejected. Dot-separated names build a nested object, which an action reaches
+with the same dotted path — `argumentPattern: "{user.name}"` is referenced as
+`${trigger.data.variables.user.name}`.
 
 Reference implementation for both extraction and naming validation:
 `shared/common/typescript/templates/command-variables.ts` (shared by the
@@ -335,8 +343,9 @@ interface GroupMemberAddedEvent {
 
 ## Triggering workflows from commands
 
-A command does not have a "run this workflow" type. Instead, every command
-invocation (regardless of `type`) fires a `chat.command.<name>` bus event
+A command's actions are one way to make it do something; a workflow
+subscribed to it is the other, and both happen. Every command invocation
+fires a `chat.command.<name>` bus event
 that the *workflow builder* can subscribe to as a trigger — the command must
 already exist before it's selectable there. Concretely, the workflow
 engine registers a single wildcard trigger definition once (`category:
@@ -366,9 +375,23 @@ minimum-amount threshold) — nothing new to build on the trigger-config
 plumbing side, just populate `conditions` the same way you already do for
 those.
 
-A "trigger-only" command (empty `"text"` response, per the behavioral note
-above) is the intended way to author a command whose only purpose is to
-drive a workflow, with no direct chat reply.
+A trigger-only command (empty `actions`, per the behavioral note above) is
+the intended way to author a command whose only purpose is to drive a
+workflow.
+
+### How a command's own actions run
+
+The actions do not go through a workflow. woofwoofwoof gates the invocation
+(cooldown, permissions), publishes `chat.command.<slug>` as above, then
+publishes `action.execute` carrying the command's action list and that same
+event. The workflow engine runs it through its own executor
+(`Engine.RunActions`), in order, with the same action handlers a workflow
+step uses. The run is not recorded in run history: both the history row and
+the `workflow.run.*` lifecycle events are keyed by a workflow id, and there
+is no workflow here.
+
+Anything else holding actions and no workflow can do the same, through the
+`runActions(input)` engine RPC.
 
 ## Out of scope
 

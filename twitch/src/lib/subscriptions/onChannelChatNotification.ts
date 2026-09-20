@@ -91,12 +91,8 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
           break;
         }
         case "raid": {
-          const [topic, data] = twitch.raid({
-            fromBroadcasterUserId: event.raiderId,
-            fromBroadcasterUserName: event.raiderDisplayName,
-            viewers: event.viewerCount,
-          });
-          ctx.messageBus.publish(topic, data);
+          // The channel.raid subscription (onChannelRaid) publishes every raid on this
+          // channel; publishing its chat notice too would announce each raid twice.
           break;
         }
         case "unraid": {
@@ -150,7 +146,8 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
           break;
         }
         case "shared_chat_sub": {
-          const [topic, data] = twitch.subscribe({
+          const [topic, data] = twitch.sharedSubscribe({
+            ...base,
             isGift: false,
             tier: event.tier,
             userId: event.chatterId,
@@ -176,7 +173,8 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
           break;
         }
         case "shared_chat_sub_gift": {
-          const [topic, data] = twitch.subscribe({
+          const [topic, data] = twitch.sharedSubscribe({
+            ...base,
             isGift: true,
             tier: event.tier,
             userId: event.recipientId,
@@ -186,7 +184,8 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
           break;
         }
         case "shared_chat_community_sub_gift": {
-          const [topic, data] = twitch.subscriptionGift({
+          const [topic, data] = twitch.sharedSubscriptionGift({
+            ...base,
             amount: event.amount,
             gifterId: event.chatterId,
             gifterName: event.chatterDisplayName,
@@ -215,7 +214,8 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
           break;
         }
         case "shared_chat_raid": {
-          const [topic, data] = twitch.raid({
+          const [topic, data] = twitch.sharedRaid({
+            ...base,
             fromBroadcasterUserId: event.raiderId,
             fromBroadcasterUserName: event.raiderDisplayName,
             viewers: event.viewerCount,

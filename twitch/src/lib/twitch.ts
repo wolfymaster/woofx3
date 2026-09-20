@@ -60,6 +60,41 @@ export default class TwitchApi {
   }
 
   /**
+   * Shout out another broadcaster: Twitch's own shoutout, which shows the
+   * channel to viewers, not a chat message about it.
+   *
+   * Accepts a user id or a login name, because a workflow author writing this
+   * action has whichever the trigger gave them — a raid carries the raider's
+   * id, a chat command carries what someone typed.
+   *
+   * Twitch rate-limits shoutouts (one every 2 minutes, and one per target per
+   * 60 minutes) and answers a refusal with a 429, which surfaces through the
+   * dispatcher's error path like any other failure.
+   */
+  async shoutout(args: { userId?: string; userName?: string }): Promise<{ ok: true; userId: string }> {
+    const target = await this.resolveUserId(args);
+    await this.apiClient.chat.shoutoutUser(this.broadcaster, target);
+    return { ok: true, userId: target };
+  }
+
+  /** A user id from whichever of id/name the caller had. */
+  private async resolveUserId(args: { userId?: string; userName?: string }): Promise<string> {
+    const userId = args?.userId?.trim();
+    if (userId) {
+      return userId;
+    }
+    const userName = args?.userName?.trim().replace(/^@/, "");
+    if (!userName) {
+      throw new Error("shoutout: userId or userName is required");
+    }
+    const user = await this.apiClient.users.getUserByName(userName);
+    if (!user) {
+      throw new Error(`shoutout: no Twitch user named "${userName}"`);
+    }
+    return user.id;
+  }
+
+  /**
    * Promote a user to channel moderator. Requires the broadcaster
    * token to carry the `channel:manage:moderators` scope; if absent,
    * Twurple will surface a 401 via the dispatcher's error path.

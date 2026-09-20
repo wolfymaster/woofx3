@@ -14,12 +14,32 @@ impl NatsPublisher for NoopNatsPublisher {
 pub struct NoopStorageClient;
 
 impl StorageClient for NoopStorageClient {
-    fn get(&self, _key: &str) -> Result<Option<Value>, String> {
+    fn get(&self, _namespace: &str, _key: &str) -> Result<Option<Value>, String> {
         Ok(None)
     }
 
-    fn set(&self, _key: &str, _value: Value, _options: StorageSetOptions) -> Result<(), String> {
+    fn set(
+        &self,
+        _namespace: &str,
+        _key: &str,
+        _value: Value,
+        _options: StorageSetOptions,
+    ) -> Result<(), String> {
         Ok(())
+    }
+
+    fn compare_and_set(
+        &self,
+        _namespace: &str,
+        _key: &str,
+        _expected: Option<&Value>,
+        value: Value,
+        _options: StorageSetOptions,
+    ) -> Result<CompareAndSetOutcome, String> {
+        Ok(CompareAndSetOutcome {
+            swapped: true,
+            current: Some(value),
+        })
     }
 }
 
@@ -70,12 +90,17 @@ impl ResourceClient for NoopResourceClient {
         _kind: &str,
         _instance_id: &str,
         _display_name: &str,
+        _settings: &Value,
     ) -> Result<ResourceInstance, String> {
         Err("resource client not configured".to_string())
     }
 
     fn delete(&self, _canonical_id: &str) -> Result<(), String> {
         Err("resource client not configured".to_string())
+    }
+
+    fn get(&self, _canonical_id: &str) -> Result<Option<ResourceInstance>, String> {
+        Ok(None)
     }
 
     fn list_by_kind(&self, _kind: &str) -> Result<Vec<ResourceInstance>, String> {

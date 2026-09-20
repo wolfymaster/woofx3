@@ -37,6 +37,7 @@
 ---@field kind string
 ---@field instance_id string
 ---@field display_name string
+---@field settings table
 
 ---@class CtxHttpResponse
 ---@field status integer
@@ -66,9 +67,14 @@
 ---@class CtxStorageSetOptions
 ---@field clearOnSessionEnd boolean?
 
+---@class CtxCompareAndSetResult
+---@field swapped boolean
+---@field current any
+
 ---@class CtxStorage
 ---@field get fun(key: string): any
 ---@field set fun(key: string, value: any, options?: CtxStorageSetOptions): nil
+---@field compareAndSet fun(key: string, expected: any, value: any, options?: CtxStorageSetOptions): CtxCompareAndSetResult
 
 ---@class CtxHttp
 ---@field request fun(url: string, method: string, opts?: CtxHttpOptions): CtxHttpResponse
@@ -91,8 +97,9 @@
 ---@field error fun(value: any): nil
 
 ---@class CtxResources
----@field create fun(kind: string, instance_id: string, display_name?: string): ResourceInstance
+---@field create fun(kind: string, instance_id: string, display_name?: string, settings?: table): ResourceInstance
 ---@field delete fun(canonical_id: string): nil
+---@field get fun(canonical_id: string): ResourceInstance|nil
 ---@field list fun(kind: string): ResourceInstance[]
 
 ---The standard shape a function returns when it wants the invoking chat
@@ -126,6 +133,7 @@
 ---@field timeout fun(args: any): nil
 ---@field updateStream fun(args: any): nil
 ---@field addModerator fun(args: any): nil
+---@field shoutout fun(args: any): nil
 
 ---@class CtxChatExtension
 ---@field sendMessage fun(text: string): nil

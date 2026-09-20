@@ -11,6 +11,12 @@ service StorageService {
   
   // Set a key-value pair
   rpc Set(SetRequest) returns (SetResponse) {}
+
+  // Write a value only if the key currently holds the expected one, in one
+  // transaction. The only safe way to update a value from its previous one --
+  // a counter, a queue -- when two callers may do it at once; a Get followed by
+  // a Set loses one of the two writes.
+  rpc CompareAndSet(CompareAndSetRequest) returns (CompareAndSetResponse) {}
   
   // Delete a key
   rpc Delete(DeleteRequest) returns (DeleteResponse) {}
@@ -30,7 +36,11 @@ service StorageService {
   rpc ClearSessionScoped(ClearSessionScopedRequest) returns (ClearSessionScopedResponse) {}
 }
 
-// Storage item with metadata
+// Storage item with metadata.
+//
+// A value is addressed by (application_id, namespace, key). The namespace is
+// the owning module's manifest id, so two modules using the same key never see
+// each other's values; it is required on every read and write.
 message StorageItem {
   string key = 1;
   string value = 2;
@@ -49,6 +59,7 @@ message StorageItem {
 message GetRequest {
   string key = 1;
   string application_id = 2;
+  string namespace = 3;
 }
 
 message GetResponse {
@@ -62,10 +73,28 @@ message SetRequest {
 
 message SetResponse {}
 
+// Write `item` only if the key holds `expected_value` now -- or holds nothing,
+// when `expect_absent` is set.
+message CompareAndSetRequest {
+  StorageItem item = 1;
+  string expected_value = 2;
+  bool expect_absent = 3;
+}
+
+message CompareAndSetResponse {
+  // Whether the write happened.
+  bool swapped = 1;
+  // What the key holds now: the value just written, or the one that stopped
+  // the write, which is what a caller retries from. Absent when the key holds
+  // nothing.
+  StorageItem current = 2;
+}
+
 // Delete a key
 message DeleteRequest {
   string key = 1;
   string application_id = 2;
+  string namespace = 3;
 }
 
 message DeleteResponse {}
@@ -102,4 +131,8 @@ message ClearSessionScopedResponse {
   // boundary with nobody watching, so the count is the only evidence in a log
   // that it ran and what it did.
   int32 cleared = 1;
+  // Which keys were dropped, by namespace and key, so the engine can announce
+  // each one as changed: a screen showing a session value has to learn that it
+  // went back to nothing.
+  repeated StorageItem cleared_items = 2;
 }

@@ -460,12 +460,21 @@ export class DbClient {
 
   /**
    * Drop every module storage key the application flagged session-scoped,
-   * returning how many went. The storage RPCs carry no status envelope, so
-   * there is nothing to unwrap.
+   * returning what went, by namespace and key. The storage RPCs carry no status
+   * envelope, so there is nothing to unwrap.
    */
-  async clearSessionScoped(req: storage.ClearSessionScopedRequest): Promise<number> {
+  async clearSessionScoped(req: storage.ClearSessionScopedRequest): Promise<storage.StorageItem[]> {
     const response = await storage.ClearSessionScoped(req, this.config);
-    return response.cleared ?? 0;
+    return response.clearedItems ?? [];
+  }
+
+  /** One module's stored value, decoded, or `undefined` when the key holds nothing. */
+  async getModuleStorageValue(applicationId: string, namespace: string, key: string): Promise<unknown> {
+    const response = await storage.Get({ applicationId, namespace, key }, this.config);
+    if (!response.item) {
+      return undefined;
+    }
+    return JSON.parse(response.item.value);
   }
 
   /**
@@ -764,6 +773,12 @@ export class DbClient {
     req: module_resource_instance.CreateResourceInstanceRequest
   ): Promise<module_resource_instance.ResourceInstanceResponse> {
     return module.CreateResourceInstance(req, this.config);
+  }
+
+  async updateResourceInstance(
+    req: module_resource_instance.UpdateResourceInstanceRequest
+  ): Promise<module_resource_instance.ResourceInstanceResponse> {
+    return module.UpdateResourceInstance(req, this.config);
   }
 
   async deleteResourceInstance(

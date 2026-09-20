@@ -29,6 +29,9 @@ export enum EventType {
   CharityDonation = "channel.charityDonation",
   BitsBadgeTier = "channel.bitsBadgeTier",
   WatchStreak = "channel.watchStreak",
+  SharedSubscribe = "channel.sharedSubscribe",
+  SharedSubscriptionGift = "channel.sharedSubscriptionGift",
+  SharedRaid = "channel.sharedRaid",
   SharedResub = "channel.sharedResub",
   SharedGiftPaidUpgrade = "channel.sharedGiftPaidUpgrade",
   SharedPrimePaidUpgrade = "channel.sharedPrimePaidUpgrade",
@@ -174,6 +177,16 @@ export interface WatchStreak extends NotificationBase {
   streakCount: number;
   channelPointsAwarded: number;
 }
+
+// The shared* events are activity in another participant's channel during a
+// shared chat session, which Twitch also shows in this broadcaster's chat. They
+// are kept apart from the plain events so a partner's sub or raid never reads as
+// one on this channel; sourceBroadcasterId names the channel it happened in.
+export interface SharedSubscribe extends Subscribe, NotificationBase {}
+
+export interface SharedSubscriptionGift extends SubscriptionGift, NotificationBase {}
+
+export interface SharedRaid extends Raid, NotificationBase {}
 
 export interface SharedResub extends Resub {}
 

@@ -2,9 +2,82 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.5.1",
+  "version": "0.7.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
+  "resources": [
+    {
+      "kind": "counter",
+      "name": "Counter",
+      "description": "A number that actions change and overlays and chat can show: deaths, wins, hugs given.",
+      "icon": "Tally5",
+      "schema": [
+        {
+          "id": "lifetime",
+          "label": "Keeps its value",
+          "type": "select",
+          "required": true,
+          "defaultValue": "forever",
+          "options": [
+            {
+              "value": "forever",
+              "label": "Forever"
+            },
+            {
+              "value": "session",
+              "label": "For this stream session"
+            }
+          ],
+          "description": "A session counter goes back to its starting value when the stream session ends; a forever counter keeps counting. Changing this applies the next time the counter changes."
+        },
+        {
+          "id": "initialValue",
+          "label": "Starts at",
+          "type": "number",
+          "defaultValue": 0,
+          "description": "Its value before anything changes it, and what Reset goes back to."
+        },
+        {
+          "id": "step",
+          "label": "Counts by",
+          "type": "number",
+          "min": 1,
+          "defaultValue": 1,
+          "description": "How much Increment adds and Decrement takes away."
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "id": "counter.increment",
+      "name": "Increment counter",
+      "runtime": "js",
+      "path": "functions/counter.js",
+      "entryPoint": "counterIncrement"
+    },
+    {
+      "id": "counter.decrement",
+      "name": "Decrement counter",
+      "runtime": "js",
+      "path": "functions/counter.js",
+      "entryPoint": "counterDecrement"
+    },
+    {
+      "id": "counter.set",
+      "name": "Set counter",
+      "runtime": "js",
+      "path": "functions/counter.js",
+      "entryPoint": "counterSet"
+    },
+    {
+      "id": "counter.reset",
+      "name": "Reset counter",
+      "runtime": "js",
+      "path": "functions/counter.js",
+      "entryPoint": "counterReset"
+    }
+  ],
   "actions": [
     {
       "id": "function",
@@ -14,6 +87,26 @@
       "handler": "function",
       "taxonomy": [
         "system.workflow"
+      ]
+    },
+    {
+      "id": "chat.reply",
+      "name": "Send chat message",
+      "description": "Send one message to chat. Replying is an action like any other, so a chat command that answers is a command with this action on it.",
+      "type": "native",
+      "handler": "chat.reply",
+      "schema": [
+        {
+          "id": "message",
+          "label": "Message",
+          "type": "text",
+          "required": true,
+          "placeholder": "What should the bot say?",
+          "description": "Plain text. Twitch chat enforces a 500-character limit."
+        }
+      ],
+      "taxonomy": [
+        "system.chat"
       ]
     },
     {
@@ -55,6 +148,169 @@
       "handler": "print",
       "taxonomy": [
         "system.workflow"
+      ]
+    },
+    {
+      "id": "counter.increment",
+      "name": "Increment counter",
+      "description": "Add the counter's step to it.",
+      "type": "function",
+      "function": "counter.increment",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Counter",
+          "type": "resource_ref",
+          "resourceKind": "counter",
+          "required": true,
+          "description": "Which counter to change."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The counter that changed."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Its value before the change."
+          },
+          {
+            "path": "next",
+            "type": "number",
+            "description": "Its value after the change."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.counter"
+      ]
+    },
+    {
+      "id": "counter.decrement",
+      "name": "Decrement counter",
+      "description": "Take the counter's step away from it.",
+      "type": "function",
+      "function": "counter.decrement",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Counter",
+          "type": "resource_ref",
+          "resourceKind": "counter",
+          "required": true,
+          "description": "Which counter to change."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The counter that changed."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Its value before the change."
+          },
+          {
+            "path": "next",
+            "type": "number",
+            "description": "Its value after the change."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.counter"
+      ]
+    },
+    {
+      "id": "counter.set",
+      "name": "Set counter",
+      "description": "Set the counter to a number.",
+      "type": "function",
+      "function": "counter.set",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Counter",
+          "type": "resource_ref",
+          "resourceKind": "counter",
+          "required": true,
+          "description": "Which counter to change."
+        },
+        {
+          "id": "value",
+          "label": "Value",
+          "type": "number",
+          "required": true,
+          "description": "The number to set it to."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The counter that changed."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Its value before the change."
+          },
+          {
+            "path": "next",
+            "type": "number",
+            "description": "Its value after the change."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.counter"
+      ]
+    },
+    {
+      "id": "counter.reset",
+      "name": "Reset counter",
+      "description": "Put the counter back to the value it starts at.",
+      "type": "function",
+      "function": "counter.reset",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Counter",
+          "type": "resource_ref",
+          "resourceKind": "counter",
+          "required": true,
+          "description": "Which counter to change."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The counter that changed."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Its value before the change."
+          },
+          {
+            "path": "next",
+            "type": "number",
+            "description": "Its value after the change."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.counter"
       ]
     }
   ],

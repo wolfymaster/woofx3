@@ -41,6 +41,12 @@ const (
 	// Workflow events
 	SubjectWorkflowExecute Subject = "workflow.execute"
 
+	// Run a list of actions that belongs to no workflow -- a chat command's
+	// actions, say. Published by anything holding actions to run; the workflow
+	// engine runs them through its own executor (Engine.RunActions). The run is
+	// not recorded: there is no workflow row to attribute it to.
+	SubjectActionExecute Subject = "action.execute"
+
 	// Run a recorded run again, whole or from one of its steps. Carries the
 	// original trigger event and the recorded step outcomes, published by the
 	// api after reading them from the db proxy.
@@ -131,6 +137,7 @@ const (
 	SubjectDbModuleAssetRegisteredPattern         Subject = "db.module.asset.registered.*"
 	SubjectDbModuleAssetDeregisteredPattern       Subject = "db.module.asset.deregistered.*"
 	SubjectDbModuleResourceInstanceCreatedPattern Subject = "db.module.resource.instance.created.*"
+	SubjectDbModuleResourceInstanceUpdatedPattern Subject = "db.module.resource.instance.updated.*"
 	SubjectDbModuleResourceInstanceDeletedPattern Subject = "db.module.resource.instance.deleted.*"
 
 	// DB-proxy overlay-token outbox patterns. Same publisher.go format:

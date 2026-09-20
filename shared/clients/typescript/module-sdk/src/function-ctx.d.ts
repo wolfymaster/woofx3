@@ -35,6 +35,8 @@ export interface ResourceInstance {
   kind: string;
   instance_id: string;
   display_name: string;
+  /** What the instance was created with: its kind's `schema` field values. */
+  settings: Record<string, unknown>;
 }
 
 /**
@@ -114,14 +116,30 @@ export interface WebhookHandlerResult {
 }
 
 /**
- * `ctx.storage` — module-scoped persistent KV. Reads and writes are
- * synchronous to the function. Every successful `set` auto-emits a
+ * `ctx.storage` — module-scoped persistent KV. Every key belongs to the calling
+ * module: two modules using the same key hold two separate values. Reads and
+ * writes are synchronous to the function. Every successful write auto-emits a
  * `module.storage.<moduleId>.changed` NATS event so widgets and other
  * subscribers see the update.
  */
 export interface CtxStorage {
   get(key: string): unknown;
   set(key: string, value: unknown, options?: CtxStorageSetOptions): void;
+  /**
+   * Write `value` only if the key holds `expected` right now — or holds nothing,
+   * when `expected` is null — in one step. The safe way to update a value from
+   * its previous one (a counter, a queue) when two invocations may do it at
+   * once; `get` then `set` can lose one of the two writes.
+   *
+   * `current` is what the key holds afterwards: the value just written, or the
+   * one that stopped the write, which is what to retry from.
+   */
+  compareAndSet(key: string, expected: unknown, value: unknown, options?: CtxStorageSetOptions): CtxCompareAndSetResult;
+}
+
+export interface CtxCompareAndSetResult {
+  swapped: boolean;
+  current: unknown;
 }
 
 /** How the engine should treat a stored value beyond its bytes. */
@@ -190,8 +208,10 @@ export interface CtxResponse {
  * in workflows / commands.
  */
 export interface CtxResources {
-  create(kind: string, instanceId: string, displayName?: string): ResourceInstance;
+  create(kind: string, instanceId: string, displayName?: string, settings?: Record<string, unknown>): ResourceInstance;
   delete(canonicalId: string): void;
+  /** One instance, settings included, or null when nothing has the id. */
+  get(canonicalId: string): ResourceInstance | null;
   list(kind: string): ResourceInstance[];
 }
 
@@ -245,6 +265,8 @@ export interface CtxTwitchExtension {
   timeout(args: unknown): null;
   updateStream(args: unknown): null;
   addModerator(args: unknown): null;
+  /** Twitch's own shoutout. `{ userId }` or `{ userName }`. */
+  shoutout(args: unknown): null;
 }
 
 /** `ctx.chat.*` — registered when `ChatExtension` is bound. */

@@ -9,6 +9,7 @@
 
 use lib_module::db_proxy::{self, RequestContext as DbRequestContext, ResourceInstanceJson};
 use lib_sandbox::host::{ResourceClient, ResourceInstance};
+use serde_json::Value;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 
@@ -36,12 +37,19 @@ impl HttpResourceClient {
 }
 
 fn from_json(j: ResourceInstanceJson) -> ResourceInstance {
+    // The engine only ever stores an object here; an unreadable one reads as
+    // no settings rather than failing the function that asked.
+    let settings = serde_json::from_str(&j.settings_json)
+        .ok()
+        .filter(Value::is_object)
+        .unwrap_or_else(|| Value::Object(Default::default()));
     ResourceInstance {
         canonical_id: j.canonical_id,
         module_name: j.module_name,
         kind: j.kind,
         instance_id: j.instance_id,
         display_name: j.display_name,
+        settings,
     }
 }
 
@@ -52,8 +60,10 @@ impl ResourceClient for HttpResourceClient {
         kind: &str,
         instance_id: &str,
         display_name: &str,
+        settings: &Value,
     ) -> Result<ResourceInstance, String> {
         let url = self.db_proxy_url.clone();
+        let settings_json = serde_json::to_string(settings).map_err(|e| e.to_string())?;
         let module_name = owning_module_name.to_string();
         let kind = kind.to_string();
         let instance_id = instance_id.to_string();
@@ -68,6 +78,7 @@ impl ResourceClient for HttpResourceClient {
                     &kind,
                     &instance_id,
                     &display_name,
+                    &settings_json,
                     req_ctx.as_deref(),
                 )
                 .await
@@ -84,6 +95,15 @@ impl ResourceClient for HttpResourceClient {
             .block_on(async move {
                 db_proxy::delete_resource_instance(&url, &cid, req_ctx.as_deref()).await
             })
+            .map_err(|e| e.to_string())
+    }
+
+    fn get(&self, canonical_id: &str) -> Result<Option<ResourceInstance>, String> {
+        let url = self.db_proxy_url.clone();
+        let canonical_id = canonical_id.to_string();
+        Handle::current()
+            .block_on(async move { db_proxy::get_resource_instance(&url, &canonical_id).await })
+            .map(|found| found.map(from_json))
             .map_err(|e| e.to_string())
     }
 

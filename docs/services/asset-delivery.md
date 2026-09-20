@@ -74,22 +74,45 @@ once to the URL the grant names, then reports completion:
 browser
   ├─> api.requestUploadUrl(...)                    api (capnweb)
   │     └─> POST {barkloaderUrl}/assets/upload-url barkloader
-  │           ├─ S3 backend   → presigned PUT at the bucket
-  │           └─ file backend → PUT {scene.publicUrl}/assets/upload/{token}
+  │           ├─ relay (default) → PUT {scene.publicUrl}/assets/upload/{token}
+  │           └─ direct, S3 only → presigned PUT at the bucket
   ├─> PUT {uploadUrl}  (bytes, exactly the grant's headers)
   └─> api.completeUpload(resourceId, size)         row becomes "ready"
 ```
 
-The grant's shape is identical on both backends, so nothing upstream
-branches on the provider. On the file backend the PUT lands on
-sceneManager, the only browser-reachable edge, which streams the body on
-to barkloader without buffering it and relays the answer:
+The grant's shape is identical either way, so nothing upstream branches on
+the provider or the mode.
+
+### Relay or direct
+
+`storage.uploadMode` chooses where the browser sends the bytes: `relay`
+(the default) or `direct`. The file backend cannot presign and always
+relays, whatever the setting says.
+
+Relay is the default because a presigned PUT straight at a bucket only
+works from a browser if that bucket carries a CORS policy allowing PUT
+from the dashboard's origin. A bucket without one — which is what a fresh
+R2 or S3 bucket is — refuses the preflight, so the upload fails before a
+byte is sent, and nothing in the engine can see it happen: the failure is
+between the browser and the bucket. The relay goes through an edge that
+already answers the preflight, so uploads work against any backend with
+no bucket configuration.
+
+Set `direct` to spend the bucket's bandwidth instead of the engine's, once
+that bucket allows `PUT` with `content-type` from the dashboard's origin.
+
+When relaying, the PUT lands on sceneManager, the only browser-reachable
+edge, which streams the body on to barkloader without buffering it and
+relays the answer:
 
 ```
 browser
   └─> PUT {sceneManagerUrl}/assets/upload/{token}  sceneManager
         └─> PUT {barkloaderUrl}/assets/upload/{token}
 ```
+
+Barkloader writes the bytes through the same repository either way, so a
+relayed upload lands in the same bucket a presigned one would.
 
 `/assets/upload/{token}` accepts only PUT (405 otherwise) and answers a
 CORS preflight allowing PUT with `Content-Type`, since the dashboard is a
