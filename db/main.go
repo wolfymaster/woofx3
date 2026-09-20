@@ -50,6 +50,7 @@ func main() {
 			cfg := runtime.GetConfig[*config.DatabaseEnvConfig](appCtx)
 			databaseURL := cfg.DatabaseURL
 			badgerPath := cfg.BadgerPath
+			httpHost := cfg.DatabaseProxyHost
 			httpPort := cfg.DatabaseProxyPort
 
 			if cfg.LogLevel != "" {
@@ -82,7 +83,7 @@ func main() {
 				return err
 			}
 
-			httpSvc := services.NewHTTPServerService(app, httpPort, logger, routes.SetupAllRoutes)
+			httpSvc := services.NewHTTPServerService(app, httpHost, httpPort, logger, routes.SetupAllRoutes)
 			if err := application.Register("http", httpSvc); err != nil {
 				return err
 			}

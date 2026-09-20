@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -124,35 +123,53 @@ func resolveRootDir(options *LoadRuntimeEnvOptions) string {
 	return findProjectRoot(".")
 }
 
+// LoadRuntimeEnv resolves configuration from .woofx3.json, .env and the process environment, keyed
+// as WOOFX3_* variables. Precedence, highest first: the process environment, then .env, then
+// .woofx3.json -- a deployment configures by variables, so a value baked into the file must never
+// beat one the host set. A blank value never masks a non-blank one from a lower source; a key blank
+// everywhere still resolves, to blank.
 func LoadRuntimeEnv(options *LoadRuntimeEnvOptions) (map[string]string, error) {
 	rootDir := resolveRootDir(options)
-
-	env := make(map[string]string)
-	for _, e := range os.Environ() {
-		idx := strings.Index(e, "=")
-		if idx > 0 {
-			env[e[:idx]] = e[idx+1:]
-		}
-	}
-
-	envPath := filepath.Join(rootDir, ".env")
-	dotenv, err := parseDotenv(envPath)
-	if err != nil {
-		return nil, err
-	}
-	maps.Copy(env, dotenv)
 
 	configPath := filepath.Join(rootDir, ".woofx3.json")
 	woofx3, err := loadWoofx3Config(configPath)
 	if err != nil {
 		return nil, err
 	}
+	fromFile := make(map[string]string, len(woofx3))
 	for key, val := range woofx3 {
-		envKey := "WOOFX3_" + camelToScreamingSnake(key)
-		env[envKey] = valueToString(val)
+		fromFile["WOOFX3_"+camelToScreamingSnake(key)] = valueToString(val)
 	}
 
-	return env, nil
+	fromDotenv, err := parseDotenv(filepath.Join(rootDir, ".env"))
+	if err != nil {
+		return nil, err
+	}
+
+	fromProcess := make(map[string]string)
+	for _, e := range os.Environ() {
+		idx := strings.Index(e, "=")
+		if idx > 0 {
+			fromProcess[e[:idx]] = e[idx+1:]
+		}
+	}
+
+	return mergeByPrecedence(fromFile, fromDotenv, fromProcess), nil
+}
+
+// mergeByPrecedence merges sources given lowest precedence first. A later source overrides an
+// earlier one unless its value is blank: a "" left in a config file, or an unset variable passed
+// through by a compose file, means "not set here".
+func mergeByPrecedence(sources ...map[string]string) map[string]string {
+	merged := make(map[string]string)
+	for _, source := range sources {
+		for key, value := range source {
+			if _, present := merged[key]; strings.TrimSpace(value) != "" || !present {
+				merged[key] = value
+			}
+		}
+	}
+	return merged
 }
 
 func ValidateRequiredEnv(env map[string]string, required []string) []string {

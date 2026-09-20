@@ -21,9 +21,14 @@ func NewSettingService(repo *repository.SettingRepository) *settingService {
 }
 
 func (s *settingService) GetSetting(ctx context.Context, req *client.GetSettingRequest) (*client.SettingResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	appIDStr, found, err := resolveApplicationIDForRead(ctx, s.repo.DB(), req.ApplicationId)
 	if err != nil {
 		return nil, err
+	}
+	if !found {
+		// Nothing has been stored on this engine yet; same answer as a key
+		// that is not set.
+		return &client.SettingResponse{}, nil
 	}
 	applicationId, err := uuid.Parse(appIDStr)
 	if err != nil {
@@ -54,9 +59,12 @@ func (s *settingService) GetSetting(ctx context.Context, req *client.GetSettingR
 }
 
 func (s *settingService) GetSettings(ctx context.Context, req *client.GetSettingsRequest) (*client.GetSettingsResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	appIDStr, found, err := resolveApplicationIDForRead(ctx, s.repo.DB(), req.ApplicationId)
 	if err != nil {
 		return nil, err
+	}
+	if !found {
+		return &client.GetSettingsResponse{Status: &client.ResponseStatus{Code: client.ResponseStatus_OK}}, nil
 	}
 	applicationId, err := uuid.Parse(appIDStr)
 	if err != nil {
@@ -188,9 +196,15 @@ func (s *settingService) DeleteSetting(ctx context.Context, req *client.DeleteSe
 }
 
 func (s *settingService) ListSettingsByPrefix(ctx context.Context, req *client.ListSettingsRequest) (*client.ListSettingsResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
+	appIDStr, found, err := resolveApplicationIDForRead(ctx, s.repo.DB(), req.ApplicationId)
 	if err != nil {
 		return nil, err
+	}
+	if !found {
+		return &client.ListSettingsResponse{
+			Status:   &client.ResponseStatus{Code: client.ResponseStatus_OK},
+			Settings: map[string]string{},
+		}, nil
 	}
 	applicationId, err := uuid.Parse(appIDStr)
 	if err != nil {

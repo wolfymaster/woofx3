@@ -64,26 +64,22 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
 
     const db = ctx.services.db.client;
 
-    const commander = new Commands(
-      ctx.config.getConfig("woofx3TwitchChannelName") as string,
-      ctx.services.twitchChat.client,
-      {
-        publisher: (match) => {
-          const [subject, data] = ctx.events.ChatCommand().command(match.commandName, {
-            args: match.args,
-            rawMessage: match.rawMessage,
-            text: match.text,
-            variables: match.variables,
-            chatter: match.chatter,
-            platform: "twitch",
-          });
-          ctx.services.messageBus.client.publish(subject, data);
-        },
-        onPublishError: (err, match) => {
-          ctx.logger.error("Failed to publish chat.command event", match.commandName, err);
-        },
-      }
-    );
+    const commander = new Commands(ctx.services.twitchChat, {
+      publisher: (match) => {
+        const [subject, data] = ctx.events.ChatCommand().command(match.commandName, {
+          args: match.args,
+          rawMessage: match.rawMessage,
+          text: match.text,
+          variables: match.variables,
+          chatter: match.chatter,
+          platform: "twitch",
+        });
+        ctx.services.messageBus.client.publish(subject, data);
+      },
+      onPublishError: (err, match) => {
+        ctx.logger.error("Failed to publish chat.command event", match.commandName, err);
+      },
+    });
     commander.setAuth(async (user: string, cmd: string) => {
       return await canUse(user, cmd, db);
     });
@@ -237,8 +233,11 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
     }
 
     ctx.logger.info(chalk.yellow("#######################################################"));
+    const channel = ctx.services.twitchChat.channel();
     ctx.logger.info(
-      chalk.yellow.bold(`Connected to Twitch chat for channel: ${ctx.config.getConfig("woofx3TwitchChannelName")}`)
+      chalk.yellow.bold(
+        channel ? `Connected to Twitch chat for channel: ${channel}` : "Twitch chat waiting for a Twitch link"
+      )
     );
     ctx.logger.info(chalk.yellow("####################################################### \n"));
 

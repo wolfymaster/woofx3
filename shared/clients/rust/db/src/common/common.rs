@@ -67,6 +67,26 @@ pub struct PingResponse {
     #[prost(message, optional, tag="1")]
     pub status: ::core::option::Option<ResponseStatus>,
 }
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct MigrationStatusRequest {
+}
+/// How much of its migration chain the database behind this db-proxy has
+/// applied, measured against the chain this db-proxy build ships. An engine is
+/// not ready until nothing is pending.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct MigrationStatusResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<ResponseStatus>,
+    /// Newest migration in the chain the database has applied; empty when none.
+    #[prost(string, tag="2")]
+    pub applied: ::prost::alloc::string::String,
+    /// Newest migration in the chain.
+    #[prost(string, tag="3")]
+    pub latest: ::prost::alloc::string::String,
+    /// Migrations in the chain the database has not applied.
+    #[prost(int32, tag="4")]
+    pub pending: i32,
+}
 include!("common.serde.rs");
 include!("common.tonic.rs");
 // @@protoc_insertion_point(module)

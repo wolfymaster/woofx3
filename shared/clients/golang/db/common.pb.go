@@ -273,6 +273,116 @@ func (x *PingResponse) GetStatus() *ResponseStatus {
 	return nil
 }
 
+type MigrationStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrationStatusRequest) Reset() {
+	*x = MigrationStatusRequest{}
+	mi := &file_common_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationStatusRequest) ProtoMessage() {}
+
+func (x *MigrationStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_common_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationStatusRequest.ProtoReflect.Descriptor instead.
+func (*MigrationStatusRequest) Descriptor() ([]byte, []int) {
+	return file_common_proto_rawDescGZIP(), []int{4}
+}
+
+// How much of its migration chain the database behind this db-proxy has
+// applied, measured against the chain this db-proxy build ships. An engine is
+// not ready until nothing is pending.
+type MigrationStatusResponse struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Status *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	// Newest migration in the chain the database has applied; empty when none.
+	Applied string `protobuf:"bytes,2,opt,name=applied,proto3" json:"applied,omitempty"`
+	// Newest migration in the chain.
+	Latest string `protobuf:"bytes,3,opt,name=latest,proto3" json:"latest,omitempty"`
+	// Migrations in the chain the database has not applied.
+	Pending       int32 `protobuf:"varint,4,opt,name=pending,proto3" json:"pending,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrationStatusResponse) Reset() {
+	*x = MigrationStatusResponse{}
+	mi := &file_common_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationStatusResponse) ProtoMessage() {}
+
+func (x *MigrationStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_common_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationStatusResponse.ProtoReflect.Descriptor instead.
+func (*MigrationStatusResponse) Descriptor() ([]byte, []int) {
+	return file_common_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *MigrationStatusResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *MigrationStatusResponse) GetApplied() string {
+	if x != nil {
+		return x.Applied
+	}
+	return ""
+}
+
+func (x *MigrationStatusResponse) GetLatest() string {
+	if x != nil {
+		return x.Latest
+	}
+	return ""
+}
+
+func (x *MigrationStatusResponse) GetPending() int32 {
+	if x != nil {
+		return x.Pending
+	}
+	return 0
+}
+
 var File_common_proto protoreflect.FileDescriptor
 
 const file_common_proto_rawDesc = "" +
@@ -294,9 +404,16 @@ const file_common_proto_rawDesc = "" +
 	"\bINTERNAL\x10\x04\"\r\n" +
 	"\vPingRequest\">\n" +
 	"\fPingResponse\x12.\n" +
-	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status2B\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\"\x18\n" +
+	"\x16MigrationStatusRequest\"\x95\x01\n" +
+	"\x17MigrationStatusResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12\x18\n" +
+	"\aapplied\x18\x02 \x01(\tR\aapplied\x12\x16\n" +
+	"\x06latest\x18\x03 \x01(\tR\x06latest\x12\x18\n" +
+	"\apending\x18\x04 \x01(\x05R\apending2\x96\x01\n" +
 	"\rCommonService\x121\n" +
-	"\x04Ping\x12\x13.common.PingRequest\x1a\x14.common.PingResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"\x04Ping\x12\x13.common.PingRequest\x1a\x14.common.PingResponse\x12R\n" +
+	"\x0fMigrationStatus\x12\x1e.common.MigrationStatusRequest\x1a\x1f.common.MigrationStatusResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_common_proto_rawDescOnce sync.Once
@@ -311,24 +428,29 @@ func file_common_proto_rawDescGZIP() []byte {
 }
 
 var file_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_common_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_common_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_common_proto_goTypes = []any{
-	(ResponseStatus_Code)(0), // 0: common.ResponseStatus.Code
-	(*RequestContext)(nil),   // 1: common.RequestContext
-	(*ResponseStatus)(nil),   // 2: common.ResponseStatus
-	(*PingRequest)(nil),      // 3: common.PingRequest
-	(*PingResponse)(nil),     // 4: common.PingResponse
+	(ResponseStatus_Code)(0),        // 0: common.ResponseStatus.Code
+	(*RequestContext)(nil),          // 1: common.RequestContext
+	(*ResponseStatus)(nil),          // 2: common.ResponseStatus
+	(*PingRequest)(nil),             // 3: common.PingRequest
+	(*PingResponse)(nil),            // 4: common.PingResponse
+	(*MigrationStatusRequest)(nil),  // 5: common.MigrationStatusRequest
+	(*MigrationStatusResponse)(nil), // 6: common.MigrationStatusResponse
 }
 var file_common_proto_depIdxs = []int32{
 	0, // 0: common.ResponseStatus.code:type_name -> common.ResponseStatus.Code
 	2, // 1: common.PingResponse.status:type_name -> common.ResponseStatus
-	3, // 2: common.CommonService.Ping:input_type -> common.PingRequest
-	4, // 3: common.CommonService.Ping:output_type -> common.PingResponse
-	3, // [3:4] is the sub-list for method output_type
-	2, // [2:3] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	2, // 2: common.MigrationStatusResponse.status:type_name -> common.ResponseStatus
+	3, // 3: common.CommonService.Ping:input_type -> common.PingRequest
+	5, // 4: common.CommonService.MigrationStatus:input_type -> common.MigrationStatusRequest
+	4, // 5: common.CommonService.Ping:output_type -> common.PingResponse
+	6, // 6: common.CommonService.MigrationStatus:output_type -> common.MigrationStatusResponse
+	5, // [5:7] is the sub-list for method output_type
+	3, // [3:5] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_common_proto_init() }
@@ -342,7 +464,7 @@ func file_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_common_proto_rawDesc), len(file_common_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

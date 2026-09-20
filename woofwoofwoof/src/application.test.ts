@@ -76,7 +76,8 @@ function buildTestContext(options: {
   };
 
   const twitchChat = {
-    client: { say },
+    channel: () => "testchannel",
+    say: (text: string, opts?: unknown) => say("testchannel", text, opts),
   };
 
   const services = {

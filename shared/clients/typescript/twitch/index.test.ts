@@ -10,7 +10,7 @@ const TOKEN_JSON = JSON.stringify({
 });
 
 let lastRefreshingAuthCredentials: unknown;
-const addUserForToken = mock(async (_token: unknown, _scopes: string[]) => {});
+const addUserForToken = mock(async (_token: unknown, _scopes: string[]) => "42");
 
 mock.module("@twurple/auth", () => ({
   RefreshingAuthProvider: class {
@@ -27,10 +27,11 @@ mock.module("@twurple/auth", () => ({
 const apiClientConstructCount = { n: 0 };
 let lastApiClientAuth: unknown;
 const getUserByName = mock(async (_opts: { name: string }) => ({ id: "b1", name: "broadcaster" }));
+const getUserById = mock(async (id: string) => ({ id, name: "linked-login" }));
 
 mock.module("@twurple/api", () => ({
   ApiClient: class {
-    users = { getUserByName };
+    users = { getUserByName, getUserById };
 
     constructor(opts: { authProvider: unknown }) {
       apiClientConstructCount.n += 1;
@@ -76,6 +77,7 @@ beforeEach(() => {
   apiClientConstructCount.n = 0;
   lastApiClientAuth = undefined;
   getUserByName.mockClear();
+  getUserById.mockClear();
   lastChatClientOpts = undefined;
   eventSubConstructCount.n = 0;
   lastEventSubOpts = undefined;
@@ -199,5 +201,48 @@ describe("TwitchClient", () => {
     await client.init({ clientId: "i", clientSecret: "s", redirectUri: "r" });
 
     await expect(client.broadcaster()).rejects.toThrow("Failed to retrieve Twitch Helix user: ghost");
+  });
+});
+
+describe("TwitchClient before and after a Twitch account is linked", () => {
+  const credentials = { clientId: "cid", clientSecret: "sec", redirectUri: "https://app/cb" };
+
+  test("init rejects with a TwitchNotLinked error while no token is stored", async () => {
+    const { TWITCH_NOT_LINKED } = await import("./index");
+    for (const stored of [undefined, "", "   "]) {
+      const client = new TwitchClient({ getSetting: createGetSetting(stored) });
+      const err = await client.init(credentials).then(
+        () => null,
+        (e: unknown) => e as Error
+      );
+      expect(err?.name).toBe(TWITCH_NOT_LINKED);
+    }
+  });
+
+  test("without a configured channel, the broadcaster is the account that linked the token", async () => {
+    const client = new TwitchClient({ getSetting: createGetSetting(TOKEN_JSON) });
+    await client.init(credentials);
+
+    const broadcaster = await client.broadcaster();
+
+    expect(getUserById).toHaveBeenCalledWith("42");
+    expect(getUserByName).not.toHaveBeenCalled();
+    expect(broadcaster.name).toBe("linked-login");
+  });
+
+  test("a chat client joins the channel it is given", async () => {
+    const client = new TwitchClient({ getSetting: createGetSetting(TOKEN_JSON) });
+    await client.init(credentials);
+
+    client.ChatClient("linked-login");
+
+    expect((lastChatClientOpts as { channels: string[] }).channels).toEqual(["linked-login"]);
+  });
+
+  test("a chat client needs a channel from somewhere", async () => {
+    const client = new TwitchClient({ getSetting: createGetSetting(TOKEN_JSON) });
+    await client.init(credentials);
+
+    expect(() => client.ChatClient()).toThrow("ChatClient needs a channel");
   });
 });

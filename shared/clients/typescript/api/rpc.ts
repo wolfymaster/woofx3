@@ -25,12 +25,25 @@ export interface ApiContract {}
  * `callbackUrl` + `callbackToken` are the webhook target. They're optional
  * only for headless consumers (CLI tests, smoke checks) that don't need
  * to receive engine callbacks.
+ *
+ * `registrationToken` is required when the engine was deployed with
+ * `WOOFX3_REGISTRATION_TOKEN` set (every managed engine is): without it
+ * anyone who reaches the engine first could register and claim it. An
+ * engine deployed without one ignores it.
  */
 export interface RegisterClientOptions {
   userId: string;
   callbackUrl?: string;
   callbackToken?: string;
+  registrationToken?: string;
 }
+
+/**
+ * The error a refused `registerClient` rejects with. Its `name` survives the
+ * capnweb boundary, so a caller can tell a refused registration from a
+ * transport failure; its `message` is written to be shown to a user.
+ */
+export const REGISTRATION_REFUSED = "RegistrationRefused";
 
 /**
  * The unauthenticated capnweb entry point served by the engine. Connecting

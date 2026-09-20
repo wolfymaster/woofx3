@@ -36,6 +36,9 @@ const _ = twirp.TwirpPackageMinVersion_8_1_0
 type CommonService interface {
 	// Ping checks if the service is accessible and returns a success response
 	Ping(context.Context, *PingRequest) (*PingResponse, error)
+
+	// MigrationStatus reports how far the database is migrated.
+	MigrationStatus(context.Context, *MigrationStatusRequest) (*MigrationStatusResponse, error)
 }
 
 // =============================
@@ -44,7 +47,7 @@ type CommonService interface {
 
 type commonServiceProtobufClient struct {
 	client      HTTPClient
-	urls        [1]string
+	urls        [2]string
 	interceptor twirp.Interceptor
 	opts        twirp.ClientOptions
 }
@@ -72,8 +75,9 @@ func NewCommonServiceProtobufClient(baseURL string, client HTTPClient, opts ...t
 	// Build method URLs: <baseURL>[<prefix>]/<package>.<Service>/<Method>
 	serviceURL := sanitizeBaseURL(baseURL)
 	serviceURL += baseServicePath(pathPrefix, "common", "CommonService")
-	urls := [1]string{
+	urls := [2]string{
 		serviceURL + "Ping",
+		serviceURL + "MigrationStatus",
 	}
 
 	return &commonServiceProtobufClient{
@@ -130,13 +134,59 @@ func (c *commonServiceProtobufClient) callPing(ctx context.Context, in *PingRequ
 	return out, nil
 }
 
+func (c *commonServiceProtobufClient) MigrationStatus(ctx context.Context, in *MigrationStatusRequest) (*MigrationStatusResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "common")
+	ctx = ctxsetters.WithServiceName(ctx, "CommonService")
+	ctx = ctxsetters.WithMethodName(ctx, "MigrationStatus")
+	caller := c.callMigrationStatus
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *MigrationStatusRequest) (*MigrationStatusResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*MigrationStatusRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*MigrationStatusRequest) when calling interceptor")
+					}
+					return c.callMigrationStatus(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*MigrationStatusResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*MigrationStatusResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *commonServiceProtobufClient) callMigrationStatus(ctx context.Context, in *MigrationStatusRequest) (*MigrationStatusResponse, error) {
+	out := new(MigrationStatusResponse)
+	ctx, err := doProtobufRequest(ctx, c.client, c.opts.Hooks, c.urls[1], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
 // =========================
 // CommonService JSON Client
 // =========================
 
 type commonServiceJSONClient struct {
 	client      HTTPClient
-	urls        [1]string
+	urls        [2]string
 	interceptor twirp.Interceptor
 	opts        twirp.ClientOptions
 }
@@ -164,8 +214,9 @@ func NewCommonServiceJSONClient(baseURL string, client HTTPClient, opts ...twirp
 	// Build method URLs: <baseURL>[<prefix>]/<package>.<Service>/<Method>
 	serviceURL := sanitizeBaseURL(baseURL)
 	serviceURL += baseServicePath(pathPrefix, "common", "CommonService")
-	urls := [1]string{
+	urls := [2]string{
 		serviceURL + "Ping",
+		serviceURL + "MigrationStatus",
 	}
 
 	return &commonServiceJSONClient{
@@ -208,6 +259,52 @@ func (c *commonServiceJSONClient) Ping(ctx context.Context, in *PingRequest) (*P
 func (c *commonServiceJSONClient) callPing(ctx context.Context, in *PingRequest) (*PingResponse, error) {
 	out := new(PingResponse)
 	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[0], in, out)
+	if err != nil {
+		twerr, ok := err.(twirp.Error)
+		if !ok {
+			twerr = twirp.InternalErrorWith(err)
+		}
+		callClientError(ctx, c.opts.Hooks, twerr)
+		return nil, err
+	}
+
+	callClientResponseReceived(ctx, c.opts.Hooks)
+
+	return out, nil
+}
+
+func (c *commonServiceJSONClient) MigrationStatus(ctx context.Context, in *MigrationStatusRequest) (*MigrationStatusResponse, error) {
+	ctx = ctxsetters.WithPackageName(ctx, "common")
+	ctx = ctxsetters.WithServiceName(ctx, "CommonService")
+	ctx = ctxsetters.WithMethodName(ctx, "MigrationStatus")
+	caller := c.callMigrationStatus
+	if c.interceptor != nil {
+		caller = func(ctx context.Context, req *MigrationStatusRequest) (*MigrationStatusResponse, error) {
+			resp, err := c.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*MigrationStatusRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*MigrationStatusRequest) when calling interceptor")
+					}
+					return c.callMigrationStatus(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*MigrationStatusResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*MigrationStatusResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+	return caller(ctx, in)
+}
+
+func (c *commonServiceJSONClient) callMigrationStatus(ctx context.Context, in *MigrationStatusRequest) (*MigrationStatusResponse, error) {
+	out := new(MigrationStatusResponse)
+	ctx, err := doJSONRequest(ctx, c.client, c.opts.Hooks, c.urls[1], in, out)
 	if err != nil {
 		twerr, ok := err.(twirp.Error)
 		if !ok {
@@ -321,6 +418,9 @@ func (s *commonServiceServer) ServeHTTP(resp http.ResponseWriter, req *http.Requ
 	switch method {
 	case "Ping":
 		s.servePing(ctx, resp, req)
+		return
+	case "MigrationStatus":
+		s.serveMigrationStatus(ctx, resp, req)
 		return
 	default:
 		msg := fmt.Sprintf("no handler for path %q", req.URL.Path)
@@ -486,6 +586,186 @@ func (s *commonServiceServer) servePingProtobuf(ctx context.Context, resp http.R
 	}
 	if respContent == nil {
 		s.writeError(ctx, resp, twirp.InternalError("received a nil *PingResponse and nil error while calling Ping. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	respBytes, err := proto.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal proto response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/protobuf")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *commonServiceServer) serveMigrationStatus(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	header := req.Header.Get("Content-Type")
+	i := strings.Index(header, ";")
+	if i == -1 {
+		i = len(header)
+	}
+	switch strings.TrimSpace(strings.ToLower(header[:i])) {
+	case "application/json":
+		s.serveMigrationStatusJSON(ctx, resp, req)
+	case "application/protobuf":
+		s.serveMigrationStatusProtobuf(ctx, resp, req)
+	default:
+		msg := fmt.Sprintf("unexpected Content-Type: %q", req.Header.Get("Content-Type"))
+		twerr := badRouteError(msg, req.Method, req.URL.Path)
+		s.writeError(ctx, resp, twerr)
+	}
+}
+
+func (s *commonServiceServer) serveMigrationStatusJSON(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "MigrationStatus")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	d := json.NewDecoder(req.Body)
+	rawReqBody := json.RawMessage{}
+	if err := d.Decode(&rawReqBody); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+	reqContent := new(MigrationStatusRequest)
+	unmarshaler := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err = unmarshaler.Unmarshal(rawReqBody, reqContent); err != nil {
+		s.handleRequestBodyError(ctx, resp, "the json request could not be decoded", err)
+		return
+	}
+
+	handler := s.CommonService.MigrationStatus
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *MigrationStatusRequest) (*MigrationStatusResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*MigrationStatusRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*MigrationStatusRequest) when calling interceptor")
+					}
+					return s.CommonService.MigrationStatus(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*MigrationStatusResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*MigrationStatusResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *MigrationStatusResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *MigrationStatusResponse and nil error while calling MigrationStatus. nil responses are not supported"))
+		return
+	}
+
+	ctx = callResponsePrepared(ctx, s.hooks)
+
+	marshaler := &protojson.MarshalOptions{UseProtoNames: !s.jsonCamelCase, EmitUnpopulated: !s.jsonSkipDefaults}
+	respBytes, err := marshaler.Marshal(respContent)
+	if err != nil {
+		s.writeError(ctx, resp, wrapInternal(err, "failed to marshal json response"))
+		return
+	}
+
+	ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	resp.Header().Set("Content-Type", "application/json")
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBytes)))
+	resp.WriteHeader(http.StatusOK)
+
+	if n, err := resp.Write(respBytes); err != nil {
+		msg := fmt.Sprintf("failed to write response, %d of %d bytes written: %s", n, len(respBytes), err.Error())
+		twerr := twirp.NewError(twirp.Unknown, msg)
+		ctx = callError(ctx, s.hooks, twerr)
+	}
+	callResponseSent(ctx, s.hooks)
+}
+
+func (s *commonServiceServer) serveMigrationStatusProtobuf(ctx context.Context, resp http.ResponseWriter, req *http.Request) {
+	var err error
+	ctx = ctxsetters.WithMethodName(ctx, "MigrationStatus")
+	ctx, err = callRequestRouted(ctx, s.hooks)
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		s.handleRequestBodyError(ctx, resp, "failed to read request body", err)
+		return
+	}
+	reqContent := new(MigrationStatusRequest)
+	if err = proto.Unmarshal(buf, reqContent); err != nil {
+		s.writeError(ctx, resp, malformedRequestError("the protobuf request could not be decoded"))
+		return
+	}
+
+	handler := s.CommonService.MigrationStatus
+	if s.interceptor != nil {
+		handler = func(ctx context.Context, req *MigrationStatusRequest) (*MigrationStatusResponse, error) {
+			resp, err := s.interceptor(
+				func(ctx context.Context, req interface{}) (interface{}, error) {
+					typedReq, ok := req.(*MigrationStatusRequest)
+					if !ok {
+						return nil, twirp.InternalError("failed type assertion req.(*MigrationStatusRequest) when calling interceptor")
+					}
+					return s.CommonService.MigrationStatus(ctx, typedReq)
+				},
+			)(ctx, req)
+			if resp != nil {
+				typedResp, ok := resp.(*MigrationStatusResponse)
+				if !ok {
+					return nil, twirp.InternalError("failed type assertion resp.(*MigrationStatusResponse) when calling interceptor")
+				}
+				return typedResp, err
+			}
+			return nil, err
+		}
+	}
+
+	// Call service method
+	var respContent *MigrationStatusResponse
+	func() {
+		defer ensurePanicResponses(ctx, resp, s.hooks)
+		respContent, err = handler(ctx, reqContent)
+	}()
+
+	if err != nil {
+		s.writeError(ctx, resp, err)
+		return
+	}
+	if respContent == nil {
+		s.writeError(ctx, resp, twirp.InternalError("received a nil *MigrationStatusResponse and nil error while calling MigrationStatus. nil responses are not supported"))
 		return
 	}
 
@@ -1090,29 +1370,34 @@ func callClientError(ctx context.Context, h *twirp.ClientHooks, err twirp.Error)
 }
 
 var twirpFileDescriptor0 = []byte{
-	// 375 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x6c, 0x91, 0x51, 0x6b, 0x9c, 0x40,
-	0x14, 0x85, 0xeb, 0x46, 0x6c, 0xbc, 0x59, 0x17, 0x3b, 0x4d, 0xcb, 0xd2, 0x50, 0x28, 0x42, 0x69,
-	0xfb, 0xa2, 0x64, 0xf3, 0x5e, 0xd8, 0xac, 0xb6, 0x0c, 0x49, 0xc6, 0xa0, 0x9b, 0x52, 0xfa, 0x22,
-	0xae, 0xde, 0x58, 0xa9, 0x3a, 0x76, 0x67, 0x4c, 0xb2, 0x3f, 0xac, 0xff, 0xaf, 0x38, 0x1a, 0xc8,
-	0x42, 0x1e, 0xcf, 0x99, 0x6f, 0xee, 0x39, 0x77, 0x06, 0xa6, 0x19, 0xaf, 0x6b, 0xde, 0xb8, 0xed,
-	0x96, 0x4b, 0x4e, 0x8c, 0x41, 0x39, 0x02, 0x66, 0x11, 0xfe, 0xed, 0x50, 0xc8, 0x15, 0x6f, 0x24,
-	0x3e, 0x48, 0x72, 0x02, 0x66, 0x56, 0x95, 0xd8, 0xc8, 0xa4, 0xcc, 0xe7, 0xda, 0x07, 0xed, 0xb3,
-	0x19, 0x1d, 0x0e, 0x06, 0xcd, 0xc9, 0x47, 0x98, 0xa5, 0x6d, 0x5b, 0x95, 0x59, 0x2a, 0x4b, 0xde,
-	0xf4, 0xc4, 0x44, 0x11, 0xd6, 0x13, 0x97, 0xe6, 0xe4, 0x3d, 0x40, 0xcd, 0xf3, 0xae, 0xc2, 0xe4,
-	0x0f, 0xee, 0xe6, 0x07, 0x0a, 0x31, 0x07, 0xe7, 0x02, 0x77, 0xce, 0x3f, 0xad, 0x4f, 0x15, 0x2d,
-	0x6f, 0x04, 0xc6, 0x32, 0x95, 0x9d, 0x20, 0x1e, 0xe8, 0x19, 0xcf, 0x51, 0x05, 0xce, 0x16, 0x27,
-	0xee, 0x58, 0x76, 0x9f, 0x72, 0x57, 0x3c, 0xc7, 0x48, 0x81, 0x64, 0x0e, 0x2f, 0x6b, 0x14, 0x22,
-	0x2d, 0x70, 0xac, 0xf0, 0x28, 0x9d, 0x9f, 0xa0, 0xf7, 0x1c, 0x31, 0x60, 0x12, 0x5e, 0xd8, 0x2f,
-	0xc8, 0x31, 0xd8, 0x94, 0xfd, 0x58, 0x5e, 0x52, 0x3f, 0x59, 0x46, 0xdf, 0x6f, 0xae, 0x02, 0xb6,
-	0xb6, 0x35, 0x62, 0x81, 0xc9, 0xc2, 0x75, 0xf2, 0x2d, 0xbc, 0x61, 0xbe, 0x3d, 0x21, 0x6f, 0xe0,
-	0xd5, 0x75, 0x10, 0x5d, 0xd1, 0x38, 0xa6, 0x21, 0x4b, 0xfc, 0x80, 0xd1, 0xc0, 0xb7, 0x0f, 0xc8,
-	0x14, 0x0e, 0x29, 0x5b, 0x07, 0x11, 0x5b, 0x5e, 0xda, 0xba, 0x63, 0xc1, 0xd1, 0x75, 0xd9, 0x14,
-	0xe3, 0x83, 0x39, 0x5f, 0x61, 0x3a, 0xc8, 0xa1, 0x23, 0x71, 0xc1, 0x10, 0xaa, 0xa7, 0xda, 0xe2,
-	0x68, 0xf1, 0xf6, 0xf9, 0x2d, 0xa2, 0x91, 0x5a, 0x9c, 0x83, 0xb5, 0x52, 0x40, 0x8c, 0xdb, 0xbb,
-	0x32, 0x43, 0x72, 0x0a, 0x7a, 0x3f, 0x90, 0xbc, 0x7e, 0xbc, 0xf8, 0x24, 0xed, 0xdd, 0xf1, 0xbe,
-	0x39, 0x4c, 0x3c, 0xff, 0xf2, 0xeb, 0x53, 0x51, 0xca, 0xdf, 0xdd, 0xa6, 0x3f, 0xf5, 0xee, 0x79,
-	0x75, 0xbb, 0xab, 0x53, 0x21, 0x71, 0xeb, 0xdd, 0x73, 0x7e, 0xfb, 0x70, 0xe6, 0xe5, 0x1b, 0xaf,
-	0xc0, 0xc6, 0xbb, 0x3b, 0xdd, 0x18, 0xea, 0xe7, 0xcf, 0xfe, 0x07, 0x00, 0x00, 0xff, 0xff, 0xfc,
-	0x64, 0x50, 0xeb, 0x09, 0x02, 0x00, 0x00,
+	// 453 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x93, 0xc1, 0x6e, 0xd3, 0x40,
+	0x10, 0x86, 0x71, 0x6a, 0x4c, 0x33, 0x4d, 0x82, 0x59, 0x4a, 0xb0, 0x5a, 0x01, 0x95, 0x25, 0x44,
+	0xb9, 0xc4, 0x6a, 0x7a, 0x47, 0x0a, 0x89, 0x41, 0x56, 0x1b, 0xa7, 0x72, 0x52, 0x84, 0xb8, 0x58,
+	0x8e, 0x3d, 0x35, 0x16, 0xf6, 0xae, 0xc9, 0x6e, 0xda, 0xe6, 0x41, 0xe0, 0x4d, 0x78, 0x3f, 0xe4,
+	0xf5, 0x5a, 0x6a, 0x21, 0x5c, 0x38, 0xfe, 0x33, 0x9f, 0x77, 0xfe, 0xf9, 0x47, 0x86, 0x4e, 0xcc,
+	0x8a, 0x82, 0xd1, 0x41, 0xb9, 0x62, 0x82, 0x11, 0xa3, 0x56, 0x36, 0x87, 0x5e, 0x80, 0xdf, 0xd7,
+	0xc8, 0xc5, 0x98, 0x51, 0x81, 0xb7, 0x82, 0x1c, 0x42, 0x3b, 0xce, 0x33, 0xa4, 0x22, 0xcc, 0x12,
+	0x4b, 0x3b, 0xd2, 0x8e, 0xdb, 0xc1, 0x6e, 0x5d, 0xf0, 0x12, 0xf2, 0x1a, 0x7a, 0x51, 0x59, 0xe6,
+	0x59, 0x1c, 0x89, 0x8c, 0xd1, 0x8a, 0x68, 0x49, 0xa2, 0x7b, 0xa7, 0xea, 0x25, 0xe4, 0x05, 0x40,
+	0xc1, 0x92, 0x75, 0x8e, 0xe1, 0x37, 0xdc, 0x58, 0x3b, 0x12, 0x69, 0xd7, 0x95, 0x33, 0xdc, 0xd8,
+	0xbf, 0xb4, 0x6a, 0x2a, 0x2f, 0x19, 0xe5, 0x38, 0x17, 0x91, 0x58, 0x73, 0xe2, 0x80, 0x1e, 0xb3,
+	0x04, 0xe5, 0xc0, 0xde, 0xf0, 0x70, 0xa0, 0xcc, 0xde, 0xa7, 0x06, 0x63, 0x96, 0x60, 0x20, 0x41,
+	0x62, 0xc1, 0xa3, 0x02, 0x39, 0x8f, 0x52, 0x54, 0x16, 0x1a, 0x69, 0x7f, 0x06, 0xbd, 0xe2, 0x88,
+	0x01, 0xad, 0xd9, 0x99, 0xf9, 0x80, 0xec, 0x83, 0xe9, 0xf9, 0x9f, 0x46, 0xe7, 0xde, 0x24, 0x1c,
+	0x05, 0x1f, 0x2f, 0xa7, 0xae, 0xbf, 0x30, 0x35, 0xd2, 0x85, 0xb6, 0x3f, 0x5b, 0x84, 0x1f, 0x66,
+	0x97, 0xfe, 0xc4, 0x6c, 0x91, 0x67, 0xf0, 0xe4, 0xc2, 0x0d, 0xa6, 0xde, 0x7c, 0xee, 0xcd, 0xfc,
+	0x70, 0xe2, 0xfa, 0x9e, 0x3b, 0x31, 0x77, 0x48, 0x07, 0x76, 0x3d, 0x7f, 0xe1, 0x06, 0xfe, 0xe8,
+	0xdc, 0xd4, 0xed, 0x2e, 0xec, 0x5d, 0x64, 0x34, 0x55, 0x81, 0xd9, 0xef, 0xa0, 0x53, 0xcb, 0xda,
+	0x23, 0x19, 0x80, 0xc1, 0xa5, 0x4f, 0xb9, 0xc5, 0xde, 0xb0, 0xbf, 0x7d, 0x8b, 0x40, 0x51, 0xb6,
+	0x05, 0xfd, 0x69, 0x96, 0xae, 0x64, 0x68, 0xaa, 0xa5, 0x5e, 0xfe, 0xa1, 0xc1, 0xf3, 0xbf, 0x5a,
+	0xff, 0x37, 0xa5, 0x0a, 0x4a, 0x1e, 0x07, 0x9b, 0x5b, 0x35, 0x92, 0xf4, 0xc1, 0xc8, 0x23, 0x81,
+	0x5c, 0xa8, 0x0b, 0x29, 0x55, 0x7d, 0x51, 0x22, 0x4d, 0x32, 0x9a, 0x5a, 0xfa, 0x91, 0x76, 0xfc,
+	0x30, 0x68, 0xe4, 0xf0, 0xa7, 0x06, 0xdd, 0xb1, 0x9c, 0x36, 0xc7, 0xd5, 0x75, 0x16, 0x23, 0x39,
+	0x01, 0xbd, 0xca, 0x80, 0x3c, 0x6d, 0x5c, 0xdc, 0x09, 0xe8, 0x60, 0xff, 0x7e, 0x51, 0x2d, 0x10,
+	0xc0, 0xe3, 0x3f, 0x76, 0x23, 0x2f, 0x1b, 0x70, 0x7b, 0x1e, 0x07, 0xaf, 0xfe, 0xd9, 0xaf, 0xdf,
+	0x7c, 0xff, 0xf6, 0xcb, 0x9b, 0x34, 0x13, 0x5f, 0xd7, 0xcb, 0x0a, 0x74, 0x6e, 0x58, 0x7e, 0xb5,
+	0x29, 0x22, 0x2e, 0x70, 0xe5, 0xdc, 0x30, 0x76, 0x75, 0x7b, 0xea, 0x24, 0x4b, 0x27, 0x45, 0xea,
+	0x5c, 0x9f, 0x2c, 0x0d, 0xf9, 0x03, 0x9c, 0xfe, 0x0e, 0x00, 0x00, 0xff, 0xff, 0xd6, 0x1c, 0xda,
+	0x71, 0x10, 0x03, 0x00, 0x00,
 }

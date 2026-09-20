@@ -5,37 +5,84 @@ import { z } from "zod";
 import { fillEnvConfig, loadRuntimeEnv, screamingSnakeToCamel, camelToScreamingSnake } from "./config";
 
 describe("Config loading from file and environment", () => {
-  test("loadRuntimeEnv merges process.env, .env file, and .woofx3.json with correct precedence", () => {
-    const tmpDir = path.join(process.cwd(), "tmp-runtime-config-test");
-    fs.mkdirSync(tmpDir, { recursive: true });
+  /**
+   * Run `body` against a throwaway root holding `files`, with `vars` set in
+   * process.env for its duration only.
+   */
+  function withConfigRoot(
+    files: Record<string, string>,
+    vars: Record<string, string>,
+    body: (rootDir: string) => void
+  ): void {
+    const rootDir = fs.mkdtempSync(path.join(process.cwd(), "tmp-runtime-config-"));
+    const previous: Record<string, string | undefined> = {};
+    for (const [name, value] of Object.entries(vars)) {
+      previous[name] = process.env[name];
+      process.env[name] = value;
+    }
     try {
-      fs.writeFileSync(path.join(tmpDir, ".env"), "FROM_DOTENV=dotenv_value\nWOOFX3_OVERWRITE=from_dotenv");
-      fs.writeFileSync(
-        path.join(tmpDir, ".woofx3.json"),
-        JSON.stringify({ appName: "from-woofx3", port: 3000, overwrite: "from_woofx3" })
-      );
-      const origOverwrite = process.env.WOOFX3_OVERWRITE;
-      process.env.WOOFX3_OVERWRITE = "from_process";
-      const schema = z.object({
-        woofx3AppName: z.string(),
-        woofx3Port: z.number(),
-        woofx3Overwrite: z.string(),
-      });
-      try {
-        const result = loadRuntimeEnv({ rootDir: tmpDir, schema });
-        expect(result.config.woofx3AppName).toBe("from-woofx3");
-        expect(result.config.woofx3Port).toBe(3000);
-        expect(result.getConfig("woofx3Overwrite")).toBe("from_woofx3");
-      } finally {
-        if (origOverwrite !== undefined) {
-          process.env.WOOFX3_OVERWRITE = origOverwrite;
+      for (const [name, content] of Object.entries(files)) {
+        fs.writeFileSync(path.join(rootDir, name), content);
+      }
+      body(rootDir);
+    } finally {
+      for (const [name, value] of Object.entries(previous)) {
+        if (value === undefined) {
+          delete process.env[name];
         } else {
-          delete process.env.WOOFX3_OVERWRITE;
+          process.env[name] = value;
         }
       }
-    } finally {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+      fs.rmSync(rootDir, { recursive: true, force: true });
     }
+  }
+
+  test("process.env overrides .env, which overrides .woofx3.json", () => {
+    withConfigRoot(
+      {
+        ".woofx3.json": JSON.stringify({
+          appName: "from-file",
+          port: 3000,
+          fromDotenv: "from-file",
+          overwrite: "from-file",
+        }),
+        ".env": "WOOFX3_FROM_DOTENV=from-dotenv\nWOOFX3_OVERWRITE=from-dotenv",
+      },
+      { WOOFX3_OVERWRITE: "from-process" },
+      (rootDir) => {
+        const schema = z.object({
+          woofx3AppName: z.string(),
+          woofx3Port: z.number(),
+          woofx3FromDotenv: z.string(),
+          woofx3Overwrite: z.string(),
+        });
+        const result = loadRuntimeEnv({ rootDir, schema });
+        expect(result.config.woofx3AppName).toBe("from-file");
+        expect(result.config.woofx3Port).toBe(3000);
+        expect(result.config.woofx3FromDotenv).toBe("from-dotenv");
+        expect(result.getConfig("woofx3Overwrite")).toBe("from-process");
+      }
+    );
+  });
+
+  test("a blank value never masks a non-blank one from a lower-precedence source", () => {
+    withConfigRoot(
+      { ".woofx3.json": JSON.stringify({ blankInFile: "", blankInEnv: "from-file" }) },
+      { WOOFX3_BLANK_IN_FILE: "from-process", WOOFX3_BLANK_IN_ENV: "" },
+      (rootDir) => {
+        const schema = z.object({ woofx3BlankInFile: z.string(), woofx3BlankInEnv: z.string() });
+        const result = loadRuntimeEnv({ rootDir, schema });
+        expect(result.config.woofx3BlankInFile).toBe("from-process");
+        expect(result.config.woofx3BlankInEnv).toBe("from-file");
+      }
+    );
+  });
+
+  test("a key blank in every source still resolves, to blank", () => {
+    withConfigRoot({ ".woofx3.json": JSON.stringify({ blankEverywhere: "" }) }, {}, (rootDir) => {
+      const schema = z.object({ woofx3BlankEverywhere: z.string() });
+      expect(loadRuntimeEnv({ rootDir, schema }).config.woofx3BlankEverywhere).toBe("");
+    });
   });
 
   test("loadRuntimeEnv with empty rootDir still includes process.env and produces config", () => {

@@ -24,6 +24,7 @@ import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
 import type { WebhookClient } from "../webhook-client";
 import type { WorkflowItem } from "./types";
 import { rebuildWorkflowDefinition, timestampToIso } from "./helpers";
+import { UNVERSIONED } from "../version";
 
 /**
  * Runs a module function in the barkloader sandbox and waits for its return
@@ -44,6 +45,8 @@ export interface ApiOptions {
   sceneManagerUrl: string;
   apiUrl: string;
   logger: SharedLogger;
+  /** The running release (`WOOFX3_VERSION`); "dev" for an unversioned build. */
+  version?: string;
 }
 
 /**
@@ -66,6 +69,7 @@ export class ApiRouteHost extends RpcTarget {
   protected sceneManagerUrl: string;
   protected apiUrl: string;
   protected logger: SharedLogger;
+  protected version: string;
 
   protected getBarkloaderBaseUrl(): string {
     return this.barkloaderUrl.endsWith("/") ? this.barkloaderUrl.slice(0, -1) : this.barkloaderUrl;
@@ -288,6 +292,7 @@ export class ApiRouteHost extends RpcTarget {
     this.sceneManagerUrl = opts.sceneManagerUrl;
     this.apiUrl = opts.apiUrl;
     this.logger = opts.logger;
+    this.version = opts.version ?? UNVERSIONED;
   }
 }
 

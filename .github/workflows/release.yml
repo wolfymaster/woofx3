@@ -17,7 +17,7 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/wolfymaster/woofx3
-  BUN_VERSION: "1.1.34"
+  BUN_VERSION: "1.3.14"
 
 jobs:
   docker:
@@ -25,6 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.meta.outputs.version }}
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,6 +45,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -54,6 +56,7 @@ jobs:
             ${{ env.IMAGE_NAME }}:latest
           build-args: |
             BUN_VERSION=${{ env.BUN_VERSION }}
+            WOOFX3_VERSION=${{ steps.meta.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -173,7 +176,15 @@ jobs:
             docker pull ghcr.io/wolfymaster/woofx3:${{ needs.docker.outputs.version }}
             ```
 
-            Also tagged as `ghcr.io/wolfymaster/woofx3:latest`.
+            Digest: `${{ needs.docker.outputs.digest }}`
+
+            Deploy by digest, which never moves:
+
+            ```
+            ghcr.io/wolfymaster/woofx3@${{ needs.docker.outputs.digest }}
+            ```
+
+            Also tagged as `ghcr.io/wolfymaster/woofx3:latest`, which moves with every release; never deploy it.
 
             ## Binary packages
 

@@ -3,8 +3,8 @@ use crate::services::http_client::ReqwestHttpClient;
 use crate::services::http_storage_client::HttpStorageClient;
 use crate::services::sandbox_resources::HttpResourceClient;
 use crate::util::{
-    get_env_or_default, get_env_or_default_with_key, get_woofx3_json_value,
-    validate_required_config, validate_required_woofx3_json_keys,
+    get_config_value, get_env_or_default, get_env_or_default_with_key, validate_required_config,
+    validate_required_config_keys,
 };
 use actix_web::{App, HttpServer, middleware::Logger, web::Data};
 use anyhow::Result;
@@ -17,6 +17,7 @@ use lib_sandbox::host::noop::{NoopChatSender, noop_host_context};
 use lib_sandbox::host::{ChatSender, ExtensionRegistry};
 use lib_sandbox::{ModuleRegistry, SandboxFactory};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tracing::{info, warn};
 use types::{AppContext, SharedRepository};
 
@@ -30,6 +31,37 @@ mod util;
 mod websocket;
 const DEFAULT_MODULE_DIR: &str = "modules";
 const SERVICE_NAME: &str = "barkloader";
+
+/// How long to wait for the message bus before giving up on it. The
+/// orchestrator starts every service at once, so a refused connection at
+/// startup means "not yet", not "never".
+const MESSAGEBUS_WAIT: Duration = Duration::from_secs(60);
+const MESSAGEBUS_RETRY_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Connect to the message bus, waiting for it to accept connections.
+///
+/// Without a bus barkloader publishes no readiness heartbeat, and anything
+/// gating on that -- the api's GET /ready, and so a provisioner waiting on a
+/// new engine -- waits forever. Retrying is what keeps a boot race from
+/// becoming a permanently degraded engine.
+async fn connect_messagebus(url: &str) -> Result<Arc<crate::services::nats::NatsService>> {
+    let deadline = Instant::now() + MESSAGEBUS_WAIT;
+    loop {
+        match crate::services::nats::NatsService::connect(url).await {
+            Ok(nats) => return Ok(nats),
+            Err(e) => {
+                if Instant::now() + MESSAGEBUS_RETRY_INTERVAL >= deadline {
+                    return Err(e);
+                }
+                warn!(
+                    "Messagebus at {} is not accepting connections yet ({}); retrying",
+                    url, e
+                );
+                tokio::time::sleep(MESSAGEBUS_RETRY_INTERVAL).await;
+            }
+        }
+    }
+}
 
 async fn setup() -> Result<AppContext> {
     let registry = Arc::new(ModuleRegistry::new());
@@ -49,7 +81,7 @@ async fn setup() -> Result<AppContext> {
         let messagebus_url =
             get_env_or_default_with_key("MESSAGEBUS_URL", Some("messagebusUrl"), "");
         if !messagebus_url.is_empty() {
-            match crate::services::nats::NatsService::connect(&messagebus_url).await {
+            match connect_messagebus(&messagebus_url).await {
                 Ok(nats) => {
                     info!("Connected to messagebus at {}", messagebus_url);
                     nats_raw_client = Some(nats.raw_client().clone());
@@ -91,12 +123,10 @@ async fn setup() -> Result<AppContext> {
         // the engine's own applicationId: today one barkloader process
         // serves exactly one application, so a single startup-time value
         // (rather than a per-invocation one) correctly scopes both.
-        let resource_proxy_url = get_woofx3_json_value("databaseProxyUrl", "");
-        let application_id = get_woofx3_json_value("applicationId", "");
+        let resource_proxy_url = get_config_value("databaseProxyUrl", "");
+        let application_id = get_config_value("applicationId", "");
         if application_id.is_empty() {
-            warn!(
-                "applicationId not set in .woofx3.json; ctx.resources/ctx.storage calls will be unscoped"
-            );
+            warn!("applicationId not configured; ctx.resources/ctx.storage calls will be unscoped");
         }
         if !resource_proxy_url.is_empty() {
             info!(
@@ -140,9 +170,9 @@ async fn setup() -> Result<AppContext> {
     // Establish the connection before reading either -- everything below this point
     // treats db-proxy as available, the same contract the Go and TypeScript runtimes
     // give their applications by gating init behind the registered `db` service.
-    let db_proxy_url = get_woofx3_json_value("databaseProxyUrl", "");
+    let db_proxy_url = get_config_value("databaseProxyUrl", "");
     if db_proxy_url.is_empty() {
-        anyhow::bail!("databaseProxyUrl in .woofx3.json is required for barkloader");
+        anyhow::bail!("databaseProxyUrl (WOOFX3_DATABASE_PROXY_URL) is required for barkloader");
     }
     crate::services::storage_settings::wait_for_db_proxy(&db_proxy_url).await;
 
@@ -271,7 +301,7 @@ async fn main() -> std::io::Result<()> {
         drop(logging);
         std::process::exit(1);
     }
-    if let Err(e) = validate_required_woofx3_json_keys(&["databaseProxyUrl"]) {
+    if let Err(e) = validate_required_config_keys(&["databaseProxyUrl"]) {
         tracing::error!("{}", e);
         drop(logging);
         std::process::exit(1);

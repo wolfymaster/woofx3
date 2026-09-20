@@ -1,12 +1,22 @@
 # syntax=docker/dockerfile:1
 #
 # Build:  docker build -f Dockerfile.production -t woofx3:production .
-# Run:    docker run --rm -v /path/to/.woofx3.json:/app/.woofx3.json:ro woofx3:production
-#         (add volume mounts for badgerPath / data dirs as needed)
+# Run:    docker run --rm -e WOOFX3_DATABASE_URL=... -e WOOFX3_SECRETS_KEY=... woofx3:production
+#         Configure with WOOFX3_* variables (they override the baked
+#         /app/.woofx3.json); mount a volume at /app/data for state.
 #
-# Pin Bun with: docker build --build-arg BUN_VERSION=1.1.34 ...
+# The entrypoint migrates the database before the orchestrator starts any
+# service, and exits non-zero if migration fails.
+#
+# Override with: docker build --build-arg BUN_VERSION=... (must support
+# streaming fetch request bodies; see sceneManager's upload relay)
 
-ARG BUN_VERSION=1.1.34
+ARG BUN_VERSION=1.3.14
+# The in-container edge (see build/config/Caddyfile.edge). Bumping the version
+# means bumping the checksum: the SHA-512 of caddy_<version>_linux_amd64.tar.gz
+# from that release's caddy_<version>_checksums.txt.
+ARG CADDY_VERSION=2.11.4
+ARG CADDY_SHA512=8220d1f013b6f27510247b2360c9e0ca9f018feebd82515f07635318b34ff9777ccc8fd0b6e6f2486ce3a33fe389fbb7db12d05baa474f4587509fb4f5ebf1c9
 
 FROM oven/bun:${BUN_VERSION} AS bun-toolchain
 
@@ -41,27 +51,56 @@ ENV PACKAGE_SKIP_ARCHIVE=1
 ENV RUST_LINUX_TARGET=x86_64-unknown-linux-gnu
 
 WORKDIR /src/build
+# Parallel rustc jobs for barkloader. Unset uses every core; a build host
+# short on memory passes a smaller number (--build-arg BUILD_JOBS=2), since
+# the release build of the AWS SDK and mlua is what runs out first.
+ARG BUILD_JOBS
 RUN chmod +x main.sh scripts/*.sh \
-    && ./main.sh --target linux-amd64 \
+    && CARGO_BUILD_JOBS="${BUILD_JOBS:-$(nproc)}" ./main.sh --target linux-amd64 \
     && ls -la /src/build/dist/linux-amd64/ \
     && test -f /src/build/dist/linux-amd64/orchestrator \
     && test -x /src/build/dist/linux-amd64/orchestrator
+
+ARG CADDY_VERSION
+ARG CADDY_SHA512
+RUN curl -fsSLo /tmp/caddy.tar.gz \
+        "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" \
+    && echo "${CADDY_SHA512}  /tmp/caddy.tar.gz" | sha512sum -c - \
+    && tar -xzf /tmp/caddy.tar.gz -C /src/build/dist/linux-amd64 caddy \
+    && rm /tmp/caddy.tar.gz \
+    && /src/build/dist/linux-amd64/caddy version
 
 # bookworm-slim: same glibc family as the builder; full dynamic linker paths for mixed static/dynamic binaries.
 FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tini \
+    && apt-get install -y --no-install-recommends ca-certificates tini util-linux \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 65532 nonroot \
     && useradd --system --uid 65532 --gid nonroot --home /nonexistent --shell /usr/sbin/nologin nonroot
 
 COPY --from=builder --chown=65532:65532 /src/build/dist/linux-amd64/ /app/
+COPY --chown=65532:65532 --chmod=0755 build/entrypoint.sh /app/entrypoint.sh
+
+# State (Badger, a sqlite database, file-backed storage) lives here. Created
+# owned by the image user so the image works unprivileged with no volume; a
+# host that mounts a root-owned volume here runs the entrypoint as root, which
+# fixes ownership and drops privileges (see build/entrypoint.sh).
+RUN install -d -o 65532 -g 65532 /app/data
 
 WORKDIR /app
 ENV WOOFX3_ROOT=/app
 
+# The release this image is, reported by GET /ready and getEngineInfo. The
+# release workflow passes the tag; "dev" must match UNVERSIONED in
+# api/src/version.ts. Declared late so changing it rebuilds only this layer.
+ARG WOOFX3_VERSION=dev
+ENV WOOFX3_VERSION=${WOOFX3_VERSION}
+
 USER 65532:65532
 
-ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["/app/orchestrator"]
+# The edge (Caddy) is the only listener beyond loopback; Railway and other
+# hosts set PORT, and it defaults to 8080.
+EXPOSE 8080
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/app/entrypoint.sh"]

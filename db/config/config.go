@@ -8,6 +8,10 @@ type DatabaseEnvConfig struct {
 	DatabaseURL       string `env:"WOOFX3_DATABASE_URL,required"`
 	BadgerPath        string `env:"WOOFX3_BADGER_PATH,required"`
 	DatabaseProxyPort string `env:"WOOFX3_DATABASE_PROXY_PORT,default=8080"`
+	// DatabaseProxyHost is the interface db-proxy listens on. db-proxy has no
+	// authentication, so it stays on loopback unless a deployment runs its
+	// clients in separate network namespaces and says otherwise.
+	DatabaseProxyHost string `env:"WOOFX3_DATABASE_PROXY_HOST,default=127.0.0.1"`
 	LogLevel          string `env:"WOOFX3_LOG_LEVEL"`
 	// SecretsKey seals `secret` module settings at rest: a base64-encoded
 	// 32-byte key. Injected like any other config so every instance shares it.

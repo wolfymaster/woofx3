@@ -85,6 +85,10 @@ Go, and Rust runtimes all support loading this file with the same precedence:
 2. **`./.env` file** - key=value pairs
 3. **`./.woofx3.json` file** (lowest priority) - JSON with camelCase keys
 
+A blank value never overrides a non-blank one from a lower source, so a `""` left in
+a config file cannot mask a variable the deployment set. A missing `.woofx3.json` is
+not an error: a service can be configured entirely through `WOOFX3_*` variables.
+
 To locate the config, services search parent directories from current working directory until
 they find `.woofx3.json` (or `.woofx3.config`), or reach the filesystem root.
 

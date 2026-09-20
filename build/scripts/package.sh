@@ -20,6 +20,9 @@ log_error() {
 woofx3_set_output_dir "$CONFIG_FILE"
 
 TEMPLATE_CONFIG="$SCRIPT_DIR/../config/.woofx3.json"
+# The edge's routing config. Caddy itself is a prebuilt binary the container
+# image installs; a package without it runs its services directly.
+EDGE_CONFIG="$SCRIPT_DIR/../config/Caddyfile.edge"
 if [[ ! -f "$TEMPLATE_CONFIG" ]]; then
     log_error "Missing packaging template: $TEMPLATE_CONFIG"
     log_error "Add a non-secret build/config/.woofx3.json for release archives."
@@ -52,6 +55,7 @@ for target in "${TARGETS[@]}"; do
 
     # Copy non-secret template config for runtime use (operators replace secrets)
     cp "$TEMPLATE_CONFIG" "$TARGET_DIR/.woofx3.json"
+    cp "$EDGE_CONFIG" "$TARGET_DIR/Caddyfile.edge"
     
     # Create a simple startup script
     case "$target" in
@@ -65,6 +69,10 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 export WOOFX3_ROOT_PATH="${WOOFX3_ROOT_PATH:-$DIR}"
 
+# Migrate before any service starts, as the container entrypoint does: a
+# failed migration stops here rather than booting against a stale schema.
+"$DIR/migrate" -cmd up
+
 # Start the orchestrator
 exec "$DIR/orchestrator"
 EOF
@@ -75,6 +83,7 @@ EOF
 @echo off
 cd /d "%~dp0"
 if not defined WOOFX3_ROOT_PATH set WOOFX3_ROOT_PATH=%cd%
+migrate.exe -cmd up || exit /b 1
 orchestrator.exe
 EOF
             ;;

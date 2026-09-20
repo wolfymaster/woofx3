@@ -21,9 +21,14 @@ describe("WoofEnvSchema", () => {
   test("rejects configuration when required Twitch or infrastructure fields are missing", () => {
     const parsed = WoofEnvSchema.safeParse({
       ...baseValid,
-      woofx3TwitchChannelName: "",
+      woofx3TwitchClientId: "",
     });
     expect(parsed.success).toBe(false);
+  });
+
+  test("accepts no channel: the bot joins whoever links Twitch", () => {
+    const { woofx3TwitchChannelName: _channel, ...withoutChannel } = baseValid;
+    expect(WoofEnvSchema.safeParse(withoutChannel).success).toBe(true);
   });
 
   test("applies defaults for optional fields", () => {
