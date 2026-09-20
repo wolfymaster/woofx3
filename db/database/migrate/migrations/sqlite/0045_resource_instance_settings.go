@@ -14,12 +14,13 @@ func ResourceInstanceSettings() *gormigrate.Migration {
 		ID: "0045_resource_instance_settings",
 		Migrate: func(tx *gorm.DB) error {
 			log.Println("Adding module_resource_instances.settings...")
-			return tx.Exec(
+			return execSQL(
+				tx,
 				`ALTER TABLE module_resource_instances ADD COLUMN IF NOT EXISTS settings TEXT NOT NULL DEFAULT '{}'`,
-			).Error
+			)
 		},
 		Rollback: func(tx *gorm.DB) error {
-			return tx.Exec(`ALTER TABLE module_resource_instances DROP COLUMN IF EXISTS settings`).Error
+			return execSQL(tx, `ALTER TABLE module_resource_instances DROP COLUMN IF EXISTS settings`)
 		},
 	}
 }
