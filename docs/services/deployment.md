@@ -89,6 +89,20 @@ only once the engine can be depended on, and `503` until then:
 `GET /health` stays a liveness check: it answers as soon as the api process
 does.
 
+Readiness is deliberately strict about the message bus. barkloader reports
+ready once its bundled modules are installed, and it can only report anything
+while it holds a bus connection, so an engine whose bus never comes up stays
+`503` and a deploy gated on `/ready` fails. That is the intended answer: with
+no bus nothing publishes or receives events, and an engine that serves HTTP
+while delivering no alerts is worse than one that plainly failed to start.
+Services wait a minute for the bus before giving up on it, so a boot race is
+not what this reports.
+
+None of this needs an application. A freshly provisioned engine reports ready
+before anyone registers with it, which is what lets the dashboard register at
+all: reads that resolve the engine's default application answer "nothing"
+until one exists, rather than failing.
+
 ## The Twitch link
 
 An engine exists before its streamer connects Twitch, so `twitch` and
