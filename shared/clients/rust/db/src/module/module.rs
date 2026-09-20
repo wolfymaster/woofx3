@@ -716,6 +716,12 @@ pub struct Widget {
     /// own.
     #[prost(string, tag="15")]
     pub hosts_surface: ::prost::alloc::string::String,
+    /// Open, multi-valued dotted classification (e.g. \["media.video"\]), the
+    /// same axis triggers and actions carry. A catalog groups on it instead of
+    /// on the module that shipped the widget. Empty when the author declared
+    /// none.
+    #[prost(string, repeated, tag="16")]
+    pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WidgetInput {
@@ -739,6 +745,9 @@ pub struct WidgetInput {
     pub surfaces: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, tag="11")]
     pub hosts_surface: ::prost::alloc::string::String,
+    /// See Widget.taxonomy.
+    #[prost(string, repeated, tag="12")]
+    pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterWidgetsRequest {

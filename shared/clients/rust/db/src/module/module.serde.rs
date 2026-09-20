@@ -10657,6 +10657,9 @@ impl serde::Serialize for Widget {
         if !self.hosts_surface.is_empty() {
             len += 1;
         }
+        if !self.taxonomy.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.Widget", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -10697,6 +10700,9 @@ impl serde::Serialize for Widget {
         if !self.hosts_surface.is_empty() {
             struct_ser.serialize_field("hostsSurface", &self.hosts_surface)?;
         }
+        if !self.taxonomy.is_empty() {
+            struct_ser.serialize_field("taxonomy", &self.taxonomy)?;
+        }
         struct_ser.end()
     }
 }
@@ -10727,6 +10733,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
             "surfaces",
             "hosts_surface",
             "hostsSurface",
+            "taxonomy",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -10744,6 +10751,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
             Entry,
             Surfaces,
             HostsSurface,
+            Taxonomy,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -10778,6 +10786,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
                             "entry" => Ok(GeneratedField::Entry),
                             "surfaces" => Ok(GeneratedField::Surfaces),
                             "hostsSurface" | "hosts_surface" => Ok(GeneratedField::HostsSurface),
+                            "taxonomy" => Ok(GeneratedField::Taxonomy),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -10810,6 +10819,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
                 let mut entry__ = None;
                 let mut surfaces__ = None;
                 let mut hosts_surface__ = None;
+                let mut taxonomy__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -10890,6 +10900,12 @@ impl<'de> serde::Deserialize<'de> for Widget {
                             }
                             hosts_surface__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Taxonomy => {
+                            if taxonomy__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("taxonomy"));
+                            }
+                            taxonomy__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Widget {
@@ -10906,6 +10922,7 @@ impl<'de> serde::Deserialize<'de> for Widget {
                     entry: entry__.unwrap_or_default(),
                     surfaces: surfaces__.unwrap_or_default(),
                     hosts_surface: hosts_surface__.unwrap_or_default(),
+                    taxonomy: taxonomy__.unwrap_or_default(),
                 })
             }
         }
@@ -10947,6 +10964,9 @@ impl serde::Serialize for WidgetInput {
         if !self.hosts_surface.is_empty() {
             len += 1;
         }
+        if !self.taxonomy.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.WidgetInput", len)?;
         if !self.manifest_id.is_empty() {
             struct_ser.serialize_field("manifestId", &self.manifest_id)?;
@@ -10975,6 +10995,9 @@ impl serde::Serialize for WidgetInput {
         if !self.hosts_surface.is_empty() {
             struct_ser.serialize_field("hostsSurface", &self.hosts_surface)?;
         }
+        if !self.taxonomy.is_empty() {
+            struct_ser.serialize_field("taxonomy", &self.taxonomy)?;
+        }
         struct_ser.end()
     }
 }
@@ -10998,6 +11021,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
             "surfaces",
             "hosts_surface",
             "hostsSurface",
+            "taxonomy",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -11011,6 +11035,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
             Entry,
             Surfaces,
             HostsSurface,
+            Taxonomy,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -11041,6 +11066,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                             "entry" => Ok(GeneratedField::Entry),
                             "surfaces" => Ok(GeneratedField::Surfaces),
                             "hostsSurface" | "hosts_surface" => Ok(GeneratedField::HostsSurface),
+                            "taxonomy" => Ok(GeneratedField::Taxonomy),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -11069,6 +11095,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                 let mut entry__ = None;
                 let mut surfaces__ = None;
                 let mut hosts_surface__ = None;
+                let mut taxonomy__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::ManifestId => {
@@ -11125,6 +11152,12 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                             }
                             hosts_surface__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Taxonomy => {
+                            if taxonomy__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("taxonomy"));
+                            }
+                            taxonomy__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(WidgetInput {
@@ -11137,6 +11170,7 @@ impl<'de> serde::Deserialize<'de> for WidgetInput {
                     entry: entry__.unwrap_or_default(),
                     surfaces: surfaces__.unwrap_or_default(),
                     hosts_surface: hosts_surface__.unwrap_or_default(),
+                    taxonomy: taxonomy__.unwrap_or_default(),
                 })
             }
         }

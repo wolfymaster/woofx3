@@ -353,6 +353,12 @@ export interface WidgetDefinition {
    * `"alert"` widget is the area of a scene that plays alert layouts.
    */
   hostsSurface?: WidgetSurface;
+  /**
+   * Open, multi-valued dotted classification (`["media.video"]`), the same
+   * axis triggers and actions carry. A catalog groups on it rather than on
+   * the module that shipped the widget. Empty when none was declared.
+   */
+  taxonomy: string[];
   createdByType: string;
   createdByRef: string;
 }

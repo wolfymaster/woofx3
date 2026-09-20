@@ -65,6 +65,13 @@ export interface Widget {
    * own.
    */
   hostsSurface: string;
+  /**
+   * Open, multi-valued dotted classification (e.g. ["media.video"]), the
+   * same axis triggers and actions carry. A catalog groups on it instead of
+   * on the module that shipped the widget. Empty when the author declared
+   * none.
+   */
+  taxonomy: string[];
 }
 
 export interface WidgetInput {
@@ -81,6 +88,10 @@ export interface WidgetInput {
   entry: string;
   surfaces: string[];
   hostsSurface: string;
+  /**
+   * See Widget.taxonomy.
+   */
+  taxonomy: string[];
 }
 
 export interface RegisterWidgetsRequest {
@@ -167,6 +178,7 @@ export const Widget = {
       entry: "",
       surfaces: [],
       hostsSurface: "",
+      taxonomy: [],
       ...msg,
     };
   },
@@ -216,6 +228,9 @@ export const Widget = {
     }
     if (msg.hostsSurface) {
       writer.writeString(15, msg.hostsSurface);
+    }
+    if (msg.taxonomy?.length) {
+      writer.writeRepeatedString(16, msg.taxonomy);
     }
     return writer;
   },
@@ -282,6 +297,10 @@ export const Widget = {
           msg.hostsSurface = reader.readString();
           break;
         }
+        case 16: {
+          msg.taxonomy.push(reader.readString());
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -327,6 +346,7 @@ export const WidgetInput = {
       entry: "",
       surfaces: [],
       hostsSurface: "",
+      taxonomy: [],
       ...msg,
     };
   },
@@ -364,6 +384,9 @@ export const WidgetInput = {
     }
     if (msg.hostsSurface) {
       writer.writeString(11, msg.hostsSurface);
+    }
+    if (msg.taxonomy?.length) {
+      writer.writeRepeatedString(12, msg.taxonomy);
     }
     return writer;
   },
@@ -412,6 +435,10 @@ export const WidgetInput = {
         }
         case 11: {
           msg.hostsSurface = reader.readString();
+          break;
+        }
+        case 12: {
+          msg.taxonomy.push(reader.readString());
           break;
         }
         default: {
@@ -825,6 +852,7 @@ export const WidgetJSON = {
       entry: "",
       surfaces: [],
       hostsSurface: "",
+      taxonomy: [],
       ...msg,
     };
   },
@@ -872,6 +900,9 @@ export const WidgetJSON = {
     }
     if (msg.hostsSurface) {
       json["hostsSurface"] = msg.hostsSurface;
+    }
+    if (msg.taxonomy?.length) {
+      json["taxonomy"] = msg.taxonomy;
     }
     return json;
   },
@@ -932,6 +963,10 @@ export const WidgetJSON = {
     if (_hostsSurface_) {
       msg.hostsSurface = _hostsSurface_;
     }
+    const _taxonomy_ = json["taxonomy"];
+    if (_taxonomy_) {
+      msg.taxonomy = _taxonomy_;
+    }
     return msg;
   },
 };
@@ -968,6 +1003,7 @@ export const WidgetInputJSON = {
       entry: "",
       surfaces: [],
       hostsSurface: "",
+      taxonomy: [],
       ...msg,
     };
   },
@@ -1005,6 +1041,9 @@ export const WidgetInputJSON = {
     }
     if (msg.hostsSurface) {
       json["hostsSurface"] = msg.hostsSurface;
+    }
+    if (msg.taxonomy?.length) {
+      json["taxonomy"] = msg.taxonomy;
     }
     return json;
   },
@@ -1048,6 +1087,10 @@ export const WidgetInputJSON = {
     const _hostsSurface_ = json["hostsSurface"] ?? json["hosts_surface"];
     if (_hostsSurface_) {
       msg.hostsSurface = _hostsSurface_;
+    }
+    const _taxonomy_ = json["taxonomy"];
+    if (_taxonomy_) {
+      msg.taxonomy = _taxonomy_;
     }
     return msg;
   },

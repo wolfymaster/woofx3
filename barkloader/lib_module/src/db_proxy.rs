@@ -204,6 +204,8 @@ pub struct WidgetInputJson {
     pub surfaces: Vec<String>,
     /// Empty for an ordinary widget; see `ModuleWidget::hosts_surface`.
     pub hosts_surface: String,
+    /// Open, multi-valued classification; see `ModuleWidget::taxonomy`.
+    pub taxonomy: Vec<String>,
     /// Entry path relative to the widget asset root (assets-relative,
     /// matching the prefix-stripped repository keys). Empty means the
     /// consumer falls back to `index.html`.

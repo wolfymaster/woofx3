@@ -384,6 +384,7 @@ func buildWidgetRegisteredData(modulePrefix, moduleKey, moduleName, version stri
 			"settings_schema": w.SettingsSchema,
 			"surfaces":        widgetSurfaces(w),
 			"hosts_surface":   w.HostsSurface,
+			"taxonomy":        widgetTaxonomy(w),
 			"created_by_type": w.CreatedByType,
 			"created_by_ref":  w.CreatedByRef,
 		}
@@ -424,6 +425,7 @@ func buildWidgetDeregisteredData(modulePrefix, moduleKey string, widgets []*mode
 			"settings_schema": w.SettingsSchema,
 			"surfaces":        widgetSurfaces(w),
 			"hosts_surface":   w.HostsSurface,
+			"taxonomy":        widgetTaxonomy(w),
 			"created_by_ref":  w.CreatedByRef,
 		}
 		if pk := projectionKeyFor(w.CreatedByType, w.CreatedByRef, "widget", w.ManifestID); pk != "" {
