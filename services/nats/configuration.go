@@ -17,9 +17,12 @@ type Configuration struct {
 	LogLevel      string `json:"logLevel"`
 }
 
+// DefaultConfiguration listens on loopback only. The server has no
+// authentication, and in a shared-network deployment anything reachable
+// beyond loopback is reachable by every neighbour.
 func DefaultConfiguration() *Configuration {
 	return &Configuration{
-		Host: "0.0.0.0",
+		Host: "127.0.0.1",
 	}
 }
 

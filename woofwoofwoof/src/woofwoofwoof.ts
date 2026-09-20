@@ -57,7 +57,7 @@ const runtime = createRuntime({
     application.register(
       "twitchChat",
       new TwitchChatClientService({
-        channel: config.getConfig("woofx3TwitchChannelName") as string,
+        channel: (config.getConfig("woofx3TwitchChannelName") as string | undefined) || undefined,
         credentials: {
           clientId: config.getConfig("woofx3TwitchClientId") as string,
           clientSecret: config.getConfig("woofx3TwitchClientSecret") as string,

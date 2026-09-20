@@ -1,8 +1,22 @@
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
+import { UNVERSIONED } from "./version";
 
 export interface ApiConfig {
+  /** The running release (`WOOFX3_VERSION`); see UNVERSIONED. */
+  version: string;
+  /**
+   * Secret a caller must present to register (`WOOFX3_REGISTRATION_TOKEN`),
+   * or null when registration is open.
+   */
+  registrationToken: string | null;
   port: number;
+  /**
+   * Interface the HTTP server binds. Loopback unless configured otherwise:
+   * a deployed engine is reached through its in-container edge, and every
+   * other listener stays off the host's shared network.
+   */
+  host: string;
   rootDir: string;
   databaseProxyUrl: string;
   barkloaderUrl: string;
@@ -34,6 +48,10 @@ export const ApiEnvSchema = z
   .object({
     woofx3ApiPort: z.union([z.number(), z.string()]).optional(),
     apiPort: z.union([z.number(), z.string()]).optional(),
+    woofx3ApiHost: z.string().optional(),
+    apiHost: z.string().optional(),
+    woofx3Version: z.union([z.string(), z.number()]).optional(),
+    woofx3RegistrationToken: z.union([z.string(), z.number()]).optional(),
     woofx3DatabaseProxyUrl: z.string().optional(),
     databaseProxyUrl: z.string().optional(),
     woofx3BarkloaderUrl: z.string().optional(),
@@ -81,6 +99,12 @@ export function loadConfig(): ApiConfig {
   const config = result.config;
 
   const port = Number(config.woofx3ApiPort ?? config.apiPort ?? 8080);
+  const host = String(config.woofx3ApiHost || config.apiHost || "127.0.0.1");
+  const version = String(config.woofx3Version || UNVERSIONED);
+  const registrationToken =
+    config.woofx3RegistrationToken === undefined || String(config.woofx3RegistrationToken).trim() === ""
+      ? null
+      : String(config.woofx3RegistrationToken);
   const rootDir = String(config.woofx3RootPath);
   const databaseProxyUrl = String(config.woofx3DatabaseProxyUrl ?? config.databaseProxyUrl ?? "");
   const barkloaderUrl = String(config.woofx3BarkloaderUrl ?? config.barkloaderUrl ?? "http://127.0.0.1:3005");
@@ -125,7 +149,10 @@ export function loadConfig(): ApiConfig {
         : undefined;
 
   return {
+    version,
+    registrationToken,
     port,
+    host,
     databaseProxyUrl,
     barkloaderUrl,
     barkloaderWsUrl,

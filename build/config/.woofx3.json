@@ -16,7 +16,6 @@
   "messagebusNKey": "",
   "sceneManagerHost": "127.0.0.1",
   "sceneManagerTokenSecret": "CHANGE_ME",
-  "sceneManagerUrl": "",
   "twitchChannelName": "",
   "twitchClientId": "",
   "twitchClientSecret": ""

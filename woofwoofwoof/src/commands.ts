@@ -5,7 +5,21 @@ import type { ChatClient } from "@woofx3/twitch";
 /** Options `ChatClient.say` accepts, derived from the client this module
  *  actually calls rather than a second @twurple/chat install, whose
  *  identically-named type is nominally distinct. */
-type ChatSayMessageAttributes = NonNullable<Parameters<ChatClient["say"]>[2]>;
+export type ChatSayMessageAttributes = NonNullable<Parameters<ChatClient["say"]>[2]>;
+
+/**
+ * Where command replies are said.
+ *
+ * Resolved on every message rather than captured once: the chat connection
+ * is replaced when Twitch is relinked, and does not exist at all until the
+ * streamer links a Twitch account.
+ */
+export interface ChatSender {
+  /** The channel replies go to, or null while chat is not connected. */
+  channel(): string | null;
+  /** Say `text` in the channel. Rejects while chat is not connected. */
+  say(text: string, opts?: ChatSayMessageAttributes): Promise<void>;
+}
 
 export type CommandVisibility = "public" | "restricted";
 
@@ -101,8 +115,7 @@ export class Commands {
   private authCache = new Map<string, CachedAuth>();
 
   constructor(
-    private channel: string,
-    private chatClient: ChatClient,
+    private chat: ChatSender,
     opts?: CommandsOptions
   ) {
     this.auth = async (_user, _cmd) => ({ granted: true });
@@ -242,12 +255,13 @@ export class Commands {
 
   async send(msg: string, opts?: ChatSayMessageAttributes, parseCommand = false) {
     if (parseCommand) {
-      let [message, matched] = await this.process(msg, this.channel);
+      // The broadcaster is the author of a message the bot parses as a command.
+      let [message, matched] = await this.process(msg, this.chat.channel() ?? "");
       if (matched && message) {
-        await this.chatClient.say(this.channel, msg, opts);
+        await this.chat.say(msg, opts);
       }
     } else {
-      await this.chatClient.say(this.channel, msg, opts);
+      await this.chat.say(msg, opts);
     }
   }
 

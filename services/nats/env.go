@@ -113,9 +113,12 @@ func valueToString(v any) string {
 	}
 }
 
-// loadEnvMap pulls in variables from os environment, .env, and .woofx3.json/.woofx3.config
-// into a single map. Precedence (lowest to highest): os env, .env, woofx3 config.
-// Does not modify the process environment. Returns the map and the config file path used, or "" if none.
+// loadEnvMap pulls in variables from .woofx3.json/.woofx3.config, .env and the process environment
+// into a single map. Precedence, highest first: the process environment, then .env, then the
+// config file -- the same order as the shared Go runtime loader, so a deployment's variables beat
+// values baked into the image. A blank value never masks a non-blank one from a lower source.
+// Does not modify the process environment. Returns the map and the config file path used, or ""
+// if none.
 func loadEnvMap(confPath string) (map[string]string, string, error) {
 	var rootDir, configPath string
 	if confPath != "" {
@@ -132,35 +135,46 @@ func loadEnvMap(confPath string) (map[string]string, string, error) {
 		}
 	}
 
-	env := make(map[string]string)
-	for _, e := range os.Environ() {
-		idx := strings.Index(e, "=")
-		if idx > 0 {
-			env[e[:idx]] = e[idx+1:]
-		}
-	}
-
-	envPath := filepath.Join(rootDir, ".env")
-	dotenv, err := parseDotenv(envPath)
-	if err != nil {
-		return nil, "", err
-	}
-	for k, v := range dotenv {
-		env[k] = v
-	}
-
+	fromFile := make(map[string]string)
 	if configPath != "" {
 		woofx3, err := loadWoofx3JSON(configPath)
 		if err != nil {
 			return nil, "", err
 		}
 		for key, val := range woofx3 {
-			envKey := "WOOFX3_" + camelToScreamingSnake(key)
-			env[envKey] = valueToString(val)
+			fromFile["WOOFX3_"+camelToScreamingSnake(key)] = valueToString(val)
 		}
 	}
 
-	return env, configPath, nil
+	fromDotenv, err := parseDotenv(filepath.Join(rootDir, ".env"))
+	if err != nil {
+		return nil, "", err
+	}
+
+	fromProcess := make(map[string]string)
+	for _, e := range os.Environ() {
+		idx := strings.Index(e, "=")
+		if idx > 0 {
+			fromProcess[e[:idx]] = e[idx+1:]
+		}
+	}
+
+	return mergeByPrecedence(fromFile, fromDotenv, fromProcess), configPath, nil
+}
+
+// mergeByPrecedence merges sources given lowest precedence first. A later source overrides an
+// earlier one unless its value is blank. Must match mergeByPrecedence in
+// shared/common/golang/runtime/env.go.
+func mergeByPrecedence(sources ...map[string]string) map[string]string {
+	merged := make(map[string]string)
+	for _, source := range sources {
+		for key, value := range source {
+			if _, present := merged[key]; strings.TrimSpace(value) != "" || !present {
+				merged[key] = value
+			}
+		}
+	}
+	return merged
 }
 
 // LoadConfig loads configuration from env, .env, and optionally .woofx3.json/.woofx3.config.

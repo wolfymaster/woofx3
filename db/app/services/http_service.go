@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -19,6 +20,7 @@ type RouteSetupFunc func(mux *http.ServeMux, app *types.App, casbinMiddleware *m
 type HTTPServerService struct {
 	*runtime.BaseService[*http.Server]
 	logger           *slog.Logger
+	httpHost         string
 	httpPort         string
 	app              interface{}
 	server           *http.Server
@@ -30,10 +32,11 @@ type HTTPServerService struct {
 	mux               *http.ServeMux
 }
 
-func NewHTTPServerService(app interface{}, httpPort string, logger *slog.Logger, routeSetup RouteSetupFunc) *HTTPServerService {
+func NewHTTPServerService(app interface{}, httpHost string, httpPort string, logger *slog.Logger, routeSetup RouteSetupFunc) *HTTPServerService {
 	return &HTTPServerService{
 		BaseService: runtime.NewBaseService[*http.Server]("http", "server", nil, false), // HTTP server doesn't need external heartbeat monitoring
 		logger:      logger,
+		httpHost:    httpHost,
 		httpPort:    httpPort,
 		app:         app,
 		routeSetup:  routeSetup,
@@ -55,13 +58,13 @@ func (s *HTTPServerService) Connect(ctx context.Context, appCtx *runtime.Applica
 	handler = s.tracingMiddleware(handler)
 
 	s.server = &http.Server{
-		Addr:    ":" + s.httpPort,
+		Addr:    net.JoinHostPort(s.httpHost, s.httpPort),
 		Handler: handler,
 	}
 	s.SetClient(s.server)
 
 	go func() {
-		s.logger.Info("Starting HTTP server", "port", s.httpPort)
+		s.logger.Info("Starting HTTP server", "addr", s.server.Addr)
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			s.logger.Error("HTTP server failed", "error", err)
 		}

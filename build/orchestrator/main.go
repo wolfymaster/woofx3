@@ -51,10 +51,8 @@ func main() {
 
 	supervisor := NewSupervisor(baseDir, logger)
 
-	for _, service := range config.Services {
-		if service.Enabled {
-			supervisor.AddService(service)
-		}
+	for _, service := range servicesToRun(baseDir, config, logger) {
+		supervisor.AddService(service)
 	}
 
 	if len(supervisor.services) == 0 {
@@ -125,14 +123,55 @@ type Config struct {
 }
 
 type Service struct {
-	Name           string   `json:"name"`
-	Type           string   `json:"type"`
-	Path           string   `json:"path"`
-	Enabled        bool     `json:"enabled"`
-	Entry          string   `json:"entry,omitempty"`
-	Output         string   `json:"output"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Path    string `json:"path"`
+	Enabled bool   `json:"enabled"`
+	Entry   string `json:"entry,omitempty"`
+	Output  string `json:"output"`
+	// Args are passed to the binary after its own path.
+	Args           []string `json:"args,omitempty"`
 	Dependencies   []string `json:"dependencies,omitempty"`
 	HealthEndpoint string   `json:"health_endpoint,omitempty"`
+}
+
+// serviceTypeBinary marks a service the build does not produce: a prebuilt
+// binary that the packager installs beside the others (the Caddy edge, in the
+// container image). A package that did not install it runs without it.
+const serviceTypeBinary = "binary"
+
+// servicesToRun returns the enabled services, minus prebuilt binaries that are
+// not installed. Those are skipped with a warning rather than retried forever:
+// a release archive has no edge, and runs its services directly.
+func servicesToRun(baseDir string, config *Config, logger *slog.Logger) []Service {
+	var out []Service
+	for _, service := range config.Services {
+		if !service.Enabled {
+			continue
+		}
+		if service.Type == serviceTypeBinary {
+			binaryPath := filepath.Join(baseDir, binaryFileName(service))
+			if _, err := os.Stat(binaryPath); err != nil {
+				logger.Warn("Skipping service: its prebuilt binary is not installed", "service", service.Name, "path", binaryPath)
+				continue
+			}
+		}
+		out = append(out, service)
+	}
+	return out
+}
+
+// binaryFileName is the file a service runs from, relative to the base dir.
+func binaryFileName(service Service) string {
+	if isWindows() {
+		return service.Output + ".exe"
+	}
+	return service.Output
+}
+
+// serviceArgv is the argument vector a service is started with.
+func serviceArgv(binaryPath string, service Service) []string {
+	return append([]string{binaryPath}, service.Args...)
 }
 
 type Build struct {
@@ -309,13 +348,7 @@ func (s *Supervisor) StopAll() {
 
 func (s *Supervisor) manageService(serviceProcess *ServiceProcess) {
 	service := serviceProcess.Service
-	binaryName := service.Output
-
-	if isWindows() {
-		binaryName += ".exe"
-	}
-
-	binaryPath := filepath.Join(s.baseDir, binaryName)
+	binaryPath := filepath.Join(s.baseDir, binaryFileName(service))
 
 	for {
 		select {
@@ -381,7 +414,7 @@ func (s *Supervisor) startServiceProcess(serviceProcess *ServiceProcess, binaryP
 		Env:   os.Environ(),
 	}
 
-	process, err := os.StartProcess(binaryPath, []string{binaryPath}, attr)
+	process, err := os.StartProcess(binaryPath, serviceArgv(binaryPath, service), attr)
 	if err != nil {
 		return fmt.Errorf("failed to start process: %w", err)
 	}

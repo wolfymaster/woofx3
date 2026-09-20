@@ -26,11 +26,13 @@ export const engineRoutes = routeModule({
   async getEngineInfo(): Promise<{
     engineSceneOverlayBaseUrl: string;
     overlayPublicUrl: string;
+    version: string;
   }> {
     const overlayPublicUrl = await resolveSceneManagerUrl(this.db, this.sceneManagerUrl);
     return {
       engineSceneOverlayBaseUrl: `${overlayPublicUrl}/overlay/scene`,
       overlayPublicUrl,
+      version: this.version,
     };
   },
 

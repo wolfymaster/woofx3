@@ -1,0 +1,34 @@
+# The engine's single public listener.
+#
+# A host that gives a service one public port and one domain (Railway) can
+# still serve both apps: /api, /api/* and /ready go to the api, everything
+# else -- overlays, the /events SSE stream, assets, the upload relay -- to
+# sceneManager. Every other process in the container listens on loopback.
+#
+# Ports must match the services' own: WOOFX3_API_PORT (apiPort in the baked
+# .woofx3.json) and WOOFX3_SCENE_MANAGER_PORT (sceneManager's default).
+{
+	# No admin endpoint: nothing reconfigures this at runtime, and an open
+	# admin API is a second listener to defend.
+	admin off
+	# TLS terminates in front of the engine (the edge Worker, or whatever
+	# tunnel a bring-your-own engine sits behind).
+	auto_https off
+}
+
+:{$PORT:8080} {
+	@api path /api /api/* /ready
+	handle @api {
+		reverse_proxy 127.0.0.1:{$WOOFX3_API_PORT:5050} {
+			# Unbuffered, so capnweb responses and WebSocket frames are not held.
+			flush_interval -1
+		}
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:{$WOOFX3_SCENE_MANAGER_PORT:9101} {
+			# Unbuffered, so the /events SSE stream reaches overlays as it is written.
+			flush_interval -1
+		}
+	}
+}

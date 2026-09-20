@@ -35,10 +35,9 @@ const runtime = createRuntime({
     applicationName: "twitchapi",
     requiredServices: ["messageBus", "dbProxy"],
     // Without this the monitor defaults `ready` to false forever; with it
-    // the heartbeat tells the rest of the system whether Twitch events are
-    // actually flowing, and flips to true on its own if Twurple's retries
-    // establish the subscriptions later.
-    heartbeatReady: () => application.isEventBusReady(),
+    // the heartbeat says whether Twitch events are actually flowing, or that
+    // the service is healthily waiting for a Twitch link (see isReady).
+    heartbeatReady: () => application.isReady(),
   }),
   heartbeatInterval: 250_000,
   livenessInterval: 300_000,

@@ -148,7 +148,7 @@ export interface LoadRuntimeEnvOptions {
   injectIntoProcess?: boolean;
   /**
    * Schema that the final config must match exactly (no more, no less keys).
-   * Config file and env are merged (file overrides env), coerced to a common format, then validated.
+   * Config file, .env and process.env are merged (process.env wins; see loadRuntimeEnv), coerced to a common format, then validated.
    * Required: the application only ever sees schema-validated config.
    */
   schema: EnvConfigSchema;
@@ -164,9 +164,31 @@ function fileKeyToCanonical(key: string): string {
 }
 
 /**
- * Load config file (.woofx3.json), then environment (process.env, .env). Coerce values to a common
- * format (string | number | boolean) so env and file can be merged. Precedence: .woofx3.json
- * overrides environment. Final config is validated against the schema and must match exactly.
+ * Merge config sources given lowest precedence first. A later source overrides an earlier one,
+ * except that a blank value never masks a non-blank one: a `""` left in a baked config file, or
+ * an unset variable passed through by a compose file, means "not set here". A key blank in every
+ * source still resolves, to blank, so schemas that accept an empty string keep working.
+ */
+function mergeByPrecedence(
+  sources: Array<Record<string, string | number | boolean>>
+): Record<string, string | number | boolean> {
+  const merged: Record<string, string | number | boolean> = {};
+  for (const source of sources) {
+    for (const [key, value] of Object.entries(source)) {
+      if (value !== "" || !(key in merged)) {
+        merged[key] = value;
+      }
+    }
+  }
+  return merged;
+}
+
+/**
+ * Load config from .woofx3.json, .env and process.env, coerced to a common format
+ * (string | number | boolean) so they can be merged. Precedence, highest first: process.env,
+ * then .env, then .woofx3.json -- a deployment configures by variables, so a value baked into
+ * the file must never beat one the host set. Final config is validated against the schema and
+ * must match exactly.
  */
 export function loadRuntimeEnv(options: LoadRuntimeEnvOptions): RuntimeEnvResult {
   const rootDir = options?.rootDir ?? findProjectRoot();
@@ -181,20 +203,18 @@ export function loadRuntimeEnv(options: LoadRuntimeEnvOptions): RuntimeEnvResult
     }
   }
 
-  const envFromProcessAndDotenv: Record<string, string> = {};
+  const processEnv: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined) envFromProcessAndDotenv[k] = v;
-  }
-  const dotenv = loadDotenvFile(rootDir);
-  for (const [k, v] of Object.entries(dotenv)) {
-    envFromProcessAndDotenv[k] = v;
+    if (v !== undefined) {
+      processEnv[k] = v;
+    }
   }
 
-  const configFromEnv = buildConfigFromEnv(envFromProcessAndDotenv);
-  const mergedConfig: Record<string, string | number | boolean> = {
-    ...configFromEnv,
-    ...configFromFile,
-  };
+  const mergedConfig = mergeByPrecedence([
+    configFromFile,
+    buildConfigFromEnv(loadDotenvFile(rootDir)),
+    buildConfigFromEnv(processEnv),
+  ]);
 
   const config = schema.parse(mergedConfig) as Record<string, string | number | boolean>;
 

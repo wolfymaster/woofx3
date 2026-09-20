@@ -2,6 +2,7 @@ import type { ApplicationContext, Application as RuntimeApplication, IApplicatio
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { ApiConfig } from "./config";
 import type DbService from "./db-service";
+import type { Msg } from "@woofx3/nats/src/types";
 
 export type ApiServices = {
   db: DbService;
@@ -59,6 +60,9 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { WorkflowRunEmitter },
       { initWorkflowRunHandlers },
       { default: BarkloaderClient },
+      { checkReadiness, HEARTBEAT_SUBJECT, HeartbeatTracker },
+      { ApplicationScope },
+      { connectMessageBus },
     ] = await Promise.all([
       import("@woofx3/nats"),
       import("./alert-log-handlers"),
@@ -80,6 +84,9 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./workflow-run-emitter"),
       import("./workflow-run-handlers"),
       import("@woofx3/barkloader"),
+      import("./readiness"),
+      import("./application-scope"),
+      import("./message-bus"),
     ]);
 
     const config = ctx.runtimeConfig;
@@ -89,18 +96,23 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     logger.info("Starting API server", { port: config.port || 8080 });
 
     // NATS is best-effort and non-blocking — kept outside the runtime's
-    // health-monitor-gated service connect so the API still serves
-    // traffic when the message bus is unavailable.
-    let natsClient: Awaited<ReturnType<typeof createMessageBus>> | null = null;
-    try {
-      logger.info("Connecting to NATS", { url: config.nats.url, name: config.nats.name });
-      natsClient = await createMessageBus(config.nats, logger);
-      await natsClient.connect();
+    // health-monitor-gated service connect so the API still serves traffic
+    // when the message bus is unavailable. It is waited for rather than tried
+    // once: the orchestrator starts every service at once, and without a bus
+    // no heartbeat ever arrives, so GET /ready would never see barkloader.
+    logger.info("Connecting to NATS", { url: config.nats.url, name: config.nats.name });
+    const natsClient = await connectMessageBus({
+      connect: async () => {
+        const client = await createMessageBus(config.nats, logger);
+        await client.connect();
+        return client;
+      },
+      logger,
+    });
+    if (natsClient) {
       logger.info("Connected to NATS");
-    } catch (err) {
-      logger.warn("Failed to connect to NATS", { error: err });
+    } else {
       logger.warn("Running in offline mode - some features may be unavailable");
-      natsClient = null;
     }
 
     // Runs module functions and waits for their result. It reconnects on its
@@ -124,14 +136,47 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       sceneManagerUrl: config.sceneManagerUrl,
       apiUrl: config.apiUrl,
       logger,
+      version: config.version,
     });
+
+    // Barkloader readiness for GET /ready, from the heartbeats every service
+    // publishes. Without NATS nothing arrives, and /ready stays not-ready.
+    const heartbeats = new HeartbeatTracker();
+    if (natsClient) {
+      await natsClient.subscribe(HEARTBEAT_SUBJECT, (msg: Msg) => {
+        try {
+          heartbeats.record(msg.json(), Date.now());
+        } catch {
+          // A heartbeat that is not JSON is not a heartbeat.
+        }
+      });
+    }
 
     const webhookClient = new WebhookClient(db, logger, null);
     api.setWebhookClient(webhookClient);
 
-    let convexWebhookClient: InstanceType<typeof ConvexWebhookClient> | null = null;
-    let alertEmitter: InstanceType<typeof AlertEmitter> | null = null;
-    let storageChangeEmitter: InstanceType<typeof StorageChangeEmitter> | null = null;
+    // Components that exist per application. They start here when the
+    // engine is already registered, and otherwise at the first
+    // registerClient, which creates the application (see ApiGateway).
+    const applicationScope = new ApplicationScope(async (applicationId) => {
+      const convexWebhookClient = new ConvexWebhookClient({ db, logger, applicationId });
+      await convexWebhookClient.loadConfig();
+
+      if (!natsClient) {
+        logger.warn("Skipping AlertEmitter and StorageChangeEmitter; NATS client is not connected");
+        return;
+      }
+      const alertEmitter = new AlertEmitter(natsClient, convexWebhookClient, applicationId, logger);
+      await alertEmitter.start();
+
+      const storageChangeEmitter = new StorageChangeEmitter(natsClient, webhookClient, logger);
+      await storageChangeEmitter.start();
+
+      // A session is scoped to an application; there is nothing to resolve
+      // before onboarding.
+      const streamSessionResolver = new StreamSessionResolver(natsClient, db, applicationId, logger, webhookClient);
+      await streamSessionResolver.start();
+    }, logger);
 
     try {
       const existing = await db.getDefaultApplication();
@@ -139,31 +184,9 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
         api.setApplicationId(existing.id);
         await webhookClient.refreshCallbackUrls();
         logger.info("Warmed applicationId cache from existing default", { applicationId: existing.id });
-
-        convexWebhookClient = new ConvexWebhookClient({
-          db,
-          logger,
-          applicationId: existing.id,
-        });
-        await convexWebhookClient.loadConfig();
-
-        if (natsClient) {
-          alertEmitter = new AlertEmitter(natsClient, convexWebhookClient, existing.id, logger);
-          await alertEmitter.start();
-
-          storageChangeEmitter = new StorageChangeEmitter(natsClient, webhookClient, logger);
-          await storageChangeEmitter.start();
-
-          // Needs the applicationId, so it belongs in this block rather than
-          // the NATS-only one below: a session is scoped to an application and
-          // there is nothing to resolve before onboarding.
-          const streamSessionResolver = new StreamSessionResolver(natsClient, db, existing.id, logger, webhookClient);
-          await streamSessionResolver.start();
-        } else {
-          logger.warn("Skipping AlertEmitter and StorageChangeEmitter; NATS client is not connected");
-        }
+        await applicationScope.start(existing.id);
       } else {
-        logger.info("No default application yet; waiting for UI onboarding");
+        logger.info("No default application yet; application-scoped components start at the first registration");
       }
     } catch (err) {
       logger.warn("Default-application warmup failed (continuing)", {
@@ -209,17 +232,27 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
 
     const auth = new ClientAuth(db, logger);
     api.setAuthInvalidate(() => auth.invalidateCache());
-    const gateway = new ApiGateway(api, auth, db, logger);
+    const gateway = new ApiGateway(api, auth, db, logger, config.registrationToken);
     gateway.setWebhookClient(webhookClient);
+    gateway.setApplicationScope(applicationScope);
 
     this.server = createHttpServer({
       port: config.port,
+      hostname: config.host,
+      readiness: () =>
+        checkReadiness({
+          version: config.version,
+          migrationStatus: () => db.migrationStatus(),
+          heartbeats,
+          now: Date.now,
+        }),
       logger,
       gateway,
       onProcessingCallback: (body) => api.handleProcessingCallback(body as never),
     });
 
     logger.info("API server started", {
+      host: config.host,
       port: config.port,
       httpEndpoint: `http://localhost:${config.port}/api`,
       wsEndpoint: `ws://localhost:${config.port}/api`,
