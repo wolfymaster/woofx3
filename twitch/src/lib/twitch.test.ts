@@ -4,10 +4,7 @@ import TwitchApi from "./twitch";
 
 const BROADCASTER = { id: "broadcaster-1" } as HelixUser;
 
-function apiClientWith(overrides: {
-  shoutoutUser?: ReturnType<typeof mock>;
-  getUserByName?: ReturnType<typeof mock>;
-}) {
+function apiClientWith(overrides: { shoutoutUser?: ReturnType<typeof mock>; getUserByName?: ReturnType<typeof mock> }) {
   const shoutoutUser = overrides.shoutoutUser ?? mock(async () => {});
   const getUserByName = overrides.getUserByName ?? mock(async () => ({ id: "target-1" }));
   return {

@@ -134,12 +134,7 @@ export interface CtxStorage {
    * `current` is what the key holds afterwards: the value just written, or the
    * one that stopped the write, which is what to retry from.
    */
-  compareAndSet(
-    key: string,
-    expected: unknown,
-    value: unknown,
-    options?: CtxStorageSetOptions
-  ): CtxCompareAndSetResult;
+  compareAndSet(key: string, expected: unknown, value: unknown, options?: CtxStorageSetOptions): CtxCompareAndSetResult;
 }
 
 export interface CtxCompareAndSetResult {
@@ -213,12 +208,7 @@ export interface CtxResponse {
  * in workflows / commands.
  */
 export interface CtxResources {
-  create(
-    kind: string,
-    instanceId: string,
-    displayName?: string,
-    settings?: Record<string, unknown>
-  ): ResourceInstance;
+  create(kind: string, instanceId: string, displayName?: string, settings?: Record<string, unknown>): ResourceInstance;
   delete(canonicalId: string): void;
   /** One instance, settings included, or null when nothing has the id. */
   get(canonicalId: string): ResourceInstance | null;

@@ -15,7 +15,7 @@ type Command struct {
 	// shape as workflow_definitions.steps, because it is the same thing -- see
 	// command.proto's actions_json comment. "[]" is a command that only
 	// announces itself on chat.command.<slug>.
-	Actions string `gorm:"column:actions;type:jsonb;not null;default:'[]'"`
+	Actions       string    `gorm:"column:actions;type:jsonb;not null;default:'[]'"`
 	Cooldown      int       `gorm:"column:cooldown;default:0"`
 	Priority      int       `gorm:"column:priority;default:0"`
 	Enabled       bool      `gorm:"column:enabled;default:true"`

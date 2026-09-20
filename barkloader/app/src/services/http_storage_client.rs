@@ -56,7 +56,13 @@ impl StorageClient for HttpStorageClient {
         item.map(|item| decode(&item.value, key)).transpose()
     }
 
-    fn set(&self, namespace: &str, key: &str, value: Value, options: StorageSetOptions) -> Result<(), String> {
+    fn set(
+        &self,
+        namespace: &str,
+        key: &str,
+        value: Value,
+        options: StorageSetOptions,
+    ) -> Result<(), String> {
         let url = self.db_proxy_url.clone();
         let value_str = serde_json::to_string(&value).map_err(|e| e.to_string())?;
         Handle::current()

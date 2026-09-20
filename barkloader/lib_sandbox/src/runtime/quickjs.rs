@@ -86,7 +86,12 @@ impl RuntimeAdapter for QuickJSAdapter {
     }
 }
 
-fn to_sandbox_error(ctx: &Ctx<'_>, counter: &AtomicU64, max_instructions: u64, e: rquickjs::Error) -> Error {
+fn to_sandbox_error(
+    ctx: &Ctx<'_>,
+    counter: &AtomicU64,
+    max_instructions: u64,
+    e: rquickjs::Error,
+) -> Error {
     if counter.load(Ordering::Relaxed) >= max_instructions {
         return Error::InstructionLimitExceeded;
     }
@@ -486,7 +491,11 @@ fn build_resources_namespace<'js>(
     let module_name = invocation.module_id.clone();
     let create_fn = JsFunction::new(
         ctx.clone(),
-        move |ctx, kind: String, instance_id: String, display_name: Option<String>, settings: Opt<JsValue>| {
+        move |ctx,
+              kind: String,
+              instance_id: String,
+              display_name: Option<String>,
+              settings: Opt<JsValue>| {
             let display = display_name.unwrap_or_default();
             let json_settings = settings
                 .0
@@ -729,10 +738,19 @@ mod tests {
             module_version: "1.0.0".to_string(),
         };
         for (code, expected) in [
-            ("function run() { throw new Error('counter: no counter chosen'); }", "counter: no counter chosen"),
-            ("function run() { throw 'a plain string'; }", "a plain string"),
+            (
+                "function run() { throw new Error('counter: no counter chosen'); }",
+                "counter: no counter chosen",
+            ),
+            (
+                "function run() { throw 'a plain string'; }",
+                "a plain string",
+            ),
         ] {
-            let err = adapter.execute(code, "run", &invocation).unwrap_err().to_string();
+            let err = adapter
+                .execute(code, "run", &invocation)
+                .unwrap_err()
+                .to_string();
             assert!(err.contains(expected), "{err}");
         }
     }

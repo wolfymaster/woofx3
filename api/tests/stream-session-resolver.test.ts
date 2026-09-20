@@ -207,13 +207,15 @@ describe("stream.online", () => {
     await resolver.start();
     nats.publish.mockClear();
 
-    await handlers
-      .get(EventType.StreamOnline)
-      ?.(makeMsg(EventType.StreamOnline, { startedAt: "2026-01-01T02:00:00.000Z" }));
+    await handlers.get(EventType.StreamOnline)?.(
+      makeMsg(EventType.StreamOnline, { startedAt: "2026-01-01T02:00:00.000Z" })
+    );
 
     const subjects = nats.publish.mock.calls.map(([subject]: [string]) => subject);
     expect(subjects[0]).toBe("module.storage.woofx3.changed");
-    expect(subjects.indexOf("module.storage.woofx3.changed")).toBeLessThan(subjects.indexOf(SessionEventType.SessionEnded));
+    expect(subjects.indexOf("module.storage.woofx3.changed")).toBeLessThan(
+      subjects.indexOf(SessionEventType.SessionEnded)
+    );
     expect(published(nats)[0]).toMatchObject({
       type: "module.storage.changed",
       data: { moduleId: "woofx3", key: "state:woofx3:counter:deaths", value: null },

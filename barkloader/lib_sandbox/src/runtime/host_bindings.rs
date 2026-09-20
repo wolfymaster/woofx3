@@ -114,9 +114,13 @@ pub fn resources_create(
         Some(Value::Object(map)) => Value::Object(map),
         Some(_) => return Err("resources.create: settings must be an object".to_string()),
     };
-    let inst = host
-        .resources
-        .create(owning_module_name, kind, instance_id, display_name, &settings)?;
+    let inst = host.resources.create(
+        owning_module_name,
+        kind,
+        instance_id,
+        display_name,
+        &settings,
+    )?;
     serde_json::to_value(&inst).map_err(|e| e.to_string())
 }
 
@@ -461,7 +465,10 @@ mod tests {
         fn delete(&self, _canonical_id: &str) -> Result<(), String> {
             Ok(())
         }
-        fn get(&self, _canonical_id: &str) -> Result<Option<crate::host::ResourceInstance>, String> {
+        fn get(
+            &self,
+            _canonical_id: &str,
+        ) -> Result<Option<crate::host::ResourceInstance>, String> {
             Ok(None)
         }
         fn list_by_kind(&self, _kind: &str) -> Result<Vec<crate::host::ResourceInstance>, String> {
@@ -478,7 +485,11 @@ mod tests {
         assert_eq!(v["kind"], "counter");
         assert_eq!(v["instance_id"], "c1");
         assert_eq!(v["canonical_id"], "mymod:counter:c1");
-        assert_eq!(v["settings"], serde_json::json!({}), "no settings reads as an empty object");
+        assert_eq!(
+            v["settings"],
+            serde_json::json!({}),
+            "no settings reads as an empty object"
+        );
     }
 
     #[test]
@@ -490,14 +501,24 @@ mod tests {
             .expect("static client succeeds");
         assert_eq!(v["settings"], settings);
 
-        let err = resources_create(&host, "mymod", "counter", "c1", "", Some(serde_json::json!([1])))
-            .expect_err("an array is not settings");
+        let err = resources_create(
+            &host,
+            "mymod",
+            "counter",
+            "c1",
+            "",
+            Some(serde_json::json!([1])),
+        )
+        .expect_err("an array is not settings");
         assert!(err.contains("settings must be an object"), "{err}");
     }
 
     #[test]
     fn resources_get_reads_null_for_a_missing_instance() {
         let host = noop_host_context();
-        assert_eq!(resources_get(&host, "mymod:counter:gone").unwrap(), Value::Null);
+        assert_eq!(
+            resources_get(&host, "mymod:counter:gone").unwrap(),
+            Value::Null
+        );
     }
 }
