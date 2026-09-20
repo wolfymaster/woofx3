@@ -53,8 +53,13 @@ require() {
 
 cleanup() {
   if [ "$failed" -ne 0 ]; then
-    echo "--- container logs (last 200 lines) ---" >&2
-    docker logs --tail 200 "$CONTAINER_NAME" >&2 2>&1 || true
+    # Every service writes its own file under /app/logs; the combined stdout is
+    # mostly db-proxy answering the readiness poll, which drowns out whatever
+    # actually went wrong.
+    echo "--- per-service logs (last 40 lines each) ---" >&2
+    docker exec "$CONTAINER_NAME" sh -c 'for log in /app/logs/*.log; do echo "=== $log"; tail -n 40 "$log"; done' >&2 2>&1 || true
+    echo "--- container output, without db-proxy request logging ---" >&2
+    docker logs --tail 400 "$CONTAINER_NAME" 2>&1 | grep -v '"service":"db"' | tail -n 120 >&2 || true
   fi
   docker rm --force "$CONTAINER_NAME" >/dev/null 2>&1 || true
 }
@@ -106,7 +111,14 @@ while [ "$SECONDS" -lt "$deadline" ]; do
 done
 
 if [ -z "$ready_body" ]; then
-  fail "GET /ready answers 200 within ${READY_TIMEOUT_SECONDS}s" "last body: $(cat /tmp/ready.json 2>/dev/null || echo none)"
+  last_body="$(cat /tmp/ready.json 2>/dev/null || echo none)"
+  fail "GET /ready answers 200 within ${READY_TIMEOUT_SECONDS}s" "last body: $last_body"
+  # Which dependency is missing is the whole diagnosis; say it in words.
+  for service in dbProxy barkloader; do
+    if [ "$(echo "$last_body" | jq -r ".services.${service} // \"unknown\"" 2>/dev/null)" = "false" ]; then
+      echo "        ${service} never reported ready" >&2
+    fi
+  done
   exit 1
 fi
 pass "GET /ready answers 200 through the edge"
