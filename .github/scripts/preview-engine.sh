@@ -36,12 +36,16 @@ pr_number="${2:?usage: preview-engine.sh up|down <pr-number> [image-version]}"
 owner_ref="${GITHUB_REPOSITORY}#${pr_number}"
 slug="pr-${pr_number}-woofx3"
 
+# api <method> <path> [body] [idempotency-key]
 api() {
-  local method="$1" path="$2" body="${3:-}"
+  local method="$1" path="$2" body="${3:-}" idempotency_key="${4:-}"
   local args=(--silent --show-error --fail-with-body
     --request "$method"
     --header "Authorization: Bearer ${MAINTENANCE_API_KEY}"
     --header "Content-Type: application/json")
+  if [ -n "$idempotency_key" ]; then
+    args+=(--header "Idempotency-Key: ${idempotency_key}")
+  fi
   if [ -n "$body" ]; then
     args+=(--data "$body")
   fi
@@ -80,12 +84,16 @@ up)
 
   if [ -z "$engine_id" ]; then
     echo "Creating preview engine ${slug} on ${version}"
+    # Keyed on the pull request, so two runs racing here (a label and a push
+    # arriving together) create one engine and both get its response, rather
+    # than the second failing on the taken slug.
     created="$(api POST "/v1/engines" "$(jq --null-input \
       --arg slug "$slug" \
       --arg ref "$owner_ref" \
       --arg version "$version" \
       --argjson ttl "$TTL_HOURS" \
-      '{slug: $slug, kind: "preview", owner: {type: "github", ref: $ref}, version: $version, ttlHours: $ttl}')")"
+      '{slug: $slug, kind: "preview", owner: {type: "github", ref: $ref}, version: $version, ttlHours: $ttl}')" \
+      "preview-engine:${owner_ref}")"
     engine_id="$(echo "$created" | jq --raw-output '.engine.id')"
   else
     echo "Redeploying preview engine ${engine_id} on ${version}"
