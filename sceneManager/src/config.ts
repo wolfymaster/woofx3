@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
 
@@ -84,15 +84,26 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
 }
 
 /**
- * Source runs from `src/` → `../public`. Compiled release binaries live
- * next to a copied `public/` directory in the deploy package → `./public`.
+ * Where the static files sceneManager serves itself live (the widget host
+ * shim, the scene client, vendored scripts).
+ *
+ * A compiled release binary is what runs in the image, and its
+ * `import.meta.dir` points inside the bundle rather than at the deploy
+ * directory, so the executable's own directory is checked first -- that is
+ * where the build copies `public/`. From source, `import.meta.dir` is `src/`
+ * and the files are beside it in `../public`.
+ *
+ * `execDir` is a parameter so the choice can be tested without a compiled
+ * binary; callers pass nothing.
  */
-export function resolvePublicDir(metaDir: string): string {
-  const nextToBinary = join(metaDir, "public");
-  if (existsSync(nextToBinary)) {
-    return nextToBinary;
+export function resolvePublicDir(metaDir: string, execDir: string = dirname(process.execPath)): string {
+  const candidates = [join(execDir, "public"), join(metaDir, "public"), join(metaDir, "..", "public")];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
   }
-  return join(metaDir, "..", "public");
+  return candidates[candidates.length - 1] as string;
 }
 
 export function loadConfig(): SceneManagerRuntimeConfig {

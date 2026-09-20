@@ -1,14 +1,19 @@
 import { describe, expect, mock, test } from "bun:test";
-import { Commands, type AuthorizationResponse, type CommandMatch } from "./commands";
+import { Commands, type AuthorizationResponse, type ChatSender, type CommandMatch } from "./commands";
 
 function makeChatClient() {
   const say = mock(async (_channel: string, _message: string, _opts?: unknown) => {});
   return { say };
 }
 
+/** A chat sender over a stand-in chat client whose replies go to `channel`. */
+function sender(channel: string, client: ReturnType<typeof makeChatClient>): ChatSender {
+  return { channel: () => channel, say: (text, opts) => client.say(channel, text, opts) };
+}
+
 describe("Commands", () => {
   test("parses a bare command (no arguments) into action, cmd name, and empty tail", () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     const parsed = commands.parseAction("!hello");
     expect(parsed.action).toBe("!hello");
     expect(parsed.cmd).toBe("hello");
@@ -16,7 +21,7 @@ describe("Commands", () => {
   });
 
   test("parses a command with trailing text after the first space", () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     const parsed = commands.parseAction("!sr never gonna give you up");
     expect(parsed.action).toBe("!sr");
     expect(parsed.cmd).toBe("sr");
@@ -24,14 +29,14 @@ describe("Commands", () => {
   });
 
   test("does not treat non-command chat as a slash-command", async () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     const [out, matched] = await commands.process("hello everyone", "user");
     expect(matched).toBe(false);
     expect(out).toBe("");
   });
 
   test("runs a registered string response when the user is allowed to use that command", async () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.add("roll", "you rolled a 20");
     const [out, matched] = await commands.process("!roll", "player");
     expect(matched).toBe(true);
@@ -39,7 +44,7 @@ describe("Commands", () => {
   });
 
   test("invokes a registered handler and returns its async result", async () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.add("echo", async (text: string) => `heard: ${text}`);
     const [out, matched] = await commands.process("!echo ping", "player");
     expect(matched).toBe(true);
@@ -47,7 +52,7 @@ describe("Commands", () => {
   });
 
   test("blocks execution when authorization denies the command and surfaces the denial message", async () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.setAuth(
       async (): Promise<AuthorizationResponse> => ({
         granted: false,
@@ -62,7 +67,7 @@ describe("Commands", () => {
 
   test("send forwards the message to the channel chat client", async () => {
     const chat = makeChatClient();
-    const commands = new Commands("mychannel", chat as never);
+    const commands = new Commands(sender("mychannel", chat));
     await commands.send("hello chat");
     expect(chat.say).toHaveBeenCalledTimes(1);
     expect(chat.say.mock.calls[0]).toEqual(["mychannel", "hello chat", undefined]);
@@ -70,7 +75,7 @@ describe("Commands", () => {
 
   test("invokes the publisher with match details when a registered command matches", async () => {
     const published: CommandMatch[] = [];
-    const commands = new Commands("#chan", makeChatClient() as never, {
+    const commands = new Commands(sender("#chan", makeChatClient()), {
       publisher: (match) => {
         published.push(match);
       },
@@ -90,7 +95,7 @@ describe("Commands", () => {
 
   test("does not invoke the publisher for non-command chat", async () => {
     const publisher = mock((_m: CommandMatch) => {});
-    const commands = new Commands("#chan", makeChatClient() as never, { publisher });
+    const commands = new Commands(sender("#chan", makeChatClient()), { publisher });
     commands.add("hello", "hi");
     await commands.process("just chatting", "alice");
     expect(publisher).not.toHaveBeenCalled();
@@ -98,7 +103,7 @@ describe("Commands", () => {
 
   test("does not invoke the publisher when authorization denies the command", async () => {
     const publisher = mock((_m: CommandMatch) => {});
-    const commands = new Commands("#chan", makeChatClient() as never, { publisher });
+    const commands = new Commands(sender("#chan", makeChatClient()), { publisher });
     commands.setAuth(async (): Promise<AuthorizationResponse> => ({ granted: false, message: "no" }));
     commands.add("secret", "classified");
     await commands.process("!secret", "guest");
@@ -107,7 +112,7 @@ describe("Commands", () => {
 
   test("publisher failure is isolated via onPublishError and does not break the handler chain", async () => {
     const caught: Array<[unknown, CommandMatch]> = [];
-    const commands = new Commands("#chan", makeChatClient() as never, {
+    const commands = new Commands(sender("#chan", makeChatClient()), {
       publisher: () => {
         throw new Error("boom");
       },
@@ -125,7 +130,7 @@ describe("Commands", () => {
   });
 
   test("resolves {template} variables in a string response", async () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.add("greet", "hello {user}, you said: {argsText}");
     const [out, matched] = await commands.process("!greet nice to meet you", "wolfy");
     expect(matched).toBe(true);
@@ -134,7 +139,7 @@ describe("Commands", () => {
 
   test("drops an invocation within the cooldown window and does not re-trigger the publisher", async () => {
     const publisher = mock((_m: CommandMatch) => {});
-    const commands = new Commands("#chan", makeChatClient() as never, { publisher });
+    const commands = new Commands(sender("#chan", makeChatClient()), { publisher });
     commands.add("roll", "you rolled a 20", { cooldownSeconds: 60 });
 
     const [first, firstMatched] = await commands.process("!roll", "player");
@@ -148,7 +153,7 @@ describe("Commands", () => {
   });
 
   test("allows an invocation once the cooldown window has elapsed", async () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.add("roll", "you rolled a 20", { cooldownSeconds: 60 });
     (commands.commands[0] as { lastInvokedAt?: number }).lastInvokedAt = Date.now() - 61_000;
 
@@ -158,7 +163,7 @@ describe("Commands", () => {
   });
 
   test("cooldown survives a hot-reloaded (updated) command", async () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.add("roll", "you rolled a 20", { cooldownSeconds: 60 });
     await commands.process("!roll", "player");
 
@@ -171,7 +176,7 @@ describe("Commands", () => {
   });
 
   test("a cooldown of 0 never throttles", async () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.add("roll", "you rolled a 20", { cooldownSeconds: 0 });
     await commands.process("!roll", "player");
     const [out, matched] = await commands.process("!roll", "player");
@@ -181,7 +186,7 @@ describe("Commands", () => {
 
   test("public visibility bypasses the auth check entirely", async () => {
     const auth = mock(async (): Promise<AuthorizationResponse> => ({ granted: false, message: "no" }));
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.setAuth(auth);
     commands.add("hello", "hi there", { visibility: "public" });
 
@@ -193,7 +198,7 @@ describe("Commands", () => {
 
   test("restricted (default) visibility still calls the auth check", async () => {
     const auth = mock(async (): Promise<AuthorizationResponse> => ({ granted: true }));
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.setAuth(auth);
     commands.add("hello", "hi there");
 
@@ -203,7 +208,7 @@ describe("Commands", () => {
 
   test("caches a permission decision so repeat invocations by the same user skip the auth check", async () => {
     const auth = mock(async (): Promise<AuthorizationResponse> => ({ granted: true }));
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.setAuth(auth);
     commands.add("hello", "hi there");
 
@@ -215,7 +220,7 @@ describe("Commands", () => {
 
   test("caches per (user, command) — a different user still triggers its own auth check", async () => {
     const auth = mock(async (): Promise<AuthorizationResponse> => ({ granted: true }));
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.setAuth(auth);
     commands.add("hello", "hi there");
 
@@ -226,7 +231,7 @@ describe("Commands", () => {
 
   test("caches per (user, command) — a different command still triggers its own auth check", async () => {
     const auth = mock(async (): Promise<AuthorizationResponse> => ({ granted: true }));
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.setAuth(auth);
     commands.add("hello", "hi there");
     commands.add("bye", "cya");
@@ -238,7 +243,7 @@ describe("Commands", () => {
 
   test("caches a denial as well as a grant", async () => {
     const auth = mock(async (): Promise<AuthorizationResponse> => ({ granted: false, message: "no" }));
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.setAuth(auth);
     commands.add("secret", "classified");
 
@@ -250,7 +255,7 @@ describe("Commands", () => {
   });
 
   test("replacing the auth function via setAuth invalidates previously cached decisions", async () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.add("hello", "hi there");
 
     const denyAuth = mock(async (): Promise<AuthorizationResponse> => ({ granted: false, message: "no" }));
@@ -267,7 +272,7 @@ describe("Commands", () => {
   });
 
   test("a single {variable} captures the entire remainder, not split on whitespace", async () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.add("sr", "queued: {songTitle}", { variables: ["songTitle"] });
     const [out, matched] = await commands.process("!sr Life is a highway", "player");
     expect(matched).toBe(true);
@@ -275,7 +280,7 @@ describe("Commands", () => {
   });
 
   test("multiple {variable}s are split positionally, last one catching the remainder", async () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.add("hug", "{userA} hugs {userB}", { variables: ["userA", "userB"] });
     const [out, matched] = await commands.process("!hug alice bob smith", "player");
     expect(matched).toBe(true);
@@ -284,14 +289,14 @@ describe("Commands", () => {
   });
 
   test("missing trailing arguments resolve to empty string, not undefined", async () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.add("hug", "[{userA}] [{userB}]", { variables: ["userA", "userB"] });
     const [out] = await commands.process("!hug alice", "player");
     expect(out).toBe("[alice] []");
   });
 
   test("dot-separated {variable} names build a nested object for the resolver", async () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.add("greet", "hello {target.name}", { variables: ["target.name"] });
     const [out] = await commands.process("!greet wolfy", "player");
     expect(out).toBe("hello wolfy");
@@ -302,14 +307,14 @@ describe("Commands", () => {
     // over an extracted variable of the same top-level name, so existing
     // {user}/{command} templates can't be silently broken by a chat-authored
     // command that happens to declare a variable rooted at the same name.
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     commands.add("greet", "hi {user}", { variables: ["user.name"] });
     const [out] = await commands.process("!greet wolfy", "invokingUser");
     expect(out).toBe("hi invokingUser");
   });
 
   test("function-type commands receive extracted {variable}s as the third argument", async () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     const handler = mock(async (_msg: string, _user?: string, vars?: Record<string, unknown>) => {
       return `queued ${vars?.songTitle}`;
     });
@@ -329,7 +334,7 @@ describe("Commands", () => {
   });
 
   test("commands with no declared variables are unaffected (vars is an empty object)", async () => {
-    const commands = new Commands("#chan", makeChatClient() as never);
+    const commands = new Commands(sender("#chan", makeChatClient()));
     const handler = mock(async (_msg: string, _user?: string, vars?: Record<string, unknown>) => {
       return JSON.stringify(vars);
     });

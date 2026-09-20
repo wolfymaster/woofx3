@@ -2,9 +2,13 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type { ServerWebSocket } from "bun";
 import { newHttpBatchRpcResponse, newWebSocketRpcSession } from "capnweb";
 import type { ApiGateway } from "./gateway";
+import type { Readiness } from "./readiness";
 
 export interface HttpDeps {
   port: number;
+  hostname: string;
+  /** Answers `GET /ready`; see readiness.ts. */
+  readiness: () => Promise<Readiness>;
   logger: SharedLogger;
   gateway: ApiGateway;
   /**
@@ -136,13 +140,14 @@ class BunWebSocketAdapter {
  * ambiently, matching `sceneManager/src/http.ts`'s `createHttpServer`.
  */
 export function createHttpServer(deps: HttpDeps) {
-  const { port, logger, gateway, onProcessingCallback } = deps;
+  const { port, hostname, readiness, logger, gateway, onProcessingCallback } = deps;
 
   // Map to track WebSocket adapters by their Bun WebSocket (capnweb path)
   const wsAdapters = new WeakMap<ServerWebSocket<unknown>, BunWebSocketAdapter>();
 
   return Bun.serve({
     port,
+    hostname,
     async fetch(req, server) {
       const url = new URL(req.url);
 
@@ -249,6 +254,16 @@ export function createHttpServer(deps: HttpDeps) {
           });
         }
         return new Response(null, { status: 204 });
+      }
+
+      // Readiness: 200 only once everything this engine depends on is up,
+      // so a provisioner or load balancer can wait on it.
+      if (url.pathname === "/ready") {
+        const state = await readiness();
+        return new Response(JSON.stringify(state), {
+          status: state.ready ? 200 : 503,
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+        });
       }
 
       // Health check endpoint

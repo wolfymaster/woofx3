@@ -2,44 +2,47 @@ use anyhow::{Context, Result, anyhow};
 use std::{env, fs, path::Path};
 use woofx3_runtime::Config;
 
-// get env var or default - first checks WOOFX3 config (.woofx3.json), then falls back to env
+/// Resolve `env_var`, or `default` when nothing sets it. See
+/// `get_env_or_default_with_key`.
 pub fn get_env_or_default(env_var: &str, default: &str) -> String {
     get_env_or_default_with_key(env_var, None, default)
 }
 
-// Same as get_env_or_default but allows specifying an explicit .woofx3.json config key
-// when the env var name does not follow the WOOFX3_<camelCase> convention.
+/// Resolve a setting from the environment first, then `.woofx3.json`.
+///
+/// In order, the first non-blank value wins:
+/// 1. `env_var` exactly as named (e.g. `BARKLOADER_PORT`);
+/// 2. `config_key`, when given, through `Config::get` (its `WOOFX3_*`
+///    variable, then the file);
+/// 3. `env_var` with any `WOOFX3_` prefix stripped and converted to
+///    camelCase (`WOOFX3_BARKLOADER_KEY` -> `barkloaderKey`), the same way.
+///
+/// A blank value is treated as unset rather than as an override, so a `""`
+/// left in a config file cannot mask a variable the deployment set.
 pub fn get_env_or_default_with_key(
     env_var: &str,
     config_key: Option<&str>,
     default: &str,
 ) -> String {
+    if let Some(value) = env::var(env_var).ok().filter(|v| !v.trim().is_empty()) {
+        return value;
+    }
+
     if let Ok(config) = Config::load() {
-        // If an explicit config key was provided, try it first
-        if let Some(key) = config_key {
-            if let Some(value) = config.get(key) {
-                if !value.is_empty() {
-                    return value;
-                }
-            }
+        if let Some(value) = config_key.and_then(|key| config.get_non_empty(key)) {
+            return value;
         }
 
-        // Convert env var to config key: strip optional WOOFX3_ prefix, then
-        // SCREAMING_SNAKE -> camelCase (e.g. DB_PROXY_ADDR -> dbProxyAddr,
-        // WOOFX3_BARKLOADER_KEY -> barkloaderKey)
         let base = env_var.strip_prefix("WOOFX3_").unwrap_or(env_var);
         let converted = screaming_snake_to_camel(base);
         if !converted.is_empty() {
-            if let Some(value) = config.get(&converted) {
-                if !value.is_empty() {
-                    return value;
-                }
+            if let Some(value) = config.get_non_empty(&converted) {
+                return value;
             }
         }
     }
 
-    // Fall back to environment variable
-    env::var(env_var).unwrap_or_else(|_| default.to_string())
+    default.to_string()
 }
 
 fn screaming_snake_to_camel(s: &str) -> String {
@@ -60,48 +63,29 @@ fn screaming_snake_to_camel(s: &str) -> String {
     result
 }
 
-/// Read a value from `.woofx3.json` only (no environment variable fallback).
-pub fn get_woofx3_json_value(key: &str, default: &str) -> String {
-    let Ok(config) = Config::load() else {
-        return default.to_string();
-    };
-    config
-        .values
-        .get(key)
-        .and_then(json_value_to_string)
-        .filter(|s| !s.is_empty())
+/// Resolve a camelCase config key: its `WOOFX3_<SCREAMING_SNAKE>` variable
+/// first, then `.woofx3.json`, else `default`. Blank values count as unset.
+pub fn get_config_value(key: &str, default: &str) -> String {
+    Config::load()
+        .ok()
+        .and_then(|config| config.get_non_empty(key))
         .unwrap_or_else(|| default.to_string())
 }
 
-fn json_value_to_string(v: &serde_json::Value) -> Option<String> {
-    match v {
-        serde_json::Value::String(s) => Some(s.clone()),
-        serde_json::Value::Number(n) => Some(n.to_string()),
-        serde_json::Value::Bool(b) => Some(b.to_string()),
-        _ => None,
-    }
-}
-
-/// Validate keys present and non-empty in `.woofx3.json` (file only).
-pub fn validate_required_woofx3_json_keys(keys: &[&str]) -> Result<()> {
+/// Fail unless every camelCase key resolves to a non-blank value, from the
+/// environment or `.woofx3.json`.
+pub fn validate_required_config_keys(keys: &[&str]) -> Result<()> {
     let config = Config::load().map_err(|e| anyhow!("failed to load .woofx3.json: {}", e))?;
-    let mut missing = Vec::new();
-    for key in keys {
-        let empty = config
-            .values
-            .get(*key)
-            .and_then(json_value_to_string)
-            .map(|s| s.is_empty())
-            .unwrap_or(true);
-        if empty {
-            missing.push((*key).to_string());
-        }
-    }
+    let missing: Vec<String> = keys
+        .iter()
+        .filter(|key| config.get_non_empty(key).is_none())
+        .map(|key| (*key).to_string())
+        .collect();
     if missing.is_empty() {
         Ok(())
     } else {
         Err(anyhow!(
-            "missing required keys in .woofx3.json: {}",
+            "missing required config (set WOOFX3_<KEY> or the key in .woofx3.json): {}",
             missing.join(", ")
         ))
     }
@@ -238,4 +222,53 @@ fn count_files_recursive(path: &Path) -> Result<usize> {
     }
 
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Each test owns distinct variable names: the environment is process-wide
+    // and tests run in parallel.
+    fn set(name: &str, value: &str) {
+        // SAFETY: test-only, and no other test reads or writes these names.
+        unsafe {
+            env::set_var(name, value);
+        }
+    }
+
+    #[test]
+    fn a_prefixed_variable_supplies_a_config_key() {
+        set("WOOFX3_UTIL_TEST_PROXY_URL", "http://127.0.0.1:5555");
+
+        assert_eq!(
+            get_config_value("utilTestProxyUrl", ""),
+            "http://127.0.0.1:5555"
+        );
+    }
+
+    #[test]
+    fn a_blank_variable_falls_back_to_the_default() {
+        set("WOOFX3_UTIL_TEST_BLANK", "  ");
+
+        assert_eq!(get_config_value("utilTestBlank", "fallback"), "fallback");
+    }
+
+    #[test]
+    fn a_variable_named_outright_is_read_first() {
+        set("UTIL_TEST_RAW_PORT", "9999");
+        set("WOOFX3_UTIL_TEST_RAW_PORT", "1111");
+
+        assert_eq!(get_env_or_default("UTIL_TEST_RAW_PORT", "0"), "9999");
+    }
+
+    #[test]
+    fn required_keys_are_satisfied_by_the_environment_alone() {
+        set("WOOFX3_UTIL_TEST_REQUIRED", "present");
+
+        assert!(validate_required_config_keys(&["utilTestRequired"]).is_ok());
+        let missing = validate_required_config_keys(&["utilTestNeverSet"])
+            .expect_err("an unset key is missing");
+        assert!(missing.to_string().contains("utilTestNeverSet"));
+    }
 }

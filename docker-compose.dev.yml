@@ -2,6 +2,10 @@
 # All services share the woofx3-dev base image; source dirs are bind-mounted
 # so code changes apply without rebuilding the image.
 #
+# Services here run in separate containers and reach each other by service
+# name, so the ones other containers connect to bind 0.0.0.0 through their
+# *_HOST variables. Everywhere else they default to loopback.
+#
 # Prerequisites:
 #   docker build -f Dockerfile.dev -t woofx3-dev .
 #
@@ -22,6 +26,7 @@ services:
     environment:
       FORCE_COLOR: "1"
       GO_ENV: development
+      WOOFX3_MESSAGEBUS_HOST: 0.0.0.0
     volumes:
       - ./.woofx3.json:/app/.woofx3.json:ro
       - ./services/nats:/app/services/nats
@@ -44,6 +49,7 @@ services:
     environment:
       FORCE_COLOR: "1"
       WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
+      WOOFX3_DATABASE_PROXY_HOST: 0.0.0.0
     volumes:
       - ./.woofx3.json:/app/.woofx3.json:ro
       - ./db:/app/db
@@ -117,6 +123,7 @@ services:
     environment:
       FORCE_COLOR: "1"
       WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
+      WOOFX3_API_HOST: 0.0.0.0
     volumes:
       - ./.woofx3.json:/app/.woofx3.json:ro
       - ./api:/app/api

@@ -9,7 +9,7 @@ import (
 
 // SetupAllRoutes registers all application routes with the provided mux
 func SetupAllRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middleware.CasbinMiddleware) {
-	PingRoutes(mux)
+	PingRoutes(mux, app)
 	UserRoutes(mux, app)
 	WorkflowRoutes(mux, app, casbinMiddleware)
 	PermissionRoutes(mux, app)

@@ -7,7 +7,9 @@ export const WoofEnvSchema = z.object({
   woofx3MessagebusUrl: z.string().min(1, "messagebusUrl is required in .woofx3.json"),
   woofx3MessagebusJwt: z.string().optional(),
   woofx3MessagebusNKey: z.string().optional(),
-  woofx3TwitchChannelName: z.string().min(1, "WOOFX3_TWITCH_CHANNEL_NAME is required"),
+  // Optional: without it the bot joins the channel of whoever links Twitch,
+  // so it can start before its streamer has linked an account.
+  woofx3TwitchChannelName: z.string().optional(),
   woofx3BarkloaderWsUrl: z.string().min(1, "barkloaderWsUrl is required in .woofx3.json"),
   woofx3BarkloaderKey: z.string().min(1, "barkloaderKey is required in .woofx3.json"),
   woofx3DatabaseProxyUrl: z.string().min(1, "databaseProxyUrl is required in .woofx3.json"),

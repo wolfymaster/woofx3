@@ -4,6 +4,7 @@
       "enabled": true,
       "entry": "src/server.ts",
       "name": "api",
+      "dependencies": ["message-bus", "db-proxy", "barkloader"],
       "output": "api",
       "path": "../api",
       "type": "bun"
@@ -11,6 +12,7 @@
     {
       "enabled": true,
       "name": "barkloader",
+      "dependencies": ["message-bus", "db-proxy"],
       "output": "barkloader",
       "path": "../barkloader",
       "type": "rust"
@@ -31,6 +33,7 @@
     },
     {
       "name": "sceneManager",
+      "dependencies": ["message-bus", "db-proxy"],
       "type": "bun",
       "path": "../sceneManager",
       "enabled": true,
@@ -40,6 +43,7 @@
     },
     {
       "name": "twitch",
+      "dependencies": ["message-bus", "db-proxy"],
       "type": "bun",
       "path": "../twitch",
       "enabled": true,
@@ -48,6 +52,7 @@
     },
     {
       "name": "wooflow",
+      "dependencies": ["message-bus", "db-proxy"],
       "type": "go",
       "path": "../workflow",
       "enabled": true,
@@ -55,11 +60,29 @@
     },
     {
       "name": "woofwoofwoof",
+      "dependencies": ["message-bus", "db-proxy", "barkloader"],
       "type": "bun",
       "path": "../woofwoofwoof",
       "enabled": true,
       "entry": "src/woofwoofwoof.ts",
       "output": "woofwoofwoof"
+    },
+    {
+      "name": "edge",
+      "dependencies": ["api", "sceneManager"],
+      "type": "binary",
+      "enabled": true,
+      "output": "caddy",
+      "args": ["run", "--config", "Caddyfile.edge", "--adapter", "caddyfile"]
+    }
+  ],
+  "tools": [
+    {
+      "name": "migrate",
+      "type": "go",
+      "path": "../db",
+      "entry": "./database/migrate",
+      "output": "migrate"
     }
   ],
   "build": {
