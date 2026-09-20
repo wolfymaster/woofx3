@@ -17,6 +17,7 @@ use lib_sandbox::host::noop::{NoopChatSender, noop_host_context};
 use lib_sandbox::host::{ChatSender, ExtensionRegistry};
 use lib_sandbox::{ModuleRegistry, SandboxFactory};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tracing::{info, warn};
 use types::{AppContext, SharedRepository};
 
@@ -30,6 +31,37 @@ mod util;
 mod websocket;
 const DEFAULT_MODULE_DIR: &str = "modules";
 const SERVICE_NAME: &str = "barkloader";
+
+/// How long to wait for the message bus before giving up on it. The
+/// orchestrator starts every service at once, so a refused connection at
+/// startup means "not yet", not "never".
+const MESSAGEBUS_WAIT: Duration = Duration::from_secs(60);
+const MESSAGEBUS_RETRY_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Connect to the message bus, waiting for it to accept connections.
+///
+/// Without a bus barkloader publishes no readiness heartbeat, and anything
+/// gating on that -- the api's GET /ready, and so a provisioner waiting on a
+/// new engine -- waits forever. Retrying is what keeps a boot race from
+/// becoming a permanently degraded engine.
+async fn connect_messagebus(url: &str) -> Result<Arc<crate::services::nats::NatsService>> {
+    let deadline = Instant::now() + MESSAGEBUS_WAIT;
+    loop {
+        match crate::services::nats::NatsService::connect(url).await {
+            Ok(nats) => return Ok(nats),
+            Err(e) => {
+                if Instant::now() + MESSAGEBUS_RETRY_INTERVAL >= deadline {
+                    return Err(e);
+                }
+                warn!(
+                    "Messagebus at {} is not accepting connections yet ({}); retrying",
+                    url, e
+                );
+                tokio::time::sleep(MESSAGEBUS_RETRY_INTERVAL).await;
+            }
+        }
+    }
+}
 
 async fn setup() -> Result<AppContext> {
     let registry = Arc::new(ModuleRegistry::new());
@@ -49,7 +81,7 @@ async fn setup() -> Result<AppContext> {
         let messagebus_url =
             get_env_or_default_with_key("MESSAGEBUS_URL", Some("messagebusUrl"), "");
         if !messagebus_url.is_empty() {
-            match crate::services::nats::NatsService::connect(&messagebus_url).await {
+            match connect_messagebus(&messagebus_url).await {
                 Ok(nats) => {
                     info!("Connected to messagebus at {}", messagebus_url);
                     nats_raw_client = Some(nats.raw_client().clone());

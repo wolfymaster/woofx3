@@ -62,6 +62,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { default: BarkloaderClient },
       { checkReadiness, HEARTBEAT_SUBJECT, HeartbeatTracker },
       { ApplicationScope },
+      { connectMessageBus },
     ] = await Promise.all([
       import("@woofx3/nats"),
       import("./alert-log-handlers"),
@@ -85,6 +86,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("@woofx3/barkloader"),
       import("./readiness"),
       import("./application-scope"),
+      import("./message-bus"),
     ]);
 
     const config = ctx.runtimeConfig;
@@ -94,18 +96,23 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     logger.info("Starting API server", { port: config.port || 8080 });
 
     // NATS is best-effort and non-blocking — kept outside the runtime's
-    // health-monitor-gated service connect so the API still serves
-    // traffic when the message bus is unavailable.
-    let natsClient: Awaited<ReturnType<typeof createMessageBus>> | null = null;
-    try {
-      logger.info("Connecting to NATS", { url: config.nats.url, name: config.nats.name });
-      natsClient = await createMessageBus(config.nats, logger);
-      await natsClient.connect();
+    // health-monitor-gated service connect so the API still serves traffic
+    // when the message bus is unavailable. It is waited for rather than tried
+    // once: the orchestrator starts every service at once, and without a bus
+    // no heartbeat ever arrives, so GET /ready would never see barkloader.
+    logger.info("Connecting to NATS", { url: config.nats.url, name: config.nats.name });
+    const natsClient = await connectMessageBus({
+      connect: async () => {
+        const client = await createMessageBus(config.nats, logger);
+        await client.connect();
+        return client;
+      },
+      logger,
+    });
+    if (natsClient) {
       logger.info("Connected to NATS");
-    } catch (err) {
-      logger.warn("Failed to connect to NATS", { error: err });
+    } else {
       logger.warn("Running in offline mode - some features may be unavailable");
-      natsClient = null;
     }
 
     // Runs module functions and waits for their result. It reconnects on its
