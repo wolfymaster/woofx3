@@ -59,8 +59,14 @@ const UPLOAD_PATH = /^\/assets\/upload\/[^/]+$/;
 /** The only method an upload grant is good for, plus its preflight. */
 export const UPLOAD_ALLOWED_METHODS = "PUT, OPTIONS";
 
-/** Request headers barkloader needs to validate and store the upload. */
-const UPLOAD_FORWARDED_HEADERS = ["Content-Type", "Content-Length"] as const;
+/**
+ * Request headers barkloader needs to validate and store the upload.
+ *
+ * Content-Length is deliberately absent: the body is forwarded as a stream and
+ * the transport frames it, so a length copied from the incoming request would
+ * be a promise this relay cannot keep if the client goes away mid-upload.
+ */
+const UPLOAD_FORWARDED_HEADERS = ["Content-Type"] as const;
 
 export function isUploadPath(pathname: string): boolean {
   return UPLOAD_PATH.test(pathname);

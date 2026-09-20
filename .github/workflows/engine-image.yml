@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  BUN_VERSION: "1.1.34"
+  BUN_VERSION: "1.3.14"
   IMAGE: woofx3:image-check
   PORT: "8080"
   POSTGRES_PASSWORD: engine-check

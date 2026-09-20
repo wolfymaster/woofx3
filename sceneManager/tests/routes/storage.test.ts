@@ -144,8 +144,10 @@ describe("handleUploadRoute", () => {
     expect(init?.method).toBe("PUT");
     const sent = new Headers(init?.headers);
     expect(sent.get("Content-Type")).toBe("image/png");
-    expect(sent.get("Content-Length")).toBe("4");
     expect(sent.get("Cookie")).toBeNull();
+    // The body goes out chunked; a length alongside it makes the upstream
+    // read an empty body.
+    expect(sent.get("Content-Length")).toBeNull();
     // Streamed through, not read into memory first.
     expect(init?.body).toBeInstanceOf(ReadableStream);
   });
