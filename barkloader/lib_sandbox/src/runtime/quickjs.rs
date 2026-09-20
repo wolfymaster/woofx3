@@ -327,10 +327,26 @@ fn build_storage_namespace<'js>(
     let module_id = invocation.module_id.clone();
     let set_fn = JsFunction::new(
         ctx.clone(),
-        move |_ctx: Ctx<'_>, key: String, value: JsValue<'_>| -> rquickjs::Result<()> {
+        move |_ctx: Ctx<'_>,
+              key: String,
+              value: JsValue<'_>,
+              options: Opt<JsValue<'_>>|
+              -> rquickjs::Result<()> {
             let json_val = js_to_json(&value).map_err(|e| host_err(e.to_string()))?;
-            super::host_bindings::storage_set(&host, &module_id, &key, json_val)
-                .map_err(host_err)?;
+            let json_options = options
+                .0
+                .as_ref()
+                .map(js_to_json)
+                .transpose()
+                .map_err(|e| host_err(e.to_string()))?;
+            super::host_bindings::storage_set(
+                &host,
+                &module_id,
+                &key,
+                json_val,
+                super::host_bindings::parse_storage_set_options(json_options.as_ref()),
+            )
+            .map_err(host_err)?;
             Ok(())
         },
     )

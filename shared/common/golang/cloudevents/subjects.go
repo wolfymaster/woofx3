@@ -41,6 +41,23 @@ const (
 	// Workflow events
 	SubjectWorkflowExecute Subject = "workflow.execute"
 
+	// Run a recorded run again, whole or from one of its steps. Carries the
+	// original trigger event and the recorded step outcomes, published by the
+	// api after reading them from the db proxy.
+	SubjectWorkflowReplay Subject = "workflow.replay"
+
+	// Workflow run lifecycle, emitted by the engine as a run starts and as it
+	// settles. Each carries the triggering event's `triggerId` unchanged, which
+	// is the only thing joining a run back to whoever asked for it: the run
+	// happens in another process, long after the publish call returned.
+	//
+	// `workflow.run.started` matters as much as the terminal pair. Nothing else
+	// acknowledges that an event matched a workflow at all, so without it a
+	// caller cannot tell a slow run from one that never began.
+	SubjectWorkflowRunStarted   Subject = "workflow.run.started"
+	SubjectWorkflowRunCompleted Subject = "workflow.run.completed"
+	SubjectWorkflowRunFailed    Subject = "workflow.run.failed"
+
 	// Unified widget event channel (R2 of the widget refactor).
 	// Single inbound subject for everything an overlay reports about a
 	// widget — alert lifecycle acks, counter increments, timer state,
@@ -125,6 +142,18 @@ const (
 	// plaintext token).
 	SubjectDbOverlayTokenCreatedPattern Subject = "db.overlay_token.created.*"
 	SubjectDbOverlayTokenUpdatedPattern Subject = "db.overlay_token.updated.*"
+
+	// Stream session lifecycle, emitted by the resolver in api/. A session is
+	// the logical span a broadcast belongs to and is always present, so
+	// `session.started` names the session events are stamped with rather than
+	// marking a boundary -- it is re-announced when the resolver starts so a
+	// process that restarted learns the current session.
+	//
+	// `session.ended` fires on a split, NOT on `stream.offline`. Anything that
+	// clears session-scoped state must key on it, or a brief dropout wipes
+	// exactly the state sessions exist to preserve.
+	SubjectSessionStarted Subject = "session.started"
+	SubjectSessionEnded   Subject = "session.ended"
 
 	// System events
 	SubjectHeartbeat      Subject = "HEARTBEAT"

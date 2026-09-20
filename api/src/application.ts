@@ -51,9 +51,13 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { initOverlayTokenHandlers },
       { initSceneHandlers },
       { StorageChangeEmitter },
+      { StreamEventBroadcaster },
+      { StreamSessionResolver },
       { WebhookClient },
       { initWidgetStatusHandlers },
       { initWorkflowHandlers },
+      { WorkflowRunEmitter },
+      { initWorkflowRunHandlers },
       { default: BarkloaderClient },
     ] = await Promise.all([
       import("@woofx3/nats"),
@@ -68,9 +72,13 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./overlay-token-handlers"),
       import("./scene-event-handlers"),
       import("./storage-change-emitter"),
+      import("./stream-event-broadcaster"),
+      import("./stream-session-resolver"),
       import("./webhook-client"),
       import("./widget-status-handlers"),
       import("./workflow-event-handlers"),
+      import("./workflow-run-emitter"),
+      import("./workflow-run-handlers"),
       import("@woofx3/barkloader"),
     ]);
 
@@ -145,6 +153,12 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
 
           storageChangeEmitter = new StorageChangeEmitter(natsClient, webhookClient, logger);
           await storageChangeEmitter.start();
+
+          // Needs the applicationId, so it belongs in this block rather than
+          // the NATS-only one below: a session is scoped to an application and
+          // there is nothing to resolve before onboarding.
+          const streamSessionResolver = new StreamSessionResolver(natsClient, db, existing.id, logger, webhookClient);
+          await streamSessionResolver.start();
         } else {
           logger.warn("Skipping AlertEmitter and StorageChangeEmitter; NATS client is not connected");
         }
@@ -166,12 +180,31 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     await api.initSubscriptions();
 
     if (natsClient) {
+      // Started here rather than alongside AlertEmitter above: that block is
+      // gated on a default application already existing, and this needs only
+      // the bus — a dashboard should receive events before onboarding has
+      // resolved an applicationId.
+      const streamEventBroadcaster = new StreamEventBroadcaster(natsClient, logger);
+      await streamEventBroadcaster.start();
+      api.setStreamEventBroadcaster(streamEventBroadcaster);
+
       await initOverlayTokenHandlers(natsClient, webhookClient, logger);
       await initModuleHandlers(natsClient, webhookClient, logger);
       await initWorkflowHandlers(natsClient, webhookClient, logger);
       await initSceneHandlers(natsClient, webhookClient, logger);
       await initAlertLogHandlers(natsClient, webhookClient, logger);
       await initWidgetStatusHandlers(natsClient, webhookClient, logger);
+      // Run history, projected from the db-proxy outbox. Distinct from
+      // WorkflowRunEmitter below, which forwards live lifecycle for a caller
+      // waiting on one run: this carries persisted rows for the history.
+      await initWorkflowRunHandlers(natsClient, webhookClient, logger);
+
+      // Needs only the bus and the webhook client, so it starts here rather
+      // than in the applicationId-gated block above: each run event carries
+      // its own applicationId, resolved by the engine that owns the workflow
+      // definition.
+      const workflowRunEmitter = new WorkflowRunEmitter(natsClient, webhookClient, logger);
+      await workflowRunEmitter.start();
     }
 
     const auth = new ClientAuth(db, logger);

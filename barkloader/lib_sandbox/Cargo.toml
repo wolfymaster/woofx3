@@ -3,6 +3,7 @@ name = "lib_sandbox"
 edition = "2024"
 
 [dependencies]
+woofx3-cloudevents = { path = "../../shared/common/rust/cloudevents" }
 anyhow = "1.0.98"
 tracing = "0.1"
 mlua = { features = ["lua54", "serialize", "vendored"], version = "0.10.3" }

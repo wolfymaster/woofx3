@@ -158,6 +158,9 @@ impl serde::Serialize for CreateResourceRequest {
         if !self.status.is_empty() {
             len += 1;
         }
+        if self.id.is_some() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("resource.CreateResourceRequest", len)?;
         if !self.application_id.is_empty() {
             struct_ser.serialize_field("applicationId", &self.application_id)?;
@@ -185,6 +188,9 @@ impl serde::Serialize for CreateResourceRequest {
         if !self.status.is_empty() {
             struct_ser.serialize_field("status", &self.status)?;
         }
+        if let Some(v) = self.id.as_ref() {
+            struct_ser.serialize_field("id", v)?;
+        }
         struct_ser.end()
     }
 }
@@ -207,6 +213,7 @@ impl<'de> serde::Deserialize<'de> for CreateResourceRequest {
             "repositoryKey",
             "size",
             "status",
+            "id",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -219,6 +226,7 @@ impl<'de> serde::Deserialize<'de> for CreateResourceRequest {
             RepositoryKey,
             Size,
             Status,
+            Id,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -248,6 +256,7 @@ impl<'de> serde::Deserialize<'de> for CreateResourceRequest {
                             "repositoryKey" | "repository_key" => Ok(GeneratedField::RepositoryKey),
                             "size" => Ok(GeneratedField::Size),
                             "status" => Ok(GeneratedField::Status),
+                            "id" => Ok(GeneratedField::Id),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -275,6 +284,7 @@ impl<'de> serde::Deserialize<'de> for CreateResourceRequest {
                 let mut repository_key__ = None;
                 let mut size__ = None;
                 let mut status__ = None;
+                let mut id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::ApplicationId => {
@@ -327,6 +337,12 @@ impl<'de> serde::Deserialize<'de> for CreateResourceRequest {
                             }
                             status__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Id => {
+                            if id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id__ = map_.next_value()?;
+                        }
                     }
                 }
                 Ok(CreateResourceRequest {
@@ -338,6 +354,7 @@ impl<'de> serde::Deserialize<'de> for CreateResourceRequest {
                     repository_key: repository_key__.unwrap_or_default(),
                     size: size__.unwrap_or_default(),
                     status: status__.unwrap_or_default(),
+                    id: id__,
                 })
             }
         }

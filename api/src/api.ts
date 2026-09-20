@@ -1,3 +1,4 @@
+import type { StreamEventBroadcaster } from "./stream-event-broadcaster";
 import type { WebhookClient } from "./webhook-client";
 import { ApiRouteHost, type ApiOptions } from "./routes/context";
 import { registerAllRoutes, type RegisteredApiRoutes } from "./routes";
@@ -51,6 +52,10 @@ export class Api extends ApiRouteHost {
 
   setAuthInvalidate(fn: () => void): void {
     this.authInvalidate = fn;
+  }
+
+  setStreamEventBroadcaster(broadcaster: StreamEventBroadcaster): void {
+    this.streamEventBroadcaster = broadcaster;
   }
 
   /** The cached application id, or null before anything has resolved one. */

@@ -56,9 +56,19 @@
 ---@field verifyEd25519 fun(public_key: string, signature: string, message: string, encoding?: "hex"|"base64"): boolean
 ---@field timingSafeEqual fun(a: string, b: string): boolean
 
+---How the engine should treat a stored value beyond its bytes.
+---
+---`clearOnSessionEnd` drops the key when the stream session ends, which is
+---not the same as the stream going offline: a session spans brief dropouts,
+---so a reconnect keeps the value. The module only declares the intent; the
+---engine does the clearing, since the sandbox exposes no way to delete
+---storage. Omitted means the value persists until something overwrites it.
+---@class CtxStorageSetOptions
+---@field clearOnSessionEnd boolean?
+
 ---@class CtxStorage
 ---@field get fun(key: string): any
----@field set fun(key: string, value: any): nil
+---@field set fun(key: string, value: any, options?: CtxStorageSetOptions): nil
 
 ---@class CtxHttp
 ---@field request fun(url: string, method: string, opts?: CtxHttpOptions): CtxHttpResponse
@@ -100,11 +110,16 @@
 ---belongs to. `settings` has one key per `module_settings` row
 ---registered for this module, coerced to string/number/boolean based
 ---on each setting's declared type.
+---
+---`setSetting` writes one immediately. Values go in as strings, and
+---`settings` is a snapshot taken once per invocation, so a value written
+---mid-invocation is not reflected back into it.
 ---@class CtxModule
 ---@field id string             manifest-local module id
 ---@field name string           display name from the manifest
 ---@field version string        semver string from the manifest
 ---@field settings table<string, string|number|boolean>
+---@field setSetting fun(key: string, value: string): nil
 
 ---@class CtxTwitchExtension
 ---@field clip fun(args?: any): nil

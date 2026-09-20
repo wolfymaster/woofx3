@@ -65,6 +65,12 @@ pub struct CreateResourceRequest {
     /// Defaults to "pending" when empty.
     #[prost(string, tag="8")]
     pub status: ::prost::alloc::string::String,
+    /// Caller-chosen UUID for the new row; a fresh one is generated when
+    /// unset. `repository_key` embeds the resource id and is required, so
+    /// a caller that obtains the key before the row exists must pick the
+    /// id itself.
+    #[prost(string, optional, tag="9")]
+    pub id: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateFolderRequest {

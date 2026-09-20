@@ -92,9 +92,22 @@ pub struct WorkflowExecution {
     /// Execution details for each step
     #[prost(message, repeated, tag="13")]
     pub steps: ::prost::alloc::vec::Vec<ExecutionStep>,
+    /// The CloudEvent the run started from, verbatim. What a replay re-feeds to
+    /// the engine, so `${trigger.*}` resolves exactly as it did the first time.
+    #[prost(string, tag="14")]
+    pub trigger_event_json: ::prost::alloc::string::String,
+    /// What caused the run ("twitch", "chat", ...).
+    #[prost(string, tag="15")]
+    pub triggered_by: ::prost::alloc::string::String,
 }
-/// Execution details for a single step
-#[derive(Clone, PartialEq, ::prost::Message)]
+/// Execution details for a single step.
+///
+/// `inputs_json` / `outputs_json` are raw JSON rather than string maps, for the
+/// same reason `Workflow` carries `steps_json`: a task's resolved parameters and
+/// its exports are arbitrarily nested engine values (an alert layout, say), and
+/// a flat string map cannot hold them without mangling. The map fields were
+/// never populated by anything, so their numbers are reserved rather than reused.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ExecutionStep {
     /// ID of the workflow step
     #[prost(string, tag="1")]
@@ -111,12 +124,6 @@ pub struct ExecutionStep {
     /// Error message if the step failed
     #[prost(string, tag="5")]
     pub error: ::prost::alloc::string::String,
-    /// Input variables for the step
-    #[prost(map="string, string", tag="6")]
-    pub inputs: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
-    /// Output variables from the step
-    #[prost(map="string, string", tag="7")]
-    pub outputs: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
     #[prost(message, optional, tag="8")]
     pub started_at: ::core::option::Option<::pbjson_types::Timestamp>,
     #[prost(message, optional, tag="9")]
@@ -124,6 +131,19 @@ pub struct ExecutionStep {
     /// Duration in milliseconds
     #[prost(int64, tag="10")]
     pub duration_ms: i64,
+    /// Parameters as resolved at run time. The definition holds the unresolved
+    /// template; this is the only record of what the task was actually asked to do.
+    #[prost(string, tag="11")]
+    pub inputs_json: ::prost::alloc::string::String,
+    /// The task's exports -- what later steps' `${taskId.*}` expressions resolve
+    /// against, and therefore what a resume has to restore.
+    #[prost(string, tag="12")]
+    pub outputs_json: ::prost::alloc::string::String,
+    /// Position in the execution order this run used. Recorded because that
+    /// order is derived from the dependency graph and changes when the workflow
+    /// is edited.
+    #[prost(int32, tag="13")]
+    pub step_index: i32,
 }
 /// Request to create a new workflow
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -350,6 +370,74 @@ pub struct ListWorkflowExecutionsResponse {
     pub page: i32,
     #[prost(int32, tag="5")]
     pub page_size: i32,
+}
+/// Request to record a run the engine has already started.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RecordWorkflowRunRequest {
+    /// Engine-minted execution id
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub workflow_id: ::prost::alloc::string::String,
+    /// The owning user is resolved from this
+    #[prost(string, tag="3")]
+    pub application_id: ::prost::alloc::string::String,
+    /// Provenance: "twitch", "dashboard", ...
+    #[prost(string, tag="4")]
+    pub triggered_by: ::prost::alloc::string::String,
+    /// Originating CloudEvent, stored verbatim so a replay can re-feed it to
+    /// the engine unchanged.
+    #[prost(string, tag="5")]
+    pub trigger_event_json: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="6")]
+    pub started_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+/// Request to advance a recorded run to its terminal state.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UpdateWorkflowRunStatusRequest {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    /// running, completed, failed, cancelled
+    #[prost(string, tag="2")]
+    pub status: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub error: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub output_json: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="5")]
+    pub completed_at: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+/// Request to record one step's outcome within a recorded run.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RecordWorkflowRunStepRequest {
+    #[prost(string, tag="1")]
+    pub execution_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub application_id: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub task_id: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub name: ::prost::alloc::string::String,
+    /// pending, running, waiting, success, failed, skipped
+    #[prost(string, tag="5")]
+    pub status: ::prost::alloc::string::String,
+    /// 1-based
+    #[prost(int32, tag="6")]
+    pub attempt: i32,
+    #[prost(int32, tag="7")]
+    pub step_index: i32,
+    #[prost(string, tag="8")]
+    pub inputs_json: ::prost::alloc::string::String,
+    #[prost(string, tag="9")]
+    pub outputs_json: ::prost::alloc::string::String,
+    #[prost(string, tag="10")]
+    pub error: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="11")]
+    pub started_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag="12")]
+    pub completed_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(int64, tag="13")]
+    pub duration_ms: i64,
 }
 /// Request to cancel a workflow execution
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

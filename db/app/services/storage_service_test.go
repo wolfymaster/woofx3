@@ -206,6 +206,62 @@ func TestStorageService_ClearAllForApplication(t *testing.T) {
 	}
 }
 
+func TestStorageService_ClearSessionScoped(t *testing.T) {
+	svc := newStorageTestService(t)
+	ctx := context.Background()
+
+	if _, err := svc.Set(ctx, &client.SetRequest{
+		Item: &client.StorageItem{Key: "ephemeral", Value: "1", ApplicationId: "app-1", ClearOnSessionEnd: true},
+	}); err != nil {
+		t.Fatalf("Set ephemeral: %v", err)
+	}
+	if _, err := svc.Set(ctx, &client.SetRequest{
+		Item: &client.StorageItem{Key: "durable", Value: "2", ApplicationId: "app-1"},
+	}); err != nil {
+		t.Fatalf("Set durable: %v", err)
+	}
+
+	resp, err := svc.ClearSessionScoped(ctx, &client.ClearSessionScopedRequest{ApplicationId: "app-1"})
+	if err != nil {
+		t.Fatalf("ClearSessionScoped: %v", err)
+	}
+	if resp.Cleared != 1 {
+		t.Errorf("Cleared = %d, want 1", resp.Cleared)
+	}
+
+	ephemeral, _ := svc.Get(ctx, &client.GetRequest{Key: "ephemeral", ApplicationId: "app-1"})
+	if ephemeral.Item != nil {
+		t.Errorf("expected session-scoped item cleared, got %+v", ephemeral.Item)
+	}
+	// The whole point of the flag: everything not marked survives the boundary.
+	durable, _ := svc.Get(ctx, &client.GetRequest{Key: "durable", ApplicationId: "app-1"})
+	if durable.Item == nil {
+		t.Error("expected unflagged item to survive a session boundary")
+	}
+}
+
+func TestStorageService_ClearSessionScoped_LeavesOtherApplicationsAlone(t *testing.T) {
+	svc := newStorageTestService(t)
+	ctx := context.Background()
+
+	for _, app := range []string{"app-1", "app-2"} {
+		if _, err := svc.Set(ctx, &client.SetRequest{
+			Item: &client.StorageItem{Key: "k", Value: "1", ApplicationId: app, ClearOnSessionEnd: true},
+		}); err != nil {
+			t.Fatalf("Set %s: %v", app, err)
+		}
+	}
+
+	if _, err := svc.ClearSessionScoped(ctx, &client.ClearSessionScopedRequest{ApplicationId: "app-1"}); err != nil {
+		t.Fatalf("ClearSessionScoped: %v", err)
+	}
+
+	other, _ := svc.Get(ctx, &client.GetRequest{Key: "k", ApplicationId: "app-2"})
+	if other.Item == nil {
+		t.Error("expected app-2 to be untouched by clearing app-1")
+	}
+}
+
 func TestStorageService_Get_RequiresKeyAndApplicationId(t *testing.T) {
 	svc := newStorageTestService(t)
 	ctx := context.Background()

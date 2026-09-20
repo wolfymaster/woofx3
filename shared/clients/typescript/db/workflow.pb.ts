@@ -85,6 +85,15 @@ export interface WorkflowExecution {
   createdAt: protoscript.Timestamp;
   updatedAt: protoscript.Timestamp;
   steps: ExecutionStep[];
+  /**
+   * The CloudEvent the run started from, verbatim. What a replay re-feeds to
+   * the engine, so `${trigger.*}` resolves exactly as it did the first time.
+   */
+  triggerEventJson: string;
+  /**
+   * What caused the run ("twitch", "chat", ...).
+   */
+  triggeredBy: string;
 }
 
 export declare namespace WorkflowExecution {
@@ -100,7 +109,13 @@ export declare namespace WorkflowExecution {
 }
 
 /**
- * Execution details for a single step
+ * Execution details for a single step.
+ *
+ * `inputs_json` / `outputs_json` are raw JSON rather than string maps, for the
+ * same reason `Workflow` carries `steps_json`: a task's resolved parameters and
+ * its exports are arbitrarily nested engine values (an alert layout, say), and
+ * a flat string map cannot hold them without mangling. The map fields were
+ * never populated by anything, so their numbers are reserved rather than reused.
  */
 export interface ExecutionStep {
   stepId: string;
@@ -108,23 +123,25 @@ export interface ExecutionStep {
   status: string;
   attempt: number;
   error: string;
-  inputs: Record<string, ExecutionStep.Inputs["value"] | undefined>;
-  outputs: Record<string, ExecutionStep.Outputs["value"] | undefined>;
   startedAt: protoscript.Timestamp;
   completedAt: protoscript.Timestamp;
   durationMs: bigint;
-}
-
-export declare namespace ExecutionStep {
-  interface Inputs {
-    key: string;
-    value: string;
-  }
-
-  interface Outputs {
-    key: string;
-    value: string;
-  }
+  /**
+   * Parameters as resolved at run time. The definition holds the unresolved
+   * template; this is the only record of what the task was actually asked to do.
+   */
+  inputsJson: string;
+  /**
+   * The task's exports -- what later steps' `${taskId.*}` expressions resolve
+   * against, and therefore what a resume has to restore.
+   */
+  outputsJson: string;
+  /**
+   * Position in the execution order this run used. Recorded because that
+   * order is derived from the dependency graph and changes when the workflow
+   * is edited.
+   */
+  stepIndex: number;
 }
 
 /**
@@ -329,6 +346,52 @@ export interface ListWorkflowExecutionsResponse {
 }
 
 /**
+ * Request to record a run the engine has already started.
+ */
+export interface RecordWorkflowRunRequest {
+  id: string;
+  workflowId: string;
+  applicationId: string;
+  triggeredBy: string;
+  /**
+   * Originating CloudEvent, stored verbatim so a replay can re-feed it to
+   * the engine unchanged.
+   */
+  triggerEventJson: string;
+  startedAt: protoscript.Timestamp;
+}
+
+/**
+ * Request to advance a recorded run to its terminal state.
+ */
+export interface UpdateWorkflowRunStatusRequest {
+  id: string;
+  status: string;
+  error: string;
+  outputJson: string;
+  completedAt: protoscript.Timestamp;
+}
+
+/**
+ * Request to record one step's outcome within a recorded run.
+ */
+export interface RecordWorkflowRunStepRequest {
+  executionId: string;
+  applicationId: string;
+  taskId: string;
+  name: string;
+  status: string;
+  attempt: number;
+  stepIndex: number;
+  inputsJson: string;
+  outputsJson: string;
+  error: string;
+  startedAt: protoscript.Timestamp;
+  completedAt: protoscript.Timestamp;
+  durationMs: bigint;
+}
+
+/**
  * Request to cancel a workflow execution
  */
 export interface CancelWorkflowExecutionRequest {
@@ -475,6 +538,58 @@ export async function CancelWorkflowExecution(
   return common.ResponseStatus.decode(response);
 }
 
+/**
+ * Record a run the engine has already started.
+ *
+ * Distinct from ExecuteWorkflow, which asks for a run to happen: this
+ * reports one already underway. The engine owns the id, and the run exists
+ * whether or not anyone asked for it -- most runs are started by an event
+ * nobody is waiting on. The owning user is resolved from application_id.
+ */
+export async function RecordWorkflowRun(
+  recordWorkflowRunRequest: RecordWorkflowRunRequest,
+  config?: ClientConfiguration,
+): Promise<WorkflowExecutionResponse> {
+  const response = await PBrequest(
+    "/workflow.WorkflowService/RecordWorkflowRun",
+    RecordWorkflowRunRequest.encode(recordWorkflowRunRequest),
+    config,
+  );
+  return WorkflowExecutionResponse.decode(response);
+}
+
+/**
+ * Advance a recorded run to its terminal state.
+ */
+export async function UpdateWorkflowRunStatus(
+  updateWorkflowRunStatusRequest: UpdateWorkflowRunStatusRequest,
+  config?: ClientConfiguration,
+): Promise<WorkflowExecutionResponse> {
+  const response = await PBrequest(
+    "/workflow.WorkflowService/UpdateWorkflowRunStatus",
+    UpdateWorkflowRunStatusRequest.encode(updateWorkflowRunStatusRequest),
+    config,
+  );
+  return WorkflowExecutionResponse.decode(response);
+}
+
+/**
+ * Record one step's outcome within a recorded run. Upserted on
+ * (execution, task, attempt), so a repeated report of the same attempt
+ * replaces the row rather than adding another.
+ */
+export async function RecordWorkflowRunStep(
+  recordWorkflowRunStepRequest: RecordWorkflowRunStepRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/workflow.WorkflowService/RecordWorkflowRunStep",
+    RecordWorkflowRunStepRequest.encode(recordWorkflowRunStepRequest),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
+}
+
 //========================================//
 //      WorkflowService JSON Client       //
 //========================================//
@@ -614,6 +729,58 @@ export async function CancelWorkflowExecutionJSON(
   return common.ResponseStatusJSON.decode(response);
 }
 
+/**
+ * Record a run the engine has already started.
+ *
+ * Distinct from ExecuteWorkflow, which asks for a run to happen: this
+ * reports one already underway. The engine owns the id, and the run exists
+ * whether or not anyone asked for it -- most runs are started by an event
+ * nobody is waiting on. The owning user is resolved from application_id.
+ */
+export async function RecordWorkflowRunJSON(
+  recordWorkflowRunRequest: RecordWorkflowRunRequest,
+  config?: ClientConfiguration,
+): Promise<WorkflowExecutionResponse> {
+  const response = await JSONrequest(
+    "/workflow.WorkflowService/RecordWorkflowRun",
+    RecordWorkflowRunRequestJSON.encode(recordWorkflowRunRequest),
+    config,
+  );
+  return WorkflowExecutionResponseJSON.decode(response);
+}
+
+/**
+ * Advance a recorded run to its terminal state.
+ */
+export async function UpdateWorkflowRunStatusJSON(
+  updateWorkflowRunStatusRequest: UpdateWorkflowRunStatusRequest,
+  config?: ClientConfiguration,
+): Promise<WorkflowExecutionResponse> {
+  const response = await JSONrequest(
+    "/workflow.WorkflowService/UpdateWorkflowRunStatus",
+    UpdateWorkflowRunStatusRequestJSON.encode(updateWorkflowRunStatusRequest),
+    config,
+  );
+  return WorkflowExecutionResponseJSON.decode(response);
+}
+
+/**
+ * Record one step's outcome within a recorded run. Upserted on
+ * (execution, task, attempt), so a repeated report of the same attempt
+ * replaces the row rather than adding another.
+ */
+export async function RecordWorkflowRunStepJSON(
+  recordWorkflowRunStepRequest: RecordWorkflowRunStepRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/workflow.WorkflowService/RecordWorkflowRunStep",
+    RecordWorkflowRunStepRequestJSON.encode(recordWorkflowRunStepRequest),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
 //========================================//
 //            WorkflowService             //
 //========================================//
@@ -680,6 +847,34 @@ export interface WorkflowService<Context = unknown> {
    */
   CancelWorkflowExecution: (
     cancelWorkflowExecutionRequest: CancelWorkflowExecutionRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  /**
+   * Record a run the engine has already started.
+   *
+   * Distinct from ExecuteWorkflow, which asks for a run to happen: this
+   * reports one already underway. The engine owns the id, and the run exists
+   * whether or not anyone asked for it -- most runs are started by an event
+   * nobody is waiting on. The owning user is resolved from application_id.
+   */
+  RecordWorkflowRun: (
+    recordWorkflowRunRequest: RecordWorkflowRunRequest,
+    context: Context,
+  ) => Promise<WorkflowExecutionResponse> | WorkflowExecutionResponse;
+  /**
+   * Advance a recorded run to its terminal state.
+   */
+  UpdateWorkflowRunStatus: (
+    updateWorkflowRunStatusRequest: UpdateWorkflowRunStatusRequest,
+    context: Context,
+  ) => Promise<WorkflowExecutionResponse> | WorkflowExecutionResponse;
+  /**
+   * Record one step's outcome within a recorded run. Upserted on
+   * (execution, task, attempt), so a repeated report of the same attempt
+   * replaces the row rather than adding another.
+   */
+  RecordWorkflowRunStep: (
+    recordWorkflowRunStepRequest: RecordWorkflowRunStepRequest,
     context: Context,
   ) => Promise<common.ResponseStatus> | common.ResponseStatus;
 }
@@ -780,6 +975,42 @@ export function createWorkflowService<Context>(
         input: {
           protobuf: CancelWorkflowExecutionRequest,
           json: CancelWorkflowExecutionRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
+      },
+      RecordWorkflowRun: {
+        name: "RecordWorkflowRun",
+        handler: service.RecordWorkflowRun,
+        input: {
+          protobuf: RecordWorkflowRunRequest,
+          json: RecordWorkflowRunRequestJSON,
+        },
+        output: {
+          protobuf: WorkflowExecutionResponse,
+          json: WorkflowExecutionResponseJSON,
+        },
+      },
+      UpdateWorkflowRunStatus: {
+        name: "UpdateWorkflowRunStatus",
+        handler: service.UpdateWorkflowRunStatus,
+        input: {
+          protobuf: UpdateWorkflowRunStatusRequest,
+          json: UpdateWorkflowRunStatusRequestJSON,
+        },
+        output: {
+          protobuf: WorkflowExecutionResponse,
+          json: WorkflowExecutionResponseJSON,
+        },
+      },
+      RecordWorkflowRunStep: {
+        name: "RecordWorkflowRunStep",
+        handler: service.RecordWorkflowRunStep,
+        input: {
+          protobuf: RecordWorkflowRunStepRequest,
+          json: RecordWorkflowRunStepRequestJSON,
         },
         output: {
           protobuf: common.ResponseStatus,
@@ -1099,6 +1330,8 @@ export const WorkflowExecution = {
       createdAt: protoscript.Timestamp.initialize(),
       updatedAt: protoscript.Timestamp.initialize(),
       steps: [],
+      triggerEventJson: "",
+      triggeredBy: "",
       ...msg,
     };
   },
@@ -1183,6 +1416,12 @@ export const WorkflowExecution = {
         ExecutionStep._writeMessage,
       );
     }
+    if (msg.triggerEventJson) {
+      writer.writeString(14, msg.triggerEventJson);
+    }
+    if (msg.triggeredBy) {
+      writer.writeString(15, msg.triggeredBy);
+    }
     return writer;
   },
 
@@ -1255,6 +1494,14 @@ export const WorkflowExecution = {
           const m = ExecutionStep.initialize();
           reader.readMessage(m, ExecutionStep._readMessage);
           msg.steps.push(m);
+          break;
+        }
+        case 14: {
+          msg.triggerEventJson = reader.readString();
+          break;
+        }
+        case 15: {
+          msg.triggeredBy = reader.readString();
           break;
         }
         default: {
@@ -1388,11 +1635,12 @@ export const ExecutionStep = {
       status: "",
       attempt: 0,
       error: "",
-      inputs: {},
-      outputs: {},
       startedAt: protoscript.Timestamp.initialize(),
       completedAt: protoscript.Timestamp.initialize(),
       durationMs: 0n,
+      inputsJson: "",
+      outputsJson: "",
+      stepIndex: 0,
       ...msg,
     };
   },
@@ -1419,26 +1667,6 @@ export const ExecutionStep = {
     if (msg.error) {
       writer.writeString(5, msg.error);
     }
-    if (msg.inputs) {
-      writer.writeRepeatedMessage(
-        6,
-        Object.entries(msg.inputs).map(([key, value]) => ({
-          key: key as any,
-          value: value as any,
-        })) as any,
-        ExecutionStep.Inputs._writeMessage,
-      );
-    }
-    if (msg.outputs) {
-      writer.writeRepeatedMessage(
-        7,
-        Object.entries(msg.outputs).map(([key, value]) => ({
-          key: key as any,
-          value: value as any,
-        })) as any,
-        ExecutionStep.Outputs._writeMessage,
-      );
-    }
     if (msg.startedAt) {
       writer.writeMessage(
         8,
@@ -1455,6 +1683,15 @@ export const ExecutionStep = {
     }
     if (msg.durationMs) {
       writer.writeInt64String(10, msg.durationMs.toString() as any);
+    }
+    if (msg.inputsJson) {
+      writer.writeString(11, msg.inputsJson);
+    }
+    if (msg.outputsJson) {
+      writer.writeString(12, msg.outputsJson);
+    }
+    if (msg.stepIndex) {
+      writer.writeInt32(13, msg.stepIndex);
     }
     return writer;
   },
@@ -1489,18 +1726,6 @@ export const ExecutionStep = {
           msg.error = reader.readString();
           break;
         }
-        case 6: {
-          const map = {} as ExecutionStep.Inputs;
-          reader.readMessage(map, ExecutionStep.Inputs._readMessage);
-          msg.inputs[map.key.toString()] = map.value;
-          break;
-        }
-        case 7: {
-          const map = {} as ExecutionStep.Outputs;
-          reader.readMessage(map, ExecutionStep.Outputs._readMessage);
-          msg.outputs[map.key.toString()] = map.value;
-          break;
-        }
         case 8: {
           reader.readMessage(msg.startedAt, protoscript.Timestamp._readMessage);
           break;
@@ -1516,6 +1741,18 @@ export const ExecutionStep = {
           msg.durationMs = BigInt(reader.readInt64String());
           break;
         }
+        case 11: {
+          msg.inputsJson = reader.readString();
+          break;
+        }
+        case 12: {
+          msg.outputsJson = reader.readString();
+          break;
+        }
+        case 13: {
+          msg.stepIndex = reader.readInt32();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -1523,96 +1760,6 @@ export const ExecutionStep = {
       }
     }
     return msg;
-  },
-
-  Inputs: {
-    /**
-     * @private
-     */
-    _writeMessage: function (
-      msg: PartialDeep<ExecutionStep.Inputs>,
-      writer: protoscript.BinaryWriter,
-    ): protoscript.BinaryWriter {
-      if (msg.key) {
-        writer.writeString(1, msg.key);
-      }
-      if (msg.value) {
-        writer.writeString(2, msg.value);
-      }
-      return writer;
-    },
-
-    /**
-     * @private
-     */
-    _readMessage: function (
-      msg: ExecutionStep.Inputs,
-      reader: protoscript.BinaryReader,
-    ): ExecutionStep.Inputs {
-      while (reader.nextField()) {
-        const field = reader.getFieldNumber();
-        switch (field) {
-          case 1: {
-            msg.key = reader.readString();
-            break;
-          }
-          case 2: {
-            msg.value = reader.readString();
-            break;
-          }
-          default: {
-            reader.skipField();
-            break;
-          }
-        }
-      }
-      return msg;
-    },
-  },
-
-  Outputs: {
-    /**
-     * @private
-     */
-    _writeMessage: function (
-      msg: PartialDeep<ExecutionStep.Outputs>,
-      writer: protoscript.BinaryWriter,
-    ): protoscript.BinaryWriter {
-      if (msg.key) {
-        writer.writeString(1, msg.key);
-      }
-      if (msg.value) {
-        writer.writeString(2, msg.value);
-      }
-      return writer;
-    },
-
-    /**
-     * @private
-     */
-    _readMessage: function (
-      msg: ExecutionStep.Outputs,
-      reader: protoscript.BinaryReader,
-    ): ExecutionStep.Outputs {
-      while (reader.nextField()) {
-        const field = reader.getFieldNumber();
-        switch (field) {
-          case 1: {
-            msg.key = reader.readString();
-            break;
-          }
-          case 2: {
-            msg.value = reader.readString();
-            break;
-          }
-          default: {
-            reader.skipField();
-            break;
-          }
-        }
-      }
-      return msg;
-    },
   },
 };
 
@@ -3210,6 +3357,410 @@ export const ListWorkflowExecutionsResponse = {
   },
 };
 
+export const RecordWorkflowRunRequest = {
+  /**
+   * Serializes RecordWorkflowRunRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<RecordWorkflowRunRequest>): Uint8Array {
+    return RecordWorkflowRunRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes RecordWorkflowRunRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): RecordWorkflowRunRequest {
+    return RecordWorkflowRunRequest._readMessage(
+      RecordWorkflowRunRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes RecordWorkflowRunRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<RecordWorkflowRunRequest>,
+  ): RecordWorkflowRunRequest {
+    return {
+      id: "",
+      workflowId: "",
+      applicationId: "",
+      triggeredBy: "",
+      triggerEventJson: "",
+      startedAt: protoscript.Timestamp.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<RecordWorkflowRunRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.id) {
+      writer.writeString(1, msg.id);
+    }
+    if (msg.workflowId) {
+      writer.writeString(2, msg.workflowId);
+    }
+    if (msg.applicationId) {
+      writer.writeString(3, msg.applicationId);
+    }
+    if (msg.triggeredBy) {
+      writer.writeString(4, msg.triggeredBy);
+    }
+    if (msg.triggerEventJson) {
+      writer.writeString(5, msg.triggerEventJson);
+    }
+    if (msg.startedAt) {
+      writer.writeMessage(
+        6,
+        msg.startedAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: RecordWorkflowRunRequest,
+    reader: protoscript.BinaryReader,
+  ): RecordWorkflowRunRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.id = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.workflowId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.applicationId = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.triggeredBy = reader.readString();
+          break;
+        }
+        case 5: {
+          msg.triggerEventJson = reader.readString();
+          break;
+        }
+        case 6: {
+          reader.readMessage(msg.startedAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const UpdateWorkflowRunStatusRequest = {
+  /**
+   * Serializes UpdateWorkflowRunStatusRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<UpdateWorkflowRunStatusRequest>,
+  ): Uint8Array {
+    return UpdateWorkflowRunStatusRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes UpdateWorkflowRunStatusRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): UpdateWorkflowRunStatusRequest {
+    return UpdateWorkflowRunStatusRequest._readMessage(
+      UpdateWorkflowRunStatusRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes UpdateWorkflowRunStatusRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<UpdateWorkflowRunStatusRequest>,
+  ): UpdateWorkflowRunStatusRequest {
+    return {
+      id: "",
+      status: "",
+      error: "",
+      outputJson: "",
+      completedAt: protoscript.Timestamp.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<UpdateWorkflowRunStatusRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.id) {
+      writer.writeString(1, msg.id);
+    }
+    if (msg.status) {
+      writer.writeString(2, msg.status);
+    }
+    if (msg.error) {
+      writer.writeString(3, msg.error);
+    }
+    if (msg.outputJson) {
+      writer.writeString(4, msg.outputJson);
+    }
+    if (msg.completedAt) {
+      writer.writeMessage(
+        5,
+        msg.completedAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: UpdateWorkflowRunStatusRequest,
+    reader: protoscript.BinaryReader,
+  ): UpdateWorkflowRunStatusRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.id = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.status = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.error = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.outputJson = reader.readString();
+          break;
+        }
+        case 5: {
+          reader.readMessage(
+            msg.completedAt,
+            protoscript.Timestamp._readMessage,
+          );
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const RecordWorkflowRunStepRequest = {
+  /**
+   * Serializes RecordWorkflowRunStepRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<RecordWorkflowRunStepRequest>,
+  ): Uint8Array {
+    return RecordWorkflowRunStepRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes RecordWorkflowRunStepRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): RecordWorkflowRunStepRequest {
+    return RecordWorkflowRunStepRequest._readMessage(
+      RecordWorkflowRunStepRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes RecordWorkflowRunStepRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<RecordWorkflowRunStepRequest>,
+  ): RecordWorkflowRunStepRequest {
+    return {
+      executionId: "",
+      applicationId: "",
+      taskId: "",
+      name: "",
+      status: "",
+      attempt: 0,
+      stepIndex: 0,
+      inputsJson: "",
+      outputsJson: "",
+      error: "",
+      startedAt: protoscript.Timestamp.initialize(),
+      completedAt: protoscript.Timestamp.initialize(),
+      durationMs: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<RecordWorkflowRunStepRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.executionId) {
+      writer.writeString(1, msg.executionId);
+    }
+    if (msg.applicationId) {
+      writer.writeString(2, msg.applicationId);
+    }
+    if (msg.taskId) {
+      writer.writeString(3, msg.taskId);
+    }
+    if (msg.name) {
+      writer.writeString(4, msg.name);
+    }
+    if (msg.status) {
+      writer.writeString(5, msg.status);
+    }
+    if (msg.attempt) {
+      writer.writeInt32(6, msg.attempt);
+    }
+    if (msg.stepIndex) {
+      writer.writeInt32(7, msg.stepIndex);
+    }
+    if (msg.inputsJson) {
+      writer.writeString(8, msg.inputsJson);
+    }
+    if (msg.outputsJson) {
+      writer.writeString(9, msg.outputsJson);
+    }
+    if (msg.error) {
+      writer.writeString(10, msg.error);
+    }
+    if (msg.startedAt) {
+      writer.writeMessage(
+        11,
+        msg.startedAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    if (msg.completedAt) {
+      writer.writeMessage(
+        12,
+        msg.completedAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    if (msg.durationMs) {
+      writer.writeInt64String(13, msg.durationMs.toString() as any);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: RecordWorkflowRunStepRequest,
+    reader: protoscript.BinaryReader,
+  ): RecordWorkflowRunStepRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.executionId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.applicationId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.taskId = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.name = reader.readString();
+          break;
+        }
+        case 5: {
+          msg.status = reader.readString();
+          break;
+        }
+        case 6: {
+          msg.attempt = reader.readInt32();
+          break;
+        }
+        case 7: {
+          msg.stepIndex = reader.readInt32();
+          break;
+        }
+        case 8: {
+          msg.inputsJson = reader.readString();
+          break;
+        }
+        case 9: {
+          msg.outputsJson = reader.readString();
+          break;
+        }
+        case 10: {
+          msg.error = reader.readString();
+          break;
+        }
+        case 11: {
+          reader.readMessage(msg.startedAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 12: {
+          reader.readMessage(
+            msg.completedAt,
+            protoscript.Timestamp._readMessage,
+          );
+          break;
+        }
+        case 13: {
+          msg.durationMs = BigInt(reader.readInt64String());
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 export const CancelWorkflowExecutionRequest = {
   /**
    * Serializes CancelWorkflowExecutionRequest to protobuf.
@@ -3568,6 +4119,8 @@ export const WorkflowExecutionJSON = {
       createdAt: protoscript.TimestampJSON.initialize(),
       updatedAt: protoscript.TimestampJSON.initialize(),
       steps: [],
+      triggerEventJson: "",
+      triggeredBy: "",
       ...msg,
     };
   },
@@ -3633,6 +4186,12 @@ export const WorkflowExecutionJSON = {
     }
     if (msg.steps?.length) {
       json["steps"] = msg.steps.map(ExecutionStepJSON._writeMessage);
+    }
+    if (msg.triggerEventJson) {
+      json["triggerEventJson"] = msg.triggerEventJson;
+    }
+    if (msg.triggeredBy) {
+      json["triggeredBy"] = msg.triggeredBy;
     }
     return json;
   },
@@ -3709,6 +4268,15 @@ export const WorkflowExecutionJSON = {
         ExecutionStepJSON._readMessage(m, item);
         msg.steps.push(m);
       }
+    }
+    const _triggerEventJson_ =
+      json["triggerEventJson"] ?? json["trigger_event_json"];
+    if (_triggerEventJson_) {
+      msg.triggerEventJson = _triggerEventJson_;
+    }
+    const _triggeredBy_ = json["triggeredBy"] ?? json["triggered_by"];
+    if (_triggeredBy_) {
+      msg.triggeredBy = _triggeredBy_;
     }
     return msg;
   },
@@ -3814,11 +4382,12 @@ export const ExecutionStepJSON = {
       status: "",
       attempt: 0,
       error: "",
-      inputs: {},
-      outputs: {},
       startedAt: protoscript.TimestampJSON.initialize(),
       completedAt: protoscript.TimestampJSON.initialize(),
       durationMs: 0n,
+      inputsJson: "",
+      outputsJson: "",
+      stepIndex: 0,
       ...msg,
     };
   },
@@ -3845,28 +4414,6 @@ export const ExecutionStepJSON = {
     if (msg.error) {
       json["error"] = msg.error;
     }
-    if (msg.inputs) {
-      const _inputs_ = Object.fromEntries(
-        Object.entries(msg.inputs)
-          .map(([key, value]) => ({ key: key as any, value: value as any }))
-          .map(ExecutionStepJSON.Inputs._writeMessage)
-          .map(({ key, value }) => [key, value]),
-      );
-      if (Object.keys(_inputs_).length > 0) {
-        json["inputs"] = _inputs_;
-      }
-    }
-    if (msg.outputs) {
-      const _outputs_ = Object.fromEntries(
-        Object.entries(msg.outputs)
-          .map(([key, value]) => ({ key: key as any, value: value as any }))
-          .map(ExecutionStepJSON.Outputs._writeMessage)
-          .map(({ key, value }) => [key, value]),
-      );
-      if (Object.keys(_outputs_).length > 0) {
-        json["outputs"] = _outputs_;
-      }
-    }
     if (msg.startedAt && (msg.startedAt.seconds || msg.startedAt.nanos)) {
       json["startedAt"] = protoscript.serializeTimestamp(msg.startedAt);
     }
@@ -3875,6 +4422,15 @@ export const ExecutionStepJSON = {
     }
     if (msg.durationMs) {
       json["durationMs"] = String(msg.durationMs);
+    }
+    if (msg.inputsJson) {
+      json["inputsJson"] = msg.inputsJson;
+    }
+    if (msg.outputsJson) {
+      json["outputsJson"] = msg.outputsJson;
+    }
+    if (msg.stepIndex) {
+      json["stepIndex"] = msg.stepIndex;
     }
     return json;
   },
@@ -3903,24 +4459,6 @@ export const ExecutionStepJSON = {
     if (_error_) {
       msg.error = _error_;
     }
-    const _inputs_ = json["inputs"];
-    if (_inputs_) {
-      msg.inputs = Object.fromEntries(
-        Object.entries(_inputs_)
-          .map(([key, value]) => ({ key: key as any, value: value as any }))
-          .map(ExecutionStepJSON.Inputs._readMessage)
-          .map(({ key, value }) => [key, value]),
-      );
-    }
-    const _outputs_ = json["outputs"];
-    if (_outputs_) {
-      msg.outputs = Object.fromEntries(
-        Object.entries(_outputs_)
-          .map(([key, value]) => ({ key: key as any, value: value as any }))
-          .map(ExecutionStepJSON.Outputs._readMessage)
-          .map(({ key, value }) => [key, value]),
-      );
-    }
     const _startedAt_ = json["startedAt"] ?? json["started_at"];
     if (_startedAt_) {
       msg.startedAt = protoscript.parseTimestamp(_startedAt_);
@@ -3933,79 +4471,19 @@ export const ExecutionStepJSON = {
     if (_durationMs_) {
       msg.durationMs = BigInt(_durationMs_);
     }
+    const _inputsJson_ = json["inputsJson"] ?? json["inputs_json"];
+    if (_inputsJson_) {
+      msg.inputsJson = _inputsJson_;
+    }
+    const _outputsJson_ = json["outputsJson"] ?? json["outputs_json"];
+    if (_outputsJson_) {
+      msg.outputsJson = _outputsJson_;
+    }
+    const _stepIndex_ = json["stepIndex"] ?? json["step_index"];
+    if (_stepIndex_) {
+      msg.stepIndex = protoscript.parseNumber(_stepIndex_);
+    }
     return msg;
-  },
-
-  Inputs: {
-    /**
-     * @private
-     */
-    _writeMessage: function (
-      msg: PartialDeep<ExecutionStep.Inputs>,
-    ): Record<string, unknown> {
-      const json: Record<string, unknown> = {};
-      if (msg.key) {
-        json["key"] = msg.key;
-      }
-      if (msg.value) {
-        json["value"] = msg.value;
-      }
-      return json;
-    },
-
-    /**
-     * @private
-     */
-    _readMessage: function (
-      msg: ExecutionStep.Inputs,
-      json: any,
-    ): ExecutionStep.Inputs {
-      const _key_ = json["key"];
-      if (_key_) {
-        msg.key = _key_;
-      }
-      const _value_ = json["value"];
-      if (_value_) {
-        msg.value = _value_;
-      }
-      return msg;
-    },
-  },
-
-  Outputs: {
-    /**
-     * @private
-     */
-    _writeMessage: function (
-      msg: PartialDeep<ExecutionStep.Outputs>,
-    ): Record<string, unknown> {
-      const json: Record<string, unknown> = {};
-      if (msg.key) {
-        json["key"] = msg.key;
-      }
-      if (msg.value) {
-        json["value"] = msg.value;
-      }
-      return json;
-    },
-
-    /**
-     * @private
-     */
-    _readMessage: function (
-      msg: ExecutionStep.Outputs,
-      json: any,
-    ): ExecutionStep.Outputs {
-      const _key_ = json["key"];
-      if (_key_) {
-        msg.key = _key_;
-      }
-      const _value_ = json["value"];
-      if (_value_) {
-        msg.value = _value_;
-      }
-      return msg;
-    },
   },
 };
 
@@ -5437,6 +5915,351 @@ export const ListWorkflowExecutionsResponseJSON = {
     const _pageSize_ = json["pageSize"] ?? json["page_size"];
     if (_pageSize_) {
       msg.pageSize = protoscript.parseNumber(_pageSize_);
+    }
+    return msg;
+  },
+};
+
+export const RecordWorkflowRunRequestJSON = {
+  /**
+   * Serializes RecordWorkflowRunRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<RecordWorkflowRunRequest>): string {
+    return JSON.stringify(RecordWorkflowRunRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes RecordWorkflowRunRequest from JSON.
+   */
+  decode: function (json: string): RecordWorkflowRunRequest {
+    return RecordWorkflowRunRequestJSON._readMessage(
+      RecordWorkflowRunRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes RecordWorkflowRunRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<RecordWorkflowRunRequest>,
+  ): RecordWorkflowRunRequest {
+    return {
+      id: "",
+      workflowId: "",
+      applicationId: "",
+      triggeredBy: "",
+      triggerEventJson: "",
+      startedAt: protoscript.TimestampJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<RecordWorkflowRunRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.id) {
+      json["id"] = msg.id;
+    }
+    if (msg.workflowId) {
+      json["workflowId"] = msg.workflowId;
+    }
+    if (msg.applicationId) {
+      json["applicationId"] = msg.applicationId;
+    }
+    if (msg.triggeredBy) {
+      json["triggeredBy"] = msg.triggeredBy;
+    }
+    if (msg.triggerEventJson) {
+      json["triggerEventJson"] = msg.triggerEventJson;
+    }
+    if (msg.startedAt && (msg.startedAt.seconds || msg.startedAt.nanos)) {
+      json["startedAt"] = protoscript.serializeTimestamp(msg.startedAt);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: RecordWorkflowRunRequest,
+    json: any,
+  ): RecordWorkflowRunRequest {
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = _id_;
+    }
+    const _workflowId_ = json["workflowId"] ?? json["workflow_id"];
+    if (_workflowId_) {
+      msg.workflowId = _workflowId_;
+    }
+    const _applicationId_ = json["applicationId"] ?? json["application_id"];
+    if (_applicationId_) {
+      msg.applicationId = _applicationId_;
+    }
+    const _triggeredBy_ = json["triggeredBy"] ?? json["triggered_by"];
+    if (_triggeredBy_) {
+      msg.triggeredBy = _triggeredBy_;
+    }
+    const _triggerEventJson_ =
+      json["triggerEventJson"] ?? json["trigger_event_json"];
+    if (_triggerEventJson_) {
+      msg.triggerEventJson = _triggerEventJson_;
+    }
+    const _startedAt_ = json["startedAt"] ?? json["started_at"];
+    if (_startedAt_) {
+      msg.startedAt = protoscript.parseTimestamp(_startedAt_);
+    }
+    return msg;
+  },
+};
+
+export const UpdateWorkflowRunStatusRequestJSON = {
+  /**
+   * Serializes UpdateWorkflowRunStatusRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<UpdateWorkflowRunStatusRequest>): string {
+    return JSON.stringify(
+      UpdateWorkflowRunStatusRequestJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes UpdateWorkflowRunStatusRequest from JSON.
+   */
+  decode: function (json: string): UpdateWorkflowRunStatusRequest {
+    return UpdateWorkflowRunStatusRequestJSON._readMessage(
+      UpdateWorkflowRunStatusRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes UpdateWorkflowRunStatusRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<UpdateWorkflowRunStatusRequest>,
+  ): UpdateWorkflowRunStatusRequest {
+    return {
+      id: "",
+      status: "",
+      error: "",
+      outputJson: "",
+      completedAt: protoscript.TimestampJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<UpdateWorkflowRunStatusRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.id) {
+      json["id"] = msg.id;
+    }
+    if (msg.status) {
+      json["status"] = msg.status;
+    }
+    if (msg.error) {
+      json["error"] = msg.error;
+    }
+    if (msg.outputJson) {
+      json["outputJson"] = msg.outputJson;
+    }
+    if (msg.completedAt && (msg.completedAt.seconds || msg.completedAt.nanos)) {
+      json["completedAt"] = protoscript.serializeTimestamp(msg.completedAt);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: UpdateWorkflowRunStatusRequest,
+    json: any,
+  ): UpdateWorkflowRunStatusRequest {
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = _id_;
+    }
+    const _status_ = json["status"];
+    if (_status_) {
+      msg.status = _status_;
+    }
+    const _error_ = json["error"];
+    if (_error_) {
+      msg.error = _error_;
+    }
+    const _outputJson_ = json["outputJson"] ?? json["output_json"];
+    if (_outputJson_) {
+      msg.outputJson = _outputJson_;
+    }
+    const _completedAt_ = json["completedAt"] ?? json["completed_at"];
+    if (_completedAt_) {
+      msg.completedAt = protoscript.parseTimestamp(_completedAt_);
+    }
+    return msg;
+  },
+};
+
+export const RecordWorkflowRunStepRequestJSON = {
+  /**
+   * Serializes RecordWorkflowRunStepRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<RecordWorkflowRunStepRequest>): string {
+    return JSON.stringify(RecordWorkflowRunStepRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes RecordWorkflowRunStepRequest from JSON.
+   */
+  decode: function (json: string): RecordWorkflowRunStepRequest {
+    return RecordWorkflowRunStepRequestJSON._readMessage(
+      RecordWorkflowRunStepRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes RecordWorkflowRunStepRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<RecordWorkflowRunStepRequest>,
+  ): RecordWorkflowRunStepRequest {
+    return {
+      executionId: "",
+      applicationId: "",
+      taskId: "",
+      name: "",
+      status: "",
+      attempt: 0,
+      stepIndex: 0,
+      inputsJson: "",
+      outputsJson: "",
+      error: "",
+      startedAt: protoscript.TimestampJSON.initialize(),
+      completedAt: protoscript.TimestampJSON.initialize(),
+      durationMs: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<RecordWorkflowRunStepRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.executionId) {
+      json["executionId"] = msg.executionId;
+    }
+    if (msg.applicationId) {
+      json["applicationId"] = msg.applicationId;
+    }
+    if (msg.taskId) {
+      json["taskId"] = msg.taskId;
+    }
+    if (msg.name) {
+      json["name"] = msg.name;
+    }
+    if (msg.status) {
+      json["status"] = msg.status;
+    }
+    if (msg.attempt) {
+      json["attempt"] = msg.attempt;
+    }
+    if (msg.stepIndex) {
+      json["stepIndex"] = msg.stepIndex;
+    }
+    if (msg.inputsJson) {
+      json["inputsJson"] = msg.inputsJson;
+    }
+    if (msg.outputsJson) {
+      json["outputsJson"] = msg.outputsJson;
+    }
+    if (msg.error) {
+      json["error"] = msg.error;
+    }
+    if (msg.startedAt && (msg.startedAt.seconds || msg.startedAt.nanos)) {
+      json["startedAt"] = protoscript.serializeTimestamp(msg.startedAt);
+    }
+    if (msg.completedAt && (msg.completedAt.seconds || msg.completedAt.nanos)) {
+      json["completedAt"] = protoscript.serializeTimestamp(msg.completedAt);
+    }
+    if (msg.durationMs) {
+      json["durationMs"] = String(msg.durationMs);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: RecordWorkflowRunStepRequest,
+    json: any,
+  ): RecordWorkflowRunStepRequest {
+    const _executionId_ = json["executionId"] ?? json["execution_id"];
+    if (_executionId_) {
+      msg.executionId = _executionId_;
+    }
+    const _applicationId_ = json["applicationId"] ?? json["application_id"];
+    if (_applicationId_) {
+      msg.applicationId = _applicationId_;
+    }
+    const _taskId_ = json["taskId"] ?? json["task_id"];
+    if (_taskId_) {
+      msg.taskId = _taskId_;
+    }
+    const _name_ = json["name"];
+    if (_name_) {
+      msg.name = _name_;
+    }
+    const _status_ = json["status"];
+    if (_status_) {
+      msg.status = _status_;
+    }
+    const _attempt_ = json["attempt"];
+    if (_attempt_) {
+      msg.attempt = protoscript.parseNumber(_attempt_);
+    }
+    const _stepIndex_ = json["stepIndex"] ?? json["step_index"];
+    if (_stepIndex_) {
+      msg.stepIndex = protoscript.parseNumber(_stepIndex_);
+    }
+    const _inputsJson_ = json["inputsJson"] ?? json["inputs_json"];
+    if (_inputsJson_) {
+      msg.inputsJson = _inputsJson_;
+    }
+    const _outputsJson_ = json["outputsJson"] ?? json["outputs_json"];
+    if (_outputsJson_) {
+      msg.outputsJson = _outputsJson_;
+    }
+    const _error_ = json["error"];
+    if (_error_) {
+      msg.error = _error_;
+    }
+    const _startedAt_ = json["startedAt"] ?? json["started_at"];
+    if (_startedAt_) {
+      msg.startedAt = protoscript.parseTimestamp(_startedAt_);
+    }
+    const _completedAt_ = json["completedAt"] ?? json["completed_at"];
+    if (_completedAt_) {
+      msg.completedAt = protoscript.parseTimestamp(_completedAt_);
+    }
+    const _durationMs_ = json["durationMs"] ?? json["duration_ms"];
+    if (_durationMs_) {
+      msg.durationMs = BigInt(_durationMs_);
     }
     return msg;
   },

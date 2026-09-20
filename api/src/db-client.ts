@@ -16,6 +16,8 @@ import * as permission from "@woofx3/db/permission.pb";
 import * as resource from "@woofx3/db/resource.pb";
 import * as scene from "@woofx3/db/scene.pb";
 import * as setting from "@woofx3/db/setting.pb";
+import * as storage from "@woofx3/db/storage.pb";
+import * as stream_session from "@woofx3/db/stream_session.pb";
 import * as treat from "@woofx3/db/treat.pb";
 import * as user from "@woofx3/db/user.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
@@ -195,19 +197,6 @@ export class DbClient {
   async updateResource(req: resource.UpdateResourceRequest): Promise<resource.Resource> {
     const response = await resource.UpdateResource(req, this.config);
     return unwrap("updateResource", response, response.resource);
-  }
-
-  /**
-   * Update, or null when it did not happen. Used where a caller has a
-   * reasonable answer without the update -- recording the repository key on a
-   * freshly created row, which can fall back to the row it just made.
-   */
-  async tryUpdateResource(req: resource.UpdateResourceRequest): Promise<resource.Resource | null> {
-    const response = await resource.UpdateResource(req, this.config);
-    if (response.status?.code !== "OK" || !response.resource) {
-      return null;
-    }
-    return response.resource;
   }
 
   /** Returns the repository keys of everything removed, for the caller to purge. */
@@ -460,6 +449,64 @@ export class DbClient {
 
   async deleteAlert(req: alert.DeleteAlertRequest): Promise<common.ResponseStatus> {
     return alert.DeleteAlert(req, this.config);
+  }
+
+  /**
+   * Drop every module storage key the application flagged session-scoped,
+   * returning how many went. The storage RPCs carry no status envelope, so
+   * there is nothing to unwrap.
+   */
+  async clearSessionScoped(req: storage.ClearSessionScopedRequest): Promise<number> {
+    const response = await storage.ClearSessionScoped(req, this.config);
+    return response.cleared ?? 0;
+  }
+
+  /**
+   * The open session plus the two facts the extend-or-split decision reads.
+   *
+   * Returns the whole envelope rather than just the session: the three values
+   * are one consistent answer, and a caller that fetched them separately could
+   * see a segment close between the reads.
+   */
+  async ensureCurrentStreamSession(
+    req: stream_session.EnsureCurrentStreamSessionRequest
+  ): Promise<stream_session.StreamSessionStateResponse> {
+    const response = await stream_session.EnsureCurrentStreamSession(req, this.config);
+    unwrapVoid("ensureCurrentStreamSession", response);
+    return response;
+  }
+
+  /** Ends the open session and opens its successor, returning both. */
+  async splitStreamSession(
+    req: stream_session.SplitStreamSessionRequest
+  ): Promise<stream_session.SplitStreamSessionResponse> {
+    const response = await stream_session.SplitStreamSession(req, this.config);
+    unwrapVoid("splitStreamSession", response);
+    return response;
+  }
+
+  async openStreamSessionSegment(
+    req: stream_session.OpenStreamSessionSegmentRequest
+  ): Promise<stream_session.StreamSessionSegment> {
+    const response = await stream_session.OpenStreamSessionSegment(req, this.config);
+    return unwrap("openStreamSessionSegment", response, response.segment);
+  }
+
+  async closeStreamSessionSegment(
+    req: stream_session.CloseStreamSessionSegmentRequest
+  ): Promise<stream_session.StreamSessionSegment> {
+    const response = await stream_session.CloseStreamSessionSegment(req, this.config);
+    return unwrap("closeStreamSessionSegment", response, response.segment);
+  }
+
+  async getStreamSession(req: stream_session.GetStreamSessionRequest): Promise<stream_session.StreamSession> {
+    const response = await stream_session.GetStreamSession(req, this.config);
+    return unwrap("getStreamSession", response, response.session);
+  }
+
+  async listStreamSessions(req: stream_session.ListStreamSessionsRequest): Promise<stream_session.StreamSession[]> {
+    const response = await stream_session.ListStreamSessions(req, this.config);
+    return unwrap("listStreamSessions", response, response.sessions ?? []);
   }
 
   async upsertWidgetStatus(req: widget_status.UpsertWidgetStatusRequest): Promise<widget_status.WidgetStatusResponse> {

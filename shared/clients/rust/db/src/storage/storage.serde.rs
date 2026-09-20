@@ -505,6 +505,191 @@ impl<'de> serde::Deserialize<'de> for ClearNamespaceResponse {
         deserializer.deserialize_struct("storage.ClearNamespaceResponse", FIELDS, GeneratedVisitor)
     }
 }
+impl serde::Serialize for ClearSessionScopedRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.application_id.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("storage.ClearSessionScopedRequest", len)?;
+        if !self.application_id.is_empty() {
+            struct_ser.serialize_field("applicationId", &self.application_id)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for ClearSessionScopedRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "application_id",
+            "applicationId",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            ApplicationId,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = ClearSessionScopedRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct storage.ClearSessionScopedRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<ClearSessionScopedRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut application_id__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::ApplicationId => {
+                            if application_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("applicationId"));
+                            }
+                            application_id__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(ClearSessionScopedRequest {
+                    application_id: application_id__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("storage.ClearSessionScopedRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for ClearSessionScopedResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.cleared != 0 {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("storage.ClearSessionScopedResponse", len)?;
+        if self.cleared != 0 {
+            struct_ser.serialize_field("cleared", &self.cleared)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for ClearSessionScopedResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "cleared",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Cleared,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "cleared" => Ok(GeneratedField::Cleared),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = ClearSessionScopedResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct storage.ClearSessionScopedResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<ClearSessionScopedResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut cleared__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Cleared => {
+                            if cleared__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("cleared"));
+                            }
+                            cleared__ = 
+                                Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
+                            ;
+                        }
+                    }
+                }
+                Ok(ClearSessionScopedResponse {
+                    cleared: cleared__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("storage.ClearSessionScopedResponse", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for DeleteRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -1073,7 +1258,7 @@ impl serde::Serialize for StorageItem {
         if !self.application_id.is_empty() {
             len += 1;
         }
-        if self.clear_on_stream_end {
+        if self.clear_on_session_end {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("storage.StorageItem", len)?;
@@ -1099,8 +1284,8 @@ impl serde::Serialize for StorageItem {
         if !self.application_id.is_empty() {
             struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
-        if self.clear_on_stream_end {
-            struct_ser.serialize_field("clearOnStreamEnd", &self.clear_on_stream_end)?;
+        if self.clear_on_session_end {
+            struct_ser.serialize_field("clearOnSessionEnd", &self.clear_on_session_end)?;
         }
         struct_ser.end()
     }
@@ -1121,8 +1306,8 @@ impl<'de> serde::Deserialize<'de> for StorageItem {
             "namespace",
             "application_id",
             "applicationId",
-            "clear_on_stream_end",
-            "clearOnStreamEnd",
+            "clear_on_session_end",
+            "clearOnSessionEnd",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -1133,7 +1318,7 @@ impl<'de> serde::Deserialize<'de> for StorageItem {
             ExpiresAt,
             Namespace,
             ApplicationId,
-            ClearOnStreamEnd,
+            ClearOnSessionEnd,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -1161,7 +1346,7 @@ impl<'de> serde::Deserialize<'de> for StorageItem {
                             "expiresAt" | "expires_at" => Ok(GeneratedField::ExpiresAt),
                             "namespace" => Ok(GeneratedField::Namespace),
                             "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
-                            "clearOnStreamEnd" | "clear_on_stream_end" => Ok(GeneratedField::ClearOnStreamEnd),
+                            "clearOnSessionEnd" | "clear_on_session_end" => Ok(GeneratedField::ClearOnSessionEnd),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -1187,7 +1372,7 @@ impl<'de> serde::Deserialize<'de> for StorageItem {
                 let mut expires_at__ = None;
                 let mut namespace__ = None;
                 let mut application_id__ = None;
-                let mut clear_on_stream_end__ = None;
+                let mut clear_on_session_end__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Key => {
@@ -1230,11 +1415,11 @@ impl<'de> serde::Deserialize<'de> for StorageItem {
                             }
                             application_id__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::ClearOnStreamEnd => {
-                            if clear_on_stream_end__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("clearOnStreamEnd"));
+                        GeneratedField::ClearOnSessionEnd => {
+                            if clear_on_session_end__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("clearOnSessionEnd"));
                             }
-                            clear_on_stream_end__ = Some(map_.next_value()?);
+                            clear_on_session_end__ = Some(map_.next_value()?);
                         }
                     }
                 }
@@ -1245,7 +1430,7 @@ impl<'de> serde::Deserialize<'de> for StorageItem {
                     expires_at: expires_at__.unwrap_or_default(),
                     namespace: namespace__.unwrap_or_default(),
                     application_id: application_id__.unwrap_or_default(),
-                    clear_on_stream_end: clear_on_stream_end__.unwrap_or_default(),
+                    clear_on_session_end: clear_on_session_end__.unwrap_or_default(),
                 })
             }
         }

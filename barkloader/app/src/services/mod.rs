@@ -12,6 +12,7 @@ pub mod module_settings_client;
 pub mod nats;
 pub mod public_url;
 pub mod sandbox_resources;
+pub mod session;
 pub mod storage_settings;
 pub mod thumbnail;
 pub mod upload_token;

@@ -1,5 +1,6 @@
 import { Ping } from "@woofx3/db/common.pb";
 import type * as common from "@woofx3/db/common.pb";
+import * as alert from "@woofx3/db/alert.pb";
 import * as overlay_token from "@woofx3/db/overlay_token.pb";
 import * as scene from "@woofx3/db/scene.pb";
 import * as scene_event from "@woofx3/db/scene_event.pb";
@@ -40,8 +41,10 @@ function toError(err: unknown, op: string): Error {
  * CLAUDE.md ("Only DB communicates with databases"), this is the
  * sanctioned way for sceneManager to read/write engine state.
  *
- * Read-only for scenes — same convention streamware used. Write paths
- * (create/update/delete) stay on the `api` service.
+ * Scenes are read-only here; authoring them stays on the `api` service. What
+ * this client does write is what sceneManager alone observes — widget status,
+ * scene event delivery and completion, and the outcome of an alert it was
+ * asked to play.
  */
 export class DbClient {
   private config: ClientConfiguration;
@@ -104,6 +107,15 @@ export class DbClient {
 
   async upsertWidgetStatus(req: widget_status.UpsertWidgetStatusRequest): Promise<widget_status.WidgetStatusResponse> {
     return widget_status.UpsertWidgetStatus(req, this.config);
+  }
+
+  // Reports what became of an alert this service was asked to play, keyed on
+  // the envelope id the workflow engine minted and recorded as it published.
+  // That record is best-effort, so an alert whose row was never written answers
+  // NOT_FOUND — which means there is nothing to annotate, not that reporting
+  // failed.
+  async updateAlertLifecycle(req: alert.UpdateAlertLifecycleRequest): Promise<alert.AlertResponse> {
+    return alert.UpdateAlertLifecycle(req, this.config);
   }
 
   async getSetting(key: string, applicationId: string): Promise<string | null> {

@@ -23,6 +23,11 @@ service StorageService {
   
   // Clear all keys for an application
   rpc ClearAllForApplication(ClearAllForApplicationRequest) returns (ClearAllForApplicationResponse) {}
+
+  // Clear every key flagged `clear_on_session_end`. The engine calls this when
+  // a stream session ends; a module declares the key is session-scoped and the
+  // engine acts on it, since the sandbox exposes no way to clear storage.
+  rpc ClearSessionScoped(ClearSessionScopedRequest) returns (ClearSessionScopedResponse) {}
 }
 
 // Storage item with metadata
@@ -33,7 +38,11 @@ message StorageItem {
   int64 expires_at = 4;  // 0 means never expires
   string namespace = 5;
   string application_id = 6;
-  bool clear_on_stream_end = 7;
+  // Drop this key when the stream *session* ends. Not the same as the stream
+  // going offline: a session spans dropouts, so clearing when the broadcast
+  // stops would wipe exactly the state a brief reconnect is meant to preserve.
+  // See docs/services/stream-sessions.md.
+  bool clear_on_session_end = 7;
 }
 
 // Get a value by key
@@ -82,3 +91,15 @@ message ClearAllForApplicationRequest {
 }
 
 message ClearAllForApplicationResponse {}
+
+// Clear every key flagged `clear_on_session_end`
+message ClearSessionScopedRequest {
+  string application_id = 1;
+}
+
+message ClearSessionScopedResponse {
+  // How many keys were dropped. Clearing fires automatically at a session
+  // boundary with nobody watching, so the count is the only evidence in a log
+  // that it ran and what it did.
+  int32 cleared = 1;
+}

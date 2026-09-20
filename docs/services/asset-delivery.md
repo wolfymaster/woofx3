@@ -65,6 +65,49 @@ would carry no signature.
 | Inline `user/` bytes | `public, max-age=60, must-revalidate` | A thumbnail is written after its original |
 | Redirect | `public, max-age=3600` | Well inside the presigned URL's 12 hours |
 
+## How an upload is stored
+
+A caller never sends bytes through the api. It asks for a grant, PUTs
+once to the URL the grant names, then reports completion:
+
+```
+browser
+  ├─> api.requestUploadUrl(...)                    api (capnweb)
+  │     └─> POST {barkloaderUrl}/assets/upload-url barkloader
+  │           ├─ S3 backend   → presigned PUT at the bucket
+  │           └─ file backend → PUT {scene.publicUrl}/assets/upload/{token}
+  ├─> PUT {uploadUrl}  (bytes, exactly the grant's headers)
+  └─> api.completeUpload(resourceId, size)         row becomes "ready"
+```
+
+The grant's shape is identical on both backends, so nothing upstream
+branches on the provider. On the file backend the PUT lands on
+sceneManager, the only browser-reachable edge, which streams the body on
+to barkloader without buffering it and relays the answer:
+
+```
+browser
+  └─> PUT {sceneManagerUrl}/assets/upload/{token}  sceneManager
+        └─> PUT {barkloaderUrl}/assets/upload/{token}
+```
+
+`/assets/upload/{token}` accepts only PUT (405 otherwise) and answers a
+CORS preflight allowing PUT with `Content-Type`, since the dashboard is a
+different origin. The token is a bearer capability in the URL, so no
+origin is privileged over another. An upload over the size limit is
+refused from its declared `Content-Length` before any bytes are relayed;
+the limit is 512 MiB, and sceneManager and barkloader must agree on it.
+
+The token is an HMAC-signed grant naming one key, one content type and one
+expiry (`barkloader/app/src/services/upload_token.rs`). Barkloader holds
+the signing secret and is the only party that judges it. It refuses a
+grant that is expired (410), forged or not under `user/` (403), sent as a
+content type other than the one it was issued for (403), or whose key
+already holds an object (409) — a stored object is the record that the
+grant was spent, which makes a grant single-use without a table of spent
+tokens. Bytes are written to a staging file and renamed into place, so a
+key never names a half-written object.
+
 ## The `<base>` tag
 
 A widget document references its sibling files (`style.css`, `logo.png`,

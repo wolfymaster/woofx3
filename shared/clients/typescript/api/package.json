@@ -7,6 +7,7 @@
     ".": "./index.ts",
     "./overlay-events": "./overlay-events.ts",
     "./rpc": "./rpc.ts",
+    "./stream-events": "./stream-events.ts",
     "./webhooks": "./webhooks.ts",
     "./client": "./client.ts",
     "./ui-schema": "./ui-schema.ts",

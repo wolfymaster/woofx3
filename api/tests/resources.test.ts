@@ -145,67 +145,126 @@ describe("public urls", () => {
   });
 });
 
+/** The fields of a createResource request these tests read back. */
+type CreateResourceArgs = { id: string; kind: string; repositoryKey: string };
+
+/**
+ * Stand in for barkloader's upload-url endpoint: the key it issues is built
+ * from the ids the caller sent, exactly as `user_resource_key` does.
+ */
+function grantingBarkloader() {
+  return mock(async (_path: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { application_id: string; resource_id: string; file_name: string };
+    return new Response(
+      JSON.stringify({
+        repositoryKey: `user/${body.application_id}/${body.resource_id}/${body.file_name}`,
+        uploadUrl: "http://storage.test/put",
+        method: "PUT",
+        headers: [{ name: "Content-Type", value: "image/png" }],
+        expiresAt: 1_700_000_300,
+      })
+    );
+  });
+}
+
 describe("requestUploadUrl", () => {
-  test("reserves a row, then asks barkloader for a grant keyed on its id", async () => {
-    const createResource = mock(async (_req: any) => readyRow({ status: "pending", repositoryKey: "" }));
-    const updateResource = mock(async (_req: any) => readyRow({ status: "pending" }));
-    const barkloaderRequest = mock(
-      async (_path: string, _init?: RequestInit) =>
-        new Response(
-          JSON.stringify({
-            repositoryKey: "user/app-1/res-1/clip.png",
-            uploadUrl: "http://storage.test/put",
-            method: "PUT",
-            headers: [{ name: "Content-Type", value: "image/png" }],
-            expiresAt: 1_700_000_300,
-          })
-        )
+  test("mints the id, obtains a grant keyed on it, then creates the row holding that key", async () => {
+    const createResource = mock(async (req: CreateResourceArgs) =>
+      readyRow({ id: req.id, status: "pending", repositoryKey: req.repositoryKey })
     );
-    const api = host({ db: { createResource, tryUpdateResource: updateResource }, barkloaderRequest });
+    const updateResource = mock(async (_req: unknown) => readyRow());
+    const barkloaderRequest = grantingBarkloader();
+    const api = host({ db: { createResource, updateResource }, barkloaderRequest });
 
-    const grant = await api.requestUploadUrl({ name: "clip.png", contentType: "image/png" });
+    const grant = await api.requestUploadUrl({ name: "clip.png", contentType: "image/png", size: 2048 });
 
-    expect(createResource).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "pending", kind: "image", contentType: "image/png" })
-    );
     const [path, init] = barkloaderRequest.mock.calls[0];
     expect(path).toBe("/assets/upload-url");
-    expect(JSON.parse(String(init?.body))).toMatchObject({
-      application_id: APPLICATION_ID,
-      resource_id: "res-1",
-      file_name: "clip.png",
-    });
-    // The issued key is written back so the row can be resolved to bytes.
-    expect(updateResource).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "res-1", repositoryKey: "user/app-1/res-1/clip.png" })
+    const sent = JSON.parse(String(init?.body)) as { resource_id: string };
+    expect(sent).toMatchObject({ application_id: APPLICATION_ID, file_name: "clip.png", content_type: "image/png" });
+    expect(sent.resource_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+
+    // db-proxy refuses a file row without its key, so the row must be
+    // created with the id barkloader keyed on and the key it issued.
+    expect(createResource).toHaveBeenCalledTimes(1);
+    expect(createResource).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: sent.resource_id,
+        applicationId: APPLICATION_ID,
+        repositoryKey: `user/${APPLICATION_ID}/${sent.resource_id}/clip.png`,
+        status: "pending",
+        kind: "image",
+        contentType: "image/png",
+        size: BigInt(2048),
+      })
     );
+    expect(updateResource).not.toHaveBeenCalled();
+
+    expect(grant.resource.id).toBe(sent.resource_id);
+    expect(grant.resource.status).toBe("pending");
+    expect(grant.resource.url).toBeNull();
     expect(grant.uploadUrl).toBe("http://storage.test/put");
     expect(grant.expiresAt).toBe(1_700_000_300);
   });
 
+  test("every upload gets its own id", async () => {
+    const createResource = mock(async (req: CreateResourceArgs) =>
+      readyRow({ id: req.id, repositoryKey: req.repositoryKey })
+    );
+    const api = host({ db: { createResource }, barkloaderRequest: grantingBarkloader() });
+
+    await api.requestUploadUrl({ name: "a.png", contentType: "image/png" });
+    await api.requestUploadUrl({ name: "b.png", contentType: "image/png" });
+
+    const ids = createResource.mock.calls.map((call) => call[0].id);
+    expect(new Set(ids).size).toBe(2);
+  });
+
   test("classifies kind from the content type", async () => {
-    const createResource = mock(async (_req: any) => readyRow({ status: "pending", repositoryKey: "" }));
-    const api = host({
-      db: { createResource, tryUpdateResource: mock(async (_req: any) => readyRow()) },
-      barkloaderRequest: mock(
-        async () =>
-          new Response(JSON.stringify({ repositoryKey: "k", uploadUrl: "u", method: "PUT", headers: [], expiresAt: 0 }))
-      ),
-    });
+    const createResource = mock(async (req: CreateResourceArgs) =>
+      readyRow({ status: "pending", repositoryKey: req.repositoryKey })
+    );
+    const api = host({ db: { createResource }, barkloaderRequest: grantingBarkloader() });
 
     await api.requestUploadUrl({ name: "a.mp4", contentType: "video/mp4" });
     await api.requestUploadUrl({ name: "b.mp3", contentType: "audio/mpeg" });
     await api.requestUploadUrl({ name: "c.bin", contentType: "application/octet-stream" });
 
-    const kinds = createResource.mock.calls.map((call) => (call[0] as { kind: string }).kind);
+    const kinds = createResource.mock.calls.map((call) => call[0].kind);
     expect(kinds).toEqual(["video", "audio", "other"]);
   });
 
-  test("rejects a nameless upload before reserving anything", async () => {
-    const createResource = mock(async (_req: any) => readyRow());
-    const api = host({ db: { createResource } });
+  test("refuses a grant whose key is not under the minted resource id", async () => {
+    const createResource = mock(async (_req: unknown) => readyRow());
+    const api = host({
+      db: { createResource },
+      barkloaderRequest: mock(
+        async () =>
+          new Response(
+            JSON.stringify({
+              repositoryKey: "user/app-1/other/clip.png",
+              uploadUrl: "u",
+              method: "PUT",
+              headers: [],
+              expiresAt: 0,
+            })
+          )
+      ),
+    });
+
+    await expect(api.requestUploadUrl({ name: "clip.png", contentType: "image/png" })).rejects.toThrow(
+      "Upload grant repository key is not under"
+    );
+    expect(createResource).not.toHaveBeenCalled();
+  });
+
+  test("rejects a nameless upload before asking for a grant", async () => {
+    const createResource = mock(async (_req: unknown) => readyRow());
+    const barkloaderRequest = grantingBarkloader();
+    const api = host({ db: { createResource }, barkloaderRequest });
 
     await expect(api.requestUploadUrl({ name: "", contentType: "image/png" })).rejects.toThrow("name is required");
+    expect(barkloaderRequest).not.toHaveBeenCalled();
     expect(createResource).not.toHaveBeenCalled();
   });
 });

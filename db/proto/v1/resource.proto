@@ -30,8 +30,8 @@ import "google/protobuf/timestamp.proto";
 // to, so listing resources can never surface one as a peer of the
 // upload that produced it.
 service ResourceService {
-  // Record a resource row. Called by the api gateway when it issues an
-  // upload URL, before any bytes exist -- the row starts in
+  // Record a resource row. Called by the api gateway once it holds an
+  // upload grant, before any bytes exist -- the row starts in
   // `status = "pending"` and moves to "ready" once the upload is
   // confirmed.
   rpc CreateResource(CreateResourceRequest) returns (ResourceResponse);
@@ -109,6 +109,11 @@ message CreateResourceRequest {
   int64 size = 7;
   // Defaults to "pending" when empty.
   string status = 8;
+  // Caller-chosen UUID for the new row; a fresh one is generated when
+  // unset. `repository_key` embeds the resource id and is required, so
+  // a caller that obtains the key before the row exists must pick the
+  // id itself.
+  optional string id = 9;
 }
 
 message CreateFolderRequest {

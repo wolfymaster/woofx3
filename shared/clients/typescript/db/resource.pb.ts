@@ -73,6 +73,13 @@ export interface CreateResourceRequest {
    * Defaults to "pending" when empty.
    */
   status: string;
+  /**
+   * Caller-chosen UUID for the new row; a fresh one is generated when
+   * unset. `repository_key` embeds the resource id and is required, so
+   * a caller that obtains the key before the row exists must pick the
+   * id itself.
+   */
+  id?: string | null | undefined;
 }
 
 export interface CreateFolderRequest {
@@ -155,8 +162,8 @@ export interface ResourceResponse {
 //========================================//
 
 /**
- * Record a resource row. Called by the api gateway when it issues an
- * upload URL, before any bytes exist -- the row starts in
+ * Record a resource row. Called by the api gateway once it holds an
+ * upload grant, before any bytes exist -- the row starts in
  * `status = "pending"` and moves to "ready" once the upload is
  * confirmed.
  */
@@ -256,8 +263,8 @@ export async function DeleteResource(
 //========================================//
 
 /**
- * Record a resource row. Called by the api gateway when it issues an
- * upload URL, before any bytes exist -- the row starts in
+ * Record a resource row. Called by the api gateway once it holds an
+ * upload grant, before any bytes exist -- the row starts in
  * `status = "pending"` and moves to "ready" once the upload is
  * confirmed.
  */
@@ -382,8 +389,8 @@ export async function DeleteResourceJSON(
  */
 export interface ResourceService<Context = unknown> {
   /**
-   * Record a resource row. Called by the api gateway when it issues an
-   * upload URL, before any bytes exist -- the row starts in
+   * Record a resource row. Called by the api gateway once it holds an
+   * upload grant, before any bytes exist -- the row starts in
    * `status = "pending"` and moves to "ready" once the upload is
    * confirmed.
    */
@@ -708,6 +715,7 @@ export const CreateResourceRequest = {
       repositoryKey: "",
       size: 0n,
       status: "",
+      id: undefined,
       ...msg,
     };
   },
@@ -742,6 +750,9 @@ export const CreateResourceRequest = {
     }
     if (msg.status) {
       writer.writeString(8, msg.status);
+    }
+    if (msg.id != undefined) {
+      writer.writeString(9, msg.id);
     }
     return writer;
   },
@@ -786,6 +797,10 @@ export const CreateResourceRequest = {
         }
         case 8: {
           msg.status = reader.readString();
+          break;
+        }
+        case 9: {
+          msg.id = reader.readString();
           break;
         }
         default: {
@@ -1723,6 +1738,7 @@ export const CreateResourceRequestJSON = {
       repositoryKey: "",
       size: 0n,
       status: "",
+      id: undefined,
       ...msg,
     };
   },
@@ -1757,6 +1773,9 @@ export const CreateResourceRequestJSON = {
     }
     if (msg.status) {
       json["status"] = msg.status;
+    }
+    if (msg.id != undefined) {
+      json["id"] = msg.id;
     }
     return json;
   },
@@ -1799,6 +1818,10 @@ export const CreateResourceRequestJSON = {
     const _status_ = json["status"];
     if (_status_) {
       msg.status = _status_;
+    }
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = _id_;
     }
     return msg;
   },

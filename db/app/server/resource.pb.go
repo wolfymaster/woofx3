@@ -191,7 +191,12 @@ type CreateResourceRequest struct {
 	RepositoryKey string                 `protobuf:"bytes,6,opt,name=repository_key,json=repositoryKey,proto3" json:"repository_key,omitempty"`
 	Size          int64                  `protobuf:"varint,7,opt,name=size,proto3" json:"size,omitempty"`
 	// Defaults to "pending" when empty.
-	Status        string `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"`
+	Status string `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"`
+	// Caller-chosen UUID for the new row; a fresh one is generated when
+	// unset. `repository_key` embeds the resource id and is required, so
+	// a caller that obtains the key before the row exists must pick the
+	// id itself.
+	Id            *string `protobuf:"bytes,9,opt,name=id,proto3,oneof" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -278,6 +283,13 @@ func (x *CreateResourceRequest) GetSize() int64 {
 func (x *CreateResourceRequest) GetStatus() string {
 	if x != nil {
 		return x.Status
+	}
+	return ""
+}
+
+func (x *CreateResourceRequest) GetId() string {
+	if x != nil && x.Id != nil {
+		return *x.Id
 	}
 	return ""
 }
@@ -842,7 +854,7 @@ const file_resource_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAtB\f\n" +
 	"\n" +
-	"_parent_id\"\x8c\x02\n" +
+	"_parent_id\"\xa8\x02\n" +
 	"\x15CreateResourceRequest\x12%\n" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12 \n" +
 	"\tparent_id\x18\x02 \x01(\tH\x00R\bparentId\x88\x01\x01\x12\x12\n" +
@@ -851,9 +863,11 @@ const file_resource_proto_rawDesc = "" +
 	"\fcontent_type\x18\x05 \x01(\tR\vcontentType\x12%\n" +
 	"\x0erepository_key\x18\x06 \x01(\tR\rrepositoryKey\x12\x12\n" +
 	"\x04size\x18\a \x01(\x03R\x04size\x12\x16\n" +
-	"\x06status\x18\b \x01(\tR\x06statusB\f\n" +
+	"\x06status\x18\b \x01(\tR\x06status\x12\x13\n" +
+	"\x02id\x18\t \x01(\tH\x01R\x02id\x88\x01\x01B\f\n" +
 	"\n" +
-	"_parent_id\"\x80\x01\n" +
+	"_parent_idB\x05\n" +
+	"\x03_id\"\x80\x01\n" +
 	"\x13CreateFolderRequest\x12%\n" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12 \n" +
 	"\tparent_id\x18\x02 \x01(\tH\x00R\bparentId\x88\x01\x01\x12\x12\n" +

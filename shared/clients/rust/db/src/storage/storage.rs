@@ -17,8 +17,12 @@ pub struct StorageItem {
     pub namespace: ::prost::alloc::string::String,
     #[prost(string, tag="6")]
     pub application_id: ::prost::alloc::string::String,
+    /// Drop this key when the stream *session* ends. Not the same as the stream
+    /// going offline: a session spans dropouts, so clearing when the broadcast
+    /// stops would wipe exactly the state a brief reconnect is meant to preserve.
+    /// See docs/services/stream-sessions.md.
     #[prost(bool, tag="7")]
-    pub clear_on_stream_end: bool,
+    pub clear_on_session_end: bool,
 }
 /// Get a value by key
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -81,6 +85,20 @@ pub struct ClearAllForApplicationRequest {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ClearAllForApplicationResponse {
+}
+/// Clear every key flagged `clear_on_session_end`
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ClearSessionScopedRequest {
+    #[prost(string, tag="1")]
+    pub application_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ClearSessionScopedResponse {
+    /// How many keys were dropped. Clearing fires automatically at a session
+    /// boundary with nobody watching, so the count is the only evidence in a log
+    /// that it ran and what it did.
+    #[prost(int32, tag="1")]
+    pub cleared: i32,
 }
 include!("storage.serde.rs");
 include!("storage.tonic.rs");

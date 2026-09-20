@@ -59,16 +59,24 @@ v0.1.0):
 | `ctx.user` | user context (opaque) |
 | `ctx.response` | `(success, message)` — see [Sandbox → `ctx.response`](./sandbox.md#ctxresponse) |
 | `ctx.crypto` | `hmac(algorithm, key, data, encoding?)`, `verifyEd25519(publicKey, signature, message, encoding?)`, `timingSafeEqual(a, b)` — see [Sandbox → `ctx.crypto`](./sandbox.md#ctxcrypto) |
-| `ctx.storage` | `get(key)`, `set(key, value)` |
+| `ctx.storage` | `get(key)`, `set(key, value, options?)` |
 | `ctx.http` | `request(url, method, opts?)` |
 | `ctx.env` | `get(key)` |
 | `ctx.resources` | `create(kind, instanceId, displayName?)`, `delete(canonicalId)`, `list(kind)` |
-| `ctx.module` | `id`, `name`, `version` (invoking module's identity), `settings` (resolved `module_settings` values — see [Module-level settings](./modules.md#module-level-settings-settings)) |
+| `ctx.module` | `id`, `name`, `version` (invoking module's identity), `settings` (resolved `module_settings` values — see [Module-level settings](./modules.md#module-level-settings-settings)), `setSetting(key, value)` |
 | `ctx.log` | `info(value)`, `warn(value)`, `error(value)` — forwards to the host's log, prefixed with the module id. No `console` global exists in this sandbox; this is the only way to emit a log line. |
 | `ctx.twitch?` | `clip(args?)`, `timeout(args)`, `updateStream(args)`, `addModerator(args)` |
 | `ctx.chat?` | `sendMessage(text)` |
 | `ctx.platform?.alerts?` | `alert(args)`, `setTimer(args)` |
 | `ctx.platform?.chat?` | `register(args)` |
+
+`ctx.storage.set` takes an optional third argument. Passing
+`{ clearOnSessionEnd: true }` declares the key as belonging to the current
+stream session, and the engine drops it when that session ends — which is not
+the same as the stream going offline, since a session spans brief dropouts and a
+reconnect keeps the value. Everything else persists until a module overwrites
+it. A module never clears storage itself; it declares, and the engine acts. See
+[Stream sessions](../services/stream-sessions.md).
 
 The engine's runtime registration is the source of truth (see
 `barkloader/lib_sandbox/src/runtime/quickjs.rs:185-517`). The SDK ships

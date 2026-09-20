@@ -1,5 +1,6 @@
 // Shared API Types for woofx3 UI and Backend
 
+import type { StreamEventSubscriber } from "./stream-events";
 import type { ActionDefinition, ModuleResourceUsage, ResourceInstanceDefinition, TriggerDefinition } from "./webhooks";
 import type { WorkflowDefinition } from "./workflow-definition";
 
@@ -615,9 +616,16 @@ export interface StreamStatus {
 }
 
 export interface TriggerWorkflowResponse {
+  /**
+   * Empty. A run is started asynchronously by the engine, which mints the
+   * execution id when it begins -- after this call has returned. Correlate on
+   * `triggerId` instead; it is the id the run's lifecycle is reported against.
+   */
   executionId: string;
   status: string;
   message: string;
+  /** Correlation handle for the requested run. See `executionId`. */
+  triggerId: string;
 }
 
 // ==================== API Interface ====================
@@ -1046,8 +1054,20 @@ export interface Woofx3EngineApi {
    * the CloudEvent type and the NATS subject; workflows and modules
    * subscribed to that subject will fire. Used by the UI's Debug Tools
    * page to hand-fire events without a live Twitch session.
+   *
+   * `success` means the event reached the bus and nothing more -- whether a
+   * workflow matched it, and how that run ended, is decided afterwards in
+   * another process. A caller that needs to know supplies `triggerId`: the
+   * engine echoes it onto the `workflow.run.*` events it emits, which is what
+   * lets the outcome find its way back. `triggeredBy` names the origin
+   * ("dashboard", ...) for display.
    */
-  triggerEvent(eventType: string, eventData: Record<string, unknown>): Promise<{ success: boolean; message: string }>;
+  triggerEvent(
+    eventType: string,
+    eventData: Record<string, unknown>,
+    triggerId?: string,
+    triggeredBy?: string
+  ): Promise<{ success: boolean; message: string }>;
 
   /**
    * Run a module's webhook handler on an inbound request the control plane
@@ -1060,11 +1080,35 @@ export interface Woofx3EngineApi {
   handleInboundWebhook(triggerId: string, request: InboundWebhookRequest): Promise<InboundWebhookResponse>;
 
   // Workflow execution (user-facing)
+  /**
+   * Ask the engine to run one workflow, matched by id or by name.
+   *
+   * Returns once the request is on the bus, not once the run finishes. Supply
+   * `triggerId` to be told how that run ended: the engine echoes it onto the
+   * `workflow.run.*` events it emits. `userId` is recorded as provenance only
+   * and may be any string.
+   */
   triggerWorkflowByName(
-    workflowName: string,
+    workflowNameOrId: string,
     parameters?: Record<string, string>,
-    userId?: string
+    userId?: string,
+    triggerId?: string,
+    triggeredBy?: string
   ): Promise<TriggerWorkflowResponse>;
+
+  /**
+   * Run a recorded workflow run again, whole or from `fromTaskId`.
+   *
+   * Returns once the request is on the bus. The replay's progress -- or the
+   * engine's reason for refusing it -- is reported against `triggerId` on the
+   * `workflow.run.*` events.
+   */
+  replayWorkflowRun(
+    engineRunId: string,
+    fromTaskId?: string,
+    triggerId?: string,
+    triggeredBy?: string
+  ): Promise<{ triggerId: string }>;
 
   // Dashboard
   getDashboardStats(): Promise<DashboardStats>;
@@ -1231,6 +1275,15 @@ export interface Woofx3EngineApi {
     onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
   }): Promise<void>;
 
+  /** Push live stream events -- follows, subs, cheers, raids, stream on/off --
+   *  to the caller for the life of the session. Chat is deliberately not on
+   *  this channel; see ./stream-events.
+   *
+   *  Delivery is not gapless: nothing buffers events behind this, so a client
+   *  that connects late or reconnects has missed the gap and should re-read
+   *  point-in-time state rather than assume a continuous stream. */
+  subscribeStreamEvents(callback: StreamEventSubscriber): Promise<void>;
+
   getUserProfile(userId: string): Promise<{
     id: string;
     username: string;
@@ -1250,10 +1303,16 @@ export interface Woofx3EngineApi {
   ): Promise<{ success: boolean; message: string }>;
 
   /** Inject a synthetic Twitch event onto the bus. Intended for development
-   *  and for exercising alert overlays without a live stream. */
+   *  and for exercising alert overlays without a live stream.
+   *
+   *  `triggerId` and `triggeredBy` behave exactly as on `triggerEvent`: supply
+   *  a triggerId to be told how the resulting run ended, since this call's own
+   *  result only reports that the event was published. */
   simulateTwitchEvent(
     eventType: string,
-    eventData: Record<string, unknown>
+    eventData: Record<string, unknown>,
+    triggerId?: string,
+    triggeredBy?: string
   ): Promise<{ success: boolean; message: string }>;
 }
 

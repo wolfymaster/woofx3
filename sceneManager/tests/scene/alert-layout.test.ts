@@ -1,5 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { alertTarget, alertWidgetsNamed, parseAlertDelivery, parseAlertLayout } from "../../src/scene/alert-layout";
+import {
+  type AlertLayoutParse,
+  alertTarget,
+  alertWidgetsNamed,
+  parseAlertDelivery,
+  parseAlertLayout,
+} from "../../src/scene/alert-layout";
 import type { OverlayWidgetDefinition, OverlayWidgetInstance } from "../../src/scene/scene-host";
 
 function definition(manifestId: string, surfaces: string[]): OverlayWidgetDefinition {
@@ -22,16 +28,26 @@ function layoutWidget(id: string, manifestId: string) {
   };
 }
 
+/** Narrows to the usable branch, surfacing the reason when a case regresses. */
+function usable(parse: AlertLayoutParse) {
+  if (!parse.ok) {
+    throw new Error(`expected a usable layout, got: ${parse.reason}`);
+  }
+  return parse;
+}
+
 describe("parseAlertLayout", () => {
   it("keeps widgets that can play in an alert, positioned from position and size", () => {
-    const parsed = parseAlertLayout(
-      { width: 1920, height: 1080, widgets: [layoutWidget("t1", "text"), layoutWidget("a1", "audio")] },
-      catalog
+    const parsed = usable(
+      parseAlertLayout(
+        { width: 1920, height: 1080, widgets: [layoutWidget("t1", "text"), layoutWidget("a1", "audio")] },
+        catalog
+      )
     );
-    expect(parsed?.rejected).toEqual([]);
-    expect(parsed?.layout.width).toBe(1920);
-    expect(parsed?.layout.height).toBe(1080);
-    expect(parsed?.layout.widgets).toEqual([
+    expect(parsed.rejected).toEqual([]);
+    expect(parsed.layout.width).toBe(1920);
+    expect(parsed.layout.height).toBe(1080);
+    expect(parsed.layout.widgets).toEqual([
       {
         id: "t1",
         widgetCanonicalId: "woofx3:widget:text",
@@ -52,45 +68,74 @@ describe("parseAlertLayout", () => {
   });
 
   it("drops a scene-only widget, an unknown widget, a duplicate id and an unsafe id, reporting each", () => {
-    const parsed = parseAlertLayout(
-      {
-        width: 100,
-        height: 100,
-        widgets: [
-          layoutWidget("c1", "clock"),
-          layoutWidget("m1", "missing"),
-          layoutWidget("t1", "text"),
-          layoutWidget("t1", "text"),
-          layoutWidget("../x", "text"),
-        ],
-      },
-      catalog
+    const parsed = usable(
+      parseAlertLayout(
+        {
+          width: 100,
+          height: 100,
+          widgets: [
+            layoutWidget("c1", "clock"),
+            layoutWidget("m1", "missing"),
+            layoutWidget("t1", "text"),
+            layoutWidget("t1", "text"),
+            layoutWidget("../x", "text"),
+          ],
+        },
+        catalog
+      )
     );
-    expect(parsed?.layout.widgets.map((w) => w.id)).toEqual(["t1"]);
-    expect(parsed?.rejected.map((r) => r.index)).toEqual([0, 1, 3, 4]);
+    expect(parsed.layout.widgets.map((w) => w.id)).toEqual(["t1"]);
+    expect(parsed.rejected.map((r) => r.index)).toEqual([0, 1, 3, 4]);
   });
 
   it("strips a version from a stored module key", () => {
-    const parsed = parseAlertLayout(
-      {
-        width: 10,
-        height: 10,
-        widgets: [{ ...layoutWidget("t1", "text"), widgetCanonicalId: "woofx3:0.5.0:abc1234:widget:text" }],
-      },
-      catalog
+    const parsed = usable(
+      parseAlertLayout(
+        {
+          width: 10,
+          height: 10,
+          widgets: [{ ...layoutWidget("t1", "text"), widgetCanonicalId: "woofx3:0.5.0:abc1234:widget:text" }],
+        },
+        catalog
+      )
     );
-    expect(parsed?.layout.widgets[0]?.widgetCanonicalId).toBe("woofx3:widget:text");
+    expect(parsed.layout.widgets[0]?.widgetCanonicalId).toBe("woofx3:widget:text");
   });
 
-  it("refuses a layout without a canvas size or a widget list", () => {
-    expect(parseAlertLayout(undefined, catalog)).toBeNull();
-    expect(parseAlertLayout({ width: 0, height: 100, widgets: [] }, catalog)).toBeNull();
-    expect(parseAlertLayout({ width: 100, height: 100 }, catalog)).toBeNull();
+  // An unusable layout means an alert never plays and the operator sees only a
+  // log line, so the message has to say which field was at fault.
+  it("refuses a layout envelope it cannot use, naming the field at fault", () => {
+    expect(parseAlertLayout(undefined, catalog)).toEqual({
+      ok: false,
+      reason: "layout must be an object, got nothing",
+    });
+    expect(parseAlertLayout({ width: 0, height: 100, widgets: [] }, catalog)).toEqual({
+      ok: false,
+      reason: "layout.width must be a positive number, got number 0",
+    });
+    expect(parseAlertLayout({ width: 100, height: 0, widgets: [] }, catalog)).toEqual({
+      ok: false,
+      reason: "layout.height must be a positive number, got number 0",
+    });
+    expect(parseAlertLayout({ width: 100, height: 100 }, catalog)).toEqual({
+      ok: false,
+      reason: "layout.widgets must be an array, got nothing",
+    });
+  });
+
+  // The failure that reads as correct in a payload: a dimension serialized as a
+  // string. Quoting it in the reason is the difference between a one-line fix
+  // and an afternoon.
+  it("names a dimension that arrived as a string rather than a number", () => {
+    expect(parseAlertLayout({ width: "1920", height: 1080, widgets: [] }, catalog)).toEqual({
+      ok: false,
+      reason: 'layout.width must be a positive number, got the string "1920"',
+    });
   });
 
   it("frames nothing when the catalog could not be loaded", () => {
-    const parsed = parseAlertLayout({ width: 10, height: 10, widgets: [layoutWidget("t1", "text")] }, []);
-    expect(parsed?.layout.widgets).toEqual([]);
+    const parsed = usable(parseAlertLayout({ width: 10, height: 10, widgets: [layoutWidget("t1", "text")] }, []));
+    expect(parsed.layout.widgets).toEqual([]);
   });
 });
 

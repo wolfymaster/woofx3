@@ -43,6 +43,16 @@ export const EngineEventType = {
   WORKFLOW_CREATED: "workflow.created",
   WORKFLOW_UPDATED: "workflow.updated",
   WORKFLOW_DELETED: "workflow.deleted",
+  WORKFLOW_RUN_STARTED: "workflow.run.started",
+  WORKFLOW_RUN_COMPLETED: "workflow.run.completed",
+  WORKFLOW_RUN_FAILED: "workflow.run.failed",
+  // Persisted run history, projected from the db-proxy outbox. Distinct from
+  // the three above on purpose: those are live lifecycle notifications for a
+  // caller waiting on one run, these are database rows for the history nobody
+  // was watching. Same subject prefix, different source and different fate.
+  WORKFLOW_RUN_RECORDED: "workflow.run.recorded",
+  WORKFLOW_RUN_UPDATED: "workflow.run.updated",
+  WORKFLOW_RUN_STEP_RECORDED: "workflow.run.step.recorded",
   SCENE_CREATED: "scene.created",
   SCENE_UPDATED: "scene.updated",
   SCENE_DELETED: "scene.deleted",
@@ -55,6 +65,7 @@ export const EngineEventType = {
   WIDGET_STATUS_CHANGED: "module.widget.status.changed",
   STREAM_ONLINE: "stream.online",
   STREAM_OFFLINE: "stream.offline",
+  SESSION_STARTED: "session.started",
   OVERLAY_TOKEN_MINTED: "overlay.token.minted",
   OVERLAY_TOKEN_REVOKED: "overlay.token.revoked",
   COMMAND_CREATED: "command.created",
@@ -919,6 +930,128 @@ export interface AlertSnapshot {
 }
 
 /**
+ * Fired when the engine begins a workflow run.
+ *
+ * Worth as much as the terminal events: nothing else acknowledges that an
+ * event matched a workflow at all, so a caller waiting on an outcome cannot
+ * otherwise tell a slow run from one that never started.
+ *
+ * `triggerId` is echoed unchanged from the event that caused the run and is
+ * the only join back to whoever asked for it. Absent whenever nobody is
+ * waiting, which is nearly every run.
+ */
+export interface WorkflowRunStartedEvent {
+  type: typeof EngineEventType.WORKFLOW_RUN_STARTED;
+  applicationId: string;
+  workflowId: string;
+  executionId: string;
+  triggerId?: string;
+  triggeredBy?: string;
+  occurredAt: string;
+}
+
+/** Fired when a workflow run finishes with every task succeeding. */
+export interface WorkflowRunCompletedEvent {
+  type: typeof EngineEventType.WORKFLOW_RUN_COMPLETED;
+  applicationId: string;
+  workflowId: string;
+  executionId: string;
+  triggerId?: string;
+  triggeredBy?: string;
+  occurredAt: string;
+}
+
+/**
+ * Fired when a workflow run ends without completing.
+ *
+ * `error` is the engine's own reason, which for a refused alert step is the
+ * message `validateAlertParams` produced -- the same vocabulary the dashboard
+ * already turns into readable copy.
+ */
+export interface WorkflowRunFailedEvent {
+  type: typeof EngineEventType.WORKFLOW_RUN_FAILED;
+  applicationId: string;
+  workflowId: string;
+  executionId: string;
+  triggerId?: string;
+  triggeredBy?: string;
+  error: string;
+  occurredAt: string;
+}
+
+/**
+ * A persisted run, as the database holds it.
+ *
+ * `triggerEvent` is the originating CloudEvent verbatim, the same way
+ * AlertSnapshot.payload carries an alert envelope: opaque here, and the thing
+ * a replay re-feeds to the engine unchanged.
+ */
+export interface WorkflowRunSnapshot {
+  id: string;
+  workflowId: string;
+  applicationId: string;
+  status: string;
+  /** What caused the run ("twitch", "chat", ...). Never "dashboard": those are not recorded. */
+  triggeredBy?: string;
+  /** JSON of the originating CloudEvent. */
+  triggerEvent?: string;
+  error?: string;
+  startedAt?: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * One task's outcome within a persisted run.
+ *
+ * `inputs` is the parameters as resolved at run time, which the definition
+ * cannot reproduce; `outputs` is the task's exports, which is what later steps
+ * resolved against and therefore what a resume restores. Both are JSON strings
+ * rather than objects: they are arbitrarily nested engine values and nothing
+ * between here and the timeline needs to read inside them.
+ */
+export interface WorkflowRunStepSnapshot {
+  id: string;
+  executionId: string;
+  applicationId: string;
+  taskId: string;
+  name?: string;
+  status: string;
+  attempt: number;
+  stepIndex: number;
+  inputs?: string;
+  outputs?: string;
+  error?: string;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Fired when the engine records a run it has started. */
+export interface WorkflowRunRecordedEvent {
+  type: typeof EngineEventType.WORKFLOW_RUN_RECORDED;
+  applicationId: string;
+  run: WorkflowRunSnapshot;
+}
+
+/** Fired when a recorded run reaches its terminal state. */
+export interface WorkflowRunUpdatedEvent {
+  type: typeof EngineEventType.WORKFLOW_RUN_UPDATED;
+  applicationId: string;
+  run: WorkflowRunSnapshot;
+}
+
+/** Fired when a step within a recorded run settles. */
+export interface WorkflowRunStepRecordedEvent {
+  type: typeof EngineEventType.WORKFLOW_RUN_STEP_RECORDED;
+  applicationId: string;
+  step: WorkflowRunStepSnapshot;
+}
+
+/**
  * Fired immediately after the engine records a freshly dispatched
  * alert. Lets the UI populate its alert-log page in real time
  * without polling.
@@ -1099,6 +1232,32 @@ export interface StreamOfflineEvent {
 }
 
 /**
+ * Names the stream session the engine is currently stamping events with.
+ *
+ * A session is the *logical* span a broadcast belongs to: it survives brief
+ * dropouts, so it is not the same thing as `stream.online`. This is emitted by
+ * the resolver that owns that decision, in the same step where it adopts the
+ * session — deliberately not folded into `stream.online`, because both
+ * subscribe to the same bus subject with no ordering between them, and a split
+ * would then report the previous session.
+ *
+ * Re-sent when the engine restarts, so a consumer that missed the original
+ * still converges. Treat it as "the current session is this one", not as a
+ * boundary: receiving the same id twice is expected.
+ *
+ * A session *ending* is not delivered here. `instanceLiveState` is a
+ * latest-value row, so a reader can see the session change but never that one
+ * ended; anything that must react to an ending needs the bus event.
+ */
+export interface SessionStartedEvent {
+  type: typeof EngineEventType.SESSION_STARTED;
+  applicationId: string;
+  sessionId: string;
+  /** ISO-8601. When the session began, which may predate the current stream. */
+  startedAt: string;
+}
+
+/**
  * Discriminated union of every event the engine can deliver via webhook.
  * Consumers should narrow on `event.type` — TypeScript will pick the right
  * branch without casts.
@@ -1125,6 +1284,12 @@ export type CallbackEvent =
   | WorkflowCreatedEvent
   | WorkflowUpdatedEvent
   | WorkflowDeletedEvent
+  | WorkflowRunStartedEvent
+  | WorkflowRunCompletedEvent
+  | WorkflowRunFailedEvent
+  | WorkflowRunRecordedEvent
+  | WorkflowRunUpdatedEvent
+  | WorkflowRunStepRecordedEvent
   | SceneCreatedEvent
   | SceneUpdatedEvent
   | SceneDeletedEvent
@@ -1137,6 +1302,7 @@ export type CallbackEvent =
   | WidgetStatusChangedEvent
   | StreamOnlineEvent
   | StreamOfflineEvent
+  | SessionStartedEvent
   | OverlayTokenMintedEvent
   | OverlayTokenRevokedEvent
   | CommandCreatedEvent
@@ -1174,6 +1340,12 @@ export type CallbackEventByType = {
   [EngineEventType.WORKFLOW_CREATED]: WorkflowCreatedEvent;
   [EngineEventType.WORKFLOW_UPDATED]: WorkflowUpdatedEvent;
   [EngineEventType.WORKFLOW_DELETED]: WorkflowDeletedEvent;
+  [EngineEventType.WORKFLOW_RUN_STARTED]: WorkflowRunStartedEvent;
+  [EngineEventType.WORKFLOW_RUN_COMPLETED]: WorkflowRunCompletedEvent;
+  [EngineEventType.WORKFLOW_RUN_FAILED]: WorkflowRunFailedEvent;
+  [EngineEventType.WORKFLOW_RUN_RECORDED]: WorkflowRunRecordedEvent;
+  [EngineEventType.WORKFLOW_RUN_UPDATED]: WorkflowRunUpdatedEvent;
+  [EngineEventType.WORKFLOW_RUN_STEP_RECORDED]: WorkflowRunStepRecordedEvent;
   [EngineEventType.SCENE_CREATED]: SceneCreatedEvent;
   [EngineEventType.SCENE_UPDATED]: SceneUpdatedEvent;
   [EngineEventType.SCENE_DELETED]: SceneDeletedEvent;
@@ -1186,6 +1358,7 @@ export type CallbackEventByType = {
   [EngineEventType.WIDGET_STATUS_CHANGED]: WidgetStatusChangedEvent;
   [EngineEventType.STREAM_ONLINE]: StreamOnlineEvent;
   [EngineEventType.STREAM_OFFLINE]: StreamOfflineEvent;
+  [EngineEventType.SESSION_STARTED]: SessionStartedEvent;
   [EngineEventType.OVERLAY_TOKEN_MINTED]: OverlayTokenMintedEvent;
   [EngineEventType.OVERLAY_TOKEN_REVOKED]: OverlayTokenRevokedEvent;
   [EngineEventType.COMMAND_CREATED]: CommandCreatedEvent;

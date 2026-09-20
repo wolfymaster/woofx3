@@ -904,6 +904,7 @@ dependencies = [
  "tracing",
  "uuid",
  "woofx3",
+ "woofx3-cloudevents",
  "woofx3-logging",
  "woofx3-runtime",
  "woofx3-twirp",
@@ -2567,6 +2568,7 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+ "woofx3-cloudevents",
 ]
 
 [[package]]
@@ -5356,6 +5358,16 @@ dependencies = [
  "serde_json",
  "tonic",
  "tonic-prost",
+]
+
+[[package]]
+name = "woofx3-cloudevents"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

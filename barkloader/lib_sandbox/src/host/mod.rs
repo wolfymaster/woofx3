@@ -12,9 +12,26 @@ pub trait NatsPublisher: Send + Sync {
     fn publish(&self, subject: &str, data: Value) -> Result<(), String>;
 }
 
+/// How a module wants a stored value treated, beyond its bytes.
+///
+/// A struct rather than a bare flag: `set(key, value, true)` at a call site
+/// says nothing about what is being asked for, and `namespace` and `expires_at`
+/// are the other two metadata fields the storage proto carries that no writer
+/// populates yet.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StorageSetOptions {
+    /// Drop this key when the stream session ends.
+    ///
+    /// The module only declares the intent; the engine clears it, because the
+    /// sandbox deliberately exposes no way to delete storage. Defaults to
+    /// false, which is the safe direction -- a key that outlives a session can
+    /// still be cleared later, one wrongly dropped is gone.
+    pub clear_on_session_end: bool,
+}
+
 pub trait StorageClient: Send + Sync {
     fn get(&self, key: &str) -> Result<Option<Value>, String>;
-    fn set(&self, key: &str, value: Value) -> Result<(), String>;
+    fn set(&self, key: &str, value: Value, options: StorageSetOptions) -> Result<(), String>;
 }
 
 pub trait EnvReader: Send + Sync {

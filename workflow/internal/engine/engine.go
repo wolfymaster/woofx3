@@ -2,11 +2,13 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/wolfymaster/woofx3/common/cloudevents"
 	"github.com/wolfymaster/woofx3/common/logging"
 	"github.com/wolfymaster/woofx3/workflow/internal/eventmatch"
 	"github.com/wolfymaster/woofx3/workflow/internal/expression"
@@ -18,6 +20,40 @@ import (
 
 type EventPublisher interface {
 	Publish(event *types.Event) error
+}
+
+// RunStep is one task's outcome as the engine knows it, in engine terms only.
+//
+// Inputs are the parameters as resolved for this run, which the definition
+// cannot reproduce -- it holds the unresolved template. Outputs are the task's
+// exports, which is what later steps' `${taskId.*}` expressions read, so they
+// are what a resume has to restore.
+type RunStep struct {
+	TaskID      string
+	Status      string
+	Attempt     int
+	StepIndex   int
+	Inputs      map[string]any
+	Outputs     map[string]any
+	Error       string
+	StartedAt   time.Time
+	CompletedAt *time.Time
+}
+
+// RunRecorder persists what a run did, so it can be read back after this
+// process is gone and resumed from where it failed.
+//
+// Deliberately free of any database type: the engine is generic over its
+// services and has no notion of storage, so an implementation lives outside it
+// and decides for itself what is worth keeping -- including whether to keep
+// anything at all for a given run.
+//
+// Every method is best-effort and must not block the run. The run is the
+// product; recording it is not worth failing a workflow that otherwise worked.
+type RunRecorder interface {
+	RunStarted(applicationID string, execution *types.WorkflowExecution)
+	RunSettled(applicationID string, execution *types.WorkflowExecution)
+	StepSettled(applicationID string, execution *types.WorkflowExecution, step RunStep)
 }
 
 type AssetURLResolver interface {
@@ -35,6 +71,7 @@ type Engine[TServices any] struct {
 	subWorkflowWaiters   map[string][]*SubWorkflowWaiter // subWorkflowExecutionID -> parent executions waiting for it
 	subWorkflowWaitersMu sync.RWMutex
 	publisher            EventPublisher
+	runRecorder          RunRecorder
 	assetURLResolver     AssetURLResolver
 	logger               tasks.Logger
 	ctx                  context.Context
@@ -119,6 +156,67 @@ func (e *Engine[TServices]) RegisterAction(name string, action tasks.ActionFunc[
 func (e *Engine[TServices]) SetPublisher(publisher EventPublisher) {
 	e.publisher = publisher
 	e.registerPublishAction()
+}
+
+// SetRunRecorder wires run persistence. Optional: with none set the engine runs
+// exactly as before and keeps no history.
+func (e *Engine[TServices]) SetRunRecorder(recorder RunRecorder) {
+	e.runRecorder = recorder
+}
+
+func (e *Engine[TServices]) recordRunStarted(execution *types.WorkflowExecution) {
+	if e.runRecorder == nil {
+		return
+	}
+	e.runRecorder.RunStarted(e.resolveApplicationID(execution.WorkflowID), execution)
+}
+
+func (e *Engine[TServices]) recordRunSettled(execution *types.WorkflowExecution) {
+	if e.runRecorder == nil {
+		return
+	}
+	e.runRecorder.RunSettled(e.resolveApplicationID(execution.WorkflowID), execution)
+}
+
+// recordStep reports a task that has reached a settled state.
+//
+// Outputs come from the task's exports, falling back to its raw result data --
+// the same precedence publishTaskResultExports uses to decide what later steps
+// can see, so what is recorded matches what a resume would restore.
+//
+// Attempt is always 1: the engine does not retry a task today. The column
+// carries it so that when retries arrive, a second attempt is a new row rather
+// than an overwrite of the evidence of the first.
+func (e *Engine[TServices]) recordStep(
+	execution *types.WorkflowExecution,
+	taskID string,
+	stepIndex int,
+	inputs map[string]any,
+	taskExec *types.TaskExecution,
+) {
+	if e.runRecorder == nil || taskExec == nil {
+		return
+	}
+
+	var outputs map[string]any
+	if taskExec.Result != nil {
+		outputs = taskExec.Result.Exports
+		if outputs == nil {
+			outputs = taskExec.Result.Data
+		}
+	}
+
+	e.runRecorder.StepSettled(e.resolveApplicationID(execution.WorkflowID), execution, RunStep{
+		TaskID:      taskID,
+		Status:      string(taskExec.Status),
+		Attempt:     1,
+		StepIndex:   stepIndex,
+		Inputs:      inputs,
+		Outputs:     outputs,
+		Error:       taskExec.Error,
+		StartedAt:   taskExec.StartedAt,
+		CompletedAt: taskExec.CompletedAt,
+	})
 }
 
 // SetAssetURLResolver wires the resolver backing `${woofx3_asset_url:...}`
@@ -325,8 +423,38 @@ func (e *Engine[TServices]) evaluateTrigger(wf *types.WorkflowDefinition, event 
 	return nil
 }
 
+// beginExecution creates a run, registers it, and announces it.
+func (e *Engine[TServices]) beginExecution(wf *types.WorkflowDefinition, event *types.Event) *types.WorkflowExecution {
+	execution := &types.WorkflowExecution{
+		ID:           uuid.New().String(),
+		WorkflowID:   wf.ID,
+		Status:       types.ExecutionStatusRunning,
+		TriggerEvent: event,
+		StartedAt:    time.Now(),
+		Tasks:        make(map[string]*types.TaskExecution),
+		Variables:    make(map[string]any),
+	}
+
+	e.executionsMu.Lock()
+	e.executions[execution.ID] = execution
+	e.executionsMu.Unlock()
+
+	e.logger.Info("Starting workflow execution", "workflow", wf.ID, "execution", execution.ID)
+
+	// Announced here rather than through setExecutionStatus: the execution was
+	// built already running, and a caller waiting on this run needs to know a
+	// workflow matched its event before any task has had a chance to fail.
+	e.emitRunLifecycle(execution)
+	// Recorded at the same point, so the run exists before any step references
+	// it -- step rows carry a foreign key into this one.
+	e.recordRunStarted(execution)
+
+	return execution
+}
+
 func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event *types.Event) {
-	executionID := uuid.New().String()
+	execution := e.beginExecution(wf, event)
+	executionID := execution.ID
 
 	// Top-level entry point for the engine: a trigger fired and a workflow
 	// run begins here. Task-level child spans need the context threaded
@@ -337,31 +465,12 @@ func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event 
 	)
 	defer span.End()
 
-	execution := &types.WorkflowExecution{
-		ID:           executionID,
-		WorkflowID:   wf.ID,
-		Status:       types.ExecutionStatusRunning,
-		TriggerEvent: event,
-		StartedAt:    time.Now(),
-		Tasks:        make(map[string]*types.TaskExecution),
-		Variables:    make(map[string]any),
-	}
-
 	taskExports := make(map[string]map[string]any)
-
-	e.executionsMu.Lock()
-	e.executions[executionID] = execution
-	e.executionsMu.Unlock()
-
-	e.logger.Info("Starting workflow execution", "workflow", wf.ID, "execution", executionID)
 
 	graph, err := NewDependencyGraph(wf.Tasks)
 	if err != nil {
-		execution.Status = types.ExecutionStatusFailed
-		execution.Error = err.Error()
+		e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 		e.logger.Error("Failed to build dependency graph", "workflow", wf.ID, "execution", executionID, "error", err)
-		now := time.Now()
-		execution.CompletedAt = &now
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "build dependency graph")
 		return
@@ -369,11 +478,8 @@ func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event 
 
 	executionOrder, err := graph.GetExecutionOrder()
 	if err != nil {
-		execution.Status = types.ExecutionStatusFailed
-		execution.Error = err.Error()
+		e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 		e.logger.Error("Failed to resolve execution order", "workflow", wf.ID, "execution", executionID, "error", err)
-		now := time.Now()
-		execution.CompletedAt = &now
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "resolve execution order")
 		return
@@ -383,8 +489,16 @@ func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event 
 }
 
 func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecution, executionOrder []*types.TaskDefinition, startIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event) {
-	skippedTasks := make(map[string]bool)
+	e.runTasksFrom(execution, executionOrder, startIndex, taskExports, triggerEvent, make(map[string]bool))
+}
 
+// runTasksFrom runs tasks from startIndex, with skippedTasks holding any tasks
+// already excluded by a branch not taken.
+//
+// Separate from executeTasksFromIndex for resume: a run restarted part-way
+// through must carry the branches its earlier conditions excluded, or it would
+// run tasks the original run skipped.
+func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, executionOrder []*types.TaskDefinition, startIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event, skippedTasks map[string]bool) {
 	for i := startIndex; i < len(executionOrder); i++ {
 		// Independent adjacent tasks run together. `planConcurrentRun` returns
 		// a run of one whenever anything makes that unsafe, so the loop body
@@ -408,6 +522,10 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 			now := time.Now()
 			taskExec.CompletedAt = &now
 			execution.Tasks[taskDef.ID] = taskExec
+			// Recorded rather than omitted: that a branch was not taken is part
+			// of what the run did, and a timeline with the step missing reads
+			// as though it never existed.
+			e.recordStep(execution, taskDef.ID, i, nil, taskExec)
 			e.logger.Info("Task skipped (branch not taken)", "workflow", execution.WorkflowID, "task", taskDef.ID)
 			continue
 		}
@@ -434,11 +552,10 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 			if err != nil {
 				taskExec.Status = types.TaskStatusFailed
 				taskExec.Error = err.Error()
-				execution.Status = types.ExecutionStatusFailed
-				execution.Error = err.Error()
 				now := time.Now()
 				taskExec.CompletedAt = &now
-				execution.CompletedAt = &now
+				e.recordStep(execution, taskDef.ID, i, nil, taskExec)
+				e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 				e.logger.Error("Task condition evaluation failed", "workflow", execution.WorkflowID, "task", taskDef.ID, "error", err)
 				e.checkSubWorkflowCompletion(execution.ID)
 				return
@@ -455,6 +572,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 						"reason":  "condition evaluated to false",
 					},
 				}
+				e.recordStep(execution, taskDef.ID, i, nil, taskExec)
 				e.logger.Info("Task skipped (condition false)", "workflow", execution.WorkflowID, "task", taskDef.ID)
 				continue
 			}
@@ -468,11 +586,10 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 			if err != nil {
 				taskExec.Status = types.TaskStatusFailed
 				taskExec.Error = err.Error()
-				execution.Status = types.ExecutionStatusFailed
-				execution.Error = err.Error()
 				now := time.Now()
 				taskExec.CompletedAt = &now
-				execution.CompletedAt = &now
+				e.recordStep(execution, taskDef.ID, i, nil, taskExec)
+				e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 				e.logger.Error("Condition evaluation failed", "workflow", execution.WorkflowID, "task", taskDef.ID, "error", err)
 				e.checkSubWorkflowCompletion(execution.ID)
 				return
@@ -500,6 +617,10 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 				},
 			}
 			taskExports[taskDef.ID] = taskExec.Result.Exports
+			// The recorded result is what a resume re-derives this condition's
+			// skipped branch from; without it a resumed run could take a branch
+			// the original did not.
+			e.recordStep(execution, taskDef.ID, i, nil, taskExec)
 
 			e.logger.Info("Condition evaluated", "workflow", execution.WorkflowID, "task", taskDef.ID, "result", result, "branch", branchTasks)
 			continue
@@ -513,15 +634,18 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 				if taskDef.Wait.OnTimeout == "fail" {
 					taskExec.Status = types.TaskStatusFailed
 					taskExec.Error = "wait timeout"
-					execution.Status = types.ExecutionStatusFailed
-					execution.Error = "wait timeout"
 					now := time.Now()
-					execution.CompletedAt = &now
+					taskExec.CompletedAt = &now
+					e.recordStep(execution, taskDef.ID, i, nil, taskExec)
+					e.setExecutionStatus(execution, types.ExecutionStatusFailed, errors.New("wait timeout"))
 					e.logger.Error("Wait task timed out", "workflow", execution.WorkflowID, "task", taskDef.ID)
 					e.checkSubWorkflowCompletion(execution.ID)
 					return
 				}
 				taskExec.Status = types.TaskStatusSuccess
+				now := time.Now()
+				taskExec.CompletedAt = &now
+				e.recordStep(execution, taskDef.ID, i, nil, taskExec)
 				e.logger.Info("Wait task timed out, continuing", "workflow", execution.WorkflowID, "task", taskDef.ID)
 				continue
 			}
@@ -533,6 +657,10 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 			taskExec.Status = types.TaskStatusSuccess
 			now := time.Now()
 			taskExec.CompletedAt = &now
+			// Exports go on the result as well as into taskExports: the result is
+			// what gets recorded, and a resume can only restore what was recorded.
+			taskExec.Result = &types.TaskResult{Status: types.TaskStatusSuccess, Exports: taskExports[taskDef.ID]}
+			e.recordStep(execution, taskDef.ID, i, nil, taskExec)
 			e.logger.Info("Wait task satisfied", "workflow", execution.WorkflowID, "task", taskDef.ID)
 			continue
 		}
@@ -567,10 +695,8 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 			if workflowConfig == nil || workflowConfig.WorkflowID == "" {
 				taskExec.Status = types.TaskStatusFailed
 				taskExec.Error = "workflow task missing workflowId"
-				execution.Status = types.ExecutionStatusFailed
-				execution.Error = "workflow task missing workflowId"
-				now := time.Now()
-				execution.CompletedAt = &now
+				e.recordStep(execution, taskDef.ID, i, nil, taskExec)
+				e.setExecutionStatus(execution, types.ExecutionStatusFailed, errors.New("workflow task missing workflowId"))
 				e.logger.Error("Workflow task missing workflowId", "workflow", execution.WorkflowID, "task", taskDef.ID)
 				e.checkSubWorkflowCompletion(execution.ID)
 				return
@@ -586,9 +712,10 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 				return
 			case "failed":
 				taskExec.Status = types.TaskStatusFailed
-				execution.Status = types.ExecutionStatusFailed
-				now := time.Now()
-				execution.CompletedAt = &now
+				e.recordStep(execution, taskDef.ID, i, nil, taskExec)
+				// nil: the sub-workflow's own reason was already recorded and
+				// logged on its execution; this path never had one of its own.
+				e.setExecutionStatus(execution, types.ExecutionStatusFailed, nil)
 				e.logger.Error("Workflow task failed", "workflow", execution.WorkflowID, "task", taskDef.ID)
 				e.checkSubWorkflowCompletion(execution.ID)
 				return
@@ -617,11 +744,13 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 			taskExec.Status = types.TaskStatusSuccess
 			now := time.Now()
 			taskExec.CompletedAt = &now
+			taskExec.Result = &types.TaskResult{Status: types.TaskStatusSuccess, Exports: taskExports[taskDef.ID]}
+			e.recordStep(execution, taskDef.ID, i, nil, taskExec)
 			e.logger.Info("Workflow task completed", "workflow", execution.WorkflowID, "task", taskDef.ID)
 			continue
 		}
 
-		result, err := e.executeTask(taskDef, execution, triggerEvent, taskExports)
+		result, params, err := e.executeTask(taskDef, execution, triggerEvent, taskExports)
 
 		now := time.Now()
 		taskExec.CompletedAt = &now
@@ -630,10 +759,10 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 		if err != nil {
 			taskExec.Status = types.TaskStatusFailed
 			taskExec.Error = err.Error()
-			execution.Status = types.ExecutionStatusFailed
-			execution.Error = err.Error()
-			now := time.Now()
-			execution.CompletedAt = &now
+			// Recorded before the run is marked failed, so the step that caused
+			// the failure is already there when a reader sees the failed run.
+			e.recordStep(execution, taskDef.ID, i, params, taskExec)
+			e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 			e.logger.Error("Task failed", "workflow", execution.WorkflowID, "execution", execution.ID, "task", taskDef.ID, "error", err)
 			e.checkSubWorkflowCompletion(execution.ID)
 			return
@@ -642,6 +771,9 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 		taskExec.Status = types.TaskStatusSuccess
 
 		publishTaskResultExports(taskExports, taskDef.ID, result)
+		// After publishing exports, so the recorded outputs are the same values
+		// later steps will resolve against.
+		e.recordStep(execution, taskDef.ID, i, params, taskExec)
 
 		if result != nil && result.Data != nil {
 			e.logger.Info("Task completed", "workflow", execution.WorkflowID, "execution", execution.ID, "task", taskDef.ID, "result", result.Data)
@@ -650,9 +782,7 @@ func (e *Engine[TServices]) executeTasksFromIndex(execution *types.WorkflowExecu
 		}
 	}
 
-	execution.Status = types.ExecutionStatusCompleted
-	now := time.Now()
-	execution.CompletedAt = &now
+	e.setExecutionStatus(execution, types.ExecutionStatusCompleted, nil)
 
 	e.logger.Info("Workflow execution completed", "workflow", execution.WorkflowID, "execution", execution.ID, "status", execution.Status)
 
@@ -704,6 +834,13 @@ func (e *Engine[TServices]) executeConcurrentRun(
 		resolver := e.buildResolver(triggerEvent, taskExports)
 		shouldRun, err := (&tasks.ConditionTask{}).Evaluate(taskDef, resolver)
 		if err != nil {
+			// Marked and recorded before failExecution settles the run, so the
+			// step that failed it is stored before the run is.
+			taskExec.Status = types.TaskStatusFailed
+			taskExec.Error = err.Error()
+			now := time.Now()
+			taskExec.CompletedAt = &now
+			e.recordStep(execution, taskDef.ID, i, nil, taskExec)
 			e.failExecution(execution, taskExec, err, "Task condition evaluation failed", taskDef.ID)
 			return false
 		}
@@ -715,6 +852,11 @@ func (e *Engine[TServices]) executeConcurrentRun(
 				Status: types.TaskStatusSkipped,
 				Data:   map[string]any{"skipped": true, "reason": "condition evaluated to false"},
 			}
+			// `i` is already the absolute position in executionOrder here --
+			// this loop runs from run.Start to run.End. The apply loop below
+			// indexes into `results` instead, which is why that one adds
+			// run.Start and this one must not.
+			e.recordStep(execution, taskDef.ID, i, nil, taskExec)
 			e.logger.Info("Task skipped (condition false)", "workflow", execution.WorkflowID, "task", taskDef.ID)
 			continue
 		}
@@ -728,7 +870,10 @@ func (e *Engine[TServices]) executeConcurrentRun(
 	type outcome struct {
 		taskDef *types.TaskDefinition
 		result  *types.TaskResult
-		err     error
+		// params is carried out of the goroutine so the step can be recorded in
+		// the ordered pass below rather than concurrently.
+		params map[string]any
+		err    error
 	}
 	results := make([]outcome, len(toRun))
 	var wg sync.WaitGroup
@@ -740,8 +885,8 @@ func (e *Engine[TServices]) executeConcurrentRun(
 			// completed before this run began -- no member of the run is
 			// referenced by another (planConcurrentRun rejects the run
 			// otherwise), so there is nothing to synchronise on the read side.
-			result, err := e.executeTask(taskDef, execution, triggerEvent, taskExports)
-			results[idx] = outcome{taskDef: taskDef, result: result, err: err}
+			result, params, err := e.executeTask(taskDef, execution, triggerEvent, taskExports)
+			results[idx] = outcome{taskDef: taskDef, result: result, params: params, err: err}
 		}(idx, taskDef)
 	}
 	wg.Wait()
@@ -758,9 +903,15 @@ func (e *Engine[TServices]) executeConcurrentRun(
 		taskExec.CompletedAt = &now
 		taskExec.Result = out.result
 
+		// run.Start + i is the task's position in the execution order. The
+		// goroutines above finish in any order; this loop is where position is
+		// still known, which is why recording belongs here and not in them.
+		stepIndex := run.Start + i
+
 		if out.err != nil {
 			taskExec.Status = types.TaskStatusFailed
 			taskExec.Error = out.err.Error()
+			e.recordStep(execution, out.taskDef.ID, stepIndex, out.params, taskExec)
 			e.logger.Error("Task failed", "workflow", execution.WorkflowID, "execution", execution.ID, "task", out.taskDef.ID, "error", out.err)
 			if firstFailure == nil {
 				firstFailure = &results[i]
@@ -770,14 +921,12 @@ func (e *Engine[TServices]) executeConcurrentRun(
 
 		taskExec.Status = types.TaskStatusSuccess
 		publishTaskResultExports(taskExports, out.taskDef.ID, out.result)
+		e.recordStep(execution, out.taskDef.ID, stepIndex, out.params, taskExec)
 		e.logger.Info("Task completed", "workflow", execution.WorkflowID, "execution", execution.ID, "task", out.taskDef.ID)
 	}
 
 	if firstFailure != nil {
-		execution.Status = types.ExecutionStatusFailed
-		execution.Error = firstFailure.err.Error()
-		now := time.Now()
-		execution.CompletedAt = &now
+		e.setExecutionStatus(execution, types.ExecutionStatusFailed, firstFailure.err)
 		e.checkSubWorkflowCompletion(execution.ID)
 		return false
 	}
@@ -791,11 +940,112 @@ func (e *Engine[TServices]) failExecution(execution *types.WorkflowExecution, ta
 	taskExec.Status = types.TaskStatusFailed
 	taskExec.Error = err.Error()
 	taskExec.CompletedAt = &now
-	execution.Status = types.ExecutionStatusFailed
-	execution.Error = err.Error()
-	execution.CompletedAt = &now
+	e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 	e.logger.Error(msg, "workflow", execution.WorkflowID, "task", taskID, "error", err)
 	e.checkSubWorkflowCompletion(execution.ID)
+}
+
+// setExecutionStatus records a run's state and announces it.
+//
+// Every assignment to execution.Status goes through here, and that is the
+// whole point: a dozen places in this file can end a run, and one of them
+// forgetting to announce it would leave whoever triggered that run waiting
+// forever, unable to tell a slow workflow from a dead one.
+//
+// A nil err leaves execution.Error untouched -- one caller fails a run without
+// a reason of its own, and inventing one would report something the engine
+// never knew.
+//
+// It deliberately does not call checkSubWorkflowCompletion. Most callers do and
+// the dependency-graph and execution-order failures in executeWorkflow never
+// have; folding it in here would change sub-workflow behaviour rather than just
+// reporting on it.
+//
+// Two kinds of transition stay outside this funnel on purpose, and should not be
+// "fixed" into it: moving to Waiting, which is not an outcome anyone is waiting
+// to hear, and the Running assignments that resume a paused run, which would
+// announce a second start for a run that already began.
+func (e *Engine[TServices]) setExecutionStatus(
+	execution *types.WorkflowExecution,
+	status types.ExecutionStatus,
+	err error,
+) {
+	execution.Status = status
+	if err != nil {
+		execution.Error = err.Error()
+	}
+	// Only genuinely terminal states get a completion time. Waiting does not
+	// reach here today, but stamping CompletedAt on a paused run would make it
+	// look finished to everything that reads these rows.
+	if status == types.ExecutionStatusCompleted || status == types.ExecutionStatusFailed {
+		now := time.Now()
+		execution.CompletedAt = &now
+	}
+	e.emitRunLifecycle(execution)
+	e.recordRunSettled(execution)
+}
+
+// emitRunLifecycle publishes a run's current state, correlated with whoever
+// asked for the run.
+//
+// Best-effort on purpose: a publish failure is logged and the run continues.
+// The run is the product; telling a dashboard about it is not worth failing a
+// workflow that otherwise did its job.
+func (e *Engine[TServices]) emitRunLifecycle(execution *types.WorkflowExecution) {
+	if e.publisher == nil {
+		return
+	}
+
+	var subject cloudevents.Subject
+	switch execution.Status {
+	case types.ExecutionStatusRunning:
+		subject = cloudevents.SubjectWorkflowRunStarted
+	case types.ExecutionStatusCompleted:
+		subject = cloudevents.SubjectWorkflowRunCompleted
+	case types.ExecutionStatusFailed:
+		subject = cloudevents.SubjectWorkflowRunFailed
+	default:
+		// A state with no lifecycle event of its own (waiting, and anything a
+		// later version adds). Silence is correct: a consumer keyed on the
+		// three below would otherwise have to guess what an unknown one means.
+		return
+	}
+
+	data := map[string]any{
+		"workflowId":  execution.WorkflowID,
+		"executionId": execution.ID,
+		// Resolved here rather than left to the consumer: the engine holds the
+		// definition and therefore the owning application, and a relay would
+		// otherwise have to guess it from a default-application lookup that is
+		// wrong the moment more than one application exists.
+		"applicationId": e.resolveApplicationID(execution.WorkflowID),
+	}
+	if execution.Error != "" {
+		data["error"] = execution.Error
+	}
+
+	event := &types.Event{
+		ID:     uuid.New().String(),
+		Type:   string(subject),
+		Source: "workflow",
+		Time:   time.Now(),
+		Data:   data,
+	}
+	// Copied from the trigger unchanged. TriggerID is the only join back to the
+	// request that caused this run, and carrying SessionID keeps a run
+	// attributable to the same broadcast as the event that started it.
+	if execution.TriggerEvent != nil {
+		event.TriggerID = execution.TriggerEvent.TriggerID
+		event.TriggeredBy = execution.TriggerEvent.TriggeredBy
+		event.SessionID = execution.TriggerEvent.SessionID
+	}
+
+	if err := e.publisher.Publish(event); err != nil {
+		e.logger.Warn("run lifecycle not published",
+			"execution", execution.ID,
+			"status", execution.Status,
+			"error", err)
+	}
 }
 
 func (e *Engine[TServices]) buildResolver(triggerEvent *types.Event, taskExports map[string]map[string]any) *expression.Resolver {
@@ -1029,6 +1279,12 @@ func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, ev
 
 	e.logger.Info("Starting sub-workflow execution", "workflow", wf.ID, "execution", executionID)
 
+	// Announced like a top-level run. This execution reports completed/failed
+	// through setExecutionStatus either way, and a terminal event with no
+	// matching start would read as a run that ended without ever beginning.
+	e.emitRunLifecycle(execution)
+	e.recordRunStarted(execution)
+
 	// Execute in a goroutine (async)
 	go e.executeWorkflowInternal(wf, execution, event)
 
@@ -1040,22 +1296,16 @@ func (e *Engine[TServices]) executeWorkflowInternal(wf *types.WorkflowDefinition
 
 	graph, err := NewDependencyGraph(wf.Tasks)
 	if err != nil {
-		execution.Status = types.ExecutionStatusFailed
-		execution.Error = err.Error()
+		e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 		e.logger.Error("Failed to build dependency graph", "workflow", wf.ID, "execution", execution.ID, "error", err)
-		now := time.Now()
-		execution.CompletedAt = &now
 		e.checkSubWorkflowCompletion(execution.ID)
 		return
 	}
 
 	executionOrder, err := graph.GetExecutionOrder()
 	if err != nil {
-		execution.Status = types.ExecutionStatusFailed
-		execution.Error = err.Error()
+		e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 		e.logger.Error("Failed to resolve execution order", "workflow", wf.ID, "execution", execution.ID, "error", err)
-		now := time.Now()
-		execution.CompletedAt = &now
 		e.checkSubWorkflowCompletion(execution.ID)
 		return
 	}
@@ -1117,14 +1367,15 @@ func (e *Engine[TServices]) resumeSubWorkflowExecution(waiter *SubWorkflowWaiter
 		}
 		now := time.Now()
 		taskExec.CompletedAt = &now
+		e.recordStep(execution, waiter.TaskID, waiter.CurrentIndex, nil, taskExec)
 	}
 
 	// If the task failed, mark the execution as failed and return
 	if taskExec != nil && taskExec.Status == types.TaskStatusFailed {
-		execution.Status = types.ExecutionStatusFailed
-		execution.Error = taskExec.Error
-		now := time.Now()
-		execution.CompletedAt = &now
+		// The reason is already a string here, built by the switch above rather
+		// than carried as an error, so it is wrapped to keep the funnel's single
+		// signature without rewording what the parent task recorded.
+		e.setExecutionStatus(execution, types.ExecutionStatusFailed, errors.New(taskExec.Error))
 		e.logger.Error("Workflow execution failed due to sub-workflow failure", "workflow", waiter.ParentWorkflowID, "execution", waiter.ParentExecutionID, "task", waiter.TaskID, "error", taskExec.Error)
 		e.checkSubWorkflowCompletion(execution.ID)
 		return
@@ -1153,6 +1404,8 @@ func (e *Engine[TServices]) resumeExecution(w *WaitingExecution) {
 		taskExec.Status = types.TaskStatusSuccess
 		now := time.Now()
 		taskExec.CompletedAt = &now
+		taskExec.Result = &types.TaskResult{Status: types.TaskStatusSuccess, Exports: w.TaskExports[w.TaskID]}
+		e.recordStep(execution, w.TaskID, w.CurrentIndex, nil, taskExec)
 	}
 
 	execution.Status = types.ExecutionStatusRunning
@@ -1162,7 +1415,13 @@ func (e *Engine[TServices]) resumeExecution(w *WaitingExecution) {
 	e.executeTasksFromIndex(execution, w.ExecutionOrder, w.CurrentIndex+1, w.TaskExports, w.TriggerEvent)
 }
 
-func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution *types.WorkflowExecution, event *types.Event, taskExports map[string]map[string]any) (*types.TaskResult, error) {
+// executeTask runs one task and returns its result alongside the parameters it
+// was resolved with.
+//
+// The resolved parameters are returned even when the task fails, and that is
+// the point: a failed step is the one where "what was this actually asked to
+// do?" matters most, and the definition only holds the unresolved template.
+func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution *types.WorkflowExecution, event *types.Event, taskExports map[string]map[string]any) (*types.TaskResult, map[string]any, error) {
 	resolver := e.buildResolver(event, taskExports)
 
 	// Diagnostic: log what the resolver will see and what it produced.
@@ -1184,7 +1443,7 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 
 	resolvedParams, err := resolver.Resolve(taskDef.Parameters)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve parameters: %w", err)
+		return nil, nil, fmt.Errorf("failed to resolve parameters: %w", err)
 	}
 
 	e.logger.Info("Resolved task parameters",
@@ -1195,12 +1454,12 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 
 	params, ok := resolvedParams.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("resolved parameters must be a map")
+		return nil, nil, fmt.Errorf("resolved parameters must be a map")
 	}
 
 	task, err := e.taskRegistry.Create(taskDef, params)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create task: %w", err)
+		return nil, params, fmt.Errorf("failed to create task: %w", err)
 	}
 
 	// Resolve the owning workflow's applicationId so action handlers can
@@ -1212,6 +1471,7 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 
 	taskCtx := &tasks.TaskContext{
 		WorkflowID:    execution.WorkflowID,
+		ExecutionID:   execution.ID,
 		ApplicationID: applicationID,
 		TaskID:        taskDef.ID,
 		TriggerEvent:  event,
@@ -1222,7 +1482,7 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 
 	result, err := task.Execute(taskCtx)
 	if err != nil {
-		return result, err
+		return result, params, err
 	}
 
 	if result != nil && taskDef.Exports != nil && result.Data != nil {
@@ -1237,7 +1497,7 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 		}
 	}
 
-	return result, nil
+	return result, params, nil
 }
 
 // taskExportKeys returns just the step ids that have published exports,

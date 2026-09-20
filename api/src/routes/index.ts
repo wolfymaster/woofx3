@@ -1,6 +1,7 @@
 import { SpanKind, withSpan } from "@woofx3/common/logging";
 import { engineRoutes } from "./engine";
 import { subscriptionsRoutes } from "./subscriptions";
+import { streamEventsRoutes } from "./stream-events";
 import { triggerSubscriptionRoutes } from "./trigger-subscription";
 import { workflowsExecutionRoutes } from "./workflows-execution";
 import { commandsRoutes } from "./commands";
@@ -24,6 +25,7 @@ import type { ApiRouteHost } from "./context";
 export type RegisteredApiRoutes = typeof engineRoutes &
   typeof subscriptionsRoutes &
   typeof triggerSubscriptionRoutes &
+  typeof streamEventsRoutes &
   typeof workflowsExecutionRoutes &
   typeof commandsRoutes &
   typeof groupsRoutes &
@@ -74,6 +76,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(engineRoutes),
     instrumentRoutes(subscriptionsRoutes),
     instrumentRoutes(triggerSubscriptionRoutes),
+    instrumentRoutes(streamEventsRoutes),
     instrumentRoutes(workflowsExecutionRoutes),
     instrumentRoutes(commandsRoutes),
     instrumentRoutes(groupsRoutes),

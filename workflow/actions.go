@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
 	barkloader "github.com/wolfymaster/woofx3/clients/barkloader"
+	dbv1 "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
@@ -117,8 +119,10 @@ func NewBarkloaderAction() tasks.ActionFunc[AppServices] {
 //     attached so layout widgets can read raw event fields. `null` for
 //     non-event triggers (manual, scheduled, chat command).
 //
-// The engine forwards `parameters` unchecked: the scene manager validates
-// the layout against the widget catalog before it frames anything.
+// The step fails rather than publishing when `layout` is structurally
+// unusable (see validateAlertParams). Everything else about `parameters` is
+// forwarded unchecked: the scene manager holds the widget catalog and decides
+// what it will actually frame.
 //
 // Canonical id of the corresponding action declaration row:
 // `woofx3:action:alert`, declared as a `native` action by the bundled
@@ -130,10 +134,14 @@ func NewAlertAction() tasks.ActionFunc[AppServices] {
 		if bus == nil {
 			return nil, fmt.Errorf("message bus not available")
 		}
-		payload, err := buildAlertEnvelope(ctx.ApplicationID, params, ctx.TriggerEvent)
+		if err := validateAlertParams(params); err != nil {
+			return nil, fmt.Errorf("alert cannot be published: %w", err)
+		}
+		payload, envelopeID, err := buildAlertEnvelope(ctx.ApplicationID, params, ctx.TriggerEvent)
 		if err != nil {
 			return nil, err
 		}
+		recordAlertDispatch(ctx, envelopeID, payload)
 		if err := bus.Publish("ui.notify.alert", payload); err != nil {
 			return nil, fmt.Errorf("publish ui.notify.alert: %w", err)
 		}
@@ -150,7 +158,7 @@ func NewAlertAction() tasks.ActionFunc[AppServices] {
 // Empty string is omitted from the JSON so envelopes from non-workflow
 // publishers (manual / debug / ad-hoc) round-trip cleanly without
 // stamping a misleading id.
-func buildAlertEnvelope(applicationID string, params map[string]any, event *types.Event) ([]byte, error) {
+func buildAlertEnvelope(applicationID string, params map[string]any, event *types.Event) ([]byte, string, error) {
 	// Generate a stable envelope id at publish time so every consumer
 	// (api alert log, streamware broadcaster, overlay widget) keys on
 	// the same value. Honors a caller-supplied `parameters.id` so
@@ -173,9 +181,118 @@ func buildAlertEnvelope(applicationID string, params map[string]any, event *type
 	}
 	payload, err := json.Marshal(envelope)
 	if err != nil {
-		return nil, fmt.Errorf("marshal alert envelope: %w", err)
+		return nil, "", fmt.Errorf("marshal alert envelope: %w", err)
 	}
-	return payload, nil
+	return payload, envelopeID, nil
+}
+
+// recordAlertDispatch writes the alert to the engine's alert log.
+//
+// Before the publish, not after: a consumer that refuses the alert reports
+// against this row keyed on the envelope id, and a row that does not exist yet
+// cannot be updated.
+//
+// Best-effort, and deliberately so. An alert nobody logged is worth more than
+// an alert nobody saw, so a failure here is recorded and the dispatch
+// continues — which means every consumer downstream has to tolerate a missing
+// row rather than assume one.
+func recordAlertDispatch(ctx tasks.ActionContext[AppServices], envelopeID string, payload []byte) {
+	client := ctx.Services.AlertLog()
+	if client == nil {
+		return
+	}
+
+	sourceEventID := ""
+	if ctx.TriggerEvent != nil {
+		sourceEventID = ctx.TriggerEvent.ID
+	}
+
+	_, err := client.CreateAlert(context.Background(), &dbv1.CreateAlertRequest{
+		ApplicationId: ctx.ApplicationID,
+		Payload:       string(payload),
+		// Named for the workflow, but documented as the execution that fired
+		// the alert — and the run is the value that can answer "what produced
+		// this", which the definition id cannot.
+		WorkflowId:    ctx.ExecutionID,
+		SourceEventId: sourceEventID,
+		EnvelopeId:    envelopeID,
+	})
+	if err != nil && ctx.Logger != nil {
+		ctx.Logger.Warn("alert dispatch not recorded", "envelopeId", envelopeID, "error", err)
+	}
+}
+
+// validateAlertParams rejects an alert whose `layout` cannot be framed,
+// before anything is published.
+//
+// The scene manager validates layouts properly — it is the side holding the
+// widget catalog — but it does so after this step has already reported
+// success, and its refusal reaches nobody but a log file. These four checks
+// need no catalog, so making them here turns the common authoring mistake (a
+// step saved against a module that has since changed) into a failed run with a
+// reason on it.
+//
+// Structural only, deliberately. Whether a widget exists, or may play in an
+// alert, stays with the scene manager.
+func validateAlertParams(params map[string]any) error {
+	layout, ok := params["layout"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("layout must be an object, got %s", describeParam(params["layout"]))
+	}
+	if !isPositiveNumber(layout["width"]) {
+		return fmt.Errorf("layout.width must be a positive number, got %s", describeParam(layout["width"]))
+	}
+	if !isPositiveNumber(layout["height"]) {
+		return fmt.Errorf("layout.height must be a positive number, got %s", describeParam(layout["height"]))
+	}
+	if _, ok := layout["widgets"].([]any); !ok {
+		return fmt.Errorf("layout.widgets must be an array, got %s", describeParam(layout["widgets"]))
+	}
+	return nil
+}
+
+// describeParam names what arrived, so a message tells an absent field apart
+// from a mistyped one. Mirrors `describe` in the scene manager's
+// alert-layout.ts, so an author sees the same vocabulary wherever the alert was
+// refused. A JSON null and an absent key are indistinguishable once unmarshalled
+// into map[string]any, and both read as "nothing".
+func describeParam(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return "nothing"
+	case string:
+		return fmt.Sprintf("the string %q", v)
+	case bool:
+		return fmt.Sprintf("bool %v", v)
+	case float64:
+		return fmt.Sprintf("number %v", v)
+	case int:
+		return fmt.Sprintf("number %d", v)
+	case []any:
+		return "an array"
+	case map[string]any:
+		return "an object"
+	default:
+		return fmt.Sprintf("%T", value)
+	}
+}
+
+// isPositiveNumber accepts the shapes a step parameter can arrive in. Steps are
+// persisted as JSON, so a dimension is a float64 in practice; the integer cases
+// are for definitions built in Go.
+//
+// No finiteness check: JSON cannot carry Inf or NaN, so neither can reach here.
+func isPositiveNumber(value any) bool {
+	switch v := value.(type) {
+	case float64:
+		return v > 0
+	case int:
+		return v > 0
+	case int64:
+		return v > 0
+	default:
+		return false
+	}
 }
 
 // buildModuleInvokeEvent shapes the sandbox `ctx.event` object module functions

@@ -72,6 +72,10 @@ const KNOWN_NESTED: Record<string, string[]> = {
   http: ["request"],
   env: ["get"],
   resources: ["create", "delete", "list"],
+  // `module` appears here *and* in KNOWN_DATA_FIELDS below: it is the one
+  // namespace that mixes plain properties with a callable, and the two maps
+  // check different declaration shapes.
+  module: ["setSetting"],
   log: ["info", "warn", "error"],
 };
 

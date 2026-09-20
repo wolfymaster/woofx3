@@ -20,12 +20,12 @@
 //! a layer, not close a gap. Adapters call `invocation.host.*` directly
 //! for those, same as before.
 
-use crate::host::HostContext;
+use crate::host::{HostContext, StorageSetOptions};
 use serde_json::Value;
 use std::collections::HashMap;
 
-/// `ctx.storage.set(key, value)`: write through to the store, then emit
-/// the `module.storage.<module_id>.changed` event. Both steps, in this
+/// `ctx.storage.set(key, value, options?)`: write through to the store, then
+/// emit the `module.storage.<module_id>.changed` event. Both steps, in this
 /// order, every time — that pairing is the actual behavior worth keeping
 /// in one place.
 pub fn storage_set(
@@ -33,10 +33,34 @@ pub fn storage_set(
     module_id: &str,
     key: &str,
     value: Value,
+    options: StorageSetOptions,
 ) -> Result<(), String> {
-    host.storage.set(key, value.clone())?;
+    host.storage.set(key, value.clone(), options)?;
     super::storage_event::publish_storage_changed(&host.nats, module_id, key, &value);
     Ok(())
+}
+
+/// Read the optional third argument of `ctx.storage.set`.
+///
+/// Lives here rather than in each adapter so the two engines cannot disagree
+/// about what a module wrote. Both marshal their own value type to
+/// `serde_json::Value` first, exactly as they already do for the stored value.
+///
+/// Anything unrecognised falls back to the default rather than erroring. This
+/// is a hint about how to treat a value, not a request for an effect: failing
+/// a module's storage write mid-stream over a malformed hint trades a small
+/// mistake for a large one, and the default is the direction that loses no
+/// data.
+pub fn parse_storage_set_options(options: Option<&Value>) -> StorageSetOptions {
+    let Some(Value::Object(map)) = options else {
+        return StorageSetOptions::default();
+    };
+    StorageSetOptions {
+        clear_on_session_end: map
+            .get("clearOnSessionEnd")
+            .and_then(Value::as_bool)
+            .unwrap_or_default(),
+    }
 }
 
 /// `ctx.resources.create(kind, instanceId, displayName?)`: call the
@@ -144,8 +168,48 @@ mod tests {
         let host = noop_host_context();
         // module_id empty is the "not tied to a module" case
         // (`publish_storage_changed` no-ops on it) — must not error.
-        storage_set(&host, "", "key", serde_json::json!("value"))
-            .expect("storage_set should succeed");
+        storage_set(
+            &host,
+            "",
+            "key",
+            serde_json::json!("value"),
+            StorageSetOptions::default(),
+        )
+        .expect("storage_set should succeed");
+    }
+
+    #[test]
+    fn storage_set_options_default_to_durable() {
+        assert_eq!(
+            parse_storage_set_options(None),
+            StorageSetOptions::default()
+        );
+        assert!(!parse_storage_set_options(None).clear_on_session_end);
+    }
+
+    #[test]
+    fn storage_set_options_read_the_session_flag() {
+        let opts = serde_json::json!({ "clearOnSessionEnd": true });
+        assert!(parse_storage_set_options(Some(&opts)).clear_on_session_end);
+    }
+
+    // A hint the engine cannot read must not fail the write, and must not
+    // silently mark a key ephemeral either: durable is the direction that
+    // loses no data.
+    #[test]
+    fn storage_set_options_ignore_unusable_values() {
+        for raw in [
+            serde_json::json!({ "clearOnSessionEnd": "true" }),
+            serde_json::json!({ "clearOnSessionEnd": 1 }),
+            serde_json::json!({ "unknownOption": true }),
+            serde_json::json!("not an object"),
+            serde_json::json!(null),
+        ] {
+            assert!(
+                !parse_storage_set_options(Some(&raw)).clear_on_session_end,
+                "unusable option {raw} should leave the key durable"
+            );
+        }
     }
 
     #[test]

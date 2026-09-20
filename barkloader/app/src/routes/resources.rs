@@ -18,16 +18,21 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use actix_web::web::{Bytes, Data, Json, Path, ServiceConfig};
-use actix_web::{HttpResponse, delete, post, put};
-use lib_repository::{CreateFileRequest, Repository, UploadEndpoint, UploadRequest};
+use actix_web::error::PayloadError;
+use actix_web::http::header;
+use actix_web::web::{Bytes, Data, Json, Path, Payload, ServiceConfig};
+use actix_web::{HttpRequest, HttpResponse, delete, post, put};
+use futures_util::{Stream, StreamExt};
+use lib_repository::{
+    CreateFileRequest, Repository, RepositoryImpl, UploadEndpoint, UploadRequest,
+};
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
 use crate::callback::{send_processing_failure_callback, send_processing_success_callback};
 use crate::services::thumbnail::{self, ThumbnailOutcome};
 use crate::services::upload_token::{self, TokenError};
-use crate::types::AppContext;
+use crate::types::{AppContext, SharedRepository};
 
 /// Upload grants are capabilities to write into the store, so they are
 /// short-lived by default and hard-capped regardless of what the caller
@@ -184,12 +189,63 @@ async fn upload_url_handler(ctx: Data<AppContext>, body: Json<UploadUrlRequest>)
 /// Accept the bytes for a token-guarded upload. Only reached on the
 /// file backend; the token names the key, so the request body is the
 /// only thing the client controls here.
+///
+/// The body is read as a stream rather than through the `Bytes`
+/// extractor, whose default 256 KiB limit would refuse most media long
+/// before `MAX_PROXIED_UPLOAD_BYTES` applied.
 #[put("/assets/upload/{token}")]
-async fn upload_handler(ctx: Data<AppContext>, path: Path<String>, body: Bytes) -> HttpResponse {
+async fn upload_handler(
+    repository: Data<SharedRepository>,
+    request: HttpRequest,
+    path: Path<String>,
+    payload: Payload,
+) -> HttpResponse {
     let token = path.into_inner();
-    let secret = upload_secret();
+    let declared_content_type = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok());
+    let declared_length = request
+        .headers()
+        .get(header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok());
+    accept_upload(
+        &repository.current(),
+        &upload_secret(),
+        &token,
+        declared_content_type,
+        declared_length,
+        payload,
+        unix_now(),
+    )
+    .await
+}
 
-    let grant = match upload_token::verify(&secret, &token, unix_now()) {
+/// Everything `upload_handler` decides, with the secret, clock, and body
+/// passed in so it can be exercised without a running app.
+///
+/// Checks run cheapest first and all of them before the body is read, so
+/// a request that was never going to be stored is turned away without
+/// its bytes crossing the wire.
+///
+/// A grant is honoured once: its key must not already hold an object.
+/// That makes a leaked or replayed upload URL unable to overwrite a
+/// resource after it has landed, without keeping a table of spent
+/// tokens -- the stored object is the record that the grant was used.
+async fn accept_upload<S>(
+    repository: &RepositoryImpl,
+    secret: &str,
+    token: &str,
+    declared_content_type: Option<&str>,
+    declared_length: Option<u64>,
+    mut body: S,
+    now: i64,
+) -> HttpResponse
+where
+    S: Stream<Item = Result<Bytes, PayloadError>> + Unpin,
+{
+    let grant = match upload_token::verify(secret, token, now) {
         Ok(grant) => grant,
         Err(TokenError::Expired) => {
             return HttpResponse::Gone().json(error_body("upload grant expired"));
@@ -206,10 +262,57 @@ async fn upload_handler(ctx: Data<AppContext>, path: Path<String>, body: Bytes) 
         error!("Upload token named a non-user key: {}", grant.key);
         return HttpResponse::Forbidden().json(error_body("invalid upload grant"));
     }
-    if body.len() > MAX_PROXIED_UPLOAD_BYTES {
+
+    // Same contract as an S3 presigned PUT, which signs the content type:
+    // the bytes must be sent as what the grant was issued for.
+    if let Some(granted) = grant.content_type.as_deref() {
+        let matches = declared_content_type
+            .is_some_and(|declared| declared.trim().eq_ignore_ascii_case(granted.trim()));
+        if !matches {
+            return HttpResponse::Forbidden()
+                .json(error_body("content type does not match upload grant"));
+        }
+    }
+
+    if declared_length.is_some_and(|length| length > MAX_PROXIED_UPLOAD_BYTES as u64) {
         return HttpResponse::PayloadTooLarge().json(error_body("upload exceeds size limit"));
     }
-    if body.is_empty() {
+
+    match repository.exists(&grant.key).await {
+        Ok(false) => {}
+        Ok(true) => {
+            return HttpResponse::Conflict().json(error_body("upload grant already used"));
+        }
+        Err(err) => {
+            error!(
+                "Failed to check for an existing upload at {}: {}",
+                grant.key, err
+            );
+            return HttpResponse::InternalServerError().json(error_body("failed to store upload"));
+        }
+    }
+
+    let mut content = Vec::with_capacity(
+        declared_length
+            .map(|length| length as usize)
+            .unwrap_or(0)
+            .min(MAX_PROXIED_UPLOAD_BYTES),
+    );
+    while let Some(chunk) = body.next().await {
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(err) => {
+                warn!("Upload body for {} ended with an error: {}", grant.key, err);
+                return HttpResponse::BadRequest()
+                    .json(error_body("upload body could not be read"));
+            }
+        };
+        if content.len() + chunk.len() > MAX_PROXIED_UPLOAD_BYTES {
+            return HttpResponse::PayloadTooLarge().json(error_body("upload exceeds size limit"));
+        }
+        content.extend_from_slice(&chunk);
+    }
+    if content.is_empty() {
         return HttpResponse::BadRequest().json(error_body("upload body was empty"));
     }
 
@@ -217,13 +320,13 @@ async fn upload_handler(ctx: Data<AppContext>, path: Path<String>, body: Bytes) 
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_string());
+    let size = content.len();
 
-    let repository = ctx.repository.current();
     let mut failed = Vec::new();
     let wrote = repository
         .create(
             [CreateFileRequest {
-                content: Some(body.to_vec()),
+                content: Some(content),
                 extension,
                 file_name: grant.key.clone(),
             }],
@@ -236,11 +339,11 @@ async fn upload_handler(ctx: Data<AppContext>, path: Path<String>, body: Bytes) 
         return HttpResponse::InternalServerError().json(error_body("failed to store upload"));
     }
 
-    info!("Stored {} bytes at {}", body.len(), grant.key);
+    info!("Stored {} bytes at {}", size, grant.key);
     HttpResponse::Ok().json(serde_json::json!({
         "success": true,
         "repositoryKey": grant.key,
-        "size": body.len(),
+        "size": size,
     }))
 }
 
@@ -484,6 +587,276 @@ mod tests {
         let key = user_resource_key("app-1", "res-1", "../../etc/passwd").unwrap();
         assert_eq!(key, "user/app-1/res-1/etcpasswd");
         assert!(!key.contains(".."));
+    }
+
+    mod upload {
+        use super::super::*;
+        use actix_web::App;
+        use actix_web::test as actix_test;
+        use futures_util::stream;
+        use lib_repository::{FileRepository, FileRepositoryConfig};
+
+        const SECRET: &str = "upload-test-secret";
+        const NOW: i64 = 1_700_000_000;
+        const KEY: &str = "user/app-1/res-1/clip.png";
+
+        fn file_repo(root: &std::path::Path) -> RepositoryImpl {
+            let repo = FileRepository::new(FileRepositoryConfig {
+                destination: root.to_path_buf(),
+            });
+            repo.setup().expect("repo setup");
+            RepositoryImpl::File(repo)
+        }
+
+        fn token_for(key: &str, content_type: Option<&str>) -> String {
+            upload_token::issue(SECRET, key, content_type, Duration::from_secs(300), NOW)
+                .expect("issue token")
+                .0
+        }
+
+        fn body_of(
+            chunks: &[&[u8]],
+        ) -> impl Stream<Item = Result<Bytes, PayloadError>> + Unpin + use<> {
+            let chunks: Vec<Result<Bytes, PayloadError>> = chunks
+                .iter()
+                .map(|chunk| Ok(Bytes::copy_from_slice(chunk)))
+                .collect();
+            stream::iter(chunks)
+        }
+
+        /// A body that fails the test if anything reads it: for checks
+        /// that must refuse before the bytes are pulled.
+        fn unread_body() -> impl Stream<Item = Result<Bytes, PayloadError>> + Unpin {
+            stream::poll_fn(|_| panic!("the body must not be read"))
+        }
+
+        async fn status_of(response: HttpResponse) -> u16 {
+            response.status().as_u16()
+        }
+
+        #[actix_web::test]
+        async fn valid_grant_writes_the_bytes_at_the_key_under_the_storage_root() {
+            let root = tempfile::tempdir().expect("tempdir");
+            let repo = file_repo(root.path());
+
+            let response = accept_upload(
+                &repo,
+                SECRET,
+                &token_for(KEY, Some("image/png")),
+                Some("image/png"),
+                Some(10),
+                body_of(&[b"\x89PNG", b"-bytes"]),
+                NOW,
+            )
+            .await;
+
+            assert_eq!(status_of(response).await, 200);
+            let on_disk = std::fs::read(root.path().join(KEY)).expect("upload on disk");
+            assert_eq!(on_disk, b"\x89PNG-bytes");
+            let leftovers: Vec<_> = std::fs::read_dir(root.path().join("user/app-1/res-1"))
+                .expect("resource dir")
+                .map(|entry| entry.expect("dir entry").file_name())
+                .collect();
+            assert_eq!(leftovers, vec![std::ffi::OsString::from("clip.png")]);
+        }
+
+        #[actix_web::test]
+        async fn a_grant_is_good_for_one_upload() {
+            let root = tempfile::tempdir().expect("tempdir");
+            let repo = file_repo(root.path());
+            let token = token_for(KEY, Some("image/png"));
+
+            let first = accept_upload(
+                &repo,
+                SECRET,
+                &token,
+                Some("image/png"),
+                None,
+                body_of(&[b"original"]),
+                NOW,
+            )
+            .await;
+            assert_eq!(status_of(first).await, 200);
+
+            let replay = accept_upload(
+                &repo,
+                SECRET,
+                &token,
+                Some("image/png"),
+                None,
+                unread_body(),
+                NOW + 1,
+            )
+            .await;
+            assert_eq!(status_of(replay).await, 409);
+            assert_eq!(std::fs::read(root.path().join(KEY)).unwrap(), b"original");
+        }
+
+        #[actix_web::test]
+        async fn expired_grant_is_refused_and_writes_nothing() {
+            let root = tempfile::tempdir().expect("tempdir");
+            let repo = file_repo(root.path());
+
+            let response = accept_upload(
+                &repo,
+                SECRET,
+                &token_for(KEY, Some("image/png")),
+                Some("image/png"),
+                None,
+                unread_body(),
+                NOW + 300,
+            )
+            .await;
+
+            assert_eq!(status_of(response).await, 410);
+            assert!(!root.path().join(KEY).exists());
+        }
+
+        #[actix_web::test]
+        async fn forged_grant_is_refused() {
+            let root = tempfile::tempdir().expect("tempdir");
+            let repo = file_repo(root.path());
+            let token =
+                upload_token::issue("another-secret", KEY, None, Duration::from_secs(300), NOW)
+                    .expect("issue token")
+                    .0;
+
+            let response =
+                accept_upload(&repo, SECRET, &token, None, None, unread_body(), NOW).await;
+
+            assert_eq!(status_of(response).await, 403);
+            assert!(!root.path().join(KEY).exists());
+        }
+
+        #[actix_web::test]
+        async fn grant_for_a_non_user_key_is_refused() {
+            let root = tempfile::tempdir().expect("tempdir");
+            let repo = file_repo(root.path());
+
+            let response = accept_upload(
+                &repo,
+                SECRET,
+                &token_for("modules/m1/index.js", None),
+                None,
+                None,
+                unread_body(),
+                NOW,
+            )
+            .await;
+
+            assert_eq!(status_of(response).await, 403);
+        }
+
+        #[actix_web::test]
+        async fn bytes_must_be_sent_as_the_granted_content_type() {
+            let root = tempfile::tempdir().expect("tempdir");
+            let repo = file_repo(root.path());
+            let token = token_for(KEY, Some("image/png"));
+
+            for declared in [Some("text/html"), None] {
+                let response =
+                    accept_upload(&repo, SECRET, &token, declared, None, unread_body(), NOW).await;
+                assert_eq!(status_of(response).await, 403, "declared {declared:?}");
+            }
+
+            // Media types are case-insensitive.
+            let response = accept_upload(
+                &repo,
+                SECRET,
+                &token,
+                Some("Image/PNG"),
+                None,
+                body_of(&[b"x"]),
+                NOW,
+            )
+            .await;
+            assert_eq!(status_of(response).await, 200);
+        }
+
+        #[actix_web::test]
+        async fn declared_oversize_is_refused_before_reading() {
+            let root = tempfile::tempdir().expect("tempdir");
+            let repo = file_repo(root.path());
+
+            let response = accept_upload(
+                &repo,
+                SECRET,
+                &token_for(KEY, None),
+                None,
+                Some(MAX_PROXIED_UPLOAD_BYTES as u64 + 1),
+                unread_body(),
+                NOW,
+            )
+            .await;
+
+            assert_eq!(status_of(response).await, 413);
+        }
+
+        #[actix_web::test]
+        async fn empty_body_is_refused() {
+            let root = tempfile::tempdir().expect("tempdir");
+            let repo = file_repo(root.path());
+
+            let response = accept_upload(
+                &repo,
+                SECRET,
+                &token_for(KEY, None),
+                None,
+                Some(0),
+                body_of(&[]),
+                NOW,
+            )
+            .await;
+
+            assert_eq!(status_of(response).await, 400);
+            assert!(!root.path().join(KEY).exists());
+        }
+
+        /// Through the real route, so the extractor in front of
+        /// `accept_upload` is covered too: a body past actix's 256 KiB
+        /// default payload limit must still be stored.
+        #[actix_web::test]
+        async fn route_stores_a_body_larger_than_the_default_payload_limit() {
+            // SAFETY: test-only env mutation. No other test reads this
+            // variable, and the value is fixed.
+            unsafe {
+                std::env::set_var("WOOFX3_BARKLOADER_KEY", SECRET);
+            }
+            let secret = upload_secret();
+            assert!(
+                !secret.is_empty(),
+                "upload secret must resolve for this test"
+            );
+
+            let root = tempfile::tempdir().expect("tempdir");
+            let app = actix_test::init_service(
+                App::new()
+                    .app_data(Data::new(SharedRepository::new(file_repo(root.path()))))
+                    .service(upload_handler),
+            )
+            .await;
+
+            let (token, _) = upload_token::issue(
+                &secret,
+                "user/app-1/res-2/clip.mp4",
+                Some("video/mp4"),
+                Duration::from_secs(300),
+                unix_now(),
+            )
+            .expect("issue token");
+            let bytes = vec![7u8; 1024 * 1024];
+            let request = actix_test::TestRequest::put()
+                .uri(&format!("/assets/upload/{token}"))
+                .insert_header((header::CONTENT_TYPE, "video/mp4"))
+                .set_payload(bytes.clone())
+                .to_request();
+            let response = actix_test::call_service(&app, request).await;
+
+            assert_eq!(response.status(), 200);
+            let stored = std::fs::read(root.path().join("user/app-1/res-2/clip.mp4"))
+                .expect("upload on disk");
+            assert_eq!(stored.len(), bytes.len());
+        }
     }
 
     #[test]

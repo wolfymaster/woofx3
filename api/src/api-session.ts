@@ -1,6 +1,6 @@
-import { RpcTarget } from "capnweb";
 import type { Woofx3EngineApi } from "@woofx3/api";
-import { Api } from "./api";
+import { RpcTarget } from "capnweb";
+import type { Api } from "./api";
 
 /**
  * Per-connection session wrapper around the shared Api instance.
@@ -154,6 +154,7 @@ export const RPC_METHODS = [
   "triggerEvent",
   "handleInboundWebhook",
   "triggerWorkflowByName",
+  "replayWorkflowRun",
   "getDashboardStats",
   "replayAlert",
   "skipCurrentAlert",
@@ -170,6 +171,7 @@ export const RPC_METHODS = [
   "getWorkflowHistory",
   "cancelWorkflow",
   "subscribeTriggerChanges",
+  "subscribeStreamEvents",
   "getUserProfile",
   "awardTreatsToUser",
   "simulateTwitchEvent",
