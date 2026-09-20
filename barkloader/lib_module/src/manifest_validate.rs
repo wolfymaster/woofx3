@@ -279,6 +279,7 @@ pub fn validate_with_provenance(
     validate_resource_kinds(&manifest.resources)?;
     validate_data_shapes(&manifest.triggers, &manifest.actions)?;
     validate_field_lists(manifest)?;
+    validate_trigger_sentences(&manifest.triggers)?;
 
     // Pass 2: resolve references for kinds that have them.
     let triggers = entries_to_resolved(&triggers_table, |e| ResolvedTrigger {
@@ -386,6 +387,11 @@ fn validate_trigger_transports(
         if trigger.emits.is_some() {
             return Err(anyhow!(
                 "{label}: a webhook trigger cannot declare `emits`; declare it on the eventbus trigger its handler returns"
+            ));
+        }
+        if trigger.sentence.is_some() {
+            return Err(anyhow!(
+                "{label}: a webhook trigger cannot declare `sentence`; nothing configures it"
             ));
         }
         if trigger.allow_variants {
@@ -957,11 +963,95 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
                 &format!("{context} field #{i} ({id}): `layout` needs a `surface`"),
             )?;
         }
+        // An empty `anyText` is meaningful - it drops the part of the sentence -
+        // but whitespace alone is neither that nor words, so it is a slip.
+        if let Some(any_text) = &field.any_text
+            && !any_text.is_empty()
+            && any_text.trim().is_empty()
+        {
+            return Err(anyhow!(
+                "{context} field #{i} ({id}): `anyText` must be words or exactly \"\" to drop the phrase"
+            ));
+        }
+        if let Some(missing_text) = &field.missing_text
+            && missing_text.trim().is_empty()
+        {
+            return Err(anyhow!(
+                "{context} field #{i} ({id}): `missingText` must be non-empty"
+            ));
+        }
         if !seen.insert(id) {
             return Err(anyhow!("{context}: duplicate field `id` {id:?}"));
         }
     }
     Ok(())
+}
+
+/// Validate every declared trigger `sentence` against its trigger's `schema`.
+///
+/// The UI renders the sentence by substituting each `{fieldId}`, so anything
+/// it cannot substitute would show a raw brace to the end user. Rejected at
+/// install, naming the trigger:
+///
+///   - a sentence that is empty or only whitespace
+///   - an unbalanced `{` or `}`, or a `{` inside a placeholder - there is no
+///     escape syntax, so literal braces are not expressible
+///   - a placeholder that is not the `id` of a field in the trigger's `schema`
+///
+/// Runs after `validate_field_lists`, so field ids are already known to be
+/// non-empty and unique.
+fn validate_trigger_sentences(triggers: &[ManifestTrigger]) -> Result<()> {
+    for (i, t) in triggers.iter().enumerate() {
+        let Some(sentence) = &t.sentence else {
+            continue;
+        };
+        let label = format!("trigger #{i} ({}): `sentence`", t.id);
+        if sentence.trim().is_empty() {
+            return Err(anyhow!("{label} must be non-empty"));
+        }
+        let field_ids: HashSet<&str> = t.schema.iter().flatten().map(|f| f.id.trim()).collect();
+        for placeholder in sentence_placeholders(sentence).map_err(|e| anyhow!("{label}: {e}"))? {
+            if !field_ids.contains(placeholder) {
+                return Err(anyhow!(
+                    "{label}: placeholder {{{placeholder}}} names no field in this trigger's `schema`"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The `{placeholder}` names in a sentence template, in order, or why the
+/// template's braces are malformed.
+fn sentence_placeholders(sentence: &str) -> Result<Vec<&str>, String> {
+    let mut placeholders = Vec::new();
+    let mut open: Option<usize> = None;
+    for (at, c) in sentence.char_indices() {
+        match (c, open) {
+            ('{', Some(_)) => {
+                return Err(format!("nested `{{` at byte {at}"));
+            }
+            ('{', None) => {
+                open = Some(at);
+            }
+            ('}', None) => {
+                return Err(format!("unmatched `}}` at byte {at}"));
+            }
+            ('}', Some(start)) => {
+                let name = &sentence[start + 1..at];
+                if name.is_empty() {
+                    return Err(format!("empty placeholder `{{}}` at byte {start}"));
+                }
+                placeholders.push(name);
+                open = None;
+            }
+            _ => {}
+        }
+    }
+    if let Some(start) = open {
+        return Err(format!("unclosed `{{` at byte {start}"));
+    }
+    Ok(placeholders)
 }
 
 fn validate_settings(settings: &[ManifestSetting]) -> Result<()> {
@@ -1599,6 +1689,7 @@ mod tests {
                 "`emits`",
                 r#""emits": { "fields": [{ "path": "a", "type": "string" }] }"#,
             ),
+            ("`sentence`", r#""sentence": "An order arrives""#),
             ("`allowVariants`", r#""allowVariants": true"#),
         ] {
             let trigger = format!(
@@ -2104,6 +2195,115 @@ mod tests {
                 "emits": { "fields": [{ "path": "bits" }] } }]
         }"#;
         serde_json::from_str::<ModuleManifest>(json).expect_err("must not parse");
+    }
+
+    // ---------------------------------------------------------------
+    // Trigger sentences and the per-field wording they render
+    // ---------------------------------------------------------------
+
+    fn trigger_with_sentence(sentence: &str) -> ModuleManifest {
+        minimal(&format!(
+            r#",
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus",
+                "sentence": {sentence},
+                "schema": [
+                    {{ "id": "reward", "label": "Reward", "type": "text" }},
+                    {{ "id": "tier", "label": "Tier", "type": "text" }}
+                ] }}]"#
+        ))
+    }
+
+    fn sentence_rejection(sentence: &str) -> String {
+        let msg = bad_err(&trigger_with_sentence(sentence));
+        assert!(msg.contains("trigger #0 (t1)"), "names the trigger: {msg}");
+        assert!(msg.contains("`sentence`"), "names the field: {msg}");
+        msg
+    }
+
+    #[test]
+    fn accepts_a_sentence_naming_declared_fields() {
+        validate(&trigger_with_sentence(
+            r#""{reward} is redeemed at {tier}""#,
+        ))
+        .expect("validate ok");
+    }
+
+    #[test]
+    fn accepts_a_sentence_with_no_placeholders() {
+        validate(&trigger_with_sentence(r#""Someone follows""#)).expect("validate ok");
+    }
+
+    #[test]
+    fn rejects_an_empty_sentence() {
+        let msg = sentence_rejection(r#""   ""#);
+        assert!(msg.contains("non-empty"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_unbalanced_or_nested_braces() {
+        for (sentence, reason) in [
+            (r#""{reward is redeemed""#, "unclosed"),
+            (r#""reward} is redeemed""#, "unmatched"),
+            (r#""{re{ward}} is redeemed""#, "nested"),
+            (r#""{} is redeemed""#, "empty placeholder"),
+        ] {
+            let msg = sentence_rejection(sentence);
+            assert!(msg.contains(reason), "{sentence}: {msg}");
+        }
+    }
+
+    #[test]
+    fn rejects_a_placeholder_naming_no_field() {
+        let msg = sentence_rejection(r#""{bits} are cheered""#);
+        assert!(msg.contains("{bits}"), "names the placeholder: {msg}");
+    }
+
+    #[test]
+    fn rejects_a_placeholder_on_a_trigger_with_no_schema() {
+        let m = minimal(
+            r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus",
+                "sentence": "{reward} is redeemed" }]"#,
+        );
+        let msg = bad_err(&m);
+        assert!(msg.contains("trigger #0 (t1)"), "{msg}");
+        assert!(msg.contains("{reward}"), "{msg}");
+    }
+
+    fn trigger_field(wording: &str) -> ModuleManifest {
+        minimal(&format!(
+            r#",
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus",
+                "schema": [{{ "id": "tier", "label": "Tier", "type": "text", {wording} }}] }}]"#
+        ))
+    }
+
+    #[test]
+    fn accepts_field_wording() {
+        validate(&trigger_field(
+            r#""anyText": "any tier", "missingText": "a tier""#,
+        ))
+        .expect("validate ok");
+    }
+
+    // An empty anyText is how an author says "leave this part out".
+    #[test]
+    fn accepts_an_empty_any_text() {
+        validate(&trigger_field(r#""anyText": """#)).expect("validate ok");
+    }
+
+    #[test]
+    fn rejects_a_whitespace_any_text() {
+        let msg = bad_err(&trigger_field(r#""anyText": "  ""#));
+        assert!(msg.contains("trigger #0 (t1)"), "{msg}");
+        assert!(msg.contains("`anyText`"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_an_empty_missing_text() {
+        let msg = bad_err(&trigger_field(r#""missingText": " ""#));
+        assert!(msg.contains("trigger #0 (t1)"), "{msg}");
+        assert!(msg.contains("`missingText`"), "{msg}");
     }
 
     // ---------------------------------------------------------------

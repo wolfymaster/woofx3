@@ -39,6 +39,15 @@ describe("getTriggers", () => {
     ]);
     expect(trigger).not.toHaveProperty("projectionKey");
   });
+
+  test("carries a declared sentence and drops the empty column default", async () => {
+    const [declared, undeclared] = await getTriggers([
+      { id: "t3", createdByType: "MODULE", createdByRef: "m", manifestId: "sub", sentence: "Someone subs at {tier}" },
+      { id: "t4", createdByType: "MODULE", createdByRef: "m", manifestId: "cheer", sentence: "" },
+    ]);
+    expect(declared?.sentence).toBe("Someone subs at {tier}");
+    expect(undeclared).not.toHaveProperty("sentence");
+  });
 });
 
 describe("triggerProjectionKey", () => {

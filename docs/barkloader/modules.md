@@ -208,9 +208,10 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `category` | string | no | **Legacy.** UX / registry grouping (e.g. `platform.twitch`). Still accepted; folded into a single-element `taxonomy` at parse time when `taxonomy` is unset, otherwise falls back to `type`. New manifests should use `taxonomy` instead. |
 | `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this trigger to a workflow; see [Field declarations](#field-declarations). |
 | `emits` | object | no | `DataShape` naming what `trigger.data` carries when this trigger fires; see [Emits and returns](#emits-and-returns). Forwarded to the DB as `emits`. |
+| `sentence` | string | no | One-line English template the UI renders for a configured instance of this trigger, e.g. `"{reward} is redeemed"`; see [Trigger sentences](#trigger-sentences). Forwarded to the DB as `sentence`. |
 | `allowVariants` | boolean | no | When true, the UI lets a user create multiple bound instances of this trigger (each with its own `schema` values). Used for trigger classes like cheer / subscribe that fan out per tier or threshold. |
 
-On install, when `databaseProxyUrl` is set in `.woofx3.json`, each trigger is registered via Twirp `module.ModuleService/RegisterTrigger`. The trigger row's `event` column carries the NATS subject from the manifest's `event` field; `manifest_id` carries the manifest's `id`; `config_schema` is the JSON-encoded `schema`; `emits` is the JSON-encoded `emits` (`{}` when the manifest declares none). `taxonomy` is resolved in priority order: a non-empty `taxonomy` array as given, else a non-empty `category` wrapped in a single-element array, else the `type` field — see [Taxonomy](#taxonomy).
+On install, when `databaseProxyUrl` is set in `.woofx3.json`, each trigger is registered via Twirp `module.ModuleService/RegisterTrigger`. The trigger row's `event` column carries the NATS subject from the manifest's `event` field; `manifest_id` carries the manifest's `id`; `config_schema` is the JSON-encoded `schema`; `emits` is the JSON-encoded `emits` (`{}` when the manifest declares none); `sentence` is the manifest's `sentence` (`""` when it declares none). `taxonomy` is resolved in priority order: a non-empty `taxonomy` array as given, else a non-empty `category` wrapped in a single-element array, else the `type` field — see [Taxonomy](#taxonomy).
 
 #### Webhook triggers
 
@@ -221,7 +222,7 @@ and names the function that handles requests to it:
 { "id": "orders", "name": "Store webhook", "type": "webhook", "handler": "handle_order" }
 ```
 
-- **Nothing binds to it.** `event`, `schema`, `emits` and `allowVariants` are rejected on a
+- **Nothing binds to it.** `event`, `schema`, `emits`, `sentence` and `allowVariants` are rejected on a
   webhook trigger, and no workflow or widget may reference it or any `webhook.*` event.
   Barkloader stores its `event` as the reserved `webhook.{moduleId}.{triggerId}`, which
   nothing publishes.
@@ -288,6 +289,8 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `description` | string | no | Short prose rendered as muted helper text below the input. Always visible. |
 | `hint` | string | no | Longer prose rendered inside the field's info-icon popover. |
 | `examplePayload` | string | no | JSON-encoded **example** of the event payload this field reads from, rendered with syntax highlighting in the info-icon popover. An illustration, not a declaration: nothing reads its keys. |
+| `anyText` | string | no | Trigger `schema` only. The words a [trigger sentence](#trigger-sentences) shows in place of this field when it is set to "any". `""` drops that part of the sentence; whitespace alone is rejected. |
+| `missingText` | string | no | Trigger `schema` only. The words a [trigger sentence](#trigger-sentences) shows in place of this field while it is required and has no value yet. Must be non-empty when present. |
 
 The info icon next to a field's label appears if and only if `hint` or `examplePayload` is present. `description` renders independently below the input.
 
@@ -463,6 +466,42 @@ Deliberately a flat list of path strings rather than full JSON Schema: it matche
 ```
 
 Not to be confused with the `examplePayload` property on an individual **config field**: that is an illustration rendered in that field's info popover, scoped to explaining one input, and nothing reads its keys. `emits` is the machine-readable declaration for the whole payload, and is what feeds variable autocomplete. Declaring both is reasonable — one is for a human reading the form, the other for the variable picker.
+
+#### Trigger sentences
+
+A trigger's `sentence` is how the UI describes one configured instance of it in plain English. Each `{fieldId}` placeholder names a field in the trigger's `schema`, and the UI substitutes, in order of preference: the value the user configured, the field's `anyText` when it is set to "any", or the field's `missingText` (rendered as a warning) while a required field has no value yet.
+
+```json
+{
+  "id": "channel_subscribe",
+  "name": "Subscribe",
+  "type": "eventbus",
+  "event": "channel.subscribe",
+  "sentence": "Someone subs at {tier}",
+  "schema": [
+    {
+      "id": "tier",
+      "label": "Tier",
+      "type": "select",
+      "required": true,
+      "options": [{ "value": "1000", "label": "Tier 1" }, { "value": "2000", "label": "Tier 2" }],
+      "anyText": "any tier",
+      "missingText": "a tier you have not picked"
+    }
+  ]
+}
+```
+
+A sentence is rejected at install, naming the trigger, when:
+
+| Rule | Why |
+|------|-----|
+| it is empty or only whitespace | An empty sentence renders as nothing; omit the key instead. |
+| a brace is unbalanced, nested, or encloses nothing (`{}`) | There is no escape syntax, so a stray brace would reach the user verbatim. |
+| a placeholder is not the `id` of a field in the trigger's `schema` | Nothing could be substituted for it. Matching is exact: `{ tier }` does not name `tier`. |
+| the trigger is a `webhook` trigger | Nothing configures it, so there is nothing to describe. |
+
+Absent means the author declared none, and the UI falls back to the trigger's `name`.
 
 #### An action declares what it `returns`
 

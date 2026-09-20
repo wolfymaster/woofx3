@@ -542,6 +542,17 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 			taskExec.Status = types.TaskStatusRunning
 		}
 
+		// Checked before any guard or condition is evaluated: a disabled task
+		// reads nothing, so an expression that would fail cannot fail the run.
+		if taskDef.Disabled {
+			if taskDef.Type == "condition" {
+				e.settleCondition(execution, taskDef, taskExec, i, false, true, taskExports, skippedTasks)
+				continue
+			}
+			e.skipDisabledTask(execution, taskDef, taskExec, i)
+			continue
+		}
+
 		// For non-condition tasks, evaluate conditions as guards (skip if false)
 		// Condition tasks use conditions for branching (OnTrue/OnFalse), not skipping
 		if taskDef.Type != "condition" && (taskDef.Condition != nil || len(taskDef.Conditions) > 0) {
@@ -595,34 +606,7 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 				return
 			}
 
-			branchTasks := condTask.GetBranchTasks(taskDef, result)
-			skippedBranch := condTask.GetBranchTasks(taskDef, !result)
-
-			for _, skipID := range skippedBranch {
-				skippedTasks[skipID] = true
-			}
-
-			taskExec.Status = types.TaskStatusSuccess
-			now := time.Now()
-			taskExec.CompletedAt = &now
-			taskExec.Result = &types.TaskResult{
-				Status: types.TaskStatusSuccess,
-				Data: map[string]any{
-					"result":        result,
-					"branchTaken":   branchTasks,
-					"branchSkipped": skippedBranch,
-				},
-				Exports: map[string]any{
-					"result": result,
-				},
-			}
-			taskExports[taskDef.ID] = taskExec.Result.Exports
-			// The recorded result is what a resume re-derives this condition's
-			// skipped branch from; without it a resumed run could take a branch
-			// the original did not.
-			e.recordStep(execution, taskDef.ID, i, nil, taskExec)
-
-			e.logger.Info("Condition evaluated", "workflow", execution.WorkflowID, "task", taskDef.ID, "result", result, "branch", branchTasks)
+			e.settleCondition(execution, taskDef, taskExec, i, result, false, taskExports, skippedTasks)
 			continue
 		}
 
@@ -790,6 +774,83 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 	e.checkSubWorkflowCompletion(execution.ID)
 }
 
+// settleCondition completes a condition task with `result`: it excludes the
+// branch not taken, exports the result for `${id.result}` guards, and records
+// the step.
+//
+// A disabled condition settles here as false without evaluating anything, so
+// everything downstream of it -- the branch skip, guards, the recorded step a
+// resume re-derives the branch from -- behaves exactly as for a condition that
+// evaluated false. Only the recorded data says which it was.
+func (e *Engine[TServices]) settleCondition(
+	execution *types.WorkflowExecution,
+	taskDef *types.TaskDefinition,
+	taskExec *types.TaskExecution,
+	index int,
+	result bool,
+	disabled bool,
+	taskExports map[string]map[string]any,
+	skippedTasks map[string]bool,
+) {
+	condTask := &tasks.ConditionTask{}
+	branchTasks := condTask.GetBranchTasks(taskDef, result)
+	skippedBranch := condTask.GetBranchTasks(taskDef, !result)
+
+	for _, skipID := range skippedBranch {
+		skippedTasks[skipID] = true
+	}
+
+	data := map[string]any{
+		"result":        result,
+		"branchTaken":   branchTasks,
+		"branchSkipped": skippedBranch,
+	}
+	if disabled {
+		data["disabled"] = true
+	}
+
+	taskExec.Status = types.TaskStatusSuccess
+	now := time.Now()
+	taskExec.CompletedAt = &now
+	taskExec.Result = &types.TaskResult{
+		Status: types.TaskStatusSuccess,
+		Data:   data,
+		Exports: map[string]any{
+			"result": result,
+		},
+	}
+	taskExports[taskDef.ID] = taskExec.Result.Exports
+	// The recorded result is what a resume re-derives this condition's
+	// skipped branch from; without it a resumed run could take a branch
+	// the original did not.
+	e.recordStep(execution, taskDef.ID, index, nil, taskExec)
+
+	e.logger.Info("Condition evaluated", "workflow", execution.WorkflowID, "task", taskDef.ID, "result", result, "disabled", disabled, "branch", branchTasks)
+}
+
+// skipDisabledTask completes a disabled non-condition task as skipped, with
+// the same outcome and record as a task whose guard evaluated false. Its guard
+// is not evaluated and it exports nothing.
+//
+// Like a branch skip, this does not propagate: a task that depends on a
+// disabled one still runs, and finds no exports from it.
+func (e *Engine[TServices]) skipDisabledTask(
+	execution *types.WorkflowExecution,
+	taskDef *types.TaskDefinition,
+	taskExec *types.TaskExecution,
+	index int,
+) {
+	now := time.Now()
+	taskExec.Status = types.TaskStatusSkipped
+	taskExec.CompletedAt = &now
+	taskExec.Result = &types.TaskResult{
+		Status: types.TaskStatusSkipped,
+		Data:   map[string]any{"skipped": true, "reason": "task disabled"},
+	}
+	e.recordStep(execution, taskDef.ID, index, nil, taskExec)
+	e.logger.Info("Task skipped (disabled)", "workflow", execution.WorkflowID, "task", taskDef.ID)
+}
+
 // maxConcurrentTasks is the cap on tasks running together in one run.
 func (e *Engine[TServices]) maxConcurrentTasks() int {
 	if e.maxConcurrency > 0 {
@@ -827,6 +888,10 @@ func (e *Engine[TServices]) executeConcurrentRun(
 		}
 		execution.Tasks[taskDef.ID] = taskExec
 
+		if taskDef.Disabled {
+			e.skipDisabledTask(execution, taskDef, taskExec, i)
+			continue
+		}
 		if taskDef.Condition == nil && len(taskDef.Conditions) == 0 {
 			toRun = append(toRun, taskDef)
 			continue

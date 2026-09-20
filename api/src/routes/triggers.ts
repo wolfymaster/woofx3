@@ -21,8 +21,10 @@ export function triggerProjectionKey(trigger: {
 export const triggersRoutes = routeModule({
   async getTriggers(createdByType?: string, createdByRef?: string): Promise<TriggerDefinition[]> {
     const rows = await this.db.listTriggers(createdByType, createdByRef);
-    // `handler` names a module function, which stays inside the engine.
-    return rows.map(({ handler: _handler, ...definition }) => {
+    // `handler` names a module function, which stays inside the engine. An
+    // empty `sentence` is the column default, not a declared template.
+    return rows.map(({ handler: _handler, sentence, ...rest }) => {
+      const definition = sentence ? { ...rest, sentence } : rest;
       const projectionKey = triggerProjectionKey(definition);
       return projectionKey ? { ...definition, projectionKey } : definition;
     });
