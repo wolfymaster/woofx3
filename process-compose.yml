@@ -19,7 +19,7 @@ processes:
     # log_location: logs/barkloader.log
 
   cloudflare:
-    command: cloudflared tunnel --url https://api.dev.woofx3.tv --http-host-header api.dev.woofx3.tv
+    command: cloudflared tunnel --url http://127.0.0.1:5050 --http-host-header api.dev.woofx3.tv
     disabled: true
 
   db:
