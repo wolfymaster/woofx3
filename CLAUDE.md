@@ -146,9 +146,10 @@ Write for senior engineers: **homogeneous** patterns, naming, and formatting acr
 
 - **Tiger Style** ([tigerstyle.dev](https://tigerstyle.dev/)): fail fast; use assertions and invariants so the program does not continue in an undesirable or inconsistent state.
 - **Explicit over implicit**: prefer clear names, types, and boundaries over magic, inference-only APIs, or hidden side effects.
-- **Comments**: the code is the documentation of *what*. A comment earns its place only by saying *why*, and only when the why cannot be recovered from reading the code. Prefer a better name, or a smaller function, over a comment explaining a worse one.
+- **Comments**: must make sense to someone who has only the repository — no access to the conversation, the task, the PR, or prior versions of the file. Describe what the code does and why it's shaped this way, never what changed. The code is the primary documentation of *what*, so a comment earns its place mostly by saying *why*, and only when the why cannot be recovered from reading the code. Prefer a better name, or a smaller function, over a comment explaining a worse one.
   - Keep: an invariant, a trade-off and what was traded away, a constraint imposed from outside, a choice that looks wrong until you know the reason.
-  - Cut: anything that restates the line below it; change narration (*"was X"*, *"renamed from Y"*, *"previously"*, *"now also"*); PR or issue numbers. Git and the tracker already hold that history, and unlike them a comment is never updated when the thing it describes moves on — so it rots in place and starts lying.
+  - Cut: anything that restates the line below it; change narration (*"was X"*, *"renamed from Y"*, *"previously"*, *"now also"*); PR or issue numbers. Change rationale goes in the commit message or PR description. Git and the tracker already hold that history, and unlike them a comment is never updated when the thing it describes moves on — so it rots in place and starts lying.
+  - Cross-file references are OK only for real coupling (*"must match X in Y"*).
   - A comment naming a field, value or file that no longer exists is worse than no comment: the reader searches for it, finds nothing, and trusts the rest less.
 - **Optimize for the reader**: clarity and straightforward flow beat cleverness.
 - **Block bodies everywhere**: use braces (or the language’s required block form) for **all** branches and loop bodies—no single-line `if`/`for`/`while` without braces where the grammar allows blocks.
