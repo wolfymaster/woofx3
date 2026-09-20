@@ -60,6 +60,9 @@ pub struct TriggerInputJson {
     /// JSON-encoded `DataShape` naming what `trigger.data` carries. "{}" when
     /// the manifest declared none — see `ManifestTrigger::emits`.
     pub emits: String,
+    /// The trigger's sentence template. "" when the manifest declared none -
+    /// see `ManifestTrigger::sentence`.
+    pub sentence: String,
     pub allow_variants: bool,
     /// Stable manifest-local id (e.g. "channel_subscribe"). Forms the
     /// canonical id `{moduleId}:trigger:{manifest_id}` together with the

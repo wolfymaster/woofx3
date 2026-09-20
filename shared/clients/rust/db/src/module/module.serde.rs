@@ -9373,6 +9373,9 @@ impl serde::Serialize for Trigger {
         if !self.handler.is_empty() {
             len += 1;
         }
+        if !self.sentence.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.Trigger", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -9413,6 +9416,9 @@ impl serde::Serialize for Trigger {
         if !self.handler.is_empty() {
             struct_ser.serialize_field("handler", &self.handler)?;
         }
+        if !self.sentence.is_empty() {
+            struct_ser.serialize_field("sentence", &self.sentence)?;
+        }
         struct_ser.end()
     }
 }
@@ -9441,6 +9447,7 @@ impl<'de> serde::Deserialize<'de> for Trigger {
             "emits",
             "transport",
             "handler",
+            "sentence",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -9458,6 +9465,7 @@ impl<'de> serde::Deserialize<'de> for Trigger {
             Emits,
             Transport,
             Handler,
+            Sentence,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -9492,6 +9500,7 @@ impl<'de> serde::Deserialize<'de> for Trigger {
                             "emits" => Ok(GeneratedField::Emits),
                             "transport" => Ok(GeneratedField::Transport),
                             "handler" => Ok(GeneratedField::Handler),
+                            "sentence" => Ok(GeneratedField::Sentence),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -9524,6 +9533,7 @@ impl<'de> serde::Deserialize<'de> for Trigger {
                 let mut emits__ = None;
                 let mut transport__ = None;
                 let mut handler__ = None;
+                let mut sentence__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -9604,6 +9614,12 @@ impl<'de> serde::Deserialize<'de> for Trigger {
                             }
                             handler__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Sentence => {
+                            if sentence__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("sentence"));
+                            }
+                            sentence__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Trigger {
@@ -9620,6 +9636,7 @@ impl<'de> serde::Deserialize<'de> for Trigger {
                     emits: emits__.unwrap_or_default(),
                     transport: transport__.unwrap_or_default(),
                     handler: handler__.unwrap_or_default(),
+                    sentence: sentence__.unwrap_or_default(),
                 })
             }
         }
@@ -9664,6 +9681,9 @@ impl serde::Serialize for TriggerInput {
         if !self.handler.is_empty() {
             len += 1;
         }
+        if !self.sentence.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.TriggerInput", len)?;
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
@@ -9695,6 +9715,9 @@ impl serde::Serialize for TriggerInput {
         if !self.handler.is_empty() {
             struct_ser.serialize_field("handler", &self.handler)?;
         }
+        if !self.sentence.is_empty() {
+            struct_ser.serialize_field("sentence", &self.sentence)?;
+        }
         struct_ser.end()
     }
 }
@@ -9718,6 +9741,7 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
             "emits",
             "transport",
             "handler",
+            "sentence",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -9732,6 +9756,7 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
             Emits,
             Transport,
             Handler,
+            Sentence,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -9763,6 +9788,7 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
                             "emits" => Ok(GeneratedField::Emits),
                             "transport" => Ok(GeneratedField::Transport),
                             "handler" => Ok(GeneratedField::Handler),
+                            "sentence" => Ok(GeneratedField::Sentence),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -9792,6 +9818,7 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
                 let mut emits__ = None;
                 let mut transport__ = None;
                 let mut handler__ = None;
+                let mut sentence__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Name => {
@@ -9854,6 +9881,12 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
                             }
                             handler__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Sentence => {
+                            if sentence__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("sentence"));
+                            }
+                            sentence__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(TriggerInput {
@@ -9867,6 +9900,7 @@ impl<'de> serde::Deserialize<'de> for TriggerInput {
                     emits: emits__.unwrap_or_default(),
                     transport: transport__.unwrap_or_default(),
                     handler: handler__.unwrap_or_default(),
+                    sentence: sentence__.unwrap_or_default(),
                 })
             }
         }

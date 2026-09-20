@@ -56,6 +56,13 @@ pub struct ManifestTrigger {
     /// against it. It answers "which paths can be referenced".
     #[serde(default)]
     pub emits: Option<ManifestDataShape>,
+    /// A one-line English template the UI renders for a configured instance
+    /// of this trigger, e.g. `"{reward} is redeemed"`. Each `{fieldId}` names
+    /// a field in `schema`; the UI substitutes the configured value, that
+    /// field's `anyText`, or its `missingText`. Absent means the UI falls back
+    /// to the trigger's name.
+    #[serde(default)]
+    pub sentence: Option<String>,
     /// When true, the UI lets the user create multiple bound instances ("variants")
     /// of this trigger, each with its own values for the `schema` fields. Used for
     /// triggers like cheer/subscribe/subscription.gift where the same event class
@@ -224,6 +231,16 @@ pub struct ManifestConfigField {
     /// declaration - see `ManifestTrigger::emits` for the machine-readable one.
     #[serde(default)]
     pub example_payload: Option<String>,
+    /// Trigger config only - the words a trigger `sentence` shows in place of
+    /// this field when it is set to "any". An empty string drops that part of
+    /// the sentence, which is distinct from absent: absent leaves the wording
+    /// to the UI.
+    #[serde(default)]
+    pub any_text: Option<String>,
+    /// Trigger config only - the words a trigger `sentence` shows in place of
+    /// this field while it is required and has no value yet.
+    #[serde(default)]
+    pub missing_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -920,6 +937,7 @@ impl ManifestTrigger {
             event: self.event_subject(module_id),
             config_schema,
             emits: encode_data_shape(self.emits.as_ref()),
+            sentence: self.sentence.clone().unwrap_or_default(),
             allow_variants: self.allow_variants,
             manifest_id: self.id.clone(),
             transport,
@@ -1858,6 +1876,41 @@ mod tests {
         // nothing" with no null branch anywhere. A trigger that never declares
         // one keeps deriving its variables from `schema`.
         assert_eq!(t.to_input("test_mod").emits, "{}");
+    }
+
+    #[test]
+    fn trigger_to_input_projects_sentence_and_field_wording() {
+        let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
+            "id": "channel_subscribe",
+            "name": "Subscribe",
+            "event": "channel.subscribe",
+            "sentence": "Someone subs at {tier}",
+            "schema": [{
+                "id": "tier",
+                "label": "Tier",
+                "type": "text",
+                "anyText": "any tier",
+                "missingText": "a tier"
+            }]
+        }))
+        .expect("parse");
+        let input = t.to_input("test_mod");
+        assert_eq!(input.sentence, "Someone subs at {tier}");
+        let fields: serde_json::Value =
+            serde_json::from_str(&input.config_schema).expect("valid json");
+        assert_eq!(fields[0]["anyText"], "any tier");
+        assert_eq!(fields[0]["missingText"], "a tier");
+    }
+
+    #[test]
+    fn trigger_to_input_defaults_sentence_to_empty() {
+        let t: ManifestTrigger = serde_json::from_value(serde_json::json!({
+            "id": "channel_cheer",
+            "name": "Cheer",
+            "event": "channel.cheer"
+        }))
+        .expect("parse");
+        assert_eq!(t.to_input("test_mod").sentence, "");
     }
 
     #[test]

@@ -47,6 +47,14 @@ message Trigger {
   // Canonical id of a webhook trigger's handler function
   // (`{moduleId}:function:{id}`). Empty for every other transport.
   string handler = 16;
+  // The module author's one-line English template for a configured instance
+  // of this trigger, e.g. "{reward} is redeemed". Each `{fieldId}` names a
+  // field in config_schema; the UI substitutes the configured value, that
+  // field's `anyText`, or its `missingText`. Validated at install: non-empty,
+  // braces balanced and unnested, every placeholder a declared field id.
+  // Empty means the author declared none. Never set on a webhook trigger,
+  // which nothing configures.
+  string sentence = 17;
 }
 
 message TriggerInput {
@@ -62,6 +70,7 @@ message TriggerInput {
   string emits = 9;  // JSON string — see Trigger.emits
   string transport = 10;  // see Trigger.transport
   string handler = 11;    // see Trigger.handler
+  string sentence = 12;   // see Trigger.sentence
 }
 
 message RegisterTriggersRequest {

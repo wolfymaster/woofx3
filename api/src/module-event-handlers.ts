@@ -41,6 +41,7 @@ interface RawTrigger {
   event?: unknown;
   config_schema?: unknown;
   emits?: unknown;
+  sentence?: unknown;
   allow_variants?: unknown;
   created_by_type?: unknown;
   created_by_ref?: unknown;
@@ -158,6 +159,11 @@ function mapTrigger(raw: RawTrigger): TriggerDefinition {
   const emits = asString(raw.emits);
   if (emits !== "" && emits !== "{}") {
     def.emits = emits;
+  }
+  // Same rule: "" is the column default and means the author declared none.
+  const sentence = asString(raw.sentence);
+  if (sentence !== "") {
+    def.sentence = sentence;
   }
   const canonicalId = asString(raw.canonical_id);
   if (canonicalId !== "") {

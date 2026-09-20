@@ -128,6 +128,18 @@ export interface ConfigField {
    * exist" is the trigger's `emits` / the action's `returns` (see `DataShape`).
    */
   examplePayload?: string;
+  /**
+   * Trigger config only — the words a trigger `sentence` shows in place of
+   * this field when it is set to "any". `""` drops that part of the sentence;
+   * absent (or `null`) leaves the wording to the UI.
+   */
+  anyText?: string;
+  /**
+   * Trigger config only — the words a trigger `sentence` shows in place of
+   * this field while it is required and has no value yet. Non-empty when
+   * present.
+   */
+  missingText?: string;
 }
 
 function isConfigFieldType(raw: unknown): raw is ConfigFieldType {
