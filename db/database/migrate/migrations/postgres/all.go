@@ -58,5 +58,6 @@ func All() []*gormigrate.Migration {
 		AddTriggerSentence(),
 		CommandActions(),
 		ResourceInstanceSettings(),
+		AddWidgetTaxonomy(),
 	}
 }

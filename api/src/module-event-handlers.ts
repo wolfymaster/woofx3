@@ -89,6 +89,7 @@ interface RawWidget {
   settings_schema?: unknown;
   surfaces?: unknown;
   hosts_surface?: unknown;
+  taxonomy?: unknown;
   created_by_type?: unknown;
   created_by_ref?: unknown;
 }
@@ -244,6 +245,7 @@ function mapWidget(raw: RawWidget): WidgetDefinition {
     // widget registered by either path gets the same fields.
     settings: parseFieldList(asString(raw.settings_schema)),
     surfaces: asStringArray(raw.surfaces).filter(isWidgetSurface),
+    taxonomy: asStringArray(raw.taxonomy),
     createdByType: asString(raw.created_by_type),
     createdByRef: asString(raw.created_by_ref),
   };

@@ -385,6 +385,9 @@ describe("parseModuleWidgetRegistered", () => {
               },
             ],
             surfaces: ["scene", "alert"],
+            // The raw widget declares none, so the parser reports an empty axis
+            // rather than inventing one.
+            taxonomy: [],
             createdByType: "MODULE",
             createdByRef: "scene_widgets",
           },

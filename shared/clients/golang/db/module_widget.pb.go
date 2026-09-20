@@ -68,7 +68,12 @@ type Widget struct {
 	// The surface this widget's placements host, or empty. An "alert" widget
 	// on a scene is the area that plays alert layouts; it has no frame of its
 	// own.
-	HostsSurface  string `protobuf:"bytes,15,opt,name=hosts_surface,json=hostsSurface,proto3" json:"hosts_surface,omitempty"`
+	HostsSurface string `protobuf:"bytes,15,opt,name=hosts_surface,json=hostsSurface,proto3" json:"hosts_surface,omitempty"`
+	// Open, multi-valued dotted classification (e.g. ["media.video"]), the
+	// same axis triggers and actions carry. A catalog groups on it instead of
+	// on the module that shipped the widget. Empty when the author declared
+	// none.
+	Taxonomy      []string `protobuf:"bytes,16,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -194,6 +199,13 @@ func (x *Widget) GetHostsSurface() string {
 	return ""
 }
 
+func (x *Widget) GetTaxonomy() []string {
+	if x != nil {
+		return x.Taxonomy
+	}
+	return nil
+}
+
 type WidgetInput struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ManifestId     string                 `protobuf:"bytes,1,opt,name=manifest_id,json=manifestId,proto3" json:"manifest_id,omitempty"`
@@ -204,9 +216,11 @@ type WidgetInput struct {
 	SettingsSchema string                 `protobuf:"bytes,6,opt,name=settings_schema,json=settingsSchema,proto3" json:"settings_schema,omitempty"`
 	// Entry path relative to the widget asset root; empty means
 	// index.html fallback.
-	Entry         string   `protobuf:"bytes,8,opt,name=entry,proto3" json:"entry,omitempty"`
-	Surfaces      []string `protobuf:"bytes,10,rep,name=surfaces,proto3" json:"surfaces,omitempty"`
-	HostsSurface  string   `protobuf:"bytes,11,opt,name=hosts_surface,json=hostsSurface,proto3" json:"hosts_surface,omitempty"`
+	Entry        string   `protobuf:"bytes,8,opt,name=entry,proto3" json:"entry,omitempty"`
+	Surfaces     []string `protobuf:"bytes,10,rep,name=surfaces,proto3" json:"surfaces,omitempty"`
+	HostsSurface string   `protobuf:"bytes,11,opt,name=hosts_surface,json=hostsSurface,proto3" json:"hosts_surface,omitempty"`
+	// See Widget.taxonomy.
+	Taxonomy      []string `protobuf:"bytes,12,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -302,6 +316,13 @@ func (x *WidgetInput) GetHostsSurface() string {
 		return x.HostsSurface
 	}
 	return ""
+}
+
+func (x *WidgetInput) GetTaxonomy() []string {
+	if x != nil {
+		return x.Taxonomy
+	}
+	return nil
 }
 
 type RegisterWidgetsRequest struct {
@@ -573,7 +594,7 @@ var File_module_widget_proto protoreflect.FileDescriptor
 
 const file_module_widget_proto_rawDesc = "" +
 	"\n" +
-	"\x13module_widget.proto\x12\x06module\x1a\fcommon.proto\"\xbf\x03\n" +
+	"\x13module_widget.proto\x12\x06module\x1a\fcommon.proto\"\xdb\x03\n" +
 	"\x06Widget\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tmodule_id\x18\x02 \x01(\tR\bmoduleId\x12\x1f\n" +
@@ -590,7 +611,8 @@ const file_module_widget_proto_rawDesc = "" +
 	" \x01(\tR\fcreatedByRef\x12\x14\n" +
 	"\x05entry\x18\f \x01(\tR\x05entry\x12\x1a\n" +
 	"\bsurfaces\x18\x0e \x03(\tR\bsurfaces\x12#\n" +
-	"\rhosts_surface\x18\x0f \x01(\tR\fhostsSurfaceJ\x04\b\v\x10\fJ\x04\b\r\x10\x0eR\asurfaceR\x0faccepted_events\"\xc9\x02\n" +
+	"\rhosts_surface\x18\x0f \x01(\tR\fhostsSurface\x12\x1a\n" +
+	"\btaxonomy\x18\x10 \x03(\tR\btaxonomyJ\x04\b\v\x10\fJ\x04\b\r\x10\x0eR\asurfaceR\x0faccepted_events\"\xe5\x02\n" +
 	"\vWidgetInput\x12\x1f\n" +
 	"\vmanifest_id\x18\x01 \x01(\tR\n" +
 	"manifestId\x12\x12\n" +
@@ -603,7 +625,8 @@ const file_module_widget_proto_rawDesc = "" +
 	"\x05entry\x18\b \x01(\tR\x05entry\x12\x1a\n" +
 	"\bsurfaces\x18\n" +
 	" \x03(\tR\bsurfaces\x12#\n" +
-	"\rhosts_surface\x18\v \x01(\tR\fhostsSurfaceJ\x04\b\a\x10\bJ\x04\b\t\x10\n" +
+	"\rhosts_surface\x18\v \x01(\tR\fhostsSurface\x12\x1a\n" +
+	"\btaxonomy\x18\f \x03(\tR\btaxonomyJ\x04\b\a\x10\bJ\x04\b\t\x10\n" +
 	"R\asurfaceR\x0faccepted_events\"\xb3\x02\n" +
 	"\x16RegisterWidgetsRequest\x12\x1d\n" +
 	"\n" +

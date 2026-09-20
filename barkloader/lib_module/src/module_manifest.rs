@@ -544,6 +544,17 @@ pub struct ModuleWidget {
     /// so it has no entry of its own.
     #[serde(default)]
     pub hosts_surface: Option<String>,
+    /// Open, multi-valued UI classification, one dotted path per axis. See
+    /// `ManifestTrigger::taxonomy` for the shape/convention. A catalog groups
+    /// widgets on this rather than on the module that shipped them, so an
+    /// author's `media.video` sits beside another module's.
+    #[serde(default)]
+    pub taxonomy: Vec<String>,
+    /// Single-value UI grouping. Superseded by `taxonomy`; still accepted
+    /// from older manifests and folded into `taxonomy` at registration time
+    /// (see `resolve_taxonomy`).
+    #[serde(default)]
+    pub category: Option<String>,
 }
 
 fn default_widget_surfaces() -> Vec<String> {
@@ -1066,7 +1077,30 @@ impl ModuleWidget {
             settings_schema,
             surfaces: self.surfaces.clone(),
             hosts_surface: self.hosts_surface.clone().unwrap_or_default(),
+            taxonomy: self.resolve_taxonomy(),
             entry,
+        }
+    }
+
+    /// Taxonomy for `RegisterWidgets`: manifest `taxonomy` when non-empty,
+    /// otherwise the legacy `category` wrapped in a single-element list.
+    ///
+    /// Unlike a trigger's, this has no last-resort fallback: a widget has no
+    /// transport or type to stand in for a classification, and an invented
+    /// one would group widgets under a term no author wrote. An undeclared
+    /// widget is left unclassified for the catalog to place.
+    pub fn resolve_taxonomy(&self) -> Vec<String> {
+        if !self.taxonomy.is_empty() {
+            return self.taxonomy.clone();
+        }
+        match self
+            .category
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
+            Some(category) => vec![category.to_owned()],
+            None => Vec::new(),
         }
     }
 

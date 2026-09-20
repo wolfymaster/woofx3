@@ -619,6 +619,23 @@ export interface EngineModuleSummary {
   name: string;
   version: string;
   state: string;
+  /** `"SYSTEM"` marks a module that ships with the engine and cannot be uninstalled. */
+  createdByType: string;
+  /**
+   * Manifest-local module id (`woofx3`, `woofx3_twitch`), the first segment of
+   * every canonical id this module owns. Distinct from the display `name`.
+   */
+  moduleId: string;
+  /** Composite `{moduleId}:{version}:{sha7}` the module was installed under. */
+  moduleKey: string;
+  /**
+   * The installed manifest, parsed; null when absent or unparseable.
+   *
+   * A manifest's `resources[]` is the only declaration of the resource kinds a
+   * module provides, and the `module.installed` webhook carries no manifest —
+   * so a mirror that never reads this one sees no kinds.
+   */
+  manifest: Record<string, unknown> | null;
 }
 
 // ==================== Stream / workflow response types ====================
@@ -1058,6 +1075,7 @@ export interface Woofx3EngineApi {
       settingsSchema: string;
       surfaces: string[];
       hostsSurface: string;
+      taxonomy: string[];
       createdByType: string;
       createdByRef: string;
     }>;

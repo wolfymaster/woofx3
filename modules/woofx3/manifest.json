@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -575,6 +575,9 @@
           "defaultValue": "default",
           "description": "Alert actions that target this name play here."
         }
+      ],
+      "taxonomy": [
+        "alert"
       ]
     },
     {
@@ -650,6 +653,9 @@
           "defaultValue": 0,
           "description": "In an alert: how long the text shows. 0 keeps it up for the whole alert."
         }
+      ],
+      "taxonomy": [
+        "text"
       ]
     },
     {
@@ -699,6 +705,9 @@
           "defaultValue": 0,
           "description": "In an alert: how long the image shows. 0 keeps it up for the whole alert."
         }
+      ],
+      "taxonomy": [
+        "media.image"
       ]
     },
     {
@@ -763,6 +772,9 @@
           "defaultValue": 0,
           "description": "How long the video shows, looping if it is shorter. 0 plays it once, or loops for the rest of the alert when Loop is on."
         }
+      ],
+      "taxonomy": [
+        "media.video"
       ]
     },
     {
@@ -800,6 +812,9 @@
           "defaultValue": 0,
           "description": "How long the sound plays. 0 plays all of it."
         }
+      ],
+      "taxonomy": [
+        "media.audio"
       ]
     },
     {
@@ -848,6 +863,9 @@
           "defaultValue": 0,
           "description": "In an alert: how long the animation plays, looping if it is shorter. 0 plays it through once."
         }
+      ],
+      "taxonomy": [
+        "media.animation"
       ]
     }
   ]

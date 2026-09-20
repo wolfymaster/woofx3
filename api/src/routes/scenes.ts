@@ -44,6 +44,7 @@ export const scenesRoutes = routeModule({
       settingsSchema: string;
       surfaces: string[];
       hostsSurface: string;
+      taxonomy: string[];
       createdByType: string;
       createdByRef: string;
     }>;
@@ -60,6 +61,7 @@ export const scenesRoutes = routeModule({
         settingsSchema: w.settingsSchema ?? "[]",
         surfaces: w.surfaces ?? [],
         hostsSurface: w.hostsSurface ?? "",
+        taxonomy: w.taxonomy ?? [],
         createdByType: w.createdByType ?? "",
         createdByRef: w.createdByRef ?? "",
       })),

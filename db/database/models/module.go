@@ -223,10 +223,13 @@ type Widget struct {
 	SettingsSchema string `gorm:"column:settings_schema;type:jsonb;not null;default:'[]'"`
 	Surfaces       string `gorm:"column:surfaces;type:jsonb;not null;default:'[\"scene\"]'"`
 	HostsSurface   string `gorm:"column:hosts_surface;type:text;not null;default:''"`
-	CreatedByType  string `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
-	CreatedByRef   string `gorm:"column:created_by_ref;type:text;not null;default:''"`
-	ManifestID     string `gorm:"column:manifest_id;type:text;not null;default:''"`
-	ApplicationID  string `gorm:"column:application_id;type:text;not null;default:''"`
+	// Taxonomy is a JSON-encoded string array of open, dotted hierarchical
+	// classification terms. See Trigger.Taxonomy.
+	Taxonomy      string `gorm:"column:taxonomy;type:jsonb;not null;default:'[]'"`
+	CreatedByType string `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
+	CreatedByRef  string `gorm:"column:created_by_ref;type:text;not null;default:''"`
+	ManifestID    string `gorm:"column:manifest_id;type:text;not null;default:''"`
+	ApplicationID string `gorm:"column:application_id;type:text;not null;default:''"`
 	// ArchivedAt is set when a module upgrade drops this widget from the
 	// manifest. Archived rows stay resolvable by canonical id (existing
 	// workflows/scenes keep working) but are excluded from catalog

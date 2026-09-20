@@ -56,6 +56,11 @@ message Widget {
   // on a scene is the area that plays alert layouts; it has no frame of its
   // own.
   string hosts_surface = 15;
+  // Open, multi-valued dotted classification (e.g. ["media.video"]), the
+  // same axis triggers and actions carry. A catalog groups on it instead of
+  // on the module that shipped the widget. Empty when the author declared
+  // none.
+  repeated string taxonomy = 16;
 }
 
 message WidgetInput {
@@ -74,6 +79,8 @@ message WidgetInput {
   reserved "accepted_events";
   repeated string surfaces = 10;
   string hosts_surface = 11;
+  // See Widget.taxonomy.
+  repeated string taxonomy = 12;
 }
 
 message RegisterWidgetsRequest {

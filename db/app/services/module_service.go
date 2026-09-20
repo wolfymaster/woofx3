@@ -1327,6 +1327,10 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 		if err != nil {
 			return nil, fmt.Errorf("marshal surfaces for widget %q: %w", in.Name, err)
 		}
+		taxonomyJSON, err := json.Marshal(in.Taxonomy)
+		if err != nil {
+			return nil, fmt.Errorf("marshal taxonomy for widget %q: %w", in.Name, err)
+		}
 		w := &models.Widget{
 			ID:             uuid.New(),
 			Name:           in.Name,
@@ -1337,6 +1341,7 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 			SettingsSchema: in.SettingsSchema,
 			Surfaces:       string(surfacesJSON),
 			HostsSurface:   in.HostsSurface,
+			Taxonomy:       string(taxonomyJSON),
 			CreatedByType:  createdByType,
 			CreatedByRef:   createdByRef,
 			ManifestID:     in.ManifestId,
@@ -1557,6 +1562,7 @@ func widgetToProto(w *models.Widget) *client.Widget {
 		SettingsSchema: w.SettingsSchema,
 		Surfaces:       widgetSurfaces(w),
 		HostsSurface:   w.HostsSurface,
+		Taxonomy:       widgetTaxonomy(w),
 		CreatedByType:  w.CreatedByType,
 		CreatedByRef:   w.CreatedByRef,
 	}
@@ -1572,6 +1578,18 @@ func widgetSurfaces(w *models.Widget) []string {
 		surfaces = []string{}
 	}
 	return surfaces
+}
+
+// widgetTaxonomy decodes a widget row's stored classification terms.
+func widgetTaxonomy(w *models.Widget) []string {
+	var taxonomy []string
+	if w.Taxonomy != "" {
+		json.Unmarshal([]byte(w.Taxonomy), &taxonomy)
+	}
+	if taxonomy == nil {
+		taxonomy = []string{}
+	}
+	return taxonomy
 }
 
 // ---------------------------------------------------------------------

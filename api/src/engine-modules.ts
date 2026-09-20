@@ -12,6 +12,35 @@ export interface EngineModule {
    * should render the control as unavailable rather than let the attempt fail.
    */
   createdByType: string;
+  /**
+   * Manifest-local module id (`woofx3`, `woofx3_twitch`), the first segment of
+   * every canonical id this module owns. Distinct from the display `name`.
+   */
+  moduleId: string;
+  /** Composite `{moduleId}:{version}:{sha7}` the module was installed under. */
+  moduleKey: string;
+  /**
+   * The installed manifest, parsed. Null when the row stores no manifest or
+   * stores one that does not parse — a caller mirroring the catalog records
+   * the module either way rather than dropping it.
+   *
+   * Carried here because a manifest's `resources[]` is the only declaration of
+   * the resource kinds a module provides, and the `module.installed` webhook
+   * has no manifest field. A consumer that never sees this sees no kinds.
+   */
+  manifest: Record<string, unknown> | null;
+}
+
+function parseManifest(raw: string | undefined): Record<string, unknown> | null {
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -34,6 +63,9 @@ export async function listEngineModules(db: DbClient, logger: SharedLogger): Pro
       version: m.version ?? "",
       state: m.state ?? "active",
       createdByType: m.createdByType ?? "USER",
+      moduleId: m.moduleId ?? "",
+      moduleKey: m.moduleKey ?? "",
+      manifest: parseManifest(m.manifest),
     }));
   logger.info("Listed engine modules", { count: result.length });
   return result;
