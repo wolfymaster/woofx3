@@ -245,11 +245,12 @@ func (e *Engine[TServices]) registerPublishAction() {
 		}
 
 		event := &types.Event{
-			ID:     uuid.New().String(),
-			Type:   eventType,
-			Source: "workflow",
-			Time:   time.Now(),
-			Data:   make(map[string]any),
+			ID:            uuid.New().String(),
+			Type:          eventType,
+			Source:        "workflow",
+			Time:          time.Now(),
+			WorkflowChain: ctx.TriggerEvent.ChainThrough(ctx.WorkflowID),
+			Data:          make(map[string]any),
 		}
 
 		if data, ok := params["data"].(map[string]any); ok {
@@ -430,6 +431,34 @@ func (e *Engine[TServices]) evaluateTrigger(wf *types.WorkflowDefinition, event 
 }
 
 // beginExecution creates a run, registers it, and announces it.
+// refuseLoop fails a just-begun run when the chain of runs that led to its
+// event is too long (see MaxWorkflowChain), and says so. The run is recorded
+// failed with the loop as its error rather than dropped, so the loop shows in
+// the run history where the user would look for a workflow that stopped.
+func (e *Engine[TServices]) refuseLoop(wf *types.WorkflowDefinition, execution *types.WorkflowExecution, event *types.Event) bool {
+	err := checkWorkflowChain(event, wf.ID, e.workflowName)
+	if err == nil {
+		return false
+	}
+	e.logger.Warn("Refused a workflow run in a loop",
+		"workflow", wf.ID,
+		"execution", execution.ID,
+		"event_type", event.Type,
+		"event_id", event.ID,
+		"reason", err.Error())
+	e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
+	return true
+}
+
+// workflowName is the registered name of a workflow, or its id when it has
+// none or is no longer registered.
+func (e *Engine[TServices]) workflowName(id string) string {
+	if def, err := e.workflowRegistry.Get(id); err == nil && def.Name != "" {
+		return def.Name
+	}
+	return id
+}
+
 func (e *Engine[TServices]) beginExecution(wf *types.WorkflowDefinition, event *types.Event) *types.WorkflowExecution {
 	execution := &types.WorkflowExecution{
 		ID:            uuid.New().String(),
@@ -463,6 +492,9 @@ func (e *Engine[TServices]) beginExecution(wf *types.WorkflowDefinition, event *
 func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event *types.Event) {
 	execution := e.beginExecution(wf, event)
 	executionID := execution.ID
+	if e.refuseLoop(wf, execution, event) {
+		return
+	}
 
 	// Top-level entry point for the engine: a trigger fired and a workflow
 	// run begins here. Task-level child spans need the context threaded
@@ -1097,12 +1129,15 @@ func (e *Engine[TServices]) emitRunLifecycle(execution *types.WorkflowExecution)
 		data["error"] = execution.Error
 	}
 
+	// Chained through this run like any event it causes: a workflow triggered
+	// by runs finishing would otherwise trigger itself by finishing.
 	event := &types.Event{
-		ID:     uuid.New().String(),
-		Type:   string(subject),
-		Source: "workflow",
-		Time:   time.Now(),
-		Data:   data,
+		ID:            uuid.New().String(),
+		Type:          string(subject),
+		Source:        "workflow",
+		Time:          time.Now(),
+		WorkflowChain: execution.TriggerEvent.ChainThrough(execution.WorkflowID),
+		Data:          data,
 	}
 	// Copied from the trigger unchanged. TriggerID is the only join back to the
 	// request that caused this run, and carrying SessionID keeps a run
@@ -1248,11 +1283,12 @@ func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecutio
 
 		// Create trigger event for the sub-workflow
 		subEvent := &types.Event{
-			ID:     uuid.New().String(),
-			Type:   eventSubject,
-			Source: "workflow-task",
-			Time:   time.Now(),
-			Data:   eventData,
+			ID:            uuid.New().String(),
+			Type:          eventSubject,
+			Source:        "workflow-task",
+			Time:          time.Now(),
+			WorkflowChain: triggerEvent.ChainThrough(execution.WorkflowID),
+			Data:          eventData,
 		}
 
 		// Execute the sub-workflow
@@ -1368,6 +1404,10 @@ func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, ev
 }
 
 func (e *Engine[TServices]) executeWorkflowInternal(wf *types.WorkflowDefinition, execution *types.WorkflowExecution, event *types.Event) {
+	if e.refuseLoop(wf, execution, event) {
+		e.checkSubWorkflowCompletion(execution.ID)
+		return
+	}
 	taskExports := make(map[string]map[string]any)
 
 	graph, err := NewDependencyGraph(wf.Tasks)

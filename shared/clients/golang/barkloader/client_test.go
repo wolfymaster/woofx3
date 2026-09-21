@@ -92,7 +92,7 @@ func TestInvokeConcurrentCallsDoNotRaceOnWrite(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_, err := client.Invoke("test:function:echo", map[string]interface{}{"i": i})
+			_, err := client.Invoke("test:function:echo", map[string]interface{}{"i": i}, "")
 			errs[i] = err
 		}(i)
 	}

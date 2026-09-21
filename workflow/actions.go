@@ -117,7 +117,7 @@ func NewBarkloaderAction() tasks.ActionFunc[AppServices] {
 				"parameters", argsObj,
 			)
 		}
-		result, err := client.Invoke(canonicalID, eventPayload)
+		result, err := client.Invoke(canonicalID, eventPayload, ctx.TriggerEvent.ChainThrough(ctx.WorkflowID))
 		if err != nil {
 			if ctx.Logger != nil {
 				ctx.Logger.Error(

@@ -125,7 +125,13 @@ export default class BarkloaderClient {
   // language clients speak the same modern protocol barkloader's
   // websocket.rs treats as canonical (`func`/`args` there is the legacy
   // fallback this replaces).
-  public invoke(func: string, event: Record<string, unknown>): Promise<unknown> {
+  //
+  // `workflowChain` is the chain of workflow runs the call is part of, which
+  // barkloader stamps on every event the function announces so the workflow
+  // engine can see a loop running through a module function. Only a workflow
+  // run has one; every caller in this language starts a chain rather than
+  // continuing one, so it is omitted here in practice.
+  public invoke(func: string, event: Record<string, unknown>, workflowChain?: string): Promise<unknown> {
     const id = crypto.randomUUID();
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -145,7 +151,7 @@ export default class BarkloaderClient {
       });
 
       try {
-        this.send(JSON.stringify({ type: "invoke", id, data: { function: func, event } }));
+        this.send(JSON.stringify({ type: "invoke", id, data: { function: func, event, workflowChain } }));
       } catch (err) {
         this.pendingInvokes.delete(id);
         clearTimeout(timer);

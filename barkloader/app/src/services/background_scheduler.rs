@@ -105,6 +105,7 @@ impl BackgroundTaskScheduler {
                             event: json!({}),
                             user: None,
                             params: json!({}),
+                            workflow_chain: None,
                         })
                         .await;
 

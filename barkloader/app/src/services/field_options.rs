@@ -82,6 +82,7 @@ pub async fn run_field_options_responder(client: Client, sandbox: SandboxFactory
                     event: json!({}),
                     user: None,
                     params: json!({}),
+                    workflow_chain: None,
                 })
                 .await;
 

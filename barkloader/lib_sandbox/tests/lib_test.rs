@@ -82,6 +82,7 @@ fn test_sandbox() {
             event: serde_json::json!({ "input": "test" }),
             user: None,
             params: serde_json::Value::Null,
+            workflow_chain: None,
         })
         .unwrap();
 
@@ -102,6 +103,7 @@ fn test_lua_adapter() {
             event: serde_json::json!({ "name": "wolfy" }),
             user: None,
             params: serde_json::Value::Null,
+            workflow_chain: None,
         })
         .unwrap();
 
@@ -118,6 +120,7 @@ fn test_quickjs_adapter() {
             event: serde_json::json!({ "name": "wolfy" }),
             user: None,
             params: serde_json::Value::Null,
+            workflow_chain: None,
         })
         .unwrap();
 
@@ -134,6 +137,7 @@ fn test_null_event() {
             event: serde_json::Value::Null,
             user: None,
             params: serde_json::Value::Null,
+            workflow_chain: None,
         })
         .unwrap();
 
@@ -179,6 +183,7 @@ fn test_js_instruction_limit() {
         event: serde_json::Value::Null,
         user: None,
         params: serde_json::Value::Null,
+        workflow_chain: None,
     });
 
     assert!(result.is_err());
@@ -238,6 +243,7 @@ function isolation(ctx) {
             event: serde_json::Value::Null,
             user: None,
             params: serde_json::Value::Null,
+            workflow_chain: None,
         })
         .unwrap();
 
@@ -247,6 +253,7 @@ function isolation(ctx) {
             event: serde_json::Value::Null,
             user: None,
             params: serde_json::Value::Null,
+            workflow_chain: None,
         })
         .unwrap();
 
@@ -305,6 +312,7 @@ fn test_ctx_event_data() {
             event: serde_json::json!({ "amount": 500 }),
             user: None,
             params: serde_json::Value::Null,
+            workflow_chain: None,
         })
         .unwrap();
 
@@ -369,6 +377,7 @@ fn test_ctx_chat_send_message_routes_to_host() {
             event: serde_json::json!({ "text": "hi from sandbox" }),
             user: None,
             params: serde_json::Value::Null,
+            workflow_chain: None,
         })
         .unwrap();
 
@@ -445,6 +454,7 @@ fn test_quickjs_twitch_extension_publishes_canonical_command() {
             event: serde_json::Value::Null,
             user: None,
             params: serde_json::Value::Null,
+            workflow_chain: None,
         })
         .unwrap();
 
@@ -483,6 +493,7 @@ end
             event: serde_json::Value::Null,
             user: None,
             params: serde_json::Value::Null,
+            workflow_chain: None,
         })
         .unwrap();
 
@@ -518,6 +529,7 @@ fn test_quickjs_zero_arg_extension_function() {
             event: serde_json::Value::Null,
             user: None,
             params: serde_json::Value::Null,
+            workflow_chain: None,
         })
         .unwrap();
 
@@ -548,6 +560,7 @@ fn test_quickjs_nested_namespace_platform_alerts() {
             event: serde_json::Value::Null,
             user: None,
             params: serde_json::Value::Null,
+            workflow_chain: None,
         })
         .unwrap();
 
@@ -578,6 +591,7 @@ fn test_unregistered_extension_namespace_is_undefined() {
             event: serde_json::Value::Null,
             user: None,
             params: serde_json::Value::Null,
+            workflow_chain: None,
         })
         .unwrap();
 
@@ -598,6 +612,7 @@ fn invoke_probe(
             event: serde_json::Value::Null,
             user: None,
             params: serde_json::Value::Null,
+            workflow_chain: None,
         })
         .map_err(|e| e.to_string())
 }
@@ -677,6 +692,7 @@ fn announcing_module(func_name: &str, code: &str, ext: &str) -> Arc<ModuleRegist
 fn invoke_announcer(
     registry: Arc<ModuleRegistry>,
     func_name: &str,
+    workflow_chain: Option<&str>,
 ) -> (Result<serde_json::Value, String>, Arc<CapturingNats>) {
     let nats = Arc::new(CapturingNats::default());
     let mut host_ctx = noop_host_context();
@@ -688,6 +704,7 @@ fn invoke_announcer(
             event: serde_json::Value::Null,
             user: None,
             params: serde_json::Value::Null,
+            workflow_chain: workflow_chain.map(String::from),
         })
         .map_err(|err| err.to_string());
     (result, nats)
@@ -705,7 +722,7 @@ fn test_ctx_result_publishes_declared_events_and_returns_only_the_value() {
             "lua",
         ),
     ] {
-        let (result, nats) = invoke_announcer(announcing_module("run", code, ext), "run");
+        let (result, nats) = invoke_announcer(announcing_module("run", code, ext), "run", None);
         assert_eq!(result.unwrap(), serde_json::json!({ "n": 1 }), "{ext}");
 
         let published = nats.published.lock().unwrap();
@@ -722,8 +739,32 @@ fn test_ctx_result_publishes_declared_events_and_returns_only_the_value() {
 fn test_ctx_result_with_an_undeclared_event_fails_and_publishes_nothing() {
     let code =
         r#"function run(ctx) { return ctx.result(null, [{ type: "channel.cheer", data: {} }]); }"#;
-    let (result, nats) = invoke_announcer(announcing_module("run", code, "js"), "run");
+    let (result, nats) = invoke_announcer(announcing_module("run", code, "js"), "run", None);
     let err = result.unwrap_err();
     assert!(err.contains("not an eventbus trigger"), "{err}");
     assert!(nats.published.lock().unwrap().is_empty());
+}
+
+// How the workflow engine sees a loop that runs through a module function: the
+// function's events carry the chain of runs that called it.
+#[test]
+fn test_ctx_result_events_carry_the_calling_workflow_chain() {
+    let code = r#"function run(ctx) { return ctx.result(null, [{ type: "thing.happened" }]); }"#;
+    let (result, nats) = invoke_announcer(
+        announcing_module("run", code, "js"),
+        "run",
+        Some("wf-a,wf-b"),
+    );
+    result.unwrap();
+    assert_eq!(
+        nats.published.lock().unwrap()[0].1["workflowChain"],
+        "wf-a,wf-b"
+    );
+
+    let (_, nats) = invoke_announcer(announcing_module("run", code, "js"), "run", None);
+    let published = nats.published.lock().unwrap();
+    assert!(
+        published[0].1.get("workflowChain").is_none(),
+        "an event no workflow caused starts no chain"
+    );
 }

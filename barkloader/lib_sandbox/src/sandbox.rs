@@ -108,7 +108,13 @@ impl Sandbox {
         let result = self
             .function_executor
             .execute(&function, &invocation)
-            .and_then(|value| self.publish_requested_events(&invocation.module_id, value));
+            .and_then(|value| {
+                self.publish_requested_events(
+                    &invocation.module_id,
+                    request.workflow_chain.clone(),
+                    value,
+                )
+            });
 
         match &result {
             Ok(value) => {
@@ -141,13 +147,23 @@ impl Sandbox {
     /// A publish that fails is logged, not returned: the function's own effects
     /// (a storage write) have already happened, and failing it would invite a
     /// retry that applies them twice.
-    fn publish_requested_events(&self, module_id: &str, value: Value) -> Result<Value, Error> {
+    ///
+    /// Each event carries `workflow_chain`, the chain of workflow runs the call
+    /// was part of, so a loop that runs through a module function is still one
+    /// the workflow engine can see.
+    fn publish_requested_events(
+        &self,
+        module_id: &str,
+        workflow_chain: Option<String>,
+        value: Value,
+    ) -> Result<Value, Error> {
         let (value, events) = resolve_function_result(value, &self.registry.event_types(module_id))
             .map_err(Error::RuntimeError)?;
         let source = format!("module/{module_id}");
         for event in events {
             let envelope = BaseEvent::new(&event.event_type, &source, event.data)
                 .with_time(now_iso8601())
+                .with_workflow_chain(workflow_chain.clone())
                 .to_value();
             let published = envelope
                 .map_err(|err| err.to_string())

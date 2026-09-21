@@ -137,6 +137,49 @@ When the sub-workflow completes:
 2. Sub-workflow results are copied to the parent task's exports
 3. Parent workflows resume from the next task
 
+## Loops
+
+A run can cause events, and an event can start a run, so workflows can trigger
+each other in a circle: a "counter changed" workflow that changes the same
+counter, a "run finished" workflow that finishes, A publishing what B listens for
+while B publishes what A listens for. The engine stops these at run time.
+
+**Every event remembers the runs that led to it.** The `workflowChain` CloudEvents
+extension attribute lists them, oldest first, as comma-separated workflow ids.
+Each way a run causes an event stamps the event with the chain of the run's own
+trigger event plus the run's workflow:
+
+| How a run causes an event | Where the chain is stamped |
+|---|---|
+| A `publish_event` step | the engine, on the published event |
+| A module function step that returns [`ctx.result`](../barkloader/sandbox.md#ctxresult) events | barkloader, on each announced event; the engine passes the chain with the invoke |
+| A sub-workflow step | the engine, on the sub-workflow's trigger event |
+| The run's own `workflow.run.*` lifecycle events | the engine |
+
+An event nothing in a workflow caused — a platform event, a dashboard request, a
+background task such as the timer expiry check — has no chain, and starts one.
+
+**A run is refused when the chain behind it holds `MaxWorkflowChain` (8) runs.**
+The refused run is recorded as failed, with an error naming the loop:
+`stopped a workflow loop: Counter changed keeps triggering itself (Counter changed →
+Counter changed), 8 runs deep`, or the whole chain when it does not close on the
+refused workflow. See `workflow/internal/engine/loopguard.go`.
+
+The rule is a length, not "this workflow is already in the chain". The dashboard
+stores one workflow per event with a condition per instance, so "when counter A
+changes, add to counter B" and "when counter B changes, say so in chat" are branches
+of the same workflow, and that chain visits it twice on purpose. What every loop
+does, and no chain that means to end does, is keep growing.
+
+Nor is it a check on the workflow graph when a workflow is saved. Which events a
+step causes is decided when it runs — a module function announces what it chooses,
+a condition on the trigger decides whether an edge exists at all — so the graph a
+save-time check could see is both missing edges and full of ones that never fire.
+The chain is the path actually taken.
+
+A repeating timer is not a loop: each `timer.ended` comes from the expiry check, a
+background task, so every repetition starts a fresh chain.
+
 ## Workflow CRUD Events
 
 The service listens for CloudEvents on the workflow change subject. When a workflow is created, updated, or deleted in the database:
