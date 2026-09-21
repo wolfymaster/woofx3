@@ -156,13 +156,13 @@ The orchestrator provides:
 
 ## Releasing
 
-Tagged releases (`v*`) are built by [`.github/workflows/release.yml`](../.github/workflows/release.yml):
+Every push to `master` that semantic-release finds a release in is published by [`.github/workflows/release.yml`](../.github/workflows/release.yml) (see `docs/operations/releases.md`):
 
-1. Push a version tag: `git tag v1.2.3 && git push origin v1.2.3`
+1. semantic-release picks the next version (e.g. `v1.2.3`) from the Conventional Commits since the last tag
 2. CI builds and pushes:
    - `ghcr.io/wolfymaster/woofx3:v1.2.3` and `:latest`
-3. CI attaches to a GitHub Release:
-   - `woofx3-v1.2.3-linux-amd64.tar.gz` (extracted from the image `/app` layout)
+3. CI tags the commit and attaches to a GitHub Release:
+   - `woofx3-v1.2.3-linux-amd64.zip` (extracted from the image `/app` layout)
    - `woofx3-v1.2.3-windows-amd64.zip` (cross-compiled via `./main.sh --target windows-amd64`)
 
 Pull the image:
