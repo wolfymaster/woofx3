@@ -321,7 +321,7 @@ These three `type` values render dedicated pickers in the UI rather than freefor
 | `asset` | `kinds?: string[]` | Asset canonical id (`"twitch_platform:asset:bell.mp3"`). | Scoped to **this module's** `assets[]`, optionally filtered by `kinds`. |
 | `resource_ref` | `kind: string` (required) | Instance canonical id (`"woofx3:counter:death_count"`). Stored verbatim; the function receives it via `ctx.event.parameters.<id>`. | Cross-module: every installed module's instances of the given `kind`. Backed by `ListResourceInstancesByKind` and refreshed live via the `module.resource.instance.{created,deleted}` webhook events. |
 
-`resource_ref` is the discriminator that lets actions and widgets reference runtime instances (counters, future timers/polls/leaderboards, etc.) without the engine learning what each kind means. See [Runtime resource instances](#runtime-resource-instances).
+`resource_ref` is the discriminator that lets actions and widgets reference runtime instances (counters, timers, queues, future polls/leaderboards, etc.) without the engine learning what each kind means. See [Runtime resource instances](#runtime-resource-instances).
 
 > **Asset URLs must not be baked into saved workflows at manifest-authoring
 > time.** A repository key (`asset.repositoryKey` on the `Asset` row, see
@@ -914,6 +914,14 @@ Available in both QuickJS and Lua function runtimes:
 | `ctx.resources.list(kind)` | an array of the same shape | Returns every instance of the kind across every installed module. |
 
 **Where an instance's value lives:** at `state:<canonicalId>` in the owning module's storage (e.g. `state:woofx3:counter:death_count`). This is the contract, not a suggestion: the engine's `getResourceValues` reads it, and the dashboard's value mirror keys on it, so a kind that stores its value anywhere else shows nothing on its first-party page.
+
+The bundled `woofx3` module's kinds store these values, which is what a widget or page showing one reads:
+
+| Kind | Value at `state:<canonicalId>` | No value stored means |
+|------|--------------------------------|-----------------------|
+| `counter` | A number. | Its `initialValue` setting. |
+| `timer` | `{ "running": true, "endsAt": <epoch ms> }` while counting down; `{ "running": false, "remainingMs": <ms> }` while stopped. A running timer is never rewritten as it ticks, so time left is `max(0, endsAt - now)`. | Stopped at its `duration` setting. |
+| `queue` | An array of strings, first in line first. | Empty. |
 
 **Storage is per module.** Every key a function reads or writes belongs to its own module — the store addresses a value by application, module and key — so two modules using the same key hold two separate values. Update a value from its previous one with `ctx.storage.compareAndSet(key, expected, value, options?)`, which writes only if the key still holds `expected` (or nothing, for `null`) and otherwise returns `{ swapped: false, current }` to retry from. A `get` followed by a `set` loses one of two concurrent updates.
 

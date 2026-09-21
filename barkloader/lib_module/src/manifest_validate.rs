@@ -1522,17 +1522,23 @@ mod tests {
         validate_with_provenance(&manifest, InstallProvenance::System)
             .expect("bundled woofx3 manifest validates as a system module");
 
-        let counter = manifest
-            .resources
-            .iter()
-            .find(|kind| kind.kind == "counter")
-            .expect("woofx3 declares the counter resource kind");
-        let fields: Vec<&str> = counter
-            .schema
-            .iter()
-            .map(|field| field.id.as_str())
-            .collect();
-        assert_eq!(fields, ["lifetime", "initialValue", "step"]);
+        for (kind, expected) in [
+            ("counter", &["lifetime", "initialValue", "step"][..]),
+            ("timer", &["lifetime", "duration"][..]),
+            ("queue", &["lifetime", "capacity", "allowDuplicates"][..]),
+        ] {
+            let declared = manifest
+                .resources
+                .iter()
+                .find(|resource| resource.kind == kind)
+                .unwrap_or_else(|| panic!("woofx3 declares the {kind} resource kind"));
+            let fields: Vec<&str> = declared
+                .schema
+                .iter()
+                .map(|field| field.id.as_str())
+                .collect();
+            assert_eq!(fields, expected, "{kind}");
+        }
     }
 
     fn parse(json: &str) -> ModuleManifest {

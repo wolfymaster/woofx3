@@ -11,6 +11,12 @@ pub mod storage_event;
 
 #[cfg(test)]
 mod counter_function_test;
+#[cfg(test)]
+mod queue_function_test;
+#[cfg(test)]
+mod resource_function_harness;
+#[cfg(test)]
+mod timer_function_test;
 
 pub trait RuntimeAdapter: Send {
     fn execute(
