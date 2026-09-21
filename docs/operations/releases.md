@@ -9,12 +9,12 @@ maintenance API find one.
 
 | Tag | Published by | Meaning |
 |---|---|---|
-| `vMAJOR.MINOR.PATCH` | pushing a git tag of the same name | A release. Never re-pushed or moved. |
+| `vMAJOR.MINOR.PATCH` | the release workflow, on a push to `master` | A release. Never re-pushed or moved. |
 | `pr-<n>-<sha7>` | the preview-engine workflow | A preview of pull request `<n>` at commit `<sha7>`. Short-lived. |
 | `latest` | every release | The newest release. Moves; nothing deploys it. |
 
 The image's `WOOFX3_VERSION` build argument is the tag, verbatim: `v0.1.0` for a
-release (`GITHUB_REF_NAME`), `pr-42-a1b2c3d` for a preview. The engine reports it
+release, `pr-42-a1b2c3d` for a preview. The engine reports it
 unchanged as `version` in `GET /ready` and `getEngineInfo`, and the maintenance
 API compares it exactly with the release it deployed. A build without the
 argument reports `dev`.
@@ -24,25 +24,42 @@ argument reports `dev`.
 - The image, tagged `v…` and `latest`.
 - A GitHub release whose notes carry the image **digest** (`sha256:…`), and
   `ghcr.io/wolfymaster/woofx3@<digest>` as the reference to deploy.
-- A Linux archive extracted from the image, and a Windows archive built
-  separately. Both start through `start.sh` / `start.bat`, which migrate the
-  database before starting the orchestrator, as the image's entrypoint does.
+- `woofx3-v…-linux-amd64.zip`, extracted from the image, and
+  `woofx3-v…-windows-amd64.zip`, cross-compiled separately. Each holds the
+  orchestrator and every service binary, and starts through `start.sh` /
+  `start.bat`, which migrate the database before starting the orchestrator, as
+  the image's entrypoint does.
 
 ## Cutting a release
 
-1. Merge what the release should contain to `master`.
-2. Tag the commit and push the tag:
+Releases are cut by [semantic-release](https://semantic-release.gitbook.io/)
+(configured in `.releaserc.json`) on every push to `master`. It reads the
+[Conventional Commits](https://www.conventionalcommits.org/) since the last
+`v*` tag and picks the next version:
 
-   ```bash
-   git tag v0.1.0
-   git push origin v0.1.0
-   ```
+| Commits since the last release | Bump |
+|---|---|
+| a breaking change (`feat!:`, `BREAKING CHANGE:` footer) | minor |
+| `feat` | minor |
+| `fix`, `perf` | patch |
+| anything else (`ci`, `docs`, `chore`, `refactor`, ...) | no release |
 
-3. When the workflow finishes, check the release notes carry the digest, and
-   that `docker pull ghcr.io/wolfymaster/woofx3@<digest>` works.
+A breaking change bumps the minor version while the engine is below `1.0.0`.
+Going to `1.0.0` means tagging it by hand and removing the `breaking` rule from
+`.releaserc.json`, after which a breaking change bumps the major version.
 
-Version numbers follow semantic versioning. Until `1.0.0`, a minor bump may
-break compatibility (a migration that needs care, or a changed RPC).
+The workflow settles the version first, with a dry run, because the image is
+built with it. It then builds the image (pushed by digest, untagged) and both
+archives, and only when all three exist creates the git tag, the GitHub release
+with the archives attached, and the image's `v…` and `latest` tags. A release
+therefore never exists without its artifacts.
+
+Releases are cut one at a time. If another commit lands on `master` while one
+is building, that run fails at publishing rather than release artifacts whose
+version its tag no longer matches, and the next run releases both.
+
+When the workflow finishes, check the release notes carry the digest, and that
+`docker pull ghcr.io/wolfymaster/woofx3@<digest>` works.
 
 ## Visibility
 

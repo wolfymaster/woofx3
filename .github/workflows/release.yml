@@ -1,38 +1,83 @@
 name: Release
 
-# Builds and publishes production artifacts on version tags:
-#   - Docker image → ghcr.io/wolfymaster/woofx3:<tag> (+ :latest)
-#   - Linux binaries → woofx3-<tag>-linux-amd64.tar.gz (extracted from the image)
-#   - Windows binaries → woofx3-<tag>-windows-amd64.zip (cross-compile via build/main.sh)
-#   - GitHub Release with both archives attached
+# Every push to master that semantic-release finds a release in (a feat, fix,
+# perf or breaking commit since the last v* tag) publishes:
+#   - the image, ghcr.io/wolfymaster/woofx3:<tag> (+ :latest)
+#   - woofx3-<tag>-linux-amd64.zip, extracted from the image
+#   - woofx3-<tag>-windows-amd64.zip, cross-compiled by build/main.sh
+#   - a GitHub release of the tag, carrying both archives and the image digest
+#
+# The version is settled before anything is built, since the image reports it
+# (WOOFX3_VERSION), and nothing is tagged until every artifact exists: the
+# image is pushed by digest alone, and the git tag, the release and the
+# image's tags are all created in the last job.
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - master
+
+# Releases are cut one at a time, in push order. A run that is still building
+# when the next push lands finishes; the next run then finds its tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 env:
   IMAGE_NAME: ghcr.io/wolfymaster/woofx3
   BUN_VERSION: "1.3.14"
+  NODE_VERSION: "24"
+  SEMANTIC_RELEASE: >-
+    -p semantic-release@25.0.9
+    -p @semantic-release/exec@7.1.0
+    -p @semantic-release/github@12.0.9
+    -p conventional-changelog-conventionalcommits@10.4.0
+    semantic-release
 
 jobs:
-  docker:
-    name: Docker image + Linux archive
+  plan:
+    name: Settle the next version
     runs-on: ubuntu-latest
+    # A dry run still checks it could push the tag.
+    permissions:
+      contents: write
     outputs:
-      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.next.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Sets `tag` through .github/scripts/release-tag.sh; left empty when
+      # nothing since the last release calls for one.
+      - name: Dry-run semantic-release
+        id: next
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx --yes ${SEMANTIC_RELEASE} --dry-run
+
+  docker:
+    name: Image + Linux archive
+    needs: plan
+    if: needs.plan.outputs.tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set version
-        id: meta
-        run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -44,52 +89,51 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.production
-          push: true
-          tags: |
-            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
-            ${{ env.IMAGE_NAME }}:latest
+          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             BUN_VERSION=${{ env.BUN_VERSION }}
-            WOOFX3_VERSION=${{ steps.meta.outputs.version }}
+            WOOFX3_VERSION=${{ needs.plan.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Extract Linux package from image
+      - name: Extract Linux archive from image
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.meta.outputs.version }}"
-          IMAGE="${{ env.IMAGE_NAME }}:${VERSION}"
-          CID="$(docker create "$IMAGE")"
+          CID="$(docker create "${IMAGE_NAME}@${DIGEST}")"
           mkdir -p linux-amd64
           docker cp "${CID}:/app/." linux-amd64/
           docker rm "$CID"
-          ARCHIVE="woofx3-${VERSION}-linux-amd64.tar.gz"
-          tar -czf "$ARCHIVE" linux-amd64
+          test -x linux-amd64/orchestrator
+          ARCHIVE="woofx3-${TAG}-linux-amd64.zip"
+          zip -r --symlinks "$ARCHIVE" linux-amd64
           ls -lh "$ARCHIVE"
 
       - name: Upload Linux archive
         uses: actions/upload-artifact@v4
         with:
           name: linux-amd64
-          path: woofx3-${{ steps.meta.outputs.version }}-linux-amd64.tar.gz
+          path: woofx3-${{ needs.plan.outputs.tag }}-linux-amd64.zip
           if-no-files-found: error
 
   windows:
     name: Windows archive
+    needs: plan
+    if: needs.plan.outputs.tag != ''
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set version
-        id: meta
-        run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Install system packages
         run: |
@@ -131,67 +175,117 @@ jobs:
           cd build
           chmod +x main.sh scripts/*.sh
           ./main.sh --clean --target windows-amd64
+          test -f dist/windows-amd64/orchestrator.exe
           test -f dist/services-windows-amd64.zip
 
-      - name: Rename archive
+      - name: Name the archive for the release
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
         run: |
-          VERSION="${{ steps.meta.outputs.version }}"
-          cp build/dist/services-windows-amd64.zip "woofx3-${VERSION}-windows-amd64.zip"
-          ls -lh "woofx3-${VERSION}-windows-amd64.zip"
+          cp build/dist/services-windows-amd64.zip "woofx3-${TAG}-windows-amd64.zip"
+          ls -lh "woofx3-${TAG}-windows-amd64.zip"
 
       - name: Upload Windows archive
         uses: actions/upload-artifact@v4
         with:
           name: windows-amd64
-          path: woofx3-${{ steps.meta.outputs.version }}-windows-amd64.zip
+          path: woofx3-${{ needs.plan.outputs.tag }}-windows-amd64.zip
           if-no-files-found: error
 
   release:
-    name: GitHub Release
-    needs: [docker, windows]
+    name: Tag and publish
+    needs: [plan, docker, windows]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+      DIGEST: ${{ needs.docker.outputs.digest }}
     steps:
-      - name: Download Linux archive
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # .releaserc.json attaches dist/*.zip to the release.
+      - name: Download archives
         uses: actions/download-artifact@v4
         with:
-          name: linux-amd64
-          path: artifacts
+          path: dist
+          merge-multiple: true
 
-      - name: Download Windows archive
-        uses: actions/download-artifact@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          name: windows-amd64
-          path: artifacts
+          node-version: ${{ env.NODE_VERSION }}
 
-      - name: Create release
-        uses: softprops/action-gh-release@v2
+      - name: Tag and create the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_EXPECTED_TAG: ${{ needs.plan.outputs.tag }}
+        run: npx --yes ${SEMANTIC_RELEASE}
+
+      # semantic-release exits cleanly without releasing when master moved on
+      # since the dry run, or when a rerun finds the tag already published.
+      # Only the second may go on to tag the image.
+      - name: Check the release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git fetch --force --tags origin
+          test "$(git rev-parse "${TAG}^{commit}")" = "$(git rev-parse HEAD)"
+          gh release view "$TAG" --json assets --jq '.assets[].name' | sort > published
+          printf '%s\n' "woofx3-${TAG}-linux-amd64.zip" "woofx3-${TAG}-windows-amd64.zip" | sort > expected
+          diff expected published
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          tag_name: ${{ needs.docker.outputs.version }}
-          name: ${{ needs.docker.outputs.version }}
-          generate_release_notes: true
-          body: |
-            ## Container image
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-            ```
-            docker pull ghcr.io/wolfymaster/woofx3:${{ needs.docker.outputs.version }}
-            ```
+      - name: Tag the image
+        run: |
+          docker buildx imagetools create \
+            --tag "${IMAGE_NAME}:${TAG}" \
+            --tag "${IMAGE_NAME}:latest" \
+            "${IMAGE_NAME}@${DIGEST}"
 
-            Digest: `${{ needs.docker.outputs.digest }}`
+      - name: Add the image to the release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --json body --jq .body > notes.md
+          if grep -qF '## Container image' notes.md; then
+            exit 0
+          fi
+          cat >> notes.md <<EOF
 
-            Deploy by digest, which never moves:
+          ## Container image
 
-            ```
-            ghcr.io/wolfymaster/woofx3@${{ needs.docker.outputs.digest }}
-            ```
+          \`\`\`
+          docker pull ${IMAGE_NAME}:${TAG}
+          \`\`\`
 
-            Also tagged as `ghcr.io/wolfymaster/woofx3:latest`, which moves with every release; never deploy it.
+          Digest: \`${DIGEST}\`
 
-            ## Binary packages
+          Deploy by digest, which never moves:
 
-            - `woofx3-${{ needs.docker.outputs.version }}-linux-amd64.tar.gz` — Linux binaries (matches the image `/app` layout)
-            - `woofx3-${{ needs.docker.outputs.version }}-windows-amd64.zip` — Windows executables
+          \`\`\`
+          ${IMAGE_NAME}@${DIGEST}
+          \`\`\`
 
-            Extract and run `./start.sh` (Linux) or `start.bat` (Windows). Edit the packaged `.woofx3.json` template before production use.
-          files: |
-            artifacts/woofx3-${{ needs.docker.outputs.version }}-linux-amd64.tar.gz
-            artifacts/woofx3-${{ needs.docker.outputs.version }}-windows-amd64.zip
+          Also tagged as \`${IMAGE_NAME}:latest\`, which moves with every release; never deploy it.
+
+          ## Binary packages
+
+          - \`woofx3-${TAG}-linux-amd64.zip\`: Linux binaries and the orchestrator (the image's \`/app\` layout)
+          - \`woofx3-${TAG}-windows-amd64.zip\`: Windows executables and the orchestrator
+
+          Extract and run \`./start.sh\` (Linux) or \`start.bat\` (Windows). Edit the packaged \`.woofx3.json\` template before production use.
+          EOF
+          gh release edit "$TAG" --notes-file notes.md
