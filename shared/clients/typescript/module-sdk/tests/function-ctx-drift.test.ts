@@ -64,6 +64,8 @@ const KNOWN_TOP_LEVEL = new Set([
   // Built by build_response_fn, quickjs.rs — a bare callable, not a
   // namespace, so it has no KNOWN_NESTED entry.
   "response",
+  // Built by build_result_fn, quickjs.rs — a bare callable, like `response`.
+  "result",
 ]);
 
 const KNOWN_NESTED: Record<string, string[]> = {

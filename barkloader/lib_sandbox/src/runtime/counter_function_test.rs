@@ -118,3 +118,27 @@ fn refuses_a_counter_that_does_not_exist_or_was_not_chosen() {
     let unchosen = harness.run("counterIncrement", json!({})).unwrap_err();
     assert!(unchosen.contains("no counter chosen"), "{unchosen}");
 }
+
+#[test]
+fn a_change_is_announced_so_workflows_can_act_on_it() {
+    let harness = counter(json!({ "initialValue": 4 }));
+    harness
+        .run("counterIncrement", json!({ "target": TARGET }))
+        .unwrap();
+    assert_eq!(
+        harness.take_events(),
+        [(
+            "counter.changed".to_string(),
+            json!({ "target": TARGET, "previous": 4, "next": 5 })
+        )]
+    );
+}
+
+#[test]
+fn setting_a_counter_to_the_value_it_holds_announces_nothing() {
+    let harness = counter(json!({ "initialValue": 4 }));
+    harness
+        .run("counterSet", json!({ "target": TARGET, "value": 4 }))
+        .unwrap();
+    assert!(harness.take_events().is_empty());
+}

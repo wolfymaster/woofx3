@@ -58,6 +58,7 @@ fn build_registry() -> Arc<ModuleRegistry> {
         },
         functions,
         state: ModuleState::Active,
+        event_types: Default::default(),
     };
 
     registry
@@ -164,6 +165,7 @@ fn test_js_instruction_limit() {
         },
         functions,
         state: ModuleState::Active,
+        event_types: Default::default(),
     };
 
     registry
@@ -221,6 +223,7 @@ function isolation(ctx) {
         },
         functions,
         state: ModuleState::Active,
+        event_types: Default::default(),
     };
 
     registry
@@ -287,6 +290,7 @@ fn test_ctx_event_data() {
         },
         functions,
         state: ModuleState::Active,
+        event_types: Default::default(),
     };
 
     registry
@@ -347,6 +351,7 @@ fn test_ctx_chat_send_message_routes_to_host() {
         },
         functions,
         state: ModuleState::Active,
+        event_types: Default::default(),
     };
     registry
         .register_module("chat_test".to_string(), module)
@@ -413,6 +418,7 @@ fn extension_test_module(
         },
         functions,
         state: ModuleState::Active,
+        event_types: Default::default(),
     };
     registry.register_module(name.to_string(), module).unwrap();
     registry
@@ -650,4 +656,74 @@ fn test_quickjs_ctx_crypto_throws_for_an_unknown_algorithm() {
     assert_eq!(result["threw"], serde_json::json!(true));
     let message = result["message"].as_str().unwrap_or_default();
     assert!(message.contains("md5"), "names the algorithm: {message}");
+}
+
+/// A registry holding one function of a module that declares one eventbus
+/// trigger, `thing.happened`.
+fn announcing_module(func_name: &str, code: &str, ext: &str) -> Arc<ModuleRegistry> {
+    let registry = extension_test_module("announcer", func_name, code, ext);
+    let mut module = registry
+        .list_registered_modules()
+        .into_iter()
+        .next()
+        .unwrap();
+    module.event_types = ["thing.happened".to_string()].into_iter().collect();
+    registry
+        .update_module("announcer".to_string(), module)
+        .unwrap();
+    registry
+}
+
+fn invoke_announcer(
+    registry: Arc<ModuleRegistry>,
+    func_name: &str,
+) -> (Result<serde_json::Value, String>, Arc<CapturingNats>) {
+    let nats = Arc::new(CapturingNats::default());
+    let mut host_ctx = noop_host_context();
+    host_ctx.nats = nats.clone();
+    let result = Sandbox::new(registry, host_ctx)
+        .unwrap()
+        .invoke(InvokeRequest {
+            function: format!("announcer:function:{func_name}"),
+            event: serde_json::Value::Null,
+            user: None,
+            params: serde_json::Value::Null,
+        })
+        .map_err(|err| err.to_string());
+    (result, nats)
+}
+
+#[test]
+fn test_ctx_result_publishes_declared_events_and_returns_only_the_value() {
+    for (code, ext) in [
+        (
+            r#"function run(ctx) { return ctx.result({ n: 1 }, [{ type: "thing.happened", data: { n: 1 } }]); }"#,
+            "js",
+        ),
+        (
+            r#"function run(ctx) return ctx.result({ n = 1 }, { { type = "thing.happened", data = { n = 1 } } }) end"#,
+            "lua",
+        ),
+    ] {
+        let (result, nats) = invoke_announcer(announcing_module("run", code, ext), "run");
+        assert_eq!(result.unwrap(), serde_json::json!({ "n": 1 }), "{ext}");
+
+        let published = nats.published.lock().unwrap();
+        assert_eq!(published.len(), 1, "{ext}");
+        let (subject, envelope) = &published[0];
+        assert_eq!(subject, "thing.happened");
+        assert_eq!(envelope["type"], "thing.happened");
+        assert_eq!(envelope["source"], "module/announcer");
+        assert_eq!(envelope["data"], serde_json::json!({ "n": 1 }));
+    }
+}
+
+#[test]
+fn test_ctx_result_with_an_undeclared_event_fails_and_publishes_nothing() {
+    let code =
+        r#"function run(ctx) { return ctx.result(null, [{ type: "channel.cheer", data: {} }]); }"#;
+    let (result, nats) = invoke_announcer(announcing_module("run", code, "js"), "run");
+    let err = result.unwrap_err();
+    assert!(err.contains("not an eventbus trigger"), "{err}");
+    assert!(nats.published.lock().unwrap().is_empty());
 }

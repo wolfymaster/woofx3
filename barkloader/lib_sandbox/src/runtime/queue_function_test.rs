@@ -183,3 +183,41 @@ fn refuses_a_queue_that_does_not_exist_or_was_not_chosen() {
     let unchosen = harness.run("queueNext", json!({})).unwrap_err();
     assert!(unchosen.contains("no queue chosen"), "{unchosen}");
 }
+
+#[test]
+fn joining_and_taking_the_next_entry_are_announced() {
+    let harness = queue(json!({}));
+    add(&harness, "alice");
+    harness
+        .run("queueNext", json!({ "target": TARGET }))
+        .unwrap();
+    assert_eq!(
+        harness.take_events(),
+        [
+            (
+                "queue.added".to_string(),
+                json!({ "target": TARGET, "entry": "alice", "added": true, "reason": "", "position": 1, "size": 1 })
+            ),
+            (
+                "queue.next".to_string(),
+                json!({ "target": TARGET, "entry": "alice", "taken": true, "size": 0 })
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_refused_entry_or_an_empty_queue_announces_nothing() {
+    let harness = queue(json!({ "capacity": 1 }));
+    add(&harness, "alice");
+    harness.take_events();
+    add(&harness, "alice");
+    add(&harness, "bob");
+    harness
+        .run("queueRemove", json!({ "target": TARGET, "entry": "alice" }))
+        .unwrap();
+    harness
+        .run("queueNext", json!({ "target": TARGET }))
+        .unwrap();
+    assert!(harness.take_events().is_empty());
+}

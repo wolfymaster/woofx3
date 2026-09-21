@@ -923,6 +923,21 @@ The bundled `woofx3` module's kinds store these values, which is what a widget o
 | `timer` | `{ "running": true, "endsAt": <epoch ms> }` while counting down; `{ "running": false, "remainingMs": <ms> }` while stopped. A running timer is never rewritten as it ticks, so time left is `max(0, endsAt - now)`. | Stopped at its `duration` setting. |
 | `queue` | An array of strings, first in line first. | Empty. |
 
+Each kind also declares eventbus triggers, announced by its functions through
+[`ctx.result`](./sandbox.md#ctxresult), so a workflow — and the dashboard's resource
+pages, which edit those workflows — can act on a change however it was made. Every
+trigger carries a `resource_ref` field bound to the event's `target`, which narrows a
+workflow to one instance.
+
+| Event | Announced when |
+|-------|----------------|
+| `counter.changed` | Any counter action moves the number. |
+| `timer.started` | A timer goes from standing still to counting down. |
+| `timer.paused` | Pause stops a timer that was counting down. |
+| `timer.ended` | A running timer reaches zero. Nothing runs at that moment, so the module's `timer_expiry` background task checks once a second, stops each timer that has run out and announces it. Starting a timer from its ended workflow makes it repeat. |
+| `queue.added` | An entry joins a queue. |
+| `queue.next` | The entry at the front of a queue is taken. |
+
 **Storage is per module.** Every key a function reads or writes belongs to its own module — the store addresses a value by application, module and key — so two modules using the same key hold two separate values. Update a value from its previous one with `ctx.storage.compareAndSet(key, expected, value, options?)`, which writes only if the key still holds `expected` (or nothing, for `null`) and otherwise returns `{ swapped: false, current }` to retry from. A `get` followed by a `set` loses one of two concurrent updates.
 
 ### NATS subjects

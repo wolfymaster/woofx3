@@ -232,3 +232,92 @@ fn refuses_a_timer_that_does_not_exist_or_was_not_chosen() {
     let unchosen = harness.run("timerStart", json!({})).unwrap_err();
     assert!(unchosen.contains("no timer chosen"), "{unchosen}");
 }
+
+fn event_types(harness: &Harness) -> Vec<String> {
+    harness
+        .take_events()
+        .into_iter()
+        .map(|(event_type, _)| event_type)
+        .collect()
+}
+
+#[test]
+fn starting_and_pausing_are_announced() {
+    let harness = timer(json!({ "duration": 60 }));
+    harness
+        .run("timerStart", json!({ "target": TARGET }))
+        .unwrap();
+    harness
+        .run("timerStart", json!({ "target": TARGET }))
+        .unwrap();
+    harness
+        .run("timerPause", json!({ "target": TARGET }))
+        .unwrap();
+    assert_eq!(event_types(&harness), ["timer.started", "timer.paused"]);
+}
+
+// Reset stops a running timer, but that is not the timer being paused.
+#[test]
+fn resetting_a_running_timer_announces_nothing() {
+    let harness = timer(json!({ "duration": 60 }));
+    harness.store(running_for(30_000));
+    harness
+        .run("timerReset", json!({ "target": TARGET }))
+        .unwrap();
+    assert!(harness.take_events().is_empty());
+}
+
+#[test]
+fn expiry_ends_a_timer_that_has_run_out_and_announces_it() {
+    let harness = timer(json!({ "duration": 60 }));
+    harness.store(running_for(-500));
+    let result = harness.run("timerExpire", json!({})).unwrap();
+    assert_eq!(result, json!({ "ended": 1 }));
+    assert_eq!(
+        harness.take_events(),
+        [("timer.ended".to_string(), json!({ "target": TARGET }))]
+    );
+    assert_eq!(
+        harness.stored(),
+        Some(json!({ "running": false, "remainingMs": 0 }))
+    );
+
+    // Ended once: the next pass finds it stopped.
+    harness.run("timerExpire", json!({})).unwrap();
+    assert!(harness.take_events().is_empty());
+}
+
+#[test]
+fn expiry_leaves_a_timer_with_time_left_or_a_stopped_one_alone() {
+    for stored in [
+        running_for(30_000),
+        json!({ "running": false, "remainingMs": 0 }),
+    ] {
+        let harness = timer(json!({}));
+        harness.store(stored.clone());
+        harness.run("timerExpire", json!({})).unwrap();
+        assert!(harness.take_events().is_empty(), "{stored}");
+        assert_eq!(harness.stored(), Some(stored));
+    }
+}
+
+// The expiry task belongs to this module and ends only this module's timers.
+#[test]
+fn expiry_leaves_another_modules_timers_alone() {
+    let harness = Harness::new(TIMER_JS, "other:timer:break", "timer", json!({}));
+    harness.store(running_for(-500));
+    harness.run("timerExpire", json!({})).unwrap();
+    assert!(harness.take_events().is_empty());
+}
+
+// A repeating timer: its ended workflow starts it again, from the full duration.
+#[test]
+fn starting_an_ended_timer_runs_it_again_from_its_full_duration() {
+    let harness = timer(json!({ "duration": 90 }));
+    harness.store(json!({ "running": false, "remainingMs": 0 }));
+    let result = harness
+        .run("timerStart", json!({ "target": TARGET }))
+        .unwrap();
+    assert_ends_in(&result, 90_000);
+    assert_eq!(event_types(&harness), ["timer.started"]);
+}

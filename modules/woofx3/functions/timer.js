@@ -8,10 +8,15 @@
 // time left from those. A timer with no stored value is stopped at its full
 // duration, so a new or session-cleared timer needs no write to be ready.
 //
+// Nothing runs at the moment a timer reaches zero, so `timerExpire` — the
+// module's `timer_expiry` background task, once a second — stops every timer
+// that has run out and announces `timer.ended` for it. Starting and pausing are
+// announced by the actions that do them. Workflows act on all three.
+//
 // How long a timer runs and how long its value lives are the instance's own
 // settings, read back through `ctx.resources.get`. Every change goes through
-// `compareAndSet`, because a chat command and a workflow can change the same
-// timer at the same moment.
+// `compareAndSet`, because a chat command, a workflow and the expiry task can
+// change the same timer at the same moment.
 
 // Enough to ride out a burst of simultaneous updates; running out means
 // something is writing this key continuously, which is worth failing loudly.
@@ -20,6 +25,10 @@ const MAX_ATTEMPTS = 25;
 // A day. Far beyond any stream, and a bound on what a workflow adding time on
 // every event can build up.
 const MAX_REMAINING_MS = 24 * 60 * 60 * 1000;
+
+// The engine's limit on events one invocation may return. Timers past it that
+// have run out are still running on the next pass, which ends them then.
+const MAX_EVENTS = 16;
 
 // Runs a stopped timer from what it has left, or from its full duration when it
 // has already run out. Starting a running timer changes nothing.
@@ -33,7 +42,7 @@ function timerStart(ctx) {
 
 function timerPause(ctx) {
   const timer = loadTimer(ctx);
-  return update(ctx, timer, (remainingMs) => ({ running: false, remainingMs }));
+  return update(ctx, timer, (remainingMs) => ({ running: false, remainingMs }), { announcePause: true });
 }
 
 // Stops the timer at its full duration.
@@ -43,7 +52,8 @@ function timerReset(ctx) {
 }
 
 // Adds time to a running or stopped timer; negative seconds take it away. A
-// running timer that has already run out starts counting down again.
+// running timer that has run out but not yet been ended starts counting down
+// again.
 function timerAdd(ctx) {
   const timer = loadTimer(ctx);
   const seconds = secondsParameter(ctx, timer, "seconds");
@@ -55,6 +65,33 @@ function timerSet(ctx) {
   const timer = loadTimer(ctx);
   const seconds = secondsParameter(ctx, timer, "seconds");
   return update(ctx, timer, (_, running) => ({ running, remainingMs: seconds * 1000 }));
+}
+
+// Ends every running timer of this module that has reached zero: stops it with
+// no time left and announces `timer.ended`. A timer changed between the read and
+// the write (time added at the last second) is left for the next pass to judge.
+function timerExpire(ctx) {
+  const now = Date.now();
+  const events = [];
+  const prefix = `${ctx.module.id}:timer:`;
+  for (const instance of ctx.resources.list("timer")) {
+    if (events.length >= MAX_EVENTS) {
+      break;
+    }
+    if (!instance.canonical_id.startsWith(prefix)) {
+      continue;
+    }
+    const timer = timerFromInstance(instance);
+    const stored = ctx.storage.get(timer.key);
+    if (!stored || stored.running !== true || Number(stored.endsAt) > now) {
+      continue;
+    }
+    const ended = { running: false, remainingMs: 0 };
+    if (ctx.storage.compareAndSet(timer.key, stored, ended, timer.options).swapped) {
+      events.push({ type: "timer.ended", data: { target: timer.target } });
+    }
+  }
+  return ctx.result({ ended: events.length }, events);
 }
 
 function parameters(ctx) {
@@ -84,10 +121,14 @@ function loadTimer(ctx) {
   if (instance.kind !== "timer") {
     throw new Error(`timer: ${target} is a ${instance.kind}, not a timer`);
   }
+  return timerFromInstance(instance);
+}
+
+function timerFromInstance(instance) {
   const settings = instance.settings || {};
   return {
-    target,
-    key: `state:${target}`,
+    target: instance.canonical_id,
+    key: `state:${instance.canonical_id}`,
     durationMs: clampRemaining(numberOr(settings.duration, 300) * 1000),
     options: { clearOnSessionEnd: settings.lifetime === "session" },
   };
@@ -108,7 +149,11 @@ function readTimer(timer, stored, now) {
 // Apply `next` to the timer as it stands until the write lands, and report both
 // sides of it. `next` returns the time left and whether the timer runs; this
 // turns a running one into the moment it ends.
-function update(ctx, timer, next) {
+//
+// A timer that goes from standing still to counting down is announced as
+// `timer.started`. Stopping one is announced as `timer.paused` only when the
+// caller is pausing it, so a reset is not mistaken for a pause.
+function update(ctx, timer, next, { announcePause = false } = {}) {
   let stored = ctx.storage.get(timer.key);
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const now = Date.now();
@@ -118,13 +163,23 @@ function update(ctx, timer, next) {
     const value = wanted.running ? { running: true, endsAt: now + remainingMs } : { running: false, remainingMs };
     const result = ctx.storage.compareAndSet(timer.key, stored === undefined ? null : stored, value, timer.options);
     if (result.swapped) {
-      return {
+      const outcome = {
         target: timer.target,
         running: wanted.running,
         previous: toSeconds(previous.remainingMs),
         remaining: toSeconds(remainingMs),
         endsAt: wanted.running ? value.endsAt : null,
       };
+      const wasCounting = previous.running && previous.remainingMs > 0;
+      const isCounting = wanted.running && remainingMs > 0;
+      const events = [];
+      if (!wasCounting && isCounting) {
+        events.push({ type: "timer.started", data: { target: timer.target, remaining: outcome.remaining } });
+      }
+      if (announcePause && wasCounting && !isCounting) {
+        events.push({ type: "timer.paused", data: { target: timer.target, remaining: outcome.remaining } });
+      }
+      return ctx.result(outcome, events);
     }
     stored = result.current;
   }

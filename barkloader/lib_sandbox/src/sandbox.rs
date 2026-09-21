@@ -1,11 +1,13 @@
 use crate::error::{Error, InvokeBlockingError};
 use crate::function_executor::FunctionExecutor;
+use crate::function_result::resolve_function_result;
 use crate::host::{HostContext, InvocationContext};
 use crate::models::request::InvokeRequest;
 use crate::module_registry::ModuleRegistry;
 use serde_json::Value;
 use std::sync::Arc;
 use tracing::{error, info, warn};
+use woofx3_cloudevents::{BaseEvent, now_iso8601};
 
 #[derive(Clone)]
 pub struct SandboxFactory {
@@ -103,7 +105,10 @@ impl Sandbox {
             module_version: meta.as_ref().map(|m| m.version.clone()).unwrap_or_default(),
         };
 
-        let result = self.function_executor.execute(&function, &invocation);
+        let result = self
+            .function_executor
+            .execute(&function, &invocation)
+            .and_then(|value| self.publish_requested_events(&invocation.module_id, value));
 
         match &result {
             Ok(value) => {
@@ -127,5 +132,33 @@ impl Sandbox {
         }
 
         result
+    }
+
+    /// Publishes the events a `ctx.result` asks for and returns the value the
+    /// caller should see. An envelope that breaks the rules fails the
+    /// invocation and publishes nothing.
+    ///
+    /// A publish that fails is logged, not returned: the function's own effects
+    /// (a storage write) have already happened, and failing it would invite a
+    /// retry that applies them twice.
+    fn publish_requested_events(&self, module_id: &str, value: Value) -> Result<Value, Error> {
+        let (value, events) = resolve_function_result(value, &self.registry.event_types(module_id))
+            .map_err(Error::RuntimeError)?;
+        let source = format!("module/{module_id}");
+        for event in events {
+            let envelope = BaseEvent::new(&event.event_type, &source, event.data)
+                .with_time(now_iso8601())
+                .to_value();
+            let published = envelope
+                .map_err(|err| err.to_string())
+                .and_then(|envelope| self.host_ctx.nats.publish(&event.event_type, envelope));
+            if let Err(err) = published {
+                error!(
+                    "Publishing {} for module {} failed: {}",
+                    event.event_type, module_id, err
+                );
+            }
+        }
+        Ok(value)
     }
 }

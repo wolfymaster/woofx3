@@ -394,6 +394,19 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
     })?;
     ctx.set("response", response_fn)?;
 
+    // result — a function's result together with events it asks the engine
+    // to publish. Pure data constructor; the engine checks and publishes the
+    // events once the function returns it (see function_result.rs).
+    let result_fn = lua.create_function(move |lua, (value, events): (LuaValue, LuaValue)| {
+        let to_json = |v: &LuaValue| {
+            serde_json::to_value(v).map_err(|e| mlua::Error::RuntimeError(e.to_string()))
+        };
+        let envelope =
+            crate::function_result::build_result_value(to_json(&value)?, to_json(&events)?);
+        lua.to_value(&envelope)
+    })?;
+    ctx.set("result", result_fn)?;
+
     bind_extensions(lua, &ctx, invocation)?;
 
     Ok(ctx)

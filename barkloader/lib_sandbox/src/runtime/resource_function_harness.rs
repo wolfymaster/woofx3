@@ -1,12 +1,16 @@
 //! Runs one of the bundled woofx3 module's resource-kind functions in the real
 //! QuickJS runtime, against an in-memory store that honours compare-and-set
-//! and a resource client that knows one instance.
+//! and a resource client that knows one instance. What a function returns goes
+//! through the same `ctx.result` checks the engine applies, against the
+//! triggers the real manifest declares, and the events it would publish are
+//! kept for the test to read.
 //!
 //! Lives here rather than beside the module's JS because the module directory
 //! is zipped into the binary whole, and because what these tests prove is the
 //! pairing of that JS with this crate's `ctx.storage` and `ctx.resources`
 //! bindings — which only exist in here.
 
+use crate::function_result::{ModuleEvent, resolve_function_result};
 use crate::host::noop::noop_host_context;
 use crate::host::{
     CompareAndSetOutcome, InvocationContext, ResourceClient, ResourceInstance, StorageClient,
@@ -15,7 +19,7 @@ use crate::host::{
 use crate::runtime::RuntimeAdapter;
 use crate::runtime::quickjs::QuickJSAdapter;
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 /// One value per (namespace, key), plus a record of each write's options. When
@@ -116,6 +120,8 @@ pub struct Harness {
     target: String,
     pub storage: Arc<MemoryStorage>,
     resources: Arc<OneInstance>,
+    /// Every event the functions run so far asked to publish, in order.
+    pub events: Mutex<Vec<ModuleEvent>>,
 }
 
 impl Harness {
@@ -136,6 +142,7 @@ impl Harness {
                 instance_id,
                 settings,
             })),
+            events: Mutex::new(Vec::new()),
         }
     }
 
@@ -151,10 +158,23 @@ impl Harness {
             module_name: "woofx3".to_string(),
             module_version: "0.7.0".to_string(),
         };
-        QuickJSAdapter::new()
+        let returned = QuickJSAdapter::new()
             .unwrap()
             .execute(self.source, entry_point, &invocation)
-            .map_err(|err| err.to_string())
+            .map_err(|err| err.to_string())?;
+        let (value, events) = resolve_function_result(returned, &manifest_event_types())?;
+        self.events.lock().unwrap().extend(events);
+        Ok(value)
+    }
+
+    /// The events published so far, as `(type, data)`, emptying the record.
+    pub fn take_events(&self) -> Vec<(String, Value)> {
+        self.events
+            .lock()
+            .unwrap()
+            .drain(..)
+            .map(|event| (event.event_type, event.data))
+            .collect()
     }
 
     /// The target's value, at the key every resource kind keeps it under.
@@ -175,4 +195,18 @@ impl Harness {
             .unwrap();
         self.storage.write_options.lock().unwrap().clear();
     }
+}
+
+/// The `event` of every eventbus trigger the bundled woofx3 manifest declares.
+fn manifest_event_types() -> HashSet<String> {
+    let manifest: Value =
+        serde_json::from_str(include_str!("../../../../modules/woofx3/manifest.json"))
+            .expect("bundled woofx3 manifest parses");
+    manifest["triggers"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|trigger| trigger["type"] == "eventbus")
+        .filter_map(|trigger| trigger["event"].as_str().map(String::from))
+        .collect()
 }

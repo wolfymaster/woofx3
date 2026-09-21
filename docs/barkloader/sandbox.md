@@ -231,6 +231,45 @@ function my_function(ctx) {
   workflow step's own result, unused unless a later step references it via
   `${taskId.message}`).
 
+## `ctx.result`
+
+The shape a function returns when what it did is something workflows should be able
+to act on: a counter changed, a timer ended, a viewer joined a queue. Like
+`ctx.response`, it is a bare callable and a pure data constructor — the function
+itself publishes nothing.
+
+```js
+ctx.result(value, events?)
+// => { proto: "woofx3.result", v: 1, value, events }
+```
+
+```js
+function counterIncrement(ctx) {
+  // ...update storage...
+  const outcome = { target, previous, next };
+  return ctx.result(outcome, [{ type: "counter.changed", data: outcome }]);
+}
+```
+
+When the function returns it, barkloader (`Sandbox::invoke`, with the rules in
+`barkloader/lib_sandbox/src/function_result.rs`) checks every event before publishing
+any:
+
+- `type` must be the `event` of an **eventbus trigger the same module declares**. A
+  module cannot announce another module's events, a platform event or a `db.*` outbox
+  event.
+- At most 16 events, each `data` an object of at most 64 KiB serialized, and no
+  fields beyond `type` and `data` on an event or beyond `proto`, `v`, `value` and
+  `events` on the envelope.
+
+A result that breaks a rule fails the invocation and publishes nothing. Otherwise each
+event is published as a CloudEvent with source `module/<moduleId>`, on the subject
+named by its type, and the caller — a workflow step, a background task, a chat
+command — receives only `value`. A publish that fails is logged rather than failing
+the call, because the function's own effects have already happened and a retry would
+apply them twice. These are the same rules a webhook handler's `events` follow (see
+[Engine integrity](../services/engine-integrity.md)).
+
 ## Error Handling
 
 Sandbox errors are categorized:

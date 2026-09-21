@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -216,6 +216,13 @@
       "runtime": "js",
       "path": "functions/queue.js",
       "entryPoint": "queueClear"
+    },
+    {
+      "id": "timer.expire",
+      "name": "End timers that have run out",
+      "runtime": "js",
+      "path": "functions/timer.js",
+      "entryPoint": "timerExpire"
     }
   ],
   "actions": [
@@ -1156,6 +1163,237 @@
           }
         ]
       }
+    },
+    {
+      "id": "counter_changed",
+      "name": "Counter changed",
+      "description": "Fires when a counter's number changes, whatever changed it.",
+      "type": "eventbus",
+      "event": "counter.changed",
+      "taxonomy": [
+        "system.counter"
+      ],
+      "schema": [
+        {
+          "id": "counter",
+          "label": "Counter",
+          "type": "resource_ref",
+          "resourceKind": "counter",
+          "eventPath": "target",
+          "operator": "eq",
+          "description": "Only this counter. Leave it as any to act on every counter."
+        }
+      ],
+      "sentence": "{counter} changes",
+      "emits": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The counter, by canonical id."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Its value before the change."
+          },
+          {
+            "path": "next",
+            "type": "number",
+            "description": "Its value after the change."
+          }
+        ]
+      }
+    },
+    {
+      "id": "timer_started",
+      "name": "Timer started",
+      "description": "Fires when a timer starts counting down.",
+      "type": "eventbus",
+      "event": "timer.started",
+      "taxonomy": [
+        "system.timer"
+      ],
+      "schema": [
+        {
+          "id": "timer",
+          "label": "Timer",
+          "type": "resource_ref",
+          "resourceKind": "timer",
+          "eventPath": "target",
+          "operator": "eq",
+          "description": "Only this timer. Leave it as any to act on every timer."
+        }
+      ],
+      "sentence": "{timer} starts",
+      "emits": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The timer, by canonical id."
+          },
+          {
+            "path": "remaining",
+            "type": "number",
+            "description": "Seconds it has left."
+          }
+        ]
+      }
+    },
+    {
+      "id": "timer_paused",
+      "name": "Timer paused",
+      "description": "Fires when a timer is paused.",
+      "type": "eventbus",
+      "event": "timer.paused",
+      "taxonomy": [
+        "system.timer"
+      ],
+      "schema": [
+        {
+          "id": "timer",
+          "label": "Timer",
+          "type": "resource_ref",
+          "resourceKind": "timer",
+          "eventPath": "target",
+          "operator": "eq",
+          "description": "Only this timer. Leave it as any to act on every timer."
+        }
+      ],
+      "sentence": "{timer} is paused",
+      "emits": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The timer, by canonical id."
+          },
+          {
+            "path": "remaining",
+            "type": "number",
+            "description": "Seconds it had left."
+          }
+        ]
+      }
+    },
+    {
+      "id": "timer_ended",
+      "name": "Timer ended",
+      "description": "Fires within a second of a running timer reaching zero. Start the timer again from here to make it repeat.",
+      "type": "eventbus",
+      "event": "timer.ended",
+      "taxonomy": [
+        "system.timer"
+      ],
+      "schema": [
+        {
+          "id": "timer",
+          "label": "Timer",
+          "type": "resource_ref",
+          "resourceKind": "timer",
+          "eventPath": "target",
+          "operator": "eq",
+          "description": "Only this timer. Leave it as any to act on every timer."
+        }
+      ],
+      "sentence": "{timer} ends",
+      "emits": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The timer, by canonical id."
+          }
+        ]
+      }
+    },
+    {
+      "id": "queue_added",
+      "name": "Added to queue",
+      "description": "Fires when an entry joins a queue.",
+      "type": "eventbus",
+      "event": "queue.added",
+      "taxonomy": [
+        "system.queue"
+      ],
+      "schema": [
+        {
+          "id": "queue",
+          "label": "Queue",
+          "type": "resource_ref",
+          "resourceKind": "queue",
+          "eventPath": "target",
+          "operator": "eq",
+          "description": "Only this queue. Leave it as any to act on every queue."
+        }
+      ],
+      "sentence": "someone joins {queue}",
+      "emits": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The queue, by canonical id."
+          },
+          {
+            "path": "entry",
+            "type": "string",
+            "description": "The entry that joined."
+          },
+          {
+            "path": "position",
+            "type": "number",
+            "description": "Its place in line, counting from 1."
+          },
+          {
+            "path": "size",
+            "type": "number",
+            "description": "How many entries the queue holds now."
+          }
+        ]
+      }
+    },
+    {
+      "id": "queue_next",
+      "name": "Next in queue",
+      "description": "Fires when the entry at the front of a queue is taken.",
+      "type": "eventbus",
+      "event": "queue.next",
+      "taxonomy": [
+        "system.queue"
+      ],
+      "schema": [
+        {
+          "id": "queue",
+          "label": "Queue",
+          "type": "resource_ref",
+          "resourceKind": "queue",
+          "eventPath": "target",
+          "operator": "eq",
+          "description": "Only this queue. Leave it as any to act on every queue."
+        }
+      ],
+      "sentence": "the next entry is taken from {queue}",
+      "emits": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The queue, by canonical id."
+          },
+          {
+            "path": "entry",
+            "type": "string",
+            "description": "The entry taken."
+          },
+          {
+            "path": "size",
+            "type": "number",
+            "description": "How many entries the queue holds now."
+          }
+        ]
+      }
     }
   ],
   "widgets": [
@@ -1468,6 +1706,14 @@
       "taxonomy": [
         "media.animation"
       ]
+    }
+  ],
+  "backgroundTasks": [
+    {
+      "id": "timer_expiry",
+      "function": "timer.expire",
+      "schedule": "* * * * * *",
+      "description": "Once a second, stops every running timer that has reached zero and announces that it ended."
     }
   ]
 }

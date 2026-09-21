@@ -10,7 +10,9 @@
 // viewers joining at the same moment must both end up in line.
 //
 // A full queue, a duplicate or an empty queue is not an error: the result says
-// what happened, so a workflow can answer the viewer instead of failing.
+// what happened, so a workflow can answer the viewer instead of failing. An entry
+// joining and an entry taken from the front are announced as `queue.added` and
+// `queue.next`, so workflows can act on them whatever made the change.
 
 // Enough to ride out a burst of simultaneous updates; running out means
 // something is writing this key continuously, which is worth failing loudly.
@@ -35,7 +37,11 @@ function queueAdd(ctx) {
       return { entries, result: { entry, added: false, reason: "full", position: 0 } };
     }
     const next = entries.concat([entry]);
-    return { entries: next, result: { entry, added: true, reason: "", position: next.length } };
+    return {
+      entries: next,
+      result: { entry, added: true, reason: "", position: next.length },
+      announce: "queue.added",
+    };
   });
 }
 
@@ -46,7 +52,7 @@ function queueNext(ctx) {
     if (entries.length === 0) {
       return { entries, result: { entry: "", taken: false } };
     }
-    return { entries: entries.slice(1), result: { entry: entries[0], taken: true } };
+    return { entries: entries.slice(1), result: { entry: entries[0], taken: true }, announce: "queue.next" };
   });
 }
 
@@ -111,8 +117,9 @@ function loadQueue(ctx) {
 }
 
 // Apply `change` to the entries until the write lands. `change` returns the new
-// entries and what to report about them; the report gains the queue and its size
-// after the change, which is what later workflow steps read.
+// entries, what to report about them and, when the change is one workflows act
+// on, the event to announce it as. The report gains the queue and its size after
+// the change, which is what later workflow steps read, and is the event's data.
 function update(ctx, queue, change) {
   let stored = ctx.storage.get(queue.key);
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -120,11 +127,11 @@ function update(ctx, queue, change) {
     const changed = change(entries);
     const result = Object.assign({ target: queue.target }, changed.result, { size: changed.entries.length });
     if (changed.entries === entries) {
-      return result;
+      return ctx.result(result, []);
     }
     const written = ctx.storage.compareAndSet(queue.key, stored === undefined ? null : stored, changed.entries, queue.options);
     if (written.swapped) {
-      return result;
+      return ctx.result(result, changed.announce ? [{ type: changed.announce, data: result }] : []);
     }
     stored = written.current;
   }
