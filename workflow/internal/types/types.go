@@ -295,6 +295,7 @@ type WaitState struct {
 
 type AggregationState struct {
 	Strategy    string    `json:"strategy"`
+	Field       string    `json:"field,omitempty"`
 	Count       int       `json:"count"`
 	Sum         float64   `json:"sum"`
 	Threshold   float64   `json:"threshold"`

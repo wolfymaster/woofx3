@@ -266,7 +266,7 @@ Waits for one matching event:
   "type": "wait",
   "wait": {
     "type": "event",
-    "eventType": "channel.follow",
+    "event": "channel.follow",
     "conditions": [
       { "field": "${trigger.data.userId}", "operator": "eq", "value": "${trigger.data.userId}" }
     ],
@@ -286,7 +286,7 @@ Collects multiple events and checks a threshold:
   "type": "wait",
   "wait": {
     "type": "aggregation",
-    "eventType": "channel.cheer",
+    "event": "channel.cheer",
     "aggregation": {
       "strategy": "sum",
       "field": "data.amount",
@@ -307,13 +307,27 @@ Collects multiple events and checks a threshold:
 | `sum` | Sums the numeric value at `field` across events until `threshold` | Yes |
 | `threshold` | Satisfied when a single event's `field` value meets `threshold` | Yes |
 
+`field` is a dot path rooted at the event, as in `data.amount`. With no `field` set,
+`sum` and `threshold` read `data.amount` and then `data.value`; an event carrying
+neither fails the wait rather than contributing a default, so a `sum` that cannot
+find its number is reported instead of quietly behaving like a `count`.
+
+**Timeouts are enforced whether or not a matching event ever arrives.** The engine
+checks waiting runs against their deadlines once a second, so a wait whose event
+never comes — or an aggregation whose threshold is never reached — settles on
+`onTimeout` rather than holding its run open. `timeout` defaults to 5 minutes and
+`onTimeout` to `"fail"`.
+
 Wait tasks export aggregation results for downstream tasks:
 
 | Export | Type | Description |
 |--------|------|-------------|
-| `eventCount` | `number` | Total events received |
-| `sum` | `number` | Running sum (for sum strategy) |
-| `events` | `Event[]` | All received events |
+| `satisfied` | `boolean` | Whether the wait was satisfied. `false` when it was settled by its timeout with `onTimeout: "continue"`. |
+| `events` | `Event[]` | Every event the wait accepted, in order |
+| `count` | `number` | Events accepted, for an aggregation wait |
+| `sum` | `number` | Running sum, for the `sum` strategy |
+| `lastEvent` | `Event` | The most recent accepted event, absent if none arrived |
+| `data` | `object` | That event's payload, absent if none arrived |
 
 ---
 

@@ -18,6 +18,12 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
+// How often waiting runs are checked against their timeouts. A wait's deadline
+// is only as precise as this, which is why it is short: a workflow whose wait
+// is set to continue after 5s should not sit for a minute. The scan is over the
+// waiting runs alone, so its cost tracks how many are in flight, not traffic.
+const WaitExpiryInterval = time.Second
+
 type EventPublisher interface {
 	Publish(event *types.Event) error
 }
@@ -382,6 +388,106 @@ func (e *Engine[TServices]) processWaitingExecutions(event *types.Event) {
 	for _, w := range toResume {
 		go e.resumeExecution(w)
 	}
+}
+
+// expireTimedOutWaits settles every wait whose timeout has passed.
+//
+// Nothing else does. A waiting run is only looked at again when an event it
+// matches arrives, so a wait for an event that never comes -- or an aggregation
+// whose threshold is never met -- would otherwise hold its run open forever and
+// never reach its `onTimeout`, which is exactly the case the setting exists for.
+func (e *Engine[TServices]) expireTimedOutWaits(now time.Time) {
+	for _, w := range e.takeExpiredWaits(now) {
+		e.settleTimedOutWait(w)
+	}
+}
+
+// Remove and return the waits that have timed out, along with any whose run or
+// task has since gone: both are entries nothing will ever resume, and leaving
+// them in the map grows it for the process's lifetime.
+func (e *Engine[TServices]) takeExpiredWaits(now time.Time) []*WaitingExecution {
+	e.waitingMu.Lock()
+	defer e.waitingMu.Unlock()
+
+	expired := make([]*WaitingExecution, 0)
+	for eventType, waiting := range e.waitingExecutions {
+		remaining := make([]*WaitingExecution, 0, len(waiting))
+		for _, w := range waiting {
+			e.executionsMu.RLock()
+			execution := e.executions[w.ExecutionID]
+			e.executionsMu.RUnlock()
+			if execution == nil {
+				continue
+			}
+
+			taskExec := execution.Tasks[w.TaskID]
+			if taskExec == nil || taskExec.WaitState == nil {
+				continue
+			}
+
+			if now.After(taskExec.WaitState.Timeout) {
+				expired = append(expired, w)
+				continue
+			}
+			remaining = append(remaining, w)
+		}
+
+		if len(remaining) == 0 {
+			delete(e.waitingExecutions, eventType)
+			continue
+		}
+		e.waitingExecutions[eventType] = remaining
+	}
+
+	return expired
+}
+
+// Settle one timed-out wait the way the task loop would have, had it been able
+// to reach it: `fail` ends the run, `continue` carries on from the next task.
+//
+// This mirrors the timeout branch of executeTasksFromIndex rather than going
+// through resumeExecution, which records the wait as satisfied -- which a wait
+// that timed out is not.
+func (e *Engine[TServices]) settleTimedOutWait(w *WaitingExecution) {
+	e.executionsMu.RLock()
+	execution := e.executions[w.ExecutionID]
+	e.executionsMu.RUnlock()
+	if execution == nil {
+		return
+	}
+
+	taskExec := execution.Tasks[w.TaskID]
+	if taskExec == nil {
+		return
+	}
+
+	onTimeout := "fail"
+	if w.TaskDef != nil && w.TaskDef.Wait != nil && w.TaskDef.Wait.OnTimeout != "" {
+		onTimeout = w.TaskDef.Wait.OnTimeout
+	}
+
+	now := time.Now()
+	if onTimeout == "fail" {
+		taskExec.Status = types.TaskStatusFailed
+		taskExec.Error = "wait timeout"
+		taskExec.CompletedAt = &now
+		e.recordStep(execution, w.TaskID, w.CurrentIndex, nil, taskExec)
+		e.setExecutionStatus(execution, types.ExecutionStatusFailed, errors.New("wait timeout"))
+		e.logger.Error("Wait task timed out", "workflow", w.WorkflowID, "execution", w.ExecutionID, "task", w.TaskID)
+		e.checkSubWorkflowCompletion(execution.ID)
+		return
+	}
+
+	waitTask := &tasks.WaitTask{}
+	w.TaskExports[w.TaskID] = waitTask.GetExports(taskExec.WaitState)
+	taskExec.Status = types.TaskStatusSuccess
+	taskExec.CompletedAt = &now
+	taskExec.Result = &types.TaskResult{Status: types.TaskStatusSuccess, Exports: w.TaskExports[w.TaskID]}
+	e.recordStep(execution, w.TaskID, w.CurrentIndex, nil, taskExec)
+	execution.Status = types.ExecutionStatusRunning
+
+	e.logger.Info("Wait task timed out, continuing", "workflow", w.WorkflowID, "execution", w.ExecutionID, "task", w.TaskID)
+	e.executeTasksFromIndex(execution, w.ExecutionOrder, w.CurrentIndex+1, w.TaskExports, w.TriggerEvent)
 }
 
 func (e *Engine[TServices]) evaluateTrigger(wf *types.WorkflowDefinition, event *types.Event) error {
@@ -1658,9 +1764,19 @@ func (e *Engine[TServices]) GetExecution(id string) (*types.WorkflowExecution, e
 
 func (e *Engine[TServices]) Start(ctx context.Context) error {
 	e.logger.Info("Workflow engine started")
-	<-ctx.Done()
-	e.logger.Info("Workflow engine stopping")
-	return nil
+
+	ticker := time.NewTicker(WaitExpiryInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			e.logger.Info("Workflow engine stopping")
+			return nil
+		case now := <-ticker.C:
+			e.expireTimedOutWaits(now)
+		}
+	}
 }
 
 func (e *Engine[TServices]) Stop() error {
