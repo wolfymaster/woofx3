@@ -65,6 +65,9 @@ type InvokeRequest struct {
 type InvokeData struct {
 	Function string                 `json:"function"`
 	Event    map[string]interface{} `json:"event"`
+	// WorkflowChain is stamped on every event the function announces; see
+	// Invoke. Omitted when the caller is not a workflow run.
+	WorkflowChain string `json:"workflowChain,omitempty"`
 }
 
 type Client struct {
@@ -206,7 +209,12 @@ func (c *Client) Send(data string) error {
 // each request carries a unique id that barkloader echoes back on its
 // result/error response, so callers are matched by id rather than by call
 // order.
-func (c *Client) Invoke(functionName string, event map[string]interface{}) (map[string]interface{}, error) {
+//
+// `workflowChain` is the chain of workflow runs the call is part of: the
+// triggering event's chain plus the calling workflow. Barkloader stamps it on
+// every event the function announces, which is how the workflow engine sees a
+// loop that runs through a module function. Empty when no workflow is calling.
+func (c *Client) Invoke(functionName string, event map[string]interface{}, workflowChain string) (map[string]interface{}, error) {
 	c.mu.RLock()
 	if !c.IsConnected() {
 		c.mu.RUnlock()
@@ -237,8 +245,9 @@ func (c *Client) Invoke(functionName string, event map[string]interface{}) (map[
 		Type: "invoke",
 		Id:   id,
 		Data: InvokeData{
-			Function: functionName,
-			Event:    event,
+			Function:      functionName,
+			Event:         event,
+			WorkflowChain: workflowChain,
 		},
 	}
 

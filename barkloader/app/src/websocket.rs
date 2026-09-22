@@ -108,6 +108,10 @@ impl WebSocketSession {
             event,
             user: data.get("user").cloned(),
             params,
+            workflow_chain: data
+                .get("workflowChain")
+                .and_then(|chain| chain.as_str())
+                .map(String::from),
         };
         // invoke_blocking offloads onto Tokio's blocking thread pool because
         // Sandbox::invoke drives the QuickJS/Lua runtime synchronously and

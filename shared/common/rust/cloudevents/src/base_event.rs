@@ -38,6 +38,14 @@ pub struct BaseEvent<T> {
     /// not know a session. See docs/services/stream-sessions.md.
     #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+    /// Extension attribute naming the workflow runs that led to the event,
+    /// oldest first, as comma-separated workflow ids. The workflow engine
+    /// refuses a run whose chain has grown too long, which is what stops a
+    /// loop of workflows triggering each other. Absent on an event no
+    /// workflow caused. Must match `Event.WorkflowChain` in
+    /// `workflow/internal/types/types.go`.
+    #[serde(rename = "workflowChain", skip_serializing_if = "Option::is_none")]
+    pub workflow_chain: Option<String>,
     pub data: T,
 }
 
@@ -54,6 +62,7 @@ impl<T> BaseEvent<T> {
             time: now_iso8601(),
             platform: None,
             session_id: session::current_session_id(),
+            workflow_chain: None,
             data,
         }
     }
@@ -72,6 +81,13 @@ impl<T> BaseEvent<T> {
 
     pub fn with_session_id(mut self, session_id: impl Into<String>) -> Self {
         self.session_id = Some(session_id.into());
+        self
+    }
+
+    /// Continue the chain of workflow runs that caused this event. An empty
+    /// chain is left off, as for an event no workflow caused.
+    pub fn with_workflow_chain(mut self, chain: Option<String>) -> Self {
+        self.workflow_chain = chain.filter(|chain| !chain.is_empty());
         self
     }
 }

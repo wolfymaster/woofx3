@@ -12,4 +12,9 @@ pub struct InvokeRequest {
     /// `event`.
     #[serde(default)]
     pub params: Value,
+    /// The chain of workflow runs this call is part of, when a workflow step
+    /// made it. Stamped on every event the function announces, so the
+    /// workflow engine can see a loop that runs through a module function.
+    #[serde(default, rename = "workflowChain")]
+    pub workflow_chain: Option<String>,
 }

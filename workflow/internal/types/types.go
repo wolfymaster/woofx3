@@ -3,6 +3,7 @@ package types
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -170,9 +171,41 @@ type Event struct {
 	// TriggeredBy names what caused the event ("dashboard", "twitch", ...).
 	// Distinct from Source, which names the service that published it: the api
 	// publishes on behalf of several different origins.
-	TriggeredBy string         `json:"triggeredBy,omitempty"`
-	Data        map[string]any `json:"data"`
-	Subject     string         `json:"subject,omitempty"`
+	TriggeredBy string `json:"triggeredBy,omitempty"`
+	// WorkflowChain is the CloudEvents extension attribute naming the workflow
+	// runs that led to this event, oldest first, as comma-separated workflow
+	// ids. Every path by which a run causes an event -- a published event, a
+	// module function's announced events, a sub-workflow -- stamps it with the
+	// run's own chain plus the run's workflow, which is what lets the engine
+	// see a loop it would otherwise run forever. A string because CloudEvents
+	// extension values are scalars.
+	//
+	// Empty for an event nothing in a workflow caused: a platform event, a
+	// dashboard request, a background task.
+	WorkflowChain string         `json:"workflowChain,omitempty"`
+	Data          map[string]any `json:"data"`
+	Subject       string         `json:"subject,omitempty"`
+}
+
+// Chain is WorkflowChain as a list, oldest first.
+func (e *Event) Chain() []string {
+	if e == nil || e.WorkflowChain == "" {
+		return nil
+	}
+	return strings.Split(e.WorkflowChain, ",")
+}
+
+// ChainThrough is the WorkflowChain for an event a run of `workflowID`
+// causes while handling this one. Safe on a nil event, which a run started
+// with no trigger event has.
+func (e *Event) ChainThrough(workflowID string) string {
+	if workflowID == "" || strings.Contains(workflowID, ",") {
+		panic(fmt.Sprintf("workflow id %q cannot be a chain link", workflowID))
+	}
+	if e == nil || e.WorkflowChain == "" {
+		return workflowID
+	}
+	return e.WorkflowChain + "," + workflowID
 }
 
 // TriggerFields is the `${trigger.*}` view of an event, shared by trigger
