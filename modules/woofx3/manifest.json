@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -384,7 +384,7 @@
     {
       "id": "counter.increment",
       "name": "Increment counter",
-      "description": "Add the counter's step to it.",
+      "description": "Add an amount to the counter, or its step when no amount is given.",
       "type": "function",
       "function": "counter.increment",
       "schema": [
@@ -395,6 +395,13 @@
           "resourceKind": "counter",
           "required": true,
           "description": "Which counter to change."
+        },
+        {
+          "id": "amount",
+          "label": "Amount",
+          "type": "number",
+          "min": 1,
+          "description": "How much to increase it by. Leave blank to use the counter's own step."
         }
       ],
       "returns": {
@@ -423,7 +430,7 @@
     {
       "id": "counter.decrement",
       "name": "Decrement counter",
-      "description": "Take the counter's step away from it.",
+      "description": "Take an amount away from the counter, or its step when no amount is given.",
       "type": "function",
       "function": "counter.decrement",
       "schema": [
@@ -434,6 +441,13 @@
           "resourceKind": "counter",
           "required": true,
           "description": "Which counter to change."
+        },
+        {
+          "id": "amount",
+          "label": "Amount",
+          "type": "number",
+          "min": 1,
+          "description": "How much to decrease it by. Leave blank to use the counter's own step."
         }
       ],
       "returns": {

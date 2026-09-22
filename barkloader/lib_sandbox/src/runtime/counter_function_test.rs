@@ -40,6 +40,53 @@ fn increment_and_decrement_move_by_the_counter_step() {
 }
 
 #[test]
+fn an_amount_moves_the_counter_instead_of_its_step() {
+    let harness = counter(json!({ "step": 2 }));
+    let up = harness
+        .run(
+            "counterIncrement",
+            json!({ "target": TARGET, "amount": 500 }),
+        )
+        .unwrap();
+    assert_eq!(up["next"], 500);
+    let down = harness
+        .run(
+            "counterDecrement",
+            json!({ "target": TARGET, "amount": "100" }),
+        )
+        .unwrap();
+    assert_eq!(down["next"], 400);
+}
+
+// A step left blank in the form reaches the function as an empty string.
+#[test]
+fn a_blank_amount_falls_back_to_the_counter_step() {
+    let harness = counter(json!({ "step": 3 }));
+    let result = harness
+        .run(
+            "counterIncrement",
+            json!({ "target": TARGET, "amount": "" }),
+        )
+        .unwrap();
+    assert_eq!(result["next"], 3);
+}
+
+#[test]
+fn refuses_an_amount_that_is_not_a_positive_number() {
+    let harness = counter(json!({}));
+    for amount in [json!("lots"), json!(0), json!(-5)] {
+        let err = harness
+            .run(
+                "counterIncrement",
+                json!({ "target": TARGET, "amount": amount }),
+            )
+            .unwrap_err();
+        assert!(err.contains("cannot change"), "{amount}: {err}");
+    }
+    assert_eq!(harness.stored(), None);
+}
+
+#[test]
 fn set_and_reset() {
     let harness = counter(json!({ "initialValue": 3 }));
     assert_eq!(
