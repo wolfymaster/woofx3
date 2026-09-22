@@ -69,7 +69,9 @@ function loadCounter(ctx) {
 }
 
 // Apply `next` to the current value until the write lands, and report both
-// sides of it — `previous` and `next` are what later workflow steps read.
+// sides of it — `previous` and `next` are what later workflow steps read. A
+// change that moved the number is announced as `counter.changed`, so workflows
+// can act on it whichever action, command or page made it.
 function update(ctx, counter, next) {
   let stored = ctx.storage.get(counter.key);
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -77,7 +79,8 @@ function update(ctx, counter, next) {
     const value = next(previous);
     const result = ctx.storage.compareAndSet(counter.key, stored === undefined ? null : stored, value, counter.options);
     if (result.swapped) {
-      return { target: counter.target, previous, next: value };
+      const outcome = { target: counter.target, previous, next: value };
+      return ctx.result(outcome, previous === value ? [] : [{ type: "counter.changed", data: outcome }]);
     }
     stored = result.current;
   }

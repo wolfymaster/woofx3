@@ -23,6 +23,7 @@ Returning values keeps ordering, validation and attribution in one place the eng
 | Surface | Model | Fits the rule |
 |---|---|---|
 | `ctx.response(success, message)` | Returns a tagged value; the chat-command caller decides whether to send it | Yes |
+| `ctx.result(value, events)` | Returns a tagged value; barkloader checks each event against the module's declared eventbus triggers, publishes them itself, and hands `value` to the caller | Yes |
 | Webhook handler result | Returns `{ status, headers?, body?, events? }`; the engine checks it, publishes the events itself, then answers the request | Yes |
 | `ctx.storage.set` | Writes module storage; the engine emits `module.storage.changed` itself | Yes |
 | `ctx.resources.*` | Engine-defined create / delete / list operations | Yes |

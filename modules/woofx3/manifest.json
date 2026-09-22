@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.8.0",
+  "version": "0.10.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -46,6 +46,83 @@
           "description": "How much Increment adds and Decrement takes away."
         }
       ]
+    },
+    {
+      "kind": "timer",
+      "name": "Timer",
+      "description": "A countdown that actions start, pause and add time to, and overlays and chat can show: break timers, subathons, giveaways.",
+      "icon": "Timer",
+      "schema": [
+        {
+          "id": "lifetime",
+          "label": "Keeps its value",
+          "type": "select",
+          "required": true,
+          "defaultValue": "forever",
+          "options": [
+            {
+              "value": "forever",
+              "label": "Forever"
+            },
+            {
+              "value": "session",
+              "label": "For this stream session"
+            }
+          ],
+          "description": "A session timer goes back to its full duration, stopped, when the stream session ends; a forever timer keeps its value. Changing this applies the next time the timer changes."
+        },
+        {
+          "id": "duration",
+          "label": "Runs for",
+          "type": "number",
+          "unit": "seconds",
+          "min": 1,
+          "defaultValue": 300,
+          "description": "How long it counts down from, and what Reset goes back to."
+        }
+      ]
+    },
+    {
+      "kind": "queue",
+      "name": "Queue",
+      "description": "A line of entries that actions add to and take from, and overlays and chat can show: viewer games, song requests.",
+      "icon": "ListOrdered",
+      "schema": [
+        {
+          "id": "lifetime",
+          "label": "Keeps its value",
+          "type": "select",
+          "required": true,
+          "defaultValue": "forever",
+          "options": [
+            {
+              "value": "forever",
+              "label": "Forever"
+            },
+            {
+              "value": "session",
+              "label": "For this stream session"
+            }
+          ],
+          "description": "A session queue empties when the stream session ends; a forever queue keeps its value. Changing this applies the next time the queue changes."
+        },
+        {
+          "id": "capacity",
+          "label": "Holds up to",
+          "type": "number",
+          "min": 0,
+          "max": 1000,
+          "defaultValue": 0,
+          "description": "How many entries fit before Add refuses more. 0 allows the most a queue can hold, 1000."
+        },
+        {
+          "id": "allowDuplicates",
+          "label": "Allow duplicates",
+          "type": "toggle",
+          "defaultValue": false,
+          "description": "Let the same entry be in line more than once. Off, adding an entry already in line leaves it where it is."
+        }
+      ]
     }
   ],
   "functions": [
@@ -76,6 +153,76 @@
       "runtime": "js",
       "path": "functions/counter.js",
       "entryPoint": "counterReset"
+    },
+    {
+      "id": "timer.start",
+      "name": "Start timer",
+      "runtime": "js",
+      "path": "functions/timer.js",
+      "entryPoint": "timerStart"
+    },
+    {
+      "id": "timer.pause",
+      "name": "Pause timer",
+      "runtime": "js",
+      "path": "functions/timer.js",
+      "entryPoint": "timerPause"
+    },
+    {
+      "id": "timer.reset",
+      "name": "Reset timer",
+      "runtime": "js",
+      "path": "functions/timer.js",
+      "entryPoint": "timerReset"
+    },
+    {
+      "id": "timer.add",
+      "name": "Add time to timer",
+      "runtime": "js",
+      "path": "functions/timer.js",
+      "entryPoint": "timerAdd"
+    },
+    {
+      "id": "timer.set",
+      "name": "Set timer",
+      "runtime": "js",
+      "path": "functions/timer.js",
+      "entryPoint": "timerSet"
+    },
+    {
+      "id": "queue.add",
+      "name": "Add to queue",
+      "runtime": "js",
+      "path": "functions/queue.js",
+      "entryPoint": "queueAdd"
+    },
+    {
+      "id": "queue.next",
+      "name": "Take next from queue",
+      "runtime": "js",
+      "path": "functions/queue.js",
+      "entryPoint": "queueNext"
+    },
+    {
+      "id": "queue.remove",
+      "name": "Remove from queue",
+      "runtime": "js",
+      "path": "functions/queue.js",
+      "entryPoint": "queueRemove"
+    },
+    {
+      "id": "queue.clear",
+      "name": "Clear queue",
+      "runtime": "js",
+      "path": "functions/queue.js",
+      "entryPoint": "queueClear"
+    },
+    {
+      "id": "timer.expire",
+      "name": "End timers that have run out",
+      "runtime": "js",
+      "path": "functions/timer.js",
+      "entryPoint": "timerExpire"
     }
   ],
   "actions": [
@@ -311,6 +458,467 @@
       },
       "taxonomy": [
         "system.counter"
+      ]
+    },
+    {
+      "id": "timer.start",
+      "name": "Start timer",
+      "description": "Start the timer counting down, from where it was paused or, once it has run out, from its full duration.",
+      "type": "function",
+      "function": "timer.start",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Timer",
+          "type": "resource_ref",
+          "resourceKind": "timer",
+          "required": true,
+          "description": "Which timer to change."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The timer that changed."
+          },
+          {
+            "path": "running",
+            "type": "boolean",
+            "description": "Whether it is counting down after the change."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Seconds it had left before the change."
+          },
+          {
+            "path": "remaining",
+            "type": "number",
+            "description": "Seconds it has left after the change."
+          },
+          {
+            "path": "endsAt",
+            "type": "number",
+            "description": "When a running timer reaches zero, in milliseconds since the Unix epoch; null when it is stopped."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.timer"
+      ]
+    },
+    {
+      "id": "timer.pause",
+      "name": "Pause timer",
+      "description": "Stop the timer counting down, keeping the time it has left.",
+      "type": "function",
+      "function": "timer.pause",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Timer",
+          "type": "resource_ref",
+          "resourceKind": "timer",
+          "required": true,
+          "description": "Which timer to change."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The timer that changed."
+          },
+          {
+            "path": "running",
+            "type": "boolean",
+            "description": "Whether it is counting down after the change."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Seconds it had left before the change."
+          },
+          {
+            "path": "remaining",
+            "type": "number",
+            "description": "Seconds it has left after the change."
+          },
+          {
+            "path": "endsAt",
+            "type": "number",
+            "description": "When a running timer reaches zero, in milliseconds since the Unix epoch; null when it is stopped."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.timer"
+      ]
+    },
+    {
+      "id": "timer.reset",
+      "name": "Reset timer",
+      "description": "Stop the timer and put it back to its full duration.",
+      "type": "function",
+      "function": "timer.reset",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Timer",
+          "type": "resource_ref",
+          "resourceKind": "timer",
+          "required": true,
+          "description": "Which timer to change."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The timer that changed."
+          },
+          {
+            "path": "running",
+            "type": "boolean",
+            "description": "Whether it is counting down after the change."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Seconds it had left before the change."
+          },
+          {
+            "path": "remaining",
+            "type": "number",
+            "description": "Seconds it has left after the change."
+          },
+          {
+            "path": "endsAt",
+            "type": "number",
+            "description": "When a running timer reaches zero, in milliseconds since the Unix epoch; null when it is stopped."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.timer"
+      ]
+    },
+    {
+      "id": "timer.add",
+      "name": "Add time to timer",
+      "description": "Give the timer more time, or take time away with a negative number. A running timer that has run out starts counting down again.",
+      "type": "function",
+      "function": "timer.add",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Timer",
+          "type": "resource_ref",
+          "resourceKind": "timer",
+          "required": true,
+          "description": "Which timer to change."
+        },
+        {
+          "id": "seconds",
+          "label": "Seconds",
+          "type": "number",
+          "unit": "seconds",
+          "required": true,
+          "description": "How much time to add. Negative takes time away."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The timer that changed."
+          },
+          {
+            "path": "running",
+            "type": "boolean",
+            "description": "Whether it is counting down after the change."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Seconds it had left before the change."
+          },
+          {
+            "path": "remaining",
+            "type": "number",
+            "description": "Seconds it has left after the change."
+          },
+          {
+            "path": "endsAt",
+            "type": "number",
+            "description": "When a running timer reaches zero, in milliseconds since the Unix epoch; null when it is stopped."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.timer"
+      ]
+    },
+    {
+      "id": "timer.set",
+      "name": "Set timer",
+      "description": "Set how much time the timer has left, without starting or stopping it.",
+      "type": "function",
+      "function": "timer.set",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Timer",
+          "type": "resource_ref",
+          "resourceKind": "timer",
+          "required": true,
+          "description": "Which timer to change."
+        },
+        {
+          "id": "seconds",
+          "label": "Seconds left",
+          "type": "number",
+          "unit": "seconds",
+          "required": true,
+          "description": "The time it should have left."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The timer that changed."
+          },
+          {
+            "path": "running",
+            "type": "boolean",
+            "description": "Whether it is counting down after the change."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Seconds it had left before the change."
+          },
+          {
+            "path": "remaining",
+            "type": "number",
+            "description": "Seconds it has left after the change."
+          },
+          {
+            "path": "endsAt",
+            "type": "number",
+            "description": "When a running timer reaches zero, in milliseconds since the Unix epoch; null when it is stopped."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.timer"
+      ]
+    },
+    {
+      "id": "queue.add",
+      "name": "Add to queue",
+      "description": "Put an entry at the back of the queue, unless it is full or the entry is already in line.",
+      "type": "function",
+      "function": "queue.add",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Queue",
+          "type": "resource_ref",
+          "resourceKind": "queue",
+          "required": true,
+          "description": "Which queue to change."
+        },
+        {
+          "id": "entry",
+          "label": "Entry",
+          "type": "text",
+          "required": true,
+          "description": "What to put in line: a viewer's name, a song."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The queue that changed."
+          },
+          {
+            "path": "entry",
+            "type": "string",
+            "description": "The entry added."
+          },
+          {
+            "path": "added",
+            "type": "boolean",
+            "description": "Whether it went into the queue."
+          },
+          {
+            "path": "reason",
+            "type": "string",
+            "description": "Why it did not: `full` or `duplicate`. Empty when it was added."
+          },
+          {
+            "path": "position",
+            "type": "number",
+            "description": "Its place in line, counting from 1; 0 when it is not in the queue."
+          },
+          {
+            "path": "size",
+            "type": "number",
+            "description": "How many entries it holds after the change."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.queue"
+      ]
+    },
+    {
+      "id": "queue.next",
+      "name": "Take next from queue",
+      "description": "Take the entry at the front of the queue out of it.",
+      "type": "function",
+      "function": "queue.next",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Queue",
+          "type": "resource_ref",
+          "resourceKind": "queue",
+          "required": true,
+          "description": "Which queue to change."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The queue that changed."
+          },
+          {
+            "path": "entry",
+            "type": "string",
+            "description": "The entry taken. Empty when the queue was empty."
+          },
+          {
+            "path": "taken",
+            "type": "boolean",
+            "description": "Whether there was an entry to take."
+          },
+          {
+            "path": "size",
+            "type": "number",
+            "description": "How many entries it holds after the change."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.queue"
+      ]
+    },
+    {
+      "id": "queue.remove",
+      "name": "Remove from queue",
+      "description": "Take an entry out of the queue, wherever it is in line.",
+      "type": "function",
+      "function": "queue.remove",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Queue",
+          "type": "resource_ref",
+          "resourceKind": "queue",
+          "required": true,
+          "description": "Which queue to change."
+        },
+        {
+          "id": "entry",
+          "label": "Entry",
+          "type": "text",
+          "required": true,
+          "description": "The entry to take out."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The queue that changed."
+          },
+          {
+            "path": "entry",
+            "type": "string",
+            "description": "The entry asked for."
+          },
+          {
+            "path": "removed",
+            "type": "boolean",
+            "description": "Whether it was in the queue."
+          },
+          {
+            "path": "position",
+            "type": "number",
+            "description": "The place in line it had, counting from 1; 0 when it was not in the queue."
+          },
+          {
+            "path": "size",
+            "type": "number",
+            "description": "How many entries it holds after the change."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.queue"
+      ]
+    },
+    {
+      "id": "queue.clear",
+      "name": "Clear queue",
+      "description": "Take every entry out of the queue.",
+      "type": "function",
+      "function": "queue.clear",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Queue",
+          "type": "resource_ref",
+          "resourceKind": "queue",
+          "required": true,
+          "description": "Which queue to change."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The queue that changed."
+          },
+          {
+            "path": "removed",
+            "type": "number",
+            "description": "How many entries it held."
+          },
+          {
+            "path": "size",
+            "type": "number",
+            "description": "How many entries it holds after the change."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.queue"
       ]
     }
   ],
@@ -552,6 +1160,237 @@
             "path": "version",
             "type": "string",
             "description": "Installed version."
+          }
+        ]
+      }
+    },
+    {
+      "id": "counter_changed",
+      "name": "Counter changed",
+      "description": "Fires when a counter's number changes, whatever changed it.",
+      "type": "eventbus",
+      "event": "counter.changed",
+      "taxonomy": [
+        "system.counter"
+      ],
+      "schema": [
+        {
+          "id": "counter",
+          "label": "Counter",
+          "type": "resource_ref",
+          "resourceKind": "counter",
+          "eventPath": "target",
+          "operator": "eq",
+          "description": "Only this counter. Leave it as any to act on every counter."
+        }
+      ],
+      "sentence": "{counter} changes",
+      "emits": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The counter, by canonical id."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Its value before the change."
+          },
+          {
+            "path": "next",
+            "type": "number",
+            "description": "Its value after the change."
+          }
+        ]
+      }
+    },
+    {
+      "id": "timer_started",
+      "name": "Timer started",
+      "description": "Fires when a timer starts counting down.",
+      "type": "eventbus",
+      "event": "timer.started",
+      "taxonomy": [
+        "system.timer"
+      ],
+      "schema": [
+        {
+          "id": "timer",
+          "label": "Timer",
+          "type": "resource_ref",
+          "resourceKind": "timer",
+          "eventPath": "target",
+          "operator": "eq",
+          "description": "Only this timer. Leave it as any to act on every timer."
+        }
+      ],
+      "sentence": "{timer} starts",
+      "emits": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The timer, by canonical id."
+          },
+          {
+            "path": "remaining",
+            "type": "number",
+            "description": "Seconds it has left."
+          }
+        ]
+      }
+    },
+    {
+      "id": "timer_paused",
+      "name": "Timer paused",
+      "description": "Fires when a timer is paused.",
+      "type": "eventbus",
+      "event": "timer.paused",
+      "taxonomy": [
+        "system.timer"
+      ],
+      "schema": [
+        {
+          "id": "timer",
+          "label": "Timer",
+          "type": "resource_ref",
+          "resourceKind": "timer",
+          "eventPath": "target",
+          "operator": "eq",
+          "description": "Only this timer. Leave it as any to act on every timer."
+        }
+      ],
+      "sentence": "{timer} is paused",
+      "emits": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The timer, by canonical id."
+          },
+          {
+            "path": "remaining",
+            "type": "number",
+            "description": "Seconds it had left."
+          }
+        ]
+      }
+    },
+    {
+      "id": "timer_ended",
+      "name": "Timer ended",
+      "description": "Fires within a second of a running timer reaching zero. Start the timer again from here to make it repeat.",
+      "type": "eventbus",
+      "event": "timer.ended",
+      "taxonomy": [
+        "system.timer"
+      ],
+      "schema": [
+        {
+          "id": "timer",
+          "label": "Timer",
+          "type": "resource_ref",
+          "resourceKind": "timer",
+          "eventPath": "target",
+          "operator": "eq",
+          "description": "Only this timer. Leave it as any to act on every timer."
+        }
+      ],
+      "sentence": "{timer} ends",
+      "emits": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The timer, by canonical id."
+          }
+        ]
+      }
+    },
+    {
+      "id": "queue_added",
+      "name": "Added to queue",
+      "description": "Fires when an entry joins a queue.",
+      "type": "eventbus",
+      "event": "queue.added",
+      "taxonomy": [
+        "system.queue"
+      ],
+      "schema": [
+        {
+          "id": "queue",
+          "label": "Queue",
+          "type": "resource_ref",
+          "resourceKind": "queue",
+          "eventPath": "target",
+          "operator": "eq",
+          "description": "Only this queue. Leave it as any to act on every queue."
+        }
+      ],
+      "sentence": "someone joins {queue}",
+      "emits": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The queue, by canonical id."
+          },
+          {
+            "path": "entry",
+            "type": "string",
+            "description": "The entry that joined."
+          },
+          {
+            "path": "position",
+            "type": "number",
+            "description": "Its place in line, counting from 1."
+          },
+          {
+            "path": "size",
+            "type": "number",
+            "description": "How many entries the queue holds now."
+          }
+        ]
+      }
+    },
+    {
+      "id": "queue_next",
+      "name": "Next in queue",
+      "description": "Fires when the entry at the front of a queue is taken.",
+      "type": "eventbus",
+      "event": "queue.next",
+      "taxonomy": [
+        "system.queue"
+      ],
+      "schema": [
+        {
+          "id": "queue",
+          "label": "Queue",
+          "type": "resource_ref",
+          "resourceKind": "queue",
+          "eventPath": "target",
+          "operator": "eq",
+          "description": "Only this queue. Leave it as any to act on every queue."
+        }
+      ],
+      "sentence": "the next entry is taken from {queue}",
+      "emits": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The queue, by canonical id."
+          },
+          {
+            "path": "entry",
+            "type": "string",
+            "description": "The entry taken."
+          },
+          {
+            "path": "size",
+            "type": "number",
+            "description": "How many entries the queue holds now."
           }
         ]
       }
@@ -867,6 +1706,14 @@
       "taxonomy": [
         "media.animation"
       ]
+    }
+  ],
+  "backgroundTasks": [
+    {
+      "id": "timer_expiry",
+      "function": "timer.expire",
+      "schedule": "* * * * * *",
+      "description": "Once a second, stops every running timer that has reached zero and announces that it ended."
     }
   ]
 }

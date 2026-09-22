@@ -233,6 +233,7 @@ fn build_ctx_object<'js>(
     build_module_namespace(ctx, &ctx_obj, invocation)?;
     build_log_namespace(ctx, &ctx_obj, invocation)?;
     build_response_fn(ctx, &ctx_obj)?;
+    build_result_fn(ctx, &ctx_obj)?;
     bind_extensions(ctx, &ctx_obj, invocation)?;
 
     Ok(ctx_obj)
@@ -717,6 +718,29 @@ fn build_response_fn<'js>(ctx: &Ctx<'js>, ctx_obj: &Object<'js>) -> Result<(), E
     })
     .map_err(map)?;
     ctx_obj.set("response", response_fn).map_err(map)?;
+    Ok(())
+}
+
+/// `ctx.result(value, events)` — a function's result together with events
+/// it asks the engine to publish. A pure data constructor like
+/// `ctx.response`: the engine checks and publishes the events once the
+/// function returns the envelope (see `function_result.rs`).
+fn build_result_fn<'js>(ctx: &Ctx<'js>, ctx_obj: &Object<'js>) -> Result<(), Error> {
+    let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
+    let result_fn = JsFunction::new(
+        ctx.clone(),
+        move |ctx, value: Opt<JsValue<'_>>, events: Opt<JsValue<'_>>| {
+            let to_json = |arg: Opt<JsValue<'_>>| match arg.0 {
+                Some(v) => js_to_json(&v).map_err(|e| host_err(e.to_string())),
+                None => Ok(Value::Null),
+            };
+            let envelope =
+                crate::function_result::build_result_value(to_json(value)?, to_json(events)?);
+            json_to_js(&ctx, &envelope).map_err(|e| host_err(e.to_string()))
+        },
+    )
+    .map_err(map)?;
+    ctx_obj.set("result", result_fn).map_err(map)?;
     Ok(())
 }
 

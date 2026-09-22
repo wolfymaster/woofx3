@@ -4,11 +4,11 @@
 use crate::db_proxy::{
     BackgroundTaskJson, ModuleRecord, fetch_module_by_name, list_background_tasks, list_modules,
 };
-use crate::module_manifest::ManifestBackgroundTask;
+use crate::module_manifest::{ManifestBackgroundTask, ModuleManifest};
 use lib_repository::Repository;
 use lib_sandbox::models::function::Function;
 use lib_sandbox::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tracing::{error, info, warn};
 
 /// Host-owned background task registration. Implemented by the barkloader
@@ -281,7 +281,36 @@ async fn build_registered_module<R: Repository>(
         },
         functions,
         state: registry_state_from_db(&module.state),
+        event_types: eventbus_event_types(module),
     })
+}
+
+/// The events of the module's eventbus triggers, read from its stored
+/// manifest. A manifest that is missing or unreadable yields none, so the
+/// module's functions can publish nothing rather than anything.
+fn eventbus_event_types(module: &ModuleRecord) -> HashSet<String> {
+    let Some(raw) = module
+        .manifest_json
+        .as_deref()
+        .filter(|raw| !raw.is_empty())
+    else {
+        return HashSet::new();
+    };
+    match serde_json::from_str::<ModuleManifest>(raw) {
+        Ok(manifest) => manifest
+            .triggers
+            .into_iter()
+            .filter(|trigger| trigger.trigger_type == "eventbus" && !trigger.event.is_empty())
+            .map(|trigger| trigger.event)
+            .collect(),
+        Err(err) => {
+            warn!(
+                "Module {} has an unreadable manifest; its functions cannot publish events: {}",
+                module.name, err
+            );
+            HashSet::new()
+        }
+    }
 }
 
 fn function_manifest_id(row: &crate::db_proxy::ModuleFunctionRecord) -> String {
@@ -350,7 +379,39 @@ pub fn unregister_background_tasks<S: BackgroundTaskRegistrar>(scheduler: &S, mo
 
 #[cfg(test)]
 mod tests {
-    use super::functions_failed_to_load;
+    use super::{ModuleRecord, eventbus_event_types, functions_failed_to_load};
+
+    fn module_with_manifest(manifest_json: Option<&str>) -> ModuleRecord {
+        ModuleRecord {
+            id: "row-1".into(),
+            module_id: "woofx3".into(),
+            module_key: String::new(),
+            name: "woofx3".into(),
+            version: "1.0.0".into(),
+            state: "active".into(),
+            functions: Vec::new(),
+            manifest_json: manifest_json.map(String::from),
+        }
+    }
+
+    #[test]
+    fn a_module_may_publish_the_events_of_its_eventbus_triggers_only() {
+        let manifest = r#"{ "id": "woofx3", "name": "woofx3", "triggers": [
+            { "id": "a", "name": "A", "type": "eventbus", "event": "counter.changed" },
+            { "id": "b", "name": "B", "type": "webhook", "handler": "h" }
+        ] }"#;
+        let events = eventbus_event_types(&module_with_manifest(Some(manifest)));
+        assert_eq!(
+            events,
+            ["counter.changed".to_string()].into_iter().collect()
+        );
+    }
+
+    #[test]
+    fn a_missing_or_unreadable_manifest_allows_no_events() {
+        assert!(eventbus_event_types(&module_with_manifest(None)).is_empty());
+        assert!(eventbus_event_types(&module_with_manifest(Some("not json"))).is_empty());
+    }
 
     #[test]
     fn a_module_declaring_no_functions_is_not_broken() {

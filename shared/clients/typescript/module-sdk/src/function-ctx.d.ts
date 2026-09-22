@@ -199,6 +199,27 @@ export interface CtxResponse {
   message: string;
 }
 
+/** One event a function asks the engine to publish. */
+export interface CtxResultEvent {
+  /** The `event` of an eventbus trigger this module declares. */
+  type: string;
+  data?: Record<string, unknown>;
+}
+
+/**
+ * A function's result together with events it asks the engine to publish.
+ * The function never publishes: when it returns this, the engine checks the
+ * events (declared types only, at most 16, each `data` at most 64 KiB),
+ * publishes them, and hands `value` to the caller as the function's result.
+ * A rule broken fails the call and publishes nothing.
+ */
+export interface CtxResult<T = unknown> {
+  proto: "woofx3.result";
+  v: 1;
+  value: T;
+  events: CtxResultEvent[] | null;
+}
+
 /**
  * `ctx.resources` — runtime-instance lifecycle for kinds the calling
  * module declared in its manifest's `resources[]` block.
@@ -299,7 +320,7 @@ export interface CtxExtensions {
 /**
  * The `ctx` object passed to every function invocation. Combines the
  * built-in surface (event, user, events, storage, http, env, resources,
- * module, log, response) with any extension namespaces the host registered.
+ * module, log, response, result) with any extension namespaces the host registered.
  *
  * `event` and `user` are typed as `unknown` because their shape is
  * determined by the trigger that fired the function — the author knows
@@ -328,6 +349,12 @@ export interface Ctx extends CtxExtensions {
    * logging.
    */
   response(success: boolean, message: string): CtxResponse;
+  /**
+   * Builds the shape to `return` when the function's work is something
+   * workflows should be able to act on — a counter changed, a timer ended.
+   * See `CtxResult`.
+   */
+  result<T>(value: T, events?: CtxResultEvent[]): CtxResult<T>;
 }
 
 /**

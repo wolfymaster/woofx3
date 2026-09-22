@@ -58,6 +58,7 @@ v0.1.0):
 | `ctx.event` | the triggering CloudEvent (opaque) |
 | `ctx.user` | user context (opaque) |
 | `ctx.response` | `(success, message)` — see [Sandbox → `ctx.response`](./sandbox.md#ctxresponse) |
+| `ctx.result` | `(value, events?)` — see [Sandbox → `ctx.result`](./sandbox.md#ctxresult) |
 | `ctx.crypto` | `hmac(algorithm, key, data, encoding?)`, `verifyEd25519(publicKey, signature, message, encoding?)`, `timingSafeEqual(a, b)` — see [Sandbox → `ctx.crypto`](./sandbox.md#ctxcrypto) |
 | `ctx.storage` | `get(key)`, `set(key, value, options?)` |
 | `ctx.http` | `request(url, method, opts?)` |

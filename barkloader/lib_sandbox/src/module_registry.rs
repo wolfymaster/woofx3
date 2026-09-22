@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::models::function::Function;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 
 #[derive(Debug, Clone)]
@@ -22,6 +22,9 @@ pub struct RegisteredModule {
     pub metadata: ModuleMetadata,
     pub functions: HashMap<String, Function>,
     pub state: ModuleState,
+    /// The `event` of every eventbus trigger the module declares: the only
+    /// event types its functions may ask the engine to publish.
+    pub event_types: HashSet<String>,
 }
 
 pub struct ModuleRegistry {
@@ -118,6 +121,16 @@ impl ModuleRegistry {
         let modules = self.modules.read().unwrap();
         modules.get(name).map(|m| m.metadata.clone())
     }
+
+    /// The event types the module's functions may publish; none for a module
+    /// that is not registered.
+    pub fn event_types(&self, name: &str) -> HashSet<String> {
+        let modules = self.modules.read().unwrap();
+        modules
+            .get(name)
+            .map(|m| m.event_types.clone())
+            .unwrap_or_default()
+    }
 }
 
 #[cfg(test)]
@@ -146,6 +159,7 @@ mod tests {
             },
             functions,
             state: ModuleState::Active,
+            event_types: Default::default(),
         }
     }
 

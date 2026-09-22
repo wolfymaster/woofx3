@@ -113,6 +113,23 @@
 ---@field success boolean
 ---@field message string
 
+---One event a function asks the engine to publish. `type` must be the
+---`event` of an eventbus trigger this module declares.
+---@class CtxResultEvent
+---@field type string
+---@field data? table
+
+---A function's result together with events it asks the engine to publish.
+---The engine checks the events when the function returns this (declared
+---types only, at most 16, each `data` at most 64 KiB), publishes them, and
+---hands `value` to the caller as the result. A rule broken fails the call
+---and publishes nothing.
+---@class CtxResult
+---@field proto "woofx3.result"
+---@field v 1
+---@field value any
+---@field events CtxResultEvent[]|nil
+
 ---Identity and configured settings of the module the invoking function
 ---belongs to. `settings` has one key per `module_settings` row
 ---registered for this module, coerced to string/number/boolean based
@@ -165,6 +182,7 @@
 ---@field module CtxModule
 ---@field log CtxLog
 ---@field response fun(success: boolean, message: string): CtxResponse
+---@field result fun(value: any, events?: CtxResultEvent[]): CtxResult
 ---@field twitch? CtxTwitchExtension
 ---@field chat? CtxChatExtension
 ---@field platform? CtxPlatform
