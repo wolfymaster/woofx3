@@ -1741,7 +1741,8 @@
       "type": "eventbus",
       "event": "goal.reached",
       "taxonomy": [
-        "system.goal"
+        "system.goal",
+        "alert.stream.goal"
       ],
       "schema": [
         {
