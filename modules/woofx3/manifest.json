@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -123,6 +123,62 @@
           "description": "Let the same entry be in line more than once. Off, adding an entry already in line leaves it where it is."
         }
       ]
+    },
+    {
+      "kind": "goal",
+      "name": "Goal",
+      "description": "A number climbing toward a target that actions add to and overlays and chat can show: bits goals, sub goals, charity drives.",
+      "icon": "Target",
+      "schema": [
+        {
+          "id": "lifetime",
+          "label": "Keeps its value",
+          "type": "select",
+          "required": true,
+          "defaultValue": "forever",
+          "options": [
+            {
+              "value": "forever",
+              "label": "Forever"
+            },
+            {
+              "value": "session",
+              "label": "For this stream session"
+            }
+          ],
+          "description": "A session goal goes back to its starting value when the stream session ends; a forever goal keeps climbing. Changing this applies the next time the goal changes."
+        },
+        {
+          "id": "goal",
+          "label": "Reaches",
+          "type": "number",
+          "required": true,
+          "defaultValue": 100,
+          "description": "The number it climbs toward. Reaching it is what the Stream goal met trigger fires on."
+        },
+        {
+          "id": "initialValue",
+          "label": "Starts at",
+          "type": "number",
+          "defaultValue": 0,
+          "description": "Its value before anything changes it, and what Reset goes back to."
+        },
+        {
+          "id": "step",
+          "label": "Counts by",
+          "type": "number",
+          "min": 1,
+          "defaultValue": 1,
+          "description": "How much Add and Subtract move it when they are given no amount."
+        },
+        {
+          "id": "announceEveryTime",
+          "label": "Announce every time",
+          "type": "toggle",
+          "defaultValue": false,
+          "description": "Announce the goal again each time it is reached after dropping below it. Off, only the first time announces."
+        }
+      ]
     }
   ],
   "functions": [
@@ -216,6 +272,34 @@
       "runtime": "js",
       "path": "functions/queue.js",
       "entryPoint": "queueClear"
+    },
+    {
+      "id": "goal.add",
+      "name": "Add to goal",
+      "runtime": "js",
+      "path": "functions/goal.js",
+      "entryPoint": "goalAdd"
+    },
+    {
+      "id": "goal.subtract",
+      "name": "Subtract from goal",
+      "runtime": "js",
+      "path": "functions/goal.js",
+      "entryPoint": "goalSubtract"
+    },
+    {
+      "id": "goal.set",
+      "name": "Set goal",
+      "runtime": "js",
+      "path": "functions/goal.js",
+      "entryPoint": "goalSet"
+    },
+    {
+      "id": "goal.reset",
+      "name": "Reset goal",
+      "runtime": "js",
+      "path": "functions/goal.js",
+      "entryPoint": "goalReset"
     },
     {
       "id": "timer.expire",
@@ -920,6 +1004,261 @@
       "taxonomy": [
         "system.queue"
       ]
+    },
+    {
+      "id": "goal.add",
+      "name": "Add to goal",
+      "description": "Add to the goal. Forward an event's own number as the amount to count bits, gifted subs or anything else toward it.",
+      "type": "function",
+      "function": "goal.add",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Goal",
+          "type": "resource_ref",
+          "resourceKind": "goal",
+          "required": true,
+          "description": "Which goal to change."
+        },
+        {
+          "id": "amount",
+          "label": "Amount",
+          "type": "number",
+          "description": "How much to add. Leave it empty to add the goal's step."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The goal that changed."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Its value before the change."
+          },
+          {
+            "path": "next",
+            "type": "number",
+            "description": "Its value after the change."
+          },
+          {
+            "path": "goal",
+            "type": "number",
+            "description": "The number it climbs toward."
+          },
+          {
+            "path": "reached",
+            "type": "boolean",
+            "description": "Whether this change carried it to the goal."
+          },
+          {
+            "path": "first",
+            "type": "boolean",
+            "description": "Whether this was the first time it was reached."
+          },
+          {
+            "path": "firstReachedAt",
+            "type": "number",
+            "description": "When it was first reached, in milliseconds since the epoch. Null while it never has been."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.goal"
+      ]
+    },
+    {
+      "id": "goal.subtract",
+      "name": "Subtract from goal",
+      "description": "Take away from the goal.",
+      "type": "function",
+      "function": "goal.subtract",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Goal",
+          "type": "resource_ref",
+          "resourceKind": "goal",
+          "required": true,
+          "description": "Which goal to change."
+        },
+        {
+          "id": "amount",
+          "label": "Amount",
+          "type": "number",
+          "description": "How much to subtract. Leave it empty to subtract the goal's step."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The goal that changed."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Its value before the change."
+          },
+          {
+            "path": "next",
+            "type": "number",
+            "description": "Its value after the change."
+          },
+          {
+            "path": "goal",
+            "type": "number",
+            "description": "The number it climbs toward."
+          },
+          {
+            "path": "reached",
+            "type": "boolean",
+            "description": "Whether this change carried it to the goal."
+          },
+          {
+            "path": "first",
+            "type": "boolean",
+            "description": "Whether this was the first time it was reached."
+          },
+          {
+            "path": "firstReachedAt",
+            "type": "number",
+            "description": "When it was first reached, in milliseconds since the epoch. Null while it never has been."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.goal"
+      ]
+    },
+    {
+      "id": "goal.set",
+      "name": "Set goal",
+      "description": "Set the goal to a number.",
+      "type": "function",
+      "function": "goal.set",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Goal",
+          "type": "resource_ref",
+          "resourceKind": "goal",
+          "required": true,
+          "description": "Which goal to change."
+        },
+        {
+          "id": "value",
+          "label": "Value",
+          "type": "number",
+          "required": true,
+          "description": "The number to set it to."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The goal that changed."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Its value before the change."
+          },
+          {
+            "path": "next",
+            "type": "number",
+            "description": "Its value after the change."
+          },
+          {
+            "path": "goal",
+            "type": "number",
+            "description": "The number it climbs toward."
+          },
+          {
+            "path": "reached",
+            "type": "boolean",
+            "description": "Whether this change carried it to the goal."
+          },
+          {
+            "path": "first",
+            "type": "boolean",
+            "description": "Whether this was the first time it was reached."
+          },
+          {
+            "path": "firstReachedAt",
+            "type": "number",
+            "description": "When it was first reached, in milliseconds since the epoch. Null while it never has been."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.goal"
+      ]
+    },
+    {
+      "id": "goal.reset",
+      "name": "Reset goal",
+      "description": "Put the goal back to its starting value and forget that it was ever reached, so it can be reached for the first time again.",
+      "type": "function",
+      "function": "goal.reset",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Goal",
+          "type": "resource_ref",
+          "resourceKind": "goal",
+          "required": true,
+          "description": "Which goal to change."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The goal that changed."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Its value before the change."
+          },
+          {
+            "path": "next",
+            "type": "number",
+            "description": "Its value after the change."
+          },
+          {
+            "path": "goal",
+            "type": "number",
+            "description": "The number it climbs toward."
+          },
+          {
+            "path": "reached",
+            "type": "boolean",
+            "description": "Whether this change carried it to the goal."
+          },
+          {
+            "path": "first",
+            "type": "boolean",
+            "description": "Whether this was the first time it was reached."
+          },
+          {
+            "path": "firstReachedAt",
+            "type": "number",
+            "description": "When it was first reached, in milliseconds since the epoch. Null while it never has been."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.goal"
+      ]
     }
   ],
   "triggers": [
@@ -1391,6 +1730,62 @@
             "path": "size",
             "type": "number",
             "description": "How many entries the queue holds now."
+          }
+        ]
+      }
+    },
+    {
+      "id": "goal_reached",
+      "name": "Stream goal met",
+      "description": "Fires when a goal reaches the number it climbs toward, whatever counted toward it. Reaching it again after dropping below fires again only when the goal is set to announce every time.",
+      "type": "eventbus",
+      "event": "goal.reached",
+      "taxonomy": [
+        "system.goal"
+      ],
+      "schema": [
+        {
+          "id": "goal",
+          "label": "Goal",
+          "type": "resource_ref",
+          "resourceKind": "goal",
+          "eventPath": "target",
+          "operator": "eq",
+          "description": "Only this goal. Leave it as any to act on every goal."
+        }
+      ],
+      "sentence": "{goal} is met",
+      "emits": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The goal, by canonical id."
+          },
+          {
+            "path": "previous",
+            "type": "number",
+            "description": "Its value before the change that reached it."
+          },
+          {
+            "path": "next",
+            "type": "number",
+            "description": "Its value after that change."
+          },
+          {
+            "path": "goal",
+            "type": "number",
+            "description": "The number it climbs toward."
+          },
+          {
+            "path": "first",
+            "type": "boolean",
+            "description": "Whether this was the first time it was reached."
+          },
+          {
+            "path": "firstReachedAt",
+            "type": "number",
+            "description": "When it was first reached, in milliseconds since the epoch."
           }
         ]
       }

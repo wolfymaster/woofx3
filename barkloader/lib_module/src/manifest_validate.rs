@@ -1526,6 +1526,16 @@ mod tests {
             ("counter", &["lifetime", "initialValue", "step"][..]),
             ("timer", &["lifetime", "duration"][..]),
             ("queue", &["lifetime", "capacity", "allowDuplicates"][..]),
+            (
+                "goal",
+                &[
+                    "lifetime",
+                    "goal",
+                    "initialValue",
+                    "step",
+                    "announceEveryTime",
+                ][..],
+            ),
         ] {
             let declared = manifest
                 .resources
