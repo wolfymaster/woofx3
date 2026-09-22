@@ -922,6 +922,7 @@ The bundled `woofx3` module's kinds store these values, which is what a widget o
 | `counter` | A number. | Its `initialValue` setting. |
 | `timer` | `{ "running": true, "endsAt": <epoch ms> }` while counting down; `{ "running": false, "remainingMs": <ms> }` while stopped. A running timer is never rewritten as it ticks, so time left is `max(0, endsAt - now)`. | Stopped at its `duration` setting. |
 | `queue` | An array of strings, first in line first. | Empty. |
+| `goal` | `{ "value": <number>, "firstReachedAt": <epoch ms>|null }`. `firstReachedAt` is the moment the goal was first reached, and is what decides whether reaching it again is the first time. | Its `initialValue` setting, never reached. |
 
 Each kind also declares eventbus triggers, announced by its functions through
 [`ctx.result`](./sandbox.md#ctxresult), so a workflow — and the dashboard's resource
@@ -937,6 +938,7 @@ workflow to one instance.
 | `timer.ended` | A running timer reaches zero. Nothing runs at that moment, so the module's `timer_expiry` background task checks once a second, stops each timer that has run out and announces it. Starting a timer from its ended workflow makes it repeat. |
 | `queue.added` | An entry joins a queue. |
 | `queue.next` | The entry at the front of a queue is taken. |
+| `goal.reached` | A change carries a goal's value from below the number it climbs toward to at or above it. Climbing further past it announces nothing more. Crossing it again after dropping below announces again only when the instance's `announceEveryTime` setting is on; `first` on the event says which crossing this was. |
 
 **Storage is per module.** Every key a function reads or writes belongs to its own module — the store addresses a value by application, module and key — so two modules using the same key hold two separate values. Update a value from its previous one with `ctx.storage.compareAndSet(key, expected, value, options?)`, which writes only if the key still holds `expected` (or nothing, for `null`) and otherwise returns `{ swapped: false, current }` to retry from. A `get` followed by a `set` loses one of two concurrent updates.
 
