@@ -19,14 +19,14 @@ fn add(harness: &Harness, amount: Value) -> Value {
 /// The single `goal.reached` the last run asked to publish, or None.
 fn reached(harness: &Harness) -> Option<Value> {
     let events = harness.take_events();
-    assert!(events.len() <= 1, "at most one event per change: {events:?}");
-    events
-        .into_iter()
-        .next()
-        .map(|(event_type, data)| {
-            assert_eq!(event_type, "goal.reached");
-            data
-        })
+    assert!(
+        events.len() <= 1,
+        "at most one event per change: {events:?}"
+    );
+    events.into_iter().next().map(|(event_type, data)| {
+        assert_eq!(event_type, "goal.reached");
+        data
+    })
 }
 
 #[test]
@@ -36,7 +36,10 @@ fn a_goal_with_no_value_starts_from_its_initial_value() {
     assert_eq!(result["previous"], 10);
     assert_eq!(result["next"], 15);
     assert_eq!(result["goal"], 100);
-    assert_eq!(harness.stored(), Some(json!({ "value": 15, "firstReachedAt": null })));
+    assert_eq!(
+        harness.stored(),
+        Some(json!({ "value": 15, "firstReachedAt": null }))
+    );
 }
 
 #[test]
@@ -55,7 +58,10 @@ fn add_and_subtract_move_by_the_amount_given() {
 #[test]
 fn add_with_no_amount_moves_by_the_goal_step() {
     let harness = goal(json!({ "goal": 100, "step": 7 }));
-    assert_eq!(harness.run("goalAdd", json!({ "target": TARGET })).unwrap()["next"], 7);
+    assert_eq!(
+        harness.run("goalAdd", json!({ "target": TARGET })).unwrap()["next"],
+        7
+    );
     let subtracted = harness
         .run("goalSubtract", json!({ "target": TARGET }))
         .unwrap();
@@ -110,7 +116,11 @@ fn reaching_the_goal_announces_it_once() {
     assert!(event["firstReachedAt"].as_f64().unwrap() > 0.0);
 
     add(&harness, json!(500));
-    assert_eq!(reached(&harness), None, "climbing past the goal announces nothing");
+    assert_eq!(
+        reached(&harness),
+        None,
+        "climbing past the goal announces nothing"
+    );
 }
 
 #[test]
@@ -151,7 +161,11 @@ fn reaching_the_goal_again_announces_nothing_by_default() {
     assert_eq!(reached(&harness), None);
 
     add(&harness, json!(6));
-    assert_eq!(reached(&harness), None, "re-crossing is silent unless asked for");
+    assert_eq!(
+        reached(&harness),
+        None,
+        "re-crossing is silent unless asked for"
+    );
 }
 
 #[test]
@@ -183,10 +197,16 @@ fn reset_forgets_that_the_goal_was_ever_reached() {
     add(&harness, json!(10));
     reached(&harness).expect("first crossing announces");
 
-    let reset = harness.run("goalReset", json!({ "target": TARGET })).unwrap();
+    let reset = harness
+        .run("goalReset", json!({ "target": TARGET }))
+        .unwrap();
     assert_eq!(reset["next"], 0);
     assert_eq!(reset["firstReachedAt"], Value::Null);
-    assert_eq!(reached(&harness), None, "a reset does not itself reach the goal");
+    assert_eq!(
+        reached(&harness),
+        None,
+        "a reset does not itself reach the goal"
+    );
 
     add(&harness, json!(10));
     assert_eq!(reached(&harness).unwrap()["first"], true);
@@ -209,7 +229,10 @@ fn a_session_goal_is_written_to_be_cleared_when_the_session_ends() {
         let harness = goal(json!({ "goal": 100, "lifetime": lifetime }));
         add(&harness, json!(1));
         let options = harness.storage.write_options.lock().unwrap();
-        assert_eq!(options[0].clear_on_session_end, cleared, "lifetime {lifetime}");
+        assert_eq!(
+            options[0].clear_on_session_end, cleared,
+            "lifetime {lifetime}"
+        );
     }
 }
 
