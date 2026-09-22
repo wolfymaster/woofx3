@@ -1523,19 +1523,18 @@ mod tests {
             .expect("bundled woofx3 manifest validates as a system module");
 
         for (kind, expected) in [
-            ("counter", &["lifetime", "initialValue", "step"][..]),
-            ("timer", &["lifetime", "duration"][..]),
-            ("queue", &["lifetime", "capacity", "allowDuplicates"][..]),
             (
-                "goal",
+                "counter",
                 &[
                     "lifetime",
-                    "goal",
                     "initialValue",
                     "step",
+                    "goals",
                     "announceEveryTime",
                 ][..],
             ),
+            ("timer", &["lifetime", "duration"][..]),
+            ("queue", &["lifetime", "capacity", "allowDuplicates"][..]),
         ] {
             let declared = manifest
                 .resources
