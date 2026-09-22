@@ -184,7 +184,7 @@ Configuration for `wait` type tasks. Pauses workflow execution until a matching 
 | `event` | `string` | Yes | NATS subject to listen for while waiting. |
 | `conditions` | [ConditionConfig[]](#conditionconfig) | No | Conditions that incoming events must match to be counted. |
 | `aggregation` | [AggregationConfig](#aggregationconfig) | No | Required when `type` is `"aggregation"`. Defines the aggregation strategy. |
-| `timeout` | [Duration](#duration) | No | Maximum time to wait. If exceeded, behavior is determined by `onTimeout`. |
+| `timeout` | [Duration](#duration) | No | Maximum time to wait, 5 minutes by default. Enforced whether or not a matching event ever arrives: the engine checks waiting runs against their deadlines once a second. If exceeded, behavior is determined by `onTimeout`. |
 | `onTimeout` | `string` | No | What happens when the timeout expires. `"continue"` marks the task as successful and proceeds. `"fail"` (default) fails the task and the workflow. |
 
 ---
@@ -205,9 +205,9 @@ Defines how multiple events are aggregated in a `wait` task.
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `strategy` | `string` | Yes | Aggregation strategy. `"count"` counts events until threshold. `"sum"` sums a numeric field until threshold. `"threshold"` checks if a single event's field meets the threshold. |
-| `field` | `string` | No | Dot-notation path to the numeric field to aggregate. Required for `"sum"` and `"threshold"` strategies. |
+| `field` | `string` | No | Dot-notation path to the numeric field to aggregate, rooted at the event (`data.amount`). Used by `"sum"` and `"threshold"`; without it they read `data.amount` then `data.value`, and fail the wait if the event carries neither. |
 | `threshold` | `number` | Yes | Target value. The wait is satisfied when the aggregated value reaches or exceeds this. |
-| `timeWindow` | [Duration](#duration) | No | Rolling time window for aggregation. Events outside this window are not counted. |
+| `timeWindow` | [Duration](#duration) | No | Time window for aggregation, measured from when the wait began. Events arriving after it are ignored; the window does not restart, so a wait whose threshold is not met inside it ends on `onTimeout`. |
 
 ---
 

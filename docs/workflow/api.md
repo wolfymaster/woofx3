@@ -339,7 +339,8 @@ createWorkflow(data: CreateWorkflowInput): Promise<WorkflowMutationResult>
 | `correlationKey` | string | no | Round-trips back on the `workflow.created` webhook so the caller can match the echo to its originating request |
 
 The definition is validated server-side against [`validateWorkflowDefinition`](../../api/src/workflow/validate-definition.ts) before the DB write. Validation requires
-a non-empty `name`, `trigger.type === "event"` with a non-empty `eventType`, a non-empty
+a non-empty `name`, `trigger.type === "event"` with a non-empty `event` (or `"schedule"` with a
+valid cron expression), a non-empty
 `tasks[]` array with unique ids, and known operators/task types.
 
 **Returns `WorkflowMutationResult`:**
