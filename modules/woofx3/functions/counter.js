@@ -18,12 +18,14 @@ const MAX_ATTEMPTS = 25;
 
 function counterIncrement(ctx) {
   const counter = loadCounter(ctx);
-  return update(ctx, counter, (previous) => previous + counter.step);
+  const amount = amountOrStep(ctx, counter);
+  return update(ctx, counter, (previous) => previous + amount);
 }
 
 function counterDecrement(ctx) {
   const counter = loadCounter(ctx);
-  return update(ctx, counter, (previous) => previous - counter.step);
+  const amount = amountOrStep(ctx, counter);
+  return update(ctx, counter, (previous) => previous - amount);
 }
 
 function counterSet(ctx) {
@@ -85,6 +87,24 @@ function update(ctx, counter, next) {
     stored = result.current;
   }
   throw new Error(`counter: ${counter.target} changed ${MAX_ATTEMPTS} times while updating it`);
+}
+
+// The step's `amount` when one is given, else the counter's own step. The amount
+// is often an expression over the event (e.g. the bits cheered), so it is checked
+// here rather than trusted to the form's minimum.
+function amountOrStep(ctx, counter) {
+  const raw = parameters(ctx).amount;
+  if (raw === null || raw === undefined || raw === "") {
+    return counter.step;
+  }
+  const amount = Number(raw);
+  if (!Number.isFinite(amount)) {
+    throw new Error(`counter: cannot change ${counter.target} by "${raw}", which is not a number`);
+  }
+  if (amount <= 0) {
+    throw new Error(`counter: cannot change ${counter.target} by ${amount}; the amount must be more than 0`);
+  }
+  return amount;
 }
 
 function numberOr(value, fallback) {
