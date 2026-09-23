@@ -2,11 +2,26 @@
 // storage at `state:<canonicalId>` — the key every resource kind keeps its value
 // under, and the one the dashboard reads.
 //
-// What a counter starts at, how far it steps and how long its value lives are
-// the instance's own settings, chosen when it was created and read back through
-// `ctx.resources.get`. A counter scoped to the stream session is written with
-// `clearOnSessionEnd`, so the engine drops it when the session ends; a counter
-// with no stored value reads as its initial value either way.
+// A counter may carry goals: numbers it announces reaching, so the same counter
+// that shows deaths or gifted subs can also fire an alert at 100, 250 and 500.
+// Reaching one is an edge, not a level — only the change that carries the
+// counter from below a goal to at or above it announces `goal.reached`, so a
+// counter that keeps climbing announces once per goal. Crossing again after
+// dropping below announces again only when the counter says to, which is why
+// the moment each goal was first reached is stored beside the number: one
+// compare-and-set settles the value and the record of it together, and there is
+// no transaction spanning two keys to fall back on.
+//
+// The stored value is `{ value, reached }`. A counter written before goals
+// existed holds a bare number and still reads correctly, so nothing has to be
+// migrated.
+//
+// What a counter starts at, how far it steps, which goals it announces and how
+// long its value lives are the instance's own settings, chosen when it was
+// created and read back through `ctx.resources.get`. A counter scoped to the
+// stream session is written with `clearOnSessionEnd`, so the engine drops it
+// when the session ends; a counter with no stored value reads as its initial
+// value either way.
 //
 // Every change goes through `compareAndSet`, because a chat command and a
 // workflow can change the same counter at the same moment, and a read followed
@@ -15,6 +30,11 @@
 // Enough to ride out a burst of simultaneous updates; running out means
 // something is writing this key continuously, which is worth failing loudly.
 const MAX_ATTEMPTS = 25;
+
+// The engine's limit on events one invocation may return. A single change can
+// cross several goals at once, so the announcements are capped to fit beside
+// the `counter.changed` that carries them.
+const MAX_EVENTS = 16;
 
 function counterIncrement(ctx) {
   const counter = loadCounter(ctx);
@@ -37,9 +57,11 @@ function counterSet(ctx) {
   return update(ctx, counter, () => value);
 }
 
+// Puts the counter back to its starting value and forgets which goals it has
+// reached, so a counter started over can reach them for the first time again.
 function counterReset(ctx) {
   const counter = loadCounter(ctx);
-  return update(ctx, counter, () => counter.initial);
+  return update(ctx, counter, () => counter.initial, { forget: true });
 }
 
 function parameters(ctx) {
@@ -66,23 +88,126 @@ function loadCounter(ctx) {
     key: `state:${target}`,
     initial: numberOr(settings.initialValue, 0),
     step: numberOr(settings.step, 1),
+    goals: parseGoals(settings.goals),
+    announceEveryTime: settings.announceEveryTime === true,
     options: { clearOnSessionEnd: settings.lifetime === "session" },
   };
+}
+
+// The goals a counter announces reaching, smallest first and without repeats.
+// Written as a list of numbers in the instance's settings; an entry that is not
+// a number is skipped rather than failing the change, because counting is the
+// counter's job and a typo in an optional setting must not stop it.
+function parseGoals(raw) {
+  if (typeof raw !== "string" || raw.trim() === "") {
+    return [];
+  }
+  const goals = [];
+  for (const part of raw.split(",")) {
+    const goal = Number(part.trim());
+    if (part.trim() !== "" && Number.isFinite(goal) && !goals.includes(goal)) {
+      goals.push(goal);
+    }
+  }
+  return goals.sort((a, b) => a - b);
+}
+
+// The counter as it stands, from a stored value in either shape or from
+// nothing. `reached` maps a goal to the moment it was first reached.
+function readState(counter, stored) {
+  if (stored === null || stored === undefined) {
+    return { value: counter.initial, reached: {} };
+  }
+  if (typeof stored === "object") {
+    const value = Number(stored.value);
+    const reached = stored.reached;
+    return {
+      value: Number.isFinite(value) ? value : counter.initial,
+      reached: reached !== null && typeof reached === "object" ? reached : {},
+    };
+  }
+  // Written before counters carried goals.
+  const value = Number(stored);
+  return { value: Number.isFinite(value) ? value : counter.initial, reached: {} };
+}
+
+// Which goals this change reached, and the record of first crossings to store
+// beside the new value.
+//
+// Only goals the counter still carries are recorded, so removing a goal and
+// adding it back lets it be reached for the first time again rather than
+// leaving a record nothing can clear.
+function crossings(counter, before, previous, value, forget) {
+  const record = {};
+  const announce = [];
+  const now = Date.now();
+
+  for (const goal of counter.goals) {
+    const key = String(goal);
+    const stored = forget ? Number.NaN : Number(before[key]);
+    let at = Number.isFinite(stored) ? stored : null;
+
+    const crossed = previous < goal && value >= goal;
+    const first = crossed && at === null;
+    if (first) {
+      at = now;
+    }
+    if (crossed && (first || counter.announceEveryTime)) {
+      announce.push({ goal, first, firstReachedAt: at });
+    }
+    if (at !== null) {
+      record[key] = at;
+    }
+  }
+
+  return { record, announce };
 }
 
 // Apply `next` to the current value until the write lands, and report both
 // sides of it — `previous` and `next` are what later workflow steps read. A
 // change that moved the number is announced as `counter.changed`, so workflows
-// can act on it whichever action, command or page made it.
-function update(ctx, counter, next) {
+// can act on it whichever action, command or page made it, and each goal the
+// change reached is announced as `goal.reached` alongside it.
+function update(ctx, counter, next, { forget = false } = {}) {
   let stored = ctx.storage.get(counter.key);
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const previous = stored === null || stored === undefined ? counter.initial : Number(stored);
+    const state = readState(counter, stored);
+    const previous = state.value;
     const value = next(previous);
-    const result = ctx.storage.compareAndSet(counter.key, stored === undefined ? null : stored, value, counter.options);
+    const reached = crossings(counter, state.reached, previous, value, forget);
+    const written = { value, reached: reached.record };
+
+    const result = ctx.storage.compareAndSet(counter.key, stored === undefined ? null : stored, written, counter.options);
     if (result.swapped) {
-      const outcome = { target: counter.target, previous, next: value };
-      return ctx.result(outcome, previous === value ? [] : [{ type: "counter.changed", data: outcome }]);
+      const outcome = {
+        target: counter.target,
+        previous,
+        next: value,
+        reached: reached.announce.map((announced) => announced.goal),
+      };
+
+      const events = [];
+      if (previous !== value) {
+        events.push({ type: "counter.changed", data: { target: counter.target, previous, next: value } });
+      }
+      for (const announced of reached.announce) {
+        if (events.length >= MAX_EVENTS) {
+          break;
+        }
+        events.push({
+          type: "goal.reached",
+          data: {
+            target: counter.target,
+            previous,
+            next: value,
+            goal: announced.goal,
+            first: announced.first,
+            firstReachedAt: announced.firstReachedAt,
+          },
+        });
+      }
+
+      return ctx.result(outcome, events);
     }
     stored = result.current;
   }

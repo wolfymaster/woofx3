@@ -12,8 +12,6 @@ pub mod storage_event;
 #[cfg(test)]
 mod counter_function_test;
 #[cfg(test)]
-mod goal_function_test;
-#[cfg(test)]
 mod queue_function_test;
 #[cfg(test)]
 mod resource_function_harness;
