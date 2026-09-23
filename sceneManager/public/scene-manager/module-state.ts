@@ -5,6 +5,10 @@
 // src/scene/module-state.ts). `storage.get` in the widget protocol is
 // answered synchronously from here, so it sees only keys already loaded.
 //
+// A subscriber is answered with a fresh fetch rather than the copy held
+// here, because some values are measured at the moment they are read (a
+// running timer's time left) and a held copy of one is out of date.
+//
 // Keyed by the module the scene record places each widget in, never by
 // the module a widget names in its `hello`: that claim is unchecked.
 
@@ -41,14 +45,10 @@ export class ModuleStateCache {
     return entry?.known ? entry.value : null;
   }
 
-  /** Send `target` the key's value now if it is loaded, and every change after. */
+  /** Send `target` the key's current value, and every change after. */
   watch(moduleId: string, key: string, target: ModuleStateTarget): void {
     const entry = this.entry(moduleId, key);
     entry.targets.set(target, (entry.targets.get(target) ?? 0) + 1);
-    if (entry.known) {
-      target.sendStorageValue(key, entry.value);
-      return;
-    }
     void this.load(entry);
   }
 
@@ -111,7 +111,11 @@ export class ModuleStateCache {
     try {
       value = await this.fetchValue(via.instanceId, entry.key);
     } catch {
-      // Left unloaded; the next reconnect's refresh asks again.
+      // The next reconnect's refresh asks again. Until then a subscriber
+      // is better served the held copy than nothing.
+      if (entry.known && entry.generation === generation) {
+        this.settle(entry, entry.value);
+      }
       return;
     } finally {
       entry.loading = false;

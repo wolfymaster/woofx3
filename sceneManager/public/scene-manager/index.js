@@ -1198,10 +1198,6 @@ class ModuleStateCache {
   watch(moduleId, key, target) {
     const entry = this.entry(moduleId, key);
     entry.targets.set(target, (entry.targets.get(target) ?? 0) + 1);
-    if (entry.known) {
-      target.sendStorageValue(key, entry.value);
-      return;
-    }
     this.load(entry);
   }
   unwatch(moduleId, key, target) {
@@ -1254,6 +1250,9 @@ class ModuleStateCache {
     try {
       value = await this.fetchValue(via.instanceId, entry.key);
     } catch {
+      if (entry.known && entry.generation === generation) {
+        this.settle(entry, entry.value);
+      }
       return;
     } finally {
       entry.loading = false;

@@ -12,9 +12,10 @@ import type { Logger } from "@woofx3/common/runtime";
  * stores is not all a widget showing it needs. A counter nothing has written
  * yet, or whose session-scoped value was cleared, stores nothing and still
  * reads as its starting value; and its goals live in its settings, not in
- * storage. A widget sees only its own settings, never the instance's, so a
- * `state:` key of a kind this knows is answered with the instance's reading
- * (see `resourceReading`) rather than with what is stored.
+ * storage. A timer nothing has started stores nothing either, and how long it
+ * runs is also a setting. A widget sees only its own settings, never the
+ * instance's, so a `state:` key of a kind this knows is answered with the
+ * instance's reading (see `resourceReading`) rather than with what is stored.
  */
 
 /** The slice of DbClient this depends on (injectable for tests). */
@@ -56,22 +57,41 @@ export interface CounterReading {
 }
 
 /**
+ * A woofx3 timer as a widget reads it: a point to sync to, sent only when the
+ * timer changes. A running one's time left is measured as it is sent, so the
+ * widget counts down from when it arrives on its own clock and never needs to
+ * agree with this one.
+ */
+export interface TimerReading {
+  running: boolean;
+  /** Time left as of this reading. */
+  remainingMs: number;
+  /** What it counts down from, and what Reset goes back to. */
+  durationMs: number;
+}
+
+/**
  * What a resource instance reads as, from what it stores and its settings, or
  * the stored value unchanged for a kind this does not know.
  *
  * Owned by the module that declares the kind, not by the engine, which never
  * learns what a kind means. Repeated here because a widget cannot read the
  * instance's settings, and the rules must match the module's own: `readState`
- * and `parseGoals` in modules/woofx3/functions/counter.js.
+ * and `parseGoals` in modules/woofx3/functions/counter.js, and `readTimer` and
+ * `timerFromInstance` in modules/woofx3/functions/timer.js.
  */
 export function resourceReading(
   moduleId: string,
   kind: string,
   settings: Record<string, unknown>,
-  stored: unknown
+  stored: unknown,
+  now: number = Date.now()
 ): unknown {
   if (moduleId === "woofx3" && kind === "counter") {
     return counterReading(settings, stored);
+  }
+  if (moduleId === "woofx3" && kind === "timer") {
+    return timerReading(settings, stored, now);
   }
   return stored ?? null;
 }
@@ -92,6 +112,25 @@ function counterReading(settings: Record<string, unknown>, stored: unknown): Cou
   }
   // Written before counters carried goals.
   return { value: numberOr(stored, initial), reached: {}, goals };
+}
+
+// A day, the longest a timer can hold.
+const MAX_TIMER_MS = 24 * 60 * 60 * 1000;
+
+function timerReading(settings: Record<string, unknown>, stored: unknown, now: number): TimerReading {
+  const durationMs = clampTimerMs(numberOr(settings.duration, 300) * 1000);
+  if (stored === null || typeof stored !== "object" || Array.isArray(stored)) {
+    return { running: false, remainingMs: durationMs, durationMs };
+  }
+  const state = stored as { running?: unknown; endsAt?: unknown; remainingMs?: unknown };
+  if (state.running === true) {
+    return { running: true, remainingMs: clampTimerMs(numberOr(state.endsAt, 0) - now), durationMs };
+  }
+  return { running: false, remainingMs: clampTimerMs(numberOr(state.remainingMs, 0)), durationMs };
+}
+
+function clampTimerMs(ms: number): number {
+  return Math.min(MAX_TIMER_MS, Math.max(0, Math.round(ms)));
 }
 
 function parseGoals(raw: unknown): CounterGoal[] {
