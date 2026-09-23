@@ -8,8 +8,8 @@ the scene manager answers both for widgets placed on a scene.
 The value a resource instance holds lives at `state:<canonicalId>` in the owning
 module's storage namespace, the convention resource kinds follow and the one the
 dashboard reads through `getResourceValues`. The bundled `woofx3` module's
-Counter widget is the first reader: it subscribes to `state:<canonicalId>` of
-the counter chosen in its settings.
+Counter and Timer widgets read this way: each subscribes to
+`state:<canonicalId>` of the instance chosen in its settings.
 
 ## Shape
 
@@ -25,15 +25,19 @@ subscribe:  db-proxy ← module writes                        (module.storage.<m
 ### Reading
 
 1. The widget subscribes to a key; the shim sends `storage.subscribe`.
-2. The first time any widget on the page subscribes to that key, the page asks
-   sceneManager: `GET /scene/{sceneId}/widget/{instanceId}/storage?key={key}`.
+2. Each time a widget subscribes to that key, the page asks sceneManager:
+   `GET /scene/{sceneId}/widget/{instanceId}/storage?key={key}`.
    Addressed by **placement**, not by module; see "Which module" below.
 3. sceneManager finds the placement on the scene, reads
    `Storage.Get(applicationId, namespace = its module, key)`, and answers
    `{ value }`. From then on it pushes every change to that key to the scene.
 4. The page keeps the value (`public/scene-manager/module-state.ts`) and sends
    it to every widget subscribed to the key through the bridge's
-   `sendStorageChanged`. A later subscriber gets it at once, without a fetch.
+   `sendStorageChanged`. A later subscriber is answered by a fetch of its own
+   rather than the copy the page holds, because some readings are measured at
+   the moment they are read (a running timer's time left, below) and a held
+   copy of one is out of date. The held copy answers only when that fetch
+   fails.
 
 `host.storage.get` is answered synchronously from what the page has already
 loaded, and answers `null` for a key no widget on the page has subscribed to.
@@ -65,14 +69,28 @@ So sceneManager answers a `state:<canonicalId>` key, on read and on change
 alike, with the instance's reading: `resourceReading` in
 `sceneManager/src/scene/module-state.ts`. A woofx3 counter reads as
 `{ value, reached, goals }`, with `goals` its `{ value, name }` rows smallest
-first. That repeats rules the module owns, and must match them (`readState` and
-`parseGoals` in `modules/woofx3/functions/counter.js`). A kind it does not know
-is served as stored.
+first. A woofx3 timer reads as `{ running, remainingMs, durationMs }`, a timer
+nothing has started being stopped at its full duration. These repeat rules the
+module owns, and must match them (`readState` and `parseGoals` in
+`modules/woofx3/functions/counter.js`, `readTimer` and `timerFromInstance` in
+`modules/woofx3/functions/timer.js`). A kind it does not know is served as
+stored.
 
 Because a reading depends on settings, editing an instance can change it
 without its storage changing. sceneManager listens for
 `db.module.resource.instance.updated.*` and pushes the instance's reading again
 to every connected scene watching it.
+
+### Timers tick in the widget
+
+A running timer stores the moment it reaches zero and is not written again until
+something changes it, so its reading is a sync point, not a stream. sceneManager
+measures `remainingMs` as it sends the reading, and the widget counts down from
+the moment it arrives on its own monotonic clock (`performance.now()`), redrawing
+as each shown second turns over. Nothing crosses the wire while a timer runs;
+the next reading comes when it is started, paused, changed or ended. Sending time
+left rather than the end moment keeps the widget off the server's wall clock, so
+the two need not agree.
 
 ## Which module
 

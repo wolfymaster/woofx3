@@ -92,7 +92,48 @@ describe("resourceReading", () => {
 
   it("passes another kind's stored value through unchanged", () => {
     expect(resourceReading("other", "counter", { initialValue: 10 }, null)).toBeNull();
-    expect(resourceReading("woofx3", "timer", {}, { running: true })).toEqual({ running: true });
+    expect(resourceReading("woofx3", "queue", {}, { items: [] })).toEqual({ items: [] });
+  });
+});
+
+describe("resourceReading of a timer", () => {
+  it("reads a timer nothing has started as stopped at its full duration", () => {
+    expect(resourceReading("woofx3", "timer", { duration: 90 }, null)).toEqual({
+      running: false,
+      remainingMs: 90_000,
+      durationMs: 90_000,
+    });
+  });
+
+  it("runs for 5 minutes when its duration is missing or not a number", () => {
+    for (const duration of [undefined, "", "long"]) {
+      expect(resourceReading("woofx3", "timer", { duration }, null)).toMatchObject({ durationMs: 300_000 });
+    }
+  });
+
+  it("reads a running timer as its time left at the moment of reading", () => {
+    const stored = { running: true, endsAt: 1_700_000_045_000 };
+    expect(resourceReading("woofx3", "timer", { duration: 60 }, stored, 1_700_000_000_000)).toEqual({
+      running: true,
+      remainingMs: 45_000,
+      durationMs: 60_000,
+    });
+  });
+
+  it("reads a running timer past its end as having nothing left", () => {
+    const stored = { running: true, endsAt: 1_700_000_000_000 };
+    expect(resourceReading("woofx3", "timer", { duration: 60 }, stored, 1_700_000_002_000)).toMatchObject({
+      running: true,
+      remainingMs: 0,
+    });
+  });
+
+  it("reads a stopped timer as what it has left", () => {
+    expect(resourceReading("woofx3", "timer", { duration: 60 }, { running: false, remainingMs: 12_500 })).toEqual({
+      running: false,
+      remainingMs: 12_500,
+      durationMs: 60_000,
+    });
   });
 });
 

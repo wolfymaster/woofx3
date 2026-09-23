@@ -128,7 +128,9 @@ export class DbClient {
   /** One module's stored value, decoded, or `undefined` when the key holds nothing. */
   async getModuleStorageValue(applicationId: string, namespace: string, key: string): Promise<unknown> {
     const response = await storage.Get({ applicationId, namespace, key }, this.config);
-    if (!response.item) {
+    // Twirpscript decodes an absent message field as a default one, so an
+    // empty key is what marks "nothing stored".
+    if (!response.item || response.item.key === "") {
       return undefined;
     }
     return JSON.parse(response.item.value);
