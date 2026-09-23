@@ -12,6 +12,7 @@ import {
   alertWidgetsNamed,
   parseAlertLayout,
 } from "./scene/alert-layout";
+import type { ModuleStateWatch } from "./scene/module-state";
 import type { OverlayHost } from "./scene/scene-host";
 import type { OverlayTokenResolver } from "./scene/token-resolver";
 
@@ -21,6 +22,7 @@ interface InitArgs {
   db: DbClient;
   host: OverlayHost;
   deliveryStore: DeliveryStore;
+  moduleState: ModuleStateWatch;
   resolver: OverlayTokenResolver;
   logger: Logger;
 }
@@ -30,6 +32,10 @@ interface AlertEnvelope {
   applicationId?: unknown;
   parameters?: unknown;
   event?: { type?: unknown; source?: unknown; time?: unknown; data?: unknown };
+}
+
+interface StorageChangedEnvelope {
+  data?: { moduleId?: unknown; key?: unknown; value?: unknown };
 }
 
 interface WidgetEventEnvelope {
@@ -56,15 +62,14 @@ interface WidgetEventEnvelope {
  *     browser's per-widget queue does that now). This subscribes
  *     directly to `ui.notify.alert` (the original workflow-sourced
  *     subject) and hands off straight to `DeliveryStore.recordEvent`.
- *   - No `module.storage.*.changed` broadcaster — that was module
- *     persistent-storage sync, out of scope for this cutover (see
- *     widget-bridge.ts's header comment).
+ *   - `module.storage.*.changed` is pushed only to scenes whose widgets
+ *     asked for that key (see scene/module-state.ts), not broadcast.
  *   - `widget.event`'s `alert.lifecycle`/`instanceId === "alert-overlay"`
  *     special case is gone — every status report is a uniform
  *     `db.upsertWidgetStatus`, including the built-in alert widget's.
  */
 export async function initSubscriptions(args: InitArgs): Promise<void> {
-  const { nats, obs, db, host, deliveryStore, resolver, logger } = args;
+  const { nats, obs, db, host, deliveryStore, moduleState, resolver, logger } = args;
 
   if (!nats) {
     logger.warn("NATS unavailable — event subscriptions skipped (scenes will receive no live events)");
@@ -155,6 +160,29 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     });
   });
   logger.info("Subscribed to widget.event");
+
+  // Published by barkloader on every module storage write, and by the api
+  // with a null value for each session-scoped key a session end cleared.
+  await nats.subscribe("module.storage.*.changed", async (msg) => {
+    let envelope: StorageChangedEnvelope;
+    try {
+      envelope = msg.json<StorageChangedEnvelope>();
+    } catch (err) {
+      logger.error("module.storage.changed: malformed JSON envelope", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    const data = envelope.data ?? {};
+    const moduleId = typeof data.moduleId === "string" ? data.moduleId : "";
+    const key = typeof data.key === "string" ? data.key : "";
+    if (!moduleId || !key) {
+      logger.warn("module.storage.changed: missing moduleId or key; dropping", { subject: msg.subject });
+      return;
+    }
+    await moduleState.publish(moduleId, key, data.value ?? null);
+  });
+  logger.info("Subscribed to module.storage.*.changed");
 
   // Legacy slobs subject: kept temporarily so chat-bot scene/source
   // triggers don't break. Drop once everything moves to workflow actions.

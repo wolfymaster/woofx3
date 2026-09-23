@@ -30,12 +30,24 @@ export interface DeliveryFrame {
   value: unknown;
 }
 
-/** The stream carries two frame kinds: per-event deliveries, and the
- *  `hello` control frame the server opens every stream with. */
-export type SceneFrame = { kind: "delivery"; frame: DeliveryFrame } | { kind: "hello"; bootId: string };
+/** A change to a module storage key some widget on the page reads. */
+export interface ModuleStateFrame {
+  moduleId: string;
+  key: string;
+  value: unknown;
+}
+
+/** The stream carries three frame kinds: per-event deliveries, module
+ *  storage changes, and the `hello` control frame the server opens
+ *  every stream with. */
+export type SceneFrame =
+  | { kind: "delivery"; frame: DeliveryFrame }
+  | { kind: "module-state"; frame: ModuleStateFrame }
+  | { kind: "hello"; bootId: string };
 
 export interface SceneEventSink {
   onFrame(frame: DeliveryFrame): void;
+  onModuleState?(frame: ModuleStateFrame): void;
   onConnectionChange(connected: boolean): void;
   /** Server boot identity for the stream just opened. Changes across a
    *  sceneManager restart; see index.ts for what that triggers. */
@@ -90,6 +102,12 @@ export function parseSseChunk(rawEvent: string): SceneFrame | null {
   if (eventName === "hello") {
     return typeof parsed.bootId === "string" && parsed.bootId.length > 0
       ? { kind: "hello", bootId: parsed.bootId }
+      : null;
+  }
+
+  if (eventName === "module-state") {
+    return typeof parsed.moduleId === "string" && typeof parsed.key === "string"
+      ? { kind: "module-state", frame: { moduleId: parsed.moduleId, key: parsed.key, value: parsed.value ?? null } }
       : null;
   }
 
@@ -241,6 +259,8 @@ export class SceneEventSource {
           }
           if (parsed.kind === "hello") {
             this.sink?.onHello?.(parsed.bootId);
+          } else if (parsed.kind === "module-state") {
+            this.sink?.onModuleState?.(parsed.frame);
           } else {
             this.sink?.onFrame(parsed.frame);
           }

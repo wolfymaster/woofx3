@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <title>counter</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+    }
+
+    #box {
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      width: 100%;
+      height: 100%;
+      padding: 8px;
+    }
+
+    #text {
+      width: 100%;
+      font-weight: bold;
+      line-height: 1.2;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+      font-variant-numeric: tabular-nums;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="box">
+    <div id="text"></div>
+  </div>
+
+  <script>
+    (function () {
+      const host = window.widgetHost;
+      if (!host) {
+        return;
+      }
+      const settings = host.settings;
+      const el = document.getElementById("text");
+      el.style.color = str(settings.color, "#ffffff");
+      el.style.fontFamily = str(settings.fontFamily, "Roboto, system-ui, sans-serif");
+      el.style.fontSize = num(settings.fontSize, 48) + "px";
+      el.style.textAlign = ["left", "center", "right"].includes(settings.align) ? settings.align : "center";
+
+      const counter = str(settings.counter, "");
+      if (counter === "") {
+        return;
+      }
+      const template = str(settings.text, "{value}");
+      const highlight = str(settings.highlightColor, "#ec6758");
+
+      // The counter keeps its number at `state:<canonicalId>` in this
+      // module's storage. The host answers a counter nothing has written yet
+      // with its starting value, so nothing shows until the first answer
+      // arrives rather than a number that may be wrong.
+      host.storage.subscribe("state:" + counter, (stored) => {
+        const value = counterValue(stored);
+        if (value === null) {
+          return;
+        }
+        render(el, template.split("{value}").join(String(value)), highlight);
+      });
+    })();
+
+    // Stored as `{ value, reached }`; a counter last written before counters
+    // carried goals holds a bare number. Must match `readState` in
+    // functions/counter.js.
+    function counterValue(stored) {
+      const raw = stored !== null && typeof stored === "object" ? stored.value : stored;
+      const value = Number(raw);
+      return raw === null || raw === undefined || raw === "" || !Number.isFinite(value) ? null : value;
+    }
+
+    // Every other segment between {primary} markers is highlighted, the same
+    // markup the Text widget takes.
+    function render(el, text, highlight) {
+      el.replaceChildren();
+      text.split("{primary}").forEach((segment, i) => {
+        if (i % 2 === 1) {
+          const span = document.createElement("span");
+          span.style.color = highlight;
+          span.textContent = segment;
+          el.appendChild(span);
+        } else {
+          el.appendChild(document.createTextNode(segment));
+        }
+      });
+    }
+
+    function str(value, fallback) {
+      return typeof value === "string" && value.trim() !== "" ? value : fallback;
+    }
+
+    function num(value, fallback) {
+      return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+    }
+  </script>
+</body>
+
+</html>
