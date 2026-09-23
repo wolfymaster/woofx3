@@ -1,7 +1,7 @@
 // Child-side P1 runtime: implements the public `WidgetHost` interface
 // over `woofx3.widget` v1 postMessage to the parent scene manager.
 //
-// Built by `bun run build:shim` into `dist/widget-host-shim.js` — a
+// Built by `bun run build:shim` into `dist/widget-host-shim.iife.js` — a
 // self-contained classic-script IIFE the frame assembler injects into
 // every widget frame BEFORE the widget's own scripts (and before
 // `<base>`). Existing widgets read `window.widgetHost` at IIFE time,
