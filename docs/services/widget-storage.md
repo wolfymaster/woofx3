@@ -52,20 +52,27 @@ A widget that shows a value subscribes.
    nobody. A reconnect to a restarted sceneManager reloads the page, which asks
    afresh.
 
-## Empty values
+## Resource readings
 
-A resource instance nothing has written yet holds nothing, and a session-scoped
-value cleared when a stream session ended arrives as a change with a null value
-(see [Stream sessions](./stream-sessions.md)). Neither is really empty: a counter
-reads as its starting value. A widget cannot know that value, because it sees
-only its own settings, not the instance's.
+What a resource instance stores is not all a widget showing it needs. A counter
+nothing has written yet, or whose session-scoped value was cleared (it arrives
+as a change with a null value; see [Stream sessions](./stream-sessions.md)),
+stores nothing and still reads as its starting value. And a counter's goals
+live in its settings, not in storage. A widget sees only its own settings, never
+the instance's, so it can know neither.
 
-So sceneManager answers an empty `state:<canonicalId>`, on read and on change
-alike, with what the owning module reads it as: `emptyResourceState` in
-`sceneManager/src/scene/module-state.ts`. That repeats a rule the module owns,
-and must match it (`readState` in `modules/woofx3/functions/counter.js`). Only
-the woofx3 counter has an empty reading today; any other empty key reads as
-`null`.
+So sceneManager answers a `state:<canonicalId>` key, on read and on change
+alike, with the instance's reading: `resourceReading` in
+`sceneManager/src/scene/module-state.ts`. A woofx3 counter reads as
+`{ value, reached, goals }`, with `goals` its `{ value, name }` rows smallest
+first. That repeats rules the module owns, and must match them (`readState` and
+`parseGoals` in `modules/woofx3/functions/counter.js`). A kind it does not know
+is served as stored.
+
+Because a reading depends on settings, editing an instance can change it
+without its storage changing. sceneManager listens for
+`db.module.resource.instance.updated.*` and pushes the instance's reading again
+to every connected scene watching it.
 
 ## Which module
 

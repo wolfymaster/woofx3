@@ -69,17 +69,34 @@
         if (value === null) {
           return;
         }
-        render(el, template.split("{value}").join(String(value)), highlight);
+        const goal = currentGoal(stored, value);
+        render(el, fill(template, {
+          value: String(value),
+          goal: goal ? String(goal.value) : "",
+          goalName: goal ? goal.name : "",
+        }), highlight);
       });
     })();
 
-    // Stored as `{ value, reached }`; a counter last written before counters
-    // carried goals holds a bare number. Must match `readState` in
-    // functions/counter.js.
+    // The host serves a counter as `{ value, reached, goals }`. A bare number
+    // is what a counter last written before counters carried goals holds.
     function counterValue(stored) {
       const raw = stored !== null && typeof stored === "object" ? stored.value : stored;
       const value = Number(raw);
       return raw === null || raw === undefined || raw === "" || !Number.isFinite(value) ? null : value;
+    }
+
+    // The goal the counter is working toward: the smallest one above its
+    // value. None once every goal is reached, or when it has none.
+    function currentGoal(stored, value) {
+      const goals = stored !== null && typeof stored === "object" && Array.isArray(stored.goals) ? stored.goals : [];
+      return goals.find((goal) => typeof goal.value === "number" && goal.value > value) || null;
+    }
+
+    // Replaces each {token} it has a value for, and leaves anything else as
+    // written, so {primary} survives for `render`.
+    function fill(template, values) {
+      return template.replace(/\{(value|goal|goalName)\}/g, (_, token) => values[token]);
     }
 
     // Every other segment between {primary} markers is highlighted, the same

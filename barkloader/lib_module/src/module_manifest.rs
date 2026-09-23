@@ -216,6 +216,10 @@ pub struct ManifestConfigField {
     /// fires a request. Opaque here.
     #[serde(default)]
     pub action: Option<serde_json::Value>,
+    /// Required for `type: "list"` - the fields of one row. The collected
+    /// value is an array of objects, each keyed by these fields' ids.
+    #[serde(default)]
+    pub item_fields: Option<Vec<ManifestConfigField>>,
     /// Trigger config only - binds this field to a path in the event payload.
     #[serde(default)]
     pub event_path: Option<String>,
@@ -256,7 +260,7 @@ pub struct ManifestConfigFieldOption {
 /// `text` and `toggle` rather than `string` and `boolean`: these name the
 /// control, not the stored value, and the latter pair only ever appeared on
 /// module settings.
-pub const CONFIG_FIELD_TYPES: [&str; 11] = [
+pub const CONFIG_FIELD_TYPES: [&str; 12] = [
     "number",
     "range",
     "text",
@@ -268,7 +272,13 @@ pub const CONFIG_FIELD_TYPES: [&str; 11] = [
     "resource_ref",
     "button",
     "layout",
+    "list",
 ];
+
+/// The types a `list` field's `itemFields` may use: controls that fit in one
+/// row and hold a plain value. A nested list, a picker that opens its own
+/// dialog, or a button has no sensible place in a row.
+pub const LIST_ITEM_FIELD_TYPES: [&str; 5] = ["number", "text", "select", "toggle", "color"];
 
 /// The places a widget can be put. Mirrors `WIDGET_SURFACES` in
 /// `shared/clients/typescript/api/ui-schema.ts` and `WidgetSurface` in the

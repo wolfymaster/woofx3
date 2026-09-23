@@ -4,6 +4,7 @@
 //
 // A counter may carry goals: numbers it announces reaching, so the same counter
 // that shows deaths or gifted subs can also fire an alert at 100, 250 and 500.
+// A goal may have a name ("New emote"), which the announcement carries.
 // Reaching one is an edge, not a level — only the change that carries the
 // counter from below a goal to at or above it announces `goal.reached`, so a
 // counter that keeps climbing announces once per goal. Crossing again after
@@ -94,22 +95,37 @@ function loadCounter(ctx) {
   };
 }
 
-// The goals a counter announces reaching, smallest first and without repeats.
-// Written as a list of numbers in the instance's settings; an entry that is not
-// a number is skipped rather than failing the change, because counting is the
-// counter's job and a typo in an optional setting must not stop it.
+// The goals a counter announces reaching, as `{ value, name }`, smallest first
+// and one per number. The instance's settings hold them as a list of rows; a
+// counter set up before goals had names holds them as a comma-separated string
+// of numbers, which still reads. A row whose number is not a number is skipped
+// rather than failing the change, because counting is the counter's job and a
+// typo in an optional setting must not stop it. Two rows with the same number
+// are one goal, named by the first that has a name.
 function parseGoals(raw) {
-  if (typeof raw !== "string" || raw.trim() === "") {
+  const rows = typeof raw === "string" ? raw.split(",").map((part) => ({ value: part })) : raw;
+  if (!Array.isArray(rows)) {
     return [];
   }
   const goals = [];
-  for (const part of raw.split(",")) {
-    const goal = Number(part.trim());
-    if (part.trim() !== "" && Number.isFinite(goal) && !goals.includes(goal)) {
-      goals.push(goal);
+  for (const row of rows) {
+    if (row === null || typeof row !== "object") {
+      continue;
+    }
+    const text = typeof row.value === "string" ? row.value.trim() : row.value;
+    const value = Number(text);
+    if (text === "" || text === null || text === undefined || !Number.isFinite(value)) {
+      continue;
+    }
+    const name = typeof row.name === "string" ? row.name.trim() : "";
+    const existing = goals.find((goal) => goal.value === value);
+    if (!existing) {
+      goals.push({ value, name });
+    } else if (existing.name === "") {
+      existing.name = name;
     }
   }
-  return goals.sort((a, b) => a - b);
+  return goals.sort((a, b) => a.value - b.value);
 }
 
 // The counter as it stands, from a stored value in either shape or from
@@ -143,17 +159,17 @@ function crossings(counter, before, previous, value, forget) {
   const now = Date.now();
 
   for (const goal of counter.goals) {
-    const key = String(goal);
+    const key = String(goal.value);
     const stored = forget ? Number.NaN : Number(before[key]);
     let at = Number.isFinite(stored) ? stored : null;
 
-    const crossed = previous < goal && value >= goal;
+    const crossed = previous < goal.value && value >= goal.value;
     const first = crossed && at === null;
     if (first) {
       at = now;
     }
     if (crossed && (first || counter.announceEveryTime)) {
-      announce.push({ goal, first, firstReachedAt: at });
+      announce.push({ goal: goal.value, goalName: goal.name, first, firstReachedAt: at });
     }
     if (at !== null) {
       record[key] = at;
@@ -201,6 +217,7 @@ function update(ctx, counter, next, { forget = false } = {}) {
             previous,
             next: value,
             goal: announced.goal,
+            goalName: announced.goalName,
             first: announced.first,
             firstReachedAt: announced.firstReachedAt,
           },

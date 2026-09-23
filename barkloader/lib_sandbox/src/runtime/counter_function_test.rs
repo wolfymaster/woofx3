@@ -390,3 +390,60 @@ fn only_goals_the_counter_still_carries_are_recorded() {
     assert!(reached["100"].is_null(), "a dropped goal keeps no record");
     assert!(!reached["250"].is_null(), "a kept goal keeps its record");
 }
+
+// Goals set as rows, each with an optional name the announcement carries.
+#[test]
+fn a_named_goal_is_announced_with_its_name() {
+    let harness = counter(json!({ "goals": [
+        { "value": 50, "name": "New emote" },
+        { "value": 100 }
+    ] }));
+
+    add(&harness, 120);
+    let events = goals_reached(&harness);
+    assert_eq!(events.len(), 2, "{events:?}");
+    assert_eq!(events[0]["goal"], 50);
+    assert_eq!(events[0]["goalName"], "New emote");
+    assert_eq!(events[1]["goal"], 100);
+    assert_eq!(events[1]["goalName"], "");
+}
+
+// A goal set up before goals had names was a comma-separated string; it reads
+// as goals without names.
+#[test]
+fn goals_written_as_a_string_are_announced_without_names() {
+    let harness = counter(json!({ "goals": "100" }));
+    add(&harness, 100);
+    let events = goals_reached(&harness);
+    assert_eq!(events[0]["goal"], 100);
+    assert_eq!(events[0]["goalName"], "");
+}
+
+#[test]
+fn a_row_whose_number_is_not_a_number_is_skipped() {
+    let harness = counter(json!({ "goals": [
+        { "value": "", "name": "Unfinished" },
+        { "value": "lots" },
+        { "name": "No number" },
+        { "value": "25", "name": "Typed as text" }
+    ] }));
+    add(&harness, 30);
+    let events = goals_reached(&harness);
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert_eq!(events[0]["goal"], 25);
+    assert_eq!(events[0]["goalName"], "Typed as text");
+}
+
+// Two rows for one number are one goal, announced once, under the first name.
+#[test]
+fn rows_with_the_same_number_are_one_goal() {
+    let harness = counter(json!({ "goals": [
+        { "value": 10 },
+        { "value": 10, "name": "Ten" },
+        { "value": 10, "name": "Also ten" }
+    ] }));
+    add(&harness, 10);
+    let events = goals_reached(&harness);
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert_eq!(events[0]["goalName"], "Ten");
+}

@@ -38,6 +38,10 @@ interface StorageChangedEnvelope {
   data?: { moduleId?: unknown; key?: unknown; value?: unknown };
 }
 
+interface ResourceInstanceUpdatedEnvelope {
+  data?: { canonical_id?: unknown };
+}
+
 interface WidgetEventEnvelope {
   data?: {
     applicationId?: unknown;
@@ -183,6 +187,26 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     await moduleState.publish(moduleId, key, data.value ?? null);
   });
   logger.info("Subscribed to module.storage.*.changed");
+
+  // A resource instance's settings can change what its value reads as (a
+  // counter's goals) without its storage changing.
+  await nats.subscribe("db.module.resource.instance.updated.*", async (msg) => {
+    let envelope: ResourceInstanceUpdatedEnvelope;
+    try {
+      envelope = msg.json<ResourceInstanceUpdatedEnvelope>();
+    } catch (err) {
+      logger.error("db.module.resource.instance.updated: malformed JSON envelope", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    const canonicalId = typeof envelope.data?.canonical_id === "string" ? envelope.data.canonical_id : "";
+    if (!canonicalId) {
+      return;
+    }
+    await moduleState.resourceUpdated(canonicalId);
+  });
+  logger.info("Subscribed to db.module.resource.instance.updated.*");
 
   // Legacy slobs subject: kept temporarily so chat-bot scene/source
   // triggers don't break. Drop once everything moves to workflow actions.

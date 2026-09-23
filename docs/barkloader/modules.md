@@ -283,6 +283,7 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `kinds` | string[] | no | For `asset` — filter the picker by `ManifestAsset.kind`. |
 | `resourceKind` | string | no | Required for `resource_ref` — which resource kind the picker lists. |
 | `surface` | string | no | Required for `layout` — the surface whose widgets the layout places (`alert`). |
+| `itemFields` | array | no | Required for `list`, and only allowed there — the fields of one row. See [list fields](#list-fields). |
 | `action` | object | no | Required for `button` — the request the button fires. See [module-level settings](#module-level-settings-settings). |
 | `eventPath` | string | no | Trigger `schema` only. Dot path into the event payload this field maps to. |
 | `operator` | string | no | Trigger `schema` only. Comparison emitted with this field's value (e.g. `gte`, `eq`). |
@@ -296,13 +297,13 @@ The info icon next to a field's label appears if and only if `hint` or `exampleP
 
 #### Field types
 
-`number`, `range`, `text`, `select`, `media`, `toggle`, `color`, `asset`, `resource_ref`, `button`, `layout`.
+`number`, `range`, `text`, `select`, `media`, `toggle`, `color`, `asset`, `resource_ref`, `button`, `layout`, `list`.
 
 The set is closed — an unrecognised token fails the install rather than falling back to a text input, because a silent fallback is indistinguishable from a working field.
 
 Note `text` and `toggle`, not `string` and `boolean`. These name **controls**. The `string` / `boolean` tokens belong to [`DataShape`](#emits-and-returns), which names **values**. The two vocabularies are deliberately different because the things they describe are different: a `toggle` renders a switch, a `boolean` is what comes back in a payload. Neither list is a superset of the other.
 
-Four of them carry extra requirements, each checked at install:
+Five of them carry extra requirements, each checked at install:
 
 | Type | Requires | Why |
 |---|---|---|
@@ -310,6 +311,29 @@ Four of them carry extra requirements, each checked at install:
 | `resource_ref` | `resourceKind` | A picker that does not say what to pick lists nothing. |
 | `button` | `action` | A button with nothing to fire does nothing. |
 | `layout` | `surface` | A canvas that does not say which widgets it may hold can place nothing. |
+| `list` | `itemFields` | A list that does not say what a row holds renders empty rows. |
+
+#### List fields
+
+A `list` collects any number of rows, each made of the fields in `itemFields`.
+The stored value is an array of objects keyed by those fields' ids. The bundled
+counter's goals are one:
+
+```json
+{ "id": "goals", "label": "Goals", "type": "list", "itemFields": [
+  { "id": "value", "label": "Goal", "type": "number", "required": true },
+  { "id": "name", "label": "Name", "type": "text" }
+] }
+```
+
+which stores `[{ "value": 100, "name": "New emote" }, { "value": 250 }]`.
+
+A row holds only controls that fit in one row and carry a plain value:
+`number`, `text`, `select`, `toggle` and `color`. A list inside a list, a
+picker that opens its own dialog, and a button are rejected. Row fields are
+otherwise validated like any field list, so their ids must be unique within
+the row. A module setting cannot be a `list`, because `settings` declares no
+`itemFields`.
 
 #### Picker field types
 
@@ -919,7 +943,7 @@ The bundled `woofx3` module's kinds store these values, which is what a widget o
 
 | Kind | Value at `state:<canonicalId>` | No value stored means |
 |------|--------------------------------|-----------------------|
-| `counter` | `{ "value": <number>, "reached": { "<goal>": <epoch ms> } }`. `reached` records when each of the counter's goals was first reached, which is what decides whether reaching one again is the first time. A counter written before counters carried goals holds a bare number and still reads. | Its `initialValue` setting, no goal reached. |
+| `counter` | `{ "value": <number>, "reached": { "<goal>": <epoch ms> } }`. `reached` records when each of the counter's goals was first reached, which is what decides whether reaching one again is the first time. A counter written before counters carried goals holds a bare number and still reads. Its goals are a `list` setting of `{ value, name }` rows, the name optional; goals set up before they had names are a comma-separated string of numbers, which still reads. | Its `initialValue` setting, no goal reached. |
 | `timer` | `{ "running": true, "endsAt": <epoch ms> }` while counting down; `{ "running": false, "remainingMs": <ms> }` while stopped. A running timer is never rewritten as it ticks, so time left is `max(0, endsAt - now)`. | Stopped at its `duration` setting. |
 | `queue` | An array of strings, first in line first. | Empty. |
 
@@ -937,7 +961,7 @@ workflow to one instance.
 | `timer.ended` | A running timer reaches zero. Nothing runs at that moment, so the module's `timer_expiry` background task checks once a second, stops each timer that has run out and announces it. Starting a timer from its ended workflow makes it repeat. |
 | `queue.added` | An entry joins a queue. |
 | `queue.next` | The entry at the front of a queue is taken. |
-| `goal.reached` | A change carries a counter from below one of its goals to at or above it. Climbing further past that goal announces nothing more, and one change crossing several goals announces each. Reaching a goal again after dropping below it announces again only when the counter's `announceEveryTime` setting is on; `first` on the event says which crossing this was. A counter with no goals announces none. |
+| `goal.reached` | A change carries a counter from below one of its goals to at or above it. Climbing further past that goal announces nothing more, and one change crossing several goals announces each. Reaching a goal again after dropping below it announces again only when the counter's `announceEveryTime` setting is on; `first` on the event says which crossing this was, and `goalName` carries the goal's name, or `""` when it has none. A counter with no goals announces none. |
 
 **Storage is per module.** Every key a function reads or writes belongs to its own module — the store addresses a value by application, module and key — so two modules using the same key hold two separate values. Update a value from its previous one with `ctx.storage.compareAndSet(key, expected, value, options?)`, which writes only if the key still holds `expected` (or nothing, for `null`) and otherwise returns `{ swapped: false, current }` to retry from. A `get` followed by a `set` loses one of two concurrent updates.
 

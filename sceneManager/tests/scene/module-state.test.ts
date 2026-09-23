@@ -1,9 +1,9 @@
 import { describe, expect, it, mock } from "bun:test";
 import {
-  emptyResourceState,
   MODULE_STATE_EVENT,
   type ModuleStateDb,
   ModuleStateWatch,
+  resourceReading,
 } from "../../src/scene/module-state";
 
 const logger = {
@@ -37,57 +37,107 @@ function fakeScenes(connected: string[]) {
   };
 }
 
-describe("emptyResourceState", () => {
-  it("reads a woofx3 counter as its starting value with no goal reached", () => {
-    expect(emptyResourceState("woofx3", "counter", { initialValue: 10 })).toEqual({ value: 10, reached: {} });
+function counterInstance(settings: Record<string, unknown>) {
+  return { [COUNTER]: { kind: "counter", settingsJson: JSON.stringify(settings) } };
+}
+
+describe("resourceReading", () => {
+  it("reads a counter nothing has written as its starting value with no goal reached", () => {
+    expect(resourceReading("woofx3", "counter", { initialValue: 10 }, null)).toEqual({
+      value: 10,
+      reached: {},
+      goals: [],
+    });
   });
 
   it("starts a counter at 0 when its starting value is missing or not a number", () => {
-    expect(emptyResourceState("woofx3", "counter", {})).toEqual({ value: 0, reached: {} });
-    expect(emptyResourceState("woofx3", "counter", { initialValue: "" })).toEqual({ value: 0, reached: {} });
-    expect(emptyResourceState("woofx3", "counter", { initialValue: "lots" })).toEqual({ value: 0, reached: {} });
+    for (const initialValue of [undefined, "", "lots"]) {
+      expect(resourceReading("woofx3", "counter", { initialValue }, null)).toMatchObject({ value: 0 });
+    }
   });
 
-  it("knows nothing of another module's kinds", () => {
-    expect(emptyResourceState("other", "counter", { initialValue: 10 })).toBeNull();
-    expect(emptyResourceState("woofx3", "timer", {})).toBeNull();
+  it("reads a stored counter in either shape", () => {
+    const reached = { "100": 1_700_000_000_000 };
+    expect(resourceReading("woofx3", "counter", {}, { value: 120, reached })).toEqual({
+      value: 120,
+      reached,
+      goals: [],
+    });
+    expect(resourceReading("woofx3", "counter", {}, 42)).toEqual({ value: 42, reached: {}, goals: [] });
+  });
+
+  it("carries the counter's goals, named and unnamed, smallest first", () => {
+    const goals = [{ value: 100, name: "Emote" }, { value: 50 }, { value: "", name: "Unfinished" }];
+    expect(resourceReading("woofx3", "counter", { goals }, 3)).toMatchObject({
+      goals: [
+        { value: 50, name: "" },
+        { value: 100, name: "Emote" },
+      ],
+    });
+  });
+
+  it("reads goals written as a comma-separated string", () => {
+    expect(resourceReading("woofx3", "counter", { goals: "250, 100, x" }, 3)).toMatchObject({
+      goals: [
+        { value: 100, name: "" },
+        { value: 250, name: "" },
+      ],
+    });
+  });
+
+  it("names a repeated number by its first row that has a name", () => {
+    const goals = [{ value: 10 }, { value: 10, name: "Ten" }, { value: 10, name: "Also ten" }];
+    expect(resourceReading("woofx3", "counter", { goals }, 3)).toMatchObject({ goals: [{ value: 10, name: "Ten" }] });
+  });
+
+  it("passes another kind's stored value through unchanged", () => {
+    expect(resourceReading("other", "counter", { initialValue: 10 }, null)).toBeNull();
+    expect(resourceReading("woofx3", "timer", {}, { running: true })).toEqual({ running: true });
   });
 });
 
 describe("ModuleStateWatch.read", () => {
-  it("returns the stored value", async () => {
-    const db = fakeDb({ [`woofx3/${COUNTER_KEY}`]: { value: 4, reached: {} } }, {});
+  it("reads a counter with its goals", async () => {
+    const db = fakeDb(
+      { [`woofx3/${COUNTER_KEY}`]: { value: 4, reached: {} } },
+      counterInstance({ goals: [{ value: 10, name: "Ten" }] })
+    );
     const watch = new ModuleStateWatch(db, fakeScenes([]), logger);
-    expect(await watch.read("scene-1", "app-1", "woofx3", COUNTER_KEY)).toEqual({ value: 4, reached: {} });
+    expect(await watch.read("scene-1", "app-1", "woofx3", COUNTER_KEY)).toEqual({
+      value: 4,
+      reached: {},
+      goals: [{ value: 10, name: "Ten" }],
+    });
   });
 
   it("reads a counter nothing has written as its starting value", async () => {
-    const db = fakeDb({}, { [COUNTER]: { kind: "counter", settingsJson: '{"initialValue":7}' } });
+    const db = fakeDb({}, counterInstance({ initialValue: 7 }));
     const watch = new ModuleStateWatch(db, fakeScenes([]), logger);
-    expect(await watch.read("scene-1", "app-1", "woofx3", COUNTER_KEY)).toEqual({ value: 7, reached: {} });
+    expect(await watch.read("scene-1", "app-1", "woofx3", COUNTER_KEY)).toEqual({ value: 7, reached: {}, goals: [] });
   });
 
-  it("reads an empty key that is no resource's state as null", async () => {
-    const db = fakeDb({}, {});
+  it("reads a key that is no resource's state as it is stored", async () => {
+    const db = fakeDb({ "woofx3/something": 3 }, {});
     const watch = new ModuleStateWatch(db, fakeScenes([]), logger);
-    expect(await watch.read("scene-1", "app-1", "woofx3", "something")).toBeNull();
+    expect(await watch.read("scene-1", "app-1", "woofx3", "something")).toBe(3);
+    expect(await watch.read("scene-1", "app-1", "woofx3", "nothing")).toBeNull();
     expect(db.getResourceInstance).not.toHaveBeenCalled();
   });
 
   it("does not read another module's instance through this module's storage", async () => {
-    const db = fakeDb({}, { [COUNTER]: { kind: "counter", settingsJson: '{"initialValue":7}' } });
+    const db = fakeDb({}, counterInstance({ initialValue: 7 }));
     const watch = new ModuleStateWatch(db, fakeScenes([]), logger);
     expect(await watch.read("scene-1", "app-1", "other", COUNTER_KEY)).toBeNull();
     expect(db.getResourceInstance).not.toHaveBeenCalled();
   });
 
-  it("reads an empty counter as null when its instance cannot be looked up", async () => {
-    const db = fakeDb({}, {});
+  it("serves the stored value as is when the instance cannot be looked up", async () => {
+    const db = fakeDb({ [`woofx3/${COUNTER_KEY}`]: { value: 4, reached: {} } }, {});
     db.getResourceInstance = mock(async () => {
       throw new Error("db down");
     });
     const watch = new ModuleStateWatch(db, fakeScenes([]), logger);
-    expect(await watch.read("scene-1", "app-1", "woofx3", COUNTER_KEY)).toBeNull();
+    expect(await watch.read("scene-1", "app-1", "woofx3", COUNTER_KEY)).toEqual({ value: 4, reached: {} });
   });
 });
 
@@ -112,14 +162,13 @@ describe("ModuleStateWatch.publish", () => {
 
   it("pushes a cleared counter as its starting value", async () => {
     const scenes = fakeScenes(["scene-1"]);
-    const db = fakeDb({}, { [COUNTER]: { kind: "counter", settingsJson: '{"initialValue":2}' } });
-    const watch = new ModuleStateWatch(db, scenes, logger);
+    const watch = new ModuleStateWatch(fakeDb({}, counterInstance({ initialValue: 2 })), scenes, logger);
     await watch.read("scene-1", "app-1", "woofx3", COUNTER_KEY);
 
     await watch.publish("woofx3", COUNTER_KEY, null);
 
     expect(scenes.pushed.map((p) => p.data)).toEqual([
-      { moduleId: "woofx3", key: COUNTER_KEY, value: { value: 2, reached: {} } },
+      { moduleId: "woofx3", key: COUNTER_KEY, value: { value: 2, reached: {}, goals: [] } },
     ]);
   });
 
@@ -132,5 +181,38 @@ describe("ModuleStateWatch.publish", () => {
 
     expect(scenes.pushed).toEqual([]);
     expect(db.getResourceInstance).not.toHaveBeenCalled();
+  });
+});
+
+describe("ModuleStateWatch.resourceUpdated", () => {
+  it("pushes the counter again, read under each watching scene's application", async () => {
+    const instances = counterInstance({ goals: [{ value: 10 }] });
+    const db = fakeDb({ [`woofx3/${COUNTER_KEY}`]: { value: 4, reached: {} } }, instances);
+    const scenes = fakeScenes(["scene-1", "scene-2"]);
+    const watch = new ModuleStateWatch(db, scenes, logger);
+    await watch.read("scene-1", "app-1", "woofx3", COUNTER_KEY);
+
+    instances[COUNTER] = { kind: "counter", settingsJson: JSON.stringify({ goals: [{ value: 10, name: "Ten" }] }) };
+    await watch.resourceUpdated(COUNTER);
+
+    expect(db.getModuleStorageValue).toHaveBeenLastCalledWith("app-1", "woofx3", COUNTER_KEY);
+    expect(scenes.pushed).toEqual([
+      {
+        sceneId: "scene-1",
+        event: MODULE_STATE_EVENT,
+        data: {
+          moduleId: "woofx3",
+          key: COUNTER_KEY,
+          value: { value: 4, reached: {}, goals: [{ value: 10, name: "Ten" }] },
+        },
+      },
+    ]);
+  });
+
+  it("pushes nothing for an instance no connected scene watches", async () => {
+    const scenes = fakeScenes(["scene-1"]);
+    const watch = new ModuleStateWatch(fakeDb({}, {}), scenes, logger);
+    await watch.resourceUpdated(COUNTER);
+    expect(scenes.pushed).toEqual([]);
   });
 });
