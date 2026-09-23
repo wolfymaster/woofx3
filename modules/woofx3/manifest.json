@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -1451,7 +1451,8 @@
       "event": "goal.reached",
       "taxonomy": [
         "system.counter",
-        "alert.stream.goal"
+        "platform.twitch",
+        "alert.stream"
       ],
       "schema": [
         {
