@@ -280,6 +280,25 @@ export class DeliveryStore {
     return [...this.connections.keys()].filter((sceneId) => (this.connections.get(sceneId)?.size ?? 0) > 0);
   }
 
+  /**
+   * Push a named frame to every open connection of a scene. Unlike a
+   * delivery it is not recorded, acked or redelivered: it carries state
+   * the page can ask for again, not an event it must not miss.
+   */
+  broadcast(sceneId: string, event: string, data: unknown): void {
+    const bytes = new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    for (const controller of this.connections.get(sceneId) ?? []) {
+      try {
+        controller.enqueue(bytes);
+      } catch (err) {
+        this.logger.warn("delivery-store: SSE push failed", {
+          event,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
   private push(sceneId: string, frame: DeliveryFrame): void {
     for (const controller of this.connections.get(sceneId) ?? []) {
       this.sendTo(controller, frame);

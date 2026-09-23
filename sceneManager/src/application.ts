@@ -38,6 +38,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { FrameAssembler, HttpBarkloaderFrameClient } = await import("./scene/frame-assembler");
     const { SessionTokenService } = await import("./scene/session-token");
     const { DeliveryStore } = await import("./events/delivery-store");
+    const { ModuleStateWatch } = await import("./scene/module-state");
     const { createMessageBus } = await import("@woofx3/nats");
     const { connectObs } = await import("./obs/manager");
     const { initSubscriptions } = await import("./nats-subscriptions");
@@ -61,6 +62,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     await deliveryStore.hydrate();
     deliveryStore.startSweep();
     this.deliveryStore = deliveryStore;
+    const moduleState = new ModuleStateWatch(db, deliveryStore, ctx.logger);
 
     // NATS and OBS are both best-effort, non-blocking dependencies —
     // scene serving must degrade gracefully without live
@@ -80,9 +82,9 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     }
     const obs = await connectObs(ctx.runtimeConfig.obs, ctx.logger);
 
-    await initSubscriptions({ nats, obs, db, host, deliveryStore, resolver, logger: ctx.logger });
+    await initSubscriptions({ nats, obs, db, host, deliveryStore, moduleState, resolver, logger: ctx.logger });
 
-    this.server = createHttpServer({ ctx, host, frameAssembler, sessionTokens, deliveryStore, bootId });
+    this.server = createHttpServer({ ctx, host, frameAssembler, sessionTokens, deliveryStore, moduleState, bootId });
     ctx.logger.info("sceneManager listening", {
       port: ctx.runtimeConfig.port,
       bindHost: ctx.runtimeConfig.bindHost,

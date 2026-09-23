@@ -29,10 +29,11 @@ use super::canonical_id::{
 };
 use super::db_proxy_client::ModuleDbProxy;
 use super::module_manifest::{
-    CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, ManifestAction, ManifestActionImpl, ManifestAsset,
-    ManifestCommand, ManifestConfigField, ManifestDataShape, ManifestFunction,
-    ManifestResourceKind, ManifestSetting, ManifestTrigger, ManifestWorkflow, ModuleManifest,
-    ModuleWidget, SECRET_SETTING_TYPE, WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE, WIDGET_SURFACES,
+    CONFIG_FIELD_TYPES, DATA_SHAPE_FIELD_TYPES, LIST_ITEM_FIELD_TYPES, ManifestAction,
+    ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField, ManifestDataShape,
+    ManifestFunction, ManifestResourceKind, ManifestSetting, ManifestTrigger, ManifestWorkflow,
+    ModuleManifest, ModuleWidget, SECRET_SETTING_TYPE, WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE,
+    WIDGET_SURFACES,
 };
 
 /// Resolved action implementation. Mirrors `ManifestActionImpl` but
@@ -963,6 +964,7 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
                 &format!("{context} field #{i} ({id}): `layout` needs a `surface`"),
             )?;
         }
+        validate_item_fields(field, &format!("{context} field #{i} ({id})"))?;
         // An empty `anyText` is meaningful - it drops the part of the sentence -
         // but whitespace alone is neither that nor words, so it is a slip.
         if let Some(any_text) = &field.any_text
@@ -985,6 +987,35 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
         }
     }
     Ok(())
+}
+
+/// A `list` field declares the fields of one row, and only a `list` does.
+fn validate_item_fields(field: &ManifestConfigField, context: &str) -> Result<()> {
+    let Some(item_fields) = &field.item_fields else {
+        if field.field_type == "list" {
+            return Err(anyhow!("{context}: `list` needs `itemFields`"));
+        }
+        return Ok(());
+    };
+    if field.field_type != "list" {
+        return Err(anyhow!("{context}: only a `list` field takes `itemFields`"));
+    }
+    if item_fields.is_empty() {
+        return Err(anyhow!(
+            "{context}: `itemFields` must name at least one field"
+        ));
+    }
+    for (i, item) in item_fields.iter().enumerate() {
+        if !LIST_ITEM_FIELD_TYPES.contains(&item.field_type.as_str()) {
+            return Err(anyhow!(
+                "{context}: item field #{i} ({}) has type {:?}; a list row takes only: {}",
+                item.id,
+                item.field_type,
+                LIST_ITEM_FIELD_TYPES.join(", ")
+            ));
+        }
+    }
+    validate_field_list(item_fields, &format!("{context}: `itemFields`"))
 }
 
 /// Validate every declared trigger `sentence` against its trigger's `schema`.
@@ -1076,6 +1107,13 @@ fn validate_settings(settings: &[ManifestSetting]) -> Result<()> {
             }
         } else {
             validate_field_type(&setting.setting_type, &format!("setting #{i} ({id})"))?;
+        }
+        // A module setting declares no `itemFields`, so a list would render
+        // rows with nothing in them.
+        if setting.setting_type == "list" {
+            return Err(anyhow!(
+                "setting #{i} ({id}): a module setting cannot be a `list`"
+            ));
         }
         if setting.setting_type == "button" && setting.action.is_null() {
             return Err(anyhow!("setting #{i} ({id}): `button` needs an `action`"));
@@ -2048,6 +2086,83 @@ mod tests {
         );
         let err = validate(&m).expect_err("picker with nothing to pick");
         assert!(err.to_string().contains("resourceKind"), "{err}");
+    }
+
+    fn resource_with_field(field: &str) -> ModuleManifest {
+        minimal(&format!(
+            r#",
+            "resources": [{{ "kind": "counter", "name": "Counter", "schema": [{field}] }}]"#
+        ))
+    }
+
+    #[test]
+    fn accepts_a_list_of_plain_rows() {
+        let m = resource_with_field(
+            r#"{ "id": "goals", "label": "Goals", "type": "list", "itemFields": [
+                { "id": "value", "label": "Goal", "type": "number", "required": true },
+                { "id": "name", "label": "Name", "type": "text" }
+            ] }"#,
+        );
+        validate(&m).expect("a list of number and text rows is valid");
+    }
+
+    #[test]
+    fn rejects_a_list_that_does_not_say_what_a_row_holds() {
+        let missing = resource_with_field(r#"{ "id": "goals", "label": "Goals", "type": "list" }"#);
+        let err = validate(&missing).expect_err("list with no rows declared");
+        assert!(
+            err.to_string().contains("`list` needs `itemFields`"),
+            "{err}"
+        );
+
+        let empty = resource_with_field(
+            r#"{ "id": "goals", "label": "Goals", "type": "list", "itemFields": [] }"#,
+        );
+        let err = validate(&empty).expect_err("list with an empty row");
+        assert!(err.to_string().contains("at least one field"), "{err}");
+    }
+
+    #[test]
+    fn rejects_item_fields_on_anything_but_a_list() {
+        let m = resource_with_field(
+            r#"{ "id": "goals", "label": "Goals", "type": "text", "itemFields": [
+                { "id": "value", "label": "Goal", "type": "number" }
+            ] }"#,
+        );
+        let err = validate(&m).expect_err("itemFields on a text field");
+        assert!(err.to_string().contains("only a `list`"), "{err}");
+    }
+
+    #[test]
+    fn rejects_a_row_field_that_does_not_fit_in_a_row() {
+        let nested = resource_with_field(
+            r#"{ "id": "goals", "label": "Goals", "type": "list", "itemFields": [
+                { "id": "inner", "label": "Inner", "type": "list", "itemFields": [
+                    { "id": "v", "label": "V", "type": "number" }
+                ] }
+            ] }"#,
+        );
+        let err = validate(&nested).expect_err("a list inside a list");
+        assert!(err.to_string().contains("a list row takes only"), "{err}");
+    }
+
+    #[test]
+    fn validates_row_fields_like_any_other_field_list() {
+        let m = resource_with_field(
+            r#"{ "id": "goals", "label": "Goals", "type": "list", "itemFields": [
+                { "id": "value", "label": "Goal", "type": "number" },
+                { "id": "value", "label": "Again", "type": "text" }
+            ] }"#,
+        );
+        let err = validate(&m).expect_err("duplicate row field id");
+        assert!(err.to_string().contains("duplicate"), "{err}");
+    }
+
+    #[test]
+    fn rejects_a_list_module_setting() {
+        let m = minimal(r#", "settings": [{ "id": "goals", "label": "Goals", "type": "list" }]"#);
+        let err = validate(&m).expect_err("a list setting");
+        assert!(err.to_string().contains("cannot be a `list`"), "{err}");
     }
 
     #[test]

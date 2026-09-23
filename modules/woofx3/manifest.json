@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.13.5",
+  "version": "0.15.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -48,9 +48,23 @@
         {
           "id": "goals",
           "label": "Goals",
-          "type": "text",
-          "placeholder": "100, 250, 500",
-          "description": "Numbers to announce reaching, separated by commas. Leave it empty and the counter just counts."
+          "type": "list",
+          "description": "Numbers to announce reaching, each with an optional name. Leave it empty and the counter just counts.",
+          "itemFields": [
+            {
+              "id": "value",
+              "label": "Goal",
+              "type": "number",
+              "required": true,
+              "placeholder": "100"
+            },
+            {
+              "id": "name",
+              "label": "Name",
+              "type": "text",
+              "placeholder": "New emote"
+            }
+          ]
         },
         {
           "id": "announceEveryTime",
@@ -1489,6 +1503,11 @@
             "description": "The goal it reached."
           },
           {
+            "path": "goalName",
+            "type": "string",
+            "description": "The goal's name, or empty when it has none."
+          },
+          {
             "path": "first",
             "type": "boolean",
             "description": "Whether this was the first time it reached that goal."
@@ -1811,6 +1830,83 @@
       ],
       "taxonomy": [
         "media.animation"
+      ]
+    },
+    {
+      "id": "counter",
+      "name": "Counter",
+      "description": "A counter's number, kept up to date as it changes. Put {value} where the number goes, and {goal} and {goalName} for the goal it is working toward. Wrap words in {primary}...{primary} to show them in the highlight color.",
+      "entry": "widgets/counter/index.html",
+      "assets": "widgets/counter",
+      "surfaces": [
+        "scene"
+      ],
+      "settingsSchema": [
+        {
+          "id": "counter",
+          "label": "Counter",
+          "type": "resource_ref",
+          "resourceKind": "counter",
+          "required": true,
+          "description": "The counter to show."
+        },
+        {
+          "id": "text",
+          "label": "Text",
+          "type": "text",
+          "defaultValue": "{value}",
+          "placeholder": "{value} / {goal} {primary}{goalName}{primary}",
+          "description": "{value} is the counter's number. {goal} and {goalName} are the next goal it has not reached and that goal's name; both are empty when there is none. Wrap words in {primary}...{primary} to show them in the highlight color."
+        },
+        {
+          "id": "color",
+          "label": "Color",
+          "type": "color",
+          "defaultValue": "#ffffff"
+        },
+        {
+          "id": "highlightColor",
+          "label": "Highlight color",
+          "type": "color",
+          "defaultValue": "#ec6758"
+        },
+        {
+          "id": "fontFamily",
+          "label": "Font",
+          "type": "text",
+          "defaultValue": "Roboto, system-ui, sans-serif"
+        },
+        {
+          "id": "fontSize",
+          "label": "Font size",
+          "type": "number",
+          "unit": "px",
+          "min": 1,
+          "defaultValue": 48
+        },
+        {
+          "id": "align",
+          "label": "Alignment",
+          "type": "select",
+          "defaultValue": "center",
+          "options": [
+            {
+              "value": "left",
+              "label": "Left"
+            },
+            {
+              "value": "center",
+              "label": "Center"
+            },
+            {
+              "value": "right",
+              "label": "Right"
+            }
+          ]
+        }
+      ],
+      "taxonomy": [
+        "data.counter"
       ]
     }
   ],

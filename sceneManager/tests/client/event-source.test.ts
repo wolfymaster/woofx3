@@ -24,6 +24,19 @@ describe("parseSseChunk", () => {
     expect(parseSseChunk('event: hello\ndata: {"bootId":"boot-a"}')).toEqual({ kind: "hello", bootId: "boot-a" });
   });
 
+  it("parses a module-state frame", () => {
+    const raw =
+      'event: module-state\ndata: {"moduleId":"woofx3","key":"state:woofx3:counter:deaths","value":{"value":3}}';
+    expect(parseSseChunk(raw)).toEqual({
+      kind: "module-state",
+      frame: { moduleId: "woofx3", key: "state:woofx3:counter:deaths", value: { value: 3 } },
+    });
+  });
+
+  it("returns null for a module-state frame with no key", () => {
+    expect(parseSseChunk('event: module-state\ndata: {"moduleId":"woofx3","value":1}')).toBeNull();
+  });
+
   it("returns null for a hello frame with no bootId", () => {
     expect(parseSseChunk("event: hello\ndata: {}")).toBeNull();
   });

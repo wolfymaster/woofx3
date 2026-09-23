@@ -15,6 +15,7 @@ import {
 import { EventQueueManager, toWidgetEvent } from "./event-queue";
 import { AckBatcher } from "./ack-batcher";
 import { SceneEventSource, type DeliveryFrame } from "./event-source";
+import { ModuleStateCache } from "./module-state";
 import { ConnectionStatus } from "./connection-status";
 import { createReconnectCoordinator } from "./reconnect-coordinator";
 
@@ -97,6 +98,16 @@ function main(): void {
   const deliveredBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/delivered`);
   const completedBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/completed`);
 
+  const moduleState = new ModuleStateCache(async (instanceId, key) => {
+    const url = `${sceneBase}/widget/${encodeURIComponent(instanceId)}/storage?key=${encodeURIComponent(key)}`;
+    const resp = await fetch(url, { credentials: "same-origin" });
+    if (!resp.ok) {
+      throw new Error(`module state ${key}: ${resp.status}`);
+    }
+    const body = (await resp.json()) as { value?: unknown };
+    return body.value ?? null;
+  });
+
   function postStatus(instanceId: string, report: WidgetStatusReportPayload): void {
     fetch(`${sceneBase}/widget/${encodeURIComponent(instanceId)}/status`, {
       method: "POST",
@@ -158,9 +169,11 @@ function main(): void {
     let currentSubId: string | null = null;
 
     const callbacks: WidgetBridgeCallbacks = {
-      onStorageGet: () => null,
-      onStorageSubscribe: () => {},
-      onStorageUnsubscribe: () => {},
+      // The module comes from the scene record, not from the module the
+      // widget names in its hello (see module-state.ts).
+      onStorageGet: (_moduleId, key) => moduleState.peek(instance.moduleId, key),
+      onStorageSubscribe: (_moduleId, key) => moduleState.watch(instance.moduleId, key, storageTarget),
+      onStorageUnsubscribe: (_moduleId, key) => moduleState.unwatch(instance.moduleId, key, storageTarget),
       onStatusReport: (report) => postStatus(instance.id, report),
       onEventsSubscribe: (subId, queue) => {
         currentSubId = subId;
@@ -195,6 +208,10 @@ function main(): void {
     };
 
     const bridge = new WidgetBridge(instance.id, nonce, callbacks);
+    const storageTarget = {
+      instanceId: instance.id,
+      sendStorageValue: (key: string, value: unknown) => bridge.sendStorageValue(key, value),
+    };
     iframe.addEventListener("load", createFrameLoadHandler(bridge));
     iframe.src = `${instance.frameUrl}?nonce=${encodeURIComponent(nonce)}`;
 
@@ -253,11 +270,15 @@ function main(): void {
         value: frame.value,
       });
     },
+    onModuleState: (frame) => moduleState.apply(frame.moduleId, frame.key, frame.value),
     onConnectionChange: (connected) => status.set("stream", connected),
     onHello: (bootId) => {
       if (serverBootId !== null && serverBootId !== bootId) {
         reloadOverlay();
         return;
+      }
+      if (serverBootId !== null) {
+        moduleState.refresh();
       }
       serverBootId = bootId;
     },
