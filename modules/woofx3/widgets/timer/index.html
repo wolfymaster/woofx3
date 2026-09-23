@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <title>timer</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+    }
+
+    #box {
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      width: 100%;
+      height: 100%;
+      padding: 8px;
+    }
+
+    #text {
+      width: 100%;
+      font-weight: bold;
+      line-height: 1.2;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+      font-variant-numeric: tabular-nums;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="box">
+    <div id="text"></div>
+  </div>
+
+  <script>
+    (function () {
+      const host = window.widgetHost;
+      if (!host) {
+        return;
+      }
+      const settings = host.settings;
+      const el = document.getElementById("text");
+      el.style.color = str(settings.color, "#ffffff");
+      el.style.fontFamily = str(settings.fontFamily, "Roboto, system-ui, sans-serif");
+      el.style.fontSize = num(settings.fontSize, 48) + "px";
+      el.style.textAlign = ["left", "center", "right"].includes(settings.align) ? settings.align : "center";
+
+      const timer = str(settings.timer, "");
+      if (timer === "") {
+        return;
+      }
+      const template = str(settings.text, "{time}");
+      const highlight = str(settings.highlightColor, "#ec6758");
+
+      // The reading last synced to, and when it arrived on this page's
+      // monotonic clock. The time left is counted down from those alone.
+      let reading = null;
+      let syncedAt = 0;
+      let tick = null;
+
+      function remainingMs() {
+        if (!reading.running) {
+          return reading.remainingMs;
+        }
+        return Math.max(0, reading.remainingMs - (performance.now() - syncedAt));
+      }
+
+      // Draws the time left and, while it is running, wakes again just as
+      // the shown second turns over.
+      function draw() {
+        tick = null;
+        const left = remainingMs();
+        render(el, fill(template, {
+          time: formatDuration(left),
+          duration: formatDuration(reading.durationMs),
+        }), highlight);
+        if (reading.running && left > 0) {
+          tick = setTimeout(draw, (left % 1000 || 1000) + 5);
+        }
+      }
+
+      // The timer is kept at `state:<canonicalId>` in this module's storage.
+      // The host sends it as `{ running, remainingMs, durationMs }` whenever
+      // it changes, and never in between, with a running timer's time left
+      // measured as it is sent. Nothing shows until the first reading
+      // arrives rather than a time that may be wrong.
+      host.storage.subscribe("state:" + timer, (stored) => {
+        if (!isReading(stored)) {
+          return;
+        }
+        reading = stored;
+        syncedAt = performance.now();
+        if (tick !== null) {
+          clearTimeout(tick);
+        }
+        draw();
+      });
+    })();
+
+    function isReading(stored) {
+      return stored !== null
+        && typeof stored === "object"
+        && typeof stored.running === "boolean"
+        && typeof stored.remainingMs === "number"
+        && typeof stored.durationMs === "number";
+    }
+
+    // M:SS, or H:MM:SS from an hour up. Seconds round up, as the module's own
+    // do, so a timer with any time left never shows 0:00.
+    function formatDuration(ms) {
+      const total = Math.ceil(ms / 1000);
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const seconds = String(total % 60).padStart(2, "0");
+      if (hours > 0) {
+        return hours + ":" + String(minutes).padStart(2, "0") + ":" + seconds;
+      }
+      return minutes + ":" + seconds;
+    }
+
+    // Replaces each {token} it has a value for, and leaves anything else as
+    // written, so {primary} survives for `render`.
+    function fill(template, values) {
+      return template.replace(/\{(time|duration)\}/g, (_, token) => values[token]);
+    }
+
+    // Every other segment between {primary} markers is highlighted, the same
+    // markup the Text widget takes.
+    function render(el, text, highlight) {
+      el.replaceChildren();
+      text.split("{primary}").forEach((segment, i) => {
+        if (i % 2 === 1) {
+          const span = document.createElement("span");
+          span.style.color = highlight;
+          span.textContent = segment;
+          el.appendChild(span);
+        } else {
+          el.appendChild(document.createTextNode(segment));
+        }
+      });
+    }
+
+    function str(value, fallback) {
+      return typeof value === "string" && value.trim() !== "" ? value : fallback;
+    }
+
+    function num(value, fallback) {
+      return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+    }
+  </script>
+</body>
+
+</html>

@@ -37,18 +37,36 @@ describe("ModuleStateCache", () => {
     expect(cache.peek("woofx3", KEY)).toBe(4);
   });
 
-  it("answers a later watcher from what it already has, without fetching again", async () => {
+  it("answers a later watcher with a fresh fetch, not the copy it holds", async () => {
     let fetches = 0;
     const cache = new ModuleStateCache(async () => {
       fetches += 1;
-      return 4;
+      return fetches;
     });
     cache.watch("woofx3", KEY, target());
     await flush();
     const second = target();
     cache.watch("woofx3", KEY, second);
+    expect(second.received).toEqual([]);
+    await flush();
+    expect(second.received).toEqual([2]);
+  });
+
+  it("answers a later watcher with the copy it holds when the fresh fetch fails", async () => {
+    let fail = false;
+    const cache = new ModuleStateCache(async () => {
+      if (fail) {
+        throw new Error("down");
+      }
+      return 4;
+    });
+    cache.watch("woofx3", KEY, target());
+    await flush();
+    fail = true;
+    const second = target();
+    cache.watch("woofx3", KEY, second);
+    await flush();
     expect(second.received).toEqual([4]);
-    expect(fetches).toBe(1);
   });
 
   it("fetches through the placement that subscribed", async () => {

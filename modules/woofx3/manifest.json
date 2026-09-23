@@ -1908,6 +1908,83 @@
       "taxonomy": [
         "data.counter"
       ]
+    },
+    {
+      "id": "timer",
+      "name": "Timer",
+      "description": "A timer's time left, counting down live as it runs. Put {time} where the time goes and {duration} for how long it runs. Wrap words in {primary}...{primary} to show them in the highlight color.",
+      "entry": "widgets/timer/index.html",
+      "assets": "widgets/timer",
+      "surfaces": [
+        "scene"
+      ],
+      "settingsSchema": [
+        {
+          "id": "timer",
+          "label": "Timer",
+          "type": "resource_ref",
+          "resourceKind": "timer",
+          "required": true,
+          "description": "The timer to show."
+        },
+        {
+          "id": "text",
+          "label": "Text",
+          "type": "text",
+          "defaultValue": "{time}",
+          "placeholder": "{primary}Break{primary} {time}",
+          "description": "{time} is the time left, as M:SS or H:MM:SS. {duration} is how long the timer runs in all. Wrap words in {primary}...{primary} to show them in the highlight color."
+        },
+        {
+          "id": "color",
+          "label": "Color",
+          "type": "color",
+          "defaultValue": "#ffffff"
+        },
+        {
+          "id": "highlightColor",
+          "label": "Highlight color",
+          "type": "color",
+          "defaultValue": "#ec6758"
+        },
+        {
+          "id": "fontFamily",
+          "label": "Font",
+          "type": "text",
+          "defaultValue": "Roboto, system-ui, sans-serif"
+        },
+        {
+          "id": "fontSize",
+          "label": "Font size",
+          "type": "number",
+          "unit": "px",
+          "min": 1,
+          "defaultValue": 48
+        },
+        {
+          "id": "align",
+          "label": "Alignment",
+          "type": "select",
+          "defaultValue": "center",
+          "options": [
+            {
+              "value": "left",
+              "label": "Left"
+            },
+            {
+              "value": "center",
+              "label": "Center"
+            },
+            {
+              "value": "right",
+              "label": "Right"
+            }
+          ]
+        }
+      ],
+      "taxonomy": [
+        "data.timer"
+      ]
     }
   ],
   "backgroundTasks": [
