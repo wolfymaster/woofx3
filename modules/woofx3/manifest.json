@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.13.1",
+  "version": "0.13.2",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -1445,7 +1445,7 @@
     },
     {
       "id": "goal_reached",
-      "name": "Stream goal met",
+      "name": "Goals",
       "description": "Fires when a counter reaches one of its goals, whatever counted toward it. Reaching a goal again after dropping below it fires again only when the counter is set to announce every time.",
       "type": "eventbus",
       "event": "goal.reached",
