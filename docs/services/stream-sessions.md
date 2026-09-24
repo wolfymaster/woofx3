@@ -298,9 +298,10 @@ discards history (`db/database/models/widget_status.go:14-17`);
 aggregation lives inside a single waiting execution and dies with it.
 
 Producing aggregate values from events and stream statistics is **Analytics**, a
-subsystem still to be built. Sessions are not that subsystem and do not
-partially implement it — a session id makes per-stream totals *possible* and
-cheap to query, it does not make them exist.
+subsystem still to be built and designed in [Analytics](/services/analytics).
+Sessions are not that subsystem and do not partially implement it — a session id
+makes per-stream totals *possible* and cheap to query, it does not make them
+exist.
 
 What sessions give Analytics is the partition key. "Total chats" is meaningless
 without a definition of which chats, and that definition has to exist *at the
