@@ -1,21 +1,21 @@
-import { routeModule } from "./context";
 import type { ActionDefinition, TriggerDefinition } from "@woofx3/api/webhooks";
+import { routeModule } from "./context";
 
 /**
- * The key the registration webhook gives a module trigger (the db's
- * `projectionKeyFor`). The UI identifies triggers by it, so a listing without
- * it reads to the UI as triggers it cannot place — and its sync then takes
- * every webhook endpoint for gone. Empty for a trigger no module owns.
+ * The key the registration webhook gives a module trigger or action (the db's
+ * `projectionKeyFor`). The UI identifies both by it, so a listing without it
+ * erases the key the UI stored at registration: its sync then takes every
+ * webhook endpoint for gone, and a resource page can no longer find the action
+ * behind its buttons. Empty for a row no module owns.
  */
-export function triggerProjectionKey(trigger: {
-  createdByType: string;
-  createdByRef: string;
-  manifestId: string;
-}): string {
-  if (trigger.createdByType !== "MODULE" || !trigger.createdByRef || !trigger.manifestId) {
+export function moduleProjectionKey(
+  row: { createdByType: string; createdByRef: string; manifestId: string },
+  kind: "trigger" | "action"
+): string {
+  if (row.createdByType !== "MODULE" || !row.createdByRef || !row.manifestId) {
     return "";
   }
-  return `${trigger.createdByRef}:trigger:${trigger.manifestId}`;
+  return `${row.createdByRef}:${kind}:${row.manifestId}`;
 }
 
 export const triggersRoutes = routeModule({
@@ -25,13 +25,16 @@ export const triggersRoutes = routeModule({
     // empty `sentence` is the column default, not a declared template.
     return rows.map(({ handler: _handler, sentence, ...rest }) => {
       const definition = sentence ? { ...rest, sentence } : rest;
-      const projectionKey = triggerProjectionKey(definition);
+      const projectionKey = moduleProjectionKey(definition, "trigger");
       return projectionKey ? { ...definition, projectionKey } : definition;
     });
   },
 
   async getActions(createdByType?: string, createdByRef?: string): Promise<ActionDefinition[]> {
     const rows = await this.db.listActions(createdByType, createdByRef);
-    return rows;
+    return rows.map((row) => {
+      const projectionKey = moduleProjectionKey(row, "action");
+      return projectionKey ? { ...row, projectionKey } : row;
+    });
   },
 });
