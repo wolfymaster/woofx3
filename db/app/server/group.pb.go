@@ -23,13 +23,12 @@ const (
 )
 
 type Group struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	// Built-in groups are seeded with every application and mirror Twitch's
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name        string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Description string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// Built-in groups are seeded by the engine and mirror Twitch's
 	// badge model (everyone/subscriber/vip/moderator/broadcaster). They may
 	// not be renamed or deleted, and their membership for the Twitch-derived
 	// ones is owned by the Twitch state sync rather than by hand.
@@ -75,13 +74,6 @@ func (x *Group) GetId() string {
 	return ""
 }
 
-func (x *Group) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *Group) GetName() string {
 	if x != nil {
 		return x.Name
@@ -112,7 +104,6 @@ func (x *Group) GetIsBuiltIn() bool {
 
 type CreateGroupRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -147,13 +138,6 @@ func (x *CreateGroupRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use CreateGroupRequest.ProtoReflect.Descriptor instead.
 func (*CreateGroupRequest) Descriptor() ([]byte, []int) {
 	return file_group_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *CreateGroupRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *CreateGroupRequest) GetName() string {
@@ -216,7 +200,6 @@ func (x *GetGroupRequest) GetId() string {
 
 type ListGroupsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -249,13 +232,6 @@ func (x *ListGroupsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListGroupsRequest.ProtoReflect.Descriptor instead.
 func (*ListGroupsRequest) Descriptor() ([]byte, []int) {
 	return file_group_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *ListGroupsRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 type ListGroupsResponse struct {
@@ -472,7 +448,6 @@ func (x *GroupResponse) GetGroup() *Group {
 // the service resolves/creates the backing user row internally.
 type GroupMembershipRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	GroupId       string                 `protobuf:"bytes,2,opt,name=group_id,json=groupId,proto3" json:"group_id,omitempty"`
 	Username      string                 `protobuf:"bytes,3,opt,name=username,proto3" json:"username,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -507,13 +482,6 @@ func (x *GroupMembershipRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GroupMembershipRequest.ProtoReflect.Descriptor instead.
 func (*GroupMembershipRequest) Descriptor() ([]byte, []int) {
 	return file_group_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *GroupMembershipRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *GroupMembershipRequest) GetGroupId() string {
@@ -628,7 +596,6 @@ func (x *ListGroupMembersResponse) GetUsernames() []string {
 
 type ListUserGroupsForUserRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	Username      string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -664,13 +631,6 @@ func (*ListUserGroupsForUserRequest) Descriptor() ([]byte, []int) {
 	return file_group_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *ListUserGroupsForUserRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *ListUserGroupsForUserRequest) GetUsername() string {
 	if x != nil {
 		return x.Username
@@ -682,23 +642,20 @@ var File_group_proto protoreflect.FileDescriptor
 
 const file_group_proto_rawDesc = "" +
 	"\n" +
-	"\vgroup.proto\x12\x05group\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcf\x01\n" +
+	"\vgroup.proto\x12\x05group\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbe\x01\n" +
 	"\x05Group\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x12\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\x129\n" +
 	"\n" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1e\n" +
-	"\vis_built_in\x18\x06 \x01(\bR\tisBuiltIn\"q\n" +
-	"\x12CreateGroupRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x12\n" +
+	"\vis_built_in\x18\x06 \x01(\bR\tisBuiltInJ\x04\b\x02\x10\x03R\x0eapplication_id\"`\n" +
+	"\x12CreateGroupRequest\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\"!\n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescriptionJ\x04\b\x01\x10\x02R\x0eapplication_id\"!\n" +
 	"\x0fGetGroupRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\":\n" +
-	"\x11ListGroupsRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\"j\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\")\n" +
+	"\x11ListGroupsRequestJ\x04\b\x01\x10\x02R\x0eapplication_id\"j\n" +
 	"\x12ListGroupsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12$\n" +
 	"\x06groups\x18\x02 \x03(\v2\f.group.GroupR\x06groups\"Z\n" +
@@ -710,19 +667,17 @@ const file_group_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"c\n" +
 	"\rGroupResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12\"\n" +
-	"\x05group\x18\x02 \x01(\v2\f.group.GroupR\x05group\"v\n" +
-	"\x16GroupMembershipRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x19\n" +
+	"\x05group\x18\x02 \x01(\v2\f.group.GroupR\x05group\"e\n" +
+	"\x16GroupMembershipRequest\x12\x19\n" +
 	"\bgroup_id\x18\x02 \x01(\tR\agroupId\x12\x1a\n" +
-	"\busername\x18\x03 \x01(\tR\busername\"4\n" +
+	"\busername\x18\x03 \x01(\tR\busernameJ\x04\b\x01\x10\x02R\x0eapplication_id\"4\n" +
 	"\x17ListGroupMembersRequest\x12\x19\n" +
 	"\bgroup_id\x18\x01 \x01(\tR\agroupId\"h\n" +
 	"\x18ListGroupMembersResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12\x1c\n" +
-	"\tusernames\x18\x02 \x03(\tR\tusernames\"a\n" +
-	"\x1cListUserGroupsForUserRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x1a\n" +
-	"\busername\x18\x02 \x01(\tR\busername2\x92\x05\n" +
+	"\tusernames\x18\x02 \x03(\tR\tusernames\"P\n" +
+	"\x1cListUserGroupsForUserRequest\x12\x1a\n" +
+	"\busername\x18\x02 \x01(\tR\busernameJ\x04\b\x01\x10\x02R\x0eapplication_id2\x92\x05\n" +
 	"\fGroupService\x12>\n" +
 	"\vCreateGroup\x12\x19.group.CreateGroupRequest\x1a\x14.group.GroupResponse\x128\n" +
 	"\bGetGroup\x12\x16.group.GetGroupRequest\x1a\x14.group.GroupResponse\x12A\n" +

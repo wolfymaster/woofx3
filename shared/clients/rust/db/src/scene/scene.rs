@@ -4,8 +4,6 @@
 pub struct Scene {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag="4")]
@@ -35,8 +33,6 @@ pub struct Scene {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateSceneRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
@@ -90,8 +86,6 @@ pub struct DeleteSceneRequest {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListScenesRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(int32, tag="2")]
     pub page: i32,
     #[prost(int32, tag="3")]

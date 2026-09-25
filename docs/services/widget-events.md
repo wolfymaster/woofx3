@@ -29,7 +29,6 @@ interface OverlayWidgetEvent {
   moduleId: string;          // "core" for system widgets, manifest id otherwise
   instanceId: string;        // stable per-placement id (e.g. "alert-overlay")
   widgetCanonicalId?: string; // {moduleId}:widget:{manifestId}, when known
-  applicationId?: string;     // optional; orchestrator falls back to its default
   key: string;               // event name owned by the widget ("count", "alert.lifecycle", ...)
   value: unknown;            // any JSON-serializable payload
   ts?: string;               // ISO 8601; defaults to now if omitted
@@ -47,7 +46,6 @@ interface OverlayWidgetEvent {
   "time": "2026-05-09T14:32:11.482Z",
   "datacontenttype": "application/json",
   "data": {
-    "applicationId": "app-123",
     "moduleId": "raid_counter",
     "instanceId": "raid-counter-1",
     "widgetCanonicalId": "raid_counter:widget:counter",
@@ -66,13 +64,13 @@ Malformed messages (missing `kind`, `moduleId`, `instanceId`, or `key`) are drop
 
 | Condition | Handler | Persistence |
 |-----------|---------|-------------|
-| `key === "alert.lifecycle"` AND `instanceId === "alert-overlay"` | `EventQueueManager.handleStatus(applicationId, envelopeId, state, error?)` | `alerts` table — lifecycle column on the existing row keyed by `envelope_id` |
-| anything else | `db.upsertWidgetStatus({ applicationId, moduleId, instanceId, widgetCanonicalId?, key, value, occurredAt })` | `widget_status` table — upsert on `(application_id, instance_id, key)` |
+| `key === "alert.lifecycle"` AND `instanceId === "alert-overlay"` | `EventQueueManager.handleStatus(envelopeId, state, error?)` | `alerts` table — lifecycle column on the existing row keyed by `envelope_id` |
+| anything else | `db.upsertWidgetStatus({ moduleId, instanceId, widgetCanonicalId?, key, value, occurredAt })` | `widget_status` table — upsert on `(instance_id, key)` |
 
 The two tables answer different questions and so are kept separate:
 
 - **`alerts`** is the durable record of every dispatched alert envelope, with a full lifecycle (`sent` → `dispatched` → `playing` → `completed` / `failed` / `timed_out` / `skipped` / `replayed`). See `db/database/migrate/migrations/0008_alerts.go` and `0010_alert_lifecycle.go`.
-- **`widget_status`** holds only the latest value per `(applicationId, instanceId, key)`. See `db/database/migrate/migrations/0011_widget_status.go` and `db/proto/v1/widget_status.proto`.
+- **`widget_status`** holds only the latest value per `(instanceId, key)`. See `db/database/migrate/migrations/0011_widget_status.go` and `db/proto/v1/widget_status.proto`.
 
 Alert lifecycle reports are intentionally not also written to `widget_status` — the alerts table is already the durable record and double-bookkeeping would create reconciliation work for no gain.
 

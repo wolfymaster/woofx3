@@ -4,15 +4,13 @@
 pub struct Group {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag="4")]
     pub description: ::prost::alloc::string::String,
     #[prost(message, optional, tag="5")]
     pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
-    /// Built-in groups are seeded with every application and mirror Twitch's
+    /// Built-in groups are seeded by the engine and mirror Twitch's
     /// badge model (everyone/subscriber/vip/moderator/broadcaster). They may
     /// not be renamed or deleted, and their membership for the Twitch-derived
     /// ones is owned by the Twitch state sync rather than by hand.
@@ -21,8 +19,6 @@ pub struct Group {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateGroupRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub name: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
@@ -33,10 +29,8 @@ pub struct GetGroupRequest {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListGroupsRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListGroupsResponse {
@@ -72,8 +66,6 @@ pub struct GroupResponse {
 /// the service resolves/creates the backing user row internally.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GroupMembershipRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub group_id: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
@@ -93,8 +85,6 @@ pub struct ListGroupMembersResponse {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListUserGroupsForUserRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub username: ::prost::alloc::string::String,
 }

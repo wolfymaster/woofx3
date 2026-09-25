@@ -20,7 +20,7 @@ import (
 // through as opaque strings the engine never inspects.
 //
 // Outbox publishing is opt-in via `publisher`. When set, every CRUD
-// op emits a `db.scene.<op>.<applicationId>` event so downstream
+// op emits a `db.scene.<op>.system` event so downstream
 // consumers (Convex projector, future cache layers) can react. When
 // nil, the service is silent — useful for tests and for early-boot
 // pre-NATS scenarios.
@@ -45,14 +45,6 @@ func NewSceneService(
 }
 
 func (s *sceneService) CreateScene(ctx context.Context, req *client.CreateSceneRequest) (*client.SceneResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
 	if req.Name == "" {
 		return nil, twirp.RequiredArgumentError("name")
 	}
@@ -71,7 +63,6 @@ func (s *sceneService) CreateScene(ctx context.Context, req *client.CreateSceneR
 	}
 
 	scene := &models.Scene{
-		ApplicationID: applicationID,
 		Name:          req.Name,
 		Description:   req.Description,
 		WidgetsJSON:   widgetsJSON,
@@ -84,7 +75,7 @@ func (s *sceneService) CreateScene(ctx context.Context, req *client.CreateSceneR
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create scene: %w", err))
 	}
 
-	s.publishChange(appIDStr, scene, "created")
+	s.publishChange(scene, "created")
 
 	return &client.SceneResponse{
 		Status: &client.ResponseStatus{
@@ -145,7 +136,7 @@ func (s *sceneService) UpdateScene(ctx context.Context, req *client.UpdateSceneR
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update scene: %w", err))
 	}
 
-	s.publishChange(scene.ApplicationID.String(), scene, "updated")
+	s.publishChange(scene, "updated")
 
 	return &client.SceneResponse{
 		Status: &client.ResponseStatus{
@@ -185,7 +176,7 @@ func (s *sceneService) DeleteScene(ctx context.Context, req *client.DeleteSceneR
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to delete scene: %w", err))
 	}
 
-	s.publishChange(scene.ApplicationID.String(), scene, "deleted")
+	s.publishChange(scene, "deleted")
 
 	return &client.ResponseStatus{
 		Code:    client.ResponseStatus_OK,
@@ -204,7 +195,7 @@ func (s *sceneService) revokeTokensForScene(scene *models.Scene) (int, error) {
 		return 0, nil
 	}
 	sceneID := scene.ID
-	tokens, err := s.overlayTokenRepo.List(&sceneID, nil, false)
+	tokens, err := s.overlayTokenRepo.List(&sceneID, false)
 	if err != nil {
 		return 0, err
 	}
@@ -230,7 +221,6 @@ func (s *sceneService) publishOverlayTokenChange(token *models.OverlayToken, op 
 		return
 	}
 	s.publisher.Publish(workers.PublishOptions{
-		ApplicationID:   token.ApplicationID.String(),
 		EntityType:      "overlay_token",
 		EntityID:        token.ID.String(),
 		Operation:       op,
@@ -240,18 +230,7 @@ func (s *sceneService) publishOverlayTokenChange(token *models.OverlayToken, op 
 }
 
 func (s *sceneService) ListScenes(ctx context.Context, req *client.ListScenesRequest) (*client.ListScenesResponse, error) {
-	var scenes []*models.Scene
-	var err error
-
-	if req.ApplicationId != "" {
-		appID, parseErr := uuid.Parse(req.ApplicationId)
-		if parseErr != nil {
-			return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-		}
-		scenes, err = s.repo.GetByApplicationID(appID)
-	} else {
-		scenes, err = s.repo.GetAll()
-	}
+	scenes, err := s.repo.GetAll()
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list scenes: %w", err))
 	}
@@ -280,7 +259,6 @@ func (s *sceneService) sceneToProto(m *models.Scene) *client.Scene {
 	var createdAt, updatedAt *timestamppb.Timestamp
 	return &client.Scene{
 		Id:            m.ID.String(),
-		ApplicationId: m.ApplicationID.String(),
 		Name:          m.Name,
 		Description:   m.Description,
 		WidgetsJson:   m.WidgetsJSON,
@@ -292,12 +270,11 @@ func (s *sceneService) sceneToProto(m *models.Scene) *client.Scene {
 	}
 }
 
-func (s *sceneService) publishChange(applicationID string, scene *models.Scene, op string) {
+func (s *sceneService) publishChange(scene *models.Scene, op string) {
 	if s.publisher == nil {
 		return
 	}
 	s.publisher.Publish(workers.PublishOptions{
-		ApplicationID:   applicationID,
 		EntityType:      "scene",
 		EntityID:        scene.ID.String(),
 		Operation:       op,
@@ -309,7 +286,6 @@ func (s *sceneService) publishChange(applicationID string, scene *models.Scene, 
 func buildSceneChangeData(scene *models.Scene) map[string]interface{} {
 	return map[string]interface{}{
 		"id":              scene.ID.String(),
-		"application_id":  scene.ApplicationID.String(),
 		"name":            scene.Name,
 		"description":     scene.Description,
 		"widgets_json":    scene.WidgetsJSON,

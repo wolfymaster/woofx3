@@ -18,16 +18,13 @@ import (
 // never rewritten, so the session id stamped on an event identifies whichever
 // session owned its segment at the time of stamping.
 type StreamSessionSegment struct {
-	ID uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	// Denormalised from the parent session so the resolver can find the open
-	// segment for a channel without joining. Matches how `Alert` scopes rows.
-	ApplicationID   uuid.UUID `gorm:"column:application_id;type:uuid;not null;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
+	ID              uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
 	StreamSessionID uuid.UUID `gorm:"column:stream_session_id;type:uuid;not null;index:idx_stream_session_segments_session_started_at,priority:1;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
 	StartedAt       time.Time `gorm:"column:started_at;not null;index:idx_stream_session_segments_session_started_at,priority:2,sort:desc"`
-	// Nil while the stream is live. At most one segment per application may be
-	// open, enforced by a partial unique index: a redelivered `stream.online`
-	// must not leave two open, or "when did the stream last go down" has two
-	// answers.
+	// Nil while the stream is live. At most one segment may be open,
+	// enforced by a partial unique index over rows `WHERE ended_at IS NULL`:
+	// a redelivered `stream.online` must not leave two open, or "when did the
+	// stream last go down" has two answers.
 	EndedAt   *time.Time `gorm:"column:ended_at"`
 	CreatedAt time.Time  `gorm:"column:created_at"`
 	UpdatedAt time.Time  `gorm:"column:updated_at"`

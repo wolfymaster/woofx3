@@ -4,7 +4,6 @@ import type { ResolveOverlayTokenRequest, ResolveOverlayTokenResponse } from "..
 /** Successful resolution of an overlay token. */
 export interface ResolvedOverlayToken {
   sceneId: string;
-  applicationId: string;
 }
 
 /** The slice of DbClient the resolver depends on (injectable for tests). */
@@ -92,10 +91,8 @@ export class OverlayTokenResolver {
       return null;
     }
 
-    const ok = response.status?.code === "OK" && !!response.sceneId && !!response.applicationId;
-    const value: ResolvedOverlayToken | null = ok
-      ? { sceneId: response.sceneId, applicationId: response.applicationId }
-      : null;
+    const ok = response.status?.code === "OK" && !!response.sceneId;
+    const value: ResolvedOverlayToken | null = ok ? { sceneId: response.sceneId } : null;
     this.cache.set(token, { value, expiresAt: this.now() + this.ttlMs });
     return value;
   }

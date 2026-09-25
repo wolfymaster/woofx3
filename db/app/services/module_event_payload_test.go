@@ -144,10 +144,8 @@ func TestBuildActionRegisteredDataDefaultsEmptyTaxonomy(t *testing.T) {
 func TestBuildWorkflowChangeData(t *testing.T) {
 	t.Run("includes enabled and projection key for module-owned rows", func(t *testing.T) {
 		id := uuid.New()
-		appID := uuid.New()
 		wf := &models.WorkflowDefinition{
 			ID:            id,
-			ApplicationID: appID,
 			Name:          "wolfy_profile/Follow",
 			Steps:         "[]",
 			Trigger:       "{}",
@@ -177,7 +175,6 @@ func TestBuildWorkflowChangeData(t *testing.T) {
 	t.Run("emits enabled=false for newly created (inert) workflows", func(t *testing.T) {
 		wf := &models.WorkflowDefinition{
 			ID:            uuid.New(),
-			ApplicationID: uuid.New(),
 			Name:          "fresh",
 			Steps:         "[]",
 			Trigger:       "{}",

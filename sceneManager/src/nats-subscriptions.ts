@@ -29,7 +29,6 @@ interface InitArgs {
 
 interface AlertEnvelope {
   id?: unknown;
-  applicationId?: unknown;
   parameters?: unknown;
   event?: { type?: unknown; source?: unknown; time?: unknown; data?: unknown };
 }
@@ -44,7 +43,6 @@ interface ResourceInstanceUpdatedEnvelope {
 
 interface WidgetEventEnvelope {
   data?: {
-    applicationId?: unknown;
     moduleId?: unknown;
     instanceId?: unknown;
     widgetCanonicalId?: unknown;
@@ -90,10 +88,9 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       });
       return;
     }
-    const applicationId = typeof raw.applicationId === "string" ? raw.applicationId : "";
     const alertId = typeof raw.id === "string" ? raw.id : "";
-    if (!applicationId || !alertId) {
-      logger.warn("ui.notify.alert: missing applicationId or id; dropping");
+    if (!alertId) {
+      logger.warn("ui.notify.alert: missing id; dropping");
       return;
     }
     const parameters =
@@ -101,7 +98,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     const parsed = parseAlertLayout(parameters.layout, await host.loadWidgetCatalog());
     if (!parsed.ok) {
       logger.warn("ui.notify.alert: unusable parameters.layout; dropping", { alertId, reason: parsed.reason });
-      await reportAlertNotPlayed(db, logger, { applicationId, alertId, reason: parsed.reason });
+      await reportAlertNotPlayed(db, logger, { alertId, reason: parsed.reason });
       return;
     }
     if (parsed.rejected.length > 0) {
@@ -119,7 +116,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
           ? `no widget in the layout can play in an alert: ${parsed.rejected.map((r) => r.reason).join("; ")}`
           : "the layout contains no widgets";
       logger.warn("ui.notify.alert: layout has no widgets to play; dropping", { alertId, reason });
-      await reportAlertNotPlayed(db, logger, { applicationId, alertId, reason });
+      await reportAlertNotPlayed(db, logger, { alertId, reason });
       return;
     }
     const eventType = typeof raw.event?.type === "string" ? raw.event.type : "";
@@ -128,10 +125,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       layout: parsed.layout,
       event: eventType ? { type: eventType, data: raw.event?.data ?? null } : null,
     };
-    await fanOutAlert(
-      { applicationId, target: alertTarget(parameters), delivery },
-      { db, host, deliveryStore, logger }
-    );
+    await fanOutAlert({ target: alertTarget(parameters), delivery }, { db, host, deliveryStore, logger });
   });
   logger.info("Subscribed to ui.notify.alert");
 
@@ -146,15 +140,13 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       return;
     }
     const data = envelope.data ?? {};
-    const applicationId = typeof data.applicationId === "string" ? data.applicationId : "";
     const instanceId = typeof data.instanceId === "string" ? data.instanceId : "";
     const key = typeof data.key === "string" ? data.key : "";
-    if (!applicationId || !instanceId || !key) {
+    if (!instanceId || !key) {
       logger.warn("widget.event: missing required fields; dropping");
       return;
     }
     await handleStatusReport(db, logger, {
-      applicationId,
       moduleId: typeof data.moduleId === "string" ? data.moduleId : "",
       instanceId,
       widgetCanonicalId: typeof data.widgetCanonicalId === "string" ? data.widgetCanonicalId : undefined,
@@ -241,12 +233,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
  * fourteen methods to report one outcome. The real `DbClient` satisfies it.
  */
 interface AlertLifecycleWriter {
-  updateAlertLifecycle(req: {
-    applicationId: string;
-    envelopeId: string;
-    status: string;
-    error: string;
-  }): Promise<unknown>;
+  updateAlertLifecycle(req: { envelopeId: string; status: string; error: string }): Promise<unknown>;
 }
 
 /**
@@ -265,11 +252,10 @@ interface AlertLifecycleWriter {
 export async function reportAlertNotPlayed(
   db: AlertLifecycleWriter,
   logger: Logger,
-  alert: { applicationId: string; alertId: string; reason: string }
+  alert: { alertId: string; reason: string }
 ): Promise<void> {
   try {
     await db.updateAlertLifecycle({
-      applicationId: alert.applicationId,
       envelopeId: alert.alertId,
       status: "failed",
       error: alert.reason,
@@ -286,11 +272,11 @@ export async function reportAlertNotPlayed(
  * Fan-out targeting: for every scene currently holding an open SSE
  * connection, deliver the alert to each alert widget answering to the
  * step's target name. Only running scenes are considered, which is what
- * makes a scene nobody has open behave as disabled. A scene of another
- * application, or with no alert widget of that name, gets no DB write.
+ * makes a scene nobody has open behave as disabled. A scene with no alert
+ * widget of that name gets no DB write.
  */
 async function fanOutAlert(
-  alert: { applicationId: string; target: string; delivery: AlertDelivery },
+  alert: { target: string; delivery: AlertDelivery },
   deps: { db: DbClient; host: OverlayHost; deliveryStore: DeliveryStore; logger: Logger }
 ): Promise<void> {
   const { db, host, deliveryStore, logger } = deps;
@@ -298,7 +284,7 @@ async function fanOutAlert(
   let recorded = 0;
   for (const sceneId of connectedSceneIds) {
     const state = await host.loadSceneById(sceneId);
-    if (!state || state.applicationId !== alert.applicationId) {
+    if (!state) {
       continue;
     }
     const targetInstanceIds = alertWidgetsNamed(state.instances, alert.target).map((instance) => instance.id);
@@ -307,7 +293,6 @@ async function fanOutAlert(
     }
     const eventId = await deliveryStore.recordEvent({
       sceneId,
-      applicationId: alert.applicationId,
       type: ALERT_EVENT_TYPE,
       key: alert.delivery.alertId,
       value: alert.delivery,
@@ -330,17 +315,12 @@ async function fanOutAlert(
     logger.warn("alert matched no alert widget on a running scene; nothing delivered", {
       target: alert.target,
       alertId: alert.delivery.alertId,
-      applicationId: alert.applicationId,
       connectedScenes: connectedSceneIds.length,
     });
     // Nothing was wrong with this alert — it was correct and nobody was
     // listening. Reported all the same, because "it didn't appear" is the
     // question being asked, and a misspelled target name looks identical to a
     // scene nobody opened.
-    await reportAlertNotPlayed(db, logger, {
-      applicationId: alert.applicationId,
-      alertId: alert.delivery.alertId,
-      reason,
-    });
+    await reportAlertNotPlayed(db, logger, { alertId: alert.delivery.alertId, reason });
   }
 }

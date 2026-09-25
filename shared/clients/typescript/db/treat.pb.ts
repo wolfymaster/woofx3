@@ -28,7 +28,6 @@ export interface Treat {
   points: number;
   imageUrl: string;
   awardedBy: string;
-  applicationId: string;
   metadata: Record<string, Treat.Metadata["value"] | undefined>;
   awardedAt: protoscript.Timestamp;
   expiresAt: protoscript.Timestamp;
@@ -54,7 +53,6 @@ export interface AwardTreatRequest {
   points: number;
   imageUrl: string;
   awardedBy: string;
-  applicationId: string;
   metadata: Record<string, AwardTreatRequest.Metadata["value"] | undefined>;
   expiresAt: protoscript.Timestamp;
 }
@@ -114,7 +112,6 @@ export interface DeleteTreatRequest {
 export interface ListTreatsRequest {
   userId: string;
   treatType: string;
-  applicationId: string;
   fromDate: protoscript.Timestamp;
   toDate: protoscript.Timestamp;
   includeExpired: boolean;
@@ -142,7 +139,6 @@ export interface ListTreatsResponse {
  */
 export interface GetUserTreatsSummaryRequest {
   userId: string;
-  applicationId: string;
   fromDate: protoscript.Timestamp;
   toDate: protoscript.Timestamp;
 }
@@ -179,7 +175,6 @@ export interface TreatsSummaryResponse {
  * Request to get treat statistics
  */
 export interface GetTreatStatsRequest {
-  applicationId: string;
   fromDate: protoscript.Timestamp;
   toDate: protoscript.Timestamp;
   groupBy: string;
@@ -606,7 +601,6 @@ export const Treat = {
       points: 0,
       imageUrl: "",
       awardedBy: "",
-      applicationId: "",
       metadata: {},
       awardedAt: protoscript.Timestamp.initialize(),
       expiresAt: protoscript.Timestamp.initialize(),
@@ -646,9 +640,6 @@ export const Treat = {
     }
     if (msg.awardedBy) {
       writer.writeString(8, msg.awardedBy);
-    }
-    if (msg.applicationId) {
-      writer.writeString(9, msg.applicationId);
     }
     if (msg.metadata) {
       writer.writeRepeatedMessage(
@@ -728,10 +719,6 @@ export const Treat = {
         }
         case 8: {
           msg.awardedBy = reader.readString();
-          break;
-        }
-        case 9: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 10: {
@@ -844,7 +831,6 @@ export const AwardTreatRequest = {
       points: 0,
       imageUrl: "",
       awardedBy: "",
-      applicationId: "",
       metadata: {},
       expiresAt: protoscript.Timestamp.initialize(),
       ...msg,
@@ -878,9 +864,6 @@ export const AwardTreatRequest = {
     }
     if (msg.awardedBy) {
       writer.writeString(7, msg.awardedBy);
-    }
-    if (msg.applicationId) {
-      writer.writeString(8, msg.applicationId);
     }
     if (msg.metadata) {
       writer.writeRepeatedMessage(
@@ -938,10 +921,6 @@ export const AwardTreatRequest = {
         }
         case 7: {
           msg.awardedBy = reader.readString();
-          break;
-        }
-        case 8: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 9: {
@@ -1423,7 +1402,6 @@ export const ListTreatsRequest = {
     return {
       userId: "",
       treatType: "",
-      applicationId: "",
       fromDate: protoscript.Timestamp.initialize(),
       toDate: protoscript.Timestamp.initialize(),
       includeExpired: false,
@@ -1449,9 +1427,6 @@ export const ListTreatsRequest = {
     }
     if (msg.treatType) {
       writer.writeString(2, msg.treatType);
-    }
-    if (msg.applicationId) {
-      writer.writeString(3, msg.applicationId);
     }
     if (msg.fromDate) {
       writer.writeMessage(4, msg.fromDate, protoscript.Timestamp._writeMessage);
@@ -1499,10 +1474,6 @@ export const ListTreatsRequest = {
         }
         case 2: {
           msg.treatType = reader.readString();
-          break;
-        }
-        case 3: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 4: {
@@ -1682,7 +1653,6 @@ export const GetUserTreatsSummaryRequest = {
   ): GetUserTreatsSummaryRequest {
     return {
       userId: "",
-      applicationId: "",
       fromDate: protoscript.Timestamp.initialize(),
       toDate: protoscript.Timestamp.initialize(),
       ...msg,
@@ -1698,9 +1668,6 @@ export const GetUserTreatsSummaryRequest = {
   ): protoscript.BinaryWriter {
     if (msg.userId) {
       writer.writeString(1, msg.userId);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.fromDate) {
       writer.writeMessage(3, msg.fromDate, protoscript.Timestamp._writeMessage);
@@ -1723,10 +1690,6 @@ export const GetUserTreatsSummaryRequest = {
       switch (field) {
         case 1: {
           msg.userId = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -2029,7 +1992,6 @@ export const GetTreatStatsRequest = {
     msg?: Partial<GetTreatStatsRequest>,
   ): GetTreatStatsRequest {
     return {
-      applicationId: "",
       fromDate: protoscript.Timestamp.initialize(),
       toDate: protoscript.Timestamp.initialize(),
       groupBy: "",
@@ -2046,9 +2008,6 @@ export const GetTreatStatsRequest = {
     msg: PartialDeep<GetTreatStatsRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.fromDate) {
       writer.writeMessage(2, msg.fromDate, protoscript.Timestamp._writeMessage);
     }
@@ -2077,10 +2036,6 @@ export const GetTreatStatsRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           reader.readMessage(msg.fromDate, protoscript.Timestamp._readMessage);
           break;
@@ -2546,7 +2501,6 @@ export const TreatJSON = {
       points: 0,
       imageUrl: "",
       awardedBy: "",
-      applicationId: "",
       metadata: {},
       awardedAt: protoscript.TimestampJSON.initialize(),
       expiresAt: protoscript.TimestampJSON.initialize(),
@@ -2584,9 +2538,6 @@ export const TreatJSON = {
     }
     if (msg.awardedBy) {
       json["awardedBy"] = msg.awardedBy;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.metadata) {
       const _metadata_ = Object.fromEntries(
@@ -2649,10 +2600,6 @@ export const TreatJSON = {
     const _awardedBy_ = json["awardedBy"] ?? json["awarded_by"];
     if (_awardedBy_) {
       msg.awardedBy = _awardedBy_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _metadata_ = json["metadata"];
     if (_metadata_) {
@@ -2746,7 +2693,6 @@ export const AwardTreatRequestJSON = {
       points: 0,
       imageUrl: "",
       awardedBy: "",
-      applicationId: "",
       metadata: {},
       expiresAt: protoscript.TimestampJSON.initialize(),
       ...msg,
@@ -2780,9 +2726,6 @@ export const AwardTreatRequestJSON = {
     }
     if (msg.awardedBy) {
       json["awardedBy"] = msg.awardedBy;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.metadata) {
       const _metadata_ = Object.fromEntries(
@@ -2835,10 +2778,6 @@ export const AwardTreatRequestJSON = {
     const _awardedBy_ = json["awardedBy"] ?? json["awarded_by"];
     if (_awardedBy_) {
       msg.awardedBy = _awardedBy_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _metadata_ = json["metadata"];
     if (_metadata_) {
@@ -3247,7 +3186,6 @@ export const ListTreatsRequestJSON = {
     return {
       userId: "",
       treatType: "",
-      applicationId: "",
       fromDate: protoscript.TimestampJSON.initialize(),
       toDate: protoscript.TimestampJSON.initialize(),
       includeExpired: false,
@@ -3273,9 +3211,6 @@ export const ListTreatsRequestJSON = {
     }
     if (msg.treatType) {
       json["treatType"] = msg.treatType;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.fromDate && (msg.fromDate.seconds || msg.fromDate.nanos)) {
       json["fromDate"] = protoscript.serializeTimestamp(msg.fromDate);
@@ -3321,10 +3256,6 @@ export const ListTreatsRequestJSON = {
     const _treatType_ = json["treatType"] ?? json["treat_type"];
     if (_treatType_) {
       msg.treatType = _treatType_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _fromDate_ = json["fromDate"] ?? json["from_date"];
     if (_fromDate_) {
@@ -3487,7 +3418,6 @@ export const GetUserTreatsSummaryRequestJSON = {
   ): GetUserTreatsSummaryRequest {
     return {
       userId: "",
-      applicationId: "",
       fromDate: protoscript.TimestampJSON.initialize(),
       toDate: protoscript.TimestampJSON.initialize(),
       ...msg,
@@ -3503,9 +3433,6 @@ export const GetUserTreatsSummaryRequestJSON = {
     const json: Record<string, unknown> = {};
     if (msg.userId) {
       json["userId"] = msg.userId;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.fromDate && (msg.fromDate.seconds || msg.fromDate.nanos)) {
       json["fromDate"] = protoscript.serializeTimestamp(msg.fromDate);
@@ -3526,10 +3453,6 @@ export const GetUserTreatsSummaryRequestJSON = {
     const _userId_ = json["userId"] ?? json["user_id"];
     if (_userId_) {
       msg.userId = _userId_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _fromDate_ = json["fromDate"] ?? json["from_date"];
     if (_fromDate_) {
@@ -3794,7 +3717,6 @@ export const GetTreatStatsRequestJSON = {
     msg?: Partial<GetTreatStatsRequest>,
   ): GetTreatStatsRequest {
     return {
-      applicationId: "",
       fromDate: protoscript.TimestampJSON.initialize(),
       toDate: protoscript.TimestampJSON.initialize(),
       groupBy: "",
@@ -3811,9 +3733,6 @@ export const GetTreatStatsRequestJSON = {
     msg: PartialDeep<GetTreatStatsRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.fromDate && (msg.fromDate.seconds || msg.fromDate.nanos)) {
       json["fromDate"] = protoscript.serializeTimestamp(msg.fromDate);
     }
@@ -3839,10 +3758,6 @@ export const GetTreatStatsRequestJSON = {
     msg: GetTreatStatsRequest,
     json: any,
   ): GetTreatStatsRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _fromDate_ = json["fromDate"] ?? json["from_date"];
     if (_fromDate_) {
       msg.fromDate = protoscript.parseTimestamp(_fromDate_);

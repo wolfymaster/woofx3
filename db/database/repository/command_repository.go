@@ -16,11 +16,6 @@ func NewCommandRepository(db *gorm.DB) *CommandRepository {
 	return &CommandRepository{db: db}
 }
 
-// DB exposes the underlying *gorm.DB for handler-level helpers.
-func (r *CommandRepository) DB() *gorm.DB {
-	return r.db
-}
-
 // Create creates a new Command
 func (r *CommandRepository) Create(cmd *models.Command) error {
 	return r.db.Create(cmd).Error
@@ -43,9 +38,9 @@ func (r *CommandRepository) GetByID(id uuid.UUID) (*models.Command, error) {
 	return &cmd, err
 }
 
-func (r *CommandRepository) GetByCommand(command string, applicationID uuid.UUID) (*models.Command, error) {
+func (r *CommandRepository) GetByCommand(command string) (*models.Command, error) {
 	var cmd models.Command
-	err := r.db.Where("command = ? AND application_id = ?", command, applicationID).First(&cmd).Error
+	err := r.db.Where("command = ?", command).First(&cmd).Error
 	return &cmd, err
 }
 
@@ -53,12 +48,5 @@ func (r *CommandRepository) GetByCommand(command string, applicationID uuid.UUID
 func (r *CommandRepository) GetAll() ([]*models.Command, error) {
 	var cmds []*models.Command
 	err := r.db.Find(&cmds).Error
-	return cmds, err
-}
-
-// GetByUserAndApplication retrieves Commands for a user and application
-func (r *CommandRepository) GetByUserAndApplication(userID int, applicationID uuid.UUID) ([]*models.Command, error) {
-	var cmds []*models.Command
-	err := r.db.Where("user_id = ? AND application_id = ?", userID, applicationID).Find(&cmds).Error
 	return cmds, err
 }

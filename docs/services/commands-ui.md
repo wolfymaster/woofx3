@@ -52,7 +52,6 @@ listAvailableFunctions(): Promise<AvailableFunction[]>
 ```ts
 interface CommandSnapshot {
   id: string;
-  applicationId: string;
   command: string;            // without the "!" prefix
   actions: ActionStep[];      // what it runs, in order; [] = trigger-only
   cooldown: number;           // seconds, 0 = never throttle
@@ -213,7 +212,6 @@ removeUserFromGroup(groupId: string, username: string): Promise<{ ok: true }>
 ```ts
 interface GroupSnapshot {
   id: string;
-  applicationId: string;
   name: string;
   description: string;
   createdAt: string;   // ISO 8601
@@ -274,7 +272,6 @@ from other sessions (or from a future "manage via chat command" flow) live.
 ```ts
 interface CommandCreatedEvent {
   type: "command.created";
-  applicationId: string;
   correlationKey?: string;    // present iff you passed one to createCommand
   command: CommandWebhookSnapshot;   // same shape as CommandSnapshot
 }
@@ -282,14 +279,12 @@ interface CommandCreatedEvent {
 
 interface CommandDeletedEvent {
   type: "command.deleted";
-  applicationId: string;
   correlationKey?: string;
   commandId: string;   // id only — look up the name from your own cache if you need it
 }
 
 interface GroupCreatedEvent {
   type: "group.created";
-  applicationId: string;
   correlationKey?: string;
   group: GroupWebhookSnapshot;   // same shape as GroupSnapshot
 }
@@ -297,14 +292,12 @@ interface GroupCreatedEvent {
 
 interface GroupDeletedEvent {
   type: "group.deleted";
-  applicationId: string;
   correlationKey?: string;
   groupId: string;
 }
 
 interface GroupMemberAddedEvent {
   type: "group.member_added";
-  applicationId: string;
   groupId: string;
   username: string;
   // no correlationKey - addUserToGroup/removeUserFromGroup don't take one today

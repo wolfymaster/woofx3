@@ -33,7 +33,8 @@ message Setting {
     string key = 2;                    // Setting key (unique within scope)
     google.protobuf.Value value = 3;   // Setting value (can be any JSON-serializable type)
     string value_type = 4;             // Value type (e.g., "string", "number", "boolean", "object")
-    string application_id = 5;         // ID of the application this setting belongs to (for app settings)
+    reserved 5;
+    reserved "application_id";
     string user_id = 6;                // Optional user scope. For twitch_token this is the broadcaster's Twitch user id.
     google.protobuf.Timestamp created_at = 14;
     google.protobuf.Timestamp updated_at = 15;
@@ -42,7 +43,8 @@ message Setting {
 // Request to get a setting by key
 message GetSettingRequest {
     string key = 1;            // Setting key
-    string application_id = 2; // Optional: Application ID for app-specific settings
+    reserved 2;
+    reserved "application_id";
 }
 
 // Response containing a single setting
@@ -54,7 +56,8 @@ message SettingResponse {
 // Request to get multiple settings by keys
 message GetSettingsRequest {
     repeated string keys = 1;  // Keys of the settings to retrieve
-    string application_id = 2; // Optional: Application ID for app-specific settings
+    reserved 2;
+    reserved "application_id";
 }
 
 // Response containing multiple settings
@@ -67,7 +70,8 @@ message GetSettingsResponse {
 message SetSettingRequest {
     string key = 1;            // Setting key
     google.protobuf.Value value = 2; // New value for the setting
-    string application_id = 4; // Application ID for app-specific settings
+    reserved 4;
+    reserved "application_id";
     string user_id = 5;        // Optional user scope. For twitch_token, the broadcaster's Twitch user id.
 }
 
@@ -79,7 +83,8 @@ message SetSettingsRequest {
     }
     
     repeated SettingUpdate settings = 1;
-    string application_id = 2; // Application ID for app-specific settings
+    reserved 2;
+    reserved "application_id";
 }
 
 // Response from setting multiple settings
@@ -91,13 +96,15 @@ message SetSettingsResponse {
 // Request to delete a setting
 message DeleteSettingRequest {
     string key = 1;            // Key of the setting to delete
-    string application_id = 2; // Optional: Application ID for app-specific settings
+    reserved 2;
+    reserved "application_id";
 }
 
 // Request to list settings by key prefix
 message ListSettingsRequest {
     string key_prefix = 1;     // Key prefix to filter by
-    string application_id = 2; // Application ID for app-specific settings
+    reserved 2;
+    reserved "application_id";
 }
 
 // Response with settings map

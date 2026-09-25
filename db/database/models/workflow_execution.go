@@ -25,21 +25,20 @@ const (
 
 // WorkflowExecution represents an instance of a workflow execution
 type WorkflowExecution struct {
-	ID            uuid.UUID               `gorm:"type:uuid;default:uuid_generate_v4();primaryKey" json:"id"`
-	WorkflowID    uuid.UUID               `gorm:"type:uuid;not null;index" json:"workflow_id"`
-	ApplicationID uuid.UUID               `gorm:"type:uuid;not null;index" json:"application_id"`
-	UserID        uuid.UUID               `gorm:"type:uuid;not null;index" json:"user_id"`
-	Status        WorkflowExecutionStatus `gorm:"type:varchar(20);not null;default:'pending'" json:"status"`
-	Input         string                  `gorm:"type:jsonb" json:"input,omitempty"`
-	Output        string                  `gorm:"type:jsonb" json:"output,omitempty"`
-	Error         string                  `gorm:"type:text" json:"error,omitempty"`
+	ID         uuid.UUID               `gorm:"type:uuid;default:uuid_generate_v4();primaryKey" json:"id"`
+	WorkflowID uuid.UUID               `gorm:"type:uuid;not null;index" json:"workflow_id"`
+	UserID     *uuid.UUID              `gorm:"type:uuid;index" json:"user_id,omitempty"`
+	Status     WorkflowExecutionStatus `gorm:"type:varchar(20);not null;default:'pending'" json:"status"`
+	Input      string                  `gorm:"type:jsonb" json:"input,omitempty"`
+	Output     string                  `gorm:"type:jsonb" json:"output,omitempty"`
+	Error      string                  `gorm:"type:text" json:"error,omitempty"`
 	// TriggerEvent is the originating CloudEvent, stored verbatim. A replay
 	// re-feeds it to the engine unchanged, so the run takes the path the
 	// original took; without it there is nothing to replay from.
 	TriggerEvent string `gorm:"type:jsonb" json:"trigger_event,omitempty"`
 	// TriggeredBy names what caused the run ("twitch", "dashboard", ...).
-	// Distinct from UserID, which records the account the run belongs to: a
-	// Twitch follow is attributable to an application, not to a person.
+	// Distinct from UserID, which records the person who started the run and
+	// is nil for runs no person started, such as a Twitch follow.
 	TriggeredBy string     `gorm:"type:text" json:"triggered_by,omitempty"`
 	StartedAt   *time.Time `gorm:"index" json:"started_at,omitempty"`
 	CompletedAt *time.Time `gorm:"index" json:"completed_at,omitempty"`
@@ -47,9 +46,8 @@ type WorkflowExecution struct {
 	UpdatedAt   time.Time  `gorm:"not null;default:now()" json:"updated_at"`
 
 	// Relationships
-	Workflow    *WorkflowDefinition `gorm:"foreignKey:WorkflowID" json:"workflow,omitempty"`
-	Application *Application        `gorm:"foreignKey:ApplicationID" json:"application,omitempty"`
-	User        *User               `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Workflow *WorkflowDefinition `gorm:"foreignKey:WorkflowID" json:"workflow,omitempty"`
+	User     *User               `gorm:"foreignKey:UserID" json:"user,omitempty"`
 }
 
 // TableName specifies the table name for the WorkflowExecution model

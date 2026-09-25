@@ -39,7 +39,7 @@ service WorkflowService {
     // Distinct from ExecuteWorkflow, which asks for a run to happen: this
     // reports one already underway. The engine owns the id, and the run exists
     // whether or not anyone asked for it -- most runs are started by an event
-    // nobody is waiting on. The owning user is resolved from application_id.
+    // nobody is waiting on, so a recorded run has no starting user.
     rpc RecordWorkflowRun(RecordWorkflowRunRequest) returns (WorkflowExecutionResponse);
 
     // Advance a recorded run to its terminal state.
@@ -60,7 +60,8 @@ message Workflow {
     string id = 1;
     string name = 2;
     string description = 3;
-    string application_id = 4;
+    reserved 4;
+    reserved "application_id";
     reserved 5;                        // was: string created_by, replaced by created_by_type/created_by_ref
     reserved "created_by";
     bool enabled = 6;
@@ -96,7 +97,8 @@ message WorkflowExecution {
     string workflow_id = 2;            // ID of the workflow being executed
     string status = 3;                 // Current status (pending, running, completed, failed, cancelled)
     string started_by = 4;             // User ID who triggered the execution
-    string application_id = 5;         // ID of the application
+    reserved 5;
+    reserved "application_id";
     map<string, string> inputs = 6;    // Input variables for the workflow
     map<string, string> outputs = 7;   // Output variables from the workflow
     string error = 8;                  // Error message if the execution failed
@@ -146,7 +148,8 @@ message ExecutionStep {
 message CreateWorkflowRequest {
     string name = 1;
     string description = 2;
-    string application_id = 3;
+    reserved 3;
+    reserved "application_id";
     reserved 4;                        // was: string created_by, replaced by created_by_type/created_by_ref
     reserved "created_by";
     bool enabled = 5;
@@ -213,7 +216,8 @@ message DeleteWorkflowRequest {
 
 // Request to list workflows
 message ListWorkflowsRequest {
-    string application_id = 1;
+    reserved 1;
+    reserved "application_id";
     bool include_disabled = 2;
     int32 page = 3;
     int32 page_size = 4;
@@ -233,7 +237,8 @@ message ListWorkflowsResponse {
 // Request to execute a workflow
 message ExecuteWorkflowRequest {
     string workflow_id = 1;           // ID of the workflow to execute
-    string application_id = 2;        // ID of the application
+    reserved 2;
+    reserved "application_id";
     string started_by = 3;            // User ID who triggered the execution
     map<string, string> inputs = 4;   // Input variables for the workflow
     bool async = 5;                   // Whether to execute asynchronously
@@ -263,7 +268,8 @@ message WorkflowExecutionResponse {
 // Request to list workflow executions
 message ListWorkflowExecutionsRequest {
     string workflow_id = 1;          // Filter by workflow ID
-    string application_id = 2;       // Filter by application ID
+    reserved 2;
+    reserved "application_id";
     string status = 3;               // Filter by status
     string started_by = 4;           // Filter by user who started the execution
     google.protobuf.Timestamp from = 5;  // Filter by start time (inclusive)
@@ -287,7 +293,8 @@ message ListWorkflowExecutionsResponse {
 message RecordWorkflowRunRequest {
     string id = 1;                  // Engine-minted execution id
     string workflow_id = 2;
-    string application_id = 3;      // The owning user is resolved from this
+    reserved 3;
+    reserved "application_id";
     string triggered_by = 4;        // Provenance: "twitch", "dashboard", ...
     // Originating CloudEvent, stored verbatim so a replay can re-feed it to
     // the engine unchanged.
@@ -307,7 +314,8 @@ message UpdateWorkflowRunStatusRequest {
 // Request to record one step's outcome within a recorded run.
 message RecordWorkflowRunStepRequest {
     string execution_id = 1;
-    string application_id = 2;
+    reserved 2;
+    reserved "application_id";
     string task_id = 3;
     string name = 4;
     string status = 5;              // pending, running, waiting, success, failed, skipped

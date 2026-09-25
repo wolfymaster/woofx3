@@ -47,30 +47,15 @@ interface RegisteredInstance {
 
 export class WebhookClient {
   private instances: RegisteredInstance[] = [];
-  private applicationId: string | null;
   private readonly timeoutMs = 5_000;
 
   constructor(
     private db: DbClient,
-    private logger: SharedLogger,
-    applicationId: string | null
-  ) {
-    this.applicationId = applicationId;
-    if (applicationId) {
-      this.refreshCallbackUrls();
-    }
-  }
-
-  setApplicationId(applicationId: string): void {
-    this.applicationId = applicationId;
-  }
+    private logger: SharedLogger
+  ) {}
 
   async refreshCallbackUrls(): Promise<void> {
-    if (!this.applicationId) {
-      this.logger.debug("WebhookClient.refreshCallbackUrls skipped; applicationId not set yet");
-      return;
-    }
-    const resp = await this.db.listClients(this.applicationId);
+    const resp = await this.db.listClients();
     const newInstances: RegisteredInstance[] = [];
 
     for (const client of resp.clients ?? []) {

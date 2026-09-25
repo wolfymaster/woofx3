@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DbError } from "../src/db-client";
 import { StreamSessionResolver, timestampToEpochMs } from "../src/stream-session-resolver";
 
-const APPLICATION_ID = "app-1";
 const ABSENT_TIMESTAMP = { seconds: 0n, nanos: 0 };
 
 function fakeLogger() {
@@ -35,7 +34,7 @@ function timestampFor(iso: string) {
 }
 
 function session(id: string, startedAt = "2026-01-01T00:00:00.000Z") {
-  return { id, applicationId: APPLICATION_ID, status: "open", startedAt: timestampFor(startedAt) };
+  return { id, status: "open", startedAt: timestampFor(startedAt) };
 }
 
 function setup(db: Record<string, unknown> = {}) {
@@ -65,7 +64,7 @@ function setup(db: Record<string, unknown> = {}) {
     ...db,
   } as any;
 
-  const resolver = new StreamSessionResolver(nats, dbClient, APPLICATION_ID, fakeLogger());
+  const resolver = new StreamSessionResolver(nats, dbClient, fakeLogger());
   return { resolver, nats, db: dbClient, handlers };
 }
 
@@ -120,7 +119,7 @@ describe("StreamSessionResolver.start", () => {
     expect(published(nats)).toEqual([
       {
         type: SessionEventType.SessionStarted,
-        data: { sessionId: "session-1", applicationId: APPLICATION_ID, startedAt: "2026-01-01T00:00:00.000Z" },
+        data: { sessionId: "session-1", startedAt: "2026-01-01T00:00:00.000Z" },
       },
     ]);
   });
@@ -176,14 +175,13 @@ describe("stream.online", () => {
         type: SessionEventType.SessionEnded,
         data: {
           sessionId: "session-1",
-          applicationId: APPLICATION_ID,
           endedAt: backOnline,
           replacedBySessionId: "session-2",
         },
       },
       {
         type: SessionEventType.SessionStarted,
-        data: { sessionId: "session-2", applicationId: APPLICATION_ID, startedAt: backOnline },
+        data: { sessionId: "session-2", startedAt: backOnline },
       },
     ]);
     expect(resolver.currentSessionId()).toBe("session-2");
@@ -200,9 +198,7 @@ describe("stream.online", () => {
         isSegmentOpen: false,
         lastSegmentEndedAt: timestampFor("2026-01-01T00:00:00.000Z"),
       })),
-      clearSessionScoped: mock(async () => [
-        { namespace: "woofx3", key: "state:woofx3:counter:deaths", applicationId: APPLICATION_ID },
-      ]),
+      clearSessionScoped: mock(async () => [{ namespace: "woofx3", key: "state:woofx3:counter:deaths" }]),
     });
     await resolver.start();
     nats.publish.mockClear();

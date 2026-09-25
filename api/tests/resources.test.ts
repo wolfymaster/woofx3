@@ -2,7 +2,6 @@ import { describe, expect, mock, test } from "bun:test";
 import { resourcePublicUrl, resourceToItem, resourcesRoutes } from "../src/routes/resources";
 import { registerAllRoutes } from "../src/routes/index";
 
-const APPLICATION_ID = "app-1";
 const BASE_URL = "http://127.0.0.1:9100";
 
 function timestamp(seconds: number) {
@@ -12,13 +11,12 @@ function timestamp(seconds: number) {
 function readyRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "res-1",
-    applicationId: APPLICATION_ID,
     parentId: undefined,
     isFolder: false,
     name: "clip.png",
     kind: "image",
     contentType: "image/png",
-    repositoryKey: "user/app-1/res-1/clip.png",
+    repositoryKey: "user/res-1/clip.png",
     thumbnailRepositoryKey: "",
     size: BigInt(2048),
     status: "ready",
@@ -39,24 +37,20 @@ function host(overrides: Record<string, unknown> = {}) {
   const stub = {
     sceneManagerUrl: "http://127.0.0.1:9101",
     apiUrl: "http://127.0.0.1:9100",
-    ensureApplicationId: async () => APPLICATION_ID,
     logger: { info: mock(() => undefined), error: mock(() => undefined) },
     barkloaderRequest: mock(async (_path: string, _init?: RequestInit) => new Response("{}")),
     ...rest,
-    db: { getSetting: mock(async (_key: string, _applicationId: string) => ""), ...(db as object | undefined) },
+    db: { getSetting: mock(async (_key: string) => ""), ...(db as object | undefined) },
   };
   return Object.assign(stub, resourcesRoutes) as typeof stub & typeof resourcesRoutes;
 }
 
 describe("resource wire mapping", () => {
   test("derives public urls from repository keys", () => {
-    const item = resourceToItem(
-      BASE_URL,
-      readyRow({ thumbnailRepositoryKey: "user/app-1/res-1/thumbnail.png" }) as never
-    );
+    const item = resourceToItem(BASE_URL, readyRow({ thumbnailRepositoryKey: "user/res-1/thumbnail.png" }) as never);
 
-    expect(item.url).toBe("http://127.0.0.1:9100/assets/user/app-1/res-1/clip.png");
-    expect(item.thumbnailUrl).toBe("http://127.0.0.1:9100/assets/user/app-1/res-1/thumbnail.png");
+    expect(item.url).toBe("http://127.0.0.1:9100/assets/user/res-1/clip.png");
+    expect(item.thumbnailUrl).toBe("http://127.0.0.1:9100/assets/user/res-1/thumbnail.png");
     expect(item.size).toBe(2048);
     expect(item.parentId).toBeNull();
   });
@@ -71,7 +65,7 @@ describe("resource wire mapping", () => {
   test("a pending resource serves no url until its bytes land", () => {
     const item = resourceToItem(
       BASE_URL,
-      readyRow({ status: "pending", repositoryKey: "user/app-1/res-1/clip.png" }) as never
+      readyRow({ status: "pending", repositoryKey: "user/res-1/clip.png" }) as never
     );
 
     expect(item.status).toBe("pending");
@@ -98,7 +92,7 @@ describe("resource wire mapping", () => {
 describe("listResources", () => {
   test("returns only stored resources, never a thumbnail as its own entry", async () => {
     const rows = [
-      readyRow({ id: "res-1", thumbnailRepositoryKey: "user/app-1/res-1/thumbnail.png" }),
+      readyRow({ id: "res-1", thumbnailRepositoryKey: "user/res-1/thumbnail.png" }),
       readyRow({ id: "res-2", name: "song.mp3", kind: "audio", contentType: "audio/mpeg" }),
     ];
     const api = host({
@@ -127,21 +121,19 @@ describe("listResources", () => {
 
     await api.listResources({ folderId: "folder-9", kind: "image" });
 
-    expect(listResources).toHaveBeenCalledWith(
-      expect.objectContaining({ applicationId: APPLICATION_ID, parentId: "folder-9", kind: "image" })
-    );
+    expect(listResources).toHaveBeenCalledWith(expect.objectContaining({ parentId: "folder-9", kind: "image" }));
   });
 });
 
 describe("public urls", () => {
   test("follow the scene.publicUrl setting over the configured default", async () => {
-    const getSetting = mock(async (_key: string, _applicationId: string) => "https://scene.example.test/");
+    const getSetting = mock(async (_key: string) => "https://scene.example.test/");
     const api = host({ db: { getSetting, getResource: mock(async (_req: any) => readyRow()) } });
 
     const item = await api.getResource("res-1");
 
-    expect(getSetting).toHaveBeenCalledWith("scene.publicUrl", "");
-    expect(item.url).toBe("https://scene.example.test/assets/user/app-1/res-1/clip.png");
+    expect(getSetting).toHaveBeenCalledWith("scene.publicUrl");
+    expect(item.url).toBe("https://scene.example.test/assets/user/res-1/clip.png");
   });
 });
 
@@ -154,10 +146,10 @@ type CreateResourceArgs = { id: string; kind: string; repositoryKey: string };
  */
 function grantingBarkloader() {
   return mock(async (_path: string, init?: RequestInit) => {
-    const body = JSON.parse(String(init?.body)) as { application_id: string; resource_id: string; file_name: string };
+    const body = JSON.parse(String(init?.body)) as { resource_id: string; file_name: string };
     return new Response(
       JSON.stringify({
-        repositoryKey: `user/${body.application_id}/${body.resource_id}/${body.file_name}`,
+        repositoryKey: `user/${body.resource_id}/${body.file_name}`,
         uploadUrl: "http://storage.test/put",
         method: "PUT",
         headers: [{ name: "Content-Type", value: "image/png" }],
@@ -180,8 +172,9 @@ describe("requestUploadUrl", () => {
 
     const [path, init] = barkloaderRequest.mock.calls[0];
     expect(path).toBe("/assets/upload-url");
-    const sent = JSON.parse(String(init?.body)) as { resource_id: string };
-    expect(sent).toMatchObject({ application_id: APPLICATION_ID, file_name: "clip.png", content_type: "image/png" });
+    const sent = JSON.parse(String(init?.body)) as Record<string, unknown> & { resource_id: string };
+    expect(sent).toMatchObject({ file_name: "clip.png", content_type: "image/png" });
+    expect(Object.keys(sent).sort()).toEqual(["content_type", "file_name", "resource_id"]);
     expect(sent.resource_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
     // db-proxy refuses a file row without its key, so the row must be
@@ -190,8 +183,7 @@ describe("requestUploadUrl", () => {
     expect(createResource).toHaveBeenCalledWith(
       expect.objectContaining({
         id: sent.resource_id,
-        applicationId: APPLICATION_ID,
-        repositoryKey: `user/${APPLICATION_ID}/${sent.resource_id}/clip.png`,
+        repositoryKey: `user/${sent.resource_id}/clip.png`,
         status: "pending",
         kind: "image",
         contentType: "image/png",
@@ -242,7 +234,7 @@ describe("requestUploadUrl", () => {
         async () =>
           new Response(
             JSON.stringify({
-              repositoryKey: "user/app-1/other/clip.png",
+              repositoryKey: "user/other/clip.png",
               uploadUrl: "u",
               method: "PUT",
               headers: [],
@@ -278,9 +270,7 @@ describe("folders", () => {
 
     const folder = await api.createFolder("clips", "parent-1");
 
-    expect(createResourceFolder).toHaveBeenCalledWith(
-      expect.objectContaining({ applicationId: APPLICATION_ID, name: "clips", parentId: "parent-1" })
-    );
+    expect(createResourceFolder).toHaveBeenCalledWith(expect.objectContaining({ name: "clips", parentId: "parent-1" }));
     expect(folder.isFolder).toBe(true);
   });
 
@@ -307,11 +297,11 @@ describe("folders", () => {
 });
 
 describe("deleteResource", () => {
-  test("purges the stored objects db-proxy reports", async () => {
+  test("purges each resource directory once, by a key db-proxy reports", async () => {
     const deleteResource = mock(async (_req: any) => [
-      "user/app-1/res-1/clip.png",
-      "user/app-1/res-1/thumbnail.png",
-      "user/app-1/res-2/other.png",
+      "user/res-1/clip.png",
+      "user/res-1/thumbnail.png",
+      "user/res-2/other.png",
     ]);
     const barkloaderRequest = mock(async (_path: string, _init?: RequestInit) => new Response(null, { status: 204 }));
     const api = host({ db: { deleteResource }, barkloaderRequest });
@@ -319,15 +309,33 @@ describe("deleteResource", () => {
     await api.deleteResource("res-1");
 
     // Two distinct resource directories, not three keys: the thumbnail
-    // shares a prefix with the upload it was derived from.
-    const paths = barkloaderRequest.mock.calls.map((call) => call[0]);
-    expect(paths).toEqual(["/assets/resource/app-1/res-1", "/assets/resource/app-1/res-2"]);
+    // shares a directory with the upload it was derived from.
+    expect(barkloaderRequest).toHaveBeenCalledTimes(2);
+    const calls = barkloaderRequest.mock.calls.map(([path, init]) => ({
+      path,
+      method: init?.method,
+      body: JSON.parse(String(init?.body)) as { repositoryKey: string },
+    }));
+    expect(calls.map((c) => c.path)).toEqual(["/assets/resource", "/assets/resource"]);
+    expect(calls.map((c) => c.method)).toEqual(["DELETE", "DELETE"]);
+    expect(calls.map((c) => c.body.repositoryKey)).toEqual(["user/res-1/thumbnail.png", "user/res-2/other.png"]);
+  });
+
+  test("sends a key in an older layout verbatim rather than rebuilding it from ids", async () => {
+    const legacyKey = "user/0b6f7c1e-2d0a-4c3b-9f7e-1a2b3c4d5e6f/res-1/clip.png";
+    const barkloaderRequest = mock(async (_path: string, _init?: RequestInit) => new Response(null, { status: 204 }));
+    const api = host({ db: { deleteResource: mock(async (_req: unknown) => [legacyKey]) }, barkloaderRequest });
+
+    await api.deleteResource("res-1");
+
+    const [, init] = barkloaderRequest.mock.calls[0];
+    expect(JSON.parse(String(init?.body))).toEqual({ repositoryKey: legacyKey });
   });
 
   test("a storage purge failure does not fail the delete", async () => {
     const api = host({
       db: {
-        deleteResource: mock(async (_req: any) => ["user/app-1/res-1/clip.png"]),
+        deleteResource: mock(async (_req: any) => ["user/res-1/clip.png"]),
       },
       barkloaderRequest: mock(async (_path: string, _init?: RequestInit) => {
         throw new Error("storage unreachable");
@@ -353,7 +361,7 @@ describe("processing", () => {
     const [path, init] = barkloaderRequest.mock.calls[0];
     expect(path).toBe("/assets/process");
     expect(JSON.parse(String(init?.body))).toMatchObject({
-      repository_key: "user/app-1/res-1/clip.png",
+      repository_key: "user/res-1/clip.png",
       utility: "thumbnail",
       resource_id: "res-1",
       callback_url: "http://127.0.0.1:9100/webhooks/barkloader/processing",
@@ -380,14 +388,14 @@ describe("processing", () => {
 
     await api.handleProcessingCallback({
       resource_id: "res-1",
-      repository_key: "user/app-1/res-1/clip.png",
+      repository_key: "user/res-1/clip.png",
       utility: "thumbnail",
       status: "completed",
-      thumbnail_repository_key: "user/app-1/res-1/thumbnail.png",
+      thumbnail_repository_key: "user/res-1/thumbnail.png",
     });
 
     expect(updateResource).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "res-1", thumbnailRepositoryKey: "user/app-1/res-1/thumbnail.png" })
+      expect.objectContaining({ id: "res-1", thumbnailRepositoryKey: "user/res-1/thumbnail.png" })
     );
   });
 
@@ -399,7 +407,7 @@ describe("processing", () => {
     // retry loop behind something that can never succeed.
     await api.handleProcessingCallback({
       resource_id: "res-1",
-      repository_key: "user/app-1/res-1/song.mp3",
+      repository_key: "user/res-1/song.mp3",
       utility: "thumbnail",
       status: "not_applicable",
       reason: "audio has no renderable frame",

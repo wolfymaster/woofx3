@@ -1,14 +1,9 @@
 package services
 
 import (
-	"context"
-	"errors"
 	"testing"
 
 	"github.com/glebarez/sqlite"
-	"github.com/google/uuid"
-	"github.com/twitchtv/twirp"
-	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
 )
 
@@ -23,12 +18,6 @@ func newTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	stmts := []string{
-		`CREATE TABLE applications (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			user_id TEXT NOT NULL,
-			is_default INTEGER NOT NULL DEFAULT 0
-		)`,
 		`CREATE TABLE users (
 			id TEXT PRIMARY KEY,
 			username TEXT,
@@ -41,13 +30,11 @@ func newTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE groups (
 			id TEXT PRIMARY KEY,
-			application_id TEXT NOT NULL,
-			name VARCHAR(100) NOT NULL,
+			name VARCHAR(100) NOT NULL UNIQUE,
 			description VARCHAR(500) DEFAULT '',
 			is_built_in BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			CONSTRAINT uq_group_application_name UNIQUE (application_id, name)
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE user_groups (
 			username VARCHAR(50) NOT NULL,
@@ -57,7 +44,6 @@ func newTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE commands (
 			id TEXT PRIMARY KEY,
-			application_id TEXT NOT NULL,
 			command VARCHAR(255) NOT NULL,
 			actions TEXT NOT NULL DEFAULT '[]',
 			cooldown INTEGER DEFAULT 0,
@@ -86,42 +72,4 @@ func newTestDB(t *testing.T) *gorm.DB {
 		}
 	}
 	return db
-}
-
-func TestResolveApplicationID_Passthrough(t *testing.T) {
-	db := newTestDB(t)
-	got, err := resolveApplicationID(context.Background(), db, "abc-123")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != "abc-123" {
-		t.Fatalf("expected passthrough, got %q", got)
-	}
-}
-
-func TestResolveApplicationID_DefaultFound(t *testing.T) {
-	db := newTestDB(t)
-	app := &models.Application{ID: uuid.New(), Name: "default", IsDefault: true, UserID: uuid.New()}
-	if err := db.Create(app).Error; err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	got, err := resolveApplicationID(context.Background(), db, "")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != app.ID.String() {
-		t.Fatalf("expected default %s, got %q", app.ID, got)
-	}
-}
-
-func TestResolveApplicationID_NoDefault(t *testing.T) {
-	db := newTestDB(t)
-	_, err := resolveApplicationID(context.Background(), db, "")
-	var twerr twirp.Error
-	if !errors.As(err, &twerr) {
-		t.Fatalf("expected twirp error, got %v", err)
-	}
-	if twerr.Code() != twirp.NotFound {
-		t.Fatalf("expected NotFound, got %s", twerr.Code())
-	}
 }

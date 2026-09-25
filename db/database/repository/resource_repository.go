@@ -21,10 +21,6 @@ func NewResourceRepository(db *gorm.DB) *ResourceRepository {
 	return &ResourceRepository{db: db}
 }
 
-func (r *ResourceRepository) DB() *gorm.DB {
-	return r.db
-}
-
 func (r *ResourceRepository) Create(resource *models.Resource) error {
 	return r.db.Create(resource).Error
 }
@@ -33,13 +29,10 @@ func (r *ResourceRepository) Save(resource *models.Resource) error {
 	return r.db.Save(resource).Error
 }
 
-// GetByID is always application-scoped: a resource id alone is never
-// sufficient to read a row, so a leaked id from one application cannot
-// address another's content.
-func (r *ResourceRepository) GetByID(applicationID, id uuid.UUID) (*models.Resource, error) {
+func (r *ResourceRepository) GetByID(id uuid.UUID) (*models.Resource, error) {
 	var resource models.Resource
 	err := r.db.
-		Where("id = ? AND application_id = ?", id, applicationID).
+		Where("id = ?", id).
 		First(&resource).Error
 	if err != nil {
 		return nil, err
@@ -51,20 +44,18 @@ func (r *ResourceRepository) GetByID(applicationID, id uuid.UUID) (*models.Resou
 // with ParentSet true means "the root"; ParentSet false means "do not
 // filter on parent at all".
 type ListFilter struct {
-	ApplicationID uuid.UUID
-	ParentID      *uuid.UUID
-	ParentSet     bool
-	Kind          string
-	Search        string
-	Offset        int
-	Limit         int
+	ParentID  *uuid.UUID
+	ParentSet bool
+	Kind      string
+	Search    string
+	Offset    int
+	Limit     int
 }
 
 // List returns one page of direct children plus the unpaginated total.
 // Folders sort ahead of files so the UI never has to re-sort a page.
 func (r *ResourceRepository) List(filter ListFilter) ([]*models.Resource, int64, error) {
-	query := r.db.Model(&models.Resource{}).
-		Where("application_id = ?", filter.ApplicationID)
+	query := r.db.Model(&models.Resource{})
 
 	if filter.ParentSet {
 		if filter.ParentID == nil {
@@ -102,10 +93,10 @@ func (r *ResourceRepository) List(filter ListFilter) ([]*models.Resource, int64,
 
 // ListChildren returns every direct child of parent, unpaginated.
 // Used by the recursive delete walk.
-func (r *ResourceRepository) ListChildren(applicationID, parentID uuid.UUID) ([]*models.Resource, error) {
+func (r *ResourceRepository) ListChildren(parentID uuid.UUID) ([]*models.Resource, error) {
 	var resources []*models.Resource
 	err := r.db.
-		Where("application_id = ? AND parent_id = ?", applicationID, parentID).
+		Where("parent_id = ?", parentID).
 		Find(&resources).Error
 	if err != nil {
 		return nil, err
@@ -117,9 +108,9 @@ func (r *ResourceRepository) ListChildren(applicationID, parentID uuid.UUID) ([]
 // carries this name. Uniqueness within a folder is enforced here rather
 // than by a DB constraint because "same parent" includes the NULL-parent
 // root, and NULLs do not compare equal in a unique index.
-func (r *ResourceRepository) NameExists(applicationID uuid.UUID, parentID *uuid.UUID, name string, excludeID *uuid.UUID) (bool, error) {
+func (r *ResourceRepository) NameExists(parentID *uuid.UUID, name string, excludeID *uuid.UUID) (bool, error) {
 	query := r.db.Model(&models.Resource{}).
-		Where("application_id = ? AND LOWER(name) = ?", applicationID, strings.ToLower(name))
+		Where("LOWER(name) = ?", strings.ToLower(name))
 	if parentID == nil {
 		query = query.Where("parent_id IS NULL")
 	} else {
@@ -144,11 +135,11 @@ func (r *ResourceRepository) NameExists(applicationID uuid.UUID, parentID *uuid.
 // The walk is explicit rather than relying on ON DELETE CASCADE because
 // the keys have to be collected before the rows disappear, and because
 // sqlite only honors foreign keys when the pragma is enabled.
-func (r *ResourceRepository) DeleteSubtree(applicationID, id uuid.UUID) ([]string, error) {
+func (r *ResourceRepository) DeleteSubtree(id uuid.UUID) ([]string, error) {
 	var keys []string
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		var root models.Resource
-		if err := tx.Where("id = ? AND application_id = ?", id, applicationID).First(&root).Error; err != nil {
+		if err := tx.Where("id = ?", id).First(&root).Error; err != nil {
 			return err
 		}
 
@@ -164,7 +155,7 @@ func (r *ResourceRepository) DeleteSubtree(applicationID, id uuid.UUID) ([]strin
 		}
 		for depth := 0; depth < maxDepth && len(frontier) > 0; depth++ {
 			var children []*models.Resource
-			if err := tx.Where("application_id = ? AND parent_id IN ?", applicationID, frontier).
+			if err := tx.Where("parent_id IN ?", frontier).
 				Find(&children).Error; err != nil {
 				return err
 			}
@@ -190,7 +181,7 @@ func (r *ResourceRepository) DeleteSubtree(applicationID, id uuid.UUID) ([]strin
 				keys = append(keys, resource.ThumbnailRepositoryKey)
 			}
 		}
-		return tx.Where("application_id = ? AND id IN ?", applicationID, ids).
+		return tx.Where("id IN ?", ids).
 			Delete(&models.Resource{}).Error
 	})
 	if err != nil {

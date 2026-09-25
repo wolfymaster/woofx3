@@ -211,12 +211,11 @@ func (x *BackgroundTaskInput) GetSchedule() string {
 }
 
 type RegisterBackgroundTasksRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ModuleKey     string                 `protobuf:"bytes,1,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"` // composite "{id}:{version}:{hash}" — carried to the outbox event so consumers can resolve the exact installed version
-	ModuleName    string                 `protobuf:"bytes,2,opt,name=module_name,json=moduleName,proto3" json:"module_name,omitempty"`
-	Version       string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
-	Tasks         []*BackgroundTaskInput `protobuf:"bytes,4,rep,name=tasks,proto3" json:"tasks,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,5,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ModuleKey  string                 `protobuf:"bytes,1,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"` // composite "{id}:{version}:{hash}" — carried to the outbox event so consumers can resolve the exact installed version
+	ModuleName string                 `protobuf:"bytes,2,opt,name=module_name,json=moduleName,proto3" json:"module_name,omitempty"`
+	Version    string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	Tasks      []*BackgroundTaskInput `protobuf:"bytes,4,rep,name=tasks,proto3" json:"tasks,omitempty"`
 	// Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
 	// so a module upgrade upserts its resources in place instead of orphaning
 	// every reference. Stored as created_by_ref when created_by_type/ref are
@@ -282,13 +281,6 @@ func (x *RegisterBackgroundTasksRequest) GetTasks() []*BackgroundTaskInput {
 		return x.Tasks
 	}
 	return nil
-}
-
-func (x *RegisterBackgroundTasksRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *RegisterBackgroundTasksRequest) GetModuleId() string {
@@ -424,16 +416,15 @@ const file_background_task_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1a\n" +
 	"\bfunction\x18\x04 \x01(\tR\bfunction\x12\x1a\n" +
-	"\bschedule\x18\x05 \x01(\tR\bschedule\"\xf1\x01\n" +
+	"\bschedule\x18\x05 \x01(\tR\bschedule\"\xe0\x01\n" +
 	"\x1eRegisterBackgroundTasksRequest\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +
 	"\vmodule_name\x18\x02 \x01(\tR\n" +
 	"moduleName\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x121\n" +
-	"\x05tasks\x18\x04 \x03(\v2\x1b.module.BackgroundTaskInputR\x05tasks\x12%\n" +
-	"\x0eapplication_id\x18\x05 \x01(\tR\rapplicationId\x12\x1b\n" +
-	"\tmodule_id\x18\x06 \x01(\tR\bmoduleId\"j\n" +
+	"\x05tasks\x18\x04 \x03(\v2\x1b.module.BackgroundTaskInputR\x05tasks\x12\x1b\n" +
+	"\tmodule_id\x18\x06 \x01(\tR\bmoduleIdJ\x04\b\x05\x10\x06R\x0eapplication_id\"j\n" +
 	"\x1aListBackgroundTasksRequest\x12&\n" +
 	"\x0fcreated_by_type\x18\x01 \x01(\tR\rcreatedByType\x12$\n" +
 	"\x0ecreated_by_ref\x18\x02 \x01(\tR\fcreatedByRef\"{\n" +

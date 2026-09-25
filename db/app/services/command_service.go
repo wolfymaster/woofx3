@@ -53,7 +53,7 @@ func NewCommandService(
 // create/update so the DB join tables and Casbin's derived cache never
 // drift. Public commands never get Casbin rows - visibility is checked in
 // application code (woofwoofwoof) before Casbin is ever consulted.
-func (s *commandService) syncCommandPermissions(appID uuid.UUID, cmd *models.Command, groupIDStrs, usernames []string) error {
+func (s *commandService) syncCommandPermissions(cmd *models.Command, groupIDStrs, usernames []string) error {
 	groupIDs := make([]uuid.UUID, 0, len(groupIDStrs))
 	for _, idStr := range groupIDStrs {
 		id, err := uuid.Parse(idStr)
@@ -71,7 +71,7 @@ func (s *commandService) syncCommandPermissions(appID uuid.UUID, cmd *models.Com
 	}
 
 	object := "command/" + cmd.Command
-	if err := s.casbinRepo.RemoveAllPTypeForObject(appID, object); err != nil {
+	if err := s.casbinRepo.RemoveAllPTypeForObject(object); err != nil {
 		return err
 	}
 	if cmd.Visibility == commandVisibilityRestricted {
@@ -80,7 +80,7 @@ func (s *commandService) syncCommandPermissions(appID uuid.UUID, cmd *models.Com
 		// wildcard subject so every enforcement path agrees; leaving the object
 		// with zero rules would deny it everywhere instead.
 		if len(groupIDs) == 0 && len(usernames) == 0 {
-			if err := s.casbinRepo.AddPType(appID, models.WildcardSubject, object, "read", "allow"); err != nil {
+			if err := s.casbinRepo.AddPType(models.WildcardSubject, object, "read", "allow"); err != nil {
 				return err
 			}
 			return s.enforcer.LoadPolicy()
@@ -98,12 +98,12 @@ func (s *commandService) syncCommandPermissions(appID uuid.UUID, cmd *models.Com
 				// the wildcard the matcher understands.
 				subject = models.WildcardSubject
 			}
-			if err := s.casbinRepo.AddPType(appID, subject, object, "read", "allow"); err != nil {
+			if err := s.casbinRepo.AddPType(subject, object, "read", "allow"); err != nil {
 				return err
 			}
 		}
 		for _, username := range usernames {
-			if err := s.casbinRepo.AddPType(appID, username, object, "read", "allow"); err != nil {
+			if err := s.casbinRepo.AddPType(username, object, "read", "allow"); err != nil {
 				return err
 			}
 		}
@@ -145,11 +145,9 @@ func (s *commandService) syncCommandEdges(cmd *models.Command, actionsJSON, crea
 	if s.refRepo == nil {
 		return
 	}
-	appID := cmd.ApplicationID
 	src := refsvc.CommandSource{
 		ID:                  cmd.ID,
 		Name:                cmd.Command,
-		ApplicationID:       &appID,
 		SourceCreatedByType: createdByType,
 		SourceCreatedByRef:  createdByRef,
 	}
@@ -178,7 +176,6 @@ func (s *commandService) toProtoCommand(cmd *models.Command) (*client.Command, e
 
 	return &client.Command{
 		Id:              cmd.ID.String(),
-		ApplicationId:   cmd.ApplicationID.String(),
 		Command:         cmd.Command,
 		ActionsJson:     defaultActionsJSON(cmd.Actions),
 		Cooldown:        int32(cmd.Cooldown),
@@ -195,15 +192,6 @@ func (s *commandService) toProtoCommand(cmd *models.Command) (*client.Command, e
 }
 
 func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCommandRequest) (*client.CommandResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), cmd.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-
 	createdByType := cmd.CreatedByType
 	if createdByType == "" {
 		createdByType = "USER"
@@ -218,7 +206,6 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 	// every command would otherwise be inserted with the zero UUID and collide.
 	m := models.Command{
 		ID:              uuid.New(),
-		ApplicationID:   applicationID,
 		Command:         cmd.Command,
 		Actions:         defaultActionsJSON(cmd.ActionsJson),
 		Cooldown:        int(cmd.Cooldown),
@@ -230,14 +217,13 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 		ArgumentPattern: cmd.ArgumentPattern,
 	}
 
-	err = s.repo.Create(&m)
-	if err != nil {
+	if err := s.repo.Create(&m); err != nil {
 		return nil, err
 	}
 
 	s.syncCommandEdges(&m, m.Actions, m.CreatedByType, m.CreatedByRef)
 
-	if err := s.syncCommandPermissions(applicationID, &m, cmd.GroupIds, cmd.Usernames); err != nil {
+	if err := s.syncCommandPermissions(&m, cmd.GroupIds, cmd.Usernames); err != nil {
 		return nil, err
 	}
 
@@ -256,16 +242,7 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 }
 
 func (s *commandService) GetCommand(ctx context.Context, req *client.GetCommandRequest) (*client.CommandResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-
-	cmd, err := s.repo.GetByCommand(req.Command, applicationID)
+	cmd, err := s.repo.GetByCommand(req.Command)
 	if err != nil {
 		return nil, err
 	}
@@ -343,12 +320,12 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 	// old object's rows too, since syncCommandPermissions only re-derives
 	// under the (possibly new) current name.
 	if oldCommandName != m.Command {
-		if err := s.casbinRepo.RemoveAllPTypeForObject(m.ApplicationID, "command/"+oldCommandName); err != nil {
+		if err := s.casbinRepo.RemoveAllPTypeForObject("command/" + oldCommandName); err != nil {
 			return nil, err
 		}
 	}
 
-	if err := s.syncCommandPermissions(m.ApplicationID, m, req.GroupIds, req.Usernames); err != nil {
+	if err := s.syncCommandPermissions(m, req.GroupIds, req.Usernames); err != nil {
 		return nil, err
 	}
 
@@ -391,7 +368,7 @@ func (s *commandService) DeleteCommand(ctx context.Context, req *client.DeleteCo
 	if err := s.permRepo.DeleteBySourceCommand(m.ID); err != nil {
 		log.Printf("command_service: DeleteBySourceCommand failed for command %s: %v", m.ID, err)
 	}
-	if err := s.casbinRepo.RemoveAllPTypeForObject(m.ApplicationID, "command/"+m.Command); err != nil {
+	if err := s.casbinRepo.RemoveAllPTypeForObject("command/" + m.Command); err != nil {
 		log.Printf("command_service: RemoveAllPTypeForObject failed for command %s: %v", m.ID, err)
 	}
 	if err := s.enforcer.LoadPolicy(); err != nil {
@@ -427,15 +404,7 @@ func (s *commandService) HasPermission(ctx context.Context, enforcer *casbin.Enf
 			return false, fmt.Errorf("username is required")
 		}
 
-		appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-		if err != nil {
-			return false, err
-		}
-		appID, err := uuid.Parse(appIDStr)
-		if err != nil {
-			return false, err
-		}
-		cmd, err := s.repo.GetByCommand(req.Command, appID)
+		cmd, err := s.repo.GetByCommand(req.Command)
 		if err != nil {
 			return false, err
 		}

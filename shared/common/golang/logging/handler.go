@@ -13,13 +13,12 @@ import (
 )
 
 var traceContextFields = map[string]struct{}{
-	"applicationId": {},
-	"instanceId":    {},
-	"requestId":     {},
-	"traceId":       {},
-	"spanId":        {},
-	"eventId":       {},
-	"eventType":     {},
+	"instanceId": {},
+	"requestId":  {},
+	"traceId":    {},
+	"spanId":     {},
+	"eventId":    {},
+	"eventType":  {},
 }
 
 type canonicalHandler struct {

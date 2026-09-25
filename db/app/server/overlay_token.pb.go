@@ -27,9 +27,8 @@ type OverlayToken struct {
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	// Plaintext credential, format "ovl_" + base58(32 random bytes).
 	// Generated db-proxy-side; never accepted from callers.
-	Token         string `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
-	SceneId       string `protobuf:"bytes,3,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
-	ApplicationId string `protobuf:"bytes,4,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	Token   string `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
+	SceneId string `protobuf:"bytes,3,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
 	// Operator bookkeeping (e.g. "OBS main PC"). Free-form.
 	Label string `protobuf:"bytes,5,opt,name=label,proto3" json:"label,omitempty"`
 	// "active" | "revoked".
@@ -92,13 +91,6 @@ func (x *OverlayToken) GetSceneId() string {
 	return ""
 }
 
-func (x *OverlayToken) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *OverlayToken) GetLabel() string {
 	if x != nil {
 		return x.Label
@@ -135,12 +127,9 @@ func (x *OverlayToken) GetLastUsedAt() *timestamppb.Timestamp {
 }
 
 type MintOverlayTokenRequest struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	SceneId string                 `protobuf:"bytes,1,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
-	// Empty resolves to the default application (same convention as
-	// CreateSceneRequest). The scene must belong to this application.
-	ApplicationId string `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
-	Label         string `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SceneId       string                 `protobuf:"bytes,1,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
+	Label         string                 `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -178,13 +167,6 @@ func (*MintOverlayTokenRequest) Descriptor() ([]byte, []int) {
 func (x *MintOverlayTokenRequest) GetSceneId() string {
 	if x != nil {
 		return x.SceneId
-	}
-	return ""
-}
-
-func (x *MintOverlayTokenRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -337,9 +319,8 @@ func (x *OverlayTokenResponse) GetOverlayToken() *OverlayToken {
 }
 
 type ListOverlayTokensRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SceneId       string                 `protobuf:"bytes,1,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	SceneId string                 `protobuf:"bytes,1,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
 	// Revoked tombstones are excluded unless explicitly requested.
 	IncludeRevoked bool `protobuf:"varint,3,opt,name=include_revoked,json=includeRevoked,proto3" json:"include_revoked,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -379,13 +360,6 @@ func (*ListOverlayTokensRequest) Descriptor() ([]byte, []int) {
 func (x *ListOverlayTokensRequest) GetSceneId() string {
 	if x != nil {
 		return x.SceneId
-	}
-	return ""
-}
-
-func (x *ListOverlayTokensRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -502,13 +476,12 @@ func (x *ResolveOverlayTokenRequest) GetToken() string {
 }
 
 // Engine-internal resolution result. Active tokens return OK with the
-// bound scene/application; revoked and unknown tokens return byte-for-
+// bound scene; revoked and unknown tokens return byte-for-
 // byte identical NOT_FOUND responses.
 type ResolveOverlayTokenResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
 	SceneId       string                 `protobuf:"bytes,2,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,3,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -557,23 +530,15 @@ func (x *ResolveOverlayTokenResponse) GetSceneId() string {
 	return ""
 }
 
-func (x *ResolveOverlayTokenResponse) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 var File_overlay_token_proto protoreflect.FileDescriptor
 
 const file_overlay_token_proto_rawDesc = "" +
 	"\n" +
-	"\x13overlay_token.proto\x12\roverlay_token\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd8\x02\n" +
+	"\x13overlay_token.proto\x12\roverlay_token\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc7\x02\n" +
 	"\fOverlayToken\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12\x19\n" +
-	"\bscene_id\x18\x03 \x01(\tR\asceneId\x12%\n" +
-	"\x0eapplication_id\x18\x04 \x01(\tR\rapplicationId\x12\x14\n" +
+	"\bscene_id\x18\x03 \x01(\tR\asceneId\x12\x14\n" +
 	"\x05label\x18\x05 \x01(\tR\x05label\x12\x16\n" +
 	"\x06status\x18\x06 \x01(\tR\x06status\x129\n" +
 	"\n" +
@@ -581,33 +546,30 @@ const file_overlay_token_proto_rawDesc = "" +
 	"\n" +
 	"revoked_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\x12<\n" +
 	"\flast_used_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"lastUsedAt\"q\n" +
+	"lastUsedAtJ\x04\b\x04\x10\x05R\x0eapplication_id\"`\n" +
 	"\x17MintOverlayTokenRequest\x12\x19\n" +
-	"\bscene_id\x18\x01 \x01(\tR\asceneId\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x14\n" +
-	"\x05label\x18\x03 \x01(\tR\x05label\"+\n" +
+	"\bscene_id\x18\x01 \x01(\tR\asceneId\x12\x14\n" +
+	"\x05label\x18\x03 \x01(\tR\x05labelJ\x04\b\x02\x10\x03R\x0eapplication_id\"+\n" +
 	"\x19RevokeOverlayTokenRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"+\n" +
 	"\x19RotateOverlayTokenRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x88\x01\n" +
 	"\x14OverlayTokenResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12@\n" +
-	"\roverlay_token\x18\x02 \x01(\v2\x1b.overlay_token.OverlayTokenR\foverlayToken\"\x85\x01\n" +
+	"\roverlay_token\x18\x02 \x01(\v2\x1b.overlay_token.OverlayTokenR\foverlayToken\"t\n" +
 	"\x18ListOverlayTokensRequest\x12\x19\n" +
-	"\bscene_id\x18\x01 \x01(\tR\asceneId\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12'\n" +
-	"\x0finclude_revoked\x18\x03 \x01(\bR\x0eincludeRevoked\"\xb0\x01\n" +
+	"\bscene_id\x18\x01 \x01(\tR\asceneId\x12'\n" +
+	"\x0finclude_revoked\x18\x03 \x01(\bR\x0eincludeRevokedJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xb0\x01\n" +
 	"\x19ListOverlayTokensResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12B\n" +
 	"\x0eoverlay_tokens\x18\x02 \x03(\v2\x1b.overlay_token.OverlayTokenR\roverlayTokens\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\x05R\n" +
 	"totalCount\"2\n" +
 	"\x1aResolveOverlayTokenRequest\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\"\x8f\x01\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"~\n" +
 	"\x1bResolveOverlayTokenResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12\x19\n" +
-	"\bscene_id\x18\x02 \x01(\tR\asceneId\x12%\n" +
-	"\x0eapplication_id\x18\x03 \x01(\tR\rapplicationId2\x96\x04\n" +
+	"\bscene_id\x18\x02 \x01(\tR\asceneIdJ\x04\b\x03\x10\x04R\x0eapplication_id2\x96\x04\n" +
 	"\x13OverlayTokenService\x12_\n" +
 	"\x10MintOverlayToken\x12&.overlay_token.MintOverlayTokenRequest\x1a#.overlay_token.OverlayTokenResponse\x12c\n" +
 	"\x12RevokeOverlayToken\x12(.overlay_token.RevokeOverlayTokenRequest\x1a#.overlay_token.OverlayTokenResponse\x12c\n" +

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { renderSceneShell } from "../../src/scene/shell";
 
-const scene = { id: "scene-1", applicationId: "app-1", name: "Demo", layout: {}, widgets: [] };
+const scene = { id: "scene-1", name: "Demo", layout: {}, widgets: [] };
 
 describe("renderSceneShell", () => {
   it("renders without throwing and embeds the scene config", () => {

@@ -120,14 +120,14 @@ export class DbClient {
     return alert.UpdateAlertLifecycle(req, this.config);
   }
 
-  async getSetting(key: string, applicationId: string): Promise<string | null> {
-    const resp = await setting.GetSetting({ key, applicationId }, this.config);
+  async getSetting(key: string): Promise<string | null> {
+    const resp = await setting.GetSetting({ key }, this.config);
     return resp.setting?.value?.stringValue ?? null;
   }
 
   /** One module's stored value, decoded, or `undefined` when the key holds nothing. */
-  async getModuleStorageValue(applicationId: string, namespace: string, key: string): Promise<unknown> {
-    const response = await storage.Get({ applicationId, namespace, key }, this.config);
+  async getModuleStorageValue(namespace: string, key: string): Promise<unknown> {
+    const response = await storage.Get({ namespace, key }, this.config);
     // Twirpscript decodes an absent message field as a default one, so an
     // empty key is what marks "nothing stored".
     if (!response.item || response.item.key === "") {

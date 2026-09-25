@@ -130,7 +130,6 @@ async fn install<R: Repository + Clone>(
             &plan,
             &archive_key,
             Some(db_proxy_url),
-            "",
             // Not a force install: go through the diff-aware upgrade path so a
             // version bump archives resources the new manifest dropped.
             false,

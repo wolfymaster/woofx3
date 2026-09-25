@@ -26,10 +26,9 @@ import * as common from "./common.pb";
  */
 export interface Resource {
   id: string;
-  applicationId: string;
   /**
    * Parent folder. Unset means the resource sits at the root of the
-   * application's tree. Self-referencing; a folder's children carry
+   * tree. Self-referencing; a folder's children carry
    * its id here.
    */
   parentId?: string | null | undefined;
@@ -62,7 +61,6 @@ export interface Resource {
 }
 
 export interface CreateResourceRequest {
-  applicationId: string;
   parentId?: string | null | undefined;
   name: string;
   kind: string;
@@ -83,18 +81,15 @@ export interface CreateResourceRequest {
 }
 
 export interface CreateFolderRequest {
-  applicationId: string;
   parentId?: string | null | undefined;
   name: string;
 }
 
 export interface GetResourceRequest {
   id: string;
-  applicationId: string;
 }
 
 export interface ListResourcesRequest {
-  applicationId: string;
   /**
    * Unset lists the root. Set lists that folder's direct children.
    */
@@ -123,13 +118,12 @@ export interface ListResourcesResponse {
 }
 
 /**
- * Every field but `id`/`application_id` is optional; absent fields are
+ * Every field but `id` is optional; absent fields are
  * left untouched. `parent_id` present-but-empty moves the resource to
  * the root.
  */
 export interface UpdateResourceRequest {
   id: string;
-  applicationId: string;
   name?: string | null | undefined;
   parentId?: string | null | undefined;
   status?: string | null | undefined;
@@ -140,7 +134,6 @@ export interface UpdateResourceRequest {
 
 export interface DeleteResourceRequest {
   id: string;
-  applicationId: string;
 }
 
 export interface DeleteResourceResponse {
@@ -372,8 +365,7 @@ export async function DeleteResourceJSON(
  * content; this one is.
  *
  * Storage layout: bytes live in barkloader's repository under
- * `user/{application_id}/{resource_id}/{filename}`, mirroring the
- * `modules/` convention. `repository_key` holds that key verbatim;
+ * `user/{resource_id}/{filename}`, mirroring the `modules/` convention. `repository_key` holds that key verbatim;
  * resolving it to a public URL is the api gateway's concern (it
  * composes `{sceneManagerUrl}/assets/{repository_key}`), so
  * no URL is persisted on the row.
@@ -534,7 +526,6 @@ export const Resource = {
   initialize: function (msg?: Partial<Resource>): Resource {
     return {
       id: "",
-      applicationId: "",
       parentId: undefined,
       isFolder: false,
       name: "",
@@ -559,9 +550,6 @@ export const Resource = {
   ): protoscript.BinaryWriter {
     if (msg.id) {
       writer.writeString(1, msg.id);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.parentId != undefined) {
       writer.writeString(3, msg.parentId);
@@ -619,10 +607,6 @@ export const Resource = {
       switch (field) {
         case 1: {
           msg.id = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -707,7 +691,6 @@ export const CreateResourceRequest = {
     msg?: Partial<CreateResourceRequest>,
   ): CreateResourceRequest {
     return {
-      applicationId: "",
       parentId: undefined,
       name: "",
       kind: "",
@@ -727,9 +710,6 @@ export const CreateResourceRequest = {
     msg: PartialDeep<CreateResourceRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.parentId != undefined) {
       writer.writeString(2, msg.parentId);
     }
@@ -767,10 +747,6 @@ export const CreateResourceRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.parentId = reader.readString();
           break;
@@ -841,7 +817,6 @@ export const CreateFolderRequest = {
     msg?: Partial<CreateFolderRequest>,
   ): CreateFolderRequest {
     return {
-      applicationId: "",
       parentId: undefined,
       name: "",
       ...msg,
@@ -855,9 +830,6 @@ export const CreateFolderRequest = {
     msg: PartialDeep<CreateFolderRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.parentId != undefined) {
       writer.writeString(2, msg.parentId);
     }
@@ -877,10 +849,6 @@ export const CreateFolderRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.parentId = reader.readString();
           break;
@@ -926,7 +894,6 @@ export const GetResourceRequest = {
   initialize: function (msg?: Partial<GetResourceRequest>): GetResourceRequest {
     return {
       id: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -940,9 +907,6 @@ export const GetResourceRequest = {
   ): protoscript.BinaryWriter {
     if (msg.id) {
       writer.writeString(1, msg.id);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     return writer;
   },
@@ -959,10 +923,6 @@ export const GetResourceRequest = {
       switch (field) {
         case 1: {
           msg.id = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         default: {
@@ -1003,7 +963,6 @@ export const ListResourcesRequest = {
     msg?: Partial<ListResourcesRequest>,
   ): ListResourcesRequest {
     return {
-      applicationId: "",
       parentId: undefined,
       kind: "",
       search: "",
@@ -1020,9 +979,6 @@ export const ListResourcesRequest = {
     msg: PartialDeep<ListResourcesRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.parentId != undefined) {
       writer.writeString(2, msg.parentId);
     }
@@ -1051,10 +1007,6 @@ export const ListResourcesRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.parentId = reader.readString();
           break;
@@ -1222,7 +1174,6 @@ export const UpdateResourceRequest = {
   ): UpdateResourceRequest {
     return {
       id: "",
-      applicationId: "",
       name: undefined,
       parentId: undefined,
       status: undefined,
@@ -1242,9 +1193,6 @@ export const UpdateResourceRequest = {
   ): protoscript.BinaryWriter {
     if (msg.id) {
       writer.writeString(1, msg.id);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.name != undefined) {
       writer.writeString(3, msg.name);
@@ -1279,10 +1227,6 @@ export const UpdateResourceRequest = {
       switch (field) {
         case 1: {
           msg.id = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -1348,7 +1292,6 @@ export const DeleteResourceRequest = {
   ): DeleteResourceRequest {
     return {
       id: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -1362,9 +1305,6 @@ export const DeleteResourceRequest = {
   ): protoscript.BinaryWriter {
     if (msg.id) {
       writer.writeString(1, msg.id);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     return writer;
   },
@@ -1381,10 +1321,6 @@ export const DeleteResourceRequest = {
       switch (field) {
         case 1: {
           msg.id = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         default: {
@@ -1579,7 +1515,6 @@ export const ResourceJSON = {
   initialize: function (msg?: Partial<Resource>): Resource {
     return {
       id: "",
-      applicationId: "",
       parentId: undefined,
       isFolder: false,
       name: "",
@@ -1604,9 +1539,6 @@ export const ResourceJSON = {
     const json: Record<string, unknown> = {};
     if (msg.id) {
       json["id"] = msg.id;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.parentId != undefined) {
       json["parentId"] = msg.parentId;
@@ -1651,10 +1583,6 @@ export const ResourceJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _parentId_ = json["parentId"] ?? json["parent_id"];
     if (_parentId_) {
@@ -1730,7 +1658,6 @@ export const CreateResourceRequestJSON = {
     msg?: Partial<CreateResourceRequest>,
   ): CreateResourceRequest {
     return {
-      applicationId: "",
       parentId: undefined,
       name: "",
       kind: "",
@@ -1750,9 +1677,6 @@ export const CreateResourceRequestJSON = {
     msg: PartialDeep<CreateResourceRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.parentId != undefined) {
       json["parentId"] = msg.parentId;
     }
@@ -1787,10 +1711,6 @@ export const CreateResourceRequestJSON = {
     msg: CreateResourceRequest,
     json: any,
   ): CreateResourceRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _parentId_ = json["parentId"] ?? json["parent_id"];
     if (_parentId_) {
       msg.parentId = _parentId_;
@@ -1852,7 +1772,6 @@ export const CreateFolderRequestJSON = {
     msg?: Partial<CreateFolderRequest>,
   ): CreateFolderRequest {
     return {
-      applicationId: "",
       parentId: undefined,
       name: "",
       ...msg,
@@ -1866,9 +1785,6 @@ export const CreateFolderRequestJSON = {
     msg: PartialDeep<CreateFolderRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.parentId != undefined) {
       json["parentId"] = msg.parentId;
     }
@@ -1885,10 +1801,6 @@ export const CreateFolderRequestJSON = {
     msg: CreateFolderRequest,
     json: any,
   ): CreateFolderRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _parentId_ = json["parentId"] ?? json["parent_id"];
     if (_parentId_) {
       msg.parentId = _parentId_;
@@ -1925,7 +1837,6 @@ export const GetResourceRequestJSON = {
   initialize: function (msg?: Partial<GetResourceRequest>): GetResourceRequest {
     return {
       id: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -1940,9 +1851,6 @@ export const GetResourceRequestJSON = {
     if (msg.id) {
       json["id"] = msg.id;
     }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     return json;
   },
 
@@ -1956,10 +1864,6 @@ export const GetResourceRequestJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     return msg;
   },
@@ -1990,7 +1894,6 @@ export const ListResourcesRequestJSON = {
     msg?: Partial<ListResourcesRequest>,
   ): ListResourcesRequest {
     return {
-      applicationId: "",
       parentId: undefined,
       kind: "",
       search: "",
@@ -2007,9 +1910,6 @@ export const ListResourcesRequestJSON = {
     msg: PartialDeep<ListResourcesRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.parentId != undefined) {
       json["parentId"] = msg.parentId;
     }
@@ -2035,10 +1935,6 @@ export const ListResourcesRequestJSON = {
     msg: ListResourcesRequest,
     json: any,
   ): ListResourcesRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _parentId_ = json["parentId"] ?? json["parent_id"];
     if (_parentId_) {
       msg.parentId = _parentId_;
@@ -2186,7 +2082,6 @@ export const UpdateResourceRequestJSON = {
   ): UpdateResourceRequest {
     return {
       id: "",
-      applicationId: "",
       name: undefined,
       parentId: undefined,
       status: undefined,
@@ -2206,9 +2101,6 @@ export const UpdateResourceRequestJSON = {
     const json: Record<string, unknown> = {};
     if (msg.id) {
       json["id"] = msg.id;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.name != undefined) {
       json["name"] = msg.name;
@@ -2241,10 +2133,6 @@ export const UpdateResourceRequestJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _name_ = json["name"];
     if (_name_) {
@@ -2301,7 +2189,6 @@ export const DeleteResourceRequestJSON = {
   ): DeleteResourceRequest {
     return {
       id: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -2316,9 +2203,6 @@ export const DeleteResourceRequestJSON = {
     if (msg.id) {
       json["id"] = msg.id;
     }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     return json;
   },
 
@@ -2332,10 +2216,6 @@ export const DeleteResourceRequestJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     return msg;
   },

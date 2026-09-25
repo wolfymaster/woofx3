@@ -98,10 +98,9 @@ while delivering no alerts is worse than one that plainly failed to start.
 Services wait a minute for the bus before giving up on it, so a boot race is
 not what this reports.
 
-None of this needs an application. A freshly provisioned engine reports ready
-before anyone registers with it, which is what lets the dashboard register at
-all: reads that resolve the engine's default application answer "nothing"
-until one exists, rather than failing.
+None of this needs a registered client. A freshly provisioned engine reports
+ready before anyone registers with it, which is what lets the dashboard
+register at all.
 
 ## The Twitch link
 

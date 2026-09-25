@@ -100,10 +100,9 @@ if let Err(e) = validate_required_config(&["WOOFX3_BARKLOADER_KEY"]) {
 }
 ```
 
-Note: `applicationId` is **not** a config value. It is created during UI onboarding
-via `api.registerClient(description, { userId })` and returned to the caller; services
-either carry it per-message (e.g. `api`, `barkloader`) or let the db-proxy resolve the
-server-side default when it is absent. Do not add it back to `.woofx3.json` or env.
+Note: an engine is single-tenant. There is no application or tenant id to configure,
+pass, or resolve: every table, storage key, event and RPC belongs to the one engine.
+Differences by platform or channel belong in trigger conditions, not in a scoping id.
 
 ## Git commits
 

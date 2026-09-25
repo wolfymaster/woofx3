@@ -11,7 +11,6 @@ func newSrc() WorkflowSource {
 	return WorkflowSource{
 		ID:                  uuid.New(),
 		Name:                "wf",
-		ApplicationID:       nil,
 		SourceCreatedByType: "USER",
 		SourceCreatedByRef:  "",
 	}

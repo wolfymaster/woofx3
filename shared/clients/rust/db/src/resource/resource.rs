@@ -10,10 +10,8 @@
 pub struct Resource {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     /// Parent folder. Unset means the resource sits at the root of the
-    /// application's tree. Self-referencing; a folder's children carry
+    /// tree. Self-referencing; a folder's children carry
     /// its id here.
     #[prost(string, optional, tag="3")]
     pub parent_id: ::core::option::Option<::prost::alloc::string::String>,
@@ -48,8 +46,6 @@ pub struct Resource {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateResourceRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, optional, tag="2")]
     pub parent_id: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(string, tag="3")]
@@ -74,8 +70,6 @@ pub struct CreateResourceRequest {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateFolderRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, optional, tag="2")]
     pub parent_id: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(string, tag="3")]
@@ -85,13 +79,9 @@ pub struct CreateFolderRequest {
 pub struct GetResourceRequest {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListResourcesRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     /// Unset lists the root. Set lists that folder's direct children.
     #[prost(string, optional, tag="2")]
     pub parent_id: ::core::option::Option<::prost::alloc::string::String>,
@@ -120,15 +110,13 @@ pub struct ListResourcesResponse {
     #[prost(int32, tag="5")]
     pub page_size: i32,
 }
-/// Every field but `id`/`application_id` is optional; absent fields are
+/// Every field but `id` is optional; absent fields are
 /// left untouched. `parent_id` present-but-empty moves the resource to
 /// the root.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UpdateResourceRequest {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, optional, tag="3")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(string, optional, tag="4")]
@@ -146,8 +134,6 @@ pub struct UpdateResourceRequest {
 pub struct DeleteResourceRequest {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeleteResourceResponse {

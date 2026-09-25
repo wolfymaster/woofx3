@@ -20,7 +20,7 @@ function deps(opts: { read?: (...args: unknown[]) => Promise<unknown> } = {}) {
   const d = {
     ctx: { logger },
     sessionTokens: {
-      verify: async (token: string) => (token === "good" ? { sceneId: "scene-1", applicationId: "app-1" } : null),
+      verify: async (token: string) => (token === "good" ? { sceneId: "scene-1" } : null),
     },
     host: {
       loadSceneById: async (sceneId: string) =>
@@ -52,13 +52,13 @@ describe("handleWidgetStorageRoute", () => {
     const resp = await handleWidgetStorageRoute(request("counter-1", KEY), "scene-1", "counter-1", d);
     expect(resp.status).toBe(200);
     expect(await resp.json()).toEqual({ value: { value: 3, reached: {} } });
-    expect(read).toHaveBeenCalledWith("scene-1", "app-1", "woofx3", KEY);
+    expect(read).toHaveBeenCalledWith("scene-1", "woofx3", KEY);
   });
 
   it("reads through another module's placement only from that module's storage", async () => {
     const { deps: d, read } = deps();
     await handleWidgetStorageRoute(request("spotify-1", KEY), "scene-1", "spotify-1", d);
-    expect(read).toHaveBeenCalledWith("scene-1", "app-1", "spotify", KEY);
+    expect(read).toHaveBeenCalledWith("scene-1", "spotify", KEY);
   });
 
   it("refuses a placement that is not on the scene, or one the page draws itself", async () => {

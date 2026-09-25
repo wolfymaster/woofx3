@@ -4,8 +4,6 @@
 pub struct WidgetStatus {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     /// Module that owns the widget definition. Denormalised from the
     /// scene's widgets_json so consumers can group by module without
     /// joining.
@@ -38,8 +36,6 @@ pub struct WidgetStatus {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UpsertWidgetStatusRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub module_id: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
@@ -58,8 +54,6 @@ pub struct UpsertWidgetStatusRequest {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetWidgetStatusRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub instance_id: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
@@ -74,8 +68,6 @@ pub struct WidgetStatusResponse {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListWidgetStatusRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     /// Optional filters. Empty string = no filter.
     #[prost(string, tag="2")]
     pub module_id: ::prost::alloc::string::String,
@@ -101,8 +93,6 @@ pub struct ListWidgetStatusResponse {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeleteWidgetStatusRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub instance_id: ::prost::alloc::string::String,
     /// Optional: when omitted, deletes every row for the instance.

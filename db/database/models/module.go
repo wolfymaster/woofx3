@@ -115,7 +115,6 @@ type Trigger struct {
 	CreatedByType string `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
 	CreatedByRef  string `gorm:"column:created_by_ref;type:text;not null;default:''"`
 	ManifestID    string `gorm:"column:manifest_id;type:text;not null;default:''"`
-	ApplicationID string `gorm:"column:application_id;type:text;not null;default:''"`
 	// Transport is the manifest trigger `type`: "eventbus" for a trigger the
 	// bus fires, "webhook" for one fired by inbound HTTP through Handler.
 	Transport string `gorm:"column:transport;type:text;not null;default:'eventbus'"`
@@ -142,7 +141,6 @@ type Action struct {
 	CreatedByType string    `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
 	CreatedByRef  string    `gorm:"column:created_by_ref;type:text;not null;default:''"`
 	ManifestID    string    `gorm:"column:manifest_id;type:text;not null;default:''"`
-	ApplicationID string    `gorm:"column:application_id;type:text;not null;default:''"`
 	// Type names the engine action handler this action dispatches to
 	// (`function`, `alert`, `print`, …). For function-type actions
 	// `Call` holds the canonical function id; for non-function
@@ -208,9 +206,6 @@ func (Asset) TableName() string { return "assets" }
 //
 // `Surfaces` is a JSON-serialized list of where the widget can be placed
 // ("scene", "alert"); `HostsSurface` names the surface its placements host.
-//
-// Module catalog rows are instance-global; applicationId is carried on
-// scene placements and runtime events, not on widget declarations.
 type Widget struct {
 	ID          uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
 	Name        string    `gorm:"column:name;type:text;not null"`
@@ -229,7 +224,6 @@ type Widget struct {
 	CreatedByType string `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
 	CreatedByRef  string `gorm:"column:created_by_ref;type:text;not null;default:''"`
 	ManifestID    string `gorm:"column:manifest_id;type:text;not null;default:''"`
-	ApplicationID string `gorm:"column:application_id;type:text;not null;default:''"`
 	// ArchivedAt is set when a module upgrade drops this widget from the
 	// manifest. Archived rows stay resolvable by canonical id (existing
 	// workflows/scenes keep working) but are excluded from catalog

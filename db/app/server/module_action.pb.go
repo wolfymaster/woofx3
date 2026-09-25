@@ -281,9 +281,6 @@ type RegisterActionsRequest struct {
 	// namespace. The upsert key is (created_by_type, created_by_ref, name).
 	CreatedByType string `protobuf:"bytes,5,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
 	CreatedByRef  string `protobuf:"bytes,6,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
-	// Scopes the registration to a specific application so cross-module
-	// dependency checks are tenant-isolated.
-	ApplicationId string `protobuf:"bytes,7,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	// Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
 	// so a module upgrade upserts its resources in place instead of orphaning
 	// every reference. Stored as created_by_ref when created_by_type/ref are
@@ -361,13 +358,6 @@ func (x *RegisterActionsRequest) GetCreatedByType() string {
 func (x *RegisterActionsRequest) GetCreatedByRef() string {
 	if x != nil {
 		return x.CreatedByRef
-	}
-	return ""
-}
-
-func (x *RegisterActionsRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -511,7 +501,7 @@ const file_module_action_proto_rawDesc = "" +
 	"manifestId\x12\x12\n" +
 	"\x04type\x18\x06 \x01(\tR\x04type\x12\x1a\n" +
 	"\btaxonomy\x18\a \x03(\tR\btaxonomy\x12\x18\n" +
-	"\areturns\x18\t \x01(\tR\areturnsJ\x04\b\b\x10\tR\routput_schema\"\xb3\x02\n" +
+	"\areturns\x18\t \x01(\tR\areturnsJ\x04\b\b\x10\tR\routput_schema\"\xa2\x02\n" +
 	"\x16RegisterActionsRequest\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +
@@ -520,9 +510,8 @@ const file_module_action_proto_rawDesc = "" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12-\n" +
 	"\aactions\x18\x04 \x03(\v2\x13.module.ActionInputR\aactions\x12&\n" +
 	"\x0fcreated_by_type\x18\x05 \x01(\tR\rcreatedByType\x12$\n" +
-	"\x0ecreated_by_ref\x18\x06 \x01(\tR\fcreatedByRef\x12%\n" +
-	"\x0eapplication_id\x18\a \x01(\tR\rapplicationId\x12\x1b\n" +
-	"\tmodule_id\x18\b \x01(\tR\bmoduleId\"b\n" +
+	"\x0ecreated_by_ref\x18\x06 \x01(\tR\fcreatedByRef\x12\x1b\n" +
+	"\tmodule_id\x18\b \x01(\tR\bmoduleIdJ\x04\b\a\x10\bR\x0eapplication_id\"b\n" +
 	"\x12ListActionsRequest\x12&\n" +
 	"\x0fcreated_by_type\x18\x01 \x01(\tR\rcreatedByType\x12$\n" +
 	"\x0ecreated_by_ref\x18\x02 \x01(\tR\fcreatedByRef\"o\n" +

@@ -60,7 +60,6 @@ export interface OverlaySceneLayout {
 
 export interface OverlaySceneState {
   sceneId: string;
-  applicationId: string;
   name: string;
   layout: OverlaySceneLayout;
   instances: OverlayWidgetInstance[];
@@ -173,7 +172,6 @@ export class OverlayHost {
     const s = response.scene;
     return {
       sceneId: s.id,
-      applicationId: s.applicationId || resolved.applicationId,
       name: s.name,
       layout: parseLayout(s.layoutJson),
       instances: await this.resolveInstances(this.parseInstances(s.widgetsJson, s.id), s.id),
@@ -261,7 +259,6 @@ export class OverlayHost {
     const s = response.scene;
     return {
       sceneId: s.id,
-      applicationId: s.applicationId,
       name: s.name,
       layout: parseLayout(s.layoutJson),
       instances: await this.resolveInstances(this.parseInstances(s.widgetsJson, s.id), s.id),
@@ -292,7 +289,6 @@ export class OverlayHost {
     }
     return {
       sceneId: s.id,
-      applicationId: s.applicationId,
       name: s.name,
       widgetsJsonRaw: s.widgetsJson,
       widgetsJsonParsed: rawParsed,
@@ -312,7 +308,6 @@ export class OverlayHost {
     return {
       scene: {
         id: state.sceneId,
-        applicationId: state.applicationId,
         name: state.name,
         layout: state.layout,
         widgets: state.instances.map((w) => ({

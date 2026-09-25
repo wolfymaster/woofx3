@@ -107,11 +107,11 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     const twitchClient = new TwitchClient({
       channel: channel || undefined,
       getSetting: async (key) => {
-        const response = await GetSetting({ applicationId: "", key }, { baseURL: dbBaseURL });
+        const response = await GetSetting({ key }, { baseURL: dbBaseURL });
         return response.setting.value.stringValue ?? undefined;
       },
       setSetting: async (key, value) => {
-        await SetSetting({ applicationId: "", key, value: { stringValue: value }, userId: "" }, { baseURL: dbBaseURL });
+        await SetSetting({ key, value: { stringValue: value }, userId: "" }, { baseURL: dbBaseURL });
       },
     });
 

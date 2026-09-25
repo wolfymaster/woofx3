@@ -206,21 +206,21 @@ mod tests {
         let repo = repo(root.path());
 
         assert!(
-            write(&repo, "user/app-1/res-1/clip.png", b"first")
+            write(&repo, "user/res-1/clip.png", b"first")
                 .await
                 .is_empty()
         );
         assert!(
-            write(&repo, "user/app-1/res-1/clip.png", b"second")
+            write(&repo, "user/res-1/clip.png", b"second")
                 .await
                 .is_empty()
         );
 
         assert_eq!(
-            std::fs::read(root.path().join("user/app-1/res-1/clip.png")).unwrap(),
+            std::fs::read(root.path().join("user/res-1/clip.png")).unwrap(),
             b"second"
         );
-        let names: Vec<_> = std::fs::read_dir(root.path().join("user/app-1/res-1"))
+        let names: Vec<_> = std::fs::read_dir(root.path().join("user/res-1"))
             .unwrap()
             .map(|entry| entry.unwrap().file_name())
             .collect();
@@ -232,35 +232,33 @@ mod tests {
         let root = tempfile::tempdir().expect("tempdir");
         let repo = repo(root.path());
         // A directory where the file should go makes the final rename fail.
-        std::fs::create_dir_all(root.path().join("user/app-1/res-1/clip.png/blocker")).unwrap();
+        std::fs::create_dir_all(root.path().join("user/res-1/clip.png/blocker")).unwrap();
 
-        let failed = write(&repo, "user/app-1/res-1/clip.png", b"bytes").await;
+        let failed = write(&repo, "user/res-1/clip.png", b"bytes").await;
 
-        assert_eq!(failed, vec!["user/app-1/res-1/clip.png".to_string()]);
-        let names: Vec<_> = std::fs::read_dir(root.path().join("user/app-1/res-1"))
+        assert_eq!(failed, vec!["user/res-1/clip.png".to_string()]);
+        let names: Vec<_> = std::fs::read_dir(root.path().join("user/res-1"))
             .unwrap()
             .map(|entry| entry.unwrap().file_name())
             .collect();
         assert_eq!(names, vec![std::ffi::OsString::from("clip.png")]);
-        assert!(root.path().join("user/app-1/res-1/clip.png").is_dir());
+        assert!(root.path().join("user/res-1/clip.png").is_dir());
     }
 
     #[tokio::test]
     async fn delete_prefix_removes_a_resource_and_its_thumbnail_from_disk() {
         let root = tempfile::tempdir().expect("tempdir");
         let repo = repo(root.path());
-        write(&repo, "user/app-1/res-1/clip.png", b"bytes").await;
-        write(&repo, "user/app-1/res-1/thumbnail.png", b"thumb").await;
-        write(&repo, "user/app-1/res-2/other.png", b"keep").await;
+        write(&repo, "user/res-1/clip.png", b"bytes").await;
+        write(&repo, "user/res-1/thumbnail.png", b"thumb").await;
+        write(&repo, "user/res-2/other.png", b"keep").await;
 
-        repo.delete_prefix("user/app-1/res-1/")
-            .await
-            .expect("delete");
+        repo.delete_prefix("user/res-1/").await.expect("delete");
 
-        assert!(!root.path().join("user/app-1/res-1").exists());
-        assert!(root.path().join("user/app-1/res-2/other.png").exists());
+        assert!(!root.path().join("user/res-1").exists());
+        assert!(root.path().join("user/res-2/other.png").exists());
         // Deleting again is not an error.
-        repo.delete_prefix("user/app-1/res-1/")
+        repo.delete_prefix("user/res-1/")
             .await
             .expect("idempotent delete");
     }

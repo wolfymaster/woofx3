@@ -16,29 +16,15 @@ use tokio::runtime::Handle;
 
 pub struct HttpStorageClient {
     db_proxy_url: String,
-    /// Bound once at construction — today one barkloader process serves
-    /// exactly one application, so there is no per-invocation tenant to
-    /// thread through (see `main.rs::setup`, which resolves this from
-    /// `.woofx3.json`'s `applicationId`).
-    application_id: String,
 }
 
 impl HttpStorageClient {
-    pub fn new(db_proxy_url: String, application_id: String) -> Self {
-        Self {
-            db_proxy_url,
-            application_id,
-        }
+    pub fn new(db_proxy_url: String) -> Self {
+        Self { db_proxy_url }
     }
-}
 
-impl HttpStorageClient {
-    fn address<'a>(&'a self, namespace: &'a str, key: &'a str) -> db_proxy::StorageAddress<'a> {
-        db_proxy::StorageAddress {
-            application_id: &self.application_id,
-            namespace,
-            key,
-        }
+    fn address<'a>(&self, namespace: &'a str, key: &'a str) -> db_proxy::StorageAddress<'a> {
+        db_proxy::StorageAddress { namespace, key }
     }
 }
 

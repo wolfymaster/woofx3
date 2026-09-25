@@ -6,8 +6,6 @@ pub struct Client {
     pub id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub description: ::prost::alloc::string::String,
-    #[prost(string, tag="3")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="4")]
     pub client_id: ::prost::alloc::string::String,
     #[prost(string, tag="5")]
@@ -21,8 +19,6 @@ pub struct Client {
 pub struct CreateClientRequest {
     #[prost(string, tag="1")]
     pub description: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub callback_url: ::prost::alloc::string::String,
     #[prost(string, tag="4")]
@@ -33,10 +29,8 @@ pub struct GetClientRequest {
     #[prost(string, tag="1")]
     pub client_id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListClientsRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UpdateClientRequest {

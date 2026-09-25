@@ -6,11 +6,10 @@ import (
 )
 
 type WorkflowDefinition struct {
-	ID            uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	ApplicationID uuid.UUID `gorm:"column:application_id;type:uuid;not null;index:idx_workflow_definitions_application_id;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
-	Name          string    `gorm:"type:varchar(255);not null"`
-	Steps         string    `gorm:"type:jsonb"`
-	Trigger       string    `gorm:"type:jsonb"`
+	ID      uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	Name    string    `gorm:"type:varchar(255);not null"`
+	Steps   string    `gorm:"type:jsonb"`
+	Trigger string    `gorm:"type:jsonb"`
 
 	// Origin metadata. CreatedByType is "USER" for UI-authored workflows
 	// and "MODULE" for workflows registered by barkloader during a module
@@ -36,10 +35,7 @@ type WorkflowDefinition struct {
 	// (`workflow/manager.go`, `workflow/reconcile.go`) considers this row
 	// a candidate to subscribe / execute. Always `false` at create time;
 	// the UI's `setWorkflowEnabled` action is the canonical toggle.
-	Enabled bool `gorm:"column:enabled;not null;default:false;index:idx_workflow_definitions_application_enabled,priority:2"`
-
-	// Relationships
-	Application Application `gorm:"foreignKey:ApplicationID;references:ID"`
+	Enabled bool `gorm:"column:enabled;not null;default:false;index:idx_workflow_definitions_enabled"`
 }
 
 func (WorkflowDefinition) TableName() string {
@@ -65,14 +61,8 @@ func GetWorkflowDefinitionByID(db *gorm.DB, id uuid.UUID) (*WorkflowDefinition, 
 	return &workflow, err
 }
 
-func GetWorkflowDefinitionsByApplicationID(db *gorm.DB, appID uuid.UUID) ([]WorkflowDefinition, error) {
-	var workflows []WorkflowDefinition
-	err := db.Where("application_id = ?", appID).Find(&workflows).Error
-	return workflows, err
-}
-
-func GetWorkflowDefinitionByName(db *gorm.DB, appID uuid.UUID, name string) (*WorkflowDefinition, error) {
+func GetWorkflowDefinitionByName(db *gorm.DB, name string) (*WorkflowDefinition, error) {
 	var workflow WorkflowDefinition
-	err := db.Where("application_id = ? AND name = ?", appID, name).First(&workflow).Error
+	err := db.Where("name = ?", name).First(&workflow).Error
 	return &workflow, err
 }

@@ -18,9 +18,9 @@ import type { ClientConfiguration } from "twirpscript";
 /**
  * Storage item with metadata.
  *
- * A value is addressed by (application_id, namespace, key). The namespace is
- * the owning module's manifest id, so two modules using the same key never see
- * each other's values; it is required on every read and write.
+ * A value is addressed by (namespace, key). The namespace is the owning
+ * module's manifest id, so two modules using the same key never see each
+ * other's values; it is required on every read and write.
  */
 export interface StorageItem {
   key: string;
@@ -28,7 +28,6 @@ export interface StorageItem {
   createdAt: bigint;
   expiresAt: bigint;
   namespace: string;
-  applicationId: string;
   /**
    * Drop this key when the stream *session* ends. Not the same as the stream
    * going offline: a session spans dropouts, so clearing when the broadcast
@@ -43,7 +42,6 @@ export interface StorageItem {
  */
 export interface GetRequest {
   key: string;
-  applicationId: string;
   namespace: string;
 }
 
@@ -88,7 +86,6 @@ export interface CompareAndSetResponse {
  */
 export interface DeleteRequest {
   key: string;
-  applicationId: string;
   namespace: string;
 }
 
@@ -99,7 +96,6 @@ export interface DeleteResponse {}
  */
 export interface ClearNamespaceRequest {
   namespace: string;
-  applicationId: string;
 }
 
 export interface ClearNamespaceResponse {}
@@ -107,27 +103,14 @@ export interface ClearNamespaceResponse {}
 /**
  * Clear all expired keys
  */
-export interface ClearExpiredRequest {
-  applicationId: string;
-}
+export interface ClearExpiredRequest {}
 
 export interface ClearExpiredResponse {}
 
 /**
- * Clear all keys for an application
- */
-export interface ClearAllForApplicationRequest {
-  applicationId: string;
-}
-
-export interface ClearAllForApplicationResponse {}
-
-/**
  * Clear every key flagged `clear_on_session_end`
  */
-export interface ClearSessionScopedRequest {
-  applicationId: string;
-}
+export interface ClearSessionScopedRequest {}
 
 export interface ClearSessionScopedResponse {
   /**
@@ -239,21 +222,6 @@ export async function ClearExpired(
     config,
   );
   return ClearExpiredResponse.decode(response);
-}
-
-/**
- * Clear all keys for an application
- */
-export async function ClearAllForApplication(
-  clearAllForApplicationRequest: ClearAllForApplicationRequest,
-  config?: ClientConfiguration,
-): Promise<ClearAllForApplicationResponse> {
-  const response = await PBrequest(
-    "/storage.StorageService/ClearAllForApplication",
-    ClearAllForApplicationRequest.encode(clearAllForApplicationRequest),
-    config,
-  );
-  return ClearAllForApplicationResponse.decode(response);
 }
 
 /**
@@ -371,21 +339,6 @@ export async function ClearExpiredJSON(
 }
 
 /**
- * Clear all keys for an application
- */
-export async function ClearAllForApplicationJSON(
-  clearAllForApplicationRequest: ClearAllForApplicationRequest,
-  config?: ClientConfiguration,
-): Promise<ClearAllForApplicationResponse> {
-  const response = await JSONrequest(
-    "/storage.StorageService/ClearAllForApplication",
-    ClearAllForApplicationRequestJSON.encode(clearAllForApplicationRequest),
-    config,
-  );
-  return ClearAllForApplicationResponseJSON.decode(response);
-}
-
-/**
  * Clear every key flagged `clear_on_session_end`. The engine calls this when
  * a stream session ends; a module declares the key is session-scoped and the
  * engine acts on it, since the sandbox exposes no way to clear storage.
@@ -456,13 +409,6 @@ export interface StorageService<Context = unknown> {
     context: Context,
   ) => Promise<ClearExpiredResponse> | ClearExpiredResponse;
   /**
-   * Clear all keys for an application
-   */
-  ClearAllForApplication: (
-    clearAllForApplicationRequest: ClearAllForApplicationRequest,
-    context: Context,
-  ) => Promise<ClearAllForApplicationResponse> | ClearAllForApplicationResponse;
-  /**
    * Clear every key flagged `clear_on_session_end`. The engine calls this when
    * a stream session ends; a module declares the key is session-scoped and the
    * engine acts on it, since the sandbox exposes no way to clear storage.
@@ -530,18 +476,6 @@ export function createStorageService<Context>(
           json: ClearExpiredResponseJSON,
         },
       },
-      ClearAllForApplication: {
-        name: "ClearAllForApplication",
-        handler: service.ClearAllForApplication,
-        input: {
-          protobuf: ClearAllForApplicationRequest,
-          json: ClearAllForApplicationRequestJSON,
-        },
-        output: {
-          protobuf: ClearAllForApplicationResponse,
-          json: ClearAllForApplicationResponseJSON,
-        },
-      },
       ClearSessionScoped: {
         name: "ClearSessionScoped",
         handler: service.ClearSessionScoped,
@@ -593,7 +527,6 @@ export const StorageItem = {
       createdAt: 0n,
       expiresAt: 0n,
       namespace: "",
-      applicationId: "",
       clearOnSessionEnd: false,
       ...msg,
     };
@@ -620,9 +553,6 @@ export const StorageItem = {
     }
     if (msg.namespace) {
       writer.writeString(5, msg.namespace);
-    }
-    if (msg.applicationId) {
-      writer.writeString(6, msg.applicationId);
     }
     if (msg.clearOnSessionEnd) {
       writer.writeBool(7, msg.clearOnSessionEnd);
@@ -658,10 +588,6 @@ export const StorageItem = {
         }
         case 5: {
           msg.namespace = reader.readString();
-          break;
-        }
-        case 6: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 7: {
@@ -705,7 +631,6 @@ export const GetRequest = {
   initialize: function (msg?: Partial<GetRequest>): GetRequest {
     return {
       key: "",
-      applicationId: "",
       namespace: "",
       ...msg,
     };
@@ -720,9 +645,6 @@ export const GetRequest = {
   ): protoscript.BinaryWriter {
     if (msg.key) {
       writer.writeString(1, msg.key);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.namespace) {
       writer.writeString(3, msg.namespace);
@@ -742,10 +664,6 @@ export const GetRequest = {
       switch (field) {
         case 1: {
           msg.key = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -1134,7 +1052,6 @@ export const DeleteRequest = {
   initialize: function (msg?: Partial<DeleteRequest>): DeleteRequest {
     return {
       key: "",
-      applicationId: "",
       namespace: "",
       ...msg,
     };
@@ -1149,9 +1066,6 @@ export const DeleteRequest = {
   ): protoscript.BinaryWriter {
     if (msg.key) {
       writer.writeString(1, msg.key);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.namespace) {
       writer.writeString(3, msg.namespace);
@@ -1171,10 +1085,6 @@ export const DeleteRequest = {
       switch (field) {
         case 1: {
           msg.key = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -1265,7 +1175,6 @@ export const ClearNamespaceRequest = {
   ): ClearNamespaceRequest {
     return {
       namespace: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -1279,9 +1188,6 @@ export const ClearNamespaceRequest = {
   ): protoscript.BinaryWriter {
     if (msg.namespace) {
       writer.writeString(1, msg.namespace);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     return writer;
   },
@@ -1298,10 +1204,6 @@ export const ClearNamespaceRequest = {
       switch (field) {
         case 1: {
           msg.namespace = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         default: {
@@ -1365,21 +1267,15 @@ export const ClearExpiredRequest = {
   /**
    * Serializes ClearExpiredRequest to protobuf.
    */
-  encode: function (msg: PartialDeep<ClearExpiredRequest>): Uint8Array {
-    return ClearExpiredRequest._writeMessage(
-      msg,
-      new protoscript.BinaryWriter(),
-    ).getResultBuffer();
+  encode: function (_msg?: PartialDeep<ClearExpiredRequest>): Uint8Array {
+    return new Uint8Array();
   },
 
   /**
    * Deserializes ClearExpiredRequest from protobuf.
    */
-  decode: function (bytes: ByteSource): ClearExpiredRequest {
-    return ClearExpiredRequest._readMessage(
-      ClearExpiredRequest.initialize(),
-      new protoscript.BinaryReader(bytes),
-    );
+  decode: function (_bytes?: ByteSource): ClearExpiredRequest {
+    return {};
   },
 
   /**
@@ -1389,7 +1285,6 @@ export const ClearExpiredRequest = {
     msg?: Partial<ClearExpiredRequest>,
   ): ClearExpiredRequest {
     return {
-      applicationId: "",
       ...msg,
     };
   },
@@ -1398,12 +1293,9 @@ export const ClearExpiredRequest = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<ClearExpiredRequest>,
+    _msg: PartialDeep<ClearExpiredRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     return writer;
   },
 
@@ -1411,23 +1303,10 @@ export const ClearExpiredRequest = {
    * @private
    */
   _readMessage: function (
-    msg: ClearExpiredRequest,
-    reader: protoscript.BinaryReader,
+    _msg: ClearExpiredRequest,
+    _reader: protoscript.BinaryReader,
   ): ClearExpiredRequest {
-    while (reader.nextField()) {
-      const field = reader.getFieldNumber();
-      switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
-        default: {
-          reader.skipField();
-          break;
-        }
-      }
-    }
-    return msg;
+    return _msg;
   },
 };
 
@@ -1478,146 +1357,19 @@ export const ClearExpiredResponse = {
   },
 };
 
-export const ClearAllForApplicationRequest = {
-  /**
-   * Serializes ClearAllForApplicationRequest to protobuf.
-   */
-  encode: function (
-    msg: PartialDeep<ClearAllForApplicationRequest>,
-  ): Uint8Array {
-    return ClearAllForApplicationRequest._writeMessage(
-      msg,
-      new protoscript.BinaryWriter(),
-    ).getResultBuffer();
-  },
-
-  /**
-   * Deserializes ClearAllForApplicationRequest from protobuf.
-   */
-  decode: function (bytes: ByteSource): ClearAllForApplicationRequest {
-    return ClearAllForApplicationRequest._readMessage(
-      ClearAllForApplicationRequest.initialize(),
-      new protoscript.BinaryReader(bytes),
-    );
-  },
-
-  /**
-   * Initializes ClearAllForApplicationRequest with all fields set to their default value.
-   */
-  initialize: function (
-    msg?: Partial<ClearAllForApplicationRequest>,
-  ): ClearAllForApplicationRequest {
-    return {
-      applicationId: "",
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<ClearAllForApplicationRequest>,
-    writer: protoscript.BinaryWriter,
-  ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
-    return writer;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (
-    msg: ClearAllForApplicationRequest,
-    reader: protoscript.BinaryReader,
-  ): ClearAllForApplicationRequest {
-    while (reader.nextField()) {
-      const field = reader.getFieldNumber();
-      switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
-        default: {
-          reader.skipField();
-          break;
-        }
-      }
-    }
-    return msg;
-  },
-};
-
-export const ClearAllForApplicationResponse = {
-  /**
-   * Serializes ClearAllForApplicationResponse to protobuf.
-   */
-  encode: function (
-    _msg?: PartialDeep<ClearAllForApplicationResponse>,
-  ): Uint8Array {
-    return new Uint8Array();
-  },
-
-  /**
-   * Deserializes ClearAllForApplicationResponse from protobuf.
-   */
-  decode: function (_bytes?: ByteSource): ClearAllForApplicationResponse {
-    return {};
-  },
-
-  /**
-   * Initializes ClearAllForApplicationResponse with all fields set to their default value.
-   */
-  initialize: function (
-    msg?: Partial<ClearAllForApplicationResponse>,
-  ): ClearAllForApplicationResponse {
-    return {
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    _msg: PartialDeep<ClearAllForApplicationResponse>,
-    writer: protoscript.BinaryWriter,
-  ): protoscript.BinaryWriter {
-    return writer;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (
-    _msg: ClearAllForApplicationResponse,
-    _reader: protoscript.BinaryReader,
-  ): ClearAllForApplicationResponse {
-    return _msg;
-  },
-};
-
 export const ClearSessionScopedRequest = {
   /**
    * Serializes ClearSessionScopedRequest to protobuf.
    */
-  encode: function (msg: PartialDeep<ClearSessionScopedRequest>): Uint8Array {
-    return ClearSessionScopedRequest._writeMessage(
-      msg,
-      new protoscript.BinaryWriter(),
-    ).getResultBuffer();
+  encode: function (_msg?: PartialDeep<ClearSessionScopedRequest>): Uint8Array {
+    return new Uint8Array();
   },
 
   /**
    * Deserializes ClearSessionScopedRequest from protobuf.
    */
-  decode: function (bytes: ByteSource): ClearSessionScopedRequest {
-    return ClearSessionScopedRequest._readMessage(
-      ClearSessionScopedRequest.initialize(),
-      new protoscript.BinaryReader(bytes),
-    );
+  decode: function (_bytes?: ByteSource): ClearSessionScopedRequest {
+    return {};
   },
 
   /**
@@ -1627,7 +1379,6 @@ export const ClearSessionScopedRequest = {
     msg?: Partial<ClearSessionScopedRequest>,
   ): ClearSessionScopedRequest {
     return {
-      applicationId: "",
       ...msg,
     };
   },
@@ -1636,12 +1387,9 @@ export const ClearSessionScopedRequest = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<ClearSessionScopedRequest>,
+    _msg: PartialDeep<ClearSessionScopedRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     return writer;
   },
 
@@ -1649,23 +1397,10 @@ export const ClearSessionScopedRequest = {
    * @private
    */
   _readMessage: function (
-    msg: ClearSessionScopedRequest,
-    reader: protoscript.BinaryReader,
+    _msg: ClearSessionScopedRequest,
+    _reader: protoscript.BinaryReader,
   ): ClearSessionScopedRequest {
-    while (reader.nextField()) {
-      const field = reader.getFieldNumber();
-      switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
-        default: {
-          reader.skipField();
-          break;
-        }
-      }
-    }
-    return msg;
+    return _msg;
   },
 };
 
@@ -1785,7 +1520,6 @@ export const StorageItemJSON = {
       createdAt: 0n,
       expiresAt: 0n,
       namespace: "",
-      applicationId: "",
       clearOnSessionEnd: false,
       ...msg,
     };
@@ -1812,9 +1546,6 @@ export const StorageItemJSON = {
     }
     if (msg.namespace) {
       json["namespace"] = msg.namespace;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.clearOnSessionEnd) {
       json["clearOnSessionEnd"] = msg.clearOnSessionEnd;
@@ -1845,10 +1576,6 @@ export const StorageItemJSON = {
     const _namespace_ = json["namespace"];
     if (_namespace_) {
       msg.namespace = _namespace_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _clearOnSessionEnd_ =
       json["clearOnSessionEnd"] ?? json["clear_on_session_end"];
@@ -1883,7 +1610,6 @@ export const GetRequestJSON = {
   initialize: function (msg?: Partial<GetRequest>): GetRequest {
     return {
       key: "",
-      applicationId: "",
       namespace: "",
       ...msg,
     };
@@ -1899,9 +1625,6 @@ export const GetRequestJSON = {
     if (msg.key) {
       json["key"] = msg.key;
     }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.namespace) {
       json["namespace"] = msg.namespace;
     }
@@ -1915,10 +1638,6 @@ export const GetRequestJSON = {
     const _key_ = json["key"];
     if (_key_) {
       msg.key = _key_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _namespace_ = json["namespace"];
     if (_namespace_) {
@@ -2251,7 +1970,6 @@ export const DeleteRequestJSON = {
   initialize: function (msg?: Partial<DeleteRequest>): DeleteRequest {
     return {
       key: "",
-      applicationId: "",
       namespace: "",
       ...msg,
     };
@@ -2267,9 +1985,6 @@ export const DeleteRequestJSON = {
     if (msg.key) {
       json["key"] = msg.key;
     }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.namespace) {
       json["namespace"] = msg.namespace;
     }
@@ -2283,10 +1998,6 @@ export const DeleteRequestJSON = {
     const _key_ = json["key"];
     if (_key_) {
       msg.key = _key_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _namespace_ = json["namespace"];
     if (_namespace_) {
@@ -2363,7 +2074,6 @@ export const ClearNamespaceRequestJSON = {
   ): ClearNamespaceRequest {
     return {
       namespace: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -2378,9 +2088,6 @@ export const ClearNamespaceRequestJSON = {
     if (msg.namespace) {
       json["namespace"] = msg.namespace;
     }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     return json;
   },
 
@@ -2394,10 +2101,6 @@ export const ClearNamespaceRequestJSON = {
     const _namespace_ = json["namespace"];
     if (_namespace_) {
       msg.namespace = _namespace_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     return msg;
   },
@@ -2453,18 +2156,15 @@ export const ClearExpiredRequestJSON = {
   /**
    * Serializes ClearExpiredRequest to JSON.
    */
-  encode: function (msg: PartialDeep<ClearExpiredRequest>): string {
-    return JSON.stringify(ClearExpiredRequestJSON._writeMessage(msg));
+  encode: function (_msg?: PartialDeep<ClearExpiredRequest>): string {
+    return "{}";
   },
 
   /**
    * Deserializes ClearExpiredRequest from JSON.
    */
-  decode: function (json: string): ClearExpiredRequest {
-    return ClearExpiredRequestJSON._readMessage(
-      ClearExpiredRequestJSON.initialize(),
-      JSON.parse(json),
-    );
+  decode: function (_json?: string): ClearExpiredRequest {
+    return {};
   },
 
   /**
@@ -2474,7 +2174,6 @@ export const ClearExpiredRequestJSON = {
     msg?: Partial<ClearExpiredRequest>,
   ): ClearExpiredRequest {
     return {
-      applicationId: "",
       ...msg,
     };
   },
@@ -2483,13 +2182,9 @@ export const ClearExpiredRequestJSON = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<ClearExpiredRequest>,
+    _msg: PartialDeep<ClearExpiredRequest>,
   ): Record<string, unknown> {
-    const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
-    return json;
+    return {};
   },
 
   /**
@@ -2497,12 +2192,8 @@ export const ClearExpiredRequestJSON = {
    */
   _readMessage: function (
     msg: ClearExpiredRequest,
-    json: any,
+    _json: any,
   ): ClearExpiredRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     return msg;
   },
 };
@@ -2553,128 +2244,19 @@ export const ClearExpiredResponseJSON = {
   },
 };
 
-export const ClearAllForApplicationRequestJSON = {
-  /**
-   * Serializes ClearAllForApplicationRequest to JSON.
-   */
-  encode: function (msg: PartialDeep<ClearAllForApplicationRequest>): string {
-    return JSON.stringify(ClearAllForApplicationRequestJSON._writeMessage(msg));
-  },
-
-  /**
-   * Deserializes ClearAllForApplicationRequest from JSON.
-   */
-  decode: function (json: string): ClearAllForApplicationRequest {
-    return ClearAllForApplicationRequestJSON._readMessage(
-      ClearAllForApplicationRequestJSON.initialize(),
-      JSON.parse(json),
-    );
-  },
-
-  /**
-   * Initializes ClearAllForApplicationRequest with all fields set to their default value.
-   */
-  initialize: function (
-    msg?: Partial<ClearAllForApplicationRequest>,
-  ): ClearAllForApplicationRequest {
-    return {
-      applicationId: "",
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    msg: PartialDeep<ClearAllForApplicationRequest>,
-  ): Record<string, unknown> {
-    const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
-    return json;
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (
-    msg: ClearAllForApplicationRequest,
-    json: any,
-  ): ClearAllForApplicationRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
-    return msg;
-  },
-};
-
-export const ClearAllForApplicationResponseJSON = {
-  /**
-   * Serializes ClearAllForApplicationResponse to JSON.
-   */
-  encode: function (
-    _msg?: PartialDeep<ClearAllForApplicationResponse>,
-  ): string {
-    return "{}";
-  },
-
-  /**
-   * Deserializes ClearAllForApplicationResponse from JSON.
-   */
-  decode: function (_json?: string): ClearAllForApplicationResponse {
-    return {};
-  },
-
-  /**
-   * Initializes ClearAllForApplicationResponse with all fields set to their default value.
-   */
-  initialize: function (
-    msg?: Partial<ClearAllForApplicationResponse>,
-  ): ClearAllForApplicationResponse {
-    return {
-      ...msg,
-    };
-  },
-
-  /**
-   * @private
-   */
-  _writeMessage: function (
-    _msg: PartialDeep<ClearAllForApplicationResponse>,
-  ): Record<string, unknown> {
-    return {};
-  },
-
-  /**
-   * @private
-   */
-  _readMessage: function (
-    msg: ClearAllForApplicationResponse,
-    _json: any,
-  ): ClearAllForApplicationResponse {
-    return msg;
-  },
-};
-
 export const ClearSessionScopedRequestJSON = {
   /**
    * Serializes ClearSessionScopedRequest to JSON.
    */
-  encode: function (msg: PartialDeep<ClearSessionScopedRequest>): string {
-    return JSON.stringify(ClearSessionScopedRequestJSON._writeMessage(msg));
+  encode: function (_msg?: PartialDeep<ClearSessionScopedRequest>): string {
+    return "{}";
   },
 
   /**
    * Deserializes ClearSessionScopedRequest from JSON.
    */
-  decode: function (json: string): ClearSessionScopedRequest {
-    return ClearSessionScopedRequestJSON._readMessage(
-      ClearSessionScopedRequestJSON.initialize(),
-      JSON.parse(json),
-    );
+  decode: function (_json?: string): ClearSessionScopedRequest {
+    return {};
   },
 
   /**
@@ -2684,7 +2266,6 @@ export const ClearSessionScopedRequestJSON = {
     msg?: Partial<ClearSessionScopedRequest>,
   ): ClearSessionScopedRequest {
     return {
-      applicationId: "",
       ...msg,
     };
   },
@@ -2693,13 +2274,9 @@ export const ClearSessionScopedRequestJSON = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<ClearSessionScopedRequest>,
+    _msg: PartialDeep<ClearSessionScopedRequest>,
   ): Record<string, unknown> {
-    const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
-    return json;
+    return {};
   },
 
   /**
@@ -2707,12 +2284,8 @@ export const ClearSessionScopedRequestJSON = {
    */
   _readMessage: function (
     msg: ClearSessionScopedRequest,
-    json: any,
+    _json: any,
   ): ClearSessionScopedRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     return msg;
   },
 };

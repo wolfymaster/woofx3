@@ -43,7 +43,7 @@ function setup() {
   const webhook = {
     sendAlert: mock(async () => {}),
   } as any;
-  const emitter = new AlertEmitter(nats, webhook, "ch-1", fakeLogger());
+  const emitter = new AlertEmitter(nats, webhook, fakeLogger());
   return { emitter, nats, webhook, handlers };
 }
 
@@ -145,13 +145,13 @@ describe("AlertEmitter wiring", () => {
     );
   });
 
-  it("forwards a follow event to the webhook with the configured channelId", async () => {
+  it("forwards a follow event to the webhook", async () => {
     const { emitter, webhook, handlers } = setup();
     await emitter.start();
     handlers.get(EventType.Follow)!(makeMsg(EventType.Follow, { userName: "alice" }));
     await Promise.resolve();
     expect(webhook.sendAlert).toHaveBeenCalledTimes(1);
-    expect(webhook.sendAlert).toHaveBeenCalledWith("ch-1", { type: "follow", user: "alice" });
+    expect(webhook.sendAlert).toHaveBeenCalledWith({ type: "follow", user: "alice" });
   });
 
   it("forwards a raid event", async () => {
@@ -165,7 +165,7 @@ describe("AlertEmitter wiring", () => {
       })
     );
     await Promise.resolve();
-    expect(webhook.sendAlert).toHaveBeenCalledWith("ch-1", {
+    expect(webhook.sendAlert).toHaveBeenCalledWith({
       type: "raid",
       user: "RaidingStreamer",
       amount: 42,
@@ -187,14 +187,5 @@ describe("AlertEmitter wiring", () => {
     expect(() => handlers.get(EventType.Follow)!(badMsg)).not.toThrow();
     await Promise.resolve();
     expect(webhook.sendAlert).not.toHaveBeenCalled();
-  });
-
-  it("setChannelId updates routing for subsequent events", async () => {
-    const { emitter, webhook, handlers } = setup();
-    await emitter.start();
-    emitter.setChannelId("ch-2");
-    handlers.get(EventType.Follow)!(makeMsg(EventType.Follow, { userName: "bob" }));
-    await Promise.resolve();
-    expect(webhook.sendAlert).toHaveBeenCalledWith("ch-2", { type: "follow", user: "bob" });
   });
 });

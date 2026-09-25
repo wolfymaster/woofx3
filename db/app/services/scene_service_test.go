@@ -51,10 +51,9 @@ func reloadToken(t *testing.T, tokenRepo *repository.OverlayTokenRepository, id 
 // scene with nothing to show.
 func TestSceneService_Delete_RevokesTokensAndStopsResolving(t *testing.T) {
 	sceneSvc, tokenSvc, tokenRepo, db := newSceneSvc(t)
-	appID := uuid.New()
-	sceneID := seedScene(t, db, appID, "alerts")
-	first := mintToken(t, tokenSvc, sceneID, appID, "OBS main PC")
-	second := mintToken(t, tokenSvc, sceneID, appID, "OBS laptop")
+	sceneID := seedScene(t, db, "alerts")
+	first := mintToken(t, tokenSvc, sceneID, "OBS main PC")
+	second := mintToken(t, tokenSvc, sceneID, "OBS laptop")
 
 	resolved, err := tokenSvc.ResolveOverlayToken(context.Background(),
 		&client.ResolveOverlayTokenRequest{Token: first.Token})
@@ -86,15 +85,13 @@ func TestSceneService_Delete_RevokesTokensAndStopsResolving(t *testing.T) {
 	}
 }
 
-// The cascade is scoped by scene id, not by application: another scene's
-// overlays keep working.
+// The cascade is scoped by scene id: another scene's overlays keep working.
 func TestSceneService_Delete_LeavesOtherScenesTokensAlone(t *testing.T) {
 	sceneSvc, tokenSvc, tokenRepo, db := newSceneSvc(t)
-	appID := uuid.New()
-	doomed := seedScene(t, db, appID, "alerts")
-	kept := seedScene(t, db, appID, "chat")
-	doomedToken := mintToken(t, tokenSvc, doomed, appID, "OBS alerts")
-	keptToken := mintToken(t, tokenSvc, kept, appID, "OBS chat")
+	doomed := seedScene(t, db, "alerts")
+	kept := seedScene(t, db, "chat")
+	doomedToken := mintToken(t, tokenSvc, doomed, "OBS alerts")
+	keptToken := mintToken(t, tokenSvc, kept, "OBS chat")
 
 	deleteScene(t, sceneSvc, doomed)
 
@@ -111,10 +108,9 @@ func TestSceneService_Delete_LeavesOtherScenesTokensAlone(t *testing.T) {
 // is not told two tokens were revoked when one already had been.
 func TestSceneService_Delete_DoesNotRestampAlreadyRevokedTokens(t *testing.T) {
 	sceneSvc, tokenSvc, tokenRepo, db := newSceneSvc(t)
-	appID := uuid.New()
-	sceneID := seedScene(t, db, appID, "alerts")
-	active := mintToken(t, tokenSvc, sceneID, appID, "OBS main PC")
-	stale := mintToken(t, tokenSvc, sceneID, appID, "retired PC")
+	sceneID := seedScene(t, db, "alerts")
+	active := mintToken(t, tokenSvc, sceneID, "OBS main PC")
+	stale := mintToken(t, tokenSvc, sceneID, "retired PC")
 
 	if _, err := tokenSvc.RevokeOverlayToken(context.Background(),
 		&client.RevokeOverlayTokenRequest{Id: stale.Id}); err != nil {
@@ -142,9 +138,8 @@ func TestSceneService_Delete_DoesNotRestampAlreadyRevokedTokens(t *testing.T) {
 // become the one path that destroys the operator's rotation history.
 func TestSceneService_Delete_KeepsTombstones(t *testing.T) {
 	sceneSvc, tokenSvc, tokenRepo, db := newSceneSvc(t)
-	appID := uuid.New()
-	sceneID := seedScene(t, db, appID, "alerts")
-	minted := mintToken(t, tokenSvc, sceneID, appID, "OBS main PC")
+	sceneID := seedScene(t, db, "alerts")
+	minted := mintToken(t, tokenSvc, sceneID, "OBS main PC")
 
 	deleteScene(t, sceneSvc, sceneID)
 

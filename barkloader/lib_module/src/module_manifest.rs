@@ -1257,7 +1257,7 @@ impl ManifestCommand {
         let actions_json = serde_json::to_string(&actions)?;
 
         db_proxy
-            .register_command("", command_name, &actions_json, module_name)
+            .register_command(command_name, &actions_json, module_name)
             .await?;
 
         info!(
@@ -1539,9 +1539,6 @@ impl ManifestWorkflow {
                 self.trigger,
                 self.steps.len()
             ),
-            // Module workflows are instance-global; applicationId is set on
-            // the triggering event payload when the workflow runs.
-            application_id: String::new(),
             enabled: true,
             variables: std::collections::HashMap::new(),
             on_success: String::new(),

@@ -4,7 +4,7 @@ import { resolveSceneManagerUrl } from "./helpers";
 
 export const engineRoutes = routeModule({
   async ping(): Promise<PingResponse> {
-    return { status: "ok", instanceId: this.applicationId ?? "pending" };
+    return { status: "ok" };
   },
 
   /**
@@ -45,8 +45,7 @@ export const engineRoutes = routeModule({
    * and (via `getEngineInfo().overlayPublicUrl`) every widget/module
    * asset URL sceneManager and workflow construct. Used by the UI
    * settings form; the operator points it at wherever sceneManager
-   * sits behind a tunnel or reverse proxy. Process-wide — not
-   * application-scoped. The RPC method name is unchanged (Convex's
+   * sits behind a tunnel or reverse proxy. The RPC method name is unchanged (Convex's
    * contract), only the underlying setting key moved.
    *
    * Empty string is allowed and clears the setting — the engine then falls
@@ -54,7 +53,7 @@ export const engineRoutes = routeModule({
    */
   async setOverlayPublicUrl(value: string): Promise<{ success: boolean }> {
     const normalized = value.trim().replace(/\/+$/, "");
-    return { success: await this.db.trySetSetting("scene.publicUrl", normalized, "") };
+    return { success: await this.db.trySetSetting("scene.publicUrl", normalized) };
   },
 
   /**
@@ -71,12 +70,7 @@ export const engineRoutes = routeModule({
    * `/overlay/` surface today — see that method's doc comment).
    */
   async getStorageConfig(): Promise<StorageConfig> {
-    // Storage settings are not application-scoped — the repository
-    // is a process-wide singleton in barkloader, so we read with an
-    // empty applicationId which the db-proxy treats as the default
-    // application (same convention barkloader uses on read).
-    const applicationId = "";
-    const provider = (await this.db.getSetting("storage.provider", applicationId)) || "file";
+    const provider = (await this.db.getSetting("storage.provider")) || "file";
     if (provider !== "file" && provider !== "s3") {
       throw new Error(`Unknown storage.provider value: ${provider}`);
     }
@@ -84,19 +78,19 @@ export const engineRoutes = routeModule({
       provider: provider as "file" | "s3",
     };
     if (provider === "file") {
-      const dest = await this.db.getSetting("storage.file.destination", applicationId);
+      const dest = await this.db.getSetting("storage.file.destination");
       if (dest) {
         result.destination = dest;
       }
     } else {
       const [bucket, prefix, region, endpoint, accessKey, secretKey, forcePathStyle] = await Promise.all([
-        this.db.getSetting("storage.s3.bucket", applicationId),
-        this.db.getSetting("storage.s3.prefix", applicationId),
-        this.db.getSetting("storage.s3.region", applicationId),
-        this.db.getSetting("storage.s3.endpoint", applicationId),
-        this.db.getSetting("storage.s3.access_key", applicationId),
-        this.db.getSetting("storage.s3.secret_key", applicationId),
-        this.db.getSetting("storage.s3.force_path_style", applicationId),
+        this.db.getSetting("storage.s3.bucket"),
+        this.db.getSetting("storage.s3.prefix"),
+        this.db.getSetting("storage.s3.region"),
+        this.db.getSetting("storage.s3.endpoint"),
+        this.db.getSetting("storage.s3.access_key"),
+        this.db.getSetting("storage.s3.secret_key"),
+        this.db.getSetting("storage.s3.force_path_style"),
       ]);
       if (bucket) result.bucket = bucket;
       if (prefix) result.prefix = prefix;
@@ -121,7 +115,6 @@ export const engineRoutes = routeModule({
    * credentials every time.
    */
   async setStorageConfig(config: StorageConfig): Promise<{ success: boolean; reloaded?: boolean; message?: string }> {
-    const applicationId = "";
     if (config.provider !== "file" && config.provider !== "s3") {
       throw new Error(`Unknown provider: ${config.provider}`);
     }
@@ -142,7 +135,7 @@ export const engineRoutes = routeModule({
       updates.push(["storage.s3.force_path_style", config.forcePathStyle ? "true" : "false"]);
     }
     for (const [key, value] of updates) {
-      if (!(await this.db.trySetSetting(key, value, applicationId))) {
+      if (!(await this.db.trySetSetting(key, value))) {
         return { success: false };
       }
     }

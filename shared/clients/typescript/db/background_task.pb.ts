@@ -49,7 +49,6 @@ export interface RegisterBackgroundTasksRequest {
   moduleName: string;
   version: string;
   tasks: BackgroundTaskInput[];
-  applicationId: string;
   /**
    * Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
    * so a module upgrade upserts its resources in place instead of orphaning
@@ -341,7 +340,6 @@ export const RegisterBackgroundTasksRequest = {
       moduleName: "",
       version: "",
       tasks: [],
-      applicationId: "",
       moduleId: "",
       ...msg,
     };
@@ -369,9 +367,6 @@ export const RegisterBackgroundTasksRequest = {
         msg.tasks as any,
         BackgroundTaskInput._writeMessage,
       );
-    }
-    if (msg.applicationId) {
-      writer.writeString(5, msg.applicationId);
     }
     if (msg.moduleId) {
       writer.writeString(6, msg.moduleId);
@@ -405,10 +400,6 @@ export const RegisterBackgroundTasksRequest = {
           const m = BackgroundTaskInput.initialize();
           reader.readMessage(m, BackgroundTaskInput._readMessage);
           msg.tasks.push(m);
-          break;
-        }
-        case 5: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 6: {
@@ -829,7 +820,6 @@ export const RegisterBackgroundTasksRequestJSON = {
       moduleName: "",
       version: "",
       tasks: [],
-      applicationId: "",
       moduleId: "",
       ...msg,
     };
@@ -853,9 +843,6 @@ export const RegisterBackgroundTasksRequestJSON = {
     }
     if (msg.tasks?.length) {
       json["tasks"] = msg.tasks.map(BackgroundTaskInputJSON._writeMessage);
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.moduleId) {
       json["moduleId"] = msg.moduleId;
@@ -889,10 +876,6 @@ export const RegisterBackgroundTasksRequestJSON = {
         BackgroundTaskInputJSON._readMessage(m, item);
         msg.tasks.push(m);
       }
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _moduleId_ = json["moduleId"] ?? json["module_id"];
     if (_moduleId_) {

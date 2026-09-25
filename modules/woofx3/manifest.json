@@ -1002,11 +1002,6 @@
             "description": "Workflow id."
           },
           {
-            "path": "ApplicationID",
-            "type": "string",
-            "description": "Application the workflow belongs to."
-          },
-          {
             "path": "Name",
             "type": "string",
             "description": "Workflow name."
@@ -1066,11 +1061,6 @@
             "description": "Workflow id."
           },
           {
-            "path": "ApplicationID",
-            "type": "string",
-            "description": "Application the workflow belongs to."
-          },
-          {
             "path": "Name",
             "type": "string",
             "description": "Workflow name."
@@ -1128,11 +1118,6 @@
             "path": "ID",
             "type": "string",
             "description": "Workflow id."
-          },
-          {
-            "path": "ApplicationID",
-            "type": "string",
-            "description": "Application the workflow belongs to."
           },
           {
             "path": "Name",

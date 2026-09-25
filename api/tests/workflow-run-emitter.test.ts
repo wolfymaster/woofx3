@@ -45,11 +45,10 @@ describe("mapWorkflowRun", () => {
       time: "2026-09-17T00:00:00.000Z",
       triggerId: "corr-1",
       triggeredBy: "dashboard",
-      data: { workflowId: "wf-1", executionId: "ex-1", applicationId: "app-1" },
+      data: { workflowId: "wf-1", executionId: "ex-1" },
     });
     expect(event).toEqual({
       type: EngineEventType.WORKFLOW_RUN_STARTED,
-      applicationId: "app-1",
       workflowId: "wf-1",
       executionId: "ex-1",
       occurredAt: "2026-09-17T00:00:00.000Z",
@@ -66,7 +65,6 @@ describe("mapWorkflowRun", () => {
       data: {
         workflowId: "wf-1",
         executionId: "ex-1",
-        applicationId: "app-1",
         error: "alert cannot be published: layout must be an object, got nothing",
       },
     });
@@ -134,7 +132,7 @@ describe("WorkflowRunEmitter wiring", () => {
         type: "workflow.run.failed",
         time: "2026-09-17T00:00:00.000Z",
         triggerId: "corr-1",
-        data: { workflowId: "wf-1", executionId: "ex-1", applicationId: "app-1", error: "boom" },
+        data: { workflowId: "wf-1", executionId: "ex-1", error: "boom" },
       })
     );
     await Promise.resolve();
@@ -150,7 +148,7 @@ describe("WorkflowRunEmitter wiring", () => {
     handlers.get("workflow.run.started")!(
       makeMsg("workflow.run.started", {
         type: "workflow.run.started",
-        data: { workflowId: "wf-1", executionId: "ex-1", applicationId: "app-1" },
+        data: { workflowId: "wf-1", executionId: "ex-1" },
       })
     );
     await Promise.resolve();

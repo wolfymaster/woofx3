@@ -23,10 +23,9 @@ const (
 )
 
 type SceneEvent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	SceneId       string                 `protobuf:"bytes,2,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,3,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Id      string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	SceneId string                 `protobuf:"bytes,2,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
 	// Event class, e.g. "widget.event", "alert" — mirrors the
 	// `OverlayWidgetEvent`/CloudEvent `type` convention used elsewhere.
 	Type string `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`
@@ -82,13 +81,6 @@ func (x *SceneEvent) GetId() string {
 func (x *SceneEvent) GetSceneId() string {
 	if x != nil {
 		return x.SceneId
-	}
-	return ""
-}
-
-func (x *SceneEvent) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -318,11 +310,10 @@ func (x *SceneEventLogEntry) GetCreatedAt() *timestamppb.Timestamp {
 }
 
 type RecordSceneEventRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SceneId       string                 `protobuf:"bytes,1,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
-	Type          string                 `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
-	Key           string                 `protobuf:"bytes,4,opt,name=key,proto3" json:"key,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	SceneId string                 `protobuf:"bytes,1,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
+	Type    string                 `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
+	Key     string                 `protobuf:"bytes,4,opt,name=key,proto3" json:"key,omitempty"`
 	// JSON-encoded payload.
 	Value string `protobuf:"bytes,5,opt,name=value,proto3" json:"value,omitempty"`
 	// Optional ISO-8601 timestamp; the service stamps `now()` when
@@ -368,13 +359,6 @@ func (*RecordSceneEventRequest) Descriptor() ([]byte, []int) {
 func (x *RecordSceneEventRequest) GetSceneId() string {
 	if x != nil {
 		return x.SceneId
-	}
-	return ""
-}
-
-func (x *RecordSceneEventRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -845,19 +829,18 @@ var File_scene_event_proto protoreflect.FileDescriptor
 
 const file_scene_event_proto_rawDesc = "" +
 	"\n" +
-	"\x11scene_event.proto\x12\vscene_event\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x92\x02\n" +
+	"\x11scene_event.proto\x12\vscene_event\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x81\x02\n" +
 	"\n" +
 	"SceneEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
-	"\bscene_id\x18\x02 \x01(\tR\asceneId\x12%\n" +
-	"\x0eapplication_id\x18\x03 \x01(\tR\rapplicationId\x12\x12\n" +
+	"\bscene_id\x18\x02 \x01(\tR\asceneId\x12\x12\n" +
 	"\x04type\x18\x04 \x01(\tR\x04type\x12\x10\n" +
 	"\x03key\x18\x05 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x06 \x01(\tR\x05value\x12;\n" +
 	"\voccurred_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"occurredAt\x129\n" +
 	"\n" +
-	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xf3\x02\n" +
+	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAtJ\x04\b\x03\x10\x04R\x0eapplication_id\"\xf3\x02\n" +
 	"\x12SceneEventDelivery\x12$\n" +
 	"\x0escene_event_id\x18\x01 \x01(\tR\fsceneEventId\x12\x19\n" +
 	"\bscene_id\x18\x02 \x01(\tR\asceneId\x12\x1f\n" +
@@ -878,16 +861,15 @@ const file_scene_event_proto_rawDesc = "" +
 	"\voccurred_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"occurredAt\x129\n" +
 	"\n" +
-	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xe8\x01\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xd7\x01\n" +
 	"\x17RecordSceneEventRequest\x12\x19\n" +
-	"\bscene_id\x18\x01 \x01(\tR\asceneId\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x12\n" +
+	"\bscene_id\x18\x01 \x01(\tR\asceneId\x12\x12\n" +
 	"\x04type\x18\x03 \x01(\tR\x04type\x12\x10\n" +
 	"\x03key\x18\x04 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x05 \x01(\tR\x05value\x12\x1f\n" +
 	"\voccurred_at\x18\x06 \x01(\tR\n" +
 	"occurredAt\x12.\n" +
-	"\x13target_instance_ids\x18\a \x03(\tR\x11targetInstanceIds\"~\n" +
+	"\x13target_instance_ids\x18\a \x03(\tR\x11targetInstanceIdsJ\x04\b\x02\x10\x03R\x0eapplication_id\"~\n" +
 	"\x12SceneEventResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x128\n" +
 	"\vscene_event\x18\x02 \x01(\v2\x17.scene_event.SceneEventR\n" +

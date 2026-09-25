@@ -34,14 +34,12 @@ export enum EventType {
 
 export interface SessionStarted {
   sessionId: string;
-  applicationId: string;
   /** ISO 8601. */
   startedAt: string;
 }
 
 export interface SessionEnded {
   sessionId: string;
-  applicationId: string;
   /** ISO 8601. */
   endedAt: string;
   /**

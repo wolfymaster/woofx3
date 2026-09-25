@@ -23,9 +23,8 @@ const (
 )
 
 type WidgetStatus struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	// Module that owns the widget definition. Denormalised from the
 	// scene's widgets_json so consumers can group by module without
 	// joining.
@@ -88,13 +87,6 @@ func (x *WidgetStatus) GetId() string {
 	return ""
 }
 
-func (x *WidgetStatus) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *WidgetStatus) GetModuleId() string {
 	if x != nil {
 		return x.ModuleId
@@ -153,7 +145,6 @@ func (x *WidgetStatus) GetUpdatedAt() *timestamppb.Timestamp {
 
 type UpsertWidgetStatusRequest struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId     string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	ModuleId          string                 `protobuf:"bytes,2,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
 	InstanceId        string                 `protobuf:"bytes,3,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
 	WidgetCanonicalId string                 `protobuf:"bytes,4,opt,name=widget_canonical_id,json=widgetCanonicalId,proto3" json:"widget_canonical_id,omitempty"`
@@ -195,13 +186,6 @@ func (x *UpsertWidgetStatusRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use UpsertWidgetStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpsertWidgetStatusRequest) Descriptor() ([]byte, []int) {
 	return file_widget_status_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *UpsertWidgetStatusRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *UpsertWidgetStatusRequest) GetModuleId() string {
@@ -248,7 +232,6 @@ func (x *UpsertWidgetStatusRequest) GetOccurredAt() string {
 
 type GetWidgetStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	InstanceId    string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
 	Key           string                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -283,13 +266,6 @@ func (x *GetWidgetStatusRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GetWidgetStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetWidgetStatusRequest) Descriptor() ([]byte, []int) {
 	return file_widget_status_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *GetWidgetStatusRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *GetWidgetStatusRequest) GetInstanceId() string {
@@ -359,8 +335,7 @@ func (x *WidgetStatusResponse) GetWidgetStatus() *WidgetStatus {
 }
 
 type ListWidgetStatusRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
 	// Optional filters. Empty string = no filter.
 	ModuleId      string `protobuf:"bytes,2,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
 	InstanceId    string `protobuf:"bytes,3,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
@@ -398,13 +373,6 @@ func (x *ListWidgetStatusRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListWidgetStatusRequest.ProtoReflect.Descriptor instead.
 func (*ListWidgetStatusRequest) Descriptor() ([]byte, []int) {
 	return file_widget_status_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *ListWidgetStatusRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *ListWidgetStatusRequest) GetModuleId() string {
@@ -512,9 +480,8 @@ func (x *ListWidgetStatusResponse) GetOffset() int32 {
 }
 
 type DeleteWidgetStatusRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
-	InstanceId    string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
 	// Optional: when omitted, deletes every row for the instance.
 	Key           string `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -551,13 +518,6 @@ func (*DeleteWidgetStatusRequest) Descriptor() ([]byte, []int) {
 	return file_widget_status_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *DeleteWidgetStatusRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *DeleteWidgetStatusRequest) GetInstanceId() string {
 	if x != nil {
 		return x.InstanceId
@@ -576,10 +536,9 @@ var File_widget_status_proto protoreflect.FileDescriptor
 
 const file_widget_status_proto_rawDesc = "" +
 	"\n" +
-	"\x13widget_status.proto\x12\rwidget_status\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8e\x03\n" +
+	"\x13widget_status.proto\x12\rwidget_status\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfd\x02\n" +
 	"\fWidgetStatus\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x1b\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tmodule_id\x18\x03 \x01(\tR\bmoduleId\x12\x1f\n" +
 	"\vinstance_id\x18\x04 \x01(\tR\n" +
 	"instanceId\x12.\n" +
@@ -592,9 +551,8 @@ const file_widget_status_proto_rawDesc = "" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xf9\x01\n" +
-	"\x19UpsertWidgetStatusRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x1b\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAtJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xe8\x01\n" +
+	"\x19UpsertWidgetStatusRequest\x12\x1b\n" +
 	"\tmodule_id\x18\x02 \x01(\tR\bmoduleId\x12\x1f\n" +
 	"\vinstance_id\x18\x03 \x01(\tR\n" +
 	"instanceId\x12.\n" +
@@ -602,34 +560,31 @@ const file_widget_status_proto_rawDesc = "" +
 	"\x03key\x18\x05 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x06 \x01(\tR\x05value\x12\x1f\n" +
 	"\voccurred_at\x18\a \x01(\tR\n" +
-	"occurredAt\"r\n" +
-	"\x16GetWidgetStatusRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x1f\n" +
+	"occurredAtJ\x04\b\x01\x10\x02R\x0eapplication_id\"a\n" +
+	"\x16GetWidgetStatusRequest\x12\x1f\n" +
 	"\vinstance_id\x18\x02 \x01(\tR\n" +
 	"instanceId\x12\x10\n" +
-	"\x03key\x18\x03 \x01(\tR\x03key\"\x88\x01\n" +
+	"\x03key\x18\x03 \x01(\tR\x03keyJ\x04\b\x01\x10\x02R\x0eapplication_id\"\x88\x01\n" +
 	"\x14WidgetStatusResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12@\n" +
-	"\rwidget_status\x18\x02 \x01(\v2\x1b.widget_status.WidgetStatusR\fwidgetStatus\"\xac\x01\n" +
-	"\x17ListWidgetStatusRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x1b\n" +
+	"\rwidget_status\x18\x02 \x01(\v2\x1b.widget_status.WidgetStatusR\fwidgetStatus\"\x9b\x01\n" +
+	"\x17ListWidgetStatusRequest\x12\x1b\n" +
 	"\tmodule_id\x18\x02 \x01(\tR\bmoduleId\x12\x1f\n" +
 	"\vinstance_id\x18\x03 \x01(\tR\n" +
 	"instanceId\x12\x14\n" +
 	"\x05limit\x18\x04 \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06offset\x18\x05 \x01(\x05R\x06offset\"\xca\x01\n" +
+	"\x06offset\x18\x05 \x01(\x05R\x06offsetJ\x04\b\x01\x10\x02R\x0eapplication_id\"\xca\x01\n" +
 	"\x18ListWidgetStatusResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12/\n" +
 	"\x04rows\x18\x02 \x03(\v2\x1b.widget_status.WidgetStatusR\x04rows\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\x03R\n" +
 	"totalCount\x12\x14\n" +
 	"\x05limit\x18\x04 \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06offset\x18\x05 \x01(\x05R\x06offset\"u\n" +
-	"\x19DeleteWidgetStatusRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x1f\n" +
+	"\x06offset\x18\x05 \x01(\x05R\x06offset\"d\n" +
+	"\x19DeleteWidgetStatusRequest\x12\x1f\n" +
 	"\vinstance_id\x18\x02 \x01(\tR\n" +
 	"instanceId\x12\x10\n" +
-	"\x03key\x18\x03 \x01(\tR\x03key2\x96\x03\n" +
+	"\x03key\x18\x03 \x01(\tR\x03keyJ\x04\b\x01\x10\x02R\x0eapplication_id2\x96\x03\n" +
 	"\x13WidgetStatusService\x12c\n" +
 	"\x12UpsertWidgetStatus\x12(.widget_status.UpsertWidgetStatusRequest\x1a#.widget_status.WidgetStatusResponse\x12]\n" +
 	"\x0fGetWidgetStatus\x12%.widget_status.GetWidgetStatusRequest\x1a#.widget_status.WidgetStatusResponse\x12c\n" +

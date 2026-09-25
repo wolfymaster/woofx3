@@ -10,11 +10,9 @@ export const scenesRoutes = routeModule({
     page: number;
     pageSize: number;
   }> {
-    const applicationId = await this.ensureApplicationId();
     const page = query?.page || 1;
     const pageSize = query?.pageSize || 10;
     const response = await this.db.listScenes({
-      applicationId,
       page,
       pageSize,
       sortBy: "updated_at",
@@ -75,10 +73,8 @@ export const scenesRoutes = routeModule({
     layoutJson?: string;
     correlationKey?: string;
   }): Promise<{ id: string }> {
-    const applicationId = await this.ensureApplicationId();
-    this.logger.info("Creating scene", { name: data.name, applicationId });
+    this.logger.info("Creating scene", { name: data.name });
     const response = await this.db.createScene({
-      applicationId,
       name: data.name,
       description: data.description ?? "",
       widgetsJson: data.widgetsJson ?? "[]",
@@ -91,7 +87,6 @@ export const scenesRoutes = routeModule({
 
     void this.emitSceneWebhook({
       type: EngineEventType.SCENE_CREATED,
-      applicationId,
       correlationKey: data.correlationKey,
       scene: dbSceneToSnapshot(created),
     });
@@ -129,7 +124,6 @@ export const scenesRoutes = routeModule({
 
     void this.emitSceneWebhook({
       type: EngineEventType.SCENE_UPDATED,
-      applicationId: updated.applicationId ?? "",
       correlationKey: data.correlationKey,
       scene: dbSceneToSnapshot(updated),
     });
@@ -138,16 +132,10 @@ export const scenesRoutes = routeModule({
 
   async deleteScene(id: string, correlationKey?: string): Promise<{ success: boolean }> {
     this.logger.info("Deleting scene", { id });
-    // Fetch first so we know the applicationId for the webhook —
-    // the delete RPC just returns ResponseStatus.
-    const existing = await this.db.findScene({ id });
-    const applicationId = existing?.applicationId ?? "";
-
     const success = await this.db.tryDeleteScene({ id });
     if (success) {
       void this.emitSceneWebhook({
         type: EngineEventType.SCENE_DELETED,
-        applicationId,
         correlationKey,
         sceneId: id,
       });

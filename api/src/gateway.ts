@@ -4,7 +4,6 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
 import { ApiSession } from "./api-session";
-import type { ApplicationScope } from "./application-scope";
 import type { ClientAuth } from "./auth";
 import type { DbClient } from "./db-client";
 import type { WebhookClient } from "./webhook-client";
@@ -22,7 +21,6 @@ export class RegistrationRefused extends Error {
 
 export class ApiGateway extends RpcTarget implements ApiGatewayContract {
   private webhookClient: WebhookClient | null = null;
-  private applicationScope: ApplicationScope | null = null;
 
   /**
    * @param registrationToken The secret a caller must present to register
@@ -49,10 +47,6 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     this.webhookClient = client;
   }
 
-  setApplicationScope(scope: ApplicationScope): void {
-    this.applicationScope = scope;
-  }
-
   async authenticate(clientId: string, clientSecret: string): Promise<ApiSession> {
     const result = await this.auth.validate(clientId, clientSecret);
     if (!result.valid) {
@@ -61,7 +55,6 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     this.logger.info("Authenticated client", {
       clientId,
       description: result.description,
-      applicationId: result.applicationId,
     });
     return new ApiSession(this.api, clientId);
   }
@@ -69,28 +62,13 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
   async registerClient(
     description: string,
     options: RegisterClientOptions
-  ): Promise<{ clientId: string; clientSecret: string; applicationId: string }> {
-    const { userId, callbackUrl, callbackToken } = options;
+  ): Promise<{ clientId: string; clientSecret: string }> {
+    const { callbackUrl, callbackToken } = options;
     this.requireRegistrationToken(options.registrationToken);
-    if (!userId) {
-      throw new Error("registerClient: options.userId is required");
-    }
-    this.logger.info("Registering client", { description, userId });
-
-    // userId at the RPC boundary maps to users.woofx3_ui_user_id on the engine side.
-    const user = await this.db.findOrCreateByWoofx3UIUserId(userId);
-
-    let app = await this.db.getDefaultApplication();
-    if (!app) {
-      app = await this.db.createApplication({ name: "default", ownerId: user.id, isDefault: true });
-      if (!app) {
-        throw new Error("Failed to create default application");
-      }
-    }
+    this.logger.info("Registering client", { description });
 
     const resp = await this.db.createClient({
       description,
-      applicationId: app.id,
       callbackUrl: callbackUrl ?? "",
       callbackToken: callbackToken ?? "",
     });
@@ -98,38 +76,13 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
       throw new Error("Failed to create client");
     }
 
-    // Registration always resolves the default application, so after the
-    // first client this writes the same id it already holds. Setting it only
-    // on a change keeps the cascade into the webhook client -- and the
-    // callback-url refresh behind it -- to the case that actually needs it:
-    // the first registration, which is what creates the application.
-    if (this.api.applicationIdOrNull() !== app.id) {
-      this.api.setApplicationId(app.id);
-    }
     if (this.webhookClient && callbackUrl) {
       await this.webhookClient.refreshCallbackUrls();
-    }
-
-    // After the client exists, so the Convex webhook client it starts can
-    // read the callback this registration just stored. A failure here does
-    // not fail the registration: the client is already created, and a
-    // caller that retried would register a second one. The next
-    // registration or a restart starts the components again.
-    if (this.applicationScope) {
-      try {
-        await this.applicationScope.start(app.id);
-      } catch (err) {
-        this.logger.error("Application-scoped components failed to start after registration", {
-          applicationId: app.id,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
     }
 
     return {
       clientId: resp.client.clientId,
       clientSecret: resp.client.clientSecret,
-      applicationId: app.id,
     };
   }
 

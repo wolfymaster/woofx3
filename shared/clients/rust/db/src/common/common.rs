@@ -7,8 +7,6 @@
 pub struct RequestContext {
     #[prost(string, tag="1")]
     pub client_id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub module_key: ::prost::alloc::string::String,
 }

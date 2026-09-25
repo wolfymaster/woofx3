@@ -27,11 +27,10 @@ func TestActionTaskForwardsTheWholeTaskContext(t *testing.T) {
 
 	trigger := &types.Event{ID: "evt-1", Type: "channel.follow"}
 	if _, err := task.Execute(&TaskContext{
-		WorkflowID:    "wf-1",
-		ExecutionID:   "exec-1",
-		ApplicationID: "app-1",
-		TaskID:        "task-1",
-		TriggerEvent:  trigger,
+		WorkflowID:   "wf-1",
+		ExecutionID:  "exec-1",
+		TaskID:       "task-1",
+		TriggerEvent: trigger,
 	}); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -43,9 +42,6 @@ func TestActionTaskForwardsTheWholeTaskContext(t *testing.T) {
 	// workflow cannot answer which run produced it.
 	if got.ExecutionID != "exec-1" {
 		t.Errorf("ExecutionID = %q, want exec-1", got.ExecutionID)
-	}
-	if got.ApplicationID != "app-1" {
-		t.Errorf("ApplicationID = %q, want app-1", got.ApplicationID)
 	}
 	if got.TaskID != "task-1" {
 		t.Errorf("TaskID = %q, want task-1", got.TaskID)

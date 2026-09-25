@@ -95,7 +95,6 @@ export interface Workflow {
   id: string;
   name: string;
   description: string;
-  accountId: string;
   isEnabled: boolean;
   definition: WorkflowDefinition | null;
   stats: WorkflowStats;
@@ -243,7 +242,6 @@ export type CommandVisibility = "public" | "restricted";
  */
 export interface CommandSnapshot {
   id: string;
-  applicationId: string;
   command: string;
   actions: ActionStep[];
   cooldown: number;
@@ -365,12 +363,11 @@ export interface UpdateCommandInput {
  */
 export interface GroupSnapshot {
   id: string;
-  applicationId: string;
   name: string;
   description: string;
   createdAt: string;
   /**
-   * Built-in groups are seeded with every application: `everyone`,
+   * Built-in groups are seeded once for the engine: `everyone`,
    * `subscriber`, `vip`, `moderator`, `broadcaster`. They cannot be renamed
    * or deleted - the engine refuses both, so a UI should render those
    * affordances as disabled rather than relying on the call failing.
@@ -406,7 +403,6 @@ export interface UpdateGroupInput {
  */
 export interface PermissionRule {
   id: number;
-  applicationId: string;
   ptype: string;
   v0: string;
   v1: string;
@@ -510,7 +506,6 @@ export interface SceneWidget {
 export interface Scene {
   id: string;
   name: string;
-  accountId: string;
   widgets: SceneWidget[];
   createdAt: string;
 }
@@ -680,7 +675,7 @@ export interface TriggerWorkflowResponse {
 // ==================== API Interface ====================
 
 /** RPC connectivity check; mirrors `GET /health` semantics. */
-export type PingResponse = { status: "ok"; instanceId: string };
+export type PingResponse = { status: "ok" };
 
 /**
  * Gateway is the capnweb entry point. Unauthenticated callers see only
@@ -693,7 +688,7 @@ export interface Woofx3EngineGateway {
   registerClient(
     description: string,
     options: RegisterClientOptions
-  ): Promise<{ clientId: string; clientSecret: string; applicationId: string }>;
+  ): Promise<{ clientId: string; clientSecret: string }>;
 }
 
 /**
@@ -701,8 +696,7 @@ export interface Woofx3EngineGateway {
  * Returned by `getEngineInfo()` — typically called once per UI
  * session and cached.
  *
- * Lives in the engine's `settings` table under `overlay.publicUrl`
- * (process-wide — not application-scoped); set via
+ * Lives in the engine's `settings` table under `overlay.publicUrl`; set via
  * `setOverlayPublicUrl`. Falls back to the engine's configured
  * `sceneManagerUrl` when no override is configured.
  *
@@ -1093,7 +1087,6 @@ export interface Woofx3EngineApi {
       tokenId: string;
       token: string;
       sceneId: string;
-      applicationId: string;
       label: string;
       status: string;
       createdAt: string;
@@ -1207,11 +1200,6 @@ export interface Woofx3EngineApi {
 
   // Operator controls (Phase 3) over the backend-authoritative
   // alert queue (`api/src/alert-queue-manager.ts`).
-  //
-  // `applicationId` is optional on each method: when omitted we
-  // resolve to the authenticated session's application or the
-  // engine's default application — matches the convention used by
-  // listAlerts / getAlert.
 
   /**
    * Mark the currently-playing alert (if any) as `skipped`,
@@ -1240,7 +1228,6 @@ export interface Woofx3EngineApi {
     tokenId: string;
     token: string;
     sceneId: string;
-    applicationId: string;
     label: string;
     status: string;
     createdAt: string;
@@ -1258,15 +1245,13 @@ export interface Woofx3EngineApi {
     tokenId: string;
     token: string;
     sceneId: string;
-    applicationId: string;
     label: string;
     status: string;
     createdAt: string;
     url: string;
   }>;
 
-  /** List all overlay tokens for the authenticated application, optionally
-   *  filtered by sceneId. Includes the browser-source URL for each. */
+  /** List all overlay tokens, optionally filtered by sceneId. Includes the browser-source URL for each. */
   listOverlayTokens(input?: { sceneId?: string; page?: number; pageSize?: number }): Promise<
     Array<{
       tokenId: string;

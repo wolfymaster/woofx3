@@ -54,11 +54,9 @@ func (s *workflowService) syncWorkflowEdges(
 	if s.refRepo == nil {
 		return
 	}
-	appID := wf.ApplicationID
 	src := refsvc.WorkflowSource{
 		ID:                  wf.ID,
 		Name:                wf.Name,
-		ApplicationID:       &appID,
 		SourceCreatedByType: createdByType,
 		SourceCreatedByRef:  createdByRef,
 	}
@@ -69,15 +67,6 @@ func (s *workflowService) syncWorkflowEdges(
 }
 
 func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.CreateWorkflowRequest) (*client.WorkflowResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.workflowRepo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
-
 	// `steps_json` and `trigger_json` are the canonical workflow
 	// definition. The typed `WorkflowStep` proto array was removed
 	// in favor of these JSON columns, which the engine reads directly.
@@ -107,7 +96,6 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 	// workflow live before they intend to.
 	wf := &models.WorkflowDefinition{
 		ID:            uuid.New(),
-		ApplicationID: applicationID,
 		Name:          req.Name,
 		Steps:         stepsJSON,
 		Trigger:       triggerJSON,
@@ -136,7 +124,6 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
-			ApplicationID:   appIDStr,
 			EntityType:      "workflow",
 			EntityID:        wf.ID.String(),
 			Operation:       "created",
@@ -218,7 +205,6 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
-			ApplicationID:   wf.ApplicationID.String(),
 			EntityType:      "workflow",
 			EntityID:        wf.ID.String(),
 			Operation:       "updated",
@@ -247,7 +233,6 @@ func (s *workflowService) DeleteWorkflow(ctx context.Context, req *client.Delete
 		return nil, twirp.NotFoundError("workflow not found")
 	}
 
-	applicationID := wf.ApplicationID.String()
 	workflowID := wf.ID.String()
 
 	err = s.workflowRepo.Delete(wf)
@@ -270,7 +255,6 @@ func (s *workflowService) DeleteWorkflow(ctx context.Context, req *client.Delete
 			deletePayload["projection_key"] = pk
 		}
 		s.publisher.Publish(workers.PublishOptions{
-			ApplicationID:   applicationID,
 			EntityType:      "workflow",
 			EntityID:        workflowID,
 			Operation:       "deleted",
@@ -289,19 +273,10 @@ func (s *workflowService) ListWorkflows(ctx context.Context, req *client.ListWor
 	var workflows []*models.WorkflowDefinition
 	var err error
 
-	if req.ApplicationId != "" {
-		appID, err := uuid.Parse(req.ApplicationId)
-		if err != nil {
-			return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-		}
-
-		if req.IncludeDisabled {
-			workflows, err = s.workflowRepo.GetByApplicationID(appID)
-		} else {
-			workflows, err = s.workflowRepo.GetByApplicationIDAndEnabled(appID, true)
-		}
-	} else {
+	if req.IncludeDisabled {
 		workflows, err = s.workflowRepo.GetAll()
+	} else {
+		workflows, err = s.workflowRepo.GetByEnabled(true)
 	}
 
 	if err != nil {
@@ -331,15 +306,6 @@ func (s *workflowService) ExecuteWorkflow(ctx context.Context, req *client.Execu
 		return nil, twirp.InvalidArgumentError("workflow_id", "invalid UUID format")
 	}
 
-	appIDStr, err := resolveApplicationID(ctx, s.workflowRepo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
-
 	// Get workflow to verify it exists
 	_, err = s.workflowRepo.GetByID(workflowID)
 	if err != nil {
@@ -357,22 +323,22 @@ func (s *workflowService) ExecuteWorkflow(ctx context.Context, req *client.Execu
 	}
 
 	// Create execution record
-	var startedByID uuid.UUID
+	var startedByID *uuid.UUID
 	if req.StartedBy != "" {
-		startedByID, err = uuid.Parse(req.StartedBy)
-		if err != nil {
+		parsed, parseErr := uuid.Parse(req.StartedBy)
+		if parseErr != nil {
 			return nil, twirp.InvalidArgumentError("started_by", "invalid UUID format")
 		}
+		startedByID = &parsed
 	}
 
 	exec := &models.WorkflowExecution{
-		ID:            uuid.New(),
-		WorkflowID:    workflowID,
-		ApplicationID: applicationID,
-		UserID:        startedByID,
-		Status:        models.WorkflowStatusPending,
-		Input:         inputsJSON,
-		Output:        "{}",
+		ID:         uuid.New(),
+		WorkflowID: workflowID,
+		UserID:     startedByID,
+		Status:     models.WorkflowStatusPending,
+		Input:      inputsJSON,
+		Output:     "{}",
 	}
 
 	err = exec.Create(s.executionRepo)
@@ -382,7 +348,6 @@ func (s *workflowService) ExecuteWorkflow(ctx context.Context, req *client.Execu
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
-			ApplicationID:   appIDStr,
 			EntityType:      "workflow_execution",
 			EntityID:        exec.ID.String(),
 			Operation:       "created",
@@ -463,7 +428,6 @@ func (s *workflowService) CancelWorkflowExecution(ctx context.Context, req *clie
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
-			ApplicationID:   exec.ApplicationID.String(),
 			EntityType:      "workflow_execution",
 			EntityID:        exec.ID.String(),
 			Operation:       "cancelled",
@@ -485,9 +449,8 @@ func (s *workflowService) CancelWorkflowExecution(ctx context.Context, req *clie
 // is reporting a run already underway, so the row is written `running` -- there
 // is no queue and nothing downstream to start it.
 //
-// The owning user is resolved from the application rather than supplied by the
-// caller. A run triggered by a Twitch follow is attributable to an account but
-// to no person, and the engine has no notion of users at all.
+// The run has no user: a run triggered by a Twitch follow is attributable to no
+// person, and the engine has no notion of users at all.
 func (s *workflowService) RecordWorkflowRun(ctx context.Context, req *client.RecordWorkflowRunRequest) (*client.WorkflowExecutionResponse, error) {
 	id, err := uuid.Parse(req.Id)
 	if err != nil {
@@ -498,36 +461,20 @@ func (s *workflowService) RecordWorkflowRun(ctx context.Context, req *client.Rec
 		return nil, twirp.InvalidArgumentError("workflow_id", "invalid UUID format")
 	}
 
-	appIDStr, err := resolveApplicationID(ctx, s.executionRepo, req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
-
-	app, err := models.GetApplicationByID(s.executionRepo, applicationID)
-	if err != nil {
-		return nil, twirp.NotFoundError("application not found")
-	}
-
 	startedAt := time.Now()
 	if req.StartedAt != nil {
 		startedAt = req.StartedAt.AsTime()
 	}
 
 	exec := &models.WorkflowExecution{
-		ID:            id,
-		WorkflowID:    workflowID,
-		ApplicationID: applicationID,
-		UserID:        app.UserID,
-		Status:        models.WorkflowStatusRunning,
-		Input:         "{}",
-		Output:        "{}",
-		TriggerEvent:  jsonOrEmptyObject(req.TriggerEventJson),
-		TriggeredBy:   req.TriggeredBy,
-		StartedAt:     &startedAt,
+		ID:           id,
+		WorkflowID:   workflowID,
+		Status:       models.WorkflowStatusRunning,
+		Input:        "{}",
+		Output:       "{}",
+		TriggerEvent: jsonOrEmptyObject(req.TriggerEventJson),
+		TriggeredBy:  req.TriggeredBy,
+		StartedAt:    &startedAt,
 	}
 	if err := exec.Create(s.executionRepo); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to record workflow run: %w", err))
@@ -601,15 +548,6 @@ func (s *workflowService) RecordWorkflowRunStep(ctx context.Context, req *client
 		return nil, twirp.InvalidArgumentError("execution_id", "invalid UUID format")
 	}
 
-	appIDStr, err := resolveApplicationID(ctx, s.executionRepo, req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
-
 	if req.TaskId == "" {
 		return nil, twirp.RequiredArgumentError("task_id")
 	}
@@ -622,18 +560,17 @@ func (s *workflowService) RecordWorkflowRunStep(ctx context.Context, req *client
 	}
 
 	step := &models.WorkflowExecutionStep{
-		ID:            uuid.New(),
-		ExecutionID:   executionID,
-		ApplicationID: applicationID,
-		TaskID:        req.TaskId,
-		Name:          req.Name,
-		Status:        req.Status,
-		Attempt:       attempt,
-		StepIndex:     int(req.StepIndex),
-		Inputs:        jsonOrEmptyObject(req.InputsJson),
-		Outputs:       jsonOrEmptyObject(req.OutputsJson),
-		Error:         req.Error,
-		DurationMs:    req.DurationMs,
+		ID:          uuid.New(),
+		ExecutionID: executionID,
+		TaskID:      req.TaskId,
+		Name:        req.Name,
+		Status:      req.Status,
+		Attempt:     attempt,
+		StepIndex:   int(req.StepIndex),
+		Inputs:      jsonOrEmptyObject(req.InputsJson),
+		Outputs:     jsonOrEmptyObject(req.OutputsJson),
+		Error:       req.Error,
+		DurationMs:  req.DurationMs,
 	}
 	if req.StartedAt != nil {
 		startedAt := req.StartedAt.AsTime()
@@ -650,7 +587,6 @@ func (s *workflowService) RecordWorkflowRunStep(ctx context.Context, req *client
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
-			ApplicationID:   applicationID.String(),
 			EntityType:      "workflow_execution_step",
 			EntityID:        step.ID.String(),
 			Operation:       "recorded",
@@ -671,7 +607,6 @@ func (s *workflowService) publishExecution(exec *models.WorkflowExecution, opera
 		return
 	}
 	s.publisher.Publish(workers.PublishOptions{
-		ApplicationID:   exec.ApplicationID.String(),
 		EntityType:      "workflow_execution",
 		EntityID:        exec.ID.String(),
 		Operation:       operation,
@@ -708,7 +643,6 @@ func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *client
 	return &client.Workflow{
 		Id:            wf.ID.String(),
 		Name:          wf.Name,
-		ApplicationId: wf.ApplicationID.String(),
 		Enabled:       wf.Enabled,
 		CreatedAt:     createdAt,
 		UpdatedAt:     updatedAt,
@@ -749,8 +683,7 @@ func (s *workflowService) executionToProto(exec *models.WorkflowExecution) *clie
 		Id:               exec.ID.String(),
 		WorkflowId:       exec.WorkflowID.String(),
 		Status:           string(exec.Status),
-		StartedBy:        exec.UserID.String(),
-		ApplicationId:    exec.ApplicationID.String(),
+		StartedBy:        startedByString(exec.UserID),
 		Inputs:           inputs,
 		Outputs:          outputs,
 		Error:            exec.Error,
@@ -805,4 +738,13 @@ func stepToProto(step *models.WorkflowExecutionStep) *client.ExecutionStep {
 		CompletedAt: completedAt,
 		DurationMs:  step.DurationMs,
 	}
+}
+
+// startedByString renders a run's user for the wire, where "" means no person
+// started the run.
+func startedByString(userID *uuid.UUID) string {
+	if userID == nil {
+		return ""
+	}
+	return userID.String()
 }

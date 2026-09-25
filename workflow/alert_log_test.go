@@ -63,13 +63,12 @@ func (l *recordingLogger) Warn(message string, _ ...any) {
 
 func alertContext(services AppServices, logger tasks.Logger, trigger *types.Event) tasks.ActionContext[AppServices] {
 	return tasks.ActionContext[AppServices]{
-		Services:      services,
-		ApplicationID: "app-1",
-		WorkflowID:    "wf-1",
-		ExecutionID:   "exec-1",
-		TaskID:        "task-1",
-		TriggerEvent:  trigger,
-		Logger:        logger,
+		Services:     services,
+		WorkflowID:   "wf-1",
+		ExecutionID:  "exec-1",
+		TaskID:       "task-1",
+		TriggerEvent: trigger,
+		Logger:       logger,
 	}
 }
 
@@ -83,9 +82,6 @@ func TestRecordAlertDispatch_SendsTheAttributionTheRowNeeds(t *testing.T) {
 		t.Fatalf("CreateAlert calls = %d, want 1", len(stub.created))
 	}
 	got := stub.created[0]
-	if got.ApplicationId != "app-1" {
-		t.Errorf("ApplicationId = %q, want app-1", got.ApplicationId)
-	}
 	if got.EnvelopeId != "env-1" {
 		t.Errorf("EnvelopeId = %q, want env-1", got.EnvelopeId)
 	}

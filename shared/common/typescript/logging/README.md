@@ -6,8 +6,8 @@ OpenTelemetry layer for log export and tracing:
 - pretty JSON console transport
 - single-line file transport (`<logDir>/<service>_YYYYMMDD_HHMM.log`)
 - canonical record fields (`timestamp`, `service`, `level`, `message`, `metadata`)
-- context fields (`applicationId`, `instanceId`, `requestId`, `traceId`, `spanId`,
-  `traceFlags`, `eventId`, `eventType`)
+- context fields (`instanceId`, `requestId`, `traceId`, `spanId`, `traceFlags`,
+  `eventId`, `eventType`)
 - key-based redaction for sensitive metadata
 - runtime level control (`setLevel`/`getLevel`) when enabled
 - child/context logger derivation (`child`, `withContext`)
@@ -29,7 +29,7 @@ logger.info("api started", { port: 8080 });
 Child loggers inherit parent context; colliding keys are overridden by the child.
 
 ```ts
-const scoped = logger.withContext({ applicationId: "app-1" });
+const scoped = logger.withContext({ instanceId: "instance-1" });
 scoped.child({ requestId: "req-1" }).info("handling request");
 ```
 

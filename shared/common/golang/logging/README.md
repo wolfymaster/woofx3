@@ -7,7 +7,7 @@
 - OTLP transport that ships records to an OpenTelemetry collector when one is configured
 - OpenTelemetry tracing (`StartSpan`) with automatic `traceId`/`spanId` on log records
 - canonical record fields (`timestamp`, `service`, `level`, `message`, `metadata`)
-- optional trace fields (`applicationId`, `instanceId`, `requestId`, `traceId`, `spanId`, `eventId`, `eventType`)
+- optional trace fields (`instanceId`, `requestId`, `traceId`, `spanId`, `eventId`, `eventType`)
 - key-based redaction for sensitive metadata
 - runtime level control (`SetLevel`/`GetLevel`) when enabled
 - child/context logger derivation (`Child`, `WithContext`)

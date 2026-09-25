@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/casbin/casbin/v2"
-	"github.com/google/uuid"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"github.com/wolfymaster/woofx3/db/database/repository"
@@ -18,21 +17,16 @@ type commandPermFixture struct {
 	enforcer  *casbin.Enforcer
 	groupRepo *repository.GroupRepository
 	db        *gorm.DB
-	appID     uuid.UUID
 }
 
 func newCommandPermFixture(t *testing.T) *commandPermFixture {
 	t.Helper()
 	db := newTestDB(t)
-	app := &models.Application{ID: uuid.New(), Name: "default", IsDefault: true, UserID: uuid.New()}
-	if err := db.Create(app).Error; err != nil {
-		t.Fatalf("seed application: %v", err)
-	}
 	enforcer := newTestEnforcer(t, db)
 	groupRepo := repository.NewGroupRepository(db)
 	permissionRepo := repository.NewPermissionRepository(db)
 
-	if err := SeedBuiltInGroups(groupRepo, app.ID); err != nil {
+	if err := SeedBuiltInGroups(groupRepo); err != nil {
 		t.Fatalf("seed built-in groups: %v", err)
 	}
 
@@ -49,7 +43,6 @@ func newCommandPermFixture(t *testing.T) *commandPermFixture {
 		enforcer:  enforcer,
 		groupRepo: groupRepo,
 		db:        db,
-		appID:     app.ID,
 	}
 }
 
@@ -66,12 +59,11 @@ func (f *commandPermFixture) can(t *testing.T, username, command string) bool {
 func (f *commandPermFixture) createCommand(t *testing.T, name string, groupIDs, usernames []string) {
 	t.Helper()
 	_, err := f.svc.CreateCommand(context.Background(), &client.CreateCommandRequest{
-		ApplicationId: f.appID.String(),
-		Command:       name,
-		ActionsJson:   `[{"id":"action-1","action":"chat.reply","parameters":{"message":"hello"}}]`,
-		Enabled:       true,
-		GroupIds:      groupIDs,
-		Usernames:     usernames,
+		Command:     name,
+		ActionsJson: `[{"id":"action-1","action":"chat.reply","parameters":{"message":"hello"}}]`,
+		Enabled:     true,
+		GroupIds:    groupIDs,
+		Usernames:   usernames,
 	})
 	if err != nil {
 		t.Fatalf("create command %q: %v", name, err)
@@ -97,7 +89,7 @@ func TestCommandPermissions_NoGrantsMeansUnrestricted(t *testing.T) {
 func TestCommandPermissions_GroupGrantDeniesNonMembers(t *testing.T) {
 	f := newCommandPermFixture(t)
 
-	mods, err := f.groupRepo.GetByName(f.appID, models.GroupModerator)
+	mods, err := f.groupRepo.GetByName(models.GroupModerator)
 	if err != nil {
 		t.Fatalf("get moderator group: %v", err)
 	}
@@ -108,9 +100,8 @@ func TestCommandPermissions_GroupGrantDeniesNonMembers(t *testing.T) {
 	}
 
 	if _, err := f.groupSvc.AddUserToGroup(context.Background(), &client.GroupMembershipRequest{
-		ApplicationId: f.appID.String(),
-		GroupId:       mods.ID.String(),
-		Username:      "trustedmod",
+		GroupId:  mods.ID.String(),
+		Username: "trustedmod",
 	}); err != nil {
 		t.Fatalf("add member: %v", err)
 	}
@@ -139,7 +130,7 @@ func TestCommandPermissions_UserGrantDeniesOthers(t *testing.T) {
 func TestCommandPermissions_EveryoneGroupAllowsAnyUser(t *testing.T) {
 	f := newCommandPermFixture(t)
 
-	everyone, err := f.groupRepo.GetByName(f.appID, models.GroupEveryone)
+	everyone, err := f.groupRepo.GetByName(models.GroupEveryone)
 	if err != nil {
 		t.Fatalf("get everyone group: %v", err)
 	}
@@ -163,11 +154,10 @@ func TestCommandPermissions_EveryoneGroupAllowsAnyUser(t *testing.T) {
 func TestCommandPermissions_PublicVisibilitySkipsPolicy(t *testing.T) {
 	f := newCommandPermFixture(t)
 	_, err := f.svc.CreateCommand(context.Background(), &client.CreateCommandRequest{
-		ApplicationId: f.appID.String(),
-		Command:       "uptime",
-		ActionsJson:   "[]",
-		Enabled:       true,
-		Visibility:    commandVisibilityPublic,
+		Command:     "uptime",
+		ActionsJson: "[]",
+		Enabled:     true,
+		Visibility:  commandVisibilityPublic,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -191,7 +181,7 @@ func TestCommandPermissions_PublicVisibilitySkipsPolicy(t *testing.T) {
 func TestCommandPermissions_ClearingGrantsRestoresUnrestricted(t *testing.T) {
 	f := newCommandPermFixture(t)
 
-	mods, err := f.groupRepo.GetByName(f.appID, models.GroupModerator)
+	mods, err := f.groupRepo.GetByName(models.GroupModerator)
 	if err != nil {
 		t.Fatalf("get moderator group: %v", err)
 	}
@@ -200,7 +190,7 @@ func TestCommandPermissions_ClearingGrantsRestoresUnrestricted(t *testing.T) {
 		t.Fatal("precondition: non-member should be denied")
 	}
 
-	cmd, err := repository.NewCommandRepository(f.db).GetByCommand("vanish", f.appID)
+	cmd, err := repository.NewCommandRepository(f.db).GetByCommand("vanish")
 	if err != nil {
 		t.Fatalf("get command: %v", err)
 	}
@@ -223,13 +213,13 @@ func TestCommandPermissions_ClearingGrantsRestoresUnrestricted(t *testing.T) {
 func TestCommandPermissions_RenameMovesPolicy(t *testing.T) {
 	f := newCommandPermFixture(t)
 
-	mods, err := f.groupRepo.GetByName(f.appID, models.GroupModerator)
+	mods, err := f.groupRepo.GetByName(models.GroupModerator)
 	if err != nil {
 		t.Fatalf("get moderator group: %v", err)
 	}
 	f.createCommand(t, "vanish", []string{mods.ID.String()}, nil)
 
-	cmd, err := repository.NewCommandRepository(f.db).GetByCommand("vanish", f.appID)
+	cmd, err := repository.NewCommandRepository(f.db).GetByCommand("vanish")
 	if err != nil {
 		t.Fatalf("get command: %v", err)
 	}
@@ -258,22 +248,21 @@ func TestPermissionService_ListPermissions(t *testing.T) {
 	f := newCommandPermFixture(t)
 	ctx := context.Background()
 
-	mods, err := f.groupRepo.GetByName(f.appID, models.GroupModerator)
+	mods, err := f.groupRepo.GetByName(models.GroupModerator)
 	if err != nil {
 		t.Fatalf("get moderator group: %v", err)
 	}
 	f.createCommand(t, "vanish", []string{mods.ID.String()}, nil)
 	if _, err := f.groupSvc.AddUserToGroup(ctx, &client.GroupMembershipRequest{
-		ApplicationId: f.appID.String(),
-		GroupId:       mods.ID.String(),
-		Username:      "trustedmod",
+		GroupId:  mods.ID.String(),
+		Username: "trustedmod",
 	}); err != nil {
 		t.Fatalf("add member: %v", err)
 	}
 
 	svc := NewPermissionService(nil, repository.NewPermissionRepository(f.db), f.enforcer)
 
-	all, err := svc.ListPermissions(ctx, &client.ListPermissionsRequest{ApplicationId: f.appID.String()})
+	all, err := svc.ListPermissions(ctx, &client.ListPermissionsRequest{})
 	if err != nil {
 		t.Fatalf("list all: %v", err)
 	}
@@ -282,8 +271,7 @@ func TestPermissionService_ListPermissions(t *testing.T) {
 	}
 
 	policies, err := svc.ListPermissions(ctx, &client.ListPermissionsRequest{
-		ApplicationId: f.appID.String(),
-		Ptype:         "p",
+		Ptype: "p",
 	})
 	if err != nil {
 		t.Fatalf("list policies: %v", err)
@@ -295,8 +283,7 @@ func TestPermissionService_ListPermissions(t *testing.T) {
 	}
 
 	forUser, err := svc.ListPermissions(ctx, &client.ListPermissionsRequest{
-		ApplicationId: f.appID.String(),
-		Subject:       "trustedmod",
+		Subject: "trustedmod",
 	})
 	if err != nil {
 		t.Fatalf("list for subject: %v", err)

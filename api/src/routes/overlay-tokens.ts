@@ -14,7 +14,6 @@ interface OverlayTokenRow {
   id: string;
   token: string;
   sceneId: string;
-  applicationId: string;
   label: string;
   status: string;
   createdAt: { seconds?: bigint; nanos?: number } | undefined;
@@ -34,7 +33,6 @@ function toMintedResult(sceneManagerUrl: string, row: OverlayTokenRow) {
     tokenId: row.id,
     token: row.token,
     sceneId: row.sceneId,
-    applicationId: row.applicationId,
     label: row.label,
     status: row.status,
     createdAt: timestampToIso(row.createdAt),
@@ -44,11 +42,9 @@ function toMintedResult(sceneManagerUrl: string, row: OverlayTokenRow) {
 
 export const overlayTokenRoutes = routeModule({
   async mintOverlayToken(input: { sceneId: string; label?: string }) {
-    const applicationId = await this.ensureApplicationId();
     const [result, sceneManagerUrl] = await Promise.all([
       this.db.mintOverlayToken({
         sceneId: input.sceneId,
-        applicationId,
         label: input.label ?? "",
       }),
       resolveSceneManagerUrl(this.db, this.sceneManagerUrl),
@@ -70,11 +66,9 @@ export const overlayTokenRoutes = routeModule({
   },
 
   async listOverlayTokens(input?: { sceneId?: string; page?: number; pageSize?: number }) {
-    const applicationId = await this.ensureApplicationId();
     const [result, sceneManagerUrl] = await Promise.all([
       this.db.listOverlayTokens({
         sceneId: input?.sceneId ?? "",
-        applicationId,
         includeRevoked: false,
       }),
       resolveSceneManagerUrl(this.db, this.sceneManagerUrl),

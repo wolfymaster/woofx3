@@ -32,7 +32,6 @@ interface WidgetInstanceConfig {
 
 interface SceneConfig {
   id: string;
-  applicationId: string;
   name: string;
   layout: Record<string, unknown>;
   widgets: WidgetInstanceConfig[];

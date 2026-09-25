@@ -155,7 +155,6 @@ func (w *PublisherWorker) publishEvent(event *models.WorkerEvent) error {
 	// actually need is forwarded; client_id and entity_type are kept on
 	// WorkerEvent (DB metadata + subject building) but no consumer reads
 	// them off the wire.
-	ce.SetExtension("applicationid", event.ApplicationID)
 	ce.SetExtension("entityid", event.EntityID)
 	ce.SetExtension("operation", event.Operation)
 
@@ -321,7 +320,6 @@ func (w *PublisherWorker) retryEvent(cached *CachedEvent) error {
 
 	// CloudEvents extension names must be lowercase a-z and digits only —
 	// see publishEvent for the rationale. Keep this in sync with that path.
-	ce.SetExtension("applicationid", event.ApplicationID)
 	ce.SetExtension("entityid", event.EntityID)
 	ce.SetExtension("operation", event.Operation)
 

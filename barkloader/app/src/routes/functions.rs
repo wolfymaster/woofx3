@@ -68,14 +68,12 @@ async fn upload_handler(
 
     let mut request_context = {
         let client_id = metadata.client_id.clone().unwrap_or_default();
-        let application_id = metadata.application_id.clone().unwrap_or_default();
         info!(
-            "Upload form fields: client_id={:?} module_key={:?} application_id={:?}",
-            metadata.client_id, metadata.module_key, metadata.application_id
+            "Upload form fields: client_id={:?} module_key={:?}",
+            metadata.client_id, metadata.module_key
         );
         Some(db_proxy::RequestContext {
             client_id,
-            application_id,
             module_key: String::new(),
         })
     };
@@ -359,16 +357,11 @@ async fn upload_handler(
             .as_ref()
             .map(|rc| rc.client_id.clone())
             .unwrap_or_default();
-        let upload_application_id = request_context
-            .as_ref()
-            .map(|rc| rc.application_id.clone())
-            .unwrap_or_default();
         if let Err(e) = module
             .execute_plan(
                 &module_plan,
                 &archive_key,
                 ctx.db_proxy_url.as_deref(),
-                &upload_application_id,
                 force,
                 &computed_module_key,
                 &upload_client_id,
@@ -521,7 +514,6 @@ async fn delete_handler(
         let db_proxy = HttpDbProxyClient::new(db_proxy_url.clone());
         let mut request_context = db_proxy::RequestContext {
             client_id,
-            application_id: String::new(),
             module_key: caller_module_key.clone(),
         };
 
@@ -577,7 +569,6 @@ async fn delete_handler(
             &resolved,
             &module_name_task,
             &db_proxy,
-            "",
             &*ctx_clone.repository.current(),
             registry,
         )
@@ -925,7 +916,6 @@ async fn rollback_handler(
             &module_plan,
             &archive_key,
             Some(db_proxy_url),
-            "",
             false, // not force — go through the diff-aware upgrade path, same as any install
             &composite_module_key,
             "",

@@ -3,7 +3,6 @@ import type { LevelWithSilent } from "pino";
 export type LogMetadata = Record<string, unknown>;
 
 export type LoggerContext = {
-  applicationId?: string;
   eventId?: string;
   eventType?: string;
   instanceId?: string;

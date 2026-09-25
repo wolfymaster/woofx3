@@ -6,8 +6,7 @@
 //!   `POST /assets/upload-url`     ask for permission to upload
 //!   `PUT  /assets/upload/{token}` send the bytes (file backend only)
 //!   `POST /assets/process`        derive a thumbnail, asynchronously
-//!   `DELETE /assets/resource/{application_id}/{resource_id}`
-//!                                 purge one resource's stored bytes
+//!   `DELETE /assets/resource`     purge one resource's stored bytes
 //!
 //! The upload-url response is deliberately identical whichever storage
 //! backend is live. On S3 the `uploadUrl` is a genuine presigned PUT
@@ -64,9 +63,8 @@ const UPLOAD_MODE_DIRECT: &str = "direct";
 
 #[derive(Deserialize)]
 struct UploadUrlRequest {
-    /// Owner scope. Keys are `user/{application_id}/{resource_id}/...`,
-    /// mirroring how `modules/` scopes by module key.
-    application_id: String,
+    /// Keys are `user/{resource_id}/...`, mirroring how `modules/`
+    /// scopes by module key.
     resource_id: String,
     file_name: String,
     content_type: Option<String>,
@@ -139,11 +137,7 @@ async fn direct_upload_enabled(ctx: &AppContext) -> bool {
 async fn upload_url_handler(ctx: Data<AppContext>, body: Json<UploadUrlRequest>) -> HttpResponse {
     let request = body.into_inner();
 
-    let key = match user_resource_key(
-        &request.application_id,
-        &request.resource_id,
-        &request.file_name,
-    ) {
+    let key = match user_resource_key(&request.resource_id, &request.file_name) {
         Ok(key) => key,
         Err(message) => {
             return HttpResponse::BadRequest().json(error_body(&message));
@@ -485,18 +479,11 @@ async fn process_handler(ctx: Data<AppContext>, body: Json<ProcessRequest>) -> H
     HttpResponse::Accepted().json(accepted)
 }
 
-/// Build `user/{application_id}/{resource_id}/{file_name}`, rejecting
-/// anything that would escape that shape. Both ids must be plain
-/// segments and the file name is sanitized -- the resulting key is
-/// then re-checked by `routes::assets::sanitize_asset_key` on read.
-fn user_resource_key(
-    application_id: &str,
-    resource_id: &str,
-    file_name: &str,
-) -> Result<String, String> {
-    if !is_safe_segment(application_id) {
-        return Err("application_id must be a plain path segment".to_string());
-    }
+/// Build `user/{resource_id}/{file_name}`, rejecting anything that
+/// would escape that shape. The id must be a plain segment and the file
+/// name is sanitized -- the resulting key is then re-checked by
+/// `routes::assets::sanitize_asset_key` on read.
+fn user_resource_key(resource_id: &str, file_name: &str) -> Result<String, String> {
     if !is_safe_segment(resource_id) {
         return Err("resource_id must be a plain path segment".to_string());
     }
@@ -510,10 +497,36 @@ fn user_resource_key(
     if sanitized.is_empty() {
         return Err("file_name is not a usable file name".to_string());
     }
-    Ok(format!(
-        "user/{}/{}/{}",
-        application_id, resource_id, sanitized
-    ))
+    Ok(format!("user/{}/{}", resource_id, sanitized))
+}
+
+/// The directory holding every object stored for the resource whose
+/// upload lives at `repository_key`, with a trailing `/`.
+///
+/// Callers pass the key exactly as it was stored rather than ids to
+/// rebuild it from, because stored keys do not share one shape: current
+/// uploads are `user/{resource_id}/{file}` while older rows carry an
+/// extra leading segment. Whatever the depth, the upload and its derived
+/// thumbnail share the key's parent directory.
+///
+/// The key must sit under `user/` with no empty, `.` or `..` segments,
+/// and at least one directory below `user/` -- a key directly under
+/// `user/` would make the directory every user upload at once.
+fn resource_directory_for_key(repository_key: &str) -> Result<String, String> {
+    let Some(rest) = repository_key.strip_prefix("user/") else {
+        return Err("repositoryKey must start with user/".to_string());
+    };
+    let segments: Vec<&str> = rest.split('/').collect();
+    for segment in &segments {
+        if segment.is_empty() || *segment == "." || *segment == ".." {
+            return Err("repositoryKey must not contain empty, . or .. segments".to_string());
+        }
+    }
+    if segments.len() < 2 {
+        return Err("repositoryKey must name a file inside a resource directory".to_string());
+    }
+    let directory = &segments[..segments.len() - 1];
+    Ok(format!("user/{}/", directory.join("/")))
 }
 
 /// A usable path segment: non-empty, no separators, no traversal, and
@@ -546,34 +559,33 @@ fn error_body(message: &str) -> serde_json::Value {
     serde_json::json!({ "success": false, "error": message })
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteResourceRequest {
+    /// The resource's `repository_key` exactly as stored.
+    repository_key: String,
+}
+
 /// Purge every object stored for one resource.
 ///
-/// Addressed by id segments rather than a raw key so there is no
-/// caller-supplied path to sanitize: the prefix is rebuilt here from
-/// two validated segments and can only ever name a directory under
-/// `user/`. Deleting the whole directory takes the upload and any
-/// derived thumbnail together, which is what callers always want and
-/// removes the chance of leaving a thumbnail orphaned behind its
-/// source.
+/// Deletes the whole directory containing the stored key (see
+/// `resource_directory_for_key`), which takes the upload and any
+/// derived thumbnail together, so a thumbnail is never left orphaned
+/// behind its source.
 ///
 /// Idempotent: a prefix that stores nothing is a success, so a retried
 /// delete does not fail.
-#[delete("/assets/resource/{application_id}/{resource_id}")]
+#[delete("/assets/resource")]
 async fn delete_resource_handler(
     ctx: Data<AppContext>,
-    path: Path<(String, String)>,
+    body: Json<DeleteResourceRequest>,
 ) -> HttpResponse {
-    let (application_id, resource_id) = path.into_inner();
-    if !is_safe_segment(&application_id) {
-        return HttpResponse::BadRequest()
-            .json(error_body("application_id must be a plain path segment"));
-    }
-    if !is_safe_segment(&resource_id) {
-        return HttpResponse::BadRequest()
-            .json(error_body("resource_id must be a plain path segment"));
-    }
-
-    let prefix = format!("user/{}/{}/", application_id, resource_id);
+    let prefix = match resource_directory_for_key(&body.repository_key) {
+        Ok(prefix) => prefix,
+        Err(message) => {
+            return HttpResponse::BadRequest().json(error_body(&message));
+        }
+    };
     let repository = ctx.repository.current();
     match repository.delete_prefix(&prefix).await {
         Ok(()) => {
@@ -601,8 +613,8 @@ mod tests {
     #[test]
     fn builds_the_documented_key_shape() {
         assert_eq!(
-            user_resource_key("app-1", "res-1", "photo.png").unwrap(),
-            "user/app-1/res-1/photo.png"
+            user_resource_key("res-1", "photo.png").unwrap(),
+            "user/res-1/photo.png"
         );
     }
 
@@ -610,11 +622,7 @@ mod tests {
     fn rejects_ids_that_would_escape_the_user_prefix() {
         for bad in ["..", ".", "", "a/b", "a\\b", "a b", "../etc"] {
             assert!(
-                user_resource_key(bad, "res-1", "photo.png").is_err(),
-                "application_id {bad:?} should be rejected"
-            );
-            assert!(
-                user_resource_key("app-1", bad, "photo.png").is_err(),
+                user_resource_key(bad, "photo.png").is_err(),
                 "resource_id {bad:?} should be rejected"
             );
         }
@@ -623,9 +631,46 @@ mod tests {
     #[test]
     fn sanitizes_the_file_name_rather_than_rejecting_it() {
         // Traversal in the file name is stripped, not honored.
-        let key = user_resource_key("app-1", "res-1", "../../etc/passwd").unwrap();
-        assert_eq!(key, "user/app-1/res-1/etcpasswd");
+        let key = user_resource_key("res-1", "../../etc/passwd").unwrap();
+        assert_eq!(key, "user/res-1/etcpasswd");
         assert!(!key.contains(".."));
+    }
+
+    #[test]
+    fn resource_directory_is_the_parent_of_the_stored_key() {
+        assert_eq!(
+            resource_directory_for_key("user/res-1/photo.png").unwrap(),
+            "user/res-1/"
+        );
+        // Older rows carry an extra leading segment; the directory still
+        // comes from the key itself, never from ids.
+        assert_eq!(
+            resource_directory_for_key("user/0b7c/res-1/photo.png").unwrap(),
+            "user/0b7c/res-1/"
+        );
+    }
+
+    #[test]
+    fn resource_directory_rejects_keys_outside_a_resource_directory() {
+        for bad in [
+            "",
+            "user/",
+            "user/photo.png",
+            "modules/m1/widget.html",
+            "/user/res-1/photo.png",
+            "users/res-1/photo.png",
+            "user//photo.png",
+            "user/res-1//photo.png",
+            "user/res-1/",
+            "user/../photo.png",
+            "user/res-1/../../etc/passwd",
+            "user/./photo.png",
+        ] {
+            assert!(
+                resource_directory_for_key(bad).is_err(),
+                "repositoryKey {bad:?} should be rejected"
+            );
+        }
     }
 
     mod upload {
@@ -637,7 +682,7 @@ mod tests {
 
         const SECRET: &str = "upload-test-secret";
         const NOW: i64 = 1_700_000_000;
-        const KEY: &str = "user/app-1/res-1/clip.png";
+        const KEY: &str = "user/res-1/clip.png";
 
         fn file_repo(root: &std::path::Path) -> RepositoryImpl {
             let repo = FileRepository::new(FileRepositoryConfig {
@@ -692,7 +737,7 @@ mod tests {
             assert_eq!(status_of(response).await, 200);
             let on_disk = std::fs::read(root.path().join(KEY)).expect("upload on disk");
             assert_eq!(on_disk, b"\x89PNG-bytes");
-            let leftovers: Vec<_> = std::fs::read_dir(root.path().join("user/app-1/res-1"))
+            let leftovers: Vec<_> = std::fs::read_dir(root.path().join("user/res-1"))
                 .expect("resource dir")
                 .map(|entry| entry.expect("dir entry").file_name())
                 .collect();
@@ -877,7 +922,7 @@ mod tests {
 
             let (token, _) = upload_token::issue(
                 &secret,
-                "user/app-1/res-2/clip.mp4",
+                "user/res-2/clip.mp4",
                 Some("video/mp4"),
                 Duration::from_secs(300),
                 unix_now(),
@@ -892,15 +937,15 @@ mod tests {
             let response = actix_test::call_service(&app, request).await;
 
             assert_eq!(response.status(), 200);
-            let stored = std::fs::read(root.path().join("user/app-1/res-2/clip.mp4"))
-                .expect("upload on disk");
+            let stored =
+                std::fs::read(root.path().join("user/res-2/clip.mp4")).expect("upload on disk");
             assert_eq!(stored.len(), bytes.len());
         }
     }
 
     #[test]
     fn rejects_file_names_that_sanitize_to_nothing() {
-        assert!(user_resource_key("app-1", "res-1", "").is_err());
-        assert!(user_resource_key("app-1", "res-1", "..").is_err());
+        assert!(user_resource_key("res-1", "").is_err());
+        assert!(user_resource_key("res-1", "..").is_err());
     }
 }

@@ -83,7 +83,6 @@ func (x *HasPermissionRequest) GetAction() string {
 
 type PermissionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	Subject       string                 `protobuf:"bytes,2,opt,name=subject,proto3" json:"subject,omitempty"`
 	Object        string                 `protobuf:"bytes,3,opt,name=object,proto3" json:"object,omitempty"`
 	Action        string                 `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"`
@@ -122,13 +121,6 @@ func (*PermissionRequest) Descriptor() ([]byte, []int) {
 	return file_permission_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *PermissionRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *PermissionRequest) GetSubject() string {
 	if x != nil {
 		return x.Subject
@@ -159,7 +151,6 @@ func (x *PermissionRequest) GetPermission() string {
 
 type UserResourceRoleRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	Username      string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
 	Resource      string                 `protobuf:"bytes,3,opt,name=resource,proto3" json:"resource,omitempty"`
 	Role          string                 `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
@@ -197,13 +188,6 @@ func (*UserResourceRoleRequest) Descriptor() ([]byte, []int) {
 	return file_permission_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *UserResourceRoleRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *UserResourceRoleRequest) GetUsername() string {
 	if x != nil {
 		return x.Username
@@ -232,7 +216,6 @@ func (x *UserResourceRoleRequest) GetRole() string {
 type Permission struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	Ptype         string                 `protobuf:"bytes,3,opt,name=ptype,proto3" json:"ptype,omitempty"`
 	V0            string                 `protobuf:"bytes,4,opt,name=v0,proto3" json:"v0,omitempty"`
 	V1            string                 `protobuf:"bytes,5,opt,name=v1,proto3" json:"v1,omitempty"`
@@ -279,13 +262,6 @@ func (x *Permission) GetId() int64 {
 		return x.Id
 	}
 	return 0
-}
-
-func (x *Permission) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *Permission) GetPtype() string {
@@ -342,7 +318,6 @@ func (x *Permission) GetV5() string {
 // "g" and "g2") and is ignored when ptype is set.
 type ListPermissionsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	Ptype         string                 `protobuf:"bytes,2,opt,name=ptype,proto3" json:"ptype,omitempty"`
 	PtypePrefix   string                 `protobuf:"bytes,3,opt,name=ptype_prefix,json=ptypePrefix,proto3" json:"ptype_prefix,omitempty"`
 	Subject       string                 `protobuf:"bytes,4,opt,name=subject,proto3" json:"subject,omitempty"`
@@ -378,13 +353,6 @@ func (x *ListPermissionsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListPermissionsRequest.ProtoReflect.Descriptor instead.
 func (*ListPermissionsRequest) Descriptor() ([]byte, []int) {
 	return file_permission_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *ListPermissionsRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *ListPermissionsRequest) GetPtype() string {
@@ -469,36 +437,32 @@ const file_permission_proto_rawDesc = "" +
 	"\x14HasPermissionRequest\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12\x1a\n" +
 	"\bresource\x18\x02 \x01(\tR\bresource\x12\x16\n" +
-	"\x06action\x18\x03 \x01(\tR\x06action\"\xa4\x01\n" +
-	"\x11PermissionRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x18\n" +
+	"\x06action\x18\x03 \x01(\tR\x06action\"\x93\x01\n" +
+	"\x11PermissionRequest\x12\x18\n" +
 	"\asubject\x18\x02 \x01(\tR\asubject\x12\x16\n" +
 	"\x06object\x18\x03 \x01(\tR\x06object\x12\x16\n" +
 	"\x06action\x18\x04 \x01(\tR\x06action\x12\x1e\n" +
 	"\n" +
 	"permission\x18\x05 \x01(\tR\n" +
-	"permission\"\x8c\x01\n" +
-	"\x17UserResourceRoleRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x1a\n" +
+	"permissionJ\x04\b\x01\x10\x02R\x0eapplication_id\"{\n" +
+	"\x17UserResourceRoleRequest\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12\x1a\n" +
 	"\bresource\x18\x03 \x01(\tR\bresource\x12\x12\n" +
-	"\x04role\x18\x04 \x01(\tR\x04role\"\xb9\x01\n" +
+	"\x04role\x18\x04 \x01(\tR\x04roleJ\x04\b\x01\x10\x02R\x0eapplication_id\"\xa8\x01\n" +
 	"\n" +
 	"Permission\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x14\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05ptype\x18\x03 \x01(\tR\x05ptype\x12\x0e\n" +
 	"\x02v0\x18\x04 \x01(\tR\x02v0\x12\x0e\n" +
 	"\x02v1\x18\x05 \x01(\tR\x02v1\x12\x0e\n" +
 	"\x02v2\x18\x06 \x01(\tR\x02v2\x12\x0e\n" +
 	"\x02v3\x18\a \x01(\tR\x02v3\x12\x0e\n" +
 	"\x02v4\x18\b \x01(\tR\x02v4\x12\x0e\n" +
-	"\x02v5\x18\t \x01(\tR\x02v5\"\x92\x01\n" +
-	"\x16ListPermissionsRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x14\n" +
+	"\x02v5\x18\t \x01(\tR\x02v5J\x04\b\x02\x10\x03R\x0eapplication_id\"\x81\x01\n" +
+	"\x16ListPermissionsRequest\x12\x14\n" +
 	"\x05ptype\x18\x02 \x01(\tR\x05ptype\x12!\n" +
 	"\fptype_prefix\x18\x03 \x01(\tR\vptypePrefix\x12\x18\n" +
-	"\asubject\x18\x04 \x01(\tR\asubject\"\x83\x01\n" +
+	"\asubject\x18\x04 \x01(\tR\asubjectJ\x04\b\x01\x10\x02R\x0eapplication_id\"\x83\x01\n" +
 	"\x17ListPermissionsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x128\n" +
 	"\vpermissions\x18\x02 \x03(\v2\x16.permission.PermissionR\vpermissions2\x88\t\n" +

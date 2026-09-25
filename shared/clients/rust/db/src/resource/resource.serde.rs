@@ -7,9 +7,6 @@ impl serde::Serialize for CreateFolderRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.parent_id.is_some() {
             len += 1;
         }
@@ -17,9 +14,6 @@ impl serde::Serialize for CreateFolderRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("resource.CreateFolderRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if let Some(v) = self.parent_id.as_ref() {
             struct_ser.serialize_field("parentId", v)?;
         }
@@ -36,8 +30,6 @@ impl<'de> serde::Deserialize<'de> for CreateFolderRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "parent_id",
             "parentId",
             "name",
@@ -45,7 +37,6 @@ impl<'de> serde::Deserialize<'de> for CreateFolderRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             ParentId,
             Name,
         }
@@ -69,7 +60,6 @@ impl<'de> serde::Deserialize<'de> for CreateFolderRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "parentId" | "parent_id" => Ok(GeneratedField::ParentId),
                             "name" => Ok(GeneratedField::Name),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
@@ -91,17 +81,10 @@ impl<'de> serde::Deserialize<'de> for CreateFolderRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut parent_id__ = None;
                 let mut name__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::ParentId => {
                             if parent_id__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("parentId"));
@@ -117,7 +100,6 @@ impl<'de> serde::Deserialize<'de> for CreateFolderRequest {
                     }
                 }
                 Ok(CreateFolderRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     parent_id: parent_id__,
                     name: name__.unwrap_or_default(),
                 })
@@ -134,9 +116,6 @@ impl serde::Serialize for CreateResourceRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.parent_id.is_some() {
             len += 1;
         }
@@ -162,9 +141,6 @@ impl serde::Serialize for CreateResourceRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("resource.CreateResourceRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if let Some(v) = self.parent_id.as_ref() {
             struct_ser.serialize_field("parentId", v)?;
         }
@@ -201,8 +177,6 @@ impl<'de> serde::Deserialize<'de> for CreateResourceRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "parent_id",
             "parentId",
             "name",
@@ -218,7 +192,6 @@ impl<'de> serde::Deserialize<'de> for CreateResourceRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             ParentId,
             Name,
             Kind,
@@ -248,7 +221,6 @@ impl<'de> serde::Deserialize<'de> for CreateResourceRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "parentId" | "parent_id" => Ok(GeneratedField::ParentId),
                             "name" => Ok(GeneratedField::Name),
                             "kind" => Ok(GeneratedField::Kind),
@@ -276,7 +248,6 @@ impl<'de> serde::Deserialize<'de> for CreateResourceRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut parent_id__ = None;
                 let mut name__ = None;
                 let mut kind__ = None;
@@ -287,12 +258,6 @@ impl<'de> serde::Deserialize<'de> for CreateResourceRequest {
                 let mut id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::ParentId => {
                             if parent_id__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("parentId"));
@@ -346,7 +311,6 @@ impl<'de> serde::Deserialize<'de> for CreateResourceRequest {
                     }
                 }
                 Ok(CreateResourceRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     parent_id: parent_id__,
                     name: name__.unwrap_or_default(),
                     kind: kind__.unwrap_or_default(),
@@ -372,15 +336,9 @@ impl serde::Serialize for DeleteResourceRequest {
         if !self.id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         let mut struct_ser = serializer.serialize_struct("resource.DeleteResourceRequest", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         struct_ser.end()
     }
@@ -393,14 +351,11 @@ impl<'de> serde::Deserialize<'de> for DeleteResourceRequest {
     {
         const FIELDS: &[&str] = &[
             "id",
-            "application_id",
-            "applicationId",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Id,
-            ApplicationId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -423,7 +378,6 @@ impl<'de> serde::Deserialize<'de> for DeleteResourceRequest {
                     {
                         match value {
                             "id" => Ok(GeneratedField::Id),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -444,7 +398,6 @@ impl<'de> serde::Deserialize<'de> for DeleteResourceRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut id__ = None;
-                let mut application_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -453,17 +406,10 @@ impl<'de> serde::Deserialize<'de> for DeleteResourceRequest {
                             }
                             id__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                     }
                 }
                 Ok(DeleteResourceRequest {
                     id: id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                 })
             }
         }
@@ -590,15 +536,9 @@ impl serde::Serialize for GetResourceRequest {
         if !self.id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         let mut struct_ser = serializer.serialize_struct("resource.GetResourceRequest", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         struct_ser.end()
     }
@@ -611,14 +551,11 @@ impl<'de> serde::Deserialize<'de> for GetResourceRequest {
     {
         const FIELDS: &[&str] = &[
             "id",
-            "application_id",
-            "applicationId",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Id,
-            ApplicationId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -641,7 +578,6 @@ impl<'de> serde::Deserialize<'de> for GetResourceRequest {
                     {
                         match value {
                             "id" => Ok(GeneratedField::Id),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -662,7 +598,6 @@ impl<'de> serde::Deserialize<'de> for GetResourceRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut id__ = None;
-                let mut application_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -671,17 +606,10 @@ impl<'de> serde::Deserialize<'de> for GetResourceRequest {
                             }
                             id__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                     }
                 }
                 Ok(GetResourceRequest {
                     id: id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                 })
             }
         }
@@ -696,9 +624,6 @@ impl serde::Serialize for ListResourcesRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.parent_id.is_some() {
             len += 1;
         }
@@ -715,9 +640,6 @@ impl serde::Serialize for ListResourcesRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("resource.ListResourcesRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if let Some(v) = self.parent_id.as_ref() {
             struct_ser.serialize_field("parentId", v)?;
         }
@@ -743,8 +665,6 @@ impl<'de> serde::Deserialize<'de> for ListResourcesRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "parent_id",
             "parentId",
             "kind",
@@ -756,7 +676,6 @@ impl<'de> serde::Deserialize<'de> for ListResourcesRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             ParentId,
             Kind,
             Search,
@@ -783,7 +702,6 @@ impl<'de> serde::Deserialize<'de> for ListResourcesRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "parentId" | "parent_id" => Ok(GeneratedField::ParentId),
                             "kind" => Ok(GeneratedField::Kind),
                             "search" => Ok(GeneratedField::Search),
@@ -808,7 +726,6 @@ impl<'de> serde::Deserialize<'de> for ListResourcesRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut parent_id__ = None;
                 let mut kind__ = None;
                 let mut search__ = None;
@@ -816,12 +733,6 @@ impl<'de> serde::Deserialize<'de> for ListResourcesRequest {
                 let mut page_size__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::ParentId => {
                             if parent_id__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("parentId"));
@@ -859,7 +770,6 @@ impl<'de> serde::Deserialize<'de> for ListResourcesRequest {
                     }
                 }
                 Ok(ListResourcesRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     parent_id: parent_id__,
                     kind: kind__.unwrap_or_default(),
                     search: search__.unwrap_or_default(),
@@ -1048,9 +958,6 @@ impl serde::Serialize for Resource {
         if !self.id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.parent_id.is_some() {
             len += 1;
         }
@@ -1087,9 +994,6 @@ impl serde::Serialize for Resource {
         let mut struct_ser = serializer.serialize_struct("resource.Resource", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if let Some(v) = self.parent_id.as_ref() {
             struct_ser.serialize_field("parentId", v)?;
@@ -1137,8 +1041,6 @@ impl<'de> serde::Deserialize<'de> for Resource {
     {
         const FIELDS: &[&str] = &[
             "id",
-            "application_id",
-            "applicationId",
             "parent_id",
             "parentId",
             "is_folder",
@@ -1162,7 +1064,6 @@ impl<'de> serde::Deserialize<'de> for Resource {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Id,
-            ApplicationId,
             ParentId,
             IsFolder,
             Name,
@@ -1196,7 +1097,6 @@ impl<'de> serde::Deserialize<'de> for Resource {
                     {
                         match value {
                             "id" => Ok(GeneratedField::Id),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "parentId" | "parent_id" => Ok(GeneratedField::ParentId),
                             "isFolder" | "is_folder" => Ok(GeneratedField::IsFolder),
                             "name" => Ok(GeneratedField::Name),
@@ -1228,7 +1128,6 @@ impl<'de> serde::Deserialize<'de> for Resource {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut id__ = None;
-                let mut application_id__ = None;
                 let mut parent_id__ = None;
                 let mut is_folder__ = None;
                 let mut name__ = None;
@@ -1247,12 +1146,6 @@ impl<'de> serde::Deserialize<'de> for Resource {
                                 return Err(serde::de::Error::duplicate_field("id"));
                             }
                             id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::ParentId => {
                             if parent_id__.is_some() {
@@ -1326,7 +1219,6 @@ impl<'de> serde::Deserialize<'de> for Resource {
                 }
                 Ok(Resource {
                     id: id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     parent_id: parent_id__,
                     is_folder: is_folder__.unwrap_or_default(),
                     name: name__.unwrap_or_default(),
@@ -1463,9 +1355,6 @@ impl serde::Serialize for UpdateResourceRequest {
         if !self.id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.name.is_some() {
             len += 1;
         }
@@ -1487,9 +1376,6 @@ impl serde::Serialize for UpdateResourceRequest {
         let mut struct_ser = serializer.serialize_struct("resource.UpdateResourceRequest", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if let Some(v) = self.name.as_ref() {
             struct_ser.serialize_field("name", v)?;
@@ -1522,8 +1408,6 @@ impl<'de> serde::Deserialize<'de> for UpdateResourceRequest {
     {
         const FIELDS: &[&str] = &[
             "id",
-            "application_id",
-            "applicationId",
             "name",
             "parent_id",
             "parentId",
@@ -1538,7 +1422,6 @@ impl<'de> serde::Deserialize<'de> for UpdateResourceRequest {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Id,
-            ApplicationId,
             Name,
             ParentId,
             Status,
@@ -1567,7 +1450,6 @@ impl<'de> serde::Deserialize<'de> for UpdateResourceRequest {
                     {
                         match value {
                             "id" => Ok(GeneratedField::Id),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "name" => Ok(GeneratedField::Name),
                             "parentId" | "parent_id" => Ok(GeneratedField::ParentId),
                             "status" => Ok(GeneratedField::Status),
@@ -1594,7 +1476,6 @@ impl<'de> serde::Deserialize<'de> for UpdateResourceRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut id__ = None;
-                let mut application_id__ = None;
                 let mut name__ = None;
                 let mut parent_id__ = None;
                 let mut status__ = None;
@@ -1608,12 +1489,6 @@ impl<'de> serde::Deserialize<'de> for UpdateResourceRequest {
                                 return Err(serde::de::Error::duplicate_field("id"));
                             }
                             id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Name => {
                             if name__.is_some() {
@@ -1657,7 +1532,6 @@ impl<'de> serde::Deserialize<'de> for UpdateResourceRequest {
                 }
                 Ok(UpdateResourceRequest {
                     id: id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     name: name__,
                     parent_id: parent_id__,
                     status: status__,

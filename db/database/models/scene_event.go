@@ -11,11 +11,10 @@ import (
 // (see `scene_event.proto` for the full design note). `Value` carries
 // the full payload verbatim so a historical event can be replayed.
 type SceneEvent struct {
-	ID            uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	SceneID       uuid.UUID `gorm:"column:scene_id;type:uuid;not null;index:idx_scene_events_scene_occurred,priority:1;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
-	ApplicationID uuid.UUID `gorm:"column:application_id;type:uuid;not null;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
-	Type          string    `gorm:"column:type;type:text;not null"`
-	Key           string    `gorm:"column:key;type:text;not null"`
+	ID      uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	SceneID uuid.UUID `gorm:"column:scene_id;type:uuid;not null;index:idx_scene_events_scene_occurred,priority:1;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
+	Type    string    `gorm:"column:type;type:text;not null"`
+	Key     string    `gorm:"column:key;type:text;not null"`
 	// Value carries arbitrary JSON. Stored as a string, same convention
 	// as `WidgetStatus.Value` — the layer below the proto never
 	// re-marshals it.

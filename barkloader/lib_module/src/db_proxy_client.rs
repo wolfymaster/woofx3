@@ -52,7 +52,6 @@ pub trait ModuleDbProxy: Send + Sync {
         module_name: &str,
         version: &str,
         triggers: Vec<TriggerInputJson>,
-        application_id: &str,
     ) -> Result<()>;
     async fn register_actions(
         &self,
@@ -61,7 +60,6 @@ pub trait ModuleDbProxy: Send + Sync {
         module_name: &str,
         version: &str,
         actions: Vec<ActionInputJson>,
-        application_id: &str,
     ) -> Result<()>;
     async fn register_widgets(
         &self,
@@ -70,7 +68,6 @@ pub trait ModuleDbProxy: Send + Sync {
         module_name: &str,
         version: &str,
         widgets: Vec<WidgetInputJson>,
-        application_id: &str,
     ) -> Result<()>;
     async fn register_background_tasks(
         &self,
@@ -79,7 +76,6 @@ pub trait ModuleDbProxy: Send + Sync {
         module_name: &str,
         version: &str,
         tasks: Vec<BackgroundTaskInputJson>,
-        application_id: &str,
     ) -> Result<()>;
     async fn register_module_settings(
         &self,
@@ -104,11 +100,7 @@ pub trait ModuleDbProxy: Send + Sync {
         module_id: &str,
         module_key: &str,
     ) -> Result<()>;
-    async fn delete_workflows_by_module(
-        &self,
-        application_id: &str,
-        module_name: &str,
-    ) -> Result<()>;
+    async fn delete_workflows_by_module(&self, module_name: &str) -> Result<()>;
     async fn delete_commands_by_module(&self, module_name: &str) -> Result<()>;
 
     // resource ledger
@@ -141,11 +133,7 @@ pub trait ModuleDbProxy: Send + Sync {
 
     // module deletion (module_delete.rs)
     async fn delete_module_resources(&self, module_id: &str) -> Result<()>;
-    async fn check_module_resource_usage(
-        &self,
-        module_id: &str,
-        application_id: &str,
-    ) -> Result<Vec<ResourceUsage>>;
+    async fn check_module_resource_usage(&self, module_id: &str) -> Result<Vec<ResourceUsage>>;
     async fn list_resource_instances_by_module(
         &self,
         module_id: &str,
@@ -174,7 +162,6 @@ pub trait ModuleDbProxy: Send + Sync {
     /// -- the same shape a workflow's steps have.
     async fn register_command(
         &self,
-        application_id: &str,
         command: &str,
         actions_json: &str,
         module_name: &str,
@@ -259,7 +246,6 @@ impl ModuleDbProxy for HttpDbProxyClient {
         module_name: &str,
         version: &str,
         triggers: Vec<TriggerInputJson>,
-        application_id: &str,
     ) -> Result<()> {
         db_proxy::register_triggers(
             &self.base_url,
@@ -268,7 +254,6 @@ impl ModuleDbProxy for HttpDbProxyClient {
             module_name,
             version,
             triggers,
-            application_id,
         )
         .await
     }
@@ -280,7 +265,6 @@ impl ModuleDbProxy for HttpDbProxyClient {
         module_name: &str,
         version: &str,
         actions: Vec<ActionInputJson>,
-        application_id: &str,
     ) -> Result<()> {
         db_proxy::register_actions(
             &self.base_url,
@@ -289,7 +273,6 @@ impl ModuleDbProxy for HttpDbProxyClient {
             module_name,
             version,
             actions,
-            application_id,
         )
         .await
     }
@@ -301,7 +284,6 @@ impl ModuleDbProxy for HttpDbProxyClient {
         module_name: &str,
         version: &str,
         widgets: Vec<WidgetInputJson>,
-        application_id: &str,
     ) -> Result<()> {
         db_proxy::register_widgets(
             &self.base_url,
@@ -310,7 +292,6 @@ impl ModuleDbProxy for HttpDbProxyClient {
             module_name,
             version,
             widgets,
-            application_id,
         )
         .await
     }
@@ -322,7 +303,6 @@ impl ModuleDbProxy for HttpDbProxyClient {
         module_name: &str,
         version: &str,
         tasks: Vec<BackgroundTaskInputJson>,
-        application_id: &str,
     ) -> Result<()> {
         db_proxy::register_background_tasks(
             &self.base_url,
@@ -331,7 +311,6 @@ impl ModuleDbProxy for HttpDbProxyClient {
             module_name,
             version,
             tasks,
-            application_id,
         )
         .await
     }
@@ -383,12 +362,8 @@ impl ModuleDbProxy for HttpDbProxyClient {
         db_proxy::delete_background_tasks_by_module_id(&self.base_url, module_id, module_key).await
     }
 
-    async fn delete_workflows_by_module(
-        &self,
-        application_id: &str,
-        module_name: &str,
-    ) -> Result<()> {
-        db_proxy::delete_workflows_by_module(&self.base_url, application_id, module_name).await
+    async fn delete_workflows_by_module(&self, module_name: &str) -> Result<()> {
+        db_proxy::delete_workflows_by_module(&self.base_url, module_name).await
     }
 
     async fn delete_commands_by_module(&self, module_name: &str) -> Result<()> {
@@ -461,12 +436,8 @@ impl ModuleDbProxy for HttpDbProxyClient {
         db_proxy::delete_module_resources(&self.base_url, module_id).await
     }
 
-    async fn check_module_resource_usage(
-        &self,
-        module_id: &str,
-        application_id: &str,
-    ) -> Result<Vec<ResourceUsage>> {
-        db_proxy::check_module_resource_usage(&self.base_url, module_id, application_id).await
+    async fn check_module_resource_usage(&self, module_id: &str) -> Result<Vec<ResourceUsage>> {
+        db_proxy::check_module_resource_usage(&self.base_url, module_id).await
     }
 
     async fn list_resource_instances_by_module(
@@ -516,19 +487,11 @@ impl ModuleDbProxy for HttpDbProxyClient {
 
     async fn register_command(
         &self,
-        application_id: &str,
         command: &str,
         actions_json: &str,
         module_name: &str,
     ) -> Result<()> {
-        db_proxy::create_command(
-            &self.base_url,
-            application_id,
-            command,
-            actions_json,
-            module_name,
-        )
-        .await
+        db_proxy::create_command(&self.base_url, command, actions_json, module_name).await
     }
 
     async fn complete_module_install(
@@ -664,7 +627,6 @@ mod test_support {
             _module_name: &str,
             _version: &str,
             _triggers: Vec<TriggerInputJson>,
-            _application_id: &str,
         ) -> Result<()> {
             self.record("register_triggers")
         }
@@ -676,7 +638,6 @@ mod test_support {
             _module_name: &str,
             _version: &str,
             _actions: Vec<ActionInputJson>,
-            _application_id: &str,
         ) -> Result<()> {
             self.record("register_actions")
         }
@@ -688,7 +649,6 @@ mod test_support {
             _module_name: &str,
             _version: &str,
             _widgets: Vec<WidgetInputJson>,
-            _application_id: &str,
         ) -> Result<()> {
             self.record("register_widgets")
         }
@@ -700,7 +660,6 @@ mod test_support {
             _module_name: &str,
             _version: &str,
             _tasks: Vec<BackgroundTaskInputJson>,
-            _application_id: &str,
         ) -> Result<()> {
             self.record("register_background_tasks")
         }
@@ -756,11 +715,7 @@ mod test_support {
             self.record("delete_background_tasks_by_module_id")
         }
 
-        async fn delete_workflows_by_module(
-            &self,
-            _application_id: &str,
-            _module_name: &str,
-        ) -> Result<()> {
+        async fn delete_workflows_by_module(&self, _module_name: &str) -> Result<()> {
             self.record("delete_workflows_by_module")
         }
 
@@ -821,7 +776,6 @@ mod test_support {
         async fn check_module_resource_usage(
             &self,
             _module_id: &str,
-            _application_id: &str,
         ) -> Result<Vec<ResourceUsage>> {
             self.record("check_module_resource_usage")?;
             Ok(Vec::new())
@@ -856,7 +810,6 @@ mod test_support {
 
         async fn register_command(
             &self,
-            _application_id: &str,
             _command: &str,
             _actions_json: &str,
             _module_name: &str,
@@ -914,7 +867,7 @@ mod test_support {
             .await
             .expect("create_module");
         client
-            .register_triggers("mod", "mod:1.0.0:abc", "Mod", "1.0.0", vec![], "")
+            .register_triggers("mod", "mod:1.0.0:abc", "Mod", "1.0.0", vec![])
             .await
             .expect("register_triggers");
 
@@ -925,11 +878,11 @@ mod test_support {
     async fn fails_only_the_configured_call() {
         let client = FakeDbProxyClient::failing_on(["register_actions"]);
         client
-            .register_triggers("mod", "mod:1.0.0:abc", "Mod", "1.0.0", vec![], "")
+            .register_triggers("mod", "mod:1.0.0:abc", "Mod", "1.0.0", vec![])
             .await
             .expect("register_triggers should succeed");
         let err = client
-            .register_actions("mod", "mod:1.0.0:abc", "Mod", "1.0.0", vec![], "")
+            .register_actions("mod", "mod:1.0.0:abc", "Mod", "1.0.0", vec![])
             .await
             .expect_err("register_actions should fail");
         assert!(err.to_string().contains("register_actions"));

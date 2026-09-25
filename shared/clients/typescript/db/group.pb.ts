@@ -18,12 +18,11 @@ import * as common from "./common.pb";
 
 export interface Group {
   id: string;
-  applicationId: string;
   name: string;
   description: string;
   createdAt: protoscript.Timestamp;
   /**
-   * Built-in groups are seeded with every application and mirror Twitch's
+   * Built-in groups are seeded by the engine and mirror Twitch's
    * badge model (everyone/subscriber/vip/moderator/broadcaster). They may
    * not be renamed or deleted, and their membership for the Twitch-derived
    * ones is owned by the Twitch state sync rather than by hand.
@@ -32,7 +31,6 @@ export interface Group {
 }
 
 export interface CreateGroupRequest {
-  applicationId: string;
   name: string;
   description: string;
 }
@@ -41,9 +39,7 @@ export interface GetGroupRequest {
   id: string;
 }
 
-export interface ListGroupsRequest {
-  applicationId: string;
-}
+export interface ListGroupsRequest {}
 
 export interface ListGroupsResponse {
   status: common.ResponseStatus;
@@ -72,7 +68,6 @@ export interface GroupResponse {
  * the service resolves/creates the backing user row internally.
  */
 export interface GroupMembershipRequest {
-  applicationId: string;
   groupId: string;
   username: string;
 }
@@ -87,7 +82,6 @@ export interface ListGroupMembersResponse {
 }
 
 export interface ListUserGroupsForUserRequest {
-  applicationId: string;
   username: string;
 }
 
@@ -481,7 +475,6 @@ export const Group = {
   initialize: function (msg?: Partial<Group>): Group {
     return {
       id: "",
-      applicationId: "",
       name: "",
       description: "",
       createdAt: protoscript.Timestamp.initialize(),
@@ -499,9 +492,6 @@ export const Group = {
   ): protoscript.BinaryWriter {
     if (msg.id) {
       writer.writeString(1, msg.id);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.name) {
       writer.writeString(3, msg.name);
@@ -531,10 +521,6 @@ export const Group = {
       switch (field) {
         case 1: {
           msg.id = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -589,7 +575,6 @@ export const CreateGroupRequest = {
    */
   initialize: function (msg?: Partial<CreateGroupRequest>): CreateGroupRequest {
     return {
-      applicationId: "",
       name: "",
       description: "",
       ...msg,
@@ -603,9 +588,6 @@ export const CreateGroupRequest = {
     msg: PartialDeep<CreateGroupRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.name) {
       writer.writeString(2, msg.name);
     }
@@ -625,10 +607,6 @@ export const CreateGroupRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.name = reader.readString();
           break;
@@ -719,21 +697,15 @@ export const ListGroupsRequest = {
   /**
    * Serializes ListGroupsRequest to protobuf.
    */
-  encode: function (msg: PartialDeep<ListGroupsRequest>): Uint8Array {
-    return ListGroupsRequest._writeMessage(
-      msg,
-      new protoscript.BinaryWriter(),
-    ).getResultBuffer();
+  encode: function (_msg?: PartialDeep<ListGroupsRequest>): Uint8Array {
+    return new Uint8Array();
   },
 
   /**
    * Deserializes ListGroupsRequest from protobuf.
    */
-  decode: function (bytes: ByteSource): ListGroupsRequest {
-    return ListGroupsRequest._readMessage(
-      ListGroupsRequest.initialize(),
-      new protoscript.BinaryReader(bytes),
-    );
+  decode: function (_bytes?: ByteSource): ListGroupsRequest {
+    return {};
   },
 
   /**
@@ -741,7 +713,6 @@ export const ListGroupsRequest = {
    */
   initialize: function (msg?: Partial<ListGroupsRequest>): ListGroupsRequest {
     return {
-      applicationId: "",
       ...msg,
     };
   },
@@ -750,12 +721,9 @@ export const ListGroupsRequest = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<ListGroupsRequest>,
+    _msg: PartialDeep<ListGroupsRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     return writer;
   },
 
@@ -763,23 +731,10 @@ export const ListGroupsRequest = {
    * @private
    */
   _readMessage: function (
-    msg: ListGroupsRequest,
-    reader: protoscript.BinaryReader,
+    _msg: ListGroupsRequest,
+    _reader: protoscript.BinaryReader,
   ): ListGroupsRequest {
-    while (reader.nextField()) {
-      const field = reader.getFieldNumber();
-      switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
-        default: {
-          reader.skipField();
-          break;
-        }
-      }
-    }
-    return msg;
+    return _msg;
   },
 };
 
@@ -1117,7 +1072,6 @@ export const GroupMembershipRequest = {
     msg?: Partial<GroupMembershipRequest>,
   ): GroupMembershipRequest {
     return {
-      applicationId: "",
       groupId: "",
       username: "",
       ...msg,
@@ -1131,9 +1085,6 @@ export const GroupMembershipRequest = {
     msg: PartialDeep<GroupMembershipRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.groupId) {
       writer.writeString(2, msg.groupId);
     }
@@ -1153,10 +1104,6 @@ export const GroupMembershipRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.groupId = reader.readString();
           break;
@@ -1353,7 +1300,6 @@ export const ListUserGroupsForUserRequest = {
     msg?: Partial<ListUserGroupsForUserRequest>,
   ): ListUserGroupsForUserRequest {
     return {
-      applicationId: "",
       username: "",
       ...msg,
     };
@@ -1366,9 +1312,6 @@ export const ListUserGroupsForUserRequest = {
     msg: PartialDeep<ListUserGroupsForUserRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.username) {
       writer.writeString(2, msg.username);
     }
@@ -1385,10 +1328,6 @@ export const ListUserGroupsForUserRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.username = reader.readString();
           break;
@@ -1428,7 +1367,6 @@ export const GroupJSON = {
   initialize: function (msg?: Partial<Group>): Group {
     return {
       id: "",
-      applicationId: "",
       name: "",
       description: "",
       createdAt: protoscript.TimestampJSON.initialize(),
@@ -1444,9 +1382,6 @@ export const GroupJSON = {
     const json: Record<string, unknown> = {};
     if (msg.id) {
       json["id"] = msg.id;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.name) {
       json["name"] = msg.name;
@@ -1470,10 +1405,6 @@ export const GroupJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _name_ = json["name"];
     if (_name_) {
@@ -1518,7 +1449,6 @@ export const CreateGroupRequestJSON = {
    */
   initialize: function (msg?: Partial<CreateGroupRequest>): CreateGroupRequest {
     return {
-      applicationId: "",
       name: "",
       description: "",
       ...msg,
@@ -1532,9 +1462,6 @@ export const CreateGroupRequestJSON = {
     msg: PartialDeep<CreateGroupRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.name) {
       json["name"] = msg.name;
     }
@@ -1551,10 +1478,6 @@ export const CreateGroupRequestJSON = {
     msg: CreateGroupRequest,
     json: any,
   ): CreateGroupRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _name_ = json["name"];
     if (_name_) {
       msg.name = _name_;
@@ -1624,18 +1547,15 @@ export const ListGroupsRequestJSON = {
   /**
    * Serializes ListGroupsRequest to JSON.
    */
-  encode: function (msg: PartialDeep<ListGroupsRequest>): string {
-    return JSON.stringify(ListGroupsRequestJSON._writeMessage(msg));
+  encode: function (_msg?: PartialDeep<ListGroupsRequest>): string {
+    return "{}";
   },
 
   /**
    * Deserializes ListGroupsRequest from JSON.
    */
-  decode: function (json: string): ListGroupsRequest {
-    return ListGroupsRequestJSON._readMessage(
-      ListGroupsRequestJSON.initialize(),
-      JSON.parse(json),
-    );
+  decode: function (_json?: string): ListGroupsRequest {
+    return {};
   },
 
   /**
@@ -1643,7 +1563,6 @@ export const ListGroupsRequestJSON = {
    */
   initialize: function (msg?: Partial<ListGroupsRequest>): ListGroupsRequest {
     return {
-      applicationId: "",
       ...msg,
     };
   },
@@ -1652,13 +1571,9 @@ export const ListGroupsRequestJSON = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<ListGroupsRequest>,
+    _msg: PartialDeep<ListGroupsRequest>,
   ): Record<string, unknown> {
-    const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
-    return json;
+    return {};
   },
 
   /**
@@ -1666,12 +1581,8 @@ export const ListGroupsRequestJSON = {
    */
   _readMessage: function (
     msg: ListGroupsRequest,
-    json: any,
+    _json: any,
   ): ListGroupsRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     return msg;
   },
 };
@@ -1967,7 +1878,6 @@ export const GroupMembershipRequestJSON = {
     msg?: Partial<GroupMembershipRequest>,
   ): GroupMembershipRequest {
     return {
-      applicationId: "",
       groupId: "",
       username: "",
       ...msg,
@@ -1981,9 +1891,6 @@ export const GroupMembershipRequestJSON = {
     msg: PartialDeep<GroupMembershipRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.groupId) {
       json["groupId"] = msg.groupId;
     }
@@ -2000,10 +1907,6 @@ export const GroupMembershipRequestJSON = {
     msg: GroupMembershipRequest,
     json: any,
   ): GroupMembershipRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _groupId_ = json["groupId"] ?? json["group_id"];
     if (_groupId_) {
       msg.groupId = _groupId_;
@@ -2168,7 +2071,6 @@ export const ListUserGroupsForUserRequestJSON = {
     msg?: Partial<ListUserGroupsForUserRequest>,
   ): ListUserGroupsForUserRequest {
     return {
-      applicationId: "",
       username: "",
       ...msg,
     };
@@ -2181,9 +2083,6 @@ export const ListUserGroupsForUserRequestJSON = {
     msg: PartialDeep<ListUserGroupsForUserRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.username) {
       json["username"] = msg.username;
     }
@@ -2197,10 +2096,6 @@ export const ListUserGroupsForUserRequestJSON = {
     msg: ListUserGroupsForUserRequest,
     json: any,
   ): ListUserGroupsForUserRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _username_ = json["username"];
     if (_username_) {
       msg.username = _username_;

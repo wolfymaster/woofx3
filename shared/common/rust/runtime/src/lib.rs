@@ -196,7 +196,10 @@ mod tests {
             camel_to_screaming_snake("barkloaderToken"),
             "BARKLOADER_TOKEN"
         );
-        assert_eq!(camel_to_screaming_snake("applicationId"), "APPLICATION_ID");
+        assert_eq!(
+            camel_to_screaming_snake("databaseProxyUrl"),
+            "DATABASE_PROXY_URL"
+        );
         assert_eq!(
             camel_to_screaming_snake("twitchChannelName"),
             "TWITCH_CHANNEL_NAME"

@@ -672,7 +672,6 @@ class FakeWebhookClient {
   async send(event: { type: string; [key: string]: unknown }): Promise<void> {
     this.sentEvents.push(event);
   }
-  setApplicationId(): void {}
   async refreshCallbackUrls(): Promise<void> {}
 }
 
@@ -682,7 +681,7 @@ describe("initModuleHandlers", () => {
     const webhook = new FakeWebhookClient();
     await initModuleHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.module.action.registered.app-1", {
+    await nats.dispatch("db.module.action.registered.system", {
       module_key: "twitch:1.0.0:abc",
       module_name: "Twitch",
       version: "1.0.0",
@@ -698,7 +697,7 @@ describe("initModuleHandlers", () => {
     const webhook = new FakeWebhookClient();
     await initModuleHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.module.installed.app-1", {
+    await nats.dispatch("db.module.installed.system", {
       module_name: "Twitch",
       module_key: "twitch:1.0.0:abc",
       version: "1.0.0",
@@ -715,7 +714,7 @@ describe("initModuleHandlers", () => {
     const webhook = new FakeWebhookClient();
     await initModuleHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.module.delete_failed.app-1", {
+    await nats.dispatch("db.module.delete_failed.system", {
       module_name: "Twitch",
       module_key: "twitch:1.0.0:abc",
       error: "resource in use",
@@ -733,7 +732,7 @@ describe("initModuleHandlers", () => {
     const webhook = new FakeWebhookClient();
     await initModuleHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.module.resource.instance.created.app-1", {
+    await nats.dispatch("db.module.resource.instance.created.system", {
       id: "res-1",
       module_id: "mod-1",
       kind: "counter",

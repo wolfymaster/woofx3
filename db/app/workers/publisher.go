@@ -22,8 +22,10 @@ func NewEventPublisher(repo *repository.DbEventRepository, logger *slog.Logger) 
 	}
 }
 
+// subjectScope is the fourth token of every outbox subject.
+const subjectScope = "system"
+
 type PublishOptions struct {
-	ApplicationID   string
 	ClientID        string
 	EntityType      string
 	EntityID        string
@@ -38,7 +40,6 @@ func (p *EventPublisher) Publish(opts PublishOptions) error {
 		"entity_type", opts.EntityType,
 		"entity_id", opts.EntityID,
 		"operation", opts.Operation,
-		"application_id", opts.ApplicationID,
 		"auto_acknowledge", opts.AutoAcknowledge)
 
 	payloadBytes, err := json.Marshal(opts.Data)
@@ -50,15 +51,12 @@ func (p *EventPublisher) Publish(opts PublishOptions) error {
 		return fmt.Errorf("marshal payload: %w", err)
 	}
 
-	appSegment := opts.ApplicationID
-	if appSegment == "" {
-		appSegment = "system"
-	}
-
+	// Subscribers match `db.<entity>.<operation>.*`, so the subject
+	// carries a fixed fourth token.
 	subject := fmt.Sprintf("db.%s.%s.%s",
 		opts.EntityType,
 		opts.Operation,
-		appSegment,
+		subjectScope,
 	)
 
 	eventType := fmt.Sprintf("%s.%s", opts.EntityType, opts.Operation)
@@ -71,7 +69,6 @@ func (p *EventPublisher) Publish(opts PublishOptions) error {
 
 	event := &models.WorkerEvent{
 		EventType:       eventType,
-		ApplicationID:   opts.ApplicationID,
 		ClientID:        opts.ClientID,
 		EntityType:      opts.EntityType,
 		EntityID:        opts.EntityID,

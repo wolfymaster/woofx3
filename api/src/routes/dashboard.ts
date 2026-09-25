@@ -16,9 +16,7 @@ export const dashboardRoutes = routeModule({
     }>;
   }> {
     // Get workflow stats
-    const applicationId = await this.ensureApplicationId();
     const workflowsReq: workflow.ListWorkflowsRequest = {
-      applicationId,
       includeDisabled: true,
       page: 1,
       pageSize: 1000,
@@ -31,7 +29,6 @@ export const dashboardRoutes = routeModule({
     // Get running executions
     const runningExecReq: workflow.ListWorkflowExecutionsRequest = {
       workflowId: "",
-      applicationId,
       status: "running",
       startedBy: "",
       from: protoscript.Timestamp.initialize(),

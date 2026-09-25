@@ -45,7 +45,7 @@ export async function handleWidgetStorageRoute(
   }
 
   try {
-    const value = await deps.moduleState.read(sceneId, claims.applicationId, instance.moduleId, key);
+    const value = await deps.moduleState.read(sceneId, instance.moduleId, key);
     return jsonResponse(200, { value });
   } catch (err) {
     deps.ctx.logger.warn("widget storage read failed", {

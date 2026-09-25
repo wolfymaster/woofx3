@@ -19,7 +19,6 @@ import * as common from "./common.pb";
 export interface Client {
   id: string;
   description: string;
-  applicationId: string;
   clientId: string;
   clientSecret: string;
   callbackUrl: string;
@@ -28,7 +27,6 @@ export interface Client {
 
 export interface CreateClientRequest {
   description: string;
-  applicationId: string;
   callbackUrl: string;
   callbackToken: string;
 }
@@ -37,9 +35,7 @@ export interface GetClientRequest {
   clientId: string;
 }
 
-export interface ListClientsRequest {
-  applicationId: string;
-}
+export interface ListClientsRequest {}
 
 export interface UpdateClientRequest {
   id: string;
@@ -335,7 +331,6 @@ export const Client = {
     return {
       id: "",
       description: "",
-      applicationId: "",
       clientId: "",
       clientSecret: "",
       callbackUrl: "",
@@ -356,9 +351,6 @@ export const Client = {
     }
     if (msg.description) {
       writer.writeString(2, msg.description);
-    }
-    if (msg.applicationId) {
-      writer.writeString(3, msg.applicationId);
     }
     if (msg.clientId) {
       writer.writeString(4, msg.clientId);
@@ -391,10 +383,6 @@ export const Client = {
         }
         case 2: {
           msg.description = reader.readString();
-          break;
-        }
-        case 3: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 4: {
@@ -452,7 +440,6 @@ export const CreateClientRequest = {
   ): CreateClientRequest {
     return {
       description: "",
-      applicationId: "",
       callbackUrl: "",
       callbackToken: "",
       ...msg,
@@ -468,9 +455,6 @@ export const CreateClientRequest = {
   ): protoscript.BinaryWriter {
     if (msg.description) {
       writer.writeString(1, msg.description);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.callbackUrl) {
       writer.writeString(3, msg.callbackUrl);
@@ -493,10 +477,6 @@ export const CreateClientRequest = {
       switch (field) {
         case 1: {
           msg.description = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -589,21 +569,15 @@ export const ListClientsRequest = {
   /**
    * Serializes ListClientsRequest to protobuf.
    */
-  encode: function (msg: PartialDeep<ListClientsRequest>): Uint8Array {
-    return ListClientsRequest._writeMessage(
-      msg,
-      new protoscript.BinaryWriter(),
-    ).getResultBuffer();
+  encode: function (_msg?: PartialDeep<ListClientsRequest>): Uint8Array {
+    return new Uint8Array();
   },
 
   /**
    * Deserializes ListClientsRequest from protobuf.
    */
-  decode: function (bytes: ByteSource): ListClientsRequest {
-    return ListClientsRequest._readMessage(
-      ListClientsRequest.initialize(),
-      new protoscript.BinaryReader(bytes),
-    );
+  decode: function (_bytes?: ByteSource): ListClientsRequest {
+    return {};
   },
 
   /**
@@ -611,7 +585,6 @@ export const ListClientsRequest = {
    */
   initialize: function (msg?: Partial<ListClientsRequest>): ListClientsRequest {
     return {
-      applicationId: "",
       ...msg,
     };
   },
@@ -620,12 +593,9 @@ export const ListClientsRequest = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<ListClientsRequest>,
+    _msg: PartialDeep<ListClientsRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     return writer;
   },
 
@@ -633,23 +603,10 @@ export const ListClientsRequest = {
    * @private
    */
   _readMessage: function (
-    msg: ListClientsRequest,
-    reader: protoscript.BinaryReader,
+    _msg: ListClientsRequest,
+    _reader: protoscript.BinaryReader,
   ): ListClientsRequest {
-    while (reader.nextField()) {
-      const field = reader.getFieldNumber();
-      switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
-        default: {
-          reader.skipField();
-          break;
-        }
-      }
-    }
-    return msg;
+    return _msg;
   },
 };
 
@@ -1077,7 +1034,6 @@ export const ClientJSON = {
     return {
       id: "",
       description: "",
-      applicationId: "",
       clientId: "",
       clientSecret: "",
       callbackUrl: "",
@@ -1096,9 +1052,6 @@ export const ClientJSON = {
     }
     if (msg.description) {
       json["description"] = msg.description;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.clientId) {
       json["clientId"] = msg.clientId;
@@ -1126,10 +1079,6 @@ export const ClientJSON = {
     const _description_ = json["description"];
     if (_description_) {
       msg.description = _description_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _clientId_ = json["clientId"] ?? json["client_id"];
     if (_clientId_) {
@@ -1177,7 +1126,6 @@ export const CreateClientRequestJSON = {
   ): CreateClientRequest {
     return {
       description: "",
-      applicationId: "",
       callbackUrl: "",
       callbackToken: "",
       ...msg,
@@ -1193,9 +1141,6 @@ export const CreateClientRequestJSON = {
     const json: Record<string, unknown> = {};
     if (msg.description) {
       json["description"] = msg.description;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.callbackUrl) {
       json["callbackUrl"] = msg.callbackUrl;
@@ -1216,10 +1161,6 @@ export const CreateClientRequestJSON = {
     const _description_ = json["description"];
     if (_description_) {
       msg.description = _description_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _callbackUrl_ = json["callbackUrl"] ?? json["callback_url"];
     if (_callbackUrl_) {
@@ -1290,18 +1231,15 @@ export const ListClientsRequestJSON = {
   /**
    * Serializes ListClientsRequest to JSON.
    */
-  encode: function (msg: PartialDeep<ListClientsRequest>): string {
-    return JSON.stringify(ListClientsRequestJSON._writeMessage(msg));
+  encode: function (_msg?: PartialDeep<ListClientsRequest>): string {
+    return "{}";
   },
 
   /**
    * Deserializes ListClientsRequest from JSON.
    */
-  decode: function (json: string): ListClientsRequest {
-    return ListClientsRequestJSON._readMessage(
-      ListClientsRequestJSON.initialize(),
-      JSON.parse(json),
-    );
+  decode: function (_json?: string): ListClientsRequest {
+    return {};
   },
 
   /**
@@ -1309,7 +1247,6 @@ export const ListClientsRequestJSON = {
    */
   initialize: function (msg?: Partial<ListClientsRequest>): ListClientsRequest {
     return {
-      applicationId: "",
       ...msg,
     };
   },
@@ -1318,13 +1255,9 @@ export const ListClientsRequestJSON = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<ListClientsRequest>,
+    _msg: PartialDeep<ListClientsRequest>,
   ): Record<string, unknown> {
-    const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
-    return json;
+    return {};
   },
 
   /**
@@ -1332,12 +1265,8 @@ export const ListClientsRequestJSON = {
    */
   _readMessage: function (
     msg: ListClientsRequest,
-    json: any,
+    _json: any,
   ): ListClientsRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     return msg;
   },
 };

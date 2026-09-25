@@ -61,7 +61,8 @@ service SceneEventService {
 message SceneEvent {
     string id = 1;
     string scene_id = 2;
-    string application_id = 3;
+    reserved 3;
+    reserved "application_id";
     // Event class, e.g. "widget.event", "alert" — mirrors the
     // `OverlayWidgetEvent`/CloudEvent `type` convention used elsewhere.
     string type = 4;
@@ -102,7 +103,8 @@ message SceneEventLogEntry {
 
 message RecordSceneEventRequest {
     string scene_id = 1;
-    string application_id = 2;
+    reserved 2;
+    reserved "application_id";
     string type = 3;
     string key = 4;
     // JSON-encoded payload.

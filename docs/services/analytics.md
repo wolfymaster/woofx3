@@ -32,7 +32,7 @@ goal, and `counterReset` wipes even those (`counter.js:65-68`).
 **No entity axis.** "Users who gifted five subs" needs a number *per viewer*.
 Expressed in counters that is one key per viewer per metric — unbounded
 cardinality in a key/value store with no query API. `ClearSessionScoped` and
-its siblings already do a full per-application Badger scan
+its siblings already do a full Badger scan
 (`db/app/services/storage_service.go:246-247`, acceptable only because they are
 not hot-path); a per-viewer key space is how that stops being true.
 
@@ -98,8 +98,8 @@ someone starts from nothing.
 | A per-viewer rollup precedent | **Scaffolded, dead** | `treats` / `treats_summary` view; Twirp generated, no service mounted |
 
 Two of those deserve care. `user_events` is
-`{userid, application_id, eventtype, eventvalue jsonb, createdat}` with indexes
-on userid, appid and eventtype (`db/database/models/user_event.go`). It has no
+`{userid, eventtype, eventvalue jsonb, createdat}` with indexes
+on userid and eventtype (`db/database/models/user_event.go`). It has no
 `session_id` column and no index on `createdat`, so it cannot answer either
 half of "per stream, over time" as it stands. It is a good starting shape, not
 a ready one.

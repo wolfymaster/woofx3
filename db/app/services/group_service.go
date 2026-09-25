@@ -37,33 +37,22 @@ func NewGroupService(groupRepo *repo.GroupRepository, permissionRepo *repo.Permi
 
 func toProtoGroup(g *models.Group) *client.Group {
 	return &client.Group{
-		Id:            g.ID.String(),
-		ApplicationId: g.ApplicationID.String(),
-		Name:          g.Name,
-		Description:   g.Description,
-		CreatedAt:     timestamppb.New(g.CreatedAt),
-		IsBuiltIn:     g.IsBuiltIn,
+		Id:          g.ID.String(),
+		Name:        g.Name,
+		Description: g.Description,
+		CreatedAt:   timestamppb.New(g.CreatedAt),
+		IsBuiltIn:   g.IsBuiltIn,
 	}
 }
 
 func (s *groupService) CreateGroup(ctx context.Context, req *client.CreateGroupRequest) (*client.GroupResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	appID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-
 	// Assign the id here rather than leaning on the column default: that
 	// default is Postgres-only (uuid_generate_v4()), so on the SQLite backend
 	// every group would otherwise be inserted with the zero UUID and collide.
 	m := models.Group{
-		ID:            uuid.New(),
-		ApplicationID: appID,
-		Name:          strings.TrimSpace(req.Name),
-		Description:   req.Description,
+		ID:          uuid.New(),
+		Name:        strings.TrimSpace(req.Name),
+		Description: req.Description,
 	}
 	if err := s.repo.Create(&m); err != nil {
 		return nil, err
@@ -91,16 +80,7 @@ func (s *groupService) GetGroup(ctx context.Context, req *client.GetGroupRequest
 }
 
 func (s *groupService) ListGroups(ctx context.Context, req *client.ListGroupsRequest) (*client.ListGroupsResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	appID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-
-	groups, err := s.repo.GetByApplicationID(appID)
+	groups, err := s.repo.List()
 	if err != nil {
 		return nil, err
 	}
@@ -162,14 +142,6 @@ func (s *groupService) DeleteGroup(ctx context.Context, req *client.DeleteGroupR
 }
 
 func (s *groupService) AddUserToGroup(ctx context.Context, req *client.GroupMembershipRequest) (*client.ResponseStatus, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	appID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
 	groupID, err := uuid.Parse(req.GroupId)
 	if err != nil {
 		return nil, err
@@ -179,7 +151,7 @@ func (s *groupService) AddUserToGroup(ctx context.Context, req *client.GroupMemb
 	if err := s.repo.AddMember(groupID, username); err != nil {
 		return nil, err
 	}
-	if err := s.permissionRepo.AddGrouping(appID, username, groupSubject(groupID)); err != nil {
+	if err := s.permissionRepo.AddGrouping(username, groupSubject(groupID)); err != nil {
 		return nil, err
 	}
 	if err := s.enforcer.LoadPolicy(); err != nil {
@@ -190,14 +162,6 @@ func (s *groupService) AddUserToGroup(ctx context.Context, req *client.GroupMemb
 }
 
 func (s *groupService) RemoveUserFromGroup(ctx context.Context, req *client.GroupMembershipRequest) (*client.ResponseStatus, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	appID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
 	groupID, err := uuid.Parse(req.GroupId)
 	if err != nil {
 		return nil, err
@@ -207,7 +171,7 @@ func (s *groupService) RemoveUserFromGroup(ctx context.Context, req *client.Grou
 	if err := s.repo.RemoveMember(groupID, username); err != nil {
 		return nil, err
 	}
-	if err := s.permissionRepo.RemoveGrouping(appID, username, groupSubject(groupID)); err != nil {
+	if err := s.permissionRepo.RemoveGrouping(username, groupSubject(groupID)); err != nil {
 		return nil, err
 	}
 	if err := s.enforcer.LoadPolicy(); err != nil {
@@ -233,17 +197,9 @@ func (s *groupService) ListGroupMembers(ctx context.Context, req *client.ListGro
 }
 
 func (s *groupService) ListUserGroupsForUser(ctx context.Context, req *client.ListUserGroupsForUserRequest) (*client.ListGroupsResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	appID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
 	username := strings.ToLower(strings.TrimSpace(req.Username))
 
-	groups, err := s.repo.ListGroupsForUser(appID, username)
+	groups, err := s.repo.ListGroupsForUser(username)
 	if err != nil {
 		return nil, err
 	}

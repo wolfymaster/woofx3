@@ -32,7 +32,6 @@ type Workflow struct {
 	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	Description    string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	ApplicationId  string                 `protobuf:"bytes,4,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	Enabled        bool                   `protobuf:"varint,6,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	Variables      map[string]string      `protobuf:"bytes,8,rep,name=variables,proto3" json:"variables,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Default variables for the workflow
 	OnSuccess      string                 `protobuf:"bytes,9,opt,name=on_success,json=onSuccess,proto3" json:"on_success,omitempty"`
@@ -107,13 +106,6 @@ func (x *Workflow) GetName() string {
 func (x *Workflow) GetDescription() string {
 	if x != nil {
 		return x.Description
-	}
-	return ""
-}
-
-func (x *Workflow) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -218,20 +210,19 @@ func (x *Workflow) GetTaxonomy() []string {
 
 // Workflow execution
 type WorkflowExecution struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                                                     // Unique identifier for the execution
-	WorkflowId    string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`                                                   // ID of the workflow being executed
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                                                                             // Current status (pending, running, completed, failed, cancelled)
-	StartedBy     string                 `protobuf:"bytes,4,opt,name=started_by,json=startedBy,proto3" json:"started_by,omitempty"`                                                      // User ID who triggered the execution
-	ApplicationId string                 `protobuf:"bytes,5,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`                                          // ID of the application
-	Inputs        map[string]string      `protobuf:"bytes,6,rep,name=inputs,proto3" json:"inputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`   // Input variables for the workflow
-	Outputs       map[string]string      `protobuf:"bytes,7,rep,name=outputs,proto3" json:"outputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Output variables from the workflow
-	Error         string                 `protobuf:"bytes,8,opt,name=error,proto3" json:"error,omitempty"`                                                                               // Error message if the execution failed
-	StartedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
-	CompletedAt   *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	Steps         []*ExecutionStep       `protobuf:"bytes,13,rep,name=steps,proto3" json:"steps,omitempty"` // Execution details for each step
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                                                                     // Unique identifier for the execution
+	WorkflowId  string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`                                                   // ID of the workflow being executed
+	Status      string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                                                                             // Current status (pending, running, completed, failed, cancelled)
+	StartedBy   string                 `protobuf:"bytes,4,opt,name=started_by,json=startedBy,proto3" json:"started_by,omitempty"`                                                      // User ID who triggered the execution
+	Inputs      map[string]string      `protobuf:"bytes,6,rep,name=inputs,proto3" json:"inputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`   // Input variables for the workflow
+	Outputs     map[string]string      `protobuf:"bytes,7,rep,name=outputs,proto3" json:"outputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Output variables from the workflow
+	Error       string                 `protobuf:"bytes,8,opt,name=error,proto3" json:"error,omitempty"`                                                                               // Error message if the execution failed
+	StartedAt   *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	CompletedAt *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt   *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Steps       []*ExecutionStep       `protobuf:"bytes,13,rep,name=steps,proto3" json:"steps,omitempty"` // Execution details for each step
 	// The CloudEvent the run started from, verbatim. What a replay re-feeds to
 	// the engine, so `${trigger.*}` resolves exactly as it did the first time.
 	TriggerEventJson string `protobuf:"bytes,14,opt,name=trigger_event_json,json=triggerEventJson,proto3" json:"trigger_event_json,omitempty"`
@@ -295,13 +286,6 @@ func (x *WorkflowExecution) GetStatus() string {
 func (x *WorkflowExecution) GetStartedBy() string {
 	if x != nil {
 		return x.StartedBy
-	}
-	return ""
-}
-
-func (x *WorkflowExecution) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -519,7 +503,6 @@ type CreateWorkflowRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Description    string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
-	ApplicationId  string                 `protobuf:"bytes,3,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	Enabled        bool                   `protobuf:"varint,5,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	Variables      map[string]string      `protobuf:"bytes,7,rep,name=variables,proto3" json:"variables,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	OnSuccess      string                 `protobuf:"bytes,8,opt,name=on_success,json=onSuccess,proto3" json:"on_success,omitempty"`
@@ -581,13 +564,6 @@ func (x *CreateWorkflowRequest) GetName() string {
 func (x *CreateWorkflowRequest) GetDescription() string {
 	if x != nil {
 		return x.Description
-	}
-	return ""
-}
-
-func (x *CreateWorkflowRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -955,7 +931,6 @@ func (x *DeleteWorkflowRequest) GetId() string {
 // Request to list workflows
 type ListWorkflowsRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId   string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	IncludeDisabled bool                   `protobuf:"varint,2,opt,name=include_disabled,json=includeDisabled,proto3" json:"include_disabled,omitempty"`
 	Page            int32                  `protobuf:"varint,3,opt,name=page,proto3" json:"page,omitempty"`
 	PageSize        int32                  `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
@@ -993,13 +968,6 @@ func (x *ListWorkflowsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListWorkflowsRequest.ProtoReflect.Descriptor instead.
 func (*ListWorkflowsRequest) Descriptor() ([]byte, []int) {
 	return file_workflow_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *ListWorkflowsRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *ListWorkflowsRequest) GetIncludeDisabled() bool {
@@ -1118,7 +1086,6 @@ func (x *ListWorkflowsResponse) GetPageSize() int32 {
 type ExecuteWorkflowRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkflowId    string                 `protobuf:"bytes,1,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`                                                 // ID of the workflow to execute
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`                                        // ID of the application
 	StartedBy     string                 `protobuf:"bytes,3,opt,name=started_by,json=startedBy,proto3" json:"started_by,omitempty"`                                                    // User ID who triggered the execution
 	Inputs        map[string]string      `protobuf:"bytes,4,rep,name=inputs,proto3" json:"inputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Input variables for the workflow
 	Async         bool                   `protobuf:"varint,5,opt,name=async,proto3" json:"async,omitempty"`                                                                            // Whether to execute asynchronously
@@ -1160,13 +1127,6 @@ func (*ExecuteWorkflowRequest) Descriptor() ([]byte, []int) {
 func (x *ExecuteWorkflowRequest) GetWorkflowId() string {
 	if x != nil {
 		return x.WorkflowId
-	}
-	return ""
-}
-
-func (x *ExecuteWorkflowRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -1377,12 +1337,11 @@ func (x *WorkflowExecutionResponse) GetExecution() *WorkflowExecution {
 // Request to list workflow executions
 type ListWorkflowExecutionsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	WorkflowId    string                 `protobuf:"bytes,1,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`          // Filter by workflow ID
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // Filter by application ID
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                                    // Filter by status
-	StartedBy     string                 `protobuf:"bytes,4,opt,name=started_by,json=startedBy,proto3" json:"started_by,omitempty"`             // Filter by user who started the execution
-	From          *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=from,proto3" json:"from,omitempty"`                                        // Filter by start time (inclusive)
-	To            *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=to,proto3" json:"to,omitempty"`                                            // Filter by end time (inclusive)
+	WorkflowId    string                 `protobuf:"bytes,1,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"` // Filter by workflow ID
+	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                           // Filter by status
+	StartedBy     string                 `protobuf:"bytes,4,opt,name=started_by,json=startedBy,proto3" json:"started_by,omitempty"`    // Filter by user who started the execution
+	From          *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=from,proto3" json:"from,omitempty"`                               // Filter by start time (inclusive)
+	To            *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=to,proto3" json:"to,omitempty"`                                   // Filter by end time (inclusive)
 	Page          int32                  `protobuf:"varint,7,opt,name=page,proto3" json:"page,omitempty"`
 	PageSize      int32                  `protobuf:"varint,8,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	SortBy        string                 `protobuf:"bytes,9,opt,name=sort_by,json=sortBy,proto3" json:"sort_by,omitempty"`         // Field to sort by (e.g., "started_at", "completed_at")
@@ -1424,13 +1383,6 @@ func (*ListWorkflowExecutionsRequest) Descriptor() ([]byte, []int) {
 func (x *ListWorkflowExecutionsRequest) GetWorkflowId() string {
 	if x != nil {
 		return x.WorkflowId
-	}
-	return ""
-}
-
-func (x *ListWorkflowExecutionsRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -1570,11 +1522,10 @@ func (x *ListWorkflowExecutionsResponse) GetPageSize() int32 {
 
 // Request to record a run the engine has already started.
 type RecordWorkflowRunRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // Engine-minted execution id
-	WorkflowId    string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,3,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // The owning user is resolved from this
-	TriggeredBy   string                 `protobuf:"bytes,4,opt,name=triggered_by,json=triggeredBy,proto3" json:"triggered_by,omitempty"`       // Provenance: "twitch", "dashboard", ...
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // Engine-minted execution id
+	WorkflowId  string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`
+	TriggeredBy string                 `protobuf:"bytes,4,opt,name=triggered_by,json=triggeredBy,proto3" json:"triggered_by,omitempty"` // Provenance: "twitch", "dashboard", ...
 	// Originating CloudEvent, stored verbatim so a replay can re-feed it to
 	// the engine unchanged.
 	TriggerEventJson string                 `protobuf:"bytes,5,opt,name=trigger_event_json,json=triggerEventJson,proto3" json:"trigger_event_json,omitempty"`
@@ -1623,13 +1574,6 @@ func (x *RecordWorkflowRunRequest) GetId() string {
 func (x *RecordWorkflowRunRequest) GetWorkflowId() string {
 	if x != nil {
 		return x.WorkflowId
-	}
-	return ""
-}
-
-func (x *RecordWorkflowRunRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -1736,7 +1680,6 @@ func (x *UpdateWorkflowRunStatusRequest) GetCompletedAt() *timestamppb.Timestamp
 type RecordWorkflowRunStepRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ExecutionId   string                 `protobuf:"bytes,1,opt,name=execution_id,json=executionId,proto3" json:"execution_id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	TaskId        string                 `protobuf:"bytes,3,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	Name          string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
 	Status        string                 `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`    // pending, running, waiting, success, failed, skipped
@@ -1785,13 +1728,6 @@ func (*RecordWorkflowRunStepRequest) Descriptor() ([]byte, []int) {
 func (x *RecordWorkflowRunStepRequest) GetExecutionId() string {
 	if x != nil {
 		return x.ExecutionId
-	}
-	return ""
-}
-
-func (x *RecordWorkflowRunStepRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -1930,12 +1866,11 @@ var File_workflow_proto protoreflect.FileDescriptor
 
 const file_workflow_proto_rawDesc = "" +
 	"\n" +
-	"\x0eworkflow.proto\x12\bworkflow\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfa\x05\n" +
+	"\x0eworkflow.proto\x12\bworkflow\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe9\x05\n" +
 	"\bWorkflow\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\x12%\n" +
-	"\x0eapplication_id\x18\x04 \x01(\tR\rapplicationId\x12\x18\n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x18\n" +
 	"\aenabled\x18\x06 \x01(\bR\aenabled\x12?\n" +
 	"\tvariables\x18\b \x03(\v2!.workflow.Workflow.VariablesEntryR\tvariables\x12\x1d\n" +
 	"\n" +
@@ -1960,16 +1895,15 @@ const file_workflow_proto_rawDesc = "" +
 	"\btaxonomy\x18\x14 \x03(\tR\btaxonomy\x1a<\n" +
 	"\x0eVariablesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x05\x10\x06J\x04\b\a\x10\bR\n" +
-	"created_byR\x05steps\"\xa4\x06\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\a\x10\bR\x0eapplication_idR\n" +
+	"created_byR\x05steps\"\x93\x06\n" +
 	"\x11WorkflowExecution\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
 	"workflowId\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12\x1d\n" +
 	"\n" +
-	"started_by\x18\x04 \x01(\tR\tstartedBy\x12%\n" +
-	"\x0eapplication_id\x18\x05 \x01(\tR\rapplicationId\x12?\n" +
+	"started_by\x18\x04 \x01(\tR\tstartedBy\x12?\n" +
 	"\x06inputs\x18\x06 \x03(\v2'.workflow.WorkflowExecution.InputsEntryR\x06inputs\x12B\n" +
 	"\aoutputs\x18\a \x03(\v2(.workflow.WorkflowExecution.OutputsEntryR\aoutputs\x12\x14\n" +
 	"\x05error\x18\b \x01(\tR\x05error\x129\n" +
@@ -1989,7 +1923,7 @@ const file_workflow_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a:\n" +
 	"\fOutputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9f\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x05\x10\x06R\x0eapplication_id\"\x9f\x03\n" +
 	"\rExecutionStep\x12\x17\n" +
 	"\astep_id\x18\x01 \x01(\tR\x06stepId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
@@ -2006,11 +1940,10 @@ const file_workflow_proto_rawDesc = "" +
 	"inputsJson\x12!\n" +
 	"\foutputs_json\x18\f \x01(\tR\voutputsJson\x12\x1d\n" +
 	"\n" +
-	"step_index\x18\r \x01(\x05R\tstepIndexJ\x04\b\x06\x10\aJ\x04\b\a\x10\bR\x06inputsR\aoutputs\"\x8e\x05\n" +
+	"step_index\x18\r \x01(\x05R\tstepIndexJ\x04\b\x06\x10\aJ\x04\b\a\x10\bR\x06inputsR\aoutputs\"\xfd\x04\n" +
 	"\x15CreateWorkflowRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x02 \x01(\tR\vdescription\x12%\n" +
-	"\x0eapplication_id\x18\x03 \x01(\tR\rapplicationId\x12\x18\n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x18\n" +
 	"\aenabled\x18\x05 \x01(\bR\aenabled\x12L\n" +
 	"\tvariables\x18\a \x03(\v2..workflow.CreateWorkflowRequest.VariablesEntryR\tvariables\x12\x1d\n" +
 	"\n" +
@@ -2031,7 +1964,7 @@ const file_workflow_proto_rawDesc = "" +
 	"\btaxonomy\x18\x11 \x03(\tR\btaxonomy\x1a<\n" +
 	"\x0eVariablesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x04\x10\x05J\x04\b\x06\x10\aR\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x06\x10\aR\x0eapplication_idR\n" +
 	"created_byR\x05steps\"$\n" +
 	"\x12GetWorkflowRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"r\n" +
@@ -2061,25 +1994,23 @@ const file_workflow_proto_rawDesc = "" +
 	"\n" +
 	"\b_enabledJ\x04\b\x05\x10\x06R\x05steps\"'\n" +
 	"\x15DeleteWorkflowRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xcf\x01\n" +
-	"\x14ListWorkflowsRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12)\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xbe\x01\n" +
+	"\x14ListWorkflowsRequest\x12)\n" +
 	"\x10include_disabled\x18\x02 \x01(\bR\x0fincludeDisabled\x12\x12\n" +
 	"\x04page\x18\x03 \x01(\x05R\x04page\x12\x1b\n" +
 	"\tpage_size\x18\x04 \x01(\x05R\bpageSize\x12\x17\n" +
 	"\asort_by\x18\x05 \x01(\tR\x06sortBy\x12\x1b\n" +
-	"\tsort_desc\x18\x06 \x01(\bR\bsortDesc\"\xcb\x01\n" +
+	"\tsort_desc\x18\x06 \x01(\bR\bsortDescJ\x04\b\x01\x10\x02R\x0eapplication_id\"\xcb\x01\n" +
 	"\x15ListWorkflowsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x120\n" +
 	"\tworkflows\x18\x02 \x03(\v2\x12.workflow.WorkflowR\tworkflows\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\x05R\n" +
 	"totalCount\x12\x12\n" +
 	"\x04page\x18\x04 \x01(\x05R\x04page\x12\x1b\n" +
-	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\"\xbd\x02\n" +
+	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\"\xac\x02\n" +
 	"\x16ExecuteWorkflowRequest\x12\x1f\n" +
 	"\vworkflow_id\x18\x01 \x01(\tR\n" +
-	"workflowId\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x1d\n" +
+	"workflowId\x12\x1d\n" +
 	"\n" +
 	"started_by\x18\x03 \x01(\tR\tstartedBy\x12D\n" +
 	"\x06inputs\x18\x04 \x03(\v2,.workflow.ExecuteWorkflowRequest.InputsEntryR\x06inputs\x12\x14\n" +
@@ -2087,7 +2018,7 @@ const file_workflow_proto_rawDesc = "" +
 	"\x0ecorrelation_id\x18\x06 \x01(\tR\rcorrelationId\x1a9\n" +
 	"\vInputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa7\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x02\x10\x03R\x0eapplication_id\"\xa7\x02\n" +
 	"\x17ExecuteWorkflowResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12!\n" +
 	"\fexecution_id\x18\x02 \x01(\tR\vexecutionId\x12\x14\n" +
@@ -2102,11 +2033,10 @@ const file_workflow_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x86\x01\n" +
 	"\x19WorkflowExecutionResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x129\n" +
-	"\texecution\x18\x02 \x01(\v2\x1b.workflow.WorkflowExecutionR\texecution\"\xe1\x02\n" +
+	"\texecution\x18\x02 \x01(\v2\x1b.workflow.WorkflowExecutionR\texecution\"\xd0\x02\n" +
 	"\x1dListWorkflowExecutionsRequest\x12\x1f\n" +
 	"\vworkflow_id\x18\x01 \x01(\tR\n" +
-	"workflowId\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x16\n" +
+	"workflowId\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12\x1d\n" +
 	"\n" +
 	"started_by\x18\x04 \x01(\tR\tstartedBy\x12.\n" +
@@ -2116,7 +2046,7 @@ const file_workflow_proto_rawDesc = "" +
 	"\tpage_size\x18\b \x01(\x05R\bpageSize\x12\x17\n" +
 	"\asort_by\x18\t \x01(\tR\x06sortBy\x12\x1b\n" +
 	"\tsort_desc\x18\n" +
-	" \x01(\bR\bsortDesc\"\xdf\x01\n" +
+	" \x01(\bR\bsortDescJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xdf\x01\n" +
 	"\x1eListWorkflowExecutionsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12;\n" +
 	"\n" +
@@ -2125,26 +2055,24 @@ const file_workflow_proto_rawDesc = "" +
 	"\vtotal_count\x18\x03 \x01(\x05R\n" +
 	"totalCount\x12\x12\n" +
 	"\x04page\x18\x04 \x01(\x05R\x04page\x12\x1b\n" +
-	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\"\xfe\x01\n" +
+	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\"\xed\x01\n" +
 	"\x18RecordWorkflowRunRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
-	"workflowId\x12%\n" +
-	"\x0eapplication_id\x18\x03 \x01(\tR\rapplicationId\x12!\n" +
+	"workflowId\x12!\n" +
 	"\ftriggered_by\x18\x04 \x01(\tR\vtriggeredBy\x12,\n" +
 	"\x12trigger_event_json\x18\x05 \x01(\tR\x10triggerEventJson\x129\n" +
 	"\n" +
-	"started_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\"\xbe\x01\n" +
+	"started_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAtJ\x04\b\x03\x10\x04R\x0eapplication_id\"\xbe\x01\n" +
 	"\x1eUpdateWorkflowRunStatusRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x14\n" +
 	"\x05error\x18\x03 \x01(\tR\x05error\x12\x1f\n" +
 	"\voutput_json\x18\x04 \x01(\tR\n" +
 	"outputJson\x12=\n" +
-	"\fcompleted_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\"\xdb\x03\n" +
+	"\fcompleted_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\"\xca\x03\n" +
 	"\x1cRecordWorkflowRunStepRequest\x12!\n" +
-	"\fexecution_id\x18\x01 \x01(\tR\vexecutionId\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x17\n" +
+	"\fexecution_id\x18\x01 \x01(\tR\vexecutionId\x12\x17\n" +
 	"\atask_id\x18\x03 \x01(\tR\x06taskId\x12\x12\n" +
 	"\x04name\x18\x04 \x01(\tR\x04name\x12\x16\n" +
 	"\x06status\x18\x05 \x01(\tR\x06status\x12\x18\n" +
@@ -2160,7 +2088,7 @@ const file_workflow_proto_rawDesc = "" +
 	"started_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12=\n" +
 	"\fcompleted_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12\x1f\n" +
 	"\vduration_ms\x18\r \x01(\x03R\n" +
-	"durationMs\"H\n" +
+	"durationMsJ\x04\b\x02\x10\x03R\x0eapplication_id\"H\n" +
 	"\x1eCancelWorkflowExecutionRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason2\xbc\b\n" +

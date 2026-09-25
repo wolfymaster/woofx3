@@ -25,12 +25,11 @@ const (
 // Command represents a chat command that can be executed
 type Command struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                            // Unique identifier for the command
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // ID of the application this command belongs to
-	Command       string                 `protobuf:"bytes,3,opt,name=command,proto3" json:"command,omitempty"`                                  // Name of the command (without the prefix)
-	Cooldown      int32                  `protobuf:"varint,6,opt,name=cooldown,proto3" json:"cooldown,omitempty"`                               // Cooldown between command uses in seconds. 0 = never throttle.
-	Priority      int32                  `protobuf:"varint,7,opt,name=priority,proto3" json:"priority,omitempty"`                               // Priority of the command
-	Enabled       bool                   `protobuf:"varint,13,opt,name=enabled,proto3" json:"enabled,omitempty"`                                // Whether the command is enabled
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`              // Unique identifier for the command
+	Command       string                 `protobuf:"bytes,3,opt,name=command,proto3" json:"command,omitempty"`    // Name of the command (without the prefix)
+	Cooldown      int32                  `protobuf:"varint,6,opt,name=cooldown,proto3" json:"cooldown,omitempty"` // Cooldown between command uses in seconds. 0 = never throttle.
+	Priority      int32                  `protobuf:"varint,7,opt,name=priority,proto3" json:"priority,omitempty"` // Priority of the command
+	Enabled       bool                   `protobuf:"varint,13,opt,name=enabled,proto3" json:"enabled,omitempty"`  // Whether the command is enabled
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	CreatedByType string                 `protobuf:"bytes,16,opt,name=created_by_type,json=createdByType,proto3" json:"created_by_type,omitempty"`
 	CreatedByRef  string                 `protobuf:"bytes,17,opt,name=created_by_ref,json=createdByRef,proto3" json:"created_by_ref,omitempty"`
@@ -93,13 +92,6 @@ func (*Command) Descriptor() ([]byte, []int) {
 func (x *Command) GetId() string {
 	if x != nil {
 		return x.Id
-	}
-	return ""
-}
-
-func (x *Command) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -192,7 +184,6 @@ func (x *Command) GetActionsJson() string {
 type GetCommandRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Command       string                 `protobuf:"bytes,1,opt,name=command,proto3" json:"command,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	Username      *string                `protobuf:"bytes,3,opt,name=username,proto3,oneof" json:"username,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -231,13 +222,6 @@ func (*GetCommandRequest) Descriptor() ([]byte, []int) {
 func (x *GetCommandRequest) GetCommand() string {
 	if x != nil {
 		return x.Command
-	}
-	return ""
-}
-
-func (x *GetCommandRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -305,7 +289,6 @@ func (x *CommandResponse) GetCommand() *Command {
 // Request to list commands with optional filters
 type ListCommandsRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId   string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	IncludeDisabled bool                   `protobuf:"varint,2,opt,name=include_disabled,json=includeDisabled,proto3" json:"include_disabled,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -339,13 +322,6 @@ func (x *ListCommandsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListCommandsRequest.ProtoReflect.Descriptor instead.
 func (*ListCommandsRequest) Descriptor() ([]byte, []int) {
 	return file_command_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *ListCommandsRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *ListCommandsRequest) GetIncludeDisabled() bool {
@@ -411,7 +387,6 @@ func (x *ListCommandsResponse) GetCommands() []*Command {
 // Request to create a new command
 type CreateCommandRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId   string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	Command         string                 `protobuf:"bytes,2,opt,name=command,proto3" json:"command,omitempty"`
 	Enabled         bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	Cooldown        int32                  `protobuf:"varint,4,opt,name=cooldown,proto3" json:"cooldown,omitempty"`
@@ -456,13 +431,6 @@ func (x *CreateCommandRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use CreateCommandRequest.ProtoReflect.Descriptor instead.
 func (*CreateCommandRequest) Descriptor() ([]byte, []int) {
 	return file_command_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *CreateCommandRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *CreateCommandRequest) GetCommand() string {
@@ -709,10 +677,9 @@ var File_command_proto protoreflect.FileDescriptor
 
 const file_command_proto_rawDesc = "" +
 	"\n" +
-	"\rcommand.proto\x12\acommand\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8e\x04\n" +
+	"\rcommand.proto\x12\acommand\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfd\x03\n" +
 	"\aCommand\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\acommand\x18\x03 \x01(\tR\acommand\x12\x1a\n" +
 	"\bcooldown\x18\x06 \x01(\x05R\bcooldown\x12\x1a\n" +
 	"\bpriority\x18\a \x01(\x05R\bpriority\x12\x18\n" +
@@ -727,25 +694,22 @@ const file_command_proto_rawDesc = "" +
 	"\tgroup_ids\x18\x13 \x03(\tR\bgroupIds\x12\x1c\n" +
 	"\tusernames\x18\x14 \x03(\tR\tusernames\x12)\n" +
 	"\x10argument_pattern\x18\x15 \x01(\tR\x0fargumentPattern\x12!\n" +
-	"\factions_json\x18\x16 \x01(\tR\vactionsJsonJ\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x0e\x10\x0fR\x04typeR\n" +
+	"\factions_json\x18\x16 \x01(\tR\vactionsJsonJ\x04\b\x02\x10\x03J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x0e\x10\x0fR\x0eapplication_idR\x04typeR\n" +
 	"type_valueR\n" +
-	"created_by\"\x82\x01\n" +
+	"created_by\"q\n" +
 	"\x11GetCommandRequest\x12\x18\n" +
-	"\acommand\x18\x01 \x01(\tR\acommand\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x1f\n" +
+	"\acommand\x18\x01 \x01(\tR\acommand\x12\x1f\n" +
 	"\busername\x18\x03 \x01(\tH\x00R\busername\x88\x01\x01B\v\n" +
-	"\t_username\"m\n" +
+	"\t_usernameJ\x04\b\x02\x10\x03R\x0eapplication_id\"m\n" +
 	"\x0fCommandResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12*\n" +
-	"\acommand\x18\x02 \x01(\v2\x10.command.CommandR\acommand\"g\n" +
-	"\x13ListCommandsRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12)\n" +
-	"\x10include_disabled\x18\x02 \x01(\bR\x0fincludeDisabled\"t\n" +
+	"\acommand\x18\x02 \x01(\v2\x10.command.CommandR\acommand\"V\n" +
+	"\x13ListCommandsRequest\x12)\n" +
+	"\x10include_disabled\x18\x02 \x01(\bR\x0fincludeDisabledJ\x04\b\x01\x10\x02R\x0eapplication_id\"t\n" +
 	"\x14ListCommandsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12,\n" +
-	"\bcommands\x18\x02 \x03(\v2\x10.command.CommandR\bcommands\"\xd0\x03\n" +
-	"\x14CreateCommandRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x18\n" +
+	"\bcommands\x18\x02 \x03(\v2\x10.command.CommandR\bcommands\"\xbf\x03\n" +
+	"\x14CreateCommandRequest\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12\x18\n" +
 	"\aenabled\x18\x03 \x01(\bR\aenabled\x12\x1a\n" +
 	"\bcooldown\x18\x04 \x01(\x05R\bcooldown\x12\x1a\n" +
@@ -759,7 +723,7 @@ const file_command_proto_rawDesc = "" +
 	"\tgroup_ids\x18\f \x03(\tR\bgroupIds\x12\x1c\n" +
 	"\tusernames\x18\r \x03(\tR\tusernames\x12)\n" +
 	"\x10argument_pattern\x18\x0e \x01(\tR\x0fargumentPattern\x12!\n" +
-	"\factions_json\x18\x0f \x01(\tR\vactionsJsonJ\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\b\x10\tR\x04typeR\n" +
+	"\factions_json\x18\x0f \x01(\tR\vactionsJsonJ\x04\b\x01\x10\x02J\x04\b\x05\x10\x06J\x04\b\x06\x10\aJ\x04\b\b\x10\tR\x0eapplication_idR\x04typeR\n" +
 	"type_valueR\n" +
 	"created_by\"\xd9\x02\n" +
 	"\x14UpdateCommandRequest\x12\x0e\n" +

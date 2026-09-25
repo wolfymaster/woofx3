@@ -13,9 +13,11 @@ import (
 
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/db/app/secrets"
+	svc "github.com/wolfymaster/woofx3/db/app/services"
 	"github.com/wolfymaster/woofx3/db/app/types"
 	outbox "github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/config"
+	"github.com/wolfymaster/woofx3/db/database/repository"
 )
 
 type DatabaseAppConfig struct {
@@ -128,6 +130,13 @@ func (a *DatabaseApp) Init(ctx context.Context) error {
 	}
 
 	if a.db != nil {
+		// The built-in groups are part of the command-permission contract,
+		// so db-proxy does not serve requests until they exist.
+		if err := svc.SeedBuiltInGroups(repository.NewGroupRepository(a.db)); err != nil {
+			a.logger.Error("Failed to seed built-in groups", "error", err)
+			return err
+		}
+
 		casbinEnforcer, err := a.initCasbin(a.db)
 		if err != nil {
 			a.logger.Error("Failed to initialize Casbin", "error", err)

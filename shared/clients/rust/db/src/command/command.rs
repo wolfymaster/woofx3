@@ -6,9 +6,6 @@ pub struct Command {
     /// Unique identifier for the command
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    /// ID of the application this command belongs to
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     /// Name of the command (without the prefix)
     #[prost(string, tag="3")]
     pub command: ::prost::alloc::string::String,
@@ -60,8 +57,6 @@ pub struct Command {
 pub struct GetCommandRequest {
     #[prost(string, tag="1")]
     pub command: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, optional, tag="3")]
     pub username: ::core::option::Option<::prost::alloc::string::String>,
 }
@@ -74,10 +69,8 @@ pub struct CommandResponse {
     pub command: ::core::option::Option<Command>,
 }
 /// Request to list commands with optional filters
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListCommandsRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(bool, tag="2")]
     pub include_disabled: bool,
 }
@@ -92,8 +85,6 @@ pub struct ListCommandsResponse {
 /// Request to create a new command
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateCommandRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub command: ::prost::alloc::string::String,
     #[prost(bool, tag="3")]

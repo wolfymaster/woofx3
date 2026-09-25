@@ -33,9 +33,8 @@ type WorkflowChangeEvent struct {
 // This struct translates the generic wire fields into workflow-specific
 // names so callers can write `data.WorkflowID` instead of `data.EntityID`.
 type WorkflowChangeData struct {
-	Operation     string `json:"operation"`
-	WorkflowID    string `json:"workflowId"`
-	ApplicationID string `json:"applicationId"`
+	Operation  string `json:"operation"`
+	WorkflowID string `json:"workflowId"`
 }
 
 // Encode encodes the workflow change event to JSON bytes
@@ -52,9 +51,9 @@ func (w *WorkflowChangeEvent) Decode(data []byte) error {
 //
 // Producers don't agree on where to put the metadata:
 //   - NewWorkflowChangeEvent (this package) embeds it in the CloudEvent
-//     data payload as `operation` / `workflowId` / `applicationId`.
+//     data payload as `operation` / `workflowId`.
 //   - The db service's generic worker publisher sets it as CloudEvent
-//     extensions (`operation` / `entityid` / `applicationid`) and uses
+//     extensions (`operation` / `entityid`) and uses
 //     the data payload for the row body itself. The extensions are named
 //     generically because the same publisher serves every entity type.
 //
@@ -75,11 +74,6 @@ func (w *WorkflowChangeEvent) Data() (*WorkflowChangeData, error) {
 	if parsed.WorkflowID == "" {
 		if v, ok := exts["entityid"].(string); ok {
 			parsed.WorkflowID = v
-		}
-	}
-	if parsed.ApplicationID == "" {
-		if v, ok := exts["applicationid"].(string); ok {
-			parsed.ApplicationID = v
 		}
 	}
 
@@ -110,7 +104,7 @@ func (d WorkflowChangeData) IsCreateOrUpdate() bool {
 // metadata embedded in the data payload. Producers that prefer the
 // extension-based wire format (e.g. db's generic worker publisher) do not
 // use this helper.
-func NewWorkflowChangeEvent(operation, workflowID, applicationID, source string) (*WorkflowChangeEvent, error) {
+func NewWorkflowChangeEvent(operation, workflowID, source string) (*WorkflowChangeEvent, error) {
 	eventType := fmt.Sprintf("woofx3.workflow.%s", operation)
 
 	evt := ce.NewEvent()
@@ -119,9 +113,8 @@ func NewWorkflowChangeEvent(operation, workflowID, applicationID, source string)
 	evt.SetTime(time.Now())
 
 	data := WorkflowChangeData{
-		Operation:     operation,
-		WorkflowID:    workflowID,
-		ApplicationID: applicationID,
+		Operation:  operation,
+		WorkflowID: workflowID,
 	}
 
 	if err := evt.SetData(ce.ApplicationJSON, data); err != nil {

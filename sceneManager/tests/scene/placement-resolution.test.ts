@@ -16,7 +16,6 @@ function hostWith(
       status: { code: "OK" as const, message: "" },
       scene: {
         id: "scene-1",
-        applicationId: "app-1",
         name: "Main",
         widgetsJson: JSON.stringify(placements),
         layoutJson: "{}",
@@ -32,7 +31,6 @@ function hostWith(
       resolveOverlayToken: async () => ({
         status: { code: "OK" as const, message: "" },
         sceneId: "scene-1",
-        applicationId: "app-1",
       }),
     },
     logger
