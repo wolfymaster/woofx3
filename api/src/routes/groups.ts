@@ -10,7 +10,6 @@ import { EngineEventType } from "@woofx3/api/webhooks";
 
 function groupToSnapshot(g: {
   id: string;
-  applicationId: string;
   name: string;
   description: string;
   createdAt: unknown;
@@ -18,7 +17,6 @@ function groupToSnapshot(g: {
 }): GroupSnapshot {
   return {
     id: g.id,
-    applicationId: g.applicationId,
     name: g.name,
     description: g.description,
     isBuiltIn: g.isBuiltIn ?? false,
@@ -36,22 +34,18 @@ function groupToSnapshot(g: {
  */
 export const groupsRoutes = routeModule({
   async listGroups(): Promise<GroupSnapshot[]> {
-    const applicationId = await this.ensureApplicationId();
-    const groups = await this.db.listGroups({ applicationId });
+    const groups = await this.db.listGroups({});
     return groups.map(groupToSnapshot);
   },
 
   async createGroup(input: CreateGroupInput): Promise<GroupSnapshot> {
-    const applicationId = await this.ensureApplicationId();
     const group = await this.db.createGroup({
-      applicationId,
       name: input.name,
       description: input.description ?? "",
     });
     const snapshot = groupToSnapshot(group);
     void this.emitGroupWebhook({
       type: EngineEventType.GROUP_CREATED,
-      applicationId,
       correlationKey: input.correlationKey,
       group: snapshot,
     });
@@ -67,7 +61,6 @@ export const groupsRoutes = routeModule({
     const snapshot = groupToSnapshot(group);
     void this.emitGroupWebhook({
       type: EngineEventType.GROUP_UPDATED,
-      applicationId: snapshot.applicationId,
       correlationKey: input.correlationKey,
       group: snapshot,
     });
@@ -75,11 +68,9 @@ export const groupsRoutes = routeModule({
   },
 
   async deleteGroup(id: string, correlationKey?: string): Promise<{ deleted: boolean }> {
-    const applicationId = await this.ensureApplicationId();
     await this.db.deleteGroup({ id });
     void this.emitGroupWebhook({
       type: EngineEventType.GROUP_DELETED,
-      applicationId,
       correlationKey,
       groupId: id,
     });
@@ -91,14 +82,12 @@ export const groupsRoutes = routeModule({
   },
 
   async addUserToGroup(groupId: string, username: string): Promise<{ ok: true }> {
-    const applicationId = await this.ensureApplicationId();
-    const status = await this.db.addUserToGroup({ applicationId, groupId, username });
+    const status = await this.db.addUserToGroup({ groupId, username });
     if (status.code !== "OK") {
       throw new Error(status.message || "Failed to add user to group");
     }
     void this.emitGroupWebhook({
       type: EngineEventType.GROUP_MEMBER_ADDED,
-      applicationId,
       groupId,
       username,
     });
@@ -106,22 +95,18 @@ export const groupsRoutes = routeModule({
   },
 
   async listGroupsForUser(username: string): Promise<GroupSnapshot[]> {
-    const applicationId = await this.ensureApplicationId();
-    const groups = await this.db.listUserGroupsForUser({ applicationId, username });
+    const groups = await this.db.listUserGroupsForUser({ username });
     return groups.map(groupToSnapshot);
   },
 
   async listPermissions(query: ListPermissionsQuery = {}): Promise<PermissionRule[]> {
-    const applicationId = await this.ensureApplicationId();
     const response = await this.db.listPermissions({
-      applicationId,
       ptype: query.ptype ?? "",
       ptypePrefix: query.ptypePrefix ?? "",
       subject: query.subject ?? "",
     });
     return response.map((p) => ({
       id: Number(p.id),
-      applicationId: p.applicationId,
       ptype: p.ptype,
       v0: p.v0,
       v1: p.v1,
@@ -133,14 +118,12 @@ export const groupsRoutes = routeModule({
   },
 
   async removeUserFromGroup(groupId: string, username: string): Promise<{ ok: true }> {
-    const applicationId = await this.ensureApplicationId();
-    const status = await this.db.removeUserFromGroup({ applicationId, groupId, username });
+    const status = await this.db.removeUserFromGroup({ groupId, username });
     if (status.code !== "OK") {
       throw new Error(status.message || "Failed to remove user from group");
     }
     void this.emitGroupWebhook({
       type: EngineEventType.GROUP_MEMBER_REMOVED,
-      applicationId,
       groupId,
       username,
     });

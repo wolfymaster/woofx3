@@ -197,9 +197,6 @@ export interface WidgetStatusReport {
   instanceId: string;
   /** Canonical widget definition id, when known. */
   widgetCanonicalId?: string;
-  /** Optional explicit applicationId; the orchestrator falls back to
-   *  its warmed default when absent. */
-  applicationId?: string;
   key: string;
   value: unknown;
   ts?: string;

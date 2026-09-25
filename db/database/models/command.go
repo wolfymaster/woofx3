@@ -8,9 +8,8 @@ import (
 )
 
 type Command struct {
-	ID            uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	ApplicationID uuid.UUID `gorm:"column:application_id;type:uuid;not null;index:idx_commands_application_id;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
-	Command       string    `gorm:"column:command;type:varchar(255);not null"`
+	ID      uuid.UUID `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	Command string    `gorm:"column:command;type:varchar(255);not null"`
 	// Actions is the JSON array of steps this command runs, in order. Same
 	// shape as workflow_definitions.steps, because it is the same thing -- see
 	// command.proto's actions_json comment. "[]" is a command that only
@@ -31,9 +30,6 @@ type Command struct {
 	// contains the bare command word itself - see command.proto's field
 	// comment for the extraction rule.
 	ArgumentPattern string `gorm:"column:argument_pattern;type:varchar(255);not null;default:''"`
-
-	// Relationships
-	Application Application `gorm:"foreignKey:ApplicationID;references:ID"`
 }
 
 func (Command) TableName() string {
@@ -58,21 +54,15 @@ func GetCommandByID(db *gorm.DB, id uuid.UUID) (*Command, error) {
 	return &cmd, err
 }
 
-func GetCommandsByApplicationID(db *gorm.DB, appID uuid.UUID) ([]Command, error) {
-	var commands []Command
-	err := db.Where("application_id = ?", appID).Order("priority DESC, created_at ASC").Find(&commands).Error
-	return commands, err
-}
-
-func GetCommandByName(db *gorm.DB, appID uuid.UUID, command string) (*Command, error) {
+func GetCommandByName(db *gorm.DB, command string) (*Command, error) {
 	var cmd Command
-	err := db.Where("application_id = ? AND command = ?", appID, command).First(&cmd).Error
+	err := db.Where("command = ?", command).First(&cmd).Error
 	return &cmd, err
 }
 
-func GetCommandsByType(db *gorm.DB, appID uuid.UUID, cmdType string) ([]Command, error) {
+func GetCommandsByType(db *gorm.DB, cmdType string) ([]Command, error) {
 	var commands []Command
-	err := db.Where("application_id = ? AND type = ?", appID, cmdType).
+	err := db.Where("type = ?", cmdType).
 		Order("priority DESC, created_at ASC").Find(&commands).Error
 	return commands, err
 }

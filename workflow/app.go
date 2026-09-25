@@ -280,7 +280,6 @@ func (a *WorkflowApp) handleWorkflowEvent(msg natsclient.Msg) {
 	a.logger.Info("Received workflow event",
 		"operation", changeData.Operation,
 		"workflow_id", changeData.WorkflowID,
-		"application_id", changeData.ApplicationID,
 		"type", evt.Type())
 
 	if changeData.IsCreateOrUpdate() {
@@ -342,10 +341,9 @@ func (a *WorkflowApp) handleWorkflowExecuteEvent(msg natsclient.Msg) {
 type actionExecuteMessage struct {
 	ID   string `json:"id"`
 	Data struct {
-		Label         string                 `json:"label"`
-		ApplicationID string                 `json:"applicationId"`
-		Actions       []types.TaskDefinition `json:"actions"`
-		Event         *types.Event           `json:"event"`
+		Label   string                 `json:"label"`
+		Actions []types.TaskDefinition `json:"actions"`
+		Event   *types.Event           `json:"event"`
 	} `json:"data"`
 }
 
@@ -358,10 +356,9 @@ func (a *WorkflowApp) handleActionExecuteEvent(msg natsclient.Msg) {
 	}
 
 	executionID, err := a.engine.RunActions(engine.ActionRun{
-		Label:         message.Data.Label,
-		ApplicationID: message.Data.ApplicationID,
-		Actions:       message.Data.Actions,
-		Event:         message.Data.Event,
+		Label:   message.Data.Label,
+		Actions: message.Data.Actions,
+		Event:   message.Data.Event,
 	})
 	if err != nil {
 		a.logger.Error("Failed to run requested actions",

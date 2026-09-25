@@ -13,10 +13,10 @@ import { subscribeProjections } from "./projection";
 import type { WebhookClient } from "./webhook-client";
 
 // The db proxy publishes workflow lifecycle events on
-// `db.workflow.{created,updated,deleted}.{appId}`. The CloudEvent's `data`
+// `db.workflow.{created,updated,deleted}`. The CloudEvent's `data`
 // is the raw `*models.WorkflowDefinition` GORM model, JSON-marshaled with
-// Go's default field-name casing (`ID`, `Name`, `Steps`, `Trigger`,
-// `ApplicationID`). The deleted payload is the smaller `{ "id": "..." }`
+// Go's default field-name casing (`ID`, `Name`, `Steps`, `Trigger`).
+// The deleted payload is the smaller `{ "id": "..." }`
 // shape produced by workflow_service.DeleteWorkflow. We accept both
 // capitalized and lowercase / snake_case keys so a future normalization
 // of the publisher payload (to match the snake_case used by module
@@ -26,8 +26,6 @@ interface RawWorkflowRow {
   id?: unknown;
   Name?: unknown;
   name?: unknown;
-  ApplicationID?: unknown;
-  application_id?: unknown;
   Steps?: unknown;
   steps?: unknown;
   steps_json?: unknown;
@@ -118,22 +116,18 @@ function buildSnapshot(ce: Record<string, unknown>): WorkflowSnapshot | null {
 }
 
 export interface ParsedWorkflowChange<T> {
-  applicationId: string;
   clientId: string;
   event: T | null;
 }
 
 export function parseWorkflowCreated(ce: Record<string, unknown>): ParsedWorkflowChange<WorkflowCreatedEvent> {
-  const applicationId = asString(ce.application_id);
   const clientId = asString(ce.client_id);
   const snapshot = buildSnapshot(ce);
   return {
-    applicationId,
     clientId,
     event: snapshot
       ? {
           type: EngineEventType.WORKFLOW_CREATED,
-          applicationId,
           workflow: snapshot,
         }
       : null,
@@ -141,16 +135,13 @@ export function parseWorkflowCreated(ce: Record<string, unknown>): ParsedWorkflo
 }
 
 export function parseWorkflowUpdated(ce: Record<string, unknown>): ParsedWorkflowChange<WorkflowUpdatedEvent> {
-  const applicationId = asString(ce.application_id);
   const clientId = asString(ce.client_id);
   const snapshot = buildSnapshot(ce);
   return {
-    applicationId,
     clientId,
     event: snapshot
       ? {
           type: EngineEventType.WORKFLOW_UPDATED,
-          applicationId,
           workflow: snapshot,
         }
       : null,
@@ -158,7 +149,6 @@ export function parseWorkflowUpdated(ce: Record<string, unknown>): ParsedWorkflo
 }
 
 export function parseWorkflowDeleted(ce: Record<string, unknown>): ParsedWorkflowChange<WorkflowDeletedEvent> {
-  const applicationId = asString(ce.application_id);
   const clientId = asString(ce.client_id);
   // workflow_service.DeleteWorkflow publishes `{ "id": <uuid> }` (plus
   // `projection_key` for module-installed workflows); fall back to the
@@ -167,18 +157,17 @@ export function parseWorkflowDeleted(ce: Record<string, unknown>): ParsedWorkflo
   const row = readRow<RawWorkflowRow>(ce);
   const workflowId = pickFirst(row.ID, row.id, ce.entity_id);
   if (!workflowId) {
-    return { applicationId, clientId, event: null };
+    return { clientId, event: null };
   }
   const projectionKey = pickFirst(row.projection_key, row.projectionKey);
   const event: WorkflowDeletedEvent = {
     type: EngineEventType.WORKFLOW_DELETED,
-    applicationId,
     workflowId,
   };
   if (projectionKey !== "") {
     event.projectionKey = projectionKey;
   }
-  return { applicationId, clientId, event };
+  return { clientId, event };
 }
 
 /**

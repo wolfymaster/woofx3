@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -20,17 +19,10 @@ func NewWidgetStatusRepository(db *gorm.DB) *WidgetStatusRepository {
 	return &WidgetStatusRepository{db: db}
 }
 
-func (r *WidgetStatusRepository) DB() *gorm.DB {
-	return r.db
-}
-
-// Upsert writes the latest value for `(applicationID, instanceID,
-// key)` — replacing on conflict. Returns the persisted row so the
+// Upsert writes the latest value for `(instanceID, key)` — replacing
+// on conflict. Returns the persisted row so the
 // caller can include `created_at` / `updated_at` on the wire.
 func (r *WidgetStatusRepository) Upsert(row *models.WidgetStatus) (*models.WidgetStatus, error) {
-	if row.ApplicationID == uuid.Nil {
-		return nil, fmt.Errorf("application_id is required")
-	}
 	if row.InstanceID == "" {
 		return nil, fmt.Errorf("instance_id is required")
 	}
@@ -43,7 +35,6 @@ func (r *WidgetStatusRepository) Upsert(row *models.WidgetStatus) (*models.Widge
 	// onto the existing row.
 	err := r.db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{
-			{Name: "application_id"},
 			{Name: "instance_id"},
 			{Name: "key"},
 		},
@@ -60,13 +51,13 @@ func (r *WidgetStatusRepository) Upsert(row *models.WidgetStatus) (*models.Widge
 	}
 	// gorm leaves the model with a fresh `id` only on insert; on
 	// update, fetch back to get the canonical row.
-	return r.Get(row.ApplicationID, row.InstanceID, row.Key)
+	return r.Get(row.InstanceID, row.Key)
 }
 
-func (r *WidgetStatusRepository) Get(applicationID uuid.UUID, instanceID, key string) (*models.WidgetStatus, error) {
+func (r *WidgetStatusRepository) Get(instanceID, key string) (*models.WidgetStatus, error) {
 	var row models.WidgetStatus
 	err := r.db.
-		Where("application_id = ? AND instance_id = ? AND key = ?", applicationID, instanceID, key).
+		Where("instance_id = ? AND key = ?", instanceID, key).
 		First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, gorm.ErrRecordNotFound
@@ -74,11 +65,11 @@ func (r *WidgetStatusRepository) Get(applicationID uuid.UUID, instanceID, key st
 	return &row, err
 }
 
-// ListByApplicationID returns rows ordered by most-recent-update.
+// List returns rows ordered by most-recent-update.
 // Optional `moduleID` / `instanceID` filters narrow the result;
 // empty string means "no filter on that column."
-func (r *WidgetStatusRepository) ListByApplicationID(applicationID uuid.UUID, moduleID, instanceID string, limit, offset int) ([]*models.WidgetStatus, error) {
-	q := r.db.Where("application_id = ?", applicationID)
+func (r *WidgetStatusRepository) List(moduleID, instanceID string, limit, offset int) ([]*models.WidgetStatus, error) {
+	q := r.db
 	if moduleID != "" {
 		q = q.Where("module_id = ?", moduleID)
 	}
@@ -94,8 +85,8 @@ func (r *WidgetStatusRepository) ListByApplicationID(applicationID uuid.UUID, mo
 	return rows, err
 }
 
-func (r *WidgetStatusRepository) CountByApplicationID(applicationID uuid.UUID, moduleID, instanceID string) (int64, error) {
-	q := r.db.Model(&models.WidgetStatus{}).Where("application_id = ?", applicationID)
+func (r *WidgetStatusRepository) Count(moduleID, instanceID string) (int64, error) {
+	q := r.db.Model(&models.WidgetStatus{})
 	if moduleID != "" {
 		q = q.Where("module_id = ?", moduleID)
 	}
@@ -108,10 +99,10 @@ func (r *WidgetStatusRepository) CountByApplicationID(applicationID uuid.UUID, m
 }
 
 // Delete removes every row matching the supplied filter. When `key`
-// is empty, deletes all rows for `(applicationID, instanceID)` —
+// is empty, deletes all rows for `instanceID` —
 // useful when a widget instance is removed from a scene.
-func (r *WidgetStatusRepository) Delete(applicationID uuid.UUID, instanceID, key string) error {
-	q := r.db.Where("application_id = ? AND instance_id = ?", applicationID, instanceID)
+func (r *WidgetStatusRepository) Delete(instanceID, key string) error {
+	q := r.db.Where("instance_id = ?", instanceID)
 	if key != "" {
 		q = q.Where("key = ?", key)
 	}

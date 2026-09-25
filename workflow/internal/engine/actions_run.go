@@ -12,8 +12,7 @@ import (
 // and no workflow to hang them on.
 type ActionRun struct {
 	// Label names the run in logs. Not an id: nothing can be looked up by it.
-	Label         string
-	ApplicationID string
+	Label string
 	// Actions run in the order given. A task that already declares DependsOn
 	// keeps it, which is how a caller asks for two actions to run together.
 	Actions []types.TaskDefinition
@@ -42,11 +41,10 @@ func (e *Engine[TServices]) RunActions(run ActionRun) (string, error) {
 	}
 
 	def := &types.WorkflowDefinition{
-		ID:            fmt.Sprintf("adhoc:%s", uuid.New().String()),
-		Name:          run.Label,
-		ApplicationID: run.ApplicationID,
-		Tasks:         tasks,
-		Ephemeral:     true,
+		ID:        fmt.Sprintf("adhoc:%s", uuid.New().String()),
+		Name:      run.Label,
+		Tasks:     tasks,
+		Ephemeral: true,
 	}
 
 	execution := e.beginExecution(def, run.Event)

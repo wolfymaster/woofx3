@@ -40,10 +40,6 @@ func NewResourceService(r *repo.ResourceRepository) client.ResourceService {
 }
 
 func (s *resourceService) CreateResource(ctx context.Context, req *client.CreateResourceRequest) (*client.ResourceResponse, error) {
-	applicationID, err := s.resolveApplication(ctx, req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		return nil, twirp.RequiredArgumentError("name")
@@ -73,24 +69,24 @@ func (s *resourceService) CreateResource(ctx context.Context, req *client.Create
 	}
 	id := uuid.New()
 	if req.Id != nil {
-		id, err = uuid.Parse(*req.Id)
+		parsed, err := uuid.Parse(*req.Id)
 		if err != nil {
 			return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
 		}
+		id = parsed
 	}
 
-	parentID, err := s.resolveParent(applicationID, req.ParentId)
+	parentID, err := s.resolveParent(req.ParentId)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireUniqueName(applicationID, parentID, name, nil); err != nil {
+	if err := s.requireUniqueName(parentID, name, nil); err != nil {
 		return nil, err
 	}
 
 	now := time.Now().UTC()
 	row := &models.Resource{
 		ID:            id,
-		ApplicationID: applicationID,
 		ParentID:      parentID,
 		IsFolder:      false,
 		Name:          name,
@@ -109,23 +105,19 @@ func (s *resourceService) CreateResource(ctx context.Context, req *client.Create
 }
 
 func (s *resourceService) CreateFolder(ctx context.Context, req *client.CreateFolderRequest) (*client.ResourceResponse, error) {
-	applicationID, err := s.resolveApplication(ctx, req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		return nil, twirp.RequiredArgumentError("name")
 	}
-	parentID, err := s.resolveParent(applicationID, req.ParentId)
+	parentID, err := s.resolveParent(req.ParentId)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireUniqueName(applicationID, parentID, name, nil); err != nil {
+	if err := s.requireUniqueName(parentID, name, nil); err != nil {
 		return nil, err
 	}
 	if parentID != nil {
-		depth, depthErr := s.depthOf(applicationID, *parentID)
+		depth, depthErr := s.depthOf(*parentID)
 		if depthErr != nil {
 			return nil, depthErr
 		}
@@ -136,15 +128,14 @@ func (s *resourceService) CreateFolder(ctx context.Context, req *client.CreateFo
 
 	now := time.Now().UTC()
 	row := &models.Resource{
-		ID:            uuid.New(),
-		ApplicationID: applicationID,
-		ParentID:      parentID,
-		IsFolder:      true,
-		Name:          name,
-		Kind:          models.ResourceKindFolder,
-		Status:        models.ResourceStatusReady,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ID:        uuid.New(),
+		ParentID:  parentID,
+		IsFolder:  true,
+		Name:      name,
+		Kind:      models.ResourceKindFolder,
+		Status:    models.ResourceStatusReady,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 	if err := s.repo.Create(row); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to create folder: %w", err))
@@ -153,15 +144,11 @@ func (s *resourceService) CreateFolder(ctx context.Context, req *client.CreateFo
 }
 
 func (s *resourceService) GetResource(ctx context.Context, req *client.GetResourceRequest) (*client.ResourceResponse, error) {
-	applicationID, err := s.resolveApplication(ctx, req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
 	id, err := uuid.Parse(req.Id)
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
 	}
-	row, err := s.repo.GetByID(applicationID, id)
+	row, err := s.repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError("resource not found")
@@ -172,16 +159,12 @@ func (s *resourceService) GetResource(ctx context.Context, req *client.GetResour
 }
 
 func (s *resourceService) ListResources(ctx context.Context, req *client.ListResourcesRequest) (*client.ListResourcesResponse, error) {
-	applicationID, err := s.resolveApplication(ctx, req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
 	if req.Kind != "" && !models.ValidResourceKind(req.Kind) {
 		return nil, twirp.InvalidArgumentError("kind", "unknown resource kind")
 	}
 
 	// An absent parent_id lists the root, not "everything" — a flat
-	// dump of every resource in the application would ignore the folder
+	// dump of every resource would ignore the folder
 	// hierarchy the caller just asked to browse.
 	var parentID *uuid.UUID
 	if req.ParentId != nil && *req.ParentId != "" {
@@ -205,13 +188,12 @@ func (s *resourceService) ListResources(ctx context.Context, req *client.ListRes
 	}
 
 	rows, total, err := s.repo.List(repo.ListFilter{
-		ApplicationID: applicationID,
-		ParentID:      parentID,
-		ParentSet:     true,
-		Kind:          req.Kind,
-		Search:        req.Search,
-		Offset:        (page - 1) * pageSize,
-		Limit:         pageSize,
+		ParentID:  parentID,
+		ParentSet: true,
+		Kind:      req.Kind,
+		Search:    req.Search,
+		Offset:    (page - 1) * pageSize,
+		Limit:     pageSize,
 	})
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list resources: %w", err))
@@ -231,15 +213,11 @@ func (s *resourceService) ListResources(ctx context.Context, req *client.ListRes
 }
 
 func (s *resourceService) UpdateResource(ctx context.Context, req *client.UpdateResourceRequest) (*client.ResourceResponse, error) {
-	applicationID, err := s.resolveApplication(ctx, req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
 	id, err := uuid.Parse(req.Id)
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
 	}
-	row, err := s.repo.GetByID(applicationID, id)
+	row, err := s.repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError("resource not found")
@@ -252,11 +230,11 @@ func (s *resourceService) UpdateResource(ctx context.Context, req *client.Update
 	// whether the caller renamed, moved, or did both at once.
 	nextParent := row.ParentID
 	if req.ParentId != nil {
-		nextParent, err = s.resolveParent(applicationID, req.ParentId)
+		nextParent, err = s.resolveParent(req.ParentId)
 		if err != nil {
 			return nil, err
 		}
-		if err := s.requireNotDescendant(applicationID, row, nextParent); err != nil {
+		if err := s.requireNotDescendant(row, nextParent); err != nil {
 			return nil, err
 		}
 	}
@@ -268,7 +246,7 @@ func (s *resourceService) UpdateResource(ctx context.Context, req *client.Update
 		}
 	}
 	if req.Name != nil || req.ParentId != nil {
-		if err := s.requireUniqueName(applicationID, nextParent, nextName, &row.ID); err != nil {
+		if err := s.requireUniqueName(nextParent, nextName, &row.ID); err != nil {
 			return nil, err
 		}
 	}
@@ -305,15 +283,11 @@ func (s *resourceService) UpdateResource(ctx context.Context, req *client.Update
 }
 
 func (s *resourceService) DeleteResource(ctx context.Context, req *client.DeleteResourceRequest) (*client.DeleteResourceResponse, error) {
-	applicationID, err := s.resolveApplication(ctx, req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
 	id, err := uuid.Parse(req.Id)
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("id", "invalid UUID format")
 	}
-	keys, err := s.repo.DeleteSubtree(applicationID, id)
+	keys, err := s.repo.DeleteSubtree(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError("resource not found")
@@ -326,23 +300,11 @@ func (s *resourceService) DeleteResource(ctx context.Context, req *client.Delete
 	}, nil
 }
 
-func (s *resourceService) resolveApplication(ctx context.Context, requested string) (uuid.UUID, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), requested)
-	if err != nil {
-		return uuid.Nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return uuid.Nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
-	return applicationID, nil
-}
-
 // resolveParent turns the wire's optional parent_id into a validated
 // pointer. Absent or empty means the root. A present id must name an
-// existing folder in the same application — pointing a resource at a
+// existing folder — pointing a resource at a
 // non-folder would produce a tree the UI cannot render.
-func (s *resourceService) resolveParent(applicationID uuid.UUID, raw *string) (*uuid.UUID, error) {
+func (s *resourceService) resolveParent(raw *string) (*uuid.UUID, error) {
 	if raw == nil || *raw == "" {
 		return nil, nil
 	}
@@ -350,7 +312,7 @@ func (s *resourceService) resolveParent(applicationID uuid.UUID, raw *string) (*
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("parent_id", "invalid UUID format")
 	}
-	parent, err := s.repo.GetByID(applicationID, parsed)
+	parent, err := s.repo.GetByID(parsed)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.InvalidArgumentError("parent_id", "parent folder not found")
@@ -363,8 +325,8 @@ func (s *resourceService) resolveParent(applicationID uuid.UUID, raw *string) (*
 	return &parent.ID, nil
 }
 
-func (s *resourceService) requireUniqueName(applicationID uuid.UUID, parentID *uuid.UUID, name string, excludeID *uuid.UUID) error {
-	exists, err := s.repo.NameExists(applicationID, parentID, name, excludeID)
+func (s *resourceService) requireUniqueName(parentID *uuid.UUID, name string, excludeID *uuid.UUID) error {
+	exists, err := s.repo.NameExists(parentID, name, excludeID)
 	if err != nil {
 		return twirp.InternalErrorWith(fmt.Errorf("failed to check name uniqueness: %w", err))
 	}
@@ -378,7 +340,7 @@ func (s *resourceService) requireUniqueName(applicationID uuid.UUID, parentID *u
 // of its own descendants. Walking up from the proposed parent is the
 // cheap direction: the chain to the root is at most resourceMaxTreeDepth
 // long, whereas the subtree below could be arbitrarily wide.
-func (s *resourceService) requireNotDescendant(applicationID uuid.UUID, moving *models.Resource, nextParent *uuid.UUID) error {
+func (s *resourceService) requireNotDescendant(moving *models.Resource, nextParent *uuid.UUID) error {
 	if nextParent == nil || !moving.IsFolder {
 		return nil
 	}
@@ -387,7 +349,7 @@ func (s *resourceService) requireNotDescendant(applicationID uuid.UUID, moving *
 	}
 	cursor := nextParent
 	for depth := 0; depth < resourceMaxTreeDepth; depth++ {
-		parent, err := s.repo.GetByID(applicationID, *cursor)
+		parent, err := s.repo.GetByID(*cursor)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return twirp.InvalidArgumentError("parent_id", "parent folder not found")
@@ -408,10 +370,10 @@ func (s *resourceService) requireNotDescendant(applicationID uuid.UUID, moving *
 // depthOf counts how many ancestors a folder has. Used to keep
 // CreateFolder from building a tree deeper than the delete walk and the
 // descendant check are bounded to handle.
-func (s *resourceService) depthOf(applicationID, id uuid.UUID) (int, error) {
+func (s *resourceService) depthOf(id uuid.UUID) (int, error) {
 	cursor := &id
 	for depth := 0; depth < resourceMaxTreeDepth; depth++ {
-		node, err := s.repo.GetByID(applicationID, *cursor)
+		node, err := s.repo.GetByID(*cursor)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return 0, twirp.InvalidArgumentError("parent_id", "parent folder not found")
@@ -436,7 +398,6 @@ func okResourceResponse(row *models.Resource) *client.ResourceResponse {
 func toProtoResource(row *models.Resource) *client.Resource {
 	proto := &client.Resource{
 		Id:                     row.ID.String(),
-		ApplicationId:          row.ApplicationID.String(),
 		IsFolder:               row.IsFolder,
 		Name:                   row.Name,
 		Kind:                   row.Kind,

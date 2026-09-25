@@ -32,7 +32,8 @@ service AlertService {
 
 message Alert {
   string id = 1;
-  string application_id = 2;
+  reserved 2;
+  reserved "application_id";
   // Full AlertPayload envelope JSON
   // (`{ id, parameters, event }`) — same bytes streamware broadcasts.
   // Persisted verbatim in `alerts.payload` (JSONB).
@@ -70,7 +71,8 @@ message Alert {
 }
 
 message CreateAlertRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
   // JSON-encoded AlertPayload. Persisted verbatim into `alerts.payload`.
   string payload = 2;
   // Optional attribution (see Alert.workflow_id / source_event_id).
@@ -91,7 +93,8 @@ message GetAlertRequest {
 // `NOT_FOUND` if no row carries that envelope id. Used by the api when
 // the overlay reports `playing` / `completed` / `failed`.
 message GetAlertByEnvelopeIdRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
   string envelope_id = 2;
 }
 
@@ -103,7 +106,8 @@ message GetAlertByEnvelopeIdRequest {
 //   - failed    → completed_at = NOW(), error = <provided message>
 // `error` is ignored unless status is `failed`.
 message UpdateAlertLifecycleRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
   string envelope_id = 2;
   string status = 3;
   string error = 4;
@@ -115,7 +119,8 @@ message AlertResponse {
 }
 
 message ListAlertsRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
   int32 limit = 2;
   int32 offset = 3;
 }

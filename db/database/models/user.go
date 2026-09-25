@@ -20,9 +20,8 @@ type User struct {
 	UpdatedAt      time.Time  `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;not null"`
 
 	// Relationships
-	UserEvents       []UserEvent       `gorm:"foreignKey:UserID;references:ID"`
-	UserMeta         []UserMeta        `gorm:"foreignKey:UserID;references:ID"`
-	UserApplications []UserApplication `gorm:"foreignKey:UserID;references:ID"`
+	UserEvents []UserEvent `gorm:"foreignKey:UserID;references:ID"`
+	UserMeta   []UserMeta  `gorm:"foreignKey:UserID;references:ID"`
 }
 
 func (u *User) BeforeUpdate(tx *gorm.DB) error {

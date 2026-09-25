@@ -24,7 +24,6 @@ export interface OverlayToken {
    */
   token: string;
   sceneId: string;
-  applicationId: string;
   /**
    * Operator bookkeeping (e.g. "OBS main PC"). Free-form.
    */
@@ -40,11 +39,6 @@ export interface OverlayToken {
 
 export interface MintOverlayTokenRequest {
   sceneId: string;
-  /**
-   * Empty resolves to the default application (same convention as
-   * CreateSceneRequest). The scene must belong to this application.
-   */
-  applicationId: string;
   label: string;
 }
 
@@ -63,7 +57,6 @@ export interface OverlayTokenResponse {
 
 export interface ListOverlayTokensRequest {
   sceneId: string;
-  applicationId: string;
   /**
    * Revoked tombstones are excluded unless explicitly requested.
    */
@@ -82,13 +75,12 @@ export interface ResolveOverlayTokenRequest {
 
 /**
  * Engine-internal resolution result. Active tokens return OK with the
- * bound scene/application; revoked and unknown tokens return byte-for-
+ * bound scene; revoked and unknown tokens return byte-for-
  * byte identical NOT_FOUND responses.
  */
 export interface ResolveOverlayTokenResponse {
   status: common.ResponseStatus;
   sceneId: string;
-  applicationId: string;
 }
 
 //========================================//
@@ -121,7 +113,7 @@ export async function RevokeOverlayToken(
 
 /**
  * Atomically mints a replacement token and tombstones the old one
- * (same scene / application / label). The response carries the NEW
+ * (same scene / label). The response carries the NEW
  * token row.
  */
 export async function RotateOverlayToken(
@@ -190,7 +182,7 @@ export async function RevokeOverlayTokenJSON(
 
 /**
  * Atomically mints a replacement token and tombstones the old one
- * (same scene / application / label). The response carries the NEW
+ * (same scene / label). The response carries the NEW
  * token row.
  */
 export async function RotateOverlayTokenJSON(
@@ -266,7 +258,7 @@ export interface OverlayTokenService<Context = unknown> {
   ) => Promise<OverlayTokenResponse> | OverlayTokenResponse;
   /**
    * Atomically mints a replacement token and tombstones the old one
-   * (same scene / application / label). The response carries the NEW
+   * (same scene / label). The response carries the NEW
    * token row.
    */
   RotateOverlayToken: (
@@ -386,7 +378,6 @@ export const OverlayToken = {
       id: "",
       token: "",
       sceneId: "",
-      applicationId: "",
       label: "",
       status: "",
       createdAt: protoscript.Timestamp.initialize(),
@@ -411,9 +402,6 @@ export const OverlayToken = {
     }
     if (msg.sceneId) {
       writer.writeString(3, msg.sceneId);
-    }
-    if (msg.applicationId) {
-      writer.writeString(4, msg.applicationId);
     }
     if (msg.label) {
       writer.writeString(5, msg.label);
@@ -465,10 +453,6 @@ export const OverlayToken = {
         }
         case 3: {
           msg.sceneId = reader.readString();
-          break;
-        }
-        case 4: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 5: {
@@ -533,7 +517,6 @@ export const MintOverlayTokenRequest = {
   ): MintOverlayTokenRequest {
     return {
       sceneId: "",
-      applicationId: "",
       label: "",
       ...msg,
     };
@@ -548,9 +531,6 @@ export const MintOverlayTokenRequest = {
   ): protoscript.BinaryWriter {
     if (msg.sceneId) {
       writer.writeString(1, msg.sceneId);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.label) {
       writer.writeString(3, msg.label);
@@ -570,10 +550,6 @@ export const MintOverlayTokenRequest = {
       switch (field) {
         case 1: {
           msg.sceneId = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -837,7 +813,6 @@ export const ListOverlayTokensRequest = {
   ): ListOverlayTokensRequest {
     return {
       sceneId: "",
-      applicationId: "",
       includeRevoked: false,
       ...msg,
     };
@@ -852,9 +827,6 @@ export const ListOverlayTokensRequest = {
   ): protoscript.BinaryWriter {
     if (msg.sceneId) {
       writer.writeString(1, msg.sceneId);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.includeRevoked) {
       writer.writeBool(3, msg.includeRevoked);
@@ -874,10 +846,6 @@ export const ListOverlayTokensRequest = {
       switch (field) {
         case 1: {
           msg.sceneId = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -1086,7 +1054,6 @@ export const ResolveOverlayTokenResponse = {
     return {
       status: common.ResponseStatus.initialize(),
       sceneId: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -1103,9 +1070,6 @@ export const ResolveOverlayTokenResponse = {
     }
     if (msg.sceneId) {
       writer.writeString(2, msg.sceneId);
-    }
-    if (msg.applicationId) {
-      writer.writeString(3, msg.applicationId);
     }
     return writer;
   },
@@ -1126,10 +1090,6 @@ export const ResolveOverlayTokenResponse = {
         }
         case 2: {
           msg.sceneId = reader.readString();
-          break;
-        }
-        case 3: {
-          msg.applicationId = reader.readString();
           break;
         }
         default: {
@@ -1172,7 +1132,6 @@ export const OverlayTokenJSON = {
       id: "",
       token: "",
       sceneId: "",
-      applicationId: "",
       label: "",
       status: "",
       createdAt: protoscript.TimestampJSON.initialize(),
@@ -1197,9 +1156,6 @@ export const OverlayTokenJSON = {
     }
     if (msg.sceneId) {
       json["sceneId"] = msg.sceneId;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.label) {
       json["label"] = msg.label;
@@ -1234,10 +1190,6 @@ export const OverlayTokenJSON = {
     const _sceneId_ = json["sceneId"] ?? json["scene_id"];
     if (_sceneId_) {
       msg.sceneId = _sceneId_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _label_ = json["label"];
     if (_label_) {
@@ -1289,7 +1241,6 @@ export const MintOverlayTokenRequestJSON = {
   ): MintOverlayTokenRequest {
     return {
       sceneId: "",
-      applicationId: "",
       label: "",
       ...msg,
     };
@@ -1304,9 +1255,6 @@ export const MintOverlayTokenRequestJSON = {
     const json: Record<string, unknown> = {};
     if (msg.sceneId) {
       json["sceneId"] = msg.sceneId;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.label) {
       json["label"] = msg.label;
@@ -1324,10 +1272,6 @@ export const MintOverlayTokenRequestJSON = {
     const _sceneId_ = json["sceneId"] ?? json["scene_id"];
     if (_sceneId_) {
       msg.sceneId = _sceneId_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _label_ = json["label"];
     if (_label_) {
@@ -1551,7 +1495,6 @@ export const ListOverlayTokensRequestJSON = {
   ): ListOverlayTokensRequest {
     return {
       sceneId: "",
-      applicationId: "",
       includeRevoked: false,
       ...msg,
     };
@@ -1566,9 +1509,6 @@ export const ListOverlayTokensRequestJSON = {
     const json: Record<string, unknown> = {};
     if (msg.sceneId) {
       json["sceneId"] = msg.sceneId;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.includeRevoked) {
       json["includeRevoked"] = msg.includeRevoked;
@@ -1586,10 +1526,6 @@ export const ListOverlayTokensRequestJSON = {
     const _sceneId_ = json["sceneId"] ?? json["scene_id"];
     if (_sceneId_) {
       msg.sceneId = _sceneId_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _includeRevoked_ = json["includeRevoked"] ?? json["include_revoked"];
     if (_includeRevoked_) {
@@ -1767,7 +1703,6 @@ export const ResolveOverlayTokenResponseJSON = {
     return {
       status: common.ResponseStatusJSON.initialize(),
       sceneId: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -1788,9 +1723,6 @@ export const ResolveOverlayTokenResponseJSON = {
     if (msg.sceneId) {
       json["sceneId"] = msg.sceneId;
     }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     return json;
   },
 
@@ -1808,10 +1740,6 @@ export const ResolveOverlayTokenResponseJSON = {
     const _sceneId_ = json["sceneId"] ?? json["scene_id"];
     if (_sceneId_) {
       msg.sceneId = _sceneId_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     return msg;
   },

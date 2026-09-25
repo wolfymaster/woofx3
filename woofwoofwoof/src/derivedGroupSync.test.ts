@@ -52,7 +52,7 @@ function fakeLogger() {
 }
 
 function newSync(db: DatabaseClient) {
-  return new DerivedGroupSync(db, "", fakeLogger());
+  return new DerivedGroupSync(db, fakeLogger());
 }
 
 describe("DerivedGroupSync", () => {

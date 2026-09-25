@@ -21,7 +21,6 @@ import * as common from "./common.pb";
  */
 export interface Command {
   id: string;
-  applicationId: string;
   command: string;
   cooldown: number;
   priority: number;
@@ -64,7 +63,6 @@ export interface Command {
  */
 export interface GetCommandRequest {
   command: string;
-  applicationId: string;
   username?: string | null | undefined;
 }
 
@@ -80,7 +78,6 @@ export interface CommandResponse {
  * Request to list commands with optional filters
  */
 export interface ListCommandsRequest {
-  applicationId: string;
   includeDisabled: boolean;
 }
 
@@ -96,7 +93,6 @@ export interface ListCommandsResponse {
  * Request to create a new command
  */
 export interface CreateCommandRequest {
-  applicationId: string;
   command: string;
   enabled: boolean;
   cooldown: number;
@@ -425,7 +421,6 @@ export const Command = {
   initialize: function (msg?: Partial<Command>): Command {
     return {
       id: "",
-      applicationId: "",
       command: "",
       cooldown: 0,
       priority: 0,
@@ -451,9 +446,6 @@ export const Command = {
   ): protoscript.BinaryWriter {
     if (msg.id) {
       writer.writeString(1, msg.id);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.command) {
       writer.writeString(3, msg.command);
@@ -510,10 +502,6 @@ export const Command = {
       switch (field) {
         case 1: {
           msg.id = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -601,7 +589,6 @@ export const GetCommandRequest = {
   initialize: function (msg?: Partial<GetCommandRequest>): GetCommandRequest {
     return {
       command: "",
-      applicationId: "",
       username: undefined,
       ...msg,
     };
@@ -616,9 +603,6 @@ export const GetCommandRequest = {
   ): protoscript.BinaryWriter {
     if (msg.command) {
       writer.writeString(1, msg.command);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.username != undefined) {
       writer.writeString(3, msg.username);
@@ -638,10 +622,6 @@ export const GetCommandRequest = {
       switch (field) {
         case 1: {
           msg.command = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -762,7 +742,6 @@ export const ListCommandsRequest = {
     msg?: Partial<ListCommandsRequest>,
   ): ListCommandsRequest {
     return {
-      applicationId: "",
       includeDisabled: false,
       ...msg,
     };
@@ -775,9 +754,6 @@ export const ListCommandsRequest = {
     msg: PartialDeep<ListCommandsRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.includeDisabled) {
       writer.writeBool(2, msg.includeDisabled);
     }
@@ -794,10 +770,6 @@ export const ListCommandsRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.includeDisabled = reader.readBool();
           break;
@@ -924,7 +896,6 @@ export const CreateCommandRequest = {
     msg?: Partial<CreateCommandRequest>,
   ): CreateCommandRequest {
     return {
-      applicationId: "",
       command: "",
       enabled: false,
       cooldown: 0,
@@ -947,9 +918,6 @@ export const CreateCommandRequest = {
     msg: PartialDeep<CreateCommandRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.command) {
       writer.writeString(2, msg.command);
     }
@@ -996,10 +964,6 @@ export const CreateCommandRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.command = reader.readString();
           break;
@@ -1291,7 +1255,6 @@ export const CommandJSON = {
   initialize: function (msg?: Partial<Command>): Command {
     return {
       id: "",
-      applicationId: "",
       command: "",
       cooldown: 0,
       priority: 0,
@@ -1315,9 +1278,6 @@ export const CommandJSON = {
     const json: Record<string, unknown> = {};
     if (msg.id) {
       json["id"] = msg.id;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.command) {
       json["command"] = msg.command;
@@ -1365,10 +1325,6 @@ export const CommandJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _command_ = json["command"];
     if (_command_) {
@@ -1447,7 +1403,6 @@ export const GetCommandRequestJSON = {
   initialize: function (msg?: Partial<GetCommandRequest>): GetCommandRequest {
     return {
       command: "",
-      applicationId: "",
       username: undefined,
       ...msg,
     };
@@ -1462,9 +1417,6 @@ export const GetCommandRequestJSON = {
     const json: Record<string, unknown> = {};
     if (msg.command) {
       json["command"] = msg.command;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.username != undefined) {
       json["username"] = msg.username;
@@ -1482,10 +1434,6 @@ export const GetCommandRequestJSON = {
     const _command_ = json["command"];
     if (_command_) {
       msg.command = _command_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _username_ = json["username"];
     if (_username_) {
@@ -1587,7 +1535,6 @@ export const ListCommandsRequestJSON = {
     msg?: Partial<ListCommandsRequest>,
   ): ListCommandsRequest {
     return {
-      applicationId: "",
       includeDisabled: false,
       ...msg,
     };
@@ -1600,9 +1547,6 @@ export const ListCommandsRequestJSON = {
     msg: PartialDeep<ListCommandsRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.includeDisabled) {
       json["includeDisabled"] = msg.includeDisabled;
     }
@@ -1616,10 +1560,6 @@ export const ListCommandsRequestJSON = {
     msg: ListCommandsRequest,
     json: any,
   ): ListCommandsRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _includeDisabled_ =
       json["includeDisabled"] ?? json["include_disabled"];
     if (_includeDisabled_) {
@@ -1727,7 +1667,6 @@ export const CreateCommandRequestJSON = {
     msg?: Partial<CreateCommandRequest>,
   ): CreateCommandRequest {
     return {
-      applicationId: "",
       command: "",
       enabled: false,
       cooldown: 0,
@@ -1750,9 +1689,6 @@ export const CreateCommandRequestJSON = {
     msg: PartialDeep<CreateCommandRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.command) {
       json["command"] = msg.command;
     }
@@ -1796,10 +1732,6 @@ export const CreateCommandRequestJSON = {
     msg: CreateCommandRequest,
     json: any,
   ): CreateCommandRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _command_ = json["command"];
     if (_command_) {
       msg.command = _command_;

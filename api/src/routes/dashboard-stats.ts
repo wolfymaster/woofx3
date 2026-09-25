@@ -10,9 +10,7 @@ export const dashboardStatsRoutes = routeModule({
     recentEvents: number;
   }> {
     const engineModules = await listEngineModules(this.db, this.logger).catch(() => []);
-    const applicationId = await this.ensureApplicationId();
     const workflowsResponse = await this.db.listWorkflows({
-      applicationId,
       includeDisabled: true,
       page: 1,
       pageSize: 1000,

@@ -62,7 +62,7 @@ pub enum ReadEndpoint {
 #[derive(Debug, Clone)]
 pub struct UploadRequest<'a> {
     /// Repository key the bytes will land at, e.g.
-    /// `user/{application_id}/{resource_id}/{filename}`.
+    /// `user/{resource_id}/{filename}`.
     pub key: &'a str,
     /// Content-Type the client will send. Bound into the signature when
     /// the backend supports it, so a grant for an image cannot be

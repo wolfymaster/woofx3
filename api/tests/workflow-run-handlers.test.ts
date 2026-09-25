@@ -5,7 +5,6 @@ import { parseRunRecorded, parseRunStepRecorded, parseRunUpdated } from "../src/
 const RUN_ROW = {
   id: "exec-1",
   workflow_id: "wf-1",
-  application_id: "app-1",
   status: "running",
   triggered_by: "twitch",
   trigger_event: '{"id":"ev-1","type":"channel.follow"}',
@@ -17,7 +16,6 @@ const RUN_ROW = {
 const STEP_ROW = {
   id: "step-1",
   execution_id: "exec-1",
-  application_id: "app-1",
   task_id: "alert",
   status: "success",
   attempt: 1,
@@ -31,7 +29,7 @@ const STEP_ROW = {
 
 describe("parseRunRecorded", () => {
   test("reads a row nested under data", () => {
-    const { event } = parseRunRecorded({ application_id: "app-1", data: RUN_ROW });
+    const { event } = parseRunRecorded({ data: RUN_ROW });
     expect(event?.type).toBe(EngineEventType.WORKFLOW_RUN_RECORDED);
     expect(event?.run.id).toBe("exec-1");
     expect(event?.run.workflowId).toBe("wf-1");
@@ -50,8 +48,7 @@ describe("parseRunRecorded", () => {
   // what the models declare. Both reach this parser depending on the path.
   test("accepts Go-capitalised field names", () => {
     const { event } = parseRunRecorded({
-      application_id: "app-1",
-      data: { ID: "exec-2", WorkflowID: "wf-2", ApplicationID: "app-1", Status: "completed" },
+      data: { ID: "exec-2", WorkflowID: "wf-2", Status: "completed" },
     });
     expect(event?.run.id).toBe("exec-2");
     expect(event?.run.workflowId).toBe("wf-2");
@@ -61,21 +58,20 @@ describe("parseRunRecorded", () => {
   // The trigger event is what a replay re-feeds, so it has to survive as the
   // exact string the engine stored rather than being re-encoded.
   test("carries the trigger event verbatim", () => {
-    const { event } = parseRunRecorded({ application_id: "app-1", data: RUN_ROW });
+    const { event } = parseRunRecorded({ data: RUN_ROW });
     expect(event?.run.triggerEvent).toBe('{"id":"ev-1","type":"channel.follow"}');
   });
 
   test("omits absent optional fields rather than emitting empty strings", () => {
     const { event } = parseRunRecorded({
-      application_id: "app-1",
-      data: { id: "exec-3", workflow_id: "wf-1", application_id: "app-1", status: "running" },
+      data: { id: "exec-3", workflow_id: "wf-1", status: "running" },
     });
     expect(event && "error" in event.run).toBe(false);
     expect(event && "completedAt" in event.run).toBe(false);
   });
 
   test("drops a row with no id", () => {
-    const { event } = parseRunRecorded({ application_id: "app-1", data: { workflow_id: "wf-1" } });
+    const { event } = parseRunRecorded({ data: { workflow_id: "wf-1" } });
     expect(event).toBeNull();
   });
 });
@@ -83,7 +79,6 @@ describe("parseRunRecorded", () => {
 describe("parseRunUpdated", () => {
   test("maps a settled run to the updated event", () => {
     const { event } = parseRunUpdated({
-      application_id: "app-1",
       data: { ...RUN_ROW, status: "failed", error: "boom", completed_at: "2026-09-17T08:50:00Z" },
     });
     expect(event?.type).toBe(EngineEventType.WORKFLOW_RUN_UPDATED);
@@ -95,7 +90,7 @@ describe("parseRunUpdated", () => {
 
 describe("parseRunStepRecorded", () => {
   test("reads a step and its payloads", () => {
-    const { event } = parseRunStepRecorded({ application_id: "app-1", data: STEP_ROW });
+    const { event } = parseRunStepRecorded({ data: STEP_ROW });
     expect(event?.type).toBe(EngineEventType.WORKFLOW_RUN_STEP_RECORDED);
     expect(event?.step.taskId).toBe("alert");
     expect(event?.step.stepIndex).toBe(0);
@@ -107,14 +102,13 @@ describe("parseRunStepRecorded", () => {
   // step_index 0 is the first step, not a missing value. Treating a falsy
   // number as absent would push every first step to the wrong position.
   test("keeps a zero step index", () => {
-    const { event } = parseRunStepRecorded({ application_id: "app-1", data: { ...STEP_ROW, step_index: 0 } });
+    const { event } = parseRunStepRecorded({ data: { ...STEP_ROW, step_index: 0 } });
     expect(event?.step.stepIndex).toBe(0);
   });
 
   test("defaults attempt to the first when the producer omits it", () => {
     const { event } = parseRunStepRecorded({
-      application_id: "app-1",
-      data: { id: "s", execution_id: "exec-1", task_id: "alert", application_id: "app-1", status: "success" },
+      data: { id: "s", execution_id: "exec-1", task_id: "alert", status: "success" },
     });
     expect(event?.step.attempt).toBe(1);
   });

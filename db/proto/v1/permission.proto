@@ -39,7 +39,8 @@ message HasPermissionRequest {
 }
 
 message PermissionRequest {
-    string application_id = 1;
+    reserved 1;
+    reserved "application_id";
     string subject = 2;
     string object = 3;
     string action = 4;
@@ -47,7 +48,8 @@ message PermissionRequest {
 }
 
 message UserResourceRoleRequest {
-    string application_id = 1;
+    reserved 1;
+    reserved "application_id";
     string username = 2;
     string resource = 3;
     string role = 4;
@@ -59,7 +61,8 @@ message UserResourceRoleRequest {
 // effect, for "g" they are subject/group.
 message Permission {
     int64 id = 1;
-    string application_id = 2;
+    reserved 2;
+    reserved "application_id";
     string ptype = 3;
     string v0 = 4;
     string v1 = 5;
@@ -73,7 +76,8 @@ message Permission {
 // means "any"; ptype_prefix matches rule families (e.g. "g" matches both
 // "g" and "g2") and is ignored when ptype is set.
 message ListPermissionsRequest {
-    string application_id = 1;
+    reserved 1;
+    reserved "application_id";
     string ptype = 2;
     string ptype_prefix = 3;
     string subject = 4;

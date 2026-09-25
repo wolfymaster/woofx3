@@ -76,7 +76,6 @@ describe("OverlayHost — frameUrl", () => {
         status: { code: "OK" as const, message: "" },
         scene: {
           id: "scene-1",
-          applicationId: "app-1",
           name: "Main",
           widgetsJson: JSON.stringify([
             { id: "inst-1", widgetCanonicalId: "woofx3:widget:media_alert", position: {}, settings: {} },
@@ -94,7 +93,6 @@ describe("OverlayHost — frameUrl", () => {
         resolveOverlayToken: async () => ({
           status: { code: "OK" as const, message: "" },
           sceneId: "scene-1",
-          applicationId: "app-1",
         }),
       },
       fakeLogger()

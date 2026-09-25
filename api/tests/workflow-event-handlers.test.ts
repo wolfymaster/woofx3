@@ -26,24 +26,20 @@ const sampleTrigger = JSON.stringify({
 describe("parseWorkflowCreated", () => {
   test("maps Go-cased GORM payload to a workflow.created event", () => {
     const ce = {
-      application_id: "app-1",
       client_id: "client-a",
       data: {
         ID: "wf-uuid",
-        ApplicationID: "app-1",
         Name: "wolfy_profile/Someone Follows the Stream",
         Steps: sampleSteps,
         Trigger: sampleTrigger,
       },
     };
 
-    const { applicationId, clientId, event } = parseWorkflowCreated(ce);
-    expect(applicationId).toBe("app-1");
+    const { clientId, event } = parseWorkflowCreated(ce);
     expect(clientId).toBe("client-a");
     expect(event).not.toBeNull();
     if (!event) return;
     expect(event.type).toBe("workflow.created");
-    expect(event.applicationId).toBe("app-1");
     expect(event.workflow.id).toBe("wf-uuid");
     expect(event.workflow.isEnabled).toBe(false);
     expect(event.workflow.definition?.name).toBe("wolfy_profile/Someone Follows the Stream");
@@ -60,7 +56,6 @@ describe("parseWorkflowCreated", () => {
 
   test("also accepts snake_case payloads (forward compat)", () => {
     const ce = {
-      application_id: "app-1",
       data: {
         id: "wf-2",
         name: "snake",
@@ -76,7 +71,6 @@ describe("parseWorkflowCreated", () => {
 
   test("returns null event when trigger JSON is missing", () => {
     const ce = {
-      application_id: "app-1",
       data: { ID: "wf-3", Name: "no-trigger", Steps: sampleSteps },
     };
     const { event } = parseWorkflowCreated(ce);
@@ -85,14 +79,13 @@ describe("parseWorkflowCreated", () => {
 
   test("returns null event when id is missing", () => {
     const ce = {
-      application_id: "app-1",
       data: { Name: "no-id", Steps: sampleSteps, Trigger: sampleTrigger },
     };
     const { event } = parseWorkflowCreated(ce);
     expect(event).toBeNull();
   });
 
-  test("defaults missing extensions to empty strings", () => {
+  test("defaults a missing client_id extension to an empty string", () => {
     const ce = {
       data: {
         ID: "wf-4",
@@ -101,14 +94,12 @@ describe("parseWorkflowCreated", () => {
         Trigger: sampleTrigger,
       },
     };
-    const { applicationId, clientId } = parseWorkflowCreated(ce);
-    expect(applicationId).toBe("");
+    const { clientId } = parseWorkflowCreated(ce);
     expect(clientId).toBe("");
   });
 
   test("threads projection_key onto the snapshot when present", () => {
     const ce = {
-      application_id: "app-1",
       data: {
         id: "wf-pk",
         name: "with pk",
@@ -123,7 +114,6 @@ describe("parseWorkflowCreated", () => {
 
   test("leaves projectionKey undefined when payload omits projection_key", () => {
     const ce = {
-      application_id: "app-1",
       data: {
         id: "wf-no-pk",
         name: "user wf",
@@ -137,7 +127,6 @@ describe("parseWorkflowCreated", () => {
 
   test("propagates enabled=true from the publisher payload", () => {
     const ce = {
-      application_id: "app-1",
       data: {
         id: "wf-enabled",
         name: "n",
@@ -152,7 +141,6 @@ describe("parseWorkflowCreated", () => {
 
   test("defaults isEnabled to false when payload omits enabled", () => {
     const ce = {
-      application_id: "app-1",
       data: {
         id: "wf-default",
         name: "n",
@@ -166,7 +154,6 @@ describe("parseWorkflowCreated", () => {
 
   test("accepts Go-cased Enabled key", () => {
     const ce = {
-      application_id: "app-1",
       data: {
         ID: "wf-go-cased",
         Name: "n",
@@ -183,7 +170,6 @@ describe("parseWorkflowCreated", () => {
 describe("parseWorkflowUpdated", () => {
   test("emits a workflow.updated event with the same shape as created", () => {
     const ce = {
-      application_id: "app-1",
       data: {
         ID: "wf-5",
         Name: "updated",
@@ -201,22 +187,18 @@ describe("parseWorkflowUpdated", () => {
 describe("parseWorkflowDeleted", () => {
   test("reads lowercase id from delete payload", () => {
     const ce = {
-      application_id: "app-1",
       client_id: "client-z",
       data: { id: "wf-deleted" },
     };
-    const { applicationId, clientId, event } = parseWorkflowDeleted(ce);
-    expect(applicationId).toBe("app-1");
+    const { clientId, event } = parseWorkflowDeleted(ce);
     expect(clientId).toBe("client-z");
     expect(event).not.toBeNull();
     expect(event?.type).toBe("workflow.deleted");
     expect(event?.workflowId).toBe("wf-deleted");
-    expect(event?.applicationId).toBe("app-1");
   });
 
   test("falls back to entity_id extension if data lacks id", () => {
     const ce = {
-      application_id: "app-1",
       entity_id: "wf-from-extension",
       data: {},
     };
@@ -225,13 +207,12 @@ describe("parseWorkflowDeleted", () => {
   });
 
   test("returns null event when no workflow id is present anywhere", () => {
-    const { event } = parseWorkflowDeleted({ application_id: "app-1", data: {} });
+    const { event } = parseWorkflowDeleted({ data: {} });
     expect(event).toBeNull();
   });
 
   test("threads projection_key onto the deleted event when present", () => {
     const ce = {
-      application_id: "app-1",
       data: {
         id: "wf-deleted",
         projection_key: "wolfy_profile:1.0.0:abc1234:workflow:follow-workflow",
@@ -243,7 +224,6 @@ describe("parseWorkflowDeleted", () => {
 
   test("leaves projectionKey undefined on USER-authored workflow deletes", () => {
     const ce = {
-      application_id: "app-1",
       data: { id: "user-wf" },
     };
     const { event } = parseWorkflowDeleted(ce);
@@ -305,7 +285,6 @@ class FakeWebhookClient {
   async send(event: { type: string; [key: string]: unknown }): Promise<void> {
     this.sentEvents.push(event);
   }
-  setApplicationId(): void {}
   async refreshCallbackUrls(): Promise<void> {}
 }
 
@@ -315,9 +294,8 @@ describe("initWorkflowHandlers", () => {
     const webhook = new FakeWebhookClient();
     await initWorkflowHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.workflow.created.app-1", {
-      application_id: "app-1",
-      data: { ID: "wf-1", ApplicationID: "app-1", Name: "My Workflow", Steps: sampleSteps, Trigger: sampleTrigger },
+    await nats.dispatch("db.workflow.created.system", {
+      data: { ID: "wf-1", Name: "My Workflow", Steps: sampleSteps, Trigger: sampleTrigger },
     });
 
     expect(webhook.sentEvents).toHaveLength(1);
@@ -329,8 +307,7 @@ describe("initWorkflowHandlers", () => {
     const webhook = new FakeWebhookClient();
     await initWorkflowHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.workflow.deleted.app-1", {
-      application_id: "app-1",
+    await nats.dispatch("db.workflow.deleted.system", {
       data: { id: "wf-1" },
     });
 
@@ -343,7 +320,7 @@ describe("initWorkflowHandlers", () => {
     const webhook = new FakeWebhookClient();
     await initWorkflowHandlers(nats as any, webhook as any, noopLogger);
 
-    await nats.dispatch("db.workflow.created.app-1", { application_id: "app-1", data: {} });
+    await nats.dispatch("db.workflow.created.system", { data: {} });
 
     expect(webhook.sentEvents).toHaveLength(0);
   });

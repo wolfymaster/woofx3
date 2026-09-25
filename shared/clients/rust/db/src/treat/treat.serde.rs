@@ -28,9 +28,6 @@ impl serde::Serialize for AwardTreatRequest {
         if !self.awarded_by.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.metadata.is_empty() {
             len += 1;
         }
@@ -59,9 +56,6 @@ impl serde::Serialize for AwardTreatRequest {
         if !self.awarded_by.is_empty() {
             struct_ser.serialize_field("awardedBy", &self.awarded_by)?;
         }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.metadata.is_empty() {
             struct_ser.serialize_field("metadata", &self.metadata)?;
         }
@@ -89,8 +83,6 @@ impl<'de> serde::Deserialize<'de> for AwardTreatRequest {
             "imageUrl",
             "awarded_by",
             "awardedBy",
-            "application_id",
-            "applicationId",
             "metadata",
             "expires_at",
             "expiresAt",
@@ -105,7 +97,6 @@ impl<'de> serde::Deserialize<'de> for AwardTreatRequest {
             Points,
             ImageUrl,
             AwardedBy,
-            ApplicationId,
             Metadata,
             ExpiresAt,
         }
@@ -136,7 +127,6 @@ impl<'de> serde::Deserialize<'de> for AwardTreatRequest {
                             "points" => Ok(GeneratedField::Points),
                             "imageUrl" | "image_url" => Ok(GeneratedField::ImageUrl),
                             "awardedBy" | "awarded_by" => Ok(GeneratedField::AwardedBy),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "metadata" => Ok(GeneratedField::Metadata),
                             "expiresAt" | "expires_at" => Ok(GeneratedField::ExpiresAt),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
@@ -165,7 +155,6 @@ impl<'de> serde::Deserialize<'de> for AwardTreatRequest {
                 let mut points__ = None;
                 let mut image_url__ = None;
                 let mut awarded_by__ = None;
-                let mut application_id__ = None;
                 let mut metadata__ = None;
                 let mut expires_at__ = None;
                 while let Some(k) = map_.next_key()? {
@@ -214,12 +203,6 @@ impl<'de> serde::Deserialize<'de> for AwardTreatRequest {
                             }
                             awarded_by__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::Metadata => {
                             if metadata__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("metadata"));
@@ -244,7 +227,6 @@ impl<'de> serde::Deserialize<'de> for AwardTreatRequest {
                     points: points__.unwrap_or_default(),
                     image_url: image_url__.unwrap_or_default(),
                     awarded_by: awarded_by__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     metadata: metadata__.unwrap_or_default(),
                     expires_at: expires_at__,
                 })
@@ -443,9 +425,6 @@ impl serde::Serialize for GetTreatStatsRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.from_date.is_some() {
             len += 1;
         }
@@ -462,9 +441,6 @@ impl serde::Serialize for GetTreatStatsRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("treat.GetTreatStatsRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if let Some(v) = self.from_date.as_ref() {
             struct_ser.serialize_field("fromDate", v)?;
         }
@@ -490,8 +466,6 @@ impl<'de> serde::Deserialize<'de> for GetTreatStatsRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "from_date",
             "fromDate",
             "to_date",
@@ -506,7 +480,6 @@ impl<'de> serde::Deserialize<'de> for GetTreatStatsRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             FromDate,
             ToDate,
             GroupBy,
@@ -533,7 +506,6 @@ impl<'de> serde::Deserialize<'de> for GetTreatStatsRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "fromDate" | "from_date" => Ok(GeneratedField::FromDate),
                             "toDate" | "to_date" => Ok(GeneratedField::ToDate),
                             "groupBy" | "group_by" => Ok(GeneratedField::GroupBy),
@@ -558,7 +530,6 @@ impl<'de> serde::Deserialize<'de> for GetTreatStatsRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut from_date__ = None;
                 let mut to_date__ = None;
                 let mut group_by__ = None;
@@ -566,12 +537,6 @@ impl<'de> serde::Deserialize<'de> for GetTreatStatsRequest {
                 let mut treat_types__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::FromDate => {
                             if from_date__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("fromDate"));
@@ -605,7 +570,6 @@ impl<'de> serde::Deserialize<'de> for GetTreatStatsRequest {
                     }
                 }
                 Ok(GetTreatStatsRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     from_date: from_date__,
                     to_date: to_date__,
                     group_by: group_by__.unwrap_or_default(),
@@ -628,9 +592,6 @@ impl serde::Serialize for GetUserTreatsSummaryRequest {
         if !self.user_id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.from_date.is_some() {
             len += 1;
         }
@@ -640,9 +601,6 @@ impl serde::Serialize for GetUserTreatsSummaryRequest {
         let mut struct_ser = serializer.serialize_struct("treat.GetUserTreatsSummaryRequest", len)?;
         if !self.user_id.is_empty() {
             struct_ser.serialize_field("userId", &self.user_id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if let Some(v) = self.from_date.as_ref() {
             struct_ser.serialize_field("fromDate", v)?;
@@ -662,8 +620,6 @@ impl<'de> serde::Deserialize<'de> for GetUserTreatsSummaryRequest {
         const FIELDS: &[&str] = &[
             "user_id",
             "userId",
-            "application_id",
-            "applicationId",
             "from_date",
             "fromDate",
             "to_date",
@@ -673,7 +629,6 @@ impl<'de> serde::Deserialize<'de> for GetUserTreatsSummaryRequest {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             UserId,
-            ApplicationId,
             FromDate,
             ToDate,
         }
@@ -698,7 +653,6 @@ impl<'de> serde::Deserialize<'de> for GetUserTreatsSummaryRequest {
                     {
                         match value {
                             "userId" | "user_id" => Ok(GeneratedField::UserId),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "fromDate" | "from_date" => Ok(GeneratedField::FromDate),
                             "toDate" | "to_date" => Ok(GeneratedField::ToDate),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
@@ -721,7 +675,6 @@ impl<'de> serde::Deserialize<'de> for GetUserTreatsSummaryRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut user_id__ = None;
-                let mut application_id__ = None;
                 let mut from_date__ = None;
                 let mut to_date__ = None;
                 while let Some(k) = map_.next_key()? {
@@ -731,12 +684,6 @@ impl<'de> serde::Deserialize<'de> for GetUserTreatsSummaryRequest {
                                 return Err(serde::de::Error::duplicate_field("userId"));
                             }
                             user_id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::FromDate => {
                             if from_date__.is_some() {
@@ -754,7 +701,6 @@ impl<'de> serde::Deserialize<'de> for GetUserTreatsSummaryRequest {
                 }
                 Ok(GetUserTreatsSummaryRequest {
                     user_id: user_id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     from_date: from_date__,
                     to_date: to_date__,
                 })
@@ -775,9 +721,6 @@ impl serde::Serialize for ListTreatsRequest {
             len += 1;
         }
         if !self.treat_type.is_empty() {
-            len += 1;
-        }
-        if !self.application_id.is_empty() {
             len += 1;
         }
         if self.from_date.is_some() {
@@ -813,9 +756,6 @@ impl serde::Serialize for ListTreatsRequest {
         }
         if !self.treat_type.is_empty() {
             struct_ser.serialize_field("treatType", &self.treat_type)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if let Some(v) = self.from_date.as_ref() {
             struct_ser.serialize_field("fromDate", v)?;
@@ -858,8 +798,6 @@ impl<'de> serde::Deserialize<'de> for ListTreatsRequest {
             "userId",
             "treat_type",
             "treatType",
-            "application_id",
-            "applicationId",
             "from_date",
             "fromDate",
             "to_date",
@@ -883,7 +821,6 @@ impl<'de> serde::Deserialize<'de> for ListTreatsRequest {
         enum GeneratedField {
             UserId,
             TreatType,
-            ApplicationId,
             FromDate,
             ToDate,
             IncludeExpired,
@@ -916,7 +853,6 @@ impl<'de> serde::Deserialize<'de> for ListTreatsRequest {
                         match value {
                             "userId" | "user_id" => Ok(GeneratedField::UserId),
                             "treatType" | "treat_type" => Ok(GeneratedField::TreatType),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "fromDate" | "from_date" => Ok(GeneratedField::FromDate),
                             "toDate" | "to_date" => Ok(GeneratedField::ToDate),
                             "includeExpired" | "include_expired" => Ok(GeneratedField::IncludeExpired),
@@ -947,7 +883,6 @@ impl<'de> serde::Deserialize<'de> for ListTreatsRequest {
             {
                 let mut user_id__ = None;
                 let mut treat_type__ = None;
-                let mut application_id__ = None;
                 let mut from_date__ = None;
                 let mut to_date__ = None;
                 let mut include_expired__ = None;
@@ -970,12 +905,6 @@ impl<'de> serde::Deserialize<'de> for ListTreatsRequest {
                                 return Err(serde::de::Error::duplicate_field("treatType"));
                             }
                             treat_type__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::FromDate => {
                             if from_date__.is_some() {
@@ -1044,7 +973,6 @@ impl<'de> serde::Deserialize<'de> for ListTreatsRequest {
                 Ok(ListTreatsRequest {
                     user_id: user_id__.unwrap_or_default(),
                     treat_type: treat_type__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     from_date: from_date__,
                     to_date: to_date__,
                     include_expired: include_expired__.unwrap_or_default(),
@@ -1259,9 +1187,6 @@ impl serde::Serialize for Treat {
         if !self.awarded_by.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.metadata.is_empty() {
             len += 1;
         }
@@ -1302,9 +1227,6 @@ impl serde::Serialize for Treat {
         if !self.awarded_by.is_empty() {
             struct_ser.serialize_field("awardedBy", &self.awarded_by)?;
         }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.metadata.is_empty() {
             struct_ser.serialize_field("metadata", &self.metadata)?;
         }
@@ -1342,8 +1264,6 @@ impl<'de> serde::Deserialize<'de> for Treat {
             "imageUrl",
             "awarded_by",
             "awardedBy",
-            "application_id",
-            "applicationId",
             "metadata",
             "awarded_at",
             "awardedAt",
@@ -1365,7 +1285,6 @@ impl<'de> serde::Deserialize<'de> for Treat {
             Points,
             ImageUrl,
             AwardedBy,
-            ApplicationId,
             Metadata,
             AwardedAt,
             ExpiresAt,
@@ -1400,7 +1319,6 @@ impl<'de> serde::Deserialize<'de> for Treat {
                             "points" => Ok(GeneratedField::Points),
                             "imageUrl" | "image_url" => Ok(GeneratedField::ImageUrl),
                             "awardedBy" | "awarded_by" => Ok(GeneratedField::AwardedBy),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "metadata" => Ok(GeneratedField::Metadata),
                             "awardedAt" | "awarded_at" => Ok(GeneratedField::AwardedAt),
                             "expiresAt" | "expires_at" => Ok(GeneratedField::ExpiresAt),
@@ -1433,7 +1351,6 @@ impl<'de> serde::Deserialize<'de> for Treat {
                 let mut points__ = None;
                 let mut image_url__ = None;
                 let mut awarded_by__ = None;
-                let mut application_id__ = None;
                 let mut metadata__ = None;
                 let mut awarded_at__ = None;
                 let mut expires_at__ = None;
@@ -1491,12 +1408,6 @@ impl<'de> serde::Deserialize<'de> for Treat {
                             }
                             awarded_by__ = Some(map_.next_value()?);
                         }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::Metadata => {
                             if metadata__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("metadata"));
@@ -1540,7 +1451,6 @@ impl<'de> serde::Deserialize<'de> for Treat {
                     points: points__.unwrap_or_default(),
                     image_url: image_url__.unwrap_or_default(),
                     awarded_by: awarded_by__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     metadata: metadata__.unwrap_or_default(),
                     awarded_at: awarded_at__,
                     expires_at: expires_at__,

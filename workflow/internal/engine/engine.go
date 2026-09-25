@@ -51,9 +51,9 @@ type RunStep struct {
 // Every method is best-effort and must not block the run. The run is the
 // product; recording it is not worth failing a workflow that otherwise worked.
 type RunRecorder interface {
-	RunStarted(applicationID string, execution *types.WorkflowExecution)
-	RunSettled(applicationID string, execution *types.WorkflowExecution)
-	StepSettled(applicationID string, execution *types.WorkflowExecution, step RunStep)
+	RunStarted(execution *types.WorkflowExecution)
+	RunSettled(execution *types.WorkflowExecution)
+	StepSettled(execution *types.WorkflowExecution, step RunStep)
 }
 
 type AssetURLResolver interface {
@@ -171,7 +171,7 @@ func (e *Engine[TServices]) recordRunStarted(execution *types.WorkflowExecution)
 	if e.runRecorder == nil {
 		return
 	}
-	e.runRecorder.RunStarted(e.resolveApplicationID(execution), execution)
+	e.runRecorder.RunStarted(execution)
 }
 
 func (e *Engine[TServices]) recordRunSettled(execution *types.WorkflowExecution) {
@@ -181,7 +181,7 @@ func (e *Engine[TServices]) recordRunSettled(execution *types.WorkflowExecution)
 	if e.runRecorder == nil {
 		return
 	}
-	e.runRecorder.RunSettled(e.resolveApplicationID(execution), execution)
+	e.runRecorder.RunSettled(execution)
 }
 
 // recordStep reports a task that has reached a settled state.
@@ -212,7 +212,7 @@ func (e *Engine[TServices]) recordStep(
 		}
 	}
 
-	e.runRecorder.StepSettled(e.resolveApplicationID(execution), execution, RunStep{
+	e.runRecorder.StepSettled(execution, RunStep{
 		TaskID:      taskID,
 		Status:      string(taskExec.Status),
 		Attempt:     1,
@@ -461,15 +461,14 @@ func (e *Engine[TServices]) workflowName(id string) string {
 
 func (e *Engine[TServices]) beginExecution(wf *types.WorkflowDefinition, event *types.Event) *types.WorkflowExecution {
 	execution := &types.WorkflowExecution{
-		ID:            uuid.New().String(),
-		WorkflowID:    wf.ID,
-		ApplicationID: wf.ApplicationID,
-		Status:        types.ExecutionStatusRunning,
-		TriggerEvent:  event,
-		StartedAt:     time.Now(),
-		Tasks:         make(map[string]*types.TaskExecution),
-		Variables:     make(map[string]any),
-		Ephemeral:     wf.Ephemeral,
+		ID:           uuid.New().String(),
+		WorkflowID:   wf.ID,
+		Status:       types.ExecutionStatusRunning,
+		TriggerEvent: event,
+		StartedAt:    time.Now(),
+		Tasks:        make(map[string]*types.TaskExecution),
+		Variables:    make(map[string]any),
+		Ephemeral:    wf.Ephemeral,
 	}
 
 	e.executionsMu.Lock()
@@ -1119,11 +1118,6 @@ func (e *Engine[TServices]) emitRunLifecycle(execution *types.WorkflowExecution)
 	data := map[string]any{
 		"workflowId":  execution.WorkflowID,
 		"executionId": execution.ID,
-		// Resolved here rather than left to the consumer: the engine holds the
-		// definition and therefore the owning application, and a relay would
-		// otherwise have to guess it from a default-application lookup that is
-		// wrong the moment more than one application exists.
-		"applicationId": e.resolveApplicationID(execution),
 	}
 	if execution.Error != "" {
 		data["error"] = execution.Error
@@ -1170,19 +1164,6 @@ func (e *Engine[TServices]) buildResolver(triggerEvent *types.Event, taskExports
 	}
 
 	return resolver
-}
-
-// resolveApplicationID reports the application a run belongs to, preferring what
-// the run already carries and falling back to the registry for a run started
-// before executions carried it. A missing definition just yields "".
-func (e *Engine[TServices]) resolveApplicationID(execution *types.WorkflowExecution) string {
-	if execution.ApplicationID != "" {
-		return execution.ApplicationID
-	}
-	if def, err := e.workflowRegistry.Get(execution.WorkflowID); err == nil && def != nil {
-		return def.ApplicationID
-	}
-	return ""
 }
 
 func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, taskDef *types.TaskDefinition, taskExec *types.TaskExecution, executionOrder []*types.TaskDefinition, currentIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event) string {
@@ -1578,22 +1559,14 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 		return nil, params, fmt.Errorf("failed to create task: %w", err)
 	}
 
-	// Resolve the owning workflow's applicationId so action handlers can
-	// attribute their side effects (e.g. NewAlertAction stamps it onto
-	// the published envelope). A missing definition is non-fatal — we
-	// just leave ApplicationID empty and let downstream consumers fall
-	// back to their own resolution.
-	applicationID := e.resolveApplicationID(execution)
-
 	taskCtx := &tasks.TaskContext{
-		WorkflowID:    execution.WorkflowID,
-		ExecutionID:   execution.ID,
-		ApplicationID: applicationID,
-		TaskID:        taskDef.ID,
-		TriggerEvent:  event,
-		Variables:     execution.Variables,
-		TaskExports:   taskExports,
-		Logger:        e.logger,
+		WorkflowID:   execution.WorkflowID,
+		ExecutionID:  execution.ID,
+		TaskID:       taskDef.ID,
+		TriggerEvent: event,
+		Variables:    execution.Variables,
+		TaskExports:  taskExports,
+		Logger:       e.logger,
 	}
 
 	result, err := task.Execute(taskCtx)

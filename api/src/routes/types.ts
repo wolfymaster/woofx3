@@ -8,7 +8,6 @@ export interface WorkflowItem {
   id: string;
   name: string;
   description: string;
-  accountId: string;
   isEnabled: boolean;
   definition: WorkflowDefinition | null;
   stats: { runsToday: number; successRate: number };

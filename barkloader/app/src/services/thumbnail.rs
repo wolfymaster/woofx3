@@ -336,12 +336,12 @@ mod tests {
     #[test]
     fn thumbnail_key_sits_beside_the_source() {
         assert_eq!(
-            thumbnail_key_for("user/app-1/res-1/photo.png").unwrap(),
-            "user/app-1/res-1/thumbnail.png"
+            thumbnail_key_for("user/res-1/photo.png").unwrap(),
+            "user/res-1/thumbnail.png"
         );
         assert_eq!(
-            thumbnail_key_for("user/app-1/res-1/clip.mp4").unwrap(),
-            "user/app-1/res-1/thumbnail.png"
+            thumbnail_key_for("user/res-1/clip.mp4").unwrap(),
+            "user/res-1/thumbnail.png"
         );
         // A key with no directory has nowhere to put a sibling.
         assert!(thumbnail_key_for("photo.png").is_err());

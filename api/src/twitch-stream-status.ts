@@ -37,7 +37,7 @@ export async function getStreamStatus(db: DbClient, logger: SharedLogger): Promi
 
   let token: { accessToken?: string; userId?: string };
   try {
-    const raw = await db.getSetting("twitch_token", "");
+    const raw = await db.getSetting("twitch_token");
     if (!raw) {
       return offline;
     }

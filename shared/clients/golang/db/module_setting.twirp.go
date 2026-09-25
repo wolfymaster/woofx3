@@ -1339,7 +1339,7 @@ func (s *moduleSettingServiceServer) serveGetModuleSecretValuesProtobuf(ctx cont
 }
 
 func (s *moduleSettingServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor7, 0
+	return twirpFileDescriptor6, 0
 }
 
 func (s *moduleSettingServiceServer) ProtocGenTwirpVersion() string {
@@ -1353,7 +1353,7 @@ func (s *moduleSettingServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "module_setting", "ModuleSettingService")
 }
 
-var twirpFileDescriptor7 = []byte{
+var twirpFileDescriptor6 = []byte{
 	// 514 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x94, 0xc1, 0x6e, 0xd3, 0x40,
 	0x10, 0x86, 0x65, 0xbb, 0x89, 0x92, 0xa9, 0x54, 0x55, 0x4b, 0x0a, 0x26, 0x90, 0x2a, 0x32, 0x48,

@@ -72,13 +72,12 @@ func buildAppServices() AppServices {
 func WithServices[TServices any](services TServices, action tasks.ActionFunc[TServices]) tasks.ActionFunc[TServices] {
 	return func(incoming tasks.ActionContext[TServices], params map[string]any) (map[string]any, error) {
 		ctx := tasks.ActionContext[TServices]{
-			Services:      services,
-			ApplicationID: incoming.ApplicationID,
-			WorkflowID:    incoming.WorkflowID,
-			ExecutionID:   incoming.ExecutionID,
-			TaskID:        incoming.TaskID,
-			TriggerEvent:  incoming.TriggerEvent,
-			Logger:        incoming.Logger,
+			Services:     services,
+			WorkflowID:   incoming.WorkflowID,
+			ExecutionID:  incoming.ExecutionID,
+			TaskID:       incoming.TaskID,
+			TriggerEvent: incoming.TriggerEvent,
+			Logger:       incoming.Logger,
 		}
 		return action(ctx, params)
 	}

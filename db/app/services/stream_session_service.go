@@ -40,20 +40,15 @@ func NewStreamSessionService(
 }
 
 func (s *streamSessionService) EnsureCurrentStreamSession(ctx context.Context, req *client.EnsureCurrentStreamSessionRequest) (*client.StreamSessionStateResponse, error) {
-	applicationID, appIDStr, err := s.resolveApp(ctx, req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-
-	session, created, err := s.repo.EnsureOpenSession(applicationID, time.Now().UTC())
+	session, created, err := s.repo.EnsureOpenSession(time.Now().UTC())
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to ensure stream session: %w", err))
 	}
 	if created {
-		s.publishSessionChange(appIDStr, session, "created")
+		s.publishSessionChange(session, "created")
 	}
 
-	isSegmentOpen, err := s.isSegmentOpen(applicationID)
+	isSegmentOpen, err := s.isSegmentOpen()
 	if err != nil {
 		return nil, err
 	}
@@ -74,12 +69,7 @@ func (s *streamSessionService) EnsureCurrentStreamSession(ctx context.Context, r
 }
 
 func (s *streamSessionService) SplitStreamSession(ctx context.Context, req *client.SplitStreamSessionRequest) (*client.SplitStreamSessionResponse, error) {
-	applicationID, appIDStr, err := s.resolveApp(ctx, req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-
-	ended, started, err := s.repo.SplitSession(applicationID, sessionTimeOrNow(req.At))
+	ended, started, err := s.repo.SplitSession(sessionTimeOrNow(req.At))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError("no open stream session to split")
@@ -87,8 +77,8 @@ func (s *streamSessionService) SplitStreamSession(ctx context.Context, req *clie
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to split stream session: %w", err))
 	}
 
-	s.publishSessionChange(appIDStr, ended, "updated")
-	s.publishSessionChange(appIDStr, started, "created")
+	s.publishSessionChange(ended, "updated")
+	s.publishSessionChange(started, "created")
 
 	return &client.SplitStreamSessionResponse{
 		Status: &client.ResponseStatus{
@@ -101,10 +91,6 @@ func (s *streamSessionService) SplitStreamSession(ctx context.Context, req *clie
 }
 
 func (s *streamSessionService) OpenStreamSessionSegment(ctx context.Context, req *client.OpenStreamSessionSegmentRequest) (*client.StreamSessionSegmentResponse, error) {
-	applicationID, _, err := s.resolveApp(ctx, req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
 	if req.StreamSessionId == "" {
 		return nil, twirp.RequiredArgumentError("stream_session_id")
 	}
@@ -113,7 +99,7 @@ func (s *streamSessionService) OpenStreamSessionSegment(ctx context.Context, req
 		return nil, twirp.InvalidArgumentError("stream_session_id", "invalid UUID format")
 	}
 
-	segment, err := s.repo.OpenSegment(applicationID, streamSessionID, sessionTimeOrNow(req.StartedAt))
+	segment, err := s.repo.OpenSegment(streamSessionID, sessionTimeOrNow(req.StartedAt))
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to open stream session segment: %w", err))
 	}
@@ -128,12 +114,7 @@ func (s *streamSessionService) OpenStreamSessionSegment(ctx context.Context, req
 }
 
 func (s *streamSessionService) CloseStreamSessionSegment(ctx context.Context, req *client.CloseStreamSessionSegmentRequest) (*client.StreamSessionSegmentResponse, error) {
-	applicationID, _, err := s.resolveApp(ctx, req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-
-	segment, err := s.repo.CloseOpenSegment(applicationID, sessionTimeOrNow(req.EndedAt))
+	segment, err := s.repo.CloseOpenSegment(sessionTimeOrNow(req.EndedAt))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError("no open stream session segment")
@@ -172,11 +153,6 @@ func (s *streamSessionService) GetStreamSession(ctx context.Context, req *client
 }
 
 func (s *streamSessionService) ListStreamSessions(ctx context.Context, req *client.ListStreamSessionsRequest) (*client.ListStreamSessionsResponse, error) {
-	applicationID, _, err := s.resolveApp(ctx, req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-
 	limit := int(req.Limit)
 	offset := int(req.Offset)
 	if limit <= 0 {
@@ -186,11 +162,11 @@ func (s *streamSessionService) ListStreamSessions(ctx context.Context, req *clie
 		offset = 0
 	}
 
-	sessions, err := s.repo.ListSessionsByApplicationID(applicationID, limit, offset)
+	sessions, err := s.repo.ListSessions(limit, offset)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list stream sessions: %w", err))
 	}
-	total, err := s.repo.CountSessionsByApplicationID(applicationID)
+	total, err := s.repo.CountSessions()
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to count stream sessions: %w", err))
 	}
@@ -212,20 +188,8 @@ func (s *streamSessionService) ListStreamSessions(ctx context.Context, req *clie
 	}, nil
 }
 
-func (s *streamSessionService) resolveApp(ctx context.Context, requested string) (uuid.UUID, string, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), requested)
-	if err != nil {
-		return uuid.Nil, "", err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return uuid.Nil, "", twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
-	return applicationID, appIDStr, nil
-}
-
-func (s *streamSessionService) isSegmentOpen(applicationID uuid.UUID) (bool, error) {
-	if _, err := s.repo.GetOpenSegment(applicationID); err != nil {
+func (s *streamSessionService) isSegmentOpen() (bool, error) {
+	if _, err := s.repo.GetOpenSegment(); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
 		}
@@ -263,12 +227,11 @@ func sessionTimeOrNow(ts *timestamppb.Timestamp) time.Time {
 
 func sessionToProto(m *models.StreamSession) *client.StreamSession {
 	out := &client.StreamSession{
-		Id:            m.ID.String(),
-		ApplicationId: m.ApplicationID.String(),
-		Status:        m.Status,
-		StartedAt:     timestamppb.New(m.StartedAt),
-		CreatedAt:     timestamppb.New(m.CreatedAt),
-		UpdatedAt:     timestamppb.New(m.UpdatedAt),
+		Id:        m.ID.String(),
+		Status:    m.Status,
+		StartedAt: timestamppb.New(m.StartedAt),
+		CreatedAt: timestamppb.New(m.CreatedAt),
+		UpdatedAt: timestamppb.New(m.UpdatedAt),
 	}
 	if m.EndedAt != nil {
 		out.EndedAt = timestamppb.New(*m.EndedAt)
@@ -279,7 +242,6 @@ func sessionToProto(m *models.StreamSession) *client.StreamSession {
 func segmentToProto(m *models.StreamSessionSegment) *client.StreamSessionSegment {
 	out := &client.StreamSessionSegment{
 		Id:              m.ID.String(),
-		ApplicationId:   m.ApplicationID.String(),
 		StreamSessionId: m.StreamSessionID.String(),
 		StartedAt:       timestamppb.New(m.StartedAt),
 		CreatedAt:       timestamppb.New(m.CreatedAt),
@@ -291,12 +253,11 @@ func segmentToProto(m *models.StreamSessionSegment) *client.StreamSessionSegment
 	return out
 }
 
-func (s *streamSessionService) publishSessionChange(applicationID string, session *models.StreamSession, op string) {
+func (s *streamSessionService) publishSessionChange(session *models.StreamSession, op string) {
 	if s.publisher == nil {
 		return
 	}
 	s.publisher.Publish(workers.PublishOptions{
-		ApplicationID:   applicationID,
 		EntityType:      "stream_session",
 		EntityID:        session.ID.String(),
 		Operation:       op,
@@ -307,12 +268,11 @@ func (s *streamSessionService) publishSessionChange(applicationID string, sessio
 
 func buildStreamSessionChangeData(session *models.StreamSession) map[string]interface{} {
 	out := map[string]interface{}{
-		"id":             session.ID.String(),
-		"application_id": session.ApplicationID.String(),
-		"status":         session.Status,
-		"started_at":     session.StartedAt.Format("2006-01-02T15:04:05.000Z07:00"),
-		"created_at":     session.CreatedAt.Format("2006-01-02T15:04:05.000Z07:00"),
-		"updated_at":     session.UpdatedAt.Format("2006-01-02T15:04:05.000Z07:00"),
+		"id":         session.ID.String(),
+		"status":     session.Status,
+		"started_at": session.StartedAt.Format("2006-01-02T15:04:05.000Z07:00"),
+		"created_at": session.CreatedAt.Format("2006-01-02T15:04:05.000Z07:00"),
+		"updated_at": session.UpdatedAt.Format("2006-01-02T15:04:05.000Z07:00"),
 	}
 	if session.EndedAt != nil {
 		out["ended_at"] = session.EndedAt.Format("2006-01-02T15:04:05.000Z07:00")

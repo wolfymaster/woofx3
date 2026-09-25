@@ -24,7 +24,6 @@ export interface Setting {
   key: string;
   value: protoscript.Value;
   valueType: string;
-  applicationId: string;
   userId: string;
   createdAt: protoscript.Timestamp;
   updatedAt: protoscript.Timestamp;
@@ -35,7 +34,6 @@ export interface Setting {
  */
 export interface GetSettingRequest {
   key: string;
-  applicationId: string;
 }
 
 /**
@@ -51,7 +49,6 @@ export interface SettingResponse {
  */
 export interface GetSettingsRequest {
   keys: string[];
-  applicationId: string;
 }
 
 /**
@@ -68,7 +65,6 @@ export interface GetSettingsResponse {
 export interface SetSettingRequest {
   key: string;
   value: protoscript.Value;
-  applicationId: string;
   userId: string;
 }
 
@@ -77,7 +73,6 @@ export interface SetSettingRequest {
  */
 export interface SetSettingsRequest {
   settings: SetSettingsRequest.SettingUpdate[];
-  applicationId: string;
 }
 
 export declare namespace SetSettingsRequest {
@@ -100,7 +95,6 @@ export interface SetSettingsResponse {
  */
 export interface DeleteSettingRequest {
   key: string;
-  applicationId: string;
 }
 
 /**
@@ -108,7 +102,6 @@ export interface DeleteSettingRequest {
  */
 export interface ListSettingsRequest {
   keyPrefix: string;
-  applicationId: string;
 }
 
 /**
@@ -458,7 +451,6 @@ export const Setting = {
       key: "",
       value: protoscript.Value.initialize(),
       valueType: "",
-      applicationId: "",
       userId: "",
       createdAt: protoscript.Timestamp.initialize(),
       updatedAt: protoscript.Timestamp.initialize(),
@@ -484,9 +476,6 @@ export const Setting = {
     }
     if (msg.valueType) {
       writer.writeString(4, msg.valueType);
-    }
-    if (msg.applicationId) {
-      writer.writeString(5, msg.applicationId);
     }
     if (msg.userId) {
       writer.writeString(6, msg.userId);
@@ -532,10 +521,6 @@ export const Setting = {
         }
         case 4: {
           msg.valueType = reader.readString();
-          break;
-        }
-        case 5: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 6: {
@@ -587,7 +572,6 @@ export const GetSettingRequest = {
   initialize: function (msg?: Partial<GetSettingRequest>): GetSettingRequest {
     return {
       key: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -601,9 +585,6 @@ export const GetSettingRequest = {
   ): protoscript.BinaryWriter {
     if (msg.key) {
       writer.writeString(1, msg.key);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     return writer;
   },
@@ -620,10 +601,6 @@ export const GetSettingRequest = {
       switch (field) {
         case 1: {
           msg.key = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         default: {
@@ -739,7 +716,6 @@ export const GetSettingsRequest = {
   initialize: function (msg?: Partial<GetSettingsRequest>): GetSettingsRequest {
     return {
       keys: [],
-      applicationId: "",
       ...msg,
     };
   },
@@ -753,9 +729,6 @@ export const GetSettingsRequest = {
   ): protoscript.BinaryWriter {
     if (msg.keys?.length) {
       writer.writeRepeatedString(1, msg.keys);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     return writer;
   },
@@ -772,10 +745,6 @@ export const GetSettingsRequest = {
       switch (field) {
         case 1: {
           msg.keys.push(reader.readString());
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         default: {
@@ -900,7 +869,6 @@ export const SetSettingRequest = {
     return {
       key: "",
       value: protoscript.Value.initialize(),
-      applicationId: "",
       userId: "",
       ...msg,
     };
@@ -918,9 +886,6 @@ export const SetSettingRequest = {
     }
     if (msg.value) {
       writer.writeMessage(2, msg.value, protoscript.Value._writeMessage);
-    }
-    if (msg.applicationId) {
-      writer.writeString(4, msg.applicationId);
     }
     if (msg.userId) {
       writer.writeString(5, msg.userId);
@@ -944,10 +909,6 @@ export const SetSettingRequest = {
         }
         case 2: {
           reader.readMessage(msg.value, protoscript.Value._readMessage);
-          break;
-        }
-        case 4: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 5: {
@@ -991,7 +952,6 @@ export const SetSettingsRequest = {
   initialize: function (msg?: Partial<SetSettingsRequest>): SetSettingsRequest {
     return {
       settings: [],
-      applicationId: "",
       ...msg,
     };
   },
@@ -1010,9 +970,6 @@ export const SetSettingsRequest = {
         SetSettingsRequest.SettingUpdate._writeMessage,
       );
     }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
-    }
     return writer;
   },
 
@@ -1030,10 +987,6 @@ export const SetSettingsRequest = {
           const m = SetSettingsRequest.SettingUpdate.initialize();
           reader.readMessage(m, SetSettingsRequest.SettingUpdate._readMessage);
           msg.settings.push(m);
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         default: {
@@ -1239,7 +1192,6 @@ export const DeleteSettingRequest = {
   ): DeleteSettingRequest {
     return {
       key: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -1253,9 +1205,6 @@ export const DeleteSettingRequest = {
   ): protoscript.BinaryWriter {
     if (msg.key) {
       writer.writeString(1, msg.key);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     return writer;
   },
@@ -1272,10 +1221,6 @@ export const DeleteSettingRequest = {
       switch (field) {
         case 1: {
           msg.key = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         default: {
@@ -1317,7 +1262,6 @@ export const ListSettingsRequest = {
   ): ListSettingsRequest {
     return {
       keyPrefix: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -1331,9 +1275,6 @@ export const ListSettingsRequest = {
   ): protoscript.BinaryWriter {
     if (msg.keyPrefix) {
       writer.writeString(1, msg.keyPrefix);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     return writer;
   },
@@ -1350,10 +1291,6 @@ export const ListSettingsRequest = {
       switch (field) {
         case 1: {
           msg.keyPrefix = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         default: {
@@ -1526,7 +1463,6 @@ export const SettingJSON = {
       key: "",
       value: protoscript.ValueJSON.initialize(),
       valueType: "",
-      applicationId: "",
       userId: "",
       createdAt: protoscript.TimestampJSON.initialize(),
       updatedAt: protoscript.TimestampJSON.initialize(),
@@ -1553,9 +1489,6 @@ export const SettingJSON = {
     }
     if (msg.valueType) {
       json["valueType"] = msg.valueType;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.userId) {
       json["userId"] = msg.userId;
@@ -1588,10 +1521,6 @@ export const SettingJSON = {
     const _valueType_ = json["valueType"] ?? json["value_type"];
     if (_valueType_) {
       msg.valueType = _valueType_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _userId_ = json["userId"] ?? json["user_id"];
     if (_userId_) {
@@ -1633,7 +1562,6 @@ export const GetSettingRequestJSON = {
   initialize: function (msg?: Partial<GetSettingRequest>): GetSettingRequest {
     return {
       key: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -1648,9 +1576,6 @@ export const GetSettingRequestJSON = {
     if (msg.key) {
       json["key"] = msg.key;
     }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     return json;
   },
 
@@ -1664,10 +1589,6 @@ export const GetSettingRequestJSON = {
     const _key_ = json["key"];
     if (_key_) {
       msg.key = _key_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     return msg;
   },
@@ -1764,7 +1685,6 @@ export const GetSettingsRequestJSON = {
   initialize: function (msg?: Partial<GetSettingsRequest>): GetSettingsRequest {
     return {
       keys: [],
-      applicationId: "",
       ...msg,
     };
   },
@@ -1779,9 +1699,6 @@ export const GetSettingsRequestJSON = {
     if (msg.keys?.length) {
       json["keys"] = msg.keys;
     }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     return json;
   },
 
@@ -1795,10 +1712,6 @@ export const GetSettingsRequestJSON = {
     const _keys_ = json["keys"];
     if (_keys_) {
       msg.keys = _keys_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     return msg;
   },
@@ -1902,7 +1815,6 @@ export const SetSettingRequestJSON = {
     return {
       key: "",
       value: protoscript.ValueJSON.initialize(),
-      applicationId: "",
       userId: "",
       ...msg,
     };
@@ -1924,9 +1836,6 @@ export const SetSettingRequestJSON = {
         json["value"] = _value_;
       }
     }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.userId) {
       json["userId"] = msg.userId;
     }
@@ -1947,10 +1856,6 @@ export const SetSettingRequestJSON = {
     const _value_ = json["value"];
     if (_value_) {
       protoscript.ValueJSON._readMessage(msg.value, _value_);
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _userId_ = json["userId"] ?? json["user_id"];
     if (_userId_) {
@@ -1984,7 +1889,6 @@ export const SetSettingsRequestJSON = {
   initialize: function (msg?: Partial<SetSettingsRequest>): SetSettingsRequest {
     return {
       settings: [],
-      applicationId: "",
       ...msg,
     };
   },
@@ -2000,9 +1904,6 @@ export const SetSettingsRequestJSON = {
       json["settings"] = msg.settings.map(
         SetSettingsRequestJSON.SettingUpdate._writeMessage,
       );
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     return json;
   },
@@ -2021,10 +1922,6 @@ export const SetSettingsRequestJSON = {
         SetSettingsRequestJSON.SettingUpdate._readMessage(m, item);
         msg.settings.push(m);
       }
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     return msg;
   },
@@ -2202,7 +2099,6 @@ export const DeleteSettingRequestJSON = {
   ): DeleteSettingRequest {
     return {
       key: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -2217,9 +2113,6 @@ export const DeleteSettingRequestJSON = {
     if (msg.key) {
       json["key"] = msg.key;
     }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     return json;
   },
 
@@ -2233,10 +2126,6 @@ export const DeleteSettingRequestJSON = {
     const _key_ = json["key"];
     if (_key_) {
       msg.key = _key_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     return msg;
   },
@@ -2268,7 +2157,6 @@ export const ListSettingsRequestJSON = {
   ): ListSettingsRequest {
     return {
       keyPrefix: "",
-      applicationId: "",
       ...msg,
     };
   },
@@ -2283,9 +2171,6 @@ export const ListSettingsRequestJSON = {
     if (msg.keyPrefix) {
       json["keyPrefix"] = msg.keyPrefix;
     }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     return json;
   },
 
@@ -2299,10 +2184,6 @@ export const ListSettingsRequestJSON = {
     const _keyPrefix_ = json["keyPrefix"] ?? json["key_prefix"];
     if (_keyPrefix_) {
       msg.keyPrefix = _keyPrefix_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     return msg;
   },

@@ -21,7 +21,6 @@ export type WebhookPayload = AlertContext | OBSCommand;
 // per logical send and reuses it across retries so Convex can deduplicate.
 export interface WebhookEnvelope<P extends WebhookPayload = WebhookPayload> {
   eventId: string;
-  channelId: string;
   emittedAt: number;
   kind: WebhookKind;
   payload: P;

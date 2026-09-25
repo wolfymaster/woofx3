@@ -10,9 +10,6 @@ impl serde::Serialize for Command {
         if !self.id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.command.is_empty() {
             len += 1;
         }
@@ -52,9 +49,6 @@ impl serde::Serialize for Command {
         let mut struct_ser = serializer.serialize_struct("command.Command", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.command.is_empty() {
             struct_ser.serialize_field("command", &self.command)?;
@@ -103,8 +97,6 @@ impl<'de> serde::Deserialize<'de> for Command {
     {
         const FIELDS: &[&str] = &[
             "id",
-            "application_id",
-            "applicationId",
             "command",
             "cooldown",
             "priority",
@@ -128,7 +120,6 @@ impl<'de> serde::Deserialize<'de> for Command {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Id,
-            ApplicationId,
             Command,
             Cooldown,
             Priority,
@@ -163,7 +154,6 @@ impl<'de> serde::Deserialize<'de> for Command {
                     {
                         match value {
                             "id" => Ok(GeneratedField::Id),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "command" => Ok(GeneratedField::Command),
                             "cooldown" => Ok(GeneratedField::Cooldown),
                             "priority" => Ok(GeneratedField::Priority),
@@ -196,7 +186,6 @@ impl<'de> serde::Deserialize<'de> for Command {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut id__ = None;
-                let mut application_id__ = None;
                 let mut command__ = None;
                 let mut cooldown__ = None;
                 let mut priority__ = None;
@@ -216,12 +205,6 @@ impl<'de> serde::Deserialize<'de> for Command {
                                 return Err(serde::de::Error::duplicate_field("id"));
                             }
                             id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Command => {
                             if command__.is_some() {
@@ -303,7 +286,6 @@ impl<'de> serde::Deserialize<'de> for Command {
                 }
                 Ok(Command {
                     id: id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     command: command__.unwrap_or_default(),
                     cooldown: cooldown__.unwrap_or_default(),
                     priority: priority__.unwrap_or_default(),
@@ -438,9 +420,6 @@ impl serde::Serialize for CreateCommandRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.command.is_empty() {
             len += 1;
         }
@@ -475,9 +454,6 @@ impl serde::Serialize for CreateCommandRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("command.CreateCommandRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.command.is_empty() {
             struct_ser.serialize_field("command", &self.command)?;
         }
@@ -521,8 +497,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "command",
             "enabled",
             "cooldown",
@@ -543,7 +517,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             Command,
             Enabled,
             Cooldown,
@@ -576,7 +549,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "command" => Ok(GeneratedField::Command),
                             "enabled" => Ok(GeneratedField::Enabled),
                             "cooldown" => Ok(GeneratedField::Cooldown),
@@ -607,7 +579,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut command__ = None;
                 let mut enabled__ = None;
                 let mut cooldown__ = None;
@@ -621,12 +592,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                 let mut actions_json__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::Command => {
                             if command__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("command"));
@@ -700,7 +665,6 @@ impl<'de> serde::Deserialize<'de> for CreateCommandRequest {
                     }
                 }
                 Ok(CreateCommandRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     command: command__.unwrap_or_default(),
                     enabled: enabled__.unwrap_or_default(),
                     cooldown: cooldown__.unwrap_or_default(),
@@ -820,18 +784,12 @@ impl serde::Serialize for GetCommandRequest {
         if !self.command.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.username.is_some() {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("command.GetCommandRequest", len)?;
         if !self.command.is_empty() {
             struct_ser.serialize_field("command", &self.command)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if let Some(v) = self.username.as_ref() {
             struct_ser.serialize_field("username", v)?;
@@ -847,15 +805,12 @@ impl<'de> serde::Deserialize<'de> for GetCommandRequest {
     {
         const FIELDS: &[&str] = &[
             "command",
-            "application_id",
-            "applicationId",
             "username",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Command,
-            ApplicationId,
             Username,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
@@ -879,7 +834,6 @@ impl<'de> serde::Deserialize<'de> for GetCommandRequest {
                     {
                         match value {
                             "command" => Ok(GeneratedField::Command),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "username" => Ok(GeneratedField::Username),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
@@ -901,7 +855,6 @@ impl<'de> serde::Deserialize<'de> for GetCommandRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut command__ = None;
-                let mut application_id__ = None;
                 let mut username__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
@@ -910,12 +863,6 @@ impl<'de> serde::Deserialize<'de> for GetCommandRequest {
                                 return Err(serde::de::Error::duplicate_field("command"));
                             }
                             command__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Username => {
                             if username__.is_some() {
@@ -927,7 +874,6 @@ impl<'de> serde::Deserialize<'de> for GetCommandRequest {
                 }
                 Ok(GetCommandRequest {
                     command: command__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     username: username__,
                 })
             }
@@ -943,16 +889,10 @@ impl serde::Serialize for ListCommandsRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.include_disabled {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("command.ListCommandsRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if self.include_disabled {
             struct_ser.serialize_field("includeDisabled", &self.include_disabled)?;
         }
@@ -966,15 +906,12 @@ impl<'de> serde::Deserialize<'de> for ListCommandsRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "include_disabled",
             "includeDisabled",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             IncludeDisabled,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
@@ -997,7 +934,6 @@ impl<'de> serde::Deserialize<'de> for ListCommandsRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "includeDisabled" | "include_disabled" => Ok(GeneratedField::IncludeDisabled),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
@@ -1018,16 +954,9 @@ impl<'de> serde::Deserialize<'de> for ListCommandsRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut include_disabled__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::IncludeDisabled => {
                             if include_disabled__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("includeDisabled"));
@@ -1037,7 +966,6 @@ impl<'de> serde::Deserialize<'de> for ListCommandsRequest {
                     }
                 }
                 Ok(ListCommandsRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     include_disabled: include_disabled__.unwrap_or_default(),
                 })
             }

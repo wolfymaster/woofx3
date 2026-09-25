@@ -19,12 +19,6 @@ func NewOverlayTokenRepository(db *gorm.DB) *OverlayTokenRepository {
 	return &OverlayTokenRepository{db: db}
 }
 
-// DB exposes the underlying *gorm.DB for handler-level helpers
-// (used to resolve the default application id from context).
-func (r *OverlayTokenRepository) DB() *gorm.DB {
-	return r.db
-}
-
 func (r *OverlayTokenRepository) Create(t *models.OverlayToken) error {
 	return r.db.Create(t).Error
 }
@@ -45,16 +39,13 @@ func (r *OverlayTokenRepository) GetByToken(token string) (*models.OverlayToken,
 	return &t, err
 }
 
-// List filters by scene and/or application; revoked tombstones are
-// excluded unless includeRevoked is set. Both filters are optional.
-func (r *OverlayTokenRepository) List(sceneID, applicationID *uuid.UUID, includeRevoked bool) ([]*models.OverlayToken, error) {
+// List optionally filters by scene; revoked tombstones are excluded
+// unless includeRevoked is set.
+func (r *OverlayTokenRepository) List(sceneID *uuid.UUID, includeRevoked bool) ([]*models.OverlayToken, error) {
 	var tokens []*models.OverlayToken
 	q := r.db
 	if sceneID != nil {
 		q = q.Where("scene_id = ?", *sceneID)
-	}
-	if applicationID != nil {
-		q = q.Where("application_id = ?", *applicationID)
 	}
 	if !includeRevoked {
 		q = q.Where("status = ?", models.OverlayTokenStatusActive)

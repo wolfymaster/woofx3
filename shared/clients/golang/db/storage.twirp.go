@@ -2189,7 +2189,7 @@ func (s *storageServiceServer) serveClearSessionScopedProtobuf(ctx context.Conte
 }
 
 func (s *storageServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor14, 0
+	return twirpFileDescriptor13, 0
 }
 
 func (s *storageServiceServer) ProtocGenTwirpVersion() string {
@@ -2203,7 +2203,7 @@ func (s *storageServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "storage", "StorageService")
 }
 
-var twirpFileDescriptor14 = []byte{
+var twirpFileDescriptor13 = []byte{
 	// 641 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x55, 0xdb, 0x6e, 0xd3, 0x40,
 	0x10, 0xc5, 0x71, 0xda, 0xa4, 0x93, 0x26, 0x0a, 0xdb, 0xb4, 0x18, 0xab, 0x85, 0xc8, 0x15, 0x22,

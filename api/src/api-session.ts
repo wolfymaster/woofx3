@@ -87,11 +87,10 @@ export class ApiSession extends RpcTarget {
  * The methods a client may call.
  *
  * Delegation used to copy every function it found on `Api.prototype`, which
- * published whatever happened to be there: 88 methods against a 72-method
- * contract, including `setApplicationId` (rewrites the process-wide
- * application id), `initSubscriptions` (re-subscribes NATS subjects, and
- * duplicates them on a second call) and `handleProcessingCallback` (which
- * `http.ts` deliberately keeps off the capnweb surface). Nothing declared the
+ * published whatever happened to be there, including `initSubscriptions`
+ * (re-subscribes NATS subjects, and duplicates them on a second call) and
+ * `handleProcessingCallback` (which `http.ts` deliberately keeps off the
+ * capnweb surface). Nothing declared the
  * boundary, so nothing could hold it.
  *
  * This list is that boundary. The assertion below fails to compile if it

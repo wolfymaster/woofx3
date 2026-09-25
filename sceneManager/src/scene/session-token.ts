@@ -9,7 +9,7 @@ import { jwtVerify, SignJWT } from "jose";
  * long-lived credential.
  *
  * Claims are deliberately minimal: `overlay_token.proto`'s
- * `ResolveOverlayToken` RPC returns only `{sceneId, applicationId}` —
+ * `ResolveOverlayToken` RPC returns only `{sceneId}` —
  * no token row id — by design (uniform NOT_FOUND for revoked/unknown
  * tokens, no enumeration oracle). So there is no id to key a
  * DB-recheckable `sub` claim on without embedding the plaintext opaque
@@ -21,7 +21,6 @@ import { jwtVerify, SignJWT } from "jose";
  */
 export interface SessionClaims {
   sceneId: string;
-  applicationId: string;
 }
 
 /** Token lifetime: 60s, refreshed pre-emptively by the client every ~50s. */
@@ -38,7 +37,7 @@ export class SessionTokenService {
   }
 
   async mint(claims: SessionClaims): Promise<string> {
-    return new SignJWT({ sceneId: claims.sceneId, applicationId: claims.applicationId })
+    return new SignJWT({ sceneId: claims.sceneId })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
       .setExpirationTime(`${SESSION_TOKEN_TTL_SECONDS}s`)
@@ -55,11 +54,10 @@ export class SessionTokenService {
     try {
       const { payload } = await jwtVerify(token, this.key, { algorithms: ["HS256"] });
       const sceneId = payload.sceneId;
-      const applicationId = payload.applicationId;
-      if (typeof sceneId !== "string" || !sceneId || typeof applicationId !== "string" || !applicationId) {
+      if (typeof sceneId !== "string" || !sceneId) {
         return null;
       }
-      return { sceneId, applicationId };
+      return { sceneId };
     } catch {
       return null;
     }

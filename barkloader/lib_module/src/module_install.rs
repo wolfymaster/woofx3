@@ -24,7 +24,6 @@ pub async fn cleanup_old_version(
     module_name: &str,
     module_key: &str,
     db_proxy: Option<&dyn ModuleDbProxy>,
-    application_id: &str,
 ) -> Result<()> {
     let proxy = match db_proxy {
         Some(p) => p,
@@ -48,7 +47,7 @@ pub async fn cleanup_old_version(
         module_name
     );
 
-    proxy.delete_workflows_by_module("", module_name).await?;
+    proxy.delete_workflows_by_module(module_name).await?;
     info!("Deleted workflows for module {}", module_name);
 
     proxy.delete_commands_by_module(module_name).await?;
@@ -67,15 +66,9 @@ async fn rollback_db_install(
     manifest_module_key: &str,
     composite_module_key: &str,
     module_name: &str,
-    application_id: &str,
 ) {
-    if let Err(e) = cleanup_old_version(
-        manifest_module_key,
-        composite_module_key,
-        Some(db_proxy),
-        application_id,
-    )
-    .await
+    if let Err(e) =
+        cleanup_old_version(manifest_module_key, composite_module_key, Some(db_proxy)).await
     {
         warn!(
             "rollback: cleanup_old_version({}) failed: {}",
@@ -254,7 +247,6 @@ struct SagaState<'a, R: Repository> {
     module_key: &'a str,
     version_dir: &'a str,
     composite_module_key: &'a str,
-    application_id: &'a str,
     client_id: &'a str,
     archive_key: &'a str,
     provenance: InstallProvenance,
@@ -459,7 +451,6 @@ impl<'a, R: Repository> SagaState<'a, R> {
                 &self.manifest.name,
                 &self.manifest.version,
                 trigger_inputs,
-                "",
             )
             .await?;
 
@@ -524,7 +515,6 @@ impl<'a, R: Repository> SagaState<'a, R> {
                 &self.manifest.name,
                 &self.manifest.version,
                 action_inputs,
-                "",
             )
             .await?;
 
@@ -562,7 +552,6 @@ impl<'a, R: Repository> SagaState<'a, R> {
                 &self.manifest.name,
                 &self.manifest.version,
                 widget_inputs,
-                self.application_id,
             )
             .await?;
         Ok(())
@@ -594,7 +583,6 @@ impl<'a, R: Repository> SagaState<'a, R> {
                 &self.manifest.name,
                 &self.manifest.version,
                 task_inputs,
-                self.application_id,
             )
             .await?;
         Ok(())
@@ -921,7 +909,6 @@ pub async fn run_install<R: Repository>(
     repository: &R,
     archive_key: &str,
     db_proxy: Option<&dyn ModuleDbProxy>,
-    application_id: &str,
     cleanup_old: bool,
     composite_module_key: &str,
     client_id: &str,
@@ -932,7 +919,6 @@ pub async fn run_install<R: Repository>(
         repository,
         archive_key,
         db_proxy,
-        application_id,
         cleanup_old,
         composite_module_key,
         client_id,
@@ -955,7 +941,6 @@ pub async fn run_install_with_provenance<R: Repository>(
     repository: &R,
     archive_key: &str,
     db_proxy: Option<&dyn ModuleDbProxy>,
-    application_id: &str,
     cleanup_old: bool,
     composite_module_key: &str,
     client_id: &str,
@@ -1022,7 +1007,6 @@ pub async fn run_install_with_provenance<R: Repository>(
         module_key,
         version_dir,
         composite_module_key,
-        application_id,
         client_id,
         archive_key,
         provenance,
@@ -1038,13 +1022,7 @@ pub async fn run_install_with_provenance<R: Repository>(
         let plan = plan.expect("plan was built above whenever db_proxy is Some");
 
         if cleanup_old {
-            cleanup_old_version(
-                module_key,
-                composite_module_key,
-                Some(proxy),
-                application_id,
-            )
-            .await?;
+            cleanup_old_version(module_key, composite_module_key, Some(proxy)).await?;
         }
 
         // Saga-style install: every step after `CreateModule` must be
@@ -1064,14 +1042,7 @@ pub async fn run_install_with_provenance<R: Repository>(
                 "install failed for module {} ({}): rolling back db state: {}",
                 manifest.name, composite_module_key, e
             );
-            rollback_db_install(
-                proxy,
-                module_key,
-                composite_module_key,
-                &manifest.name,
-                application_id,
-            )
-            .await;
+            rollback_db_install(proxy, module_key, composite_module_key, &manifest.name).await;
             return Err(e);
         }
     } else {
@@ -1135,7 +1106,6 @@ mod tests {
             &repo,
             "archives/woofx3.zip",
             Some(&db_proxy),
-            "",
             false,
             &mid,
             "",
@@ -1173,7 +1143,6 @@ mod tests {
             &repo,
             "archives/woofx3.zip",
             Some(&db_proxy),
-            "",
             false,
             &mid,
             "",
@@ -1214,7 +1183,6 @@ mod tests {
             &repo,
             "archives/om.zip",
             Some(&db_proxy),
-            "",
             false,
             &mid,
             "",
@@ -1290,7 +1258,6 @@ mod tests {
             &repo,
             "archives/fault-mod-1.zip",
             Some(&db_proxy as &dyn ModuleDbProxy),
-            "",
             false,
             &mid,
             "",
@@ -1360,7 +1327,6 @@ mod tests {
             &repo,
             "archives/fault-mod-wf.zip",
             Some(&db_proxy as &dyn ModuleDbProxy),
-            "",
             false,
             &mid,
             "",
@@ -1412,7 +1378,6 @@ mod tests {
             &repo,
             "archives/fault-mod-wf-2.zip",
             Some(&db_proxy as &dyn ModuleDbProxy),
-            "",
             false,
             &mid,
             "",
@@ -1476,7 +1441,6 @@ mod tests {
             &repo,
             "archives/fault-mod-2.zip",
             Some(&db_proxy as &dyn ModuleDbProxy),
-            "",
             false,
             &mid,
             "",
@@ -1539,7 +1503,6 @@ mod tests {
             &repo,
             "archives/fault-mod-3.zip",
             Some(&db_proxy as &dyn ModuleDbProxy),
-            "",
             false,
             &mid,
             "",
@@ -1664,7 +1627,6 @@ mod tests {
             &repo,
             "archives/test-mod/1.0.0.zip",
             None,
-            "",
             false,
             &mid,
             "",
@@ -1728,7 +1690,6 @@ mod tests {
             &repo,
             "archives/wm/1.0.0.zip",
             None,
-            "",
             false,
             &mid,
             "",
@@ -1798,7 +1759,6 @@ mod tests {
             &repo,
             "archives/am/1.0.0.zip",
             None,
-            "",
             false,
             &mid,
             "",
@@ -1856,7 +1816,6 @@ mod tests {
             &repo,
             "archives/wm2/1.0.0.zip",
             None,
-            "",
             false,
             &mid,
             "",
@@ -1927,7 +1886,6 @@ mod tests {
             &repo,
             "archives/wm3/1.0.0.zip",
             None,
-            "",
             false,
             &mid,
             "",
@@ -2011,7 +1969,6 @@ mod tests {
             &repo,
             "archives/om/2.0.0.zip",
             None,
-            "",
             false,
             &mid,
             "",

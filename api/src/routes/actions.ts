@@ -20,7 +20,6 @@ export const actionsRoutes = routeModule({
       }
     }
 
-    const applicationId = await this.ensureApplicationId();
     const triggerId = input.triggerId || crypto.randomUUID();
     const label = input.label || "actions";
 
@@ -35,14 +34,9 @@ export const actionsRoutes = routeModule({
       data: input.event?.data ?? {},
     };
 
-    await this.publishEvent(
-      "action.execute",
-      { label, applicationId, actions: input.actions, event },
-      undefined,
-      undefined,
-      "api",
-      { triggerId }
-    );
+    await this.publishEvent("action.execute", { label, actions: input.actions, event }, undefined, undefined, "api", {
+      triggerId,
+    });
 
     this.logger.info("Action run requested", { label, actions: input.actions.length, triggerId });
     return { requested: true, triggerId };

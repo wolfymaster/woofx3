@@ -18,9 +18,6 @@ function fakeLogger() {
 function gateway(registrationToken: string | null) {
   const createClient = mock(async () => ({ client: { clientId: "c1", clientSecret: "s1" } }));
   const db = {
-    findOrCreateByWoofx3UIUserId: mock(async () => ({ id: "engine-user-1" })),
-    getDefaultApplication: mock(async () => ({ id: "app-1", name: "default" })),
-    createApplication: mock(async () => ({ id: "app-1", name: "default" })),
     createClient,
     listClients: mock(async () => ({ clients: [] })),
   } as never;
@@ -54,7 +51,7 @@ describe("registerClient on an engine with a registration token", () => {
   it("refuses a caller that sends no token", async () => {
     const { gateway: gw, createClient } = gateway(TOKEN);
 
-    const err = await refusal(gw.registerClient("ui", { userId: "u1" }));
+    const err = await refusal(gw.registerClient("ui", {}));
 
     expect(err.name).toBe(REGISTRATION_REFUSED);
     expect(createClient).not.toHaveBeenCalled();
@@ -64,7 +61,7 @@ describe("registerClient on an engine with a registration token", () => {
     const { gateway: gw, createClient } = gateway(TOKEN);
 
     for (const wrong of ["", "nope", `${TOKEN}x`, TOKEN.slice(1)]) {
-      const err = await refusal(gw.registerClient("ui", { userId: "u1", registrationToken: wrong }));
+      const err = await refusal(gw.registerClient("ui", { registrationToken: wrong }));
       expect(err.name).toBe(REGISTRATION_REFUSED);
     }
     expect(createClient).not.toHaveBeenCalled();
@@ -73,9 +70,9 @@ describe("registerClient on an engine with a registration token", () => {
   it("registers a caller that sends the right token", async () => {
     const { gateway: gw, createClient } = gateway(TOKEN);
 
-    const result = await gw.registerClient("ui", { userId: "u1", registrationToken: TOKEN });
+    const result = await gw.registerClient("ui", { registrationToken: TOKEN });
 
-    expect(result).toEqual({ clientId: "c1", clientSecret: "s1", applicationId: "app-1" });
+    expect(result).toEqual({ clientId: "c1", clientSecret: "s1" });
     expect(createClient).toHaveBeenCalledTimes(1);
   });
 
@@ -90,7 +87,7 @@ describe("registerClient on an engine without a registration token", () => {
   it("registers any caller, as bring-your-own engines always have", async () => {
     const { gateway: gw } = gateway(null);
 
-    const result = await gw.registerClient("ui", { userId: "u1" });
+    const result = await gw.registerClient("ui", {});
 
     expect(result.clientId).toBe("c1");
   });
@@ -99,31 +96,5 @@ describe("registerClient on an engine without a registration token", () => {
     const { logger } = gateway(null);
 
     expect(logger.warn).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("registerClient and application-scoped components", () => {
-  it("starts them for the application the registration resolved", async () => {
-    const { gateway: gw } = gateway(null);
-    const start = mock(async (_applicationId: string) => {});
-    gw.setApplicationScope({ start } as never);
-
-    await gw.registerClient("ui", { userId: "u1" });
-
-    expect(start).toHaveBeenCalledWith("app-1");
-  });
-
-  it("still registers when they fail to start, and says so", async () => {
-    const { gateway: gw, logger } = gateway(null);
-    gw.setApplicationScope({
-      start: async () => {
-        throw new Error("NATS not ready");
-      },
-    } as never);
-
-    const result = await gw.registerClient("ui", { userId: "u1" });
-
-    expect(result.clientId).toBe("c1");
-    expect((logger as never as { error: ReturnType<typeof mock> }).error).toHaveBeenCalledTimes(1);
   });
 });

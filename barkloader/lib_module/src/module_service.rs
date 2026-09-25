@@ -104,7 +104,6 @@ where
         plan: &ModulePlan,
         archive_key: &str,
         db_proxy_url: Option<&str>,
-        application_id: &str,
         force: bool,
         composite_module_key: &str,
         client_id: &str,
@@ -113,7 +112,6 @@ where
             plan,
             archive_key,
             db_proxy_url,
-            application_id,
             force,
             composite_module_key,
             client_id,
@@ -129,7 +127,6 @@ where
         _plan: &ModulePlan,
         archive_key: &str,
         db_proxy_url: Option<&str>,
-        application_id: &str,
         force: bool,
         composite_module_key: &str,
         client_id: &str,
@@ -149,7 +146,6 @@ where
             client
                 .as_ref()
                 .map(|c| c as &dyn super::db_proxy_client::ModuleDbProxy),
-            application_id,
             cleanup_old,
             composite_module_key,
             client_id,

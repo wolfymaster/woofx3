@@ -23,7 +23,6 @@ export interface HasPermissionRequest {
 }
 
 export interface PermissionRequest {
-  applicationId: string;
   subject: string;
   object: string;
   action: string;
@@ -31,7 +30,6 @@ export interface PermissionRequest {
 }
 
 export interface UserResourceRoleRequest {
-  applicationId: string;
   username: string;
   resource: string;
   role: string;
@@ -45,7 +43,6 @@ export interface UserResourceRoleRequest {
  */
 export interface Permission {
   id: bigint;
-  applicationId: string;
   ptype: string;
   v0: string;
   v1: string;
@@ -61,7 +58,6 @@ export interface Permission {
  * "g" and "g2") and is ignored when ptype is set.
  */
 export interface ListPermissionsRequest {
-  applicationId: string;
   ptype: string;
   ptypePrefix: string;
   subject: string;
@@ -782,7 +778,6 @@ export const PermissionRequest = {
    */
   initialize: function (msg?: Partial<PermissionRequest>): PermissionRequest {
     return {
-      applicationId: "",
       subject: "",
       object: "",
       action: "",
@@ -798,9 +793,6 @@ export const PermissionRequest = {
     msg: PartialDeep<PermissionRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.subject) {
       writer.writeString(2, msg.subject);
     }
@@ -826,10 +818,6 @@ export const PermissionRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.subject = reader.readString();
           break;
@@ -884,7 +872,6 @@ export const UserResourceRoleRequest = {
     msg?: Partial<UserResourceRoleRequest>,
   ): UserResourceRoleRequest {
     return {
-      applicationId: "",
       username: "",
       resource: "",
       role: "",
@@ -899,9 +886,6 @@ export const UserResourceRoleRequest = {
     msg: PartialDeep<UserResourceRoleRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.username) {
       writer.writeString(2, msg.username);
     }
@@ -924,10 +908,6 @@ export const UserResourceRoleRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.username = reader.readString();
           break;
@@ -977,7 +957,6 @@ export const Permission = {
   initialize: function (msg?: Partial<Permission>): Permission {
     return {
       id: 0n,
-      applicationId: "",
       ptype: "",
       v0: "",
       v1: "",
@@ -998,9 +977,6 @@ export const Permission = {
   ): protoscript.BinaryWriter {
     if (msg.id) {
       writer.writeInt64String(1, msg.id.toString() as any);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.ptype) {
       writer.writeString(3, msg.ptype);
@@ -1038,10 +1014,6 @@ export const Permission = {
       switch (field) {
         case 1: {
           msg.id = BigInt(reader.readInt64String());
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -1110,7 +1082,6 @@ export const ListPermissionsRequest = {
     msg?: Partial<ListPermissionsRequest>,
   ): ListPermissionsRequest {
     return {
-      applicationId: "",
       ptype: "",
       ptypePrefix: "",
       subject: "",
@@ -1125,9 +1096,6 @@ export const ListPermissionsRequest = {
     msg: PartialDeep<ListPermissionsRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.ptype) {
       writer.writeString(2, msg.ptype);
     }
@@ -1150,10 +1118,6 @@ export const ListPermissionsRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.ptype = reader.readString();
           break;
@@ -1361,7 +1325,6 @@ export const PermissionRequestJSON = {
    */
   initialize: function (msg?: Partial<PermissionRequest>): PermissionRequest {
     return {
-      applicationId: "",
       subject: "",
       object: "",
       action: "",
@@ -1377,9 +1340,6 @@ export const PermissionRequestJSON = {
     msg: PartialDeep<PermissionRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.subject) {
       json["subject"] = msg.subject;
     }
@@ -1402,10 +1362,6 @@ export const PermissionRequestJSON = {
     msg: PermissionRequest,
     json: any,
   ): PermissionRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _subject_ = json["subject"];
     if (_subject_) {
       msg.subject = _subject_;
@@ -1451,7 +1407,6 @@ export const UserResourceRoleRequestJSON = {
     msg?: Partial<UserResourceRoleRequest>,
   ): UserResourceRoleRequest {
     return {
-      applicationId: "",
       username: "",
       resource: "",
       role: "",
@@ -1466,9 +1421,6 @@ export const UserResourceRoleRequestJSON = {
     msg: PartialDeep<UserResourceRoleRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.username) {
       json["username"] = msg.username;
     }
@@ -1488,10 +1440,6 @@ export const UserResourceRoleRequestJSON = {
     msg: UserResourceRoleRequest,
     json: any,
   ): UserResourceRoleRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _username_ = json["username"];
     if (_username_) {
       msg.username = _username_;
@@ -1532,7 +1480,6 @@ export const PermissionJSON = {
   initialize: function (msg?: Partial<Permission>): Permission {
     return {
       id: 0n,
-      applicationId: "",
       ptype: "",
       v0: "",
       v1: "",
@@ -1553,9 +1500,6 @@ export const PermissionJSON = {
     const json: Record<string, unknown> = {};
     if (msg.id) {
       json["id"] = String(msg.id);
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.ptype) {
       json["ptype"] = msg.ptype;
@@ -1588,10 +1532,6 @@ export const PermissionJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = BigInt(_id_);
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _ptype_ = json["ptype"];
     if (_ptype_) {
@@ -1650,7 +1590,6 @@ export const ListPermissionsRequestJSON = {
     msg?: Partial<ListPermissionsRequest>,
   ): ListPermissionsRequest {
     return {
-      applicationId: "",
       ptype: "",
       ptypePrefix: "",
       subject: "",
@@ -1665,9 +1604,6 @@ export const ListPermissionsRequestJSON = {
     msg: PartialDeep<ListPermissionsRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.ptype) {
       json["ptype"] = msg.ptype;
     }
@@ -1687,10 +1623,6 @@ export const ListPermissionsRequestJSON = {
     msg: ListPermissionsRequest,
     json: any,
   ): ListPermissionsRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _ptype_ = json["ptype"];
     if (_ptype_) {
       msg.ptype = _ptype_;

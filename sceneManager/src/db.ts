@@ -120,8 +120,8 @@ export class DbClient {
     return alert.UpdateAlertLifecycle(req, this.config);
   }
 
-  async getSetting(key: string, applicationId: string): Promise<string | null> {
-    const resp = await setting.GetSetting({ key, applicationId }, this.config);
+  async getSetting(key: string): Promise<string | null> {
+    const resp = await setting.GetSetting({ key }, this.config);
     return resp.setting?.value?.stringValue ?? null;
   }
 

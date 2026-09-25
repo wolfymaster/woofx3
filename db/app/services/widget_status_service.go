@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/workers"
@@ -40,14 +39,6 @@ func NewWidgetStatusService(
 }
 
 func (s *widgetStatusService) UpsertWidgetStatus(ctx context.Context, req *client.UpsertWidgetStatusRequest) (*client.WidgetStatusResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
 	if req.InstanceId == "" {
 		return nil, twirp.RequiredArgumentError("instance_id")
 	}
@@ -68,7 +59,6 @@ func (s *widgetStatusService) UpsertWidgetStatus(ctx context.Context, req *clien
 	}
 
 	row := &models.WidgetStatus{
-		ApplicationID:     applicationID,
 		ModuleID:          req.ModuleId,
 		InstanceID:        req.InstanceId,
 		WidgetCanonicalID: req.WidgetCanonicalId,
@@ -80,7 +70,7 @@ func (s *widgetStatusService) UpsertWidgetStatus(ctx context.Context, req *clien
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to upsert widget status: %w", err))
 	}
-	s.publishChange(applicationID.String(), saved, "updated")
+	s.publishChange(saved, "updated")
 	return &client.WidgetStatusResponse{
 		Status: &client.ResponseStatus{
 			Code:    client.ResponseStatus_OK,
@@ -91,21 +81,13 @@ func (s *widgetStatusService) UpsertWidgetStatus(ctx context.Context, req *clien
 }
 
 func (s *widgetStatusService) GetWidgetStatus(ctx context.Context, req *client.GetWidgetStatusRequest) (*client.WidgetStatusResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
 	if req.InstanceId == "" {
 		return nil, twirp.RequiredArgumentError("instance_id")
 	}
 	if req.Key == "" {
 		return nil, twirp.RequiredArgumentError("key")
 	}
-	row, err := s.repo.Get(applicationID, req.InstanceId, req.Key)
+	row, err := s.repo.Get(req.InstanceId, req.Key)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError("widget status not found")
@@ -122,14 +104,6 @@ func (s *widgetStatusService) GetWidgetStatus(ctx context.Context, req *client.G
 }
 
 func (s *widgetStatusService) ListWidgetStatus(ctx context.Context, req *client.ListWidgetStatusRequest) (*client.ListWidgetStatusResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
 	limit := int(req.Limit)
 	offset := int(req.Offset)
 	if limit <= 0 {
@@ -138,11 +112,11 @@ func (s *widgetStatusService) ListWidgetStatus(ctx context.Context, req *client.
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := s.repo.ListByApplicationID(applicationID, req.ModuleId, req.InstanceId, limit, offset)
+	rows, err := s.repo.List(req.ModuleId, req.InstanceId, limit, offset)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list widget status: %w", err))
 	}
-	total, err := s.repo.CountByApplicationID(applicationID, req.ModuleId, req.InstanceId)
+	total, err := s.repo.Count(req.ModuleId, req.InstanceId)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to count widget status: %w", err))
 	}
@@ -163,18 +137,10 @@ func (s *widgetStatusService) ListWidgetStatus(ctx context.Context, req *client.
 }
 
 func (s *widgetStatusService) DeleteWidgetStatus(ctx context.Context, req *client.DeleteWidgetStatusRequest) (*client.ResponseStatus, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
 	if req.InstanceId == "" {
 		return nil, twirp.RequiredArgumentError("instance_id")
 	}
-	if err := s.repo.Delete(applicationID, req.InstanceId, req.Key); err != nil {
+	if err := s.repo.Delete(req.InstanceId, req.Key); err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to delete widget status: %w", err))
 	}
 	return &client.ResponseStatus{
@@ -186,7 +152,6 @@ func (s *widgetStatusService) DeleteWidgetStatus(ctx context.Context, req *clien
 func (s *widgetStatusService) toProto(m *models.WidgetStatus) *client.WidgetStatus {
 	return &client.WidgetStatus{
 		Id:                m.ID.String(),
-		ApplicationId:     m.ApplicationID.String(),
 		ModuleId:          m.ModuleID,
 		InstanceId:        m.InstanceID,
 		WidgetCanonicalId: m.WidgetCanonicalID,
@@ -198,18 +163,16 @@ func (s *widgetStatusService) toProto(m *models.WidgetStatus) *client.WidgetStat
 	}
 }
 
-func (s *widgetStatusService) publishChange(applicationID string, row *models.WidgetStatus, op string) {
+func (s *widgetStatusService) publishChange(row *models.WidgetStatus, op string) {
 	if s.publisher == nil {
 		return
 	}
 	s.publisher.Publish(workers.PublishOptions{
-		ApplicationID: applicationID,
-		EntityType:    "widget_status",
-		EntityID:      row.ID.String(),
-		Operation:     op,
+		EntityType: "widget_status",
+		EntityID:   row.ID.String(),
+		Operation:  op,
 		Data: map[string]interface{}{
 			"id":                  row.ID.String(),
-			"application_id":      row.ApplicationID.String(),
 			"module_id":           row.ModuleID,
 			"instance_id":         row.InstanceID,
 			"widget_canonical_id": row.WidgetCanonicalID,

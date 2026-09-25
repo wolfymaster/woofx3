@@ -43,12 +43,9 @@ function makeApi(db: any) {
   return { api, nats };
 }
 
-const APPLICATION = { id: "app-1" };
-
 function commandRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "cmd-1",
-    applicationId: APPLICATION.id,
     command: "song",
     type: "text",
     typeValue: "now playing",
@@ -69,7 +66,6 @@ describe("executeCommand permission enforcement", () => {
   it("executes a command that has no group restriction", async () => {
     const getCommand = mock(async (_req: any) => commandRow({ groupIds: [] }));
     const { api, nats } = makeApi({
-      getDefaultApplication: mock(async () => APPLICATION),
       getCommand,
     });
 
@@ -86,7 +82,6 @@ describe("executeCommand permission enforcement", () => {
 
   it("executes a command whose required group the user belongs to", async () => {
     const { api, nats } = makeApi({
-      getDefaultApplication: mock(async () => APPLICATION),
       // db-proxy already enforced the grant and returned the command, which is
       // exactly what an authorized call looks like from this side.
       getCommand: mock(async () => commandRow({ command: "vanish", groupIds: ["group-mods"] })),
@@ -100,7 +95,6 @@ describe("executeCommand permission enforcement", () => {
 
   it("refuses to publish command.execute when db-proxy denies the user", async () => {
     const { api, nats } = makeApi({
-      getDefaultApplication: mock(async () => APPLICATION),
       getCommand: mock(async () => {
         // The denial is data now, not a message template a test has to
         // match character for character.
@@ -114,7 +108,6 @@ describe("executeCommand permission enforcement", () => {
 
   it("surfaces a transport failure as itself rather than as a denial", async () => {
     const { api, nats } = makeApi({
-      getDefaultApplication: mock(async () => APPLICATION),
       getCommand: mock(async () => {
         throw new Error("db.getCommand: connection refused");
       }),
@@ -126,7 +119,6 @@ describe("executeCommand permission enforcement", () => {
 
   it("does not publish for a disabled command", async () => {
     const { api, nats } = makeApi({
-      getDefaultApplication: mock(async () => APPLICATION),
       getCommand: mock(async () => commandRow({ enabled: false })),
     });
 
@@ -138,11 +130,9 @@ describe("executeCommand permission enforcement", () => {
 describe("group routes", () => {
   it("marks built-in groups on the snapshot so a UI can disable edit affordances", async () => {
     const { api } = makeApi({
-      getDefaultApplication: mock(async () => APPLICATION),
       listGroups: mock(async () => [
         {
           id: "g-everyone",
-          applicationId: APPLICATION.id,
           name: "everyone",
           description: "",
           createdAt: undefined,
@@ -150,7 +140,6 @@ describe("group routes", () => {
         },
         {
           id: "g-regulars",
-          applicationId: APPLICATION.id,
           name: "regulars",
           description: "",
           createdAt: undefined,
@@ -168,7 +157,6 @@ describe("group routes", () => {
 
   it("propagates the engine's refusal to delete a built-in group", async () => {
     const { api } = makeApi({
-      getDefaultApplication: mock(async () => APPLICATION),
       deleteGroup: mock(async () => {
         throw new DbError("deleteGroup", "permission_denied", 'built-in group "moderator" cannot be deleted');
       }),
@@ -181,7 +169,6 @@ describe("group routes", () => {
     const listUserGroupsForUser = mock(async (_req: any) => [
       {
         id: "g-mods",
-        applicationId: APPLICATION.id,
         name: "moderator",
         description: "",
         createdAt: undefined,
@@ -189,7 +176,6 @@ describe("group routes", () => {
       },
     ]);
     const { api } = makeApi({
-      getDefaultApplication: mock(async () => APPLICATION),
       listUserGroupsForUser,
     });
 

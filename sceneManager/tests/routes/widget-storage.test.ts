@@ -20,7 +20,7 @@ function deps(opts: { read?: (...args: unknown[]) => Promise<unknown> } = {}) {
   const d = {
     ctx: { logger },
     sessionTokens: {
-      verify: async (token: string) => (token === "good" ? { sceneId: "scene-1", applicationId: "app-1" } : null),
+      verify: async (token: string) => (token === "good" ? { sceneId: "scene-1" } : null),
     },
     host: {
       loadSceneById: async (sceneId: string) =>

@@ -4,11 +4,9 @@
 pub struct StreamSession {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     /// `open` while this is the session events are stamped with; `closed` once a
-    /// later session has replaced it. At most one session per application is
-    /// open, enforced by a partial unique index rather than by convention.
+    /// later session has replaced it. At most one session is open, enforced by a
+    /// partial unique index rather than by convention.
     #[prost(string, tag="3")]
     pub status: ::prost::alloc::string::String,
     #[prost(message, optional, tag="4")]
@@ -33,8 +31,6 @@ pub struct StreamSession {
 pub struct StreamSessionSegment {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub stream_session_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag="4")]
@@ -47,10 +43,8 @@ pub struct StreamSessionSegment {
     #[prost(message, optional, tag="7")]
     pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct EnsureCurrentStreamSessionRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
 }
 /// The open session and the inputs to the extend-or-split decision, fetched
 /// together because the decision needs all three consistently.
@@ -69,10 +63,8 @@ pub struct StreamSessionStateResponse {
     #[prost(message, optional, tag="4")]
     pub last_segment_ended_at: ::core::option::Option<::pbjson_types::Timestamp>,
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SplitStreamSessionRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     /// The boundary. Supplied by the caller rather than defaulted to NOW() so a
     /// split can be made from an event's own timestamp, and used as both the old
     /// session's end and the new one's start so no instant falls outside both.
@@ -90,20 +82,16 @@ pub struct SplitStreamSessionResponse {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct OpenStreamSessionSegmentRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub stream_session_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag="3")]
     pub started_at: ::core::option::Option<::pbjson_types::Timestamp>,
 }
-/// Closes whichever segment is currently open for the application. Keyed on the
-/// application rather than a segment id because the caller reacting to
-/// `stream.offline` knows the channel, not which segment it opened.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+/// Closes whichever segment is currently open. Takes no segment id because the
+/// caller reacting to `stream.offline` knows the channel, not which segment it
+/// opened.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CloseStreamSessionSegmentRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag="2")]
     pub ended_at: ::core::option::Option<::pbjson_types::Timestamp>,
 }
@@ -126,10 +114,8 @@ pub struct StreamSessionSegmentResponse {
     #[prost(message, optional, tag="2")]
     pub segment: ::core::option::Option<StreamSessionSegment>,
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListStreamSessionsRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(int32, tag="2")]
     pub limit: i32,
     #[prost(int32, tag="3")]

@@ -20,7 +20,6 @@ use super::db_proxy_client::ModuleDbProxy;
 
 pub struct DeleteContext<'a, R: Repository> {
     pub db_proxy: &'a dyn ModuleDbProxy,
-    pub application_id: &'a str,
     pub module_id: &'a str,
     pub module_name: &'a str,
     pub module_key: &'a str,
@@ -184,7 +183,7 @@ impl ModuleDeletePlan {
             }
             DeleteStep::Workflows => {
                 ctx.db_proxy
-                    .delete_workflows_by_module("", ctx.manifest_id)
+                    .delete_workflows_by_module(ctx.manifest_id)
                     .await
             }
             DeleteStep::Actions => {
@@ -356,7 +355,6 @@ pub async fn run_delete_resolved<R: Repository>(
     resolved: &ResolvedModule,
     module_name: &str,
     db_proxy: &dyn ModuleDbProxy,
-    application_id: &str,
     repository: &R,
     registry: Arc<ModuleRegistry>,
 ) -> Result<(), DeleteError> {
@@ -376,7 +374,7 @@ pub async fn run_delete_resolved<R: Repository>(
     // `resource_type` ("instance:<kind>") lets the UI render an
     // instance-specific affordance ("Delete this counter first").
     let mut usage = db_proxy
-        .check_module_resource_usage(&resolved.module_id, application_id)
+        .check_module_resource_usage(&resolved.module_id)
         .await
         .map_err(DeleteError::Other)?;
 
@@ -401,7 +399,6 @@ pub async fn run_delete_resolved<R: Repository>(
     let plan = ModuleDeletePlan::new();
     let ctx = DeleteContext {
         db_proxy,
-        application_id,
         module_id: &resolved.module_id,
         module_name,
         module_key: &resolved.module_key,
@@ -518,7 +515,6 @@ mod tests {
             &system_module("woofx3"),
             "woofx3",
             &db_proxy,
-            "",
             &repo,
             registry,
         )
@@ -555,7 +551,6 @@ mod tests {
             &system_module("woofx3"),
             "woofx3",
             &db_proxy,
-            "",
             &repo,
             registry,
         )
@@ -576,7 +571,7 @@ mod tests {
         let resolved = resolved_module("del-mod-1");
         let registry = Arc::new(ModuleRegistry::new());
 
-        run_delete_resolved(&resolved, "Del Mod 1", &db_proxy, "", &repo, registry)
+        run_delete_resolved(&resolved, "Del Mod 1", &db_proxy, &repo, registry)
             .await
             .expect("delete should succeed against a fake with no configured failures");
 
@@ -617,7 +612,7 @@ mod tests {
         let resolved = resolved_module("del-mod-2");
         let registry = Arc::new(ModuleRegistry::new());
 
-        let err = run_delete_resolved(&resolved, "Del Mod 2", &db_proxy, "", &repo, registry)
+        let err = run_delete_resolved(&resolved, "Del Mod 2", &db_proxy, &repo, registry)
             .await
             .expect_err("delete should fail when delete_actions_by_module_id fails");
         assert!(matches!(err, DeleteError::Other(_)));

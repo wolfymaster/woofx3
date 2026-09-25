@@ -59,9 +59,9 @@ func TestRecorderSkipsDashboardRuns(t *testing.T) {
 	recorder, store := recorderFixture()
 	execution := runWith(dashboardOrigin)
 
-	recorder.RunStarted("app-1", execution)
-	recorder.RunSettled("app-1", execution)
-	recorder.StepSettled("app-1", execution, engine.RunStep{TaskID: "t1"})
+	recorder.RunStarted(execution)
+	recorder.RunSettled(execution)
+	recorder.StepSettled(execution, engine.RunStep{TaskID: "t1"})
 
 	if len(store.runs) != 0 || len(store.updates) != 0 || len(store.steps) != 0 {
 		t.Fatalf("dashboard run was recorded: runs=%d updates=%d steps=%d",
@@ -73,13 +73,13 @@ func TestRecorderRecordsSystemRuns(t *testing.T) {
 	recorder, store := recorderFixture()
 	execution := runWith("twitch")
 
-	recorder.RunStarted("app-1", execution)
+	recorder.RunStarted(execution)
 
 	if len(store.runs) != 1 {
 		t.Fatalf("expected one recorded run, got %d", len(store.runs))
 	}
 	got := store.runs[0]
-	if got.Id != "exec-1" || got.WorkflowId != "wf-1" || got.ApplicationId != "app-1" {
+	if got.Id != "exec-1" || got.WorkflowId != "wf-1" {
 		t.Errorf("run recorded with wrong identity: %+v", got)
 	}
 	if got.TriggeredBy != "twitch" {
@@ -108,7 +108,7 @@ func TestRecorderHandlesMissingTriggerEvent(t *testing.T) {
 		StartedAt:  time.Now(),
 	}
 
-	recorder.RunStarted("app-1", execution)
+	recorder.RunStarted(execution)
 
 	if len(store.runs) != 1 {
 		t.Fatalf("expected one recorded run, got %d", len(store.runs))
@@ -126,7 +126,7 @@ func TestRecorderRecordsTerminalOutcome(t *testing.T) {
 	completed := time.Now()
 	execution.CompletedAt = &completed
 
-	recorder.RunSettled("app-1", execution)
+	recorder.RunSettled(execution)
 
 	if len(store.updates) != 1 {
 		t.Fatalf("expected one update, got %d", len(store.updates))
@@ -149,7 +149,7 @@ func TestRecorderStepCarriesInputsAndOutputs(t *testing.T) {
 	started := time.Now()
 	completed := started.Add(250 * time.Millisecond)
 
-	recorder.StepSettled("app-1", execution, engine.RunStep{
+	recorder.StepSettled(execution, engine.RunStep{
 		TaskID:      "send-alert",
 		Status:      "success",
 		Attempt:     1,
@@ -186,7 +186,7 @@ func TestRecorderStepCarriesInputsAndOutputs(t *testing.T) {
 func TestRecorderStepWithoutPayloads(t *testing.T) {
 	recorder, store := recorderFixture()
 
-	recorder.StepSettled("app-1", runWith("twitch"), engine.RunStep{
+	recorder.StepSettled(runWith("twitch"), engine.RunStep{
 		TaskID:    "skipped-step",
 		Status:    "skipped",
 		StepIndex: 1,

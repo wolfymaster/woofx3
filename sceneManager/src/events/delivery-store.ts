@@ -159,7 +159,6 @@ export class DeliveryStore {
    */
   async recordEvent(params: {
     sceneId: string;
-    applicationId: string;
     type: string;
     key: string;
     value: unknown;
@@ -172,7 +171,6 @@ export class DeliveryStore {
     try {
       const resp = await this.db.recordSceneEvent({
         sceneId: params.sceneId,
-        applicationId: params.applicationId,
         type: params.type,
         key: params.key,
         value: JSON.stringify(params.value ?? null),

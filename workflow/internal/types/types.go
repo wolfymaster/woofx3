@@ -8,20 +8,12 @@ import (
 )
 
 type WorkflowDefinition struct {
-	ID          string `json:"id" yaml:"id"`
-	Name        string `json:"name" yaml:"name"`
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-	// ApplicationID scopes this workflow to a specific application. Source
-	// of truth is the `workflow_definitions.application_id` column;
-	// populated by `convertDBWorkflowToEngineWorkflow` when the engine
-	// loads the row. Action handlers that need application context (the
-	// `alert` action stamps it onto the published envelope so api/'s
-	// alert log can attribute the dispatch without falling back to a
-	// singleton "default application" lookup) read it via TaskContext.
-	ApplicationID string           `json:"applicationId,omitempty" yaml:"applicationId,omitempty"`
-	Trigger       *TriggerConfig   `json:"trigger" yaml:"trigger"`
-	Tasks         []TaskDefinition `json:"tasks" yaml:"tasks"`
-	Options       *WorkflowOptions `json:"options,omitempty" yaml:"options,omitempty"`
+	ID          string           `json:"id" yaml:"id"`
+	Name        string           `json:"name" yaml:"name"`
+	Description string           `json:"description,omitempty" yaml:"description,omitempty"`
+	Trigger     *TriggerConfig   `json:"trigger" yaml:"trigger"`
+	Tasks       []TaskDefinition `json:"tasks" yaml:"tasks"`
+	Options     *WorkflowOptions `json:"options,omitempty" yaml:"options,omitempty"`
 	// Ephemeral marks a definition assembled for one run and never registered
 	// -- an action list run on request (Engine.RunActions). Not serialized:
 	// nothing persists such a definition, so nothing reads it back.
@@ -252,20 +244,15 @@ const (
 )
 
 type WorkflowExecution struct {
-	ID         string
-	WorkflowID string
-	// ApplicationID is carried on the run rather than looked up from the
-	// registry each time it is needed: an ad-hoc run (see Engine.RunActions)
-	// belongs to no registered workflow, and a registered one can be deleted
-	// while a run of it is still in flight.
-	ApplicationID string
-	Status        ExecutionStatus
-	TriggerEvent  *Event
-	StartedAt     time.Time
-	CompletedAt   *time.Time
-	Tasks         map[string]*TaskExecution
-	Variables     map[string]any
-	Error         string
+	ID           string
+	WorkflowID   string
+	Status       ExecutionStatus
+	TriggerEvent *Event
+	StartedAt    time.Time
+	CompletedAt  *time.Time
+	Tasks        map[string]*TaskExecution
+	Variables    map[string]any
+	Error        string
 	// Ephemeral marks a run of a task list that has no workflow row behind it.
 	// Such a run is not recorded and announces no lifecycle: both are keyed by
 	// workflow id, and there is no workflow here to attribute them to.

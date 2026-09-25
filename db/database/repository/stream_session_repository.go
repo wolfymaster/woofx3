@@ -23,11 +23,7 @@ func NewStreamSessionRepository(db *gorm.DB) *StreamSessionRepository {
 	return &StreamSessionRepository{db: db}
 }
 
-func (r *StreamSessionRepository) DB() *gorm.DB {
-	return r.db
-}
-
-// EnsureOpenSession returns the application's open session, creating one at
+// EnsureOpenSession returns the open session, creating one at
 // `startedAt` when none is open. The bool reports whether a session was
 // created, which is what tells the caller whether to emit a lifecycle event.
 //
@@ -35,11 +31,11 @@ func (r *StreamSessionRepository) DB() *gorm.DB {
 // absent" is a read-then-write that two engines can execute concurrently. The
 // partial unique index is the backstop; the transaction is what keeps the
 // common case from relying on it.
-func (r *StreamSessionRepository) EnsureOpenSession(applicationID uuid.UUID, startedAt time.Time) (*models.StreamSession, bool, error) {
+func (r *StreamSessionRepository) EnsureOpenSession(startedAt time.Time) (*models.StreamSession, bool, error) {
 	var session models.StreamSession
 	created := false
 	err := r.db.Transaction(func(tx *gorm.DB) error {
-		err := tx.Where("application_id = ? AND status = ?", applicationID, models.StreamSessionStatusOpen).
+		err := tx.Where("status = ?", models.StreamSessionStatusOpen).
 			First(&session).Error
 		if err == nil {
 			return nil
@@ -48,10 +44,9 @@ func (r *StreamSessionRepository) EnsureOpenSession(applicationID uuid.UUID, sta
 			return err
 		}
 		session = models.StreamSession{
-			ID:            uuid.New(),
-			ApplicationID: applicationID,
-			Status:        models.StreamSessionStatusOpen,
-			StartedAt:     startedAt,
+			ID:        uuid.New(),
+			Status:    models.StreamSessionStatusOpen,
+			StartedAt: startedAt,
 		}
 		if createErr := tx.Create(&session).Error; createErr != nil {
 			return createErr
@@ -69,18 +64,18 @@ func (r *StreamSessionRepository) EnsureOpenSession(applicationID uuid.UUID, sta
 // at the same instant, returning both.
 //
 // One transaction, and the close happens before the insert: the partial unique
-// index permits only one open session per application, so the opposite order
+// index permits only one open session, so the opposite order
 // would reject its own write. Doing this as two calls would also leave a window
 // with no open session, which is the one state the design says cannot exist.
 //
 // Returns gorm.ErrRecordNotFound when no session is open.
-func (r *StreamSessionRepository) SplitSession(applicationID uuid.UUID, at time.Time) (*models.StreamSession, *models.StreamSession, error) {
+func (r *StreamSessionRepository) SplitSession(at time.Time) (*models.StreamSession, *models.StreamSession, error) {
 	var ended models.StreamSession
 	var started models.StreamSession
 
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		var current models.StreamSession
-		if err := tx.Where("application_id = ? AND status = ?", applicationID, models.StreamSessionStatusOpen).
+		if err := tx.Where("status = ?", models.StreamSessionStatusOpen).
 			First(&current).Error; err != nil {
 			return err
 		}
@@ -103,10 +98,9 @@ func (r *StreamSessionRepository) SplitSession(applicationID uuid.UUID, at time.
 		}
 
 		started = models.StreamSession{
-			ID:            uuid.New(),
-			ApplicationID: applicationID,
-			Status:        models.StreamSessionStatusOpen,
-			StartedAt:     at,
+			ID:        uuid.New(),
+			Status:    models.StreamSessionStatusOpen,
+			StartedAt: at,
 		}
 		return tx.Create(&started).Error
 	})
@@ -116,12 +110,12 @@ func (r *StreamSessionRepository) SplitSession(applicationID uuid.UUID, at time.
 	return &ended, &started, nil
 }
 
-// GetOpenSession returns the application's open session, or
+// GetOpenSession returns the open session, or
 // gorm.ErrRecordNotFound when none is open.
-func (r *StreamSessionRepository) GetOpenSession(applicationID uuid.UUID) (*models.StreamSession, error) {
+func (r *StreamSessionRepository) GetOpenSession() (*models.StreamSession, error) {
 	var session models.StreamSession
 	err := r.db.
-		Where("application_id = ? AND status = ?", applicationID, models.StreamSessionStatusOpen).
+		Where("status = ?", models.StreamSessionStatusOpen).
 		First(&session).Error
 	return &session, err
 }
@@ -132,11 +126,11 @@ func (r *StreamSessionRepository) GetSessionByID(id uuid.UUID) (*models.StreamSe
 	return &session, err
 }
 
-// ListSessionsByApplicationID returns sessions newest-first, backed by
-// `idx_stream_sessions_app_started_at`. `limit <= 0` means no limit.
-func (r *StreamSessionRepository) ListSessionsByApplicationID(applicationID uuid.UUID, limit, offset int) ([]*models.StreamSession, error) {
+// ListSessions returns sessions newest-first, backed by
+// `idx_stream_sessions_started_at`. `limit <= 0` means no limit.
+func (r *StreamSessionRepository) ListSessions(limit, offset int) ([]*models.StreamSession, error) {
 	var sessions []*models.StreamSession
-	q := r.db.Where("application_id = ?", applicationID).Order("started_at DESC")
+	q := r.db.Order("started_at DESC")
 	if limit > 0 {
 		q = q.Limit(limit).Offset(offset)
 	}
@@ -144,20 +138,18 @@ func (r *StreamSessionRepository) ListSessionsByApplicationID(applicationID uuid
 	return sessions, err
 }
 
-func (r *StreamSessionRepository) CountSessionsByApplicationID(applicationID uuid.UUID) (int64, error) {
+func (r *StreamSessionRepository) CountSessions() (int64, error) {
 	var n int64
-	err := r.db.Model(&models.StreamSession{}).
-		Where("application_id = ?", applicationID).
-		Count(&n).Error
+	err := r.db.Model(&models.StreamSession{}).Count(&n).Error
 	return n, err
 }
 
-// GetOpenSegment returns the application's open segment (the stream is live),
+// GetOpenSegment returns the open segment (the stream is live),
 // or gorm.ErrRecordNotFound when it is not.
-func (r *StreamSessionRepository) GetOpenSegment(applicationID uuid.UUID) (*models.StreamSessionSegment, error) {
+func (r *StreamSessionRepository) GetOpenSegment() (*models.StreamSessionSegment, error) {
 	var segment models.StreamSessionSegment
 	err := r.db.
-		Where("application_id = ? AND ended_at IS NULL", applicationID).
+		Where("ended_at IS NULL").
 		First(&segment).Error
 	return &segment, err
 }
@@ -180,10 +172,10 @@ func (r *StreamSessionRepository) LastEndedSegment(streamSessionID uuid.UUID) (*
 // Returns the already-open segment unchanged when one exists rather than
 // inserting a second: Twitch redelivers `stream.online` notifications, and two
 // open segments would give "when did the stream last go down" two answers.
-func (r *StreamSessionRepository) OpenSegment(applicationID uuid.UUID, streamSessionID uuid.UUID, startedAt time.Time) (*models.StreamSessionSegment, error) {
+func (r *StreamSessionRepository) OpenSegment(streamSessionID uuid.UUID, startedAt time.Time) (*models.StreamSessionSegment, error) {
 	var segment models.StreamSessionSegment
 	err := r.db.Transaction(func(tx *gorm.DB) error {
-		err := tx.Where("application_id = ? AND ended_at IS NULL", applicationID).First(&segment).Error
+		err := tx.Where("ended_at IS NULL").First(&segment).Error
 		if err == nil {
 			return nil
 		}
@@ -192,7 +184,6 @@ func (r *StreamSessionRepository) OpenSegment(applicationID uuid.UUID, streamSes
 		}
 		segment = models.StreamSessionSegment{
 			ID:              uuid.New(),
-			ApplicationID:   applicationID,
 			StreamSessionID: streamSessionID,
 			StartedAt:       startedAt,
 		}
@@ -204,17 +195,17 @@ func (r *StreamSessionRepository) OpenSegment(applicationID uuid.UUID, streamSes
 	return &segment, nil
 }
 
-// CloseOpenSegment ends whichever segment is open for the application.
+// CloseOpenSegment ends whichever segment is open.
 //
-// Keyed on the application rather than a segment id because the caller
-// reacting to `stream.offline` knows the channel, not which segment it opened.
+// Not keyed on a segment id because the caller reacting to `stream.offline`
+// knows the stream went down, not which segment it opened.
 // Returns gorm.ErrRecordNotFound when no segment is open, which is the normal
 // result of a duplicate `stream.offline`.
-func (r *StreamSessionRepository) CloseOpenSegment(applicationID uuid.UUID, endedAt time.Time) (*models.StreamSessionSegment, error) {
+func (r *StreamSessionRepository) CloseOpenSegment(endedAt time.Time) (*models.StreamSessionSegment, error) {
 	var segment models.StreamSessionSegment
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		var open models.StreamSessionSegment
-		if err := tx.Where("application_id = ? AND ended_at IS NULL", applicationID).
+		if err := tx.Where("ended_at IS NULL").
 			First(&open).Error; err != nil {
 			return err
 		}

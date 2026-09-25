@@ -7,7 +7,7 @@ repository key under one base:
 ```
 {sceneManagerUrl}/assets/modules/{moduleKey}/{versionDir}/widgets/{manifestId}/{path}
 {sceneManagerUrl}/assets/modules/{moduleKey}/{versionDir}/assets/{path}
-{sceneManagerUrl}/assets/user/{applicationId}/{resourceId}/{fileName}
+{sceneManagerUrl}/assets/user/{resourceId}/{fileName}
 ```
 
 `sceneManagerUrl` is the `scene.publicUrl` engine setting, falling back to

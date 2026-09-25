@@ -25,11 +25,12 @@ service GroupService {
 
 message Group {
     string id = 1;
-    string application_id = 2;
+    reserved 2;
+    reserved "application_id";
     string name = 3;
     string description = 4;
     google.protobuf.Timestamp created_at = 5;
-    // Built-in groups are seeded with every application and mirror Twitch's
+    // Built-in groups are seeded by the engine and mirror Twitch's
     // badge model (everyone/subscriber/vip/moderator/broadcaster). They may
     // not be renamed or deleted, and their membership for the Twitch-derived
     // ones is owned by the Twitch state sync rather than by hand.
@@ -37,7 +38,8 @@ message Group {
 }
 
 message CreateGroupRequest {
-    string application_id = 1;
+    reserved 1;
+    reserved "application_id";
     string name = 2;
     string description = 3;
 }
@@ -47,7 +49,8 @@ message GetGroupRequest {
 }
 
 message ListGroupsRequest {
-    string application_id = 1;
+    reserved 1;
+    reserved "application_id";
 }
 
 message ListGroupsResponse {
@@ -75,7 +78,8 @@ message GroupResponse {
 // (e.g. the Twitch chatbot) don't need a separate user lookup round trip;
 // the service resolves/creates the backing user row internally.
 message GroupMembershipRequest {
-    string application_id = 1;
+    reserved 1;
+    reserved "application_id";
     string group_id = 2;
     string username = 3;
 }
@@ -90,6 +94,7 @@ message ListGroupMembersResponse {
 }
 
 message ListUserGroupsForUserRequest {
-    string application_id = 1;
+    reserved 1;
+    reserved "application_id";
     string username = 2;
 }

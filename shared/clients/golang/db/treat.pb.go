@@ -33,7 +33,6 @@ type Treat struct {
 	Points        int32                  `protobuf:"varint,6,opt,name=points,proto3" json:"points,omitempty"`                                                                               // Point value of the treat
 	ImageUrl      string                 `protobuf:"bytes,7,opt,name=image_url,json=imageUrl,proto3" json:"image_url,omitempty"`                                                            // Optional image URL
 	AwardedBy     string                 `protobuf:"bytes,8,opt,name=awarded_by,json=awardedBy,proto3" json:"awarded_by,omitempty"`                                                         // User ID who awarded the treat (empty for system)
-	ApplicationId string                 `protobuf:"bytes,9,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`                                             // ID of the application this treat is associated with
 	Metadata      map[string]string      `protobuf:"bytes,10,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Additional metadata
 	AwardedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=awarded_at,json=awardedAt,proto3" json:"awarded_at,omitempty"`
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // Optional expiration time
@@ -129,13 +128,6 @@ func (x *Treat) GetAwardedBy() string {
 	return ""
 }
 
-func (x *Treat) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *Treat) GetMetadata() map[string]string {
 	if x != nil {
 		return x.Metadata
@@ -181,7 +173,6 @@ type AwardTreatRequest struct {
 	Points        int32                  `protobuf:"varint,5,opt,name=points,proto3" json:"points,omitempty"`                                                                              // Point value of the treat
 	ImageUrl      string                 `protobuf:"bytes,6,opt,name=image_url,json=imageUrl,proto3" json:"image_url,omitempty"`                                                           // Optional image URL
 	AwardedBy     string                 `protobuf:"bytes,7,opt,name=awarded_by,json=awardedBy,proto3" json:"awarded_by,omitempty"`                                                        // User ID who is awarding the treat (empty for system)
-	ApplicationId string                 `protobuf:"bytes,8,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`                                            // ID of the application this treat is associated with
 	Metadata      map[string]string      `protobuf:"bytes,9,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Additional metadata
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`                                                       // Optional expiration time
 	unknownFields protoimpl.UnknownFields
@@ -263,13 +254,6 @@ func (x *AwardTreatRequest) GetImageUrl() string {
 func (x *AwardTreatRequest) GetAwardedBy() string {
 	if x != nil {
 		return x.AwardedBy
-	}
-	return ""
-}
-
-func (x *AwardTreatRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -529,7 +513,6 @@ type ListTreatsRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	UserId         string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                          // Filter by user ID
 	TreatType      string                 `protobuf:"bytes,2,opt,name=treat_type,json=treatType,proto3" json:"treat_type,omitempty"`                 // Filter by treat type
-	ApplicationId  string                 `protobuf:"bytes,3,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`     // Filter by application ID
 	FromDate       *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=from_date,json=fromDate,proto3" json:"from_date,omitempty"`                    // Filter by award date (inclusive)
 	ToDate         *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=to_date,json=toDate,proto3" json:"to_date,omitempty"`                          // Filter by award date (inclusive)
 	IncludeExpired bool                   `protobuf:"varint,6,opt,name=include_expired,json=includeExpired,proto3" json:"include_expired,omitempty"` // Whether to include expired treats
@@ -583,13 +566,6 @@ func (x *ListTreatsRequest) GetUserId() string {
 func (x *ListTreatsRequest) GetTreatType() string {
 	if x != nil {
 		return x.TreatType
-	}
-	return ""
-}
-
-func (x *ListTreatsRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -737,10 +713,9 @@ func (x *ListTreatsResponse) GetPageSize() int32 {
 // Request to get a summary of treats for a user
 type GetUserTreatsSummaryRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                      // User ID
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // Optional: Filter by application ID
-	FromDate      *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=from_date,json=fromDate,proto3" json:"from_date,omitempty"`                // Optional: Start date for the summary period
-	ToDate        *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=to_date,json=toDate,proto3" json:"to_date,omitempty"`                      // Optional: End date for the summary period
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`       // User ID
+	FromDate      *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=from_date,json=fromDate,proto3" json:"from_date,omitempty"` // Optional: Start date for the summary period
+	ToDate        *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=to_date,json=toDate,proto3" json:"to_date,omitempty"`       // Optional: End date for the summary period
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -778,13 +753,6 @@ func (*GetUserTreatsSummaryRequest) Descriptor() ([]byte, []int) {
 func (x *GetUserTreatsSummaryRequest) GetUserId() string {
 	if x != nil {
 		return x.UserId
-	}
-	return ""
-}
-
-func (x *GetUserTreatsSummaryRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -952,12 +920,11 @@ func (x *TreatsSummaryResponse) GetSummary() *TreatsSummary {
 // Request to get treat statistics
 type GetTreatStatsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"` // Optional: Filter by application ID
-	FromDate      *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=from_date,json=fromDate,proto3" json:"from_date,omitempty"`                // Start date for the stats period
-	ToDate        *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=to_date,json=toDate,proto3" json:"to_date,omitempty"`                      // End date for the stats period
-	GroupBy       string                 `protobuf:"bytes,4,opt,name=group_by,json=groupBy,proto3" json:"group_by,omitempty"`                   // How to group the stats (e.g., "day", "week", "month", "treat_type")
-	UserIds       []string               `protobuf:"bytes,5,rep,name=user_ids,json=userIds,proto3" json:"user_ids,omitempty"`                   // Optional: Filter by user IDs
-	TreatTypes    []string               `protobuf:"bytes,6,rep,name=treat_types,json=treatTypes,proto3" json:"treat_types,omitempty"`          // Optional: Filter by treat types
+	FromDate      *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=from_date,json=fromDate,proto3" json:"from_date,omitempty"`       // Start date for the stats period
+	ToDate        *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=to_date,json=toDate,proto3" json:"to_date,omitempty"`             // End date for the stats period
+	GroupBy       string                 `protobuf:"bytes,4,opt,name=group_by,json=groupBy,proto3" json:"group_by,omitempty"`          // How to group the stats (e.g., "day", "week", "month", "treat_type")
+	UserIds       []string               `protobuf:"bytes,5,rep,name=user_ids,json=userIds,proto3" json:"user_ids,omitempty"`          // Optional: Filter by user IDs
+	TreatTypes    []string               `protobuf:"bytes,6,rep,name=treat_types,json=treatTypes,proto3" json:"treat_types,omitempty"` // Optional: Filter by treat types
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -990,13 +957,6 @@ func (x *GetTreatStatsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GetTreatStatsRequest.ProtoReflect.Descriptor instead.
 func (*GetTreatStatsRequest) Descriptor() ([]byte, []int) {
 	return file_treat_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *GetTreatStatsRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *GetTreatStatsRequest) GetFromDate() *timestamppb.Timestamp {
@@ -1252,7 +1212,7 @@ var File_treat_proto protoreflect.FileDescriptor
 
 const file_treat_proto_rawDesc = "" +
 	"\n" +
-	"\vtreat.proto\x12\x05treat\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe3\x04\n" +
+	"\vtreat.proto\x12\x05treat\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd2\x04\n" +
 	"\x05Treat\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x1d\n" +
@@ -1263,8 +1223,7 @@ const file_treat_proto_rawDesc = "" +
 	"\x06points\x18\x06 \x01(\x05R\x06points\x12\x1b\n" +
 	"\timage_url\x18\a \x01(\tR\bimageUrl\x12\x1d\n" +
 	"\n" +
-	"awarded_by\x18\b \x01(\tR\tawardedBy\x12%\n" +
-	"\x0eapplication_id\x18\t \x01(\tR\rapplicationId\x126\n" +
+	"awarded_by\x18\b \x01(\tR\tawardedBy\x126\n" +
 	"\bmetadata\x18\n" +
 	" \x03(\v2\x1a.treat.Treat.MetadataEntryR\bmetadata\x129\n" +
 	"\n" +
@@ -1277,7 +1236,8 @@ const file_treat_proto_rawDesc = "" +
 	"updated_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xba\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\t\x10\n" +
+	"R\x0eapplication_id\"\xa9\x03\n" +
 	"\x11AwardTreatRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1d\n" +
 	"\n" +
@@ -1287,15 +1247,14 @@ const file_treat_proto_rawDesc = "" +
 	"\x06points\x18\x05 \x01(\x05R\x06points\x12\x1b\n" +
 	"\timage_url\x18\x06 \x01(\tR\bimageUrl\x12\x1d\n" +
 	"\n" +
-	"awarded_by\x18\a \x01(\tR\tawardedBy\x12%\n" +
-	"\x0eapplication_id\x18\b \x01(\tR\rapplicationId\x12B\n" +
+	"awarded_by\x18\a \x01(\tR\tawardedBy\x12B\n" +
 	"\bmetadata\x18\t \x03(\v2&.treat.AwardTreatRequest.MetadataEntryR\bmetadata\x129\n" +
 	"\n" +
 	"expires_at\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"c\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\b\x10\tR\x0eapplication_id\"c\n" +
 	"\rTreatResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12\"\n" +
 	"\x05treat\x18\x02 \x01(\v2\f.treat.TreatR\x05treat\"!\n" +
@@ -1314,12 +1273,11 @@ const file_treat_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"$\n" +
 	"\x12DeleteTreatRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xae\x03\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x9d\x03\n" +
 	"\x11ListTreatsRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1d\n" +
 	"\n" +
-	"treat_type\x18\x02 \x01(\tR\ttreatType\x12%\n" +
-	"\x0eapplication_id\x18\x03 \x01(\tR\rapplicationId\x127\n" +
+	"treat_type\x18\x02 \x01(\tR\ttreatType\x127\n" +
 	"\tfrom_date\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\bfromDate\x123\n" +
 	"\ato_date\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x06toDate\x12'\n" +
 	"\x0finclude_expired\x18\x06 \x01(\bR\x0eincludeExpired\x12\x1d\n" +
@@ -1331,19 +1289,18 @@ const file_treat_proto_rawDesc = "" +
 	"\tpage_size\x18\n" +
 	" \x01(\x05R\bpageSize\x12\x17\n" +
 	"\asort_by\x18\v \x01(\tR\x06sortBy\x12\x1b\n" +
-	"\tsort_desc\x18\f \x01(\bR\bsortDesc\"\xbc\x01\n" +
+	"\tsort_desc\x18\f \x01(\bR\bsortDescJ\x04\b\x03\x10\x04R\x0eapplication_id\"\xbc\x01\n" +
 	"\x12ListTreatsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12$\n" +
 	"\x06treats\x18\x02 \x03(\v2\f.treat.TreatR\x06treats\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\x05R\n" +
 	"totalCount\x12\x12\n" +
 	"\x04page\x18\x04 \x01(\x05R\x04page\x12\x1b\n" +
-	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\"\xcb\x01\n" +
+	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\"\xba\x01\n" +
 	"\x1bGetUserTreatsSummaryRequest\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x127\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x127\n" +
 	"\tfrom_date\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\bfromDate\x123\n" +
-	"\ato_date\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x06toDate\"\x9e\x03\n" +
+	"\ato_date\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x06toDateJ\x04\b\x02\x10\x03R\x0eapplication_id\"\x9e\x03\n" +
 	"\rTreatsSummary\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12!\n" +
 	"\ftotal_treats\x18\x02 \x01(\x05R\vtotalTreats\x12!\n" +
@@ -1357,15 +1314,14 @@ const file_treat_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"w\n" +
 	"\x15TreatsSummaryResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12.\n" +
-	"\asummary\x18\x02 \x01(\v2\x14.treat.TreatsSummaryR\asummary\"\x82\x02\n" +
-	"\x14GetTreatStatsRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x127\n" +
+	"\asummary\x18\x02 \x01(\v2\x14.treat.TreatsSummaryR\asummary\"\xf1\x01\n" +
+	"\x14GetTreatStatsRequest\x127\n" +
 	"\tfrom_date\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\bfromDate\x123\n" +
 	"\ato_date\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x06toDate\x12\x19\n" +
 	"\bgroup_by\x18\x04 \x01(\tR\agroupBy\x12\x19\n" +
 	"\buser_ids\x18\x05 \x03(\tR\auserIds\x12\x1f\n" +
 	"\vtreat_types\x18\x06 \x03(\tR\n" +
-	"treatTypes\"\xa0\x05\n" +
+	"treatTypesJ\x04\b\x01\x10\x02R\x0eapplication_id\"\xa0\x05\n" +
 	"\n" +
 	"TreatStats\x12<\n" +
 	"\vdata_points\x18\x01 \x03(\v2\x1b.treat.TreatStats.DataPointR\n" +

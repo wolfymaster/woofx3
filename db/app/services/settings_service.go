@@ -21,21 +21,7 @@ func NewSettingService(repo *repository.SettingRepository) *settingService {
 }
 
 func (s *settingService) GetSetting(ctx context.Context, req *client.GetSettingRequest) (*client.SettingResponse, error) {
-	appIDStr, found, err := resolveApplicationIDForRead(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	if !found {
-		// Nothing has been stored on this engine yet; same answer as a key
-		// that is not set.
-		return &client.SettingResponse{}, nil
-	}
-	applicationId, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-
-	setting, err := s.repo.GetSettingByKey(applicationId, req.Key)
+	setting, err := s.repo.GetSettingByKey(req.Key)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return &client.SettingResponse{}, nil
@@ -50,28 +36,15 @@ func (s *settingService) GetSetting(ctx context.Context, req *client.GetSettingR
 
 	return &client.SettingResponse{
 		Setting: &client.Setting{
-			Id:            strconv.Itoa(setting.ID),
-			ApplicationId: setting.ApplicationID.String(),
-			Key:           setting.Key,
-			Value:         value,
+			Id:    strconv.Itoa(setting.ID),
+			Key:   setting.Key,
+			Value: value,
 		},
 	}, nil
 }
 
 func (s *settingService) GetSettings(ctx context.Context, req *client.GetSettingsRequest) (*client.GetSettingsResponse, error) {
-	appIDStr, found, err := resolveApplicationIDForRead(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	if !found {
-		return &client.GetSettingsResponse{Status: &client.ResponseStatus{Code: client.ResponseStatus_OK}}, nil
-	}
-	applicationId, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-
-	settings, err := s.repo.GetSettingsByKeys(applicationId, req.Keys)
+	settings, err := s.repo.GetSettingsByKeys(req.Keys)
 	if err != nil {
 		return nil, err
 	}
@@ -83,10 +56,9 @@ func (s *settingService) GetSettings(ctx context.Context, req *client.GetSetting
 			return nil, err
 		}
 		pbSettings = append(pbSettings, &client.Setting{
-			Id:            strconv.Itoa(setting.ID),
-			ApplicationId: setting.ApplicationID.String(),
-			Key:           setting.Key,
-			Value:         value,
+			Id:    strconv.Itoa(setting.ID),
+			Key:   setting.Key,
+			Value: value,
 		})
 	}
 
@@ -97,15 +69,6 @@ func (s *settingService) GetSettings(ctx context.Context, req *client.GetSetting
 }
 
 func (s *settingService) SetSetting(ctx context.Context, req *client.SetSettingRequest) (*client.SettingResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationId, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-
 	// Extract string value from protobuf Value
 	valueStr := ""
 	if req.Value != nil {
@@ -125,31 +88,20 @@ func (s *settingService) SetSetting(ctx context.Context, req *client.SetSettingR
 		userID = &parsed
 	}
 
-	err = s.repo.UpsertSetting(applicationId, req.Key, valueStr, userID)
-	if err != nil {
+	if err := s.repo.UpsertSetting(req.Key, valueStr, userID); err != nil {
 		return nil, err
 	}
 
 	return &client.SettingResponse{
 		Setting: &client.Setting{
-			ApplicationId: applicationId.String(),
-			Key:           req.Key,
-			Value:         req.Value,
-			UserId:        req.UserId,
+			Key:    req.Key,
+			Value:  req.Value,
+			UserId: req.UserId,
 		},
 	}, nil
 }
 
 func (s *settingService) SetSettings(ctx context.Context, req *client.SetSettingsRequest) (*client.SetSettingsResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationId, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-
 	var pbSettings []*client.Setting
 	for _, update := range req.Settings {
 		valueStr := ""
@@ -159,15 +111,14 @@ func (s *settingService) SetSettings(ctx context.Context, req *client.SetSetting
 
 		// SetSettings doesn't carry a per-update user scope on the proto
 		// today; pass nil to leave the column as-is on existing rows.
-		err := s.repo.UpsertSetting(applicationId, update.Key, valueStr, nil)
+		err := s.repo.UpsertSetting(update.Key, valueStr, nil)
 		if err != nil {
 			return nil, err
 		}
 
 		pbSettings = append(pbSettings, &client.Setting{
-			ApplicationId: applicationId.String(),
-			Key:           update.Key,
-			Value:         update.Value,
+			Key:   update.Key,
+			Value: update.Value,
 		})
 	}
 
@@ -178,17 +129,7 @@ func (s *settingService) SetSettings(ctx context.Context, req *client.SetSetting
 }
 
 func (s *settingService) DeleteSetting(ctx context.Context, req *client.DeleteSettingRequest) (*client.ResponseStatus, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationId, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.repo.DeleteByKey(applicationId, req.Key)
-	if err != nil {
+	if err := s.repo.DeleteByKey(req.Key); err != nil {
 		return nil, err
 	}
 
@@ -196,22 +137,7 @@ func (s *settingService) DeleteSetting(ctx context.Context, req *client.DeleteSe
 }
 
 func (s *settingService) ListSettingsByPrefix(ctx context.Context, req *client.ListSettingsRequest) (*client.ListSettingsResponse, error) {
-	appIDStr, found, err := resolveApplicationIDForRead(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	if !found {
-		return &client.ListSettingsResponse{
-			Status:   &client.ResponseStatus{Code: client.ResponseStatus_OK},
-			Settings: map[string]string{},
-		}, nil
-	}
-	applicationId, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-
-	settings, err := s.repo.GetSettingsByKeyPrefix(applicationId, req.KeyPrefix)
+	settings, err := s.repo.GetSettingsByKeyPrefix(req.KeyPrefix)
 	if err != nil {
 		return nil, err
 	}

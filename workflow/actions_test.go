@@ -26,16 +26,15 @@ func TestBuildAlertEnvelope_WithTriggerEvent(t *testing.T) {
 		"mediaUrl": "https://example.com/cheer.mp4",
 	}
 
-	payload, _, err := buildAlertEnvelope("app-uuid-1", params, event)
+	payload, _, err := buildAlertEnvelope(params, event)
 	if err != nil {
 		t.Fatalf("buildAlertEnvelope: %v", err)
 	}
 
 	var got struct {
-		ID            string         `json:"id"`
-		ApplicationID string         `json:"applicationId"`
-		Parameters    map[string]any `json:"parameters"`
-		Event         *types.Event   `json:"event"`
+		ID         string         `json:"id"`
+		Parameters map[string]any `json:"parameters"`
+		Event      *types.Event   `json:"event"`
 	}
 	if err := json.Unmarshal(payload, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -43,9 +42,6 @@ func TestBuildAlertEnvelope_WithTriggerEvent(t *testing.T) {
 
 	if got.ID == "" {
 		t.Errorf("envelope id is empty; expected an auto-generated UUID")
-	}
-	if got.ApplicationID != "app-uuid-1" {
-		t.Errorf("applicationId = %q, want app-uuid-1", got.ApplicationID)
 	}
 	if got.Parameters["widget"] != "MediaWidget" {
 		t.Errorf("parameters.widget = %v, want MediaWidget", got.Parameters["widget"])
@@ -64,33 +60,13 @@ func TestBuildAlertEnvelope_WithTriggerEvent(t *testing.T) {
 	}
 }
 
-func TestBuildAlertEnvelope_OmitsEmptyApplicationID(t *testing.T) {
-	// Manual / debug publishers don't have an applicationId. The
-	// envelope must omit the field entirely (rather than emit "")
-	// so api/'s alert-log handler falls through to its singleton
-	// fallback instead of recording a row attributed to "" — which
-	// would never round-trip cleanly through the db proxy's UUID
-	// column.
-	payload, _, err := buildAlertEnvelope("", map[string]any{"widget": "MediaWidget"}, nil)
-	if err != nil {
-		t.Fatalf("buildAlertEnvelope: %v", err)
-	}
-	var got map[string]json.RawMessage
-	if err := json.Unmarshal(payload, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if _, present := got["applicationId"]; present {
-		t.Errorf("applicationId key should be absent for empty input, got %s", string(got["applicationId"]))
-	}
-}
-
 func TestBuildAlertEnvelope_NilTriggerEvent(t *testing.T) {
 	params := map[string]any{
 		"widget": "MediaWidget",
 		"text":   "manual fire",
 	}
 
-	payload, _, err := buildAlertEnvelope("", params, nil)
+	payload, _, err := buildAlertEnvelope(params, nil)
 	if err != nil {
 		t.Fatalf("buildAlertEnvelope: %v", err)
 	}

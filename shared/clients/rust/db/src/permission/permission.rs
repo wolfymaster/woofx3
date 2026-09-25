@@ -11,8 +11,6 @@ pub struct HasPermissionRequest {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PermissionRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub subject: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
@@ -24,8 +22,6 @@ pub struct PermissionRequest {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UserResourceRoleRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub username: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
@@ -41,8 +37,6 @@ pub struct UserResourceRoleRequest {
 pub struct Permission {
     #[prost(int64, tag="1")]
     pub id: i64,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
     pub ptype: ::prost::alloc::string::String,
     #[prost(string, tag="4")]
@@ -63,8 +57,6 @@ pub struct Permission {
 /// "g" and "g2") and is ignored when ptype is set.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListPermissionsRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub ptype: ::prost::alloc::string::String,
     #[prost(string, tag="3")]

@@ -61,9 +61,6 @@ func TestSceneManagerURLResolverUsesConfiguredSettingAndCaches(t *testing.T) {
 			if req.Key != SceneManagerURLSettingKey {
 				t.Fatalf("unexpected key %q", req.Key)
 			}
-			if req.ApplicationId != "" {
-				t.Fatalf("expected empty (process-wide) applicationId, got %q", req.ApplicationId)
-			}
 			return stringSettingResponse("https://tunnel.example.com/"), nil
 		},
 	}

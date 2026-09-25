@@ -177,7 +177,6 @@ describe("FrameAssembler.assemble", () => {
     const instance = widgetInstance({ moduleId: "mymod", manifestId: "mywid" });
     const state: OverlaySceneState = {
       sceneId: "scene-1",
-      applicationId: "app-1",
       name: "Scene",
       layout: {},
       instances: [instance],
@@ -206,7 +205,6 @@ describe("FrameAssembler.assemble", () => {
     const instance = widgetInstance({ moduleId: "mymod", manifestId: "mywid" });
     const state: OverlaySceneState = {
       sceneId: "scene-1",
-      applicationId: "app-1",
       name: "Scene",
       layout: {},
       instances: [instance],
@@ -237,7 +235,6 @@ describe("FrameAssembler.assemble", () => {
   it("returns the same uniform blank document for a valid scene with an unknown instance id", async () => {
     const state: OverlaySceneState = {
       sceneId: "scene-1",
-      applicationId: "app-1",
       name: "Scene",
       layout: {},
       instances: [],

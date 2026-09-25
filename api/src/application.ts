@@ -61,7 +61,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { initWorkflowRunHandlers },
       { default: BarkloaderClient },
       { checkReadiness, HEARTBEAT_SUBJECT, HeartbeatTracker },
-      { ApplicationScope },
       { connectMessageBus },
     ] = await Promise.all([
       import("@woofx3/nats"),
@@ -85,7 +84,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./workflow-run-handlers"),
       import("@woofx3/barkloader"),
       import("./readiness"),
-      import("./application-scope"),
       import("./message-bus"),
     ]);
 
@@ -152,47 +150,18 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       });
     }
 
-    const webhookClient = new WebhookClient(db, logger, null);
+    const webhookClient = new WebhookClient(db, logger);
     api.setWebhookClient(webhookClient);
-
-    // Components that exist per application. They start here when the
-    // engine is already registered, and otherwise at the first
-    // registerClient, which creates the application (see ApiGateway).
-    const applicationScope = new ApplicationScope(async (applicationId) => {
-      const convexWebhookClient = new ConvexWebhookClient({ db, logger, applicationId });
-      await convexWebhookClient.loadConfig();
-
-      if (!natsClient) {
-        logger.warn("Skipping AlertEmitter and StorageChangeEmitter; NATS client is not connected");
-        return;
-      }
-      const alertEmitter = new AlertEmitter(natsClient, convexWebhookClient, applicationId, logger);
-      await alertEmitter.start();
-
-      const storageChangeEmitter = new StorageChangeEmitter(natsClient, webhookClient, logger);
-      await storageChangeEmitter.start();
-
-      // A session is scoped to an application; there is nothing to resolve
-      // before onboarding.
-      const streamSessionResolver = new StreamSessionResolver(natsClient, db, applicationId, logger, webhookClient);
-      await streamSessionResolver.start();
-    }, logger);
-
     try {
-      const existing = await db.getDefaultApplication();
-      if (existing) {
-        api.setApplicationId(existing.id);
-        await webhookClient.refreshCallbackUrls();
-        logger.info("Warmed applicationId cache from existing default", { applicationId: existing.id });
-        await applicationScope.start(existing.id);
-      } else {
-        logger.info("No default application yet; application-scoped components start at the first registration");
-      }
+      await webhookClient.refreshCallbackUrls();
     } catch (err) {
-      logger.warn("Default-application warmup failed (continuing)", {
+      logger.warn("Loading webhook callback URLs failed; they load again at the next registration", {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+
+    const convexWebhookClient = new ConvexWebhookClient({ db, logger });
+    await convexWebhookClient.loadConfig();
 
     // api.initSubscriptions() covers only the module.trigger.* and
     // twitch stream lifecycle subscriptions — the ones that need more
@@ -203,10 +172,15 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     await api.initSubscriptions();
 
     if (natsClient) {
-      // Started here rather than alongside AlertEmitter above: that block is
-      // gated on a default application already existing, and this needs only
-      // the bus — a dashboard should receive events before onboarding has
-      // resolved an applicationId.
+      const alertEmitter = new AlertEmitter(natsClient, convexWebhookClient, logger);
+      await alertEmitter.start();
+
+      const storageChangeEmitter = new StorageChangeEmitter(natsClient, webhookClient, logger);
+      await storageChangeEmitter.start();
+
+      const streamSessionResolver = new StreamSessionResolver(natsClient, db, logger, webhookClient);
+      await streamSessionResolver.start();
+
       const streamEventBroadcaster = new StreamEventBroadcaster(natsClient, logger);
       await streamEventBroadcaster.start();
       api.setStreamEventBroadcaster(streamEventBroadcaster);
@@ -222,10 +196,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       // waiting on one run: this carries persisted rows for the history.
       await initWorkflowRunHandlers(natsClient, webhookClient, logger);
 
-      // Needs only the bus and the webhook client, so it starts here rather
-      // than in the applicationId-gated block above: each run event carries
-      // its own applicationId, resolved by the engine that owns the workflow
-      // definition.
       const workflowRunEmitter = new WorkflowRunEmitter(natsClient, webhookClient, logger);
       await workflowRunEmitter.start();
     }
@@ -234,7 +204,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     api.setAuthInvalidate(() => auth.invalidateCache());
     const gateway = new ApiGateway(api, auth, db, logger, config.registrationToken);
     gateway.setWebhookClient(webhookClient);
-    gateway.setApplicationScope(applicationScope);
 
     this.server = createHttpServer({
       port: config.port,

@@ -62,7 +62,6 @@ type WorkflowTriggerJSON struct {
 type WorkflowSource struct {
 	ID                  uuid.UUID
 	Name                string
-	ApplicationID       *uuid.UUID
 	SourceCreatedByType string
 	SourceCreatedByRef  string
 }
@@ -137,7 +136,6 @@ func kindFromCanonicalID(s string) (string, bool) {
 type CommandSource struct {
 	ID                  uuid.UUID
 	Name                string
-	ApplicationID       *uuid.UUID
 	SourceCreatedByType string
 	SourceCreatedByRef  string
 }
@@ -176,7 +174,6 @@ func ExtractCommandEdges(src CommandSource, actionsJSON string) []models.Resourc
 func newEdge(src WorkflowSource, targetType, targetName, context string) models.ResourceReference {
 	return models.ResourceReference{
 		ID:                  uuid.New(),
-		ApplicationID:       src.ApplicationID,
 		SourceType:          "workflow",
 		SourceID:            src.ID,
 		SourceName:          src.Name,
@@ -191,7 +188,6 @@ func newEdge(src WorkflowSource, targetType, targetName, context string) models.
 func newEdgeFromCommand(src CommandSource, targetType, targetName, context string) models.ResourceReference {
 	return models.ResourceReference{
 		ID:                  uuid.New(),
-		ApplicationID:       src.ApplicationID,
 		SourceType:          "command",
 		SourceID:            src.ID,
 		SourceName:          src.Name,

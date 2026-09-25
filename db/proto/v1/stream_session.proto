@@ -25,8 +25,8 @@ service StreamSessionService {
   rpc EnsureCurrentStreamSession(EnsureCurrentStreamSessionRequest) returns (StreamSessionStateResponse);
   // Ends the open session and opens its successor. There is no standalone
   // "end": a session is always present and only ends when a later one replaces
-  // it, so closing without opening would leave the application with no session
-  // at all.
+  // it, so closing without opening would leave the engine with no session at
+  // all.
   rpc SplitStreamSession(SplitStreamSessionRequest) returns (SplitStreamSessionResponse);
   rpc OpenStreamSessionSegment(OpenStreamSessionSegmentRequest) returns (StreamSessionSegmentResponse);
   rpc CloseStreamSessionSegment(CloseStreamSessionSegmentRequest) returns (StreamSessionSegmentResponse);
@@ -36,10 +36,11 @@ service StreamSessionService {
 
 message StreamSession {
   string id = 1;
-  string application_id = 2;
+  reserved 2;
+  reserved "application_id";
   // `open` while this is the session events are stamped with; `closed` once a
-  // later session has replaced it. At most one session per application is
-  // open, enforced by a partial unique index rather than by convention.
+  // later session has replaced it. At most one session is open, enforced by a
+  // partial unique index rather than by convention.
   string status = 3;
   google.protobuf.Timestamp started_at = 4;
   // Set when the session was closed by a split. Absent while open.
@@ -58,7 +59,8 @@ message StreamSession {
 // owned its segment at the time of stamping.
 message StreamSessionSegment {
   string id = 1;
-  string application_id = 2;
+  reserved 2;
+  reserved "application_id";
   string stream_session_id = 3;
   google.protobuf.Timestamp started_at = 4;
   // Absent while the stream is live.
@@ -68,7 +70,8 @@ message StreamSessionSegment {
 }
 
 message EnsureCurrentStreamSessionRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
 }
 
 // The open session and the inputs to the extend-or-split decision, fetched
@@ -85,7 +88,8 @@ message StreamSessionStateResponse {
 }
 
 message SplitStreamSessionRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
   // The boundary. Supplied by the caller rather than defaulted to NOW() so a
   // split can be made from an event's own timestamp, and used as both the old
   // session's end and the new one's start so no instant falls outside both.
@@ -99,16 +103,18 @@ message SplitStreamSessionResponse {
 }
 
 message OpenStreamSessionSegmentRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
   string stream_session_id = 2;
   google.protobuf.Timestamp started_at = 3;
 }
 
-// Closes whichever segment is currently open for the application. Keyed on the
-// application rather than a segment id because the caller reacting to
-// `stream.offline` knows the channel, not which segment it opened.
+// Closes whichever segment is currently open. Takes no segment id because the
+// caller reacting to `stream.offline` knows the channel, not which segment it
+// opened.
 message CloseStreamSessionSegmentRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
   google.protobuf.Timestamp ended_at = 2;
 }
 
@@ -127,7 +133,8 @@ message StreamSessionSegmentResponse {
 }
 
 message ListStreamSessionsRequest {
-  string application_id = 1;
+  reserved 1;
+  reserved "application_id";
   int32 limit = 2;
   int32 offset = 3;
 }

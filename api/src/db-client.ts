@@ -1,5 +1,4 @@
 import * as alert from "@woofx3/db/alert.pb";
-import * as application from "@woofx3/db/application.pb";
 import * as clientPb from "@woofx3/db/client.pb";
 import * as command from "@woofx3/db/command.pb";
 import { MigrationStatus, Ping } from "@woofx3/db/common.pb";
@@ -316,7 +315,7 @@ export class DbClient {
     unwrapStatus("deleteWorkflow", await workflow.DeleteWorkflow(req, this.config));
   }
 
-  // SceneService — per-application widget arrangement persistence.
+  // SceneService — widget arrangement persistence.
   // The engine treats widgets_json / layout_json as opaque strings,
   // mirroring the workflow steps_json / trigger_json pattern.
   async getScene(req: scene.GetSceneRequest): Promise<scene.Scene> {
@@ -459,7 +458,7 @@ export class DbClient {
   }
 
   /**
-   * Drop every module storage key the application flagged session-scoped,
+   * Drop every module storage key flagged session-scoped,
    * returning what went, by namespace and key. The storage RPCs carry no status
    * envelope, so there is nothing to unwrap.
    */
@@ -588,10 +587,7 @@ export class DbClient {
    * Resources owned by this module that are still referenced externally
    * (workflows, commands, etc.). `moduleId` is the engine modules.id UUID.
    */
-  async checkModuleResourceUsage(
-    moduleId: string,
-    applicationId = ""
-  ): Promise<
+  async checkModuleResourceUsage(moduleId: string): Promise<
     Array<{
       resourceId: string;
       resourceType: string;
@@ -605,7 +601,7 @@ export class DbClient {
       }>;
     }>
   > {
-    const resp = await module.CheckModuleResourceUsage({ moduleId, applicationId }, this.config);
+    const resp = await module.CheckModuleResourceUsage({ moduleId }, this.config);
     return (resp.inUse ?? []).map((row) => ({
       resourceId: row.resourceId,
       resourceType: row.resourceType,
@@ -636,33 +632,6 @@ export class DbClient {
     return resp.actions;
   }
 
-  async createApplication(opts: {
-    name: string;
-    ownerId: string;
-    isDefault: boolean;
-  }): Promise<{ id: string; name: string }> {
-    const resp = await application.CreateApplication(
-      { name: opts.name, ownerId: opts.ownerId, isDefault: opts.isDefault },
-      this.config
-    );
-    if (!resp.application || resp.status?.code !== "OK") {
-      throw new Error(`createApplication failed: ${resp.status?.message ?? "unknown error"}`);
-    }
-    return { id: resp.application.id, name: resp.application.name };
-  }
-
-  async getApplication(req: application.GetApplicationRequest): Promise<application.ApplicationResponse> {
-    return application.GetApplication(req, this.config);
-  }
-
-  async getDefaultApplication(): Promise<{ id: string; name: string } | null> {
-    const resp = await application.GetDefaultApplication({}, this.config);
-    if (resp.status?.code !== "OK" || !resp.application) {
-      return null;
-    }
-    return { id: resp.application.id, name: resp.application.name };
-  }
-
   async findOrCreateByWoofx3UIUserId(woofx3UIUserId: string): Promise<{ id: string }> {
     const resp = await user.FindOrCreateByWoofx3UIUserId({ woofx3UiUserId: woofx3UIUserId }, this.config);
     if (!resp.user || resp.status?.code !== "OK") {
@@ -671,43 +640,37 @@ export class DbClient {
     return { id: resp.user.id };
   }
 
-  async setSetting(key: string, value: string, applicationId: string, userId?: string): Promise<void> {
-    unwrapVoid("setSetting", await this.writeSetting(key, value, applicationId, userId));
+  async setSetting(key: string, value: string, userId?: string): Promise<void> {
+    unwrapVoid("setSetting", await this.writeSetting(key, value, userId));
   }
 
   /**
    * Write a setting, reporting whether it landed. For the settings screens,
    * which surface a failed save as `{ success: false }` rather than throwing.
    */
-  async trySetSetting(key: string, value: string, applicationId: string, userId?: string): Promise<boolean> {
-    const response = await this.writeSetting(key, value, applicationId, userId);
+  async trySetSetting(key: string, value: string, userId?: string): Promise<boolean> {
+    const response = await this.writeSetting(key, value, userId);
     return response.status?.code === "OK";
   }
 
-  private async writeSetting(
-    key: string,
-    value: string,
-    applicationId: string,
-    userId?: string
-  ): Promise<setting.SettingResponse> {
+  private async writeSetting(key: string, value: string, userId?: string): Promise<setting.SettingResponse> {
     return setting.SetSetting(
       {
         userId: userId ?? "",
         key,
         value: { stringValue: value },
-        applicationId,
       },
       this.config
     );
   }
 
-  async getSetting(key: string, applicationId: string): Promise<string | null> {
-    const resp = await setting.GetSetting({ key, applicationId }, this.config);
+  async getSetting(key: string): Promise<string | null> {
+    const resp = await setting.GetSetting({ key }, this.config);
     return resp.setting?.value?.stringValue ?? null;
   }
 
-  async listSettings(keyPrefix: string, applicationId: string): Promise<Record<string, string>> {
-    const resp = await setting.ListSettingsByPrefix({ keyPrefix, applicationId }, this.config);
+  async listSettings(keyPrefix: string): Promise<Record<string, string>> {
+    const resp = await setting.ListSettingsByPrefix({ keyPrefix }, this.config);
     const result: Record<string, string> = {};
     for (const [key, value] of Object.entries(resp.settings ?? {})) {
       if (value != null) {
@@ -725,8 +688,8 @@ export class DbClient {
     return clientPb.ValidateClient({ clientId, clientSecret }, this.config);
   }
 
-  async listClients(applicationId: string): Promise<clientPb.ListClientsResponse> {
-    return clientPb.ListClients({ applicationId }, this.config);
+  async listClients(): Promise<clientPb.ListClientsResponse> {
+    return clientPb.ListClients({}, this.config);
   }
 
   async getClientByClientID(clientId: string): Promise<clientPb.ClientResponse> {

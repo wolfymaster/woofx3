@@ -20,7 +20,6 @@ func SetupAllRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middle
 	ModuleSettingRoutes(mux, app)
 	StorageRoutes(mux, app)
 	ClientRoutes(mux, app)
-	ApplicationRoutes(mux, app)
 	SceneRoutes(mux, app, casbinMiddleware)
 	OverlayTokenRoutes(mux, app, casbinMiddleware)
 	AlertRoutes(mux, app, casbinMiddleware)

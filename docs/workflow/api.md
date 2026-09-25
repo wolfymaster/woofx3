@@ -45,7 +45,6 @@ All requests use `POST`. Set `Content-Type: application/json` for JSON payloads 
   "id": "string",
   "name": "string",
   "description": "string",
-  "applicationId": "string",
   "createdBy": "string",
   "enabled": true,
   "steps": [WorkflowStep],
@@ -85,7 +84,6 @@ All requests use `POST`. Set `Content-Type: application/json` for JSON payloads 
   "workflowId": "string",
   "status": "pending | running | completed | failed | cancelled",
   "startedBy": "string",
-  "applicationId": "string",
   "inputs": { "key": "value" },
   "outputs": { "key": "value" },
   "error": "string",
@@ -124,7 +122,6 @@ All requests use `POST`. Set `Content-Type: application/json` for JSON payloads 
 {
   "name": "Welcome New Follower",
   "description": "Plays a welcome animation when someone follows",
-  "applicationId": "app-123",
   "createdBy": "user-456",
   "enabled": true,
   "steps": [
@@ -175,7 +172,6 @@ All requests use `POST`. Set `Content-Type: application/json` for JSON payloads 
     "id": "wf-789",
     "name": "Welcome New Follower",
     "description": "Plays a welcome animation when someone follows",
-    "applicationId": "app-123",
     "createdBy": "user-456",
     "enabled": true,
     "steps": [ ... ],
@@ -204,7 +200,6 @@ All requests use `POST`. Set `Content-Type: application/json` for JSON payloads 
 
 ```json
 {
-  "applicationId": "app-123",
   "includeDisabled": false,
   "page": 1,
   "pageSize": 20,
@@ -232,7 +227,6 @@ All requests use `POST`. Set `Content-Type: application/json` for JSON payloads 
 ```json
 {
   "workflowId": "wf-789",
-  "applicationId": "app-123",
   "startedBy": "user-456",
   "inputs": { "username": "wolfymaster" },
   "async": true,
@@ -259,7 +253,6 @@ All requests use `POST`. Set `Content-Type: application/json` for JSON payloads 
 ```json
 {
   "workflowId": "wf-789",
-  "applicationId": "app-123",
   "status": "completed",
   "page": 1,
   "pageSize": 10,

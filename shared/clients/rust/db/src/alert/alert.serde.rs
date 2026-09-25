@@ -10,9 +10,6 @@ impl serde::Serialize for Alert {
         if !self.id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.payload.is_empty() {
             len += 1;
         }
@@ -49,9 +46,6 @@ impl serde::Serialize for Alert {
         let mut struct_ser = serializer.serialize_struct("alert.Alert", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.payload.is_empty() {
             struct_ser.serialize_field("payload", &self.payload)?;
@@ -97,8 +91,6 @@ impl<'de> serde::Deserialize<'de> for Alert {
     {
         const FIELDS: &[&str] = &[
             "id",
-            "application_id",
-            "applicationId",
             "payload",
             "workflow_id",
             "workflowId",
@@ -123,7 +115,6 @@ impl<'de> serde::Deserialize<'de> for Alert {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Id,
-            ApplicationId,
             Payload,
             WorkflowId,
             SourceEventId,
@@ -157,7 +148,6 @@ impl<'de> serde::Deserialize<'de> for Alert {
                     {
                         match value {
                             "id" => Ok(GeneratedField::Id),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "payload" => Ok(GeneratedField::Payload),
                             "workflowId" | "workflow_id" => Ok(GeneratedField::WorkflowId),
                             "sourceEventId" | "source_event_id" => Ok(GeneratedField::SourceEventId),
@@ -189,7 +179,6 @@ impl<'de> serde::Deserialize<'de> for Alert {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut id__ = None;
-                let mut application_id__ = None;
                 let mut payload__ = None;
                 let mut workflow_id__ = None;
                 let mut source_event_id__ = None;
@@ -208,12 +197,6 @@ impl<'de> serde::Deserialize<'de> for Alert {
                                 return Err(serde::de::Error::duplicate_field("id"));
                             }
                             id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Payload => {
                             if payload__.is_some() {
@@ -285,7 +268,6 @@ impl<'de> serde::Deserialize<'de> for Alert {
                 }
                 Ok(Alert {
                     id: id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     payload: payload__.unwrap_or_default(),
                     workflow_id: workflow_id__.unwrap_or_default(),
                     source_event_id: source_event_id__.unwrap_or_default(),
@@ -419,9 +401,6 @@ impl serde::Serialize for CreateAlertRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.payload.is_empty() {
             len += 1;
         }
@@ -435,9 +414,6 @@ impl serde::Serialize for CreateAlertRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("alert.CreateAlertRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.payload.is_empty() {
             struct_ser.serialize_field("payload", &self.payload)?;
         }
@@ -460,8 +436,6 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "payload",
             "workflow_id",
             "workflowId",
@@ -473,7 +447,6 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             Payload,
             WorkflowId,
             SourceEventId,
@@ -499,7 +472,6 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "payload" => Ok(GeneratedField::Payload),
                             "workflowId" | "workflow_id" => Ok(GeneratedField::WorkflowId),
                             "sourceEventId" | "source_event_id" => Ok(GeneratedField::SourceEventId),
@@ -523,19 +495,12 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut payload__ = None;
                 let mut workflow_id__ = None;
                 let mut source_event_id__ = None;
                 let mut envelope_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::Payload => {
                             if payload__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("payload"));
@@ -563,7 +528,6 @@ impl<'de> serde::Deserialize<'de> for CreateAlertRequest {
                     }
                 }
                 Ok(CreateAlertRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     payload: payload__.unwrap_or_default(),
                     workflow_id: workflow_id__.unwrap_or_default(),
                     source_event_id: source_event_id__.unwrap_or_default(),
@@ -673,16 +637,10 @@ impl serde::Serialize for GetAlertByEnvelopeIdRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.envelope_id.is_empty() {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("alert.GetAlertByEnvelopeIdRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.envelope_id.is_empty() {
             struct_ser.serialize_field("envelopeId", &self.envelope_id)?;
         }
@@ -696,15 +654,12 @@ impl<'de> serde::Deserialize<'de> for GetAlertByEnvelopeIdRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "envelope_id",
             "envelopeId",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             EnvelopeId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
@@ -727,7 +682,6 @@ impl<'de> serde::Deserialize<'de> for GetAlertByEnvelopeIdRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "envelopeId" | "envelope_id" => Ok(GeneratedField::EnvelopeId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
@@ -748,16 +702,9 @@ impl<'de> serde::Deserialize<'de> for GetAlertByEnvelopeIdRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut envelope_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::EnvelopeId => {
                             if envelope_id__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("envelopeId"));
@@ -767,7 +714,6 @@ impl<'de> serde::Deserialize<'de> for GetAlertByEnvelopeIdRequest {
                     }
                 }
                 Ok(GetAlertByEnvelopeIdRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     envelope_id: envelope_id__.unwrap_or_default(),
                 })
             }
@@ -874,9 +820,6 @@ impl serde::Serialize for ListAlertsRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.limit != 0 {
             len += 1;
         }
@@ -884,9 +827,6 @@ impl serde::Serialize for ListAlertsRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("alert.ListAlertsRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if self.limit != 0 {
             struct_ser.serialize_field("limit", &self.limit)?;
         }
@@ -903,15 +843,12 @@ impl<'de> serde::Deserialize<'de> for ListAlertsRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "limit",
             "offset",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             Limit,
             Offset,
         }
@@ -935,7 +872,6 @@ impl<'de> serde::Deserialize<'de> for ListAlertsRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "limit" => Ok(GeneratedField::Limit),
                             "offset" => Ok(GeneratedField::Offset),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
@@ -957,17 +893,10 @@ impl<'de> serde::Deserialize<'de> for ListAlertsRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut limit__ = None;
                 let mut offset__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::Limit => {
                             if limit__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("limit"));
@@ -987,7 +916,6 @@ impl<'de> serde::Deserialize<'de> for ListAlertsRequest {
                     }
                 }
                 Ok(ListAlertsRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     limit: limit__.unwrap_or_default(),
                     offset: offset__.unwrap_or_default(),
                 })
@@ -1172,9 +1100,6 @@ impl serde::Serialize for UpdateAlertLifecycleRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.envelope_id.is_empty() {
             len += 1;
         }
@@ -1185,9 +1110,6 @@ impl serde::Serialize for UpdateAlertLifecycleRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("alert.UpdateAlertLifecycleRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.envelope_id.is_empty() {
             struct_ser.serialize_field("envelopeId", &self.envelope_id)?;
         }
@@ -1207,8 +1129,6 @@ impl<'de> serde::Deserialize<'de> for UpdateAlertLifecycleRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "envelope_id",
             "envelopeId",
             "status",
@@ -1217,7 +1137,6 @@ impl<'de> serde::Deserialize<'de> for UpdateAlertLifecycleRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             EnvelopeId,
             Status,
             Error,
@@ -1242,7 +1161,6 @@ impl<'de> serde::Deserialize<'de> for UpdateAlertLifecycleRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "envelopeId" | "envelope_id" => Ok(GeneratedField::EnvelopeId),
                             "status" => Ok(GeneratedField::Status),
                             "error" => Ok(GeneratedField::Error),
@@ -1265,18 +1183,11 @@ impl<'de> serde::Deserialize<'de> for UpdateAlertLifecycleRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut envelope_id__ = None;
                 let mut status__ = None;
                 let mut error__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::EnvelopeId => {
                             if envelope_id__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("envelopeId"));
@@ -1298,7 +1209,6 @@ impl<'de> serde::Deserialize<'de> for UpdateAlertLifecycleRequest {
                     }
                 }
                 Ok(UpdateAlertLifecycleRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     envelope_id: envelope_id__.unwrap_or_default(),
                     status: status__.unwrap_or_default(),
                     error: error__.unwrap_or_default(),

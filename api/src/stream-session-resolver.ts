@@ -32,7 +32,6 @@ export class StreamSessionResolver {
   constructor(
     private nats: NATSClient,
     private db: DbClient,
-    private applicationId: string,
     private logger: SharedLogger,
     private webhook: WebhookClient | null = null
   ) {}
@@ -62,7 +61,7 @@ export class StreamSessionResolver {
 
   private async syncCurrentSession(): Promise<void> {
     try {
-      const state = await this.db.ensureCurrentStreamSession({ applicationId: this.applicationId });
+      const state = await this.db.ensureCurrentStreamSession({});
       if (!state.session?.id) {
         this.logger.warn("StreamSessionResolver: no session resolved; events will publish unstamped");
         return;
@@ -78,7 +77,7 @@ export class StreamSessionResolver {
   private async handleStreamOnline(msg: Msg): Promise<void> {
     try {
       const at = this.eventTime(msg);
-      const state = await this.db.ensureCurrentStreamSession({ applicationId: this.applicationId });
+      const state = await this.db.ensureCurrentStreamSession({});
       if (!state.session?.id) {
         this.logger.warn(`${EventType.StreamOnline}: no open stream session; skipping`);
         return;
@@ -97,7 +96,6 @@ export class StreamSessionResolver {
 
       if (action === "split") {
         const split = await this.db.splitStreamSession({
-          applicationId: this.applicationId,
           at: timestampFromDate(at),
         });
         if (!split.started?.id) {
@@ -111,7 +109,6 @@ export class StreamSessionResolver {
       // Persist before announcing: a session event nobody can look up is worse
       // than a late one.
       await this.db.openStreamSessionSegment({
-        applicationId: this.applicationId,
         streamSessionId: sessionId,
         startedAt: timestampFromDate(at),
       });
@@ -120,7 +117,6 @@ export class StreamSessionResolver {
         await this.clearSessionScopedStorage(endedSessionId);
         await this.publish(SessionEventType.SessionEnded, {
           sessionId: endedSessionId,
-          applicationId: this.applicationId,
           endedAt: at.toISOString(),
           replacedBySessionId: sessionId,
         });
@@ -141,7 +137,6 @@ export class StreamSessionResolver {
       // a stream that ends is not a session that ends, which is the whole
       // reason a dropout does not wipe session-scoped state.
       await this.db.closeStreamSessionSegment({
-        applicationId: this.applicationId,
         endedAt: timestampFromDate(this.eventTime(msg)),
       });
     } catch (err) {
@@ -164,7 +159,6 @@ export class StreamSessionResolver {
     setCurrentSessionId(sessionId);
     await this.publish(SessionEventType.SessionStarted, {
       sessionId,
-      applicationId: this.applicationId,
       startedAt,
     });
     await this.announceToUi(sessionId, startedAt);
@@ -189,7 +183,6 @@ export class StreamSessionResolver {
     try {
       await this.webhook.send({
         type: EngineEventType.SESSION_STARTED,
-        applicationId: this.applicationId,
         sessionId,
         startedAt,
       });

@@ -63,7 +63,6 @@ export class ApiRouteHost extends RpcTarget {
   protected db: DbClient;
   protected nats: NATSClient | null;
   protected functions: FunctionInvoker | null;
-  protected applicationId: string | null = null;
   protected barkloaderUrl: string;
   protected streamwareUrl: string;
   protected sceneManagerUrl: string;
@@ -88,7 +87,6 @@ export class ApiRouteHost extends RpcTarget {
     id?: string;
     name?: string;
     description?: string;
-    applicationId?: string;
     enabled?: boolean;
     stepsJson?: string;
     triggerJson?: string;
@@ -100,7 +98,6 @@ export class ApiRouteHost extends RpcTarget {
       id: wf.id ?? "",
       name: wf.name ?? "",
       description: wf.description ?? "",
-      accountId: wf.applicationId ?? "",
       isEnabled: wf.enabled ?? false,
       definition: rebuildWorkflowDefinition(wf),
       stats: { runsToday: 0, successRate: 100 },
@@ -161,38 +158,6 @@ export class ApiRouteHost extends RpcTarget {
       await this.webhookClient.send(event);
     } catch (err) {
       this.logger.error("Failed to send scene webhook", { type: event.type, err });
-    }
-  }
-
-  protected async ensureApplicationId(): Promise<string> {
-    if (this.applicationId) {
-      return this.applicationId;
-    }
-    const app = await this.db.getDefaultApplication();
-    if (!app) {
-      throw new Error("No default application; complete UI onboarding first");
-    }
-    this.applicationId = app.id;
-    if (this.webhookClient) {
-      this.webhookClient.setApplicationId(app.id);
-      void this.webhookClient.refreshCallbackUrls();
-    }
-    return app.id;
-  }
-
-  /**
-   * The application id, or null when none has been onboarded yet.
-   *
-   * For NATS handlers, which must not throw: an exception there kills the
-   * subscription and stops delivery of everything after it. Route methods
-   * should use `ensureApplicationId`, which fails loudly instead.
-   */
-  protected async tryEnsureApplicationId(context: string): Promise<string | null> {
-    try {
-      return await this.ensureApplicationId();
-    } catch {
-      this.logger.warn(`${context}: no applicationId yet; skipping`);
-      return null;
     }
   }
 

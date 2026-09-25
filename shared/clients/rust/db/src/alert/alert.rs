@@ -4,8 +4,6 @@
 pub struct Alert {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     /// Full AlertPayload envelope JSON
     /// (`{ id, parameters, event }`) — same bytes streamware broadcasts.
     /// Persisted verbatim in `alerts.payload` (JSONB).
@@ -54,8 +52,6 @@ pub struct Alert {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateAlertRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     /// JSON-encoded AlertPayload. Persisted verbatim into `alerts.payload`.
     #[prost(string, tag="2")]
     pub payload: ::prost::alloc::string::String,
@@ -81,8 +77,6 @@ pub struct GetAlertRequest {
 /// the overlay reports `playing` / `completed` / `failed`.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetAlertByEnvelopeIdRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub envelope_id: ::prost::alloc::string::String,
 }
@@ -95,8 +89,6 @@ pub struct GetAlertByEnvelopeIdRequest {
 /// `error` is ignored unless status is `failed`.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UpdateAlertLifecycleRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub envelope_id: ::prost::alloc::string::String,
     #[prost(string, tag="3")]
@@ -111,10 +103,8 @@ pub struct AlertResponse {
     #[prost(message, optional, tag="2")]
     pub alert: ::core::option::Option<Alert>,
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListAlertsRequest {
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     #[prost(int32, tag="2")]
     pub limit: i32,
     #[prost(int32, tag="3")]

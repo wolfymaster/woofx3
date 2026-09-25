@@ -30,15 +30,6 @@ func generateSecret() (string, error) {
 }
 
 func (s *clientService) CreateClient(ctx context.Context, req *client.CreateClientRequest) (*client.ClientResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationId, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-
 	clientID := uuid.New()
 	clientSecret, err := generateSecret()
 	if err != nil {
@@ -46,7 +37,6 @@ func (s *clientService) CreateClient(ctx context.Context, req *client.CreateClie
 	}
 
 	m := &models.Client{
-		ApplicationID: applicationId,
 		ClientID:      clientID,
 		ClientSecret:  clientSecret,
 		Description:   req.Description,
@@ -63,7 +53,6 @@ func (s *clientService) CreateClient(ctx context.Context, req *client.CreateClie
 		Client: &client.Client{
 			Id:            strconv.Itoa(m.ID),
 			Description:   m.Description,
-			ApplicationId: m.ApplicationID.String(),
 			ClientId:      m.ClientID.String(),
 			ClientSecret:  m.ClientSecret,
 			CallbackUrl:   m.CallbackUrl,
@@ -95,16 +84,7 @@ func (s *clientService) GetClient(ctx context.Context, req *client.GetClientRequ
 }
 
 func (s *clientService) ListClients(ctx context.Context, req *client.ListClientsRequest) (*client.ListClientsResponse, error) {
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationId, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, err
-	}
-
-	models, err := s.repo.GetByApplicationID(applicationId)
+	models, err := s.repo.List()
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +175,6 @@ func clientModelToProto(m *models.Client, includeSecret bool) *client.Client {
 	return &client.Client{
 		Id:            strconv.Itoa(m.ID),
 		Description:   m.Description,
-		ApplicationId: m.ApplicationID.String(),
 		ClientId:      m.ClientID.String(),
 		ClientSecret:  secret,
 		CallbackUrl:   m.CallbackUrl,

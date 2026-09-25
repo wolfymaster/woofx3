@@ -130,7 +130,6 @@ async fn setup() -> Result<AppContext> {
                 HttpResourceClient::new(resource_proxy_url.clone()).with_request_context(
                     DbRequestContext {
                         client_id: String::new(),
-                        application_id: String::new(),
                         module_key: String::new(),
                     },
                 ),
@@ -162,7 +161,7 @@ async fn setup() -> Result<AppContext> {
     // rows, and the storage provider is resolved from the engine's settings table.
     // Establish the connection before reading either -- everything below this point
     // treats db-proxy as available, the same contract the Go and TypeScript runtimes
-    // give their applications by gating init behind the registered `db` service.
+    // give their services by gating init behind the registered `db` service.
     let db_proxy_url = get_config_value("databaseProxyUrl", "");
     if db_proxy_url.is_empty() {
         anyhow::bail!("databaseProxyUrl (WOOFX3_DATABASE_PROXY_URL) is required for barkloader");

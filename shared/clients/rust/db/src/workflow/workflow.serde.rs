@@ -121,9 +121,6 @@ impl serde::Serialize for CreateWorkflowRequest {
         if !self.description.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.enabled {
             len += 1;
         }
@@ -166,9 +163,6 @@ impl serde::Serialize for CreateWorkflowRequest {
         }
         if !self.description.is_empty() {
             struct_ser.serialize_field("description", &self.description)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if self.enabled {
             struct_ser.serialize_field("enabled", &self.enabled)?;
@@ -218,8 +212,6 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
         const FIELDS: &[&str] = &[
             "name",
             "description",
-            "application_id",
-            "applicationId",
             "enabled",
             "variables",
             "on_success",
@@ -247,7 +239,6 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
         enum GeneratedField {
             Name,
             Description,
-            ApplicationId,
             Enabled,
             Variables,
             OnSuccess,
@@ -283,7 +274,6 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
                         match value {
                             "name" => Ok(GeneratedField::Name),
                             "description" => Ok(GeneratedField::Description),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "enabled" => Ok(GeneratedField::Enabled),
                             "variables" => Ok(GeneratedField::Variables),
                             "onSuccess" | "on_success" => Ok(GeneratedField::OnSuccess),
@@ -317,7 +307,6 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
             {
                 let mut name__ = None;
                 let mut description__ = None;
-                let mut application_id__ = None;
                 let mut enabled__ = None;
                 let mut variables__ = None;
                 let mut on_success__ = None;
@@ -343,12 +332,6 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
                                 return Err(serde::de::Error::duplicate_field("description"));
                             }
                             description__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Enabled => {
                             if enabled__.is_some() {
@@ -433,7 +416,6 @@ impl<'de> serde::Deserialize<'de> for CreateWorkflowRequest {
                 Ok(CreateWorkflowRequest {
                     name: name__.unwrap_or_default(),
                     description: description__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     enabled: enabled__.unwrap_or_default(),
                     variables: variables__.unwrap_or_default(),
                     on_success: on_success__.unwrap_or_default(),
@@ -554,9 +536,6 @@ impl serde::Serialize for ExecuteWorkflowRequest {
         if !self.workflow_id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.started_by.is_empty() {
             len += 1;
         }
@@ -572,9 +551,6 @@ impl serde::Serialize for ExecuteWorkflowRequest {
         let mut struct_ser = serializer.serialize_struct("workflow.ExecuteWorkflowRequest", len)?;
         if !self.workflow_id.is_empty() {
             struct_ser.serialize_field("workflowId", &self.workflow_id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.started_by.is_empty() {
             struct_ser.serialize_field("startedBy", &self.started_by)?;
@@ -600,8 +576,6 @@ impl<'de> serde::Deserialize<'de> for ExecuteWorkflowRequest {
         const FIELDS: &[&str] = &[
             "workflow_id",
             "workflowId",
-            "application_id",
-            "applicationId",
             "started_by",
             "startedBy",
             "inputs",
@@ -613,7 +587,6 @@ impl<'de> serde::Deserialize<'de> for ExecuteWorkflowRequest {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             WorkflowId,
-            ApplicationId,
             StartedBy,
             Inputs,
             Async,
@@ -640,7 +613,6 @@ impl<'de> serde::Deserialize<'de> for ExecuteWorkflowRequest {
                     {
                         match value {
                             "workflowId" | "workflow_id" => Ok(GeneratedField::WorkflowId),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "startedBy" | "started_by" => Ok(GeneratedField::StartedBy),
                             "inputs" => Ok(GeneratedField::Inputs),
                             "async" => Ok(GeneratedField::Async),
@@ -665,7 +637,6 @@ impl<'de> serde::Deserialize<'de> for ExecuteWorkflowRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut workflow_id__ = None;
-                let mut application_id__ = None;
                 let mut started_by__ = None;
                 let mut inputs__ = None;
                 let mut r#async__ = None;
@@ -677,12 +648,6 @@ impl<'de> serde::Deserialize<'de> for ExecuteWorkflowRequest {
                                 return Err(serde::de::Error::duplicate_field("workflowId"));
                             }
                             workflow_id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::StartedBy => {
                             if started_by__.is_some() {
@@ -714,7 +679,6 @@ impl<'de> serde::Deserialize<'de> for ExecuteWorkflowRequest {
                 }
                 Ok(ExecuteWorkflowRequest {
                     workflow_id: workflow_id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     started_by: started_by__.unwrap_or_default(),
                     inputs: inputs__.unwrap_or_default(),
                     r#async: r#async__.unwrap_or_default(),
@@ -1357,9 +1321,6 @@ impl serde::Serialize for ListWorkflowExecutionsRequest {
         if !self.workflow_id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.status.is_empty() {
             len += 1;
         }
@@ -1387,9 +1348,6 @@ impl serde::Serialize for ListWorkflowExecutionsRequest {
         let mut struct_ser = serializer.serialize_struct("workflow.ListWorkflowExecutionsRequest", len)?;
         if !self.workflow_id.is_empty() {
             struct_ser.serialize_field("workflowId", &self.workflow_id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.status.is_empty() {
             struct_ser.serialize_field("status", &self.status)?;
@@ -1427,8 +1385,6 @@ impl<'de> serde::Deserialize<'de> for ListWorkflowExecutionsRequest {
         const FIELDS: &[&str] = &[
             "workflow_id",
             "workflowId",
-            "application_id",
-            "applicationId",
             "status",
             "started_by",
             "startedBy",
@@ -1446,7 +1402,6 @@ impl<'de> serde::Deserialize<'de> for ListWorkflowExecutionsRequest {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             WorkflowId,
-            ApplicationId,
             Status,
             StartedBy,
             From,
@@ -1477,7 +1432,6 @@ impl<'de> serde::Deserialize<'de> for ListWorkflowExecutionsRequest {
                     {
                         match value {
                             "workflowId" | "workflow_id" => Ok(GeneratedField::WorkflowId),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "status" => Ok(GeneratedField::Status),
                             "startedBy" | "started_by" => Ok(GeneratedField::StartedBy),
                             "from" => Ok(GeneratedField::From),
@@ -1506,7 +1460,6 @@ impl<'de> serde::Deserialize<'de> for ListWorkflowExecutionsRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut workflow_id__ = None;
-                let mut application_id__ = None;
                 let mut status__ = None;
                 let mut started_by__ = None;
                 let mut from__ = None;
@@ -1522,12 +1475,6 @@ impl<'de> serde::Deserialize<'de> for ListWorkflowExecutionsRequest {
                                 return Err(serde::de::Error::duplicate_field("workflowId"));
                             }
                             workflow_id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Status => {
                             if status__.is_some() {
@@ -1585,7 +1532,6 @@ impl<'de> serde::Deserialize<'de> for ListWorkflowExecutionsRequest {
                 }
                 Ok(ListWorkflowExecutionsRequest {
                     workflow_id: workflow_id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     status: status__.unwrap_or_default(),
                     started_by: started_by__.unwrap_or_default(),
                     from: from__,
@@ -1775,9 +1721,6 @@ impl serde::Serialize for ListWorkflowsRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.include_disabled {
             len += 1;
         }
@@ -1794,9 +1737,6 @@ impl serde::Serialize for ListWorkflowsRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("workflow.ListWorkflowsRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if self.include_disabled {
             struct_ser.serialize_field("includeDisabled", &self.include_disabled)?;
         }
@@ -1822,8 +1762,6 @@ impl<'de> serde::Deserialize<'de> for ListWorkflowsRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "include_disabled",
             "includeDisabled",
             "page",
@@ -1837,7 +1775,6 @@ impl<'de> serde::Deserialize<'de> for ListWorkflowsRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             IncludeDisabled,
             Page,
             PageSize,
@@ -1864,7 +1801,6 @@ impl<'de> serde::Deserialize<'de> for ListWorkflowsRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "includeDisabled" | "include_disabled" => Ok(GeneratedField::IncludeDisabled),
                             "page" => Ok(GeneratedField::Page),
                             "pageSize" | "page_size" => Ok(GeneratedField::PageSize),
@@ -1889,7 +1825,6 @@ impl<'de> serde::Deserialize<'de> for ListWorkflowsRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut include_disabled__ = None;
                 let mut page__ = None;
                 let mut page_size__ = None;
@@ -1897,12 +1832,6 @@ impl<'de> serde::Deserialize<'de> for ListWorkflowsRequest {
                 let mut sort_desc__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::IncludeDisabled => {
                             if include_disabled__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("includeDisabled"));
@@ -1940,7 +1869,6 @@ impl<'de> serde::Deserialize<'de> for ListWorkflowsRequest {
                     }
                 }
                 Ok(ListWorkflowsRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     include_disabled: include_disabled__.unwrap_or_default(),
                     page: page__.unwrap_or_default(),
                     page_size: page_size__.unwrap_or_default(),
@@ -2133,9 +2061,6 @@ impl serde::Serialize for RecordWorkflowRunRequest {
         if !self.workflow_id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.triggered_by.is_empty() {
             len += 1;
         }
@@ -2151,9 +2076,6 @@ impl serde::Serialize for RecordWorkflowRunRequest {
         }
         if !self.workflow_id.is_empty() {
             struct_ser.serialize_field("workflowId", &self.workflow_id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.triggered_by.is_empty() {
             struct_ser.serialize_field("triggeredBy", &self.triggered_by)?;
@@ -2177,8 +2099,6 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunRequest {
             "id",
             "workflow_id",
             "workflowId",
-            "application_id",
-            "applicationId",
             "triggered_by",
             "triggeredBy",
             "trigger_event_json",
@@ -2191,7 +2111,6 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunRequest {
         enum GeneratedField {
             Id,
             WorkflowId,
-            ApplicationId,
             TriggeredBy,
             TriggerEventJson,
             StartedAt,
@@ -2218,7 +2137,6 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunRequest {
                         match value {
                             "id" => Ok(GeneratedField::Id),
                             "workflowId" | "workflow_id" => Ok(GeneratedField::WorkflowId),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "triggeredBy" | "triggered_by" => Ok(GeneratedField::TriggeredBy),
                             "triggerEventJson" | "trigger_event_json" => Ok(GeneratedField::TriggerEventJson),
                             "startedAt" | "started_at" => Ok(GeneratedField::StartedAt),
@@ -2243,7 +2161,6 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunRequest {
             {
                 let mut id__ = None;
                 let mut workflow_id__ = None;
-                let mut application_id__ = None;
                 let mut triggered_by__ = None;
                 let mut trigger_event_json__ = None;
                 let mut started_at__ = None;
@@ -2260,12 +2177,6 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunRequest {
                                 return Err(serde::de::Error::duplicate_field("workflowId"));
                             }
                             workflow_id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::TriggeredBy => {
                             if triggered_by__.is_some() {
@@ -2290,7 +2201,6 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunRequest {
                 Ok(RecordWorkflowRunRequest {
                     id: id__.unwrap_or_default(),
                     workflow_id: workflow_id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     triggered_by: triggered_by__.unwrap_or_default(),
                     trigger_event_json: trigger_event_json__.unwrap_or_default(),
                     started_at: started_at__,
@@ -2309,9 +2219,6 @@ impl serde::Serialize for RecordWorkflowRunStepRequest {
         use serde::ser::SerializeStruct;
         let mut len = 0;
         if !self.execution_id.is_empty() {
-            len += 1;
-        }
-        if !self.application_id.is_empty() {
             len += 1;
         }
         if !self.task_id.is_empty() {
@@ -2350,9 +2257,6 @@ impl serde::Serialize for RecordWorkflowRunStepRequest {
         let mut struct_ser = serializer.serialize_struct("workflow.RecordWorkflowRunStepRequest", len)?;
         if !self.execution_id.is_empty() {
             struct_ser.serialize_field("executionId", &self.execution_id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.task_id.is_empty() {
             struct_ser.serialize_field("taskId", &self.task_id)?;
@@ -2401,8 +2305,6 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunStepRequest {
         const FIELDS: &[&str] = &[
             "execution_id",
             "executionId",
-            "application_id",
-            "applicationId",
             "task_id",
             "taskId",
             "name",
@@ -2426,7 +2328,6 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunStepRequest {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             ExecutionId,
-            ApplicationId,
             TaskId,
             Name,
             Status,
@@ -2460,7 +2361,6 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunStepRequest {
                     {
                         match value {
                             "executionId" | "execution_id" => Ok(GeneratedField::ExecutionId),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "taskId" | "task_id" => Ok(GeneratedField::TaskId),
                             "name" => Ok(GeneratedField::Name),
                             "status" => Ok(GeneratedField::Status),
@@ -2492,7 +2392,6 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunStepRequest {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut execution_id__ = None;
-                let mut application_id__ = None;
                 let mut task_id__ = None;
                 let mut name__ = None;
                 let mut status__ = None;
@@ -2511,12 +2410,6 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunStepRequest {
                                 return Err(serde::de::Error::duplicate_field("executionId"));
                             }
                             execution_id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::TaskId => {
                             if task_id__.is_some() {
@@ -2594,7 +2487,6 @@ impl<'de> serde::Deserialize<'de> for RecordWorkflowRunStepRequest {
                 }
                 Ok(RecordWorkflowRunStepRequest {
                     execution_id: execution_id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     task_id: task_id__.unwrap_or_default(),
                     name: name__.unwrap_or_default(),
                     status: status__.unwrap_or_default(),
@@ -3063,9 +2955,6 @@ impl serde::Serialize for Workflow {
         if !self.description.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if self.enabled {
             len += 1;
         }
@@ -3117,9 +3006,6 @@ impl serde::Serialize for Workflow {
         }
         if !self.description.is_empty() {
             struct_ser.serialize_field("description", &self.description)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if self.enabled {
             struct_ser.serialize_field("enabled", &self.enabled)?;
@@ -3176,8 +3062,6 @@ impl<'de> serde::Deserialize<'de> for Workflow {
             "id",
             "name",
             "description",
-            "application_id",
-            "applicationId",
             "enabled",
             "variables",
             "on_success",
@@ -3210,7 +3094,6 @@ impl<'de> serde::Deserialize<'de> for Workflow {
             Id,
             Name,
             Description,
-            ApplicationId,
             Enabled,
             Variables,
             OnSuccess,
@@ -3249,7 +3132,6 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                             "id" => Ok(GeneratedField::Id),
                             "name" => Ok(GeneratedField::Name),
                             "description" => Ok(GeneratedField::Description),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "enabled" => Ok(GeneratedField::Enabled),
                             "variables" => Ok(GeneratedField::Variables),
                             "onSuccess" | "on_success" => Ok(GeneratedField::OnSuccess),
@@ -3286,7 +3168,6 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                 let mut id__ = None;
                 let mut name__ = None;
                 let mut description__ = None;
-                let mut application_id__ = None;
                 let mut enabled__ = None;
                 let mut variables__ = None;
                 let mut on_success__ = None;
@@ -3320,12 +3201,6 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                                 return Err(serde::de::Error::duplicate_field("description"));
                             }
                             description__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Enabled => {
                             if enabled__.is_some() {
@@ -3423,7 +3298,6 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                     id: id__.unwrap_or_default(),
                     name: name__.unwrap_or_default(),
                     description: description__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     enabled: enabled__.unwrap_or_default(),
                     variables: variables__.unwrap_or_default(),
                     on_success: on_success__.unwrap_or_default(),
@@ -3462,9 +3336,6 @@ impl serde::Serialize for WorkflowExecution {
             len += 1;
         }
         if !self.started_by.is_empty() {
-            len += 1;
-        }
-        if !self.application_id.is_empty() {
             len += 1;
         }
         if !self.inputs.is_empty() {
@@ -3509,9 +3380,6 @@ impl serde::Serialize for WorkflowExecution {
         }
         if !self.started_by.is_empty() {
             struct_ser.serialize_field("startedBy", &self.started_by)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.inputs.is_empty() {
             struct_ser.serialize_field("inputs", &self.inputs)?;
@@ -3559,8 +3427,6 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
             "status",
             "started_by",
             "startedBy",
-            "application_id",
-            "applicationId",
             "inputs",
             "outputs",
             "error",
@@ -3585,7 +3451,6 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
             WorkflowId,
             Status,
             StartedBy,
-            ApplicationId,
             Inputs,
             Outputs,
             Error,
@@ -3621,7 +3486,6 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
                             "workflowId" | "workflow_id" => Ok(GeneratedField::WorkflowId),
                             "status" => Ok(GeneratedField::Status),
                             "startedBy" | "started_by" => Ok(GeneratedField::StartedBy),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "inputs" => Ok(GeneratedField::Inputs),
                             "outputs" => Ok(GeneratedField::Outputs),
                             "error" => Ok(GeneratedField::Error),
@@ -3655,7 +3519,6 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
                 let mut workflow_id__ = None;
                 let mut status__ = None;
                 let mut started_by__ = None;
-                let mut application_id__ = None;
                 let mut inputs__ = None;
                 let mut outputs__ = None;
                 let mut error__ = None;
@@ -3691,12 +3554,6 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
                                 return Err(serde::de::Error::duplicate_field("startedBy"));
                             }
                             started_by__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Inputs => {
                             if inputs__.is_some() {
@@ -3769,7 +3626,6 @@ impl<'de> serde::Deserialize<'de> for WorkflowExecution {
                     workflow_id: workflow_id__.unwrap_or_default(),
                     status: status__.unwrap_or_default(),
                     started_by: started_by__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     inputs: inputs__.unwrap_or_default(),
                     outputs: outputs__.unwrap_or_default(),
                     error: error__.unwrap_or_default(),

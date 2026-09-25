@@ -38,11 +38,10 @@ describe("ConvexWebhookClient", () => {
     const client = new ConvexWebhookClient({
       db: fakeDb(),
       logger: fakeLogger(),
-      applicationId: "app-1",
       fetchFn,
     });
 
-    await client.sendAlert("ch-1", { type: "follow", user: "alice" });
+    await client.sendAlert({ type: "follow", user: "alice" });
 
     expect(captured).toHaveLength(1);
     const sent = captured[0];
@@ -56,7 +55,6 @@ describe("ConvexWebhookClient", () => {
 
     const envelope = JSON.parse(body);
     expect(envelope.kind).toBe("alert");
-    expect(envelope.channelId).toBe("ch-1");
     expect(envelope.payload).toEqual({ type: "follow", user: "alice" });
     expect(typeof envelope.eventId).toBe("string");
     expect(envelope.eventId.length).toBeGreaterThan(0);
@@ -74,14 +72,13 @@ describe("ConvexWebhookClient", () => {
     const client = new ConvexWebhookClient({
       db: fakeDb(),
       logger: fakeLogger(),
-      applicationId: "app-1",
       fetchFn,
       scheduleRetry: (fn) => {
         scheduled.push(fn);
       },
     });
 
-    await client.sendAlert("ch-1", { type: "follow", user: "alice" });
+    await client.sendAlert({ type: "follow", user: "alice" });
     expect(calls).toBe(1);
     expect(scheduled).toHaveLength(0);
     expect(client.inFlightCount()).toBe(0);
@@ -99,7 +96,6 @@ describe("ConvexWebhookClient", () => {
     const client = new ConvexWebhookClient({
       db: fakeDb(),
       logger: fakeLogger(),
-      applicationId: "app-1",
       fetchFn,
       scheduleRetry: (fn, ms) => {
         delays.push(ms);
@@ -107,7 +103,7 @@ describe("ConvexWebhookClient", () => {
       },
     });
 
-    await client.sendAlert("ch-1", { type: "follow", user: "alice" });
+    await client.sendAlert({ type: "follow", user: "alice" });
     expect(calls).toBe(1);
     expect(delays[0]).toBe(1_000);
 
@@ -146,14 +142,13 @@ describe("ConvexWebhookClient", () => {
     const client = new ConvexWebhookClient({
       db: fakeDb(),
       logger: fakeLogger(),
-      applicationId: "app-1",
       fetchFn,
       scheduleRetry: (fn) => {
         fns.push(fn);
       },
     });
 
-    await client.sendAlert("ch-1", { type: "follow", user: "alice" });
+    await client.sendAlert({ type: "follow", user: "alice" });
     await fns[0]();
     await fns[1]();
     expect(seen).toHaveLength(3);
@@ -170,12 +165,10 @@ describe("ConvexWebhookClient", () => {
     const client = new ConvexWebhookClient({
       db: fakeDb(),
       logger: fakeLogger(),
-      applicationId: "app-1",
       fetchFn,
     });
     const envelope = {
       eventId: "fixed-id-1",
-      channelId: "ch-1",
       emittedAt: 1,
       kind: "alert" as const,
       payload: { type: "follow" as const, user: "alice" },
@@ -190,10 +183,9 @@ describe("ConvexWebhookClient", () => {
     const client = new ConvexWebhookClient({
       db: fakeDb({ url: null, secret: null }),
       logger: fakeLogger(),
-      applicationId: "app-1",
       fetchFn,
     });
-    await client.sendAlert("ch-1", { type: "follow", user: "alice" });
+    await client.sendAlert({ type: "follow", user: "alice" });
     expect(fetchFn).not.toHaveBeenCalled();
   });
 
@@ -208,7 +200,6 @@ describe("ConvexWebhookClient", () => {
     const client = new ConvexWebhookClient({
       db: fakeDb(),
       logger: fakeLogger(),
-      applicationId: "app-1",
       fetchFn,
       scheduleRetry: (fn) => {
         fns.push(fn);
@@ -216,7 +207,7 @@ describe("ConvexWebhookClient", () => {
       ttlMs: 1, // Effectively expires immediately for the retry path.
     });
 
-    await client.sendAlert("ch-1", { type: "follow", user: "alice" });
+    await client.sendAlert({ type: "follow", user: "alice" });
     expect(calls).toBe(1);
 
     // Force time past the TTL before retry runs.
@@ -239,14 +230,13 @@ describe("ConvexWebhookClient", () => {
     const client = new ConvexWebhookClient({
       db: fakeDb(),
       logger: fakeLogger(),
-      applicationId: "app-1",
       fetchFn,
       scheduleRetry: (fn) => {
         fns.push(fn);
       },
     });
 
-    await client.sendAlert("ch-1", { type: "follow", user: "alice" });
+    await client.sendAlert({ type: "follow", user: "alice" });
     expect(calls).toBe(1);
     expect(fns).toHaveLength(1);
   });

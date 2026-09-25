@@ -26,7 +26,6 @@ interface RunEnvelope {
   data?: {
     workflowId?: unknown;
     executionId?: unknown;
-    applicationId?: unknown;
     error?: unknown;
   };
 }
@@ -114,7 +113,6 @@ export function mapWorkflowRun(ce: RunEnvelope): WorkflowRunEvent | null {
   }
 
   const common = {
-    applicationId: typeof data.applicationId === "string" ? data.applicationId : "",
     workflowId,
     executionId,
     // The envelope's own time is the moment the engine decided, which is what

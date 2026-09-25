@@ -208,7 +208,8 @@ message ResourceUsage {
 
 message CheckModuleResourceUsageRequest {
   string module_id = 1;
-  string application_id = 2;
+  reserved 2;
+  reserved "application_id";
 }
 
 message CheckModuleResourceUsageResponse {
@@ -252,7 +253,8 @@ message DeleteByModuleIdRequest {
 // baking the workflow JSON.
 message GetByCanonicalIdRequest {
   string canonical_id = 1;
-  string application_id = 2;
+  reserved 2;
+  reserved "application_id";
 }
 
 message TriggerResponse {

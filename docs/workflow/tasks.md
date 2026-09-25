@@ -159,8 +159,6 @@ An alert lasts as long as its longest widget. A widget with a length of its own 
 
 The action stamps a stable `id` onto every envelope at publish time (see `workflow/actions.go` `buildAlertEnvelope`). All three downstream layers — the api alert log, the streamware queue, and the overlay's lifecycle reports — key on this value end-to-end. A caller-supplied `parameters.id` overrides the generated UUID; this is useful for replays and deterministic tests.
 
-The action also stamps `applicationId` from the workflow context onto the envelope so streamware can attribute the dispatch without falling back to a default lookup.
-
 Returns:
 
 | Field | Type | Description |

@@ -104,7 +104,7 @@ because that is the input the next decision reads. Both live in db-proxy behind
 `StreamSessionService`.
 
 Two partial unique indexes hold the invariants the rest of the design leans on:
-at most one open session per application, and at most one open segment. They sit
+at most one open session, and at most one open segment. They sit
 in the schema rather than in resolver code because a concurrent second writer
 should fail a write, not silently corrupt the history every future aggregate
 will be computed from. A duplicate `stream.online` is the ordinary case — Twitch
@@ -293,7 +293,7 @@ Uptime readers — `broadcast-shell.tsx`, `stream-status.tsx`, `stream-stats.tsx
 Nothing in the system aggregates anything today: no totals of chats, subs or
 cheers exist. `widget_status` holds a last-reported value per key and explicitly
 discards history (`db/database/models/widget_status.go:14-17`);
-`alert.CountByApplicationID` is unbounded; the workflow engine's only
+`AlertRepository.Count` is unbounded; the workflow engine's only
 aggregation lives inside a single waiting execution and dies with it.
 
 Producing aggregate values from events and stream statistics is **Analytics**, a

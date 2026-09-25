@@ -31,14 +31,6 @@ func (s *sceneEventService) RecordSceneEvent(ctx context.Context, req *client.Re
 	if err != nil {
 		return nil, twirp.InvalidArgumentError("scene_id", "invalid UUID format")
 	}
-	appIDStr, err := resolveApplicationID(ctx, s.repo.DB(), req.ApplicationId)
-	if err != nil {
-		return nil, err
-	}
-	applicationID, err := uuid.Parse(appIDStr)
-	if err != nil {
-		return nil, twirp.InvalidArgumentError("application_id", "invalid UUID format")
-	}
 	if req.Type == "" {
 		return nil, twirp.RequiredArgumentError("type")
 	}
@@ -64,13 +56,12 @@ func (s *sceneEventService) RecordSceneEvent(ctx context.Context, req *client.Re
 	}
 
 	row := &models.SceneEvent{
-		ID:            uuid.New(),
-		SceneID:       sceneID,
-		ApplicationID: applicationID,
-		Type:          req.Type,
-		Key:           req.Key,
-		Value:         value,
-		OccurredAt:    occurredAt,
+		ID:         uuid.New(),
+		SceneID:    sceneID,
+		Type:       req.Type,
+		Key:        req.Key,
+		Value:      value,
+		OccurredAt: occurredAt,
 	}
 	saved, err := s.repo.RecordSceneEvent(row, req.TargetInstanceIds)
 	if err != nil {
@@ -198,14 +189,13 @@ func (s *sceneEventService) ListSceneEventLog(ctx context.Context, req *client.L
 
 func (s *sceneEventService) toProto(m *models.SceneEvent) *client.SceneEvent {
 	return &client.SceneEvent{
-		Id:            m.ID.String(),
-		SceneId:       m.SceneID.String(),
-		ApplicationId: m.ApplicationID.String(),
-		Type:          m.Type,
-		Key:           m.Key,
-		Value:         m.Value,
-		OccurredAt:    timestamppb.New(m.OccurredAt),
-		CreatedAt:     timestamppb.New(m.CreatedAt),
+		Id:         m.ID.String(),
+		SceneId:    m.SceneID.String(),
+		Type:       m.Type,
+		Key:        m.Key,
+		Value:      m.Value,
+		OccurredAt: timestamppb.New(m.OccurredAt),
+		CreatedAt:  timestamppb.New(m.CreatedAt),
 	}
 }
 

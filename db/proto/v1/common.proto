@@ -9,7 +9,8 @@ option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
 // this so downstream services know who initiated the operation.
 message RequestContext {
   string client_id = 1;
-  string application_id = 2;
+  reserved 2;
+  reserved "application_id";
   string module_key = 3;
 }
 

@@ -21,12 +21,10 @@ export const userActionsRoutes = routeModule({
     const user = await this.db.getUser(userReq);
 
     // Get treats summary (last 30 days)
-    const applicationId = await this.ensureApplicationId();
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const treatsReq: treat.GetUserTreatsSummaryRequest = {
       userId,
-      applicationId,
       fromDate: timestampFromDate(thirtyDaysAgo),
       toDate: timestampFromDate(now),
     };
@@ -63,7 +61,6 @@ export const userActionsRoutes = routeModule({
       ? timestampFromDate(new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000))
       : protoscript.Timestamp.initialize();
 
-    const applicationId = await this.ensureApplicationId();
     const req: treat.AwardTreatRequest = {
       userId,
       treatType,
@@ -72,7 +69,6 @@ export const userActionsRoutes = routeModule({
       points,
       imageUrl,
       awardedBy,
-      applicationId,
       metadata: {},
       expiresAt,
     };

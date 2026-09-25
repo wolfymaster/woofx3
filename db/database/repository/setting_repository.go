@@ -14,13 +14,9 @@ func NewSettingRepository(db *gorm.DB) *SettingRepository {
 	return &SettingRepository{db: db}
 }
 
-func (r *SettingRepository) DB() *gorm.DB {
-	return r.db
-}
-
-func (r *SettingRepository) GetSettingByKey(appID uuid.UUID, key string) (*models.Setting, error) {
+func (r *SettingRepository) GetSettingByKey(key string) (*models.Setting, error) {
 	var setting models.Setting
-	err := r.db.Where("application_id = ? AND key = ?", appID, key).First(&setting).Error
+	err := r.db.Where("key = ?", key).First(&setting).Error
 	return &setting, err
 }
 
@@ -30,47 +26,46 @@ func (r *SettingRepository) GetSettingByID(id int) (*models.Setting, error) {
 	return &setting, err
 }
 
-func (r *SettingRepository) GetSettingsByApplicationID(appID uuid.UUID) ([]models.Setting, error) {
+func (r *SettingRepository) ListSettings() ([]models.Setting, error) {
 	var settings []models.Setting
-	err := r.db.Where("application_id = ?", appID).Find(&settings).Error
+	err := r.db.Find(&settings).Error
 	return settings, err
 }
 
-func (r *SettingRepository) GetSettingsByKeys(appID uuid.UUID, keys []string) ([]models.Setting, error) {
+func (r *SettingRepository) GetSettingsByKeys(keys []string) ([]models.Setting, error) {
 	var settings []models.Setting
-	err := r.db.Where("application_id = ? AND key IN ?", appID, keys).Find(&settings).Error
+	err := r.db.Where("key IN ?", keys).Find(&settings).Error
 	return settings, err
 }
 
-func (r *SettingRepository) GetSettingsByKeyPrefix(appID uuid.UUID, prefix string) ([]models.Setting, error) {
+func (r *SettingRepository) GetSettingsByKeyPrefix(prefix string) ([]models.Setting, error) {
 	var settings []models.Setting
-	err := r.db.Where("application_id = ? AND key LIKE ?", appID, prefix+"%").Find(&settings).Error
+	err := r.db.Where("key LIKE ?", prefix+"%").Find(&settings).Error
 	return settings, err
 }
 
-func (r *SettingRepository) DeleteByKey(appID uuid.UUID, key string) error {
-	return r.db.Where("application_id = ? AND key = ?", appID, key).Delete(&models.Setting{}).Error
+func (r *SettingRepository) DeleteByKey(key string) error {
+	return r.db.Where("key = ?", key).Delete(&models.Setting{}).Error
 }
 
 // UpsertSetting writes (or updates) a setting row. `userID` is optional —
-// pass nil for application-scoped settings; pass a non-nil pointer for
+// pass nil for engine-wide settings; pass a non-nil pointer for
 // settings that should be tied to a specific user (e.g., the Twitch
 // broadcaster id stored alongside `twitch_token`). The user_id column is
 // updated on every write so the row's user scope can be re-bound by a
 // subsequent SetSetting call without a separate update path.
-func (r *SettingRepository) UpsertSetting(appID uuid.UUID, key, value string, userID *uuid.UUID) error {
+func (r *SettingRepository) UpsertSetting(key, value string, userID *uuid.UUID) error {
 	setting := models.Setting{
-		ApplicationID: appID,
-		Key:           key,
-		Value:         value,
-		UserID:        userID,
+		Key:    key,
+		Value:  value,
+		UserID: userID,
 	}
 	// Assign() must take a map, not a struct: GORM's struct-based Assign/Updates
 	// silently omits zero-valued fields (Go's "" for string) from the generated
 	// UPDATE, so clearing a setting back to an empty string on an existing row
 	// would otherwise leave the old value in place. A map forces every given
 	// key into the SET clause regardless of value.
-	return r.db.Where("application_id = ? AND key = ?", appID, key).
+	return r.db.Where("key = ?", key).
 		Assign(map[string]any{"value": value, "user_id": userID}).
 		FirstOrCreate(&setting).Error
 }

@@ -33,13 +33,9 @@ export const alertsRoutes = routeModule({
     if (!this.nats) {
       throw new Error("NATS client not available");
     }
-    const appId = await this.ensureApplicationId();
-    const reply = await this.nats.request(
-      "widget.queue.skip",
-      new TextEncoder().encode(JSON.stringify({ applicationId: appId }))
-    );
+    const reply = await this.nats.request("widget.queue.skip", new TextEncoder().encode(JSON.stringify({})));
     const result = JSON.parse(new TextDecoder().decode(reply.data)) as { skipped: boolean };
-    this.logger.info("skipCurrentAlert", { applicationId: appId, skipped: result.skipped });
+    this.logger.info("skipCurrentAlert", { skipped: result.skipped });
     return result;
   },
 
@@ -52,13 +48,9 @@ export const alertsRoutes = routeModule({
     if (!this.nats) {
       throw new Error("NATS client not available");
     }
-    const appId = await this.ensureApplicationId();
-    const reply = await this.nats.request(
-      "widget.queue.clear",
-      new TextEncoder().encode(JSON.stringify({ applicationId: appId }))
-    );
+    const reply = await this.nats.request("widget.queue.clear", new TextEncoder().encode(JSON.stringify({})));
     const result = JSON.parse(new TextDecoder().decode(reply.data)) as { cleared: number };
-    this.logger.info("clearAlertQueue", { applicationId: appId, cleared: result.cleared });
+    this.logger.info("clearAlertQueue", { cleared: result.cleared });
     return result;
   },
 });

@@ -36,13 +36,13 @@ export function timestampToIso(ts: { seconds?: bigint; nanos?: number } | undefi
  * Convex's public contract.
  */
 export async function resolveSceneManagerUrl(db: DbClient, configured: string): Promise<string> {
-  const dbValue = await db.getSetting("scene.publicUrl", "");
+  const dbValue = await db.getSetting("scene.publicUrl");
   return (dbValue || configured).replace(/\/+$/, "");
 }
 
 /**
  * Convert a db-proxy `Scene` row into the lightweight wire shape the
- * shared API exposes (`{ id, name, accountId, widgets, createdAt }`).
+ * shared API exposes (`{ id, name, widgets, createdAt }`).
  * `widgets_json` is parsed best-effort — the engine never inspects it,
  * but the wire `SceneWidget[]` interface is structurally compatible
  * with the editor's instance shape (a superset is fine).
@@ -52,7 +52,6 @@ export function dbSceneToWire(s: scene.Scene): Scene {
   return {
     id: s.id ?? "",
     name: s.name ?? "",
-    accountId: s.applicationId ?? "",
     widgets,
     createdAt: timestampToIso(s.createdAt),
   };
@@ -66,7 +65,6 @@ export function dbSceneToWire(s: scene.Scene): Scene {
  */
 export function dbSceneToSnapshot(s: scene.Scene): {
   id: string;
-  applicationId: string;
   name: string;
   description: string;
   widgetsJson: string;
@@ -78,7 +76,6 @@ export function dbSceneToSnapshot(s: scene.Scene): {
 } {
   return {
     id: s.id ?? "",
-    applicationId: s.applicationId ?? "",
     name: s.name ?? "",
     description: s.description ?? "",
     widgetsJson: s.widgetsJson ?? "[]",
@@ -190,7 +187,6 @@ function parseActions(actionsJson: string | undefined): ActionStep[] {
 export function commandToSnapshot(c: command.Command): CommandSnapshot {
   return {
     id: c.id,
-    applicationId: c.applicationId,
     command: c.command,
     actions: parseActions(c.actionsJson),
     cooldown: c.cooldown,

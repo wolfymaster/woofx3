@@ -6,7 +6,7 @@ import { pickFirst, readRow } from "./outbox";
 import { subscribeProjections } from "./projection";
 import type { WebhookClient } from "./webhook-client";
 
-// db.widget_status.updated.{appId} — db proxy outbox event fired by
+// db.widget_status.updated — db proxy outbox event fired by
 // widgetStatusService.publishChange whenever the streamware
 // orchestrator upserts a widget_status row. Go's JSON marshaling means
 // the row may arrive PascalCase or snake_case depending on which path
@@ -26,7 +26,6 @@ interface RawWidgetStatusRow {
   OccurredAt?: unknown;
   value?: unknown;
   Value?: unknown;
-  application_id?: unknown;
 }
 
 /**
@@ -54,16 +53,11 @@ export function parseWidgetStatusUpdated(ce: Record<string, unknown>): WidgetSta
   if (!moduleId || !instanceId || !key) {
     return null;
   }
-  const applicationId = pickFirst(ce.application_id, row.application_id);
-  if (!applicationId) {
-    return null;
-  }
   const widgetCanonicalId = pickFirst(row.widget_canonical_id, row.WidgetCanonicalID);
   const occurredAt = pickFirst(row.occurred_at, row.OccurredAt) || new Date().toISOString();
 
   const event: WidgetStatusChangedEvent = {
     type: EngineEventType.WIDGET_STATUS_CHANGED,
-    applicationId,
     moduleId,
     instanceId,
     key,
@@ -98,7 +92,6 @@ export async function initWidgetStatusHandlers(
       context: (event) => {
         const status = event as WidgetStatusChangedEvent;
         return {
-          applicationId: status.applicationId,
           moduleId: status.moduleId,
           instanceId: status.instanceId,
           key: status.key,

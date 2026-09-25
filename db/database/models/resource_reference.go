@@ -12,7 +12,6 @@ import (
 // updated and removed when it is deleted.
 type ResourceReference struct {
 	ID                  uuid.UUID  `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	ApplicationID       *uuid.UUID `gorm:"column:application_id;type:uuid"`
 	SourceType          string     `gorm:"column:source_type;type:text;not null"`
 	SourceID            uuid.UUID  `gorm:"column:source_id;type:uuid;not null;index"`
 	SourceName          string     `gorm:"column:source_name;type:text;not null"`

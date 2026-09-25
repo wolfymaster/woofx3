@@ -23,11 +23,10 @@ const (
 )
 
 type Scene struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name        string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Description string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
 	// JSON array of placed widget instances. Shape:
 	// `[{ id, widgetCanonicalId, position, settings }, ...]`.
 	// Persisted verbatim in `scenes.widgets_json` (JSONB).
@@ -81,13 +80,6 @@ func (*Scene) Descriptor() ([]byte, []int) {
 func (x *Scene) GetId() string {
 	if x != nil {
 		return x.Id
-	}
-	return ""
-}
-
-func (x *Scene) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -149,10 +141,9 @@ func (x *Scene) GetUpdatedAt() *timestamppb.Timestamp {
 }
 
 type CreateSceneRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Name        string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	// JSON-encoded widget-instances array. Persisted verbatim into
 	// `scenes.widgets_json`.
 	WidgetsJson string `protobuf:"bytes,4,opt,name=widgets_json,json=widgetsJson,proto3" json:"widgets_json,omitempty"`
@@ -193,13 +184,6 @@ func (x *CreateSceneRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use CreateSceneRequest.ProtoReflect.Descriptor instead.
 func (*CreateSceneRequest) Descriptor() ([]byte, []int) {
 	return file_scene_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *CreateSceneRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *CreateSceneRequest) GetName() string {
@@ -466,7 +450,6 @@ func (x *DeleteSceneRequest) GetId() string {
 
 type ListScenesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	Page          int32                  `protobuf:"varint,2,opt,name=page,proto3" json:"page,omitempty"`
 	PageSize      int32                  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	SortBy        string                 `protobuf:"bytes,4,opt,name=sort_by,json=sortBy,proto3" json:"sort_by,omitempty"` // e.g. "name", "created_at", "updated_at"
@@ -503,13 +486,6 @@ func (x *ListScenesRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListScenesRequest.ProtoReflect.Descriptor instead.
 func (*ListScenesRequest) Descriptor() ([]byte, []int) {
 	return file_scene_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *ListScenesRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 func (x *ListScenesRequest) GetPage() int32 {
@@ -620,10 +596,9 @@ var File_scene_proto protoreflect.FileDescriptor
 
 const file_scene_proto_rawDesc = "" +
 	"\n" +
-	"\vscene.proto\x12\x05scene\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfc\x02\n" +
+	"\vscene.proto\x12\x05scene\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xeb\x02\n" +
 	"\x05Scene\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x12\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\x12!\n" +
 	"\fwidgets_json\x18\x05 \x01(\tR\vwidgetsJson\x12\x1f\n" +
@@ -635,16 +610,15 @@ const file_scene_proto_rawDesc = "" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x83\x02\n" +
-	"\x12CreateSceneRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x12\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAtJ\x04\b\x02\x10\x03R\x0eapplication_id\"\xf2\x01\n" +
+	"\x12CreateSceneRequest\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12!\n" +
 	"\fwidgets_json\x18\x04 \x01(\tR\vwidgetsJson\x12\x1f\n" +
 	"\vlayout_json\x18\x05 \x01(\tR\n" +
 	"layoutJson\x12&\n" +
 	"\x0fcreated_by_type\x18\x06 \x01(\tR\rcreatedByType\x12$\n" +
-	"\x0ecreated_by_ref\x18\a \x01(\tR\fcreatedByRef\"!\n" +
+	"\x0ecreated_by_ref\x18\a \x01(\tR\fcreatedByRefJ\x04\b\x01\x10\x02R\x0eapplication_id\"!\n" +
 	"\x0fGetSceneRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"c\n" +
 	"\rSceneResponse\x12.\n" +
@@ -658,13 +632,12 @@ const file_scene_proto_rawDesc = "" +
 	"\vlayout_json\x18\x05 \x01(\tR\n" +
 	"layoutJson\"$\n" +
 	"\x12DeleteSceneRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xa1\x01\n" +
-	"\x11ListScenesRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x12\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x90\x01\n" +
+	"\x11ListScenesRequest\x12\x12\n" +
 	"\x04page\x18\x02 \x01(\x05R\x04page\x12\x1b\n" +
 	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\x12\x17\n" +
 	"\asort_by\x18\x04 \x01(\tR\x06sortBy\x12\x1b\n" +
-	"\tsort_desc\x18\x05 \x01(\bR\bsortDesc\"\xbc\x01\n" +
+	"\tsort_desc\x18\x05 \x01(\bR\bsortDescJ\x04\b\x01\x10\x02R\x0eapplication_id\"\xbc\x01\n" +
 	"\x12ListScenesResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12$\n" +
 	"\x06scenes\x18\x02 \x03(\v2\f.scene.SceneR\x06scenes\x12\x1f\n" +

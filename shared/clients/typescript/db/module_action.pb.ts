@@ -82,11 +82,6 @@ export interface RegisterActionsRequest {
   createdByType: string;
   createdByRef: string;
   /**
-   * Scopes the registration to a specific application so cross-module
-   * dependency checks are tenant-isolated.
-   */
-  applicationId: string;
-  /**
    * Stable manifest id (`manifest.id`, e.g. "twitch_platform"), version-free
    * so a module upgrade upserts its resources in place instead of orphaning
    * every reference. Stored as created_by_ref when created_by_type/ref are
@@ -415,7 +410,6 @@ export const RegisterActionsRequest = {
       actions: [],
       createdByType: "",
       createdByRef: "",
-      applicationId: "",
       moduleId: "",
       ...msg,
     };
@@ -449,9 +443,6 @@ export const RegisterActionsRequest = {
     }
     if (msg.createdByRef) {
       writer.writeString(6, msg.createdByRef);
-    }
-    if (msg.applicationId) {
-      writer.writeString(7, msg.applicationId);
     }
     if (msg.moduleId) {
       writer.writeString(8, msg.moduleId);
@@ -493,10 +484,6 @@ export const RegisterActionsRequest = {
         }
         case 6: {
           msg.createdByRef = reader.readString();
-          break;
-        }
-        case 7: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 8: {
@@ -941,7 +928,6 @@ export const RegisterActionsRequestJSON = {
       actions: [],
       createdByType: "",
       createdByRef: "",
-      applicationId: "",
       moduleId: "",
       ...msg,
     };
@@ -971,9 +957,6 @@ export const RegisterActionsRequestJSON = {
     }
     if (msg.createdByRef) {
       json["createdByRef"] = msg.createdByRef;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.moduleId) {
       json["moduleId"] = msg.moduleId;
@@ -1015,10 +998,6 @@ export const RegisterActionsRequestJSON = {
     const _createdByRef_ = json["createdByRef"] ?? json["created_by_ref"];
     if (_createdByRef_) {
       msg.createdByRef = _createdByRef_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _moduleId_ = json["moduleId"] ?? json["module_id"];
     if (_moduleId_) {

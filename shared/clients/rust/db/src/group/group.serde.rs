@@ -7,9 +7,6 @@ impl serde::Serialize for CreateGroupRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.name.is_empty() {
             len += 1;
         }
@@ -17,9 +14,6 @@ impl serde::Serialize for CreateGroupRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("group.CreateGroupRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
         }
@@ -36,15 +30,12 @@ impl<'de> serde::Deserialize<'de> for CreateGroupRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "name",
             "description",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             Name,
             Description,
         }
@@ -68,7 +59,6 @@ impl<'de> serde::Deserialize<'de> for CreateGroupRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "name" => Ok(GeneratedField::Name),
                             "description" => Ok(GeneratedField::Description),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
@@ -90,17 +80,10 @@ impl<'de> serde::Deserialize<'de> for CreateGroupRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut name__ = None;
                 let mut description__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::Name => {
                             if name__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("name"));
@@ -116,7 +99,6 @@ impl<'de> serde::Deserialize<'de> for CreateGroupRequest {
                     }
                 }
                 Ok(CreateGroupRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     name: name__.unwrap_or_default(),
                     description: description__.unwrap_or_default(),
                 })
@@ -318,9 +300,6 @@ impl serde::Serialize for Group {
         if !self.id.is_empty() {
             len += 1;
         }
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.name.is_empty() {
             len += 1;
         }
@@ -336,9 +315,6 @@ impl serde::Serialize for Group {
         let mut struct_ser = serializer.serialize_struct("group.Group", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
-        }
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
         }
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
@@ -363,8 +339,6 @@ impl<'de> serde::Deserialize<'de> for Group {
     {
         const FIELDS: &[&str] = &[
             "id",
-            "application_id",
-            "applicationId",
             "name",
             "description",
             "created_at",
@@ -376,7 +350,6 @@ impl<'de> serde::Deserialize<'de> for Group {
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
             Id,
-            ApplicationId,
             Name,
             Description,
             CreatedAt,
@@ -403,7 +376,6 @@ impl<'de> serde::Deserialize<'de> for Group {
                     {
                         match value {
                             "id" => Ok(GeneratedField::Id),
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "name" => Ok(GeneratedField::Name),
                             "description" => Ok(GeneratedField::Description),
                             "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
@@ -428,7 +400,6 @@ impl<'de> serde::Deserialize<'de> for Group {
                     V: serde::de::MapAccess<'de>,
             {
                 let mut id__ = None;
-                let mut application_id__ = None;
                 let mut name__ = None;
                 let mut description__ = None;
                 let mut created_at__ = None;
@@ -440,12 +411,6 @@ impl<'de> serde::Deserialize<'de> for Group {
                                 return Err(serde::de::Error::duplicate_field("id"));
                             }
                             id__ = Some(map_.next_value()?);
-                        }
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
                         }
                         GeneratedField::Name => {
                             if name__.is_some() {
@@ -475,7 +440,6 @@ impl<'de> serde::Deserialize<'de> for Group {
                 }
                 Ok(Group {
                     id: id__.unwrap_or_default(),
-                    application_id: application_id__.unwrap_or_default(),
                     name: name__.unwrap_or_default(),
                     description: description__.unwrap_or_default(),
                     created_at: created_at__,
@@ -494,9 +458,6 @@ impl serde::Serialize for GroupMembershipRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.group_id.is_empty() {
             len += 1;
         }
@@ -504,9 +465,6 @@ impl serde::Serialize for GroupMembershipRequest {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("group.GroupMembershipRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.group_id.is_empty() {
             struct_ser.serialize_field("groupId", &self.group_id)?;
         }
@@ -523,8 +481,6 @@ impl<'de> serde::Deserialize<'de> for GroupMembershipRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "group_id",
             "groupId",
             "username",
@@ -532,7 +488,6 @@ impl<'de> serde::Deserialize<'de> for GroupMembershipRequest {
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             GroupId,
             Username,
         }
@@ -556,7 +511,6 @@ impl<'de> serde::Deserialize<'de> for GroupMembershipRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "groupId" | "group_id" => Ok(GeneratedField::GroupId),
                             "username" => Ok(GeneratedField::Username),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
@@ -578,17 +532,10 @@ impl<'de> serde::Deserialize<'de> for GroupMembershipRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut group_id__ = None;
                 let mut username__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::GroupId => {
                             if group_id__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("groupId"));
@@ -604,7 +551,6 @@ impl<'de> serde::Deserialize<'de> for GroupMembershipRequest {
                     }
                 }
                 Ok(GroupMembershipRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     group_id: group_id__.unwrap_or_default(),
                     username: username__.unwrap_or_default(),
                 })
@@ -928,14 +874,8 @@ impl serde::Serialize for ListGroupsRequest {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
-        let mut struct_ser = serializer.serialize_struct("group.ListGroupsRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
+        let len = 0;
+        let struct_ser = serializer.serialize_struct("group.ListGroupsRequest", len)?;
         struct_ser.end()
     }
 }
@@ -946,13 +886,10 @@ impl<'de> serde::Deserialize<'de> for ListGroupsRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -973,10 +910,7 @@ impl<'de> serde::Deserialize<'de> for ListGroupsRequest {
                     where
                         E: serde::de::Error,
                     {
-                        match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
-                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
-                        }
+                            Err(serde::de::Error::unknown_field(value, FIELDS))
                     }
                 }
                 deserializer.deserialize_identifier(GeneratedVisitor)
@@ -994,19 +928,10 @@ impl<'de> serde::Deserialize<'de> for ListGroupsRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
-                while let Some(k) = map_.next_key()? {
-                    match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
-                    }
+                while map_.next_key::<GeneratedField>()?.is_some() {
+                    let _ = map_.next_value::<serde::de::IgnoredAny>()?;
                 }
                 Ok(ListGroupsRequest {
-                    application_id: application_id__.unwrap_or_default(),
                 })
             }
         }
@@ -1129,16 +1054,10 @@ impl serde::Serialize for ListUserGroupsForUserRequest {
     {
         use serde::ser::SerializeStruct;
         let mut len = 0;
-        if !self.application_id.is_empty() {
-            len += 1;
-        }
         if !self.username.is_empty() {
             len += 1;
         }
         let mut struct_ser = serializer.serialize_struct("group.ListUserGroupsForUserRequest", len)?;
-        if !self.application_id.is_empty() {
-            struct_ser.serialize_field("applicationId", &self.application_id)?;
-        }
         if !self.username.is_empty() {
             struct_ser.serialize_field("username", &self.username)?;
         }
@@ -1152,14 +1071,11 @@ impl<'de> serde::Deserialize<'de> for ListUserGroupsForUserRequest {
         D: serde::Deserializer<'de>,
     {
         const FIELDS: &[&str] = &[
-            "application_id",
-            "applicationId",
             "username",
         ];
 
         #[allow(clippy::enum_variant_names)]
         enum GeneratedField {
-            ApplicationId,
             Username,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
@@ -1182,7 +1098,6 @@ impl<'de> serde::Deserialize<'de> for ListUserGroupsForUserRequest {
                         E: serde::de::Error,
                     {
                         match value {
-                            "applicationId" | "application_id" => Ok(GeneratedField::ApplicationId),
                             "username" => Ok(GeneratedField::Username),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
@@ -1203,16 +1118,9 @@ impl<'de> serde::Deserialize<'de> for ListUserGroupsForUserRequest {
                 where
                     V: serde::de::MapAccess<'de>,
             {
-                let mut application_id__ = None;
                 let mut username__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
-                        GeneratedField::ApplicationId => {
-                            if application_id__.is_some() {
-                                return Err(serde::de::Error::duplicate_field("applicationId"));
-                            }
-                            application_id__ = Some(map_.next_value()?);
-                        }
                         GeneratedField::Username => {
                             if username__.is_some() {
                                 return Err(serde::de::Error::duplicate_field("username"));
@@ -1222,7 +1130,6 @@ impl<'de> serde::Deserialize<'de> for ListUserGroupsForUserRequest {
                     }
                 }
                 Ok(ListUserGroupsForUserRequest {
-                    application_id: application_id__.unwrap_or_default(),
                     username: username__.unwrap_or_default(),
                 })
             }

@@ -39,7 +39,8 @@ message Treat {
     int32 points = 6;                  // Point value of the treat
     string image_url = 7;              // Optional image URL
     string awarded_by = 8;             // User ID who awarded the treat (empty for system)
-    string application_id = 9;         // ID of the application this treat is associated with
+    reserved 9;
+    reserved "application_id";
     map<string, string> metadata = 10; // Additional metadata
     google.protobuf.Timestamp awarded_at = 11;
     google.protobuf.Timestamp expires_at = 12; // Optional expiration time
@@ -56,7 +57,8 @@ message AwardTreatRequest {
     int32 points = 5;                  // Point value of the treat
     string image_url = 6;              // Optional image URL
     string awarded_by = 7;             // User ID who is awarding the treat (empty for system)
-    string application_id = 8;         // ID of the application this treat is associated with
+    reserved 8;
+    reserved "application_id";
     map<string, string> metadata = 9;  // Additional metadata
     google.protobuf.Timestamp expires_at = 10; // Optional expiration time
 }
@@ -92,7 +94,8 @@ message DeleteTreatRequest {
 message ListTreatsRequest {
     string user_id = 1;                // Filter by user ID
     string treat_type = 2;             // Filter by treat type
-    string application_id = 3;         // Filter by application ID
+    reserved 3;
+    reserved "application_id";
     google.protobuf.Timestamp from_date = 4;  // Filter by award date (inclusive)
     google.protobuf.Timestamp to_date = 5;    // Filter by award date (inclusive)
     bool include_expired = 6;          // Whether to include expired treats
@@ -116,7 +119,8 @@ message ListTreatsResponse {
 // Request to get a summary of treats for a user
 message GetUserTreatsSummaryRequest {
     string user_id = 1;                // User ID
-    string application_id = 2;         // Optional: Filter by application ID
+    reserved 2;
+    reserved "application_id";
     google.protobuf.Timestamp from_date = 3;  // Optional: Start date for the summary period
     google.protobuf.Timestamp to_date = 4;    // Optional: End date for the summary period
 }
@@ -140,7 +144,8 @@ message TreatsSummaryResponse {
 
 // Request to get treat statistics
 message GetTreatStatsRequest {
-    string application_id = 1;         // Optional: Filter by application ID
+    reserved 1;
+    reserved "application_id";
     google.protobuf.Timestamp from_date = 2;  // Start date for the stats period
     google.protobuf.Timestamp to_date = 3;    // End date for the stats period
     string group_by = 4;               // How to group the stats (e.g., "day", "week", "month", "treat_type")

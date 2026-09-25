@@ -18,11 +18,10 @@ import * as common from "./common.pb";
 
 export interface StreamSession {
   id: string;
-  applicationId: string;
   /**
    * `open` while this is the session events are stamped with; `closed` once a
-   * later session has replaced it. At most one session per application is
-   * open, enforced by a partial unique index rather than by convention.
+   * later session has replaced it. At most one session is open, enforced by a
+   * partial unique index rather than by convention.
    */
   status: string;
   startedAt: protoscript.Timestamp;
@@ -46,7 +45,6 @@ export interface StreamSession {
  */
 export interface StreamSessionSegment {
   id: string;
-  applicationId: string;
   streamSessionId: string;
   startedAt: protoscript.Timestamp;
   /**
@@ -57,9 +55,7 @@ export interface StreamSessionSegment {
   updatedAt: protoscript.Timestamp;
 }
 
-export interface EnsureCurrentStreamSessionRequest {
-  applicationId: string;
-}
+export interface EnsureCurrentStreamSessionRequest {}
 
 /**
  * The open session and the inputs to the extend-or-split decision, fetched
@@ -81,7 +77,6 @@ export interface StreamSessionStateResponse {
 }
 
 export interface SplitStreamSessionRequest {
-  applicationId: string;
   /**
    * The boundary. Supplied by the caller rather than defaulted to NOW() so a
    * split can be made from an event's own timestamp, and used as both the old
@@ -97,18 +92,16 @@ export interface SplitStreamSessionResponse {
 }
 
 export interface OpenStreamSessionSegmentRequest {
-  applicationId: string;
   streamSessionId: string;
   startedAt: protoscript.Timestamp;
 }
 
 /**
- * Closes whichever segment is currently open for the application. Keyed on the
- * application rather than a segment id because the caller reacting to
- * `stream.offline` knows the channel, not which segment it opened.
+ * Closes whichever segment is currently open. Takes no segment id because the
+ * caller reacting to `stream.offline` knows the channel, not which segment it
+ * opened.
  */
 export interface CloseStreamSessionSegmentRequest {
-  applicationId: string;
   endedAt: protoscript.Timestamp;
 }
 
@@ -127,7 +120,6 @@ export interface StreamSessionSegmentResponse {
 }
 
 export interface ListStreamSessionsRequest {
-  applicationId: string;
   limit: number;
   offset: number;
 }
@@ -164,8 +156,8 @@ export async function EnsureCurrentStreamSession(
 /**
  * Ends the open session and opens its successor. There is no standalone
  * "end": a session is always present and only ends when a later one replaces
- * it, so closing without opening would leave the application with no session
- * at all.
+ * it, so closing without opening would leave the engine with no session at
+ * all.
  */
 export async function SplitStreamSession(
   splitStreamSessionRequest: SplitStreamSessionRequest,
@@ -253,8 +245,8 @@ export async function EnsureCurrentStreamSessionJSON(
 /**
  * Ends the open session and opens its successor. There is no standalone
  * "end": a session is always present and only ends when a later one replaces
- * it, so closing without opening would leave the application with no session
- * at all.
+ * it, so closing without opening would leave the engine with no session at
+ * all.
  */
 export async function SplitStreamSessionJSON(
   splitStreamSessionRequest: SplitStreamSessionRequest,
@@ -349,8 +341,8 @@ export interface StreamSessionService<Context = unknown> {
   /**
    * Ends the open session and opens its successor. There is no standalone
    * "end": a session is always present and only ends when a later one replaces
-   * it, so closing without opening would leave the application with no session
-   * at all.
+   * it, so closing without opening would leave the engine with no session at
+   * all.
    */
   SplitStreamSession: (
     splitStreamSessionRequest: SplitStreamSessionRequest,
@@ -487,7 +479,6 @@ export const StreamSession = {
   initialize: function (msg?: Partial<StreamSession>): StreamSession {
     return {
       id: "",
-      applicationId: "",
       status: "",
       startedAt: protoscript.Timestamp.initialize(),
       endedAt: protoscript.Timestamp.initialize(),
@@ -506,9 +497,6 @@ export const StreamSession = {
   ): protoscript.BinaryWriter {
     if (msg.id) {
       writer.writeString(1, msg.id);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.status) {
       writer.writeString(3, msg.status);
@@ -552,10 +540,6 @@ export const StreamSession = {
       switch (field) {
         case 1: {
           msg.id = reader.readString();
-          break;
-        }
-        case 2: {
-          msg.applicationId = reader.readString();
           break;
         }
         case 3: {
@@ -617,7 +601,6 @@ export const StreamSessionSegment = {
   ): StreamSessionSegment {
     return {
       id: "",
-      applicationId: "",
       streamSessionId: "",
       startedAt: protoscript.Timestamp.initialize(),
       endedAt: protoscript.Timestamp.initialize(),
@@ -636,9 +619,6 @@ export const StreamSessionSegment = {
   ): protoscript.BinaryWriter {
     if (msg.id) {
       writer.writeString(1, msg.id);
-    }
-    if (msg.applicationId) {
-      writer.writeString(2, msg.applicationId);
     }
     if (msg.streamSessionId) {
       writer.writeString(3, msg.streamSessionId);
@@ -684,10 +664,6 @@ export const StreamSessionSegment = {
           msg.id = reader.readString();
           break;
         }
-        case 2: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 3: {
           msg.streamSessionId = reader.readString();
           break;
@@ -723,22 +699,16 @@ export const EnsureCurrentStreamSessionRequest = {
    * Serializes EnsureCurrentStreamSessionRequest to protobuf.
    */
   encode: function (
-    msg: PartialDeep<EnsureCurrentStreamSessionRequest>,
+    _msg?: PartialDeep<EnsureCurrentStreamSessionRequest>,
   ): Uint8Array {
-    return EnsureCurrentStreamSessionRequest._writeMessage(
-      msg,
-      new protoscript.BinaryWriter(),
-    ).getResultBuffer();
+    return new Uint8Array();
   },
 
   /**
    * Deserializes EnsureCurrentStreamSessionRequest from protobuf.
    */
-  decode: function (bytes: ByteSource): EnsureCurrentStreamSessionRequest {
-    return EnsureCurrentStreamSessionRequest._readMessage(
-      EnsureCurrentStreamSessionRequest.initialize(),
-      new protoscript.BinaryReader(bytes),
-    );
+  decode: function (_bytes?: ByteSource): EnsureCurrentStreamSessionRequest {
+    return {};
   },
 
   /**
@@ -748,7 +718,6 @@ export const EnsureCurrentStreamSessionRequest = {
     msg?: Partial<EnsureCurrentStreamSessionRequest>,
   ): EnsureCurrentStreamSessionRequest {
     return {
-      applicationId: "",
       ...msg,
     };
   },
@@ -757,12 +726,9 @@ export const EnsureCurrentStreamSessionRequest = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<EnsureCurrentStreamSessionRequest>,
+    _msg: PartialDeep<EnsureCurrentStreamSessionRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     return writer;
   },
 
@@ -770,23 +736,10 @@ export const EnsureCurrentStreamSessionRequest = {
    * @private
    */
   _readMessage: function (
-    msg: EnsureCurrentStreamSessionRequest,
-    reader: protoscript.BinaryReader,
+    _msg: EnsureCurrentStreamSessionRequest,
+    _reader: protoscript.BinaryReader,
   ): EnsureCurrentStreamSessionRequest {
-    while (reader.nextField()) {
-      const field = reader.getFieldNumber();
-      switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
-        default: {
-          reader.skipField();
-          break;
-        }
-      }
-    }
-    return msg;
+    return _msg;
   },
 };
 
@@ -919,7 +872,6 @@ export const SplitStreamSessionRequest = {
     msg?: Partial<SplitStreamSessionRequest>,
   ): SplitStreamSessionRequest {
     return {
-      applicationId: "",
       at: protoscript.Timestamp.initialize(),
       ...msg,
     };
@@ -932,9 +884,6 @@ export const SplitStreamSessionRequest = {
     msg: PartialDeep<SplitStreamSessionRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.at) {
       writer.writeMessage(2, msg.at, protoscript.Timestamp._writeMessage);
     }
@@ -951,10 +900,6 @@ export const SplitStreamSessionRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           reader.readMessage(msg.at, protoscript.Timestamp._readMessage);
           break;
@@ -1085,7 +1030,6 @@ export const OpenStreamSessionSegmentRequest = {
     msg?: Partial<OpenStreamSessionSegmentRequest>,
   ): OpenStreamSessionSegmentRequest {
     return {
-      applicationId: "",
       streamSessionId: "",
       startedAt: protoscript.Timestamp.initialize(),
       ...msg,
@@ -1099,9 +1043,6 @@ export const OpenStreamSessionSegmentRequest = {
     msg: PartialDeep<OpenStreamSessionSegmentRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.streamSessionId) {
       writer.writeString(2, msg.streamSessionId);
     }
@@ -1125,10 +1066,6 @@ export const OpenStreamSessionSegmentRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.streamSessionId = reader.readString();
           break;
@@ -1177,7 +1114,6 @@ export const CloseStreamSessionSegmentRequest = {
     msg?: Partial<CloseStreamSessionSegmentRequest>,
   ): CloseStreamSessionSegmentRequest {
     return {
-      applicationId: "",
       endedAt: protoscript.Timestamp.initialize(),
       ...msg,
     };
@@ -1190,9 +1126,6 @@ export const CloseStreamSessionSegmentRequest = {
     msg: PartialDeep<CloseStreamSessionSegmentRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.endedAt) {
       writer.writeMessage(2, msg.endedAt, protoscript.Timestamp._writeMessage);
     }
@@ -1209,10 +1142,6 @@ export const CloseStreamSessionSegmentRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           reader.readMessage(msg.endedAt, protoscript.Timestamp._readMessage);
           break;
@@ -1483,7 +1412,6 @@ export const ListStreamSessionsRequest = {
     msg?: Partial<ListStreamSessionsRequest>,
   ): ListStreamSessionsRequest {
     return {
-      applicationId: "",
       limit: 0,
       offset: 0,
       ...msg,
@@ -1497,9 +1425,6 @@ export const ListStreamSessionsRequest = {
     msg: PartialDeep<ListStreamSessionsRequest>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
-    if (msg.applicationId) {
-      writer.writeString(1, msg.applicationId);
-    }
     if (msg.limit) {
       writer.writeInt32(2, msg.limit);
     }
@@ -1519,10 +1444,6 @@ export const ListStreamSessionsRequest = {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
-        case 1: {
-          msg.applicationId = reader.readString();
-          break;
-        }
         case 2: {
           msg.limit = reader.readInt32();
           break;
@@ -1677,7 +1598,6 @@ export const StreamSessionJSON = {
   initialize: function (msg?: Partial<StreamSession>): StreamSession {
     return {
       id: "",
-      applicationId: "",
       status: "",
       startedAt: protoscript.TimestampJSON.initialize(),
       endedAt: protoscript.TimestampJSON.initialize(),
@@ -1696,9 +1616,6 @@ export const StreamSessionJSON = {
     const json: Record<string, unknown> = {};
     if (msg.id) {
       json["id"] = msg.id;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.status) {
       json["status"] = msg.status;
@@ -1725,10 +1642,6 @@ export const StreamSessionJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _status_ = json["status"];
     if (_status_) {
@@ -1780,7 +1693,6 @@ export const StreamSessionSegmentJSON = {
   ): StreamSessionSegment {
     return {
       id: "",
-      applicationId: "",
       streamSessionId: "",
       startedAt: protoscript.TimestampJSON.initialize(),
       endedAt: protoscript.TimestampJSON.initialize(),
@@ -1799,9 +1711,6 @@ export const StreamSessionSegmentJSON = {
     const json: Record<string, unknown> = {};
     if (msg.id) {
       json["id"] = msg.id;
-    }
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
     }
     if (msg.streamSessionId) {
       json["streamSessionId"] = msg.streamSessionId;
@@ -1831,10 +1740,6 @@ export const StreamSessionSegmentJSON = {
     const _id_ = json["id"];
     if (_id_) {
       msg.id = _id_;
-    }
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
     }
     const _streamSessionId_ =
       json["streamSessionId"] ?? json["stream_session_id"];
@@ -1866,21 +1771,16 @@ export const EnsureCurrentStreamSessionRequestJSON = {
    * Serializes EnsureCurrentStreamSessionRequest to JSON.
    */
   encode: function (
-    msg: PartialDeep<EnsureCurrentStreamSessionRequest>,
+    _msg?: PartialDeep<EnsureCurrentStreamSessionRequest>,
   ): string {
-    return JSON.stringify(
-      EnsureCurrentStreamSessionRequestJSON._writeMessage(msg),
-    );
+    return "{}";
   },
 
   /**
    * Deserializes EnsureCurrentStreamSessionRequest from JSON.
    */
-  decode: function (json: string): EnsureCurrentStreamSessionRequest {
-    return EnsureCurrentStreamSessionRequestJSON._readMessage(
-      EnsureCurrentStreamSessionRequestJSON.initialize(),
-      JSON.parse(json),
-    );
+  decode: function (_json?: string): EnsureCurrentStreamSessionRequest {
+    return {};
   },
 
   /**
@@ -1890,7 +1790,6 @@ export const EnsureCurrentStreamSessionRequestJSON = {
     msg?: Partial<EnsureCurrentStreamSessionRequest>,
   ): EnsureCurrentStreamSessionRequest {
     return {
-      applicationId: "",
       ...msg,
     };
   },
@@ -1899,13 +1798,9 @@ export const EnsureCurrentStreamSessionRequestJSON = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<EnsureCurrentStreamSessionRequest>,
+    _msg: PartialDeep<EnsureCurrentStreamSessionRequest>,
   ): Record<string, unknown> {
-    const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
-    return json;
+    return {};
   },
 
   /**
@@ -1913,12 +1808,8 @@ export const EnsureCurrentStreamSessionRequestJSON = {
    */
   _readMessage: function (
     msg: EnsureCurrentStreamSessionRequest,
-    json: any,
+    _json: any,
   ): EnsureCurrentStreamSessionRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     return msg;
   },
 };
@@ -2042,7 +1933,6 @@ export const SplitStreamSessionRequestJSON = {
     msg?: Partial<SplitStreamSessionRequest>,
   ): SplitStreamSessionRequest {
     return {
-      applicationId: "",
       at: protoscript.TimestampJSON.initialize(),
       ...msg,
     };
@@ -2055,9 +1945,6 @@ export const SplitStreamSessionRequestJSON = {
     msg: PartialDeep<SplitStreamSessionRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.at && (msg.at.seconds || msg.at.nanos)) {
       json["at"] = protoscript.serializeTimestamp(msg.at);
     }
@@ -2071,10 +1958,6 @@ export const SplitStreamSessionRequestJSON = {
     msg: SplitStreamSessionRequest,
     json: any,
   ): SplitStreamSessionRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _at_ = json["at"];
     if (_at_) {
       msg.at = protoscript.parseTimestamp(_at_);
@@ -2193,7 +2076,6 @@ export const OpenStreamSessionSegmentRequestJSON = {
     msg?: Partial<OpenStreamSessionSegmentRequest>,
   ): OpenStreamSessionSegmentRequest {
     return {
-      applicationId: "",
       streamSessionId: "",
       startedAt: protoscript.TimestampJSON.initialize(),
       ...msg,
@@ -2207,9 +2089,6 @@ export const OpenStreamSessionSegmentRequestJSON = {
     msg: PartialDeep<OpenStreamSessionSegmentRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.streamSessionId) {
       json["streamSessionId"] = msg.streamSessionId;
     }
@@ -2226,10 +2105,6 @@ export const OpenStreamSessionSegmentRequestJSON = {
     msg: OpenStreamSessionSegmentRequest,
     json: any,
   ): OpenStreamSessionSegmentRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _streamSessionId_ =
       json["streamSessionId"] ?? json["stream_session_id"];
     if (_streamSessionId_) {
@@ -2272,7 +2147,6 @@ export const CloseStreamSessionSegmentRequestJSON = {
     msg?: Partial<CloseStreamSessionSegmentRequest>,
   ): CloseStreamSessionSegmentRequest {
     return {
-      applicationId: "",
       endedAt: protoscript.TimestampJSON.initialize(),
       ...msg,
     };
@@ -2285,9 +2159,6 @@ export const CloseStreamSessionSegmentRequestJSON = {
     msg: PartialDeep<CloseStreamSessionSegmentRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.endedAt && (msg.endedAt.seconds || msg.endedAt.nanos)) {
       json["endedAt"] = protoscript.serializeTimestamp(msg.endedAt);
     }
@@ -2301,10 +2172,6 @@ export const CloseStreamSessionSegmentRequestJSON = {
     msg: CloseStreamSessionSegmentRequest,
     json: any,
   ): CloseStreamSessionSegmentRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _endedAt_ = json["endedAt"] ?? json["ended_at"];
     if (_endedAt_) {
       msg.endedAt = protoscript.parseTimestamp(_endedAt_);
@@ -2540,7 +2407,6 @@ export const ListStreamSessionsRequestJSON = {
     msg?: Partial<ListStreamSessionsRequest>,
   ): ListStreamSessionsRequest {
     return {
-      applicationId: "",
       limit: 0,
       offset: 0,
       ...msg,
@@ -2554,9 +2420,6 @@ export const ListStreamSessionsRequestJSON = {
     msg: PartialDeep<ListStreamSessionsRequest>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    if (msg.applicationId) {
-      json["applicationId"] = msg.applicationId;
-    }
     if (msg.limit) {
       json["limit"] = msg.limit;
     }
@@ -2573,10 +2436,6 @@ export const ListStreamSessionsRequestJSON = {
     msg: ListStreamSessionsRequest,
     json: any,
   ): ListStreamSessionsRequest {
-    const _applicationId_ = json["applicationId"] ?? json["application_id"];
-    if (_applicationId_) {
-      msg.applicationId = _applicationId_;
-    }
     const _limit_ = json["limit"];
     if (_limit_) {
       msg.limit = protoscript.parseNumber(_limit_);

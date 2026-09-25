@@ -76,7 +76,6 @@ describe("FrameAssembler.assemble — surfaces", () => {
   function sceneWith(hostsSurface: string): OverlayHost {
     const state: OverlaySceneState = {
       sceneId: "scene-1",
-      applicationId: "app-1",
       name: "Scene",
       layout: {},
       instances: [

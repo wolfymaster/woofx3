@@ -27,9 +27,6 @@ pub struct Treat {
     /// User ID who awarded the treat (empty for system)
     #[prost(string, tag="8")]
     pub awarded_by: ::prost::alloc::string::String,
-    /// ID of the application this treat is associated with
-    #[prost(string, tag="9")]
-    pub application_id: ::prost::alloc::string::String,
     /// Additional metadata
     #[prost(map="string, string", tag="10")]
     pub metadata: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
@@ -67,9 +64,6 @@ pub struct AwardTreatRequest {
     /// User ID who is awarding the treat (empty for system)
     #[prost(string, tag="7")]
     pub awarded_by: ::prost::alloc::string::String,
-    /// ID of the application this treat is associated with
-    #[prost(string, tag="8")]
-    pub application_id: ::prost::alloc::string::String,
     /// Additional metadata
     #[prost(map="string, string", tag="9")]
     pub metadata: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
@@ -133,9 +127,6 @@ pub struct ListTreatsRequest {
     /// Filter by treat type
     #[prost(string, tag="2")]
     pub treat_type: ::prost::alloc::string::String,
-    /// Filter by application ID
-    #[prost(string, tag="3")]
-    pub application_id: ::prost::alloc::string::String,
     /// Filter by award date (inclusive)
     #[prost(message, optional, tag="4")]
     pub from_date: ::core::option::Option<::pbjson_types::Timestamp>,
@@ -184,9 +175,6 @@ pub struct GetUserTreatsSummaryRequest {
     /// User ID
     #[prost(string, tag="1")]
     pub user_id: ::prost::alloc::string::String,
-    /// Optional: Filter by application ID
-    #[prost(string, tag="2")]
-    pub application_id: ::prost::alloc::string::String,
     /// Optional: Start date for the summary period
     #[prost(message, optional, tag="3")]
     pub from_date: ::core::option::Option<::pbjson_types::Timestamp>,
@@ -230,9 +218,6 @@ pub struct TreatsSummaryResponse {
 /// Request to get treat statistics
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetTreatStatsRequest {
-    /// Optional: Filter by application ID
-    #[prost(string, tag="1")]
-    pub application_id: ::prost::alloc::string::String,
     /// Start date for the stats period
     #[prost(message, optional, tag="2")]
     pub from_date: ::core::option::Option<::pbjson_types::Timestamp>,

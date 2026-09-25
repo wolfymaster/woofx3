@@ -3,7 +3,6 @@ import type { DbClient } from "./db-client";
 
 export interface AuthResult {
   valid: boolean;
-  applicationId: string | null;
   description: string | null;
   callbackUrl: string | null;
   callbackToken: string | null;
@@ -25,7 +24,7 @@ export class ClientAuth {
 
   async validate(clientId: string, clientSecret: string): Promise<AuthResult> {
     if (!clientId || !clientSecret) {
-      return { valid: false, applicationId: null, description: null, callbackUrl: null, callbackToken: null };
+      return { valid: false, description: null, callbackUrl: null, callbackToken: null };
     }
 
     const now = Date.now();
@@ -39,7 +38,6 @@ export class ClientAuth {
       if (resp.status?.code === "OK" && resp.client) {
         const result: AuthResult = {
           valid: true,
-          applicationId: resp.client.applicationId,
           description: resp.client.description,
           callbackUrl: resp.client.callbackUrl,
           callbackToken: resp.client.callbackToken,
@@ -57,7 +55,6 @@ export class ClientAuth {
 
     const invalid: AuthResult = {
       valid: false,
-      applicationId: null,
       description: null,
       callbackUrl: null,
       callbackToken: null,

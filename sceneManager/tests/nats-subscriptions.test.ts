@@ -6,7 +6,6 @@ function fakeLogger() {
 }
 
 type LifecycleRequest = {
-  applicationId: string;
   envelopeId: string;
   status: string;
   error: string;
@@ -30,14 +29,12 @@ describe("reportAlertNotPlayed", () => {
     const { calls, client } = writer();
 
     await reportAlertNotPlayed(client, fakeLogger(), {
-      applicationId: "app-1",
       alertId: "env-1",
       reason: "layout must be an object, got nothing",
     });
 
     expect(calls).toEqual([
       {
-        applicationId: "app-1",
         envelopeId: "env-1",
         status: "failed",
         error: "layout must be an object, got nothing",
@@ -56,7 +53,6 @@ describe("reportAlertNotPlayed", () => {
     });
 
     await reportAlertNotPlayed(client, logger, {
-      applicationId: "app-1",
       alertId: "env-1",
       reason: "the layout contains no widgets",
     });
@@ -70,7 +66,6 @@ describe("reportAlertNotPlayed", () => {
     const { calls, client } = writer();
 
     await reportAlertNotPlayed(client, fakeLogger(), {
-      applicationId: "app-1",
       alertId: "env-1",
       reason: 'no alert widget named "sidebar" on a running scene',
     });
