@@ -20,7 +20,7 @@ import type { Logger } from "@woofx3/common/runtime";
 
 /** The slice of DbClient this depends on (injectable for tests). */
 export interface ModuleStateDb {
-  getModuleStorageValue(applicationId: string, namespace: string, key: string): Promise<unknown>;
+  getModuleStorageValue(namespace: string, key: string): Promise<unknown>;
   getResourceInstance(canonicalId: string): Promise<{ kind: string; settingsJson: string } | null>;
 }
 
@@ -177,8 +177,6 @@ function parseSettings(settingsJson: string): Record<string, unknown> {
 export class ModuleStateWatch {
   /** sceneId -> moduleId -> keys some page of that scene has asked for. */
   private readonly watched = new Map<string, Map<string, Set<string>>>();
-  /** sceneId -> the application its session belongs to, for reading storage again on its behalf. */
-  private readonly applications = new Map<string, string>();
 
   constructor(
     private readonly db: ModuleStateDb,
@@ -197,7 +195,7 @@ export class ModuleStateWatch {
    * keys the scene's widgets ask for, and a page that reconnects asks again
    * anyway, to catch up on what changed while it was away.
    */
-  async read(sceneId: string, applicationId: string, moduleId: string, key: string): Promise<unknown> {
+  async read(sceneId: string, moduleId: string, key: string): Promise<unknown> {
     let byModule = this.watched.get(sceneId);
     if (!byModule) {
       byModule = new Map();
@@ -209,9 +207,8 @@ export class ModuleStateWatch {
       byModule.set(moduleId, keys);
     }
     keys.add(key);
-    this.applications.set(sceneId, applicationId);
 
-    const stored = await this.db.getModuleStorageValue(applicationId, moduleId, key);
+    const stored = await this.db.getModuleStorageValue(moduleId, key);
     return this.reading(moduleId, key, stored);
   }
 
@@ -236,13 +233,9 @@ export class ModuleStateWatch {
     const moduleId = canonicalId.split(":")[0] ?? "";
     const key = `${RESOURCE_STATE_PREFIX}${canonicalId}`;
     for (const sceneId of this.watchingScenes(moduleId, key)) {
-      const applicationId = this.applications.get(sceneId);
-      if (applicationId === undefined) {
-        continue;
-      }
       let stored: unknown;
       try {
-        stored = await this.db.getModuleStorageValue(applicationId, moduleId, key);
+        stored = await this.db.getModuleStorageValue(moduleId, key);
       } catch (err) {
         this.logger.warn("module state: re-read after a settings change failed", {
           sceneId,

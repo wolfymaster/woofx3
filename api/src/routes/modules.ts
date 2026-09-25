@@ -466,7 +466,6 @@ export const modulesRoutes = routeModule({
     if (!Array.isArray(canonicalIds)) {
       throw new Error("getResourceValues: canonicalIds must be an array");
     }
-    const applicationId = await this.ensureApplicationId();
     const values: Record<string, unknown> = {};
     await Promise.all(
       canonicalIds.map(async (canonicalId) => {
@@ -474,7 +473,7 @@ export const modulesRoutes = routeModule({
         if (!moduleName) {
           throw new Error(`getResourceValues: "${canonicalId}" is not a canonical id`);
         }
-        const value = await this.db.getModuleStorageValue(applicationId, moduleName, `state:${canonicalId}`);
+        const value = await this.db.getModuleStorageValue(moduleName, `state:${canonicalId}`);
         values[canonicalId] = value ?? null;
       })
     );

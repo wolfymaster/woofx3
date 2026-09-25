@@ -119,15 +119,8 @@ async fn setup() -> Result<AppContext> {
         );
 
         // Resource-instance lifecycle (`ctx.resources.*`) and module storage
-        // (`ctx.storage.*`) — both backed by db-proxy via Twirp. Bound with
-        // the engine's own applicationId: today one barkloader process
-        // serves exactly one application, so a single startup-time value
-        // (rather than a per-invocation one) correctly scopes both.
+        // (`ctx.storage.*`) — both backed by db-proxy via Twirp.
         let resource_proxy_url = get_config_value("databaseProxyUrl", "");
-        let application_id = get_config_value("applicationId", "");
-        if application_id.is_empty() {
-            warn!("applicationId not configured; ctx.resources/ctx.storage calls will be unscoped");
-        }
         if !resource_proxy_url.is_empty() {
             info!(
                 "Wiring HttpResourceClient/HttpStorageClient against db-proxy {}",
@@ -137,7 +130,7 @@ async fn setup() -> Result<AppContext> {
                 HttpResourceClient::new(resource_proxy_url.clone()).with_request_context(
                     DbRequestContext {
                         client_id: String::new(),
-                        application_id: application_id.clone(),
+                        application_id: String::new(),
                         module_key: String::new(),
                     },
                 ),
@@ -147,7 +140,7 @@ async fn setup() -> Result<AppContext> {
                     resource_proxy_url.clone(),
                 ),
             );
-            ctx.storage = Arc::new(HttpStorageClient::new(resource_proxy_url, application_id));
+            ctx.storage = Arc::new(HttpStorageClient::new(resource_proxy_url));
         } else {
             info!(
                 "databaseProxyUrl not set in .woofx3.json; using noop resource, settings, and storage clients"

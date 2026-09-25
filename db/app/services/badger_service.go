@@ -32,6 +32,16 @@ func (s *BadgerService) Connect(ctx context.Context, appCtx *runtime.Application
 		return err
 	}
 
+	// Before anything is served, so no reader ever sees the legacy layout.
+	moved, err := MigrateStorageKeys(db)
+	if err != nil {
+		db.Close()
+		return err
+	}
+	if moved > 0 {
+		s.logger.Info("Moved module storage to the namespace-and-key layout", "keys", moved)
+	}
+
 	s.db = db
 	s.SetClient(db)
 

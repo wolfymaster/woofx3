@@ -23,17 +23,16 @@ const (
 
 // Storage item with metadata.
 //
-// A value is addressed by (application_id, namespace, key). The namespace is
-// the owning module's manifest id, so two modules using the same key never see
-// each other's values; it is required on every read and write.
+// A value is addressed by (namespace, key). The namespace is the owning
+// module's manifest id, so two modules using the same key never see each
+// other's values; it is required on every read and write.
 type StorageItem struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
-	CreatedAt     int64                  `protobuf:"varint,3,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // Unix timestamp in seconds
-	ExpiresAt     int64                  `protobuf:"varint,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // 0 means never expires
-	Namespace     string                 `protobuf:"bytes,5,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,6,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Key       string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value     string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	CreatedAt int64                  `protobuf:"varint,3,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // Unix timestamp in seconds
+	ExpiresAt int64                  `protobuf:"varint,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // 0 means never expires
+	Namespace string                 `protobuf:"bytes,5,opt,name=namespace,proto3" json:"namespace,omitempty"`
 	// Drop this key when the stream *session* ends. Not the same as the stream
 	// going offline: a session spans dropouts, so clearing when the broadcast
 	// stops would wipe exactly the state a brief reconnect is meant to preserve.
@@ -108,13 +107,6 @@ func (x *StorageItem) GetNamespace() string {
 	return ""
 }
 
-func (x *StorageItem) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
 func (x *StorageItem) GetClearOnSessionEnd() bool {
 	if x != nil {
 		return x.ClearOnSessionEnd
@@ -126,7 +118,6 @@ func (x *StorageItem) GetClearOnSessionEnd() bool {
 type GetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	Namespace     string                 `protobuf:"bytes,3,opt,name=namespace,proto3" json:"namespace,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -165,13 +156,6 @@ func (*GetRequest) Descriptor() ([]byte, []int) {
 func (x *GetRequest) GetKey() string {
 	if x != nil {
 		return x.Key
-	}
-	return ""
-}
-
-func (x *GetRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -430,7 +414,6 @@ func (x *CompareAndSetResponse) GetCurrent() *StorageItem {
 type DeleteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	Namespace     string                 `protobuf:"bytes,3,opt,name=namespace,proto3" json:"namespace,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -469,13 +452,6 @@ func (*DeleteRequest) Descriptor() ([]byte, []int) {
 func (x *DeleteRequest) GetKey() string {
 	if x != nil {
 		return x.Key
-	}
-	return ""
-}
-
-func (x *DeleteRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -527,7 +503,6 @@ func (*DeleteResponse) Descriptor() ([]byte, []int) {
 type ClearNamespaceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -565,13 +540,6 @@ func (*ClearNamespaceRequest) Descriptor() ([]byte, []int) {
 func (x *ClearNamespaceRequest) GetNamespace() string {
 	if x != nil {
 		return x.Namespace
-	}
-	return ""
-}
-
-func (x *ClearNamespaceRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
 	}
 	return ""
 }
@@ -615,7 +583,6 @@ func (*ClearNamespaceResponse) Descriptor() ([]byte, []int) {
 // Clear all expired keys
 type ClearExpiredRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -648,13 +615,6 @@ func (x *ClearExpiredRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ClearExpiredRequest.ProtoReflect.Descriptor instead.
 func (*ClearExpiredRequest) Descriptor() ([]byte, []int) {
 	return file_storage_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *ClearExpiredRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
 }
 
 type ClearExpiredResponse struct {
@@ -693,98 +653,16 @@ func (*ClearExpiredResponse) Descriptor() ([]byte, []int) {
 	return file_storage_proto_rawDescGZIP(), []int{12}
 }
 
-// Clear all keys for an application
-type ClearAllForApplicationRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ClearAllForApplicationRequest) Reset() {
-	*x = ClearAllForApplicationRequest{}
-	mi := &file_storage_proto_msgTypes[13]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ClearAllForApplicationRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ClearAllForApplicationRequest) ProtoMessage() {}
-
-func (x *ClearAllForApplicationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_proto_msgTypes[13]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ClearAllForApplicationRequest.ProtoReflect.Descriptor instead.
-func (*ClearAllForApplicationRequest) Descriptor() ([]byte, []int) {
-	return file_storage_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *ClearAllForApplicationRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
-}
-
-type ClearAllForApplicationResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ClearAllForApplicationResponse) Reset() {
-	*x = ClearAllForApplicationResponse{}
-	mi := &file_storage_proto_msgTypes[14]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ClearAllForApplicationResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ClearAllForApplicationResponse) ProtoMessage() {}
-
-func (x *ClearAllForApplicationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_proto_msgTypes[14]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ClearAllForApplicationResponse.ProtoReflect.Descriptor instead.
-func (*ClearAllForApplicationResponse) Descriptor() ([]byte, []int) {
-	return file_storage_proto_rawDescGZIP(), []int{14}
-}
-
 // Clear every key flagged `clear_on_session_end`
 type ClearSessionScopedRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ClearSessionScopedRequest) Reset() {
 	*x = ClearSessionScopedRequest{}
-	mi := &file_storage_proto_msgTypes[15]
+	mi := &file_storage_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -796,7 +674,7 @@ func (x *ClearSessionScopedRequest) String() string {
 func (*ClearSessionScopedRequest) ProtoMessage() {}
 
 func (x *ClearSessionScopedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_proto_msgTypes[15]
+	mi := &file_storage_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -809,14 +687,7 @@ func (x *ClearSessionScopedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearSessionScopedRequest.ProtoReflect.Descriptor instead.
 func (*ClearSessionScopedRequest) Descriptor() ([]byte, []int) {
-	return file_storage_proto_rawDescGZIP(), []int{15}
-}
-
-func (x *ClearSessionScopedRequest) GetApplicationId() string {
-	if x != nil {
-		return x.ApplicationId
-	}
-	return ""
+	return file_storage_proto_rawDescGZIP(), []int{13}
 }
 
 type ClearSessionScopedResponse struct {
@@ -835,7 +706,7 @@ type ClearSessionScopedResponse struct {
 
 func (x *ClearSessionScopedResponse) Reset() {
 	*x = ClearSessionScopedResponse{}
-	mi := &file_storage_proto_msgTypes[16]
+	mi := &file_storage_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -847,7 +718,7 @@ func (x *ClearSessionScopedResponse) String() string {
 func (*ClearSessionScopedResponse) ProtoMessage() {}
 
 func (x *ClearSessionScopedResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_storage_proto_msgTypes[16]
+	mi := &file_storage_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -860,7 +731,7 @@ func (x *ClearSessionScopedResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearSessionScopedResponse.ProtoReflect.Descriptor instead.
 func (*ClearSessionScopedResponse) Descriptor() ([]byte, []int) {
-	return file_storage_proto_rawDescGZIP(), []int{16}
+	return file_storage_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ClearSessionScopedResponse) GetCleared() int32 {
@@ -881,7 +752,7 @@ var File_storage_proto protoreflect.FileDescriptor
 
 const file_storage_proto_rawDesc = "" +
 	"\n" +
-	"\rstorage.proto\x12\astorage\"\xe9\x01\n" +
+	"\rstorage.proto\x12\astorage\"\xd8\x01\n" +
 	"\vStorageItem\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\x12\x1d\n" +
@@ -889,14 +760,12 @@ const file_storage_proto_rawDesc = "" +
 	"created_at\x18\x03 \x01(\x03R\tcreatedAt\x12\x1d\n" +
 	"\n" +
 	"expires_at\x18\x04 \x01(\x03R\texpiresAt\x12\x1c\n" +
-	"\tnamespace\x18\x05 \x01(\tR\tnamespace\x12%\n" +
-	"\x0eapplication_id\x18\x06 \x01(\tR\rapplicationId\x12/\n" +
-	"\x14clear_on_session_end\x18\a \x01(\bR\x11clearOnSessionEnd\"c\n" +
+	"\tnamespace\x18\x05 \x01(\tR\tnamespace\x12/\n" +
+	"\x14clear_on_session_end\x18\a \x01(\bR\x11clearOnSessionEndJ\x04\b\x06\x10\aR\x0eapplication_id\"R\n" +
 	"\n" +
 	"GetRequest\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x1c\n" +
-	"\tnamespace\x18\x03 \x01(\tR\tnamespace\"7\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x1c\n" +
+	"\tnamespace\x18\x03 \x01(\tR\tnamespaceJ\x04\b\x02\x10\x03R\x0eapplication_id\"7\n" +
 	"\vGetResponse\x12(\n" +
 	"\x04item\x18\x01 \x01(\v2\x14.storage.StorageItemR\x04item\"6\n" +
 	"\n" +
@@ -909,35 +778,27 @@ const file_storage_proto_rawDesc = "" +
 	"\rexpect_absent\x18\x03 \x01(\bR\fexpectAbsent\"a\n" +
 	"\x15CompareAndSetResponse\x12\x18\n" +
 	"\aswapped\x18\x01 \x01(\bR\aswapped\x12.\n" +
-	"\acurrent\x18\x02 \x01(\v2\x14.storage.StorageItemR\acurrent\"f\n" +
+	"\acurrent\x18\x02 \x01(\v2\x14.storage.StorageItemR\acurrent\"U\n" +
 	"\rDeleteRequest\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x1c\n" +
-	"\tnamespace\x18\x03 \x01(\tR\tnamespace\"\x10\n" +
-	"\x0eDeleteResponse\"\\\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x1c\n" +
+	"\tnamespace\x18\x03 \x01(\tR\tnamespaceJ\x04\b\x02\x10\x03R\x0eapplication_id\"\x10\n" +
+	"\x0eDeleteResponse\"K\n" +
 	"\x15ClearNamespaceRequest\x12\x1c\n" +
-	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12%\n" +
-	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\"\x18\n" +
-	"\x16ClearNamespaceResponse\"<\n" +
-	"\x13ClearExpiredRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\"\x16\n" +
-	"\x14ClearExpiredResponse\"F\n" +
-	"\x1dClearAllForApplicationRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\" \n" +
-	"\x1eClearAllForApplicationResponse\"B\n" +
-	"\x19ClearSessionScopedRequest\x12%\n" +
-	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\"q\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespaceJ\x04\b\x02\x10\x03R\x0eapplication_id\"\x18\n" +
+	"\x16ClearNamespaceResponse\"+\n" +
+	"\x13ClearExpiredRequestJ\x04\b\x01\x10\x02R\x0eapplication_id\"\x16\n" +
+	"\x14ClearExpiredResponse\"1\n" +
+	"\x19ClearSessionScopedRequestJ\x04\b\x01\x10\x02R\x0eapplication_id\"q\n" +
 	"\x1aClearSessionScopedResponse\x12\x18\n" +
 	"\acleared\x18\x01 \x01(\x05R\acleared\x129\n" +
-	"\rcleared_items\x18\x02 \x03(\v2\x14.storage.StorageItemR\fclearedItems2\xf9\x04\n" +
+	"\rcleared_items\x18\x02 \x03(\v2\x14.storage.StorageItemR\fclearedItems2\x8c\x04\n" +
 	"\x0eStorageService\x122\n" +
 	"\x03Get\x12\x13.storage.GetRequest\x1a\x14.storage.GetResponse\"\x00\x122\n" +
 	"\x03Set\x12\x13.storage.SetRequest\x1a\x14.storage.SetResponse\"\x00\x12P\n" +
 	"\rCompareAndSet\x12\x1d.storage.CompareAndSetRequest\x1a\x1e.storage.CompareAndSetResponse\"\x00\x12;\n" +
 	"\x06Delete\x12\x16.storage.DeleteRequest\x1a\x17.storage.DeleteResponse\"\x00\x12S\n" +
 	"\x0eClearNamespace\x12\x1e.storage.ClearNamespaceRequest\x1a\x1f.storage.ClearNamespaceResponse\"\x00\x12M\n" +
-	"\fClearExpired\x12\x1c.storage.ClearExpiredRequest\x1a\x1d.storage.ClearExpiredResponse\"\x00\x12k\n" +
-	"\x16ClearAllForApplication\x12&.storage.ClearAllForApplicationRequest\x1a'.storage.ClearAllForApplicationResponse\"\x00\x12_\n" +
+	"\fClearExpired\x12\x1c.storage.ClearExpiredRequest\x1a\x1d.storage.ClearExpiredResponse\"\x00\x12_\n" +
 	"\x12ClearSessionScoped\x12\".storage.ClearSessionScopedRequest\x1a#.storage.ClearSessionScopedResponse\"\x00B)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
@@ -952,25 +813,23 @@ func file_storage_proto_rawDescGZIP() []byte {
 	return file_storage_proto_rawDescData
 }
 
-var file_storage_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_storage_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_storage_proto_goTypes = []any{
-	(*StorageItem)(nil),                    // 0: storage.StorageItem
-	(*GetRequest)(nil),                     // 1: storage.GetRequest
-	(*GetResponse)(nil),                    // 2: storage.GetResponse
-	(*SetRequest)(nil),                     // 3: storage.SetRequest
-	(*SetResponse)(nil),                    // 4: storage.SetResponse
-	(*CompareAndSetRequest)(nil),           // 5: storage.CompareAndSetRequest
-	(*CompareAndSetResponse)(nil),          // 6: storage.CompareAndSetResponse
-	(*DeleteRequest)(nil),                  // 7: storage.DeleteRequest
-	(*DeleteResponse)(nil),                 // 8: storage.DeleteResponse
-	(*ClearNamespaceRequest)(nil),          // 9: storage.ClearNamespaceRequest
-	(*ClearNamespaceResponse)(nil),         // 10: storage.ClearNamespaceResponse
-	(*ClearExpiredRequest)(nil),            // 11: storage.ClearExpiredRequest
-	(*ClearExpiredResponse)(nil),           // 12: storage.ClearExpiredResponse
-	(*ClearAllForApplicationRequest)(nil),  // 13: storage.ClearAllForApplicationRequest
-	(*ClearAllForApplicationResponse)(nil), // 14: storage.ClearAllForApplicationResponse
-	(*ClearSessionScopedRequest)(nil),      // 15: storage.ClearSessionScopedRequest
-	(*ClearSessionScopedResponse)(nil),     // 16: storage.ClearSessionScopedResponse
+	(*StorageItem)(nil),                // 0: storage.StorageItem
+	(*GetRequest)(nil),                 // 1: storage.GetRequest
+	(*GetResponse)(nil),                // 2: storage.GetResponse
+	(*SetRequest)(nil),                 // 3: storage.SetRequest
+	(*SetResponse)(nil),                // 4: storage.SetResponse
+	(*CompareAndSetRequest)(nil),       // 5: storage.CompareAndSetRequest
+	(*CompareAndSetResponse)(nil),      // 6: storage.CompareAndSetResponse
+	(*DeleteRequest)(nil),              // 7: storage.DeleteRequest
+	(*DeleteResponse)(nil),             // 8: storage.DeleteResponse
+	(*ClearNamespaceRequest)(nil),      // 9: storage.ClearNamespaceRequest
+	(*ClearNamespaceResponse)(nil),     // 10: storage.ClearNamespaceResponse
+	(*ClearExpiredRequest)(nil),        // 11: storage.ClearExpiredRequest
+	(*ClearExpiredResponse)(nil),       // 12: storage.ClearExpiredResponse
+	(*ClearSessionScopedRequest)(nil),  // 13: storage.ClearSessionScopedRequest
+	(*ClearSessionScopedResponse)(nil), // 14: storage.ClearSessionScopedResponse
 }
 var file_storage_proto_depIdxs = []int32{
 	0,  // 0: storage.GetResponse.item:type_name -> storage.StorageItem
@@ -984,18 +843,16 @@ var file_storage_proto_depIdxs = []int32{
 	7,  // 8: storage.StorageService.Delete:input_type -> storage.DeleteRequest
 	9,  // 9: storage.StorageService.ClearNamespace:input_type -> storage.ClearNamespaceRequest
 	11, // 10: storage.StorageService.ClearExpired:input_type -> storage.ClearExpiredRequest
-	13, // 11: storage.StorageService.ClearAllForApplication:input_type -> storage.ClearAllForApplicationRequest
-	15, // 12: storage.StorageService.ClearSessionScoped:input_type -> storage.ClearSessionScopedRequest
-	2,  // 13: storage.StorageService.Get:output_type -> storage.GetResponse
-	4,  // 14: storage.StorageService.Set:output_type -> storage.SetResponse
-	6,  // 15: storage.StorageService.CompareAndSet:output_type -> storage.CompareAndSetResponse
-	8,  // 16: storage.StorageService.Delete:output_type -> storage.DeleteResponse
-	10, // 17: storage.StorageService.ClearNamespace:output_type -> storage.ClearNamespaceResponse
-	12, // 18: storage.StorageService.ClearExpired:output_type -> storage.ClearExpiredResponse
-	14, // 19: storage.StorageService.ClearAllForApplication:output_type -> storage.ClearAllForApplicationResponse
-	16, // 20: storage.StorageService.ClearSessionScoped:output_type -> storage.ClearSessionScopedResponse
-	13, // [13:21] is the sub-list for method output_type
-	5,  // [5:13] is the sub-list for method input_type
+	13, // 11: storage.StorageService.ClearSessionScoped:input_type -> storage.ClearSessionScopedRequest
+	2,  // 12: storage.StorageService.Get:output_type -> storage.GetResponse
+	4,  // 13: storage.StorageService.Set:output_type -> storage.SetResponse
+	6,  // 14: storage.StorageService.CompareAndSet:output_type -> storage.CompareAndSetResponse
+	8,  // 15: storage.StorageService.Delete:output_type -> storage.DeleteResponse
+	10, // 16: storage.StorageService.ClearNamespace:output_type -> storage.ClearNamespaceResponse
+	12, // 17: storage.StorageService.ClearExpired:output_type -> storage.ClearExpiredResponse
+	14, // 18: storage.StorageService.ClearSessionScoped:output_type -> storage.ClearSessionScopedResponse
+	12, // [12:19] is the sub-list for method output_type
+	5,  // [5:12] is the sub-list for method input_type
 	5,  // [5:5] is the sub-list for extension type_name
 	5,  // [5:5] is the sub-list for extension extendee
 	0,  // [0:5] is the sub-list for field type_name
@@ -1012,7 +869,7 @@ func file_storage_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_storage_proto_rawDesc), len(file_storage_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

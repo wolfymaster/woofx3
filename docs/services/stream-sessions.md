@@ -245,9 +245,8 @@ which is the [engine integrity](./engine-integrity.md) rule working as intended
 
 ### Storage is per module
 
-The storage key is `<application_id>\x00<namespace>\x00<key>`, where the
-namespace is the owning module's manifest id, so two modules writing `"count"`
-hold two separate values. Every read and write must name its namespace; the
+The storage key is `<namespace>\x00<key>`, where the namespace is the owning
+module's manifest id, so two modules writing `"count"` hold two separate values. Every read and write must name its namespace; the
 sandbox supplies the calling module's, never one the module chooses.
 
 `expires_at` is still never populated, so `ClearExpired` has nothing to match.

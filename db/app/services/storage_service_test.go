@@ -25,12 +25,12 @@ func TestStorageService_GetSet_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := svc.Set(ctx, &client.SetRequest{
-		Item: &client.StorageItem{Key: "counter:count", Value: "1", ApplicationId: "app-1", Namespace: "mod"},
+		Item: &client.StorageItem{Key: "counter:count", Value: "1", Namespace: "mod"},
 	}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
-	resp, err := svc.Get(ctx, &client.GetRequest{Key: "counter:count", ApplicationId: "app-1", Namespace: "mod"})
+	resp, err := svc.Get(ctx, &client.GetRequest{Key: "counter:count", Namespace: "mod"})
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -46,11 +46,11 @@ func TestStorageService_GetSet_RoundTrip(t *testing.T) {
 
 	// Second write must be visible to a subsequent read (the increment.js pattern).
 	if _, err := svc.Set(ctx, &client.SetRequest{
-		Item: &client.StorageItem{Key: "counter:count", Value: "2", ApplicationId: "app-1", Namespace: "mod"},
+		Item: &client.StorageItem{Key: "counter:count", Value: "2", Namespace: "mod"},
 	}); err != nil {
 		t.Fatalf("Set #2: %v", err)
 	}
-	resp, err = svc.Get(ctx, &client.GetRequest{Key: "counter:count", ApplicationId: "app-1", Namespace: "mod"})
+	resp, err = svc.Get(ctx, &client.GetRequest{Key: "counter:count", Namespace: "mod"})
 	if err != nil {
 		t.Fatalf("Get #2: %v", err)
 	}
@@ -61,31 +61,12 @@ func TestStorageService_GetSet_RoundTrip(t *testing.T) {
 
 func TestStorageService_Get_MissingKeyReturnsNilItem(t *testing.T) {
 	svc := newStorageTestService(t)
-	resp, err := svc.Get(context.Background(), &client.GetRequest{Key: "nope", ApplicationId: "app-1", Namespace: "mod"})
+	resp, err := svc.Get(context.Background(), &client.GetRequest{Key: "nope", Namespace: "mod"})
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 	if resp.Item != nil {
 		t.Fatalf("expected nil item for missing key, got %+v", resp.Item)
-	}
-}
-
-func TestStorageService_ScopedPerApplication(t *testing.T) {
-	svc := newStorageTestService(t)
-	ctx := context.Background()
-
-	if _, err := svc.Set(ctx, &client.SetRequest{
-		Item: &client.StorageItem{Key: "shared-key", Value: "app-1-value", ApplicationId: "app-1", Namespace: "mod"},
-	}); err != nil {
-		t.Fatalf("Set: %v", err)
-	}
-
-	resp, err := svc.Get(ctx, &client.GetRequest{Key: "shared-key", ApplicationId: "app-2", Namespace: "mod"})
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if resp.Item != nil {
-		t.Fatalf("expected app-2 to not see app-1's value, got %+v", resp.Item)
 	}
 }
 
@@ -95,12 +76,12 @@ func TestStorageService_ExpiredItemNotReturned(t *testing.T) {
 	past := time.Now().Add(-time.Hour).Unix()
 
 	if _, err := svc.Set(ctx, &client.SetRequest{
-		Item: &client.StorageItem{Key: "expiring", Value: "x", ApplicationId: "app-1", ExpiresAt: past, Namespace: "mod"},
+		Item: &client.StorageItem{Key: "expiring", Value: "x", ExpiresAt: past, Namespace: "mod"},
 	}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
-	resp, err := svc.Get(ctx, &client.GetRequest{Key: "expiring", ApplicationId: "app-1", Namespace: "mod"})
+	resp, err := svc.Get(ctx, &client.GetRequest{Key: "expiring", Namespace: "mod"})
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -114,12 +95,12 @@ func TestStorageService_ExpiresAtZeroNeverExpires(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := svc.Set(ctx, &client.SetRequest{
-		Item: &client.StorageItem{Key: "persistent", Value: "x", ApplicationId: "app-1", ExpiresAt: 0, Namespace: "mod"},
+		Item: &client.StorageItem{Key: "persistent", Value: "x", ExpiresAt: 0, Namespace: "mod"},
 	}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
-	resp, err := svc.Get(ctx, &client.GetRequest{Key: "persistent", ApplicationId: "app-1", Namespace: "mod"})
+	resp, err := svc.Get(ctx, &client.GetRequest{Key: "persistent", Namespace: "mod"})
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -133,14 +114,14 @@ func TestStorageService_Delete(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := svc.Set(ctx, &client.SetRequest{
-		Item: &client.StorageItem{Key: "to-delete", Value: "x", ApplicationId: "app-1", Namespace: "mod"},
+		Item: &client.StorageItem{Key: "to-delete", Value: "x", Namespace: "mod"},
 	}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	if _, err := svc.Delete(ctx, &client.DeleteRequest{Key: "to-delete", ApplicationId: "app-1", Namespace: "mod"}); err != nil {
+	if _, err := svc.Delete(ctx, &client.DeleteRequest{Key: "to-delete", Namespace: "mod"}); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	resp, err := svc.Get(ctx, &client.GetRequest{Key: "to-delete", ApplicationId: "app-1", Namespace: "mod"})
+	resp, err := svc.Get(ctx, &client.GetRequest{Key: "to-delete", Namespace: "mod"})
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -154,56 +135,27 @@ func TestStorageService_ClearNamespace(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := svc.Set(ctx, &client.SetRequest{
-		Item: &client.StorageItem{Key: "a", Value: "1", ApplicationId: "app-1", Namespace: "ns-a"},
+		Item: &client.StorageItem{Key: "a", Value: "1", Namespace: "ns-a"},
 	}); err != nil {
 		t.Fatalf("Set a: %v", err)
 	}
 	if _, err := svc.Set(ctx, &client.SetRequest{
-		Item: &client.StorageItem{Key: "b", Value: "2", ApplicationId: "app-1", Namespace: "ns-b"},
+		Item: &client.StorageItem{Key: "b", Value: "2", Namespace: "ns-b"},
 	}); err != nil {
 		t.Fatalf("Set b: %v", err)
 	}
 
-	if _, err := svc.ClearNamespace(ctx, &client.ClearNamespaceRequest{Namespace: "ns-a", ApplicationId: "app-1"}); err != nil {
+	if _, err := svc.ClearNamespace(ctx, &client.ClearNamespaceRequest{Namespace: "ns-a"}); err != nil {
 		t.Fatalf("ClearNamespace: %v", err)
 	}
 
-	respA, _ := svc.Get(ctx, &client.GetRequest{Key: "a", ApplicationId: "app-1", Namespace: "ns-a"})
+	respA, _ := svc.Get(ctx, &client.GetRequest{Key: "a", Namespace: "ns-a"})
 	if respA.Item != nil {
 		t.Fatalf("expected ns-a item cleared, got %+v", respA.Item)
 	}
-	respB, _ := svc.Get(ctx, &client.GetRequest{Key: "b", ApplicationId: "app-1", Namespace: "ns-b"})
+	respB, _ := svc.Get(ctx, &client.GetRequest{Key: "b", Namespace: "ns-b"})
 	if respB.Item == nil {
 		t.Fatalf("expected ns-b item to survive clearing a different namespace")
-	}
-}
-
-func TestStorageService_ClearAllForApplication(t *testing.T) {
-	svc := newStorageTestService(t)
-	ctx := context.Background()
-
-	if _, err := svc.Set(ctx, &client.SetRequest{
-		Item: &client.StorageItem{Key: "k", Value: "1", ApplicationId: "app-1", Namespace: "mod"},
-	}); err != nil {
-		t.Fatalf("Set app-1: %v", err)
-	}
-	if _, err := svc.Set(ctx, &client.SetRequest{
-		Item: &client.StorageItem{Key: "k", Value: "1", ApplicationId: "app-2", Namespace: "mod"},
-	}); err != nil {
-		t.Fatalf("Set app-2: %v", err)
-	}
-
-	if _, err := svc.ClearAllForApplication(ctx, &client.ClearAllForApplicationRequest{ApplicationId: "app-1"}); err != nil {
-		t.Fatalf("ClearAllForApplication: %v", err)
-	}
-
-	resp1, _ := svc.Get(ctx, &client.GetRequest{Key: "k", ApplicationId: "app-1", Namespace: "mod"})
-	if resp1.Item != nil {
-		t.Fatalf("expected app-1 cleared, got %+v", resp1.Item)
-	}
-	resp2, _ := svc.Get(ctx, &client.GetRequest{Key: "k", ApplicationId: "app-2", Namespace: "mod"})
-	if resp2.Item == nil {
-		t.Fatalf("expected app-2 to be untouched by clearing app-1")
 	}
 }
 
@@ -212,17 +164,17 @@ func TestStorageService_ClearSessionScoped(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := svc.Set(ctx, &client.SetRequest{
-		Item: &client.StorageItem{Key: "ephemeral", Value: "1", ApplicationId: "app-1", ClearOnSessionEnd: true, Namespace: "mod"},
+		Item: &client.StorageItem{Key: "ephemeral", Value: "1", ClearOnSessionEnd: true, Namespace: "mod"},
 	}); err != nil {
 		t.Fatalf("Set ephemeral: %v", err)
 	}
 	if _, err := svc.Set(ctx, &client.SetRequest{
-		Item: &client.StorageItem{Key: "durable", Value: "2", ApplicationId: "app-1", Namespace: "mod"},
+		Item: &client.StorageItem{Key: "durable", Value: "2", Namespace: "mod"},
 	}); err != nil {
 		t.Fatalf("Set durable: %v", err)
 	}
 
-	resp, err := svc.ClearSessionScoped(ctx, &client.ClearSessionScopedRequest{ApplicationId: "app-1"})
+	resp, err := svc.ClearSessionScoped(ctx, &client.ClearSessionScopedRequest{})
 	if err != nil {
 		t.Fatalf("ClearSessionScoped: %v", err)
 	}
@@ -230,48 +182,22 @@ func TestStorageService_ClearSessionScoped(t *testing.T) {
 		t.Errorf("Cleared = %d, want 1", resp.Cleared)
 	}
 
-	ephemeral, _ := svc.Get(ctx, &client.GetRequest{Key: "ephemeral", ApplicationId: "app-1", Namespace: "mod"})
+	ephemeral, _ := svc.Get(ctx, &client.GetRequest{Key: "ephemeral", Namespace: "mod"})
 	if ephemeral.Item != nil {
 		t.Errorf("expected session-scoped item cleared, got %+v", ephemeral.Item)
 	}
 	// The whole point of the flag: everything not marked survives the boundary.
-	durable, _ := svc.Get(ctx, &client.GetRequest{Key: "durable", ApplicationId: "app-1", Namespace: "mod"})
+	durable, _ := svc.Get(ctx, &client.GetRequest{Key: "durable", Namespace: "mod"})
 	if durable.Item == nil {
 		t.Error("expected unflagged item to survive a session boundary")
 	}
 }
 
-func TestStorageService_ClearSessionScoped_LeavesOtherApplicationsAlone(t *testing.T) {
+func TestStorageService_Get_RequiresKey(t *testing.T) {
 	svc := newStorageTestService(t)
-	ctx := context.Background()
 
-	for _, app := range []string{"app-1", "app-2"} {
-		if _, err := svc.Set(ctx, &client.SetRequest{
-			Item: &client.StorageItem{Key: "k", Value: "1", ApplicationId: app, ClearOnSessionEnd: true, Namespace: "mod"},
-		}); err != nil {
-			t.Fatalf("Set %s: %v", app, err)
-		}
-	}
-
-	if _, err := svc.ClearSessionScoped(ctx, &client.ClearSessionScopedRequest{ApplicationId: "app-1"}); err != nil {
-		t.Fatalf("ClearSessionScoped: %v", err)
-	}
-
-	other, _ := svc.Get(ctx, &client.GetRequest{Key: "k", ApplicationId: "app-2", Namespace: "mod"})
-	if other.Item == nil {
-		t.Error("expected app-2 to be untouched by clearing app-1")
-	}
-}
-
-func TestStorageService_Get_RequiresKeyAndApplicationId(t *testing.T) {
-	svc := newStorageTestService(t)
-	ctx := context.Background()
-
-	if _, err := svc.Get(ctx, &client.GetRequest{Key: "", ApplicationId: "app-1", Namespace: "mod"}); err == nil {
+	if _, err := svc.Get(context.Background(), &client.GetRequest{Key: "", Namespace: "mod"}); err == nil {
 		t.Fatalf("expected error for missing key")
-	}
-	if _, err := svc.Get(ctx, &client.GetRequest{Key: "k", ApplicationId: "", Namespace: "mod"}); err == nil {
-		t.Fatalf("expected error for missing application_id")
 	}
 }
 
@@ -283,14 +209,14 @@ func TestStorageService_ScopedPerModule(t *testing.T) {
 
 	for module, value := range map[string]string{"woofx3": "1", "other_module": "2"} {
 		if _, err := svc.Set(ctx, &client.SetRequest{
-			Item: &client.StorageItem{Key: "state", Value: value, ApplicationId: "app-1", Namespace: module},
+			Item: &client.StorageItem{Key: "state", Value: value, Namespace: module},
 		}); err != nil {
 			t.Fatalf("Set %s: %v", module, err)
 		}
 	}
 
 	for module, want := range map[string]string{"woofx3": "1", "other_module": "2"} {
-		resp, err := svc.Get(ctx, &client.GetRequest{Key: "state", ApplicationId: "app-1", Namespace: module})
+		resp, err := svc.Get(ctx, &client.GetRequest{Key: "state", Namespace: module})
 		if err != nil {
 			t.Fatalf("Get %s: %v", module, err)
 		}
@@ -304,11 +230,11 @@ func TestStorageService_RequiresNamespace(t *testing.T) {
 	svc := newStorageTestService(t)
 	ctx := context.Background()
 
-	if _, err := svc.Get(ctx, &client.GetRequest{Key: "k", ApplicationId: "app-1"}); err == nil {
+	if _, err := svc.Get(ctx, &client.GetRequest{Key: "k"}); err == nil {
 		t.Error("Get accepted a read with no namespace")
 	}
 	if _, err := svc.Set(ctx, &client.SetRequest{
-		Item: &client.StorageItem{Key: "k", Value: "1", ApplicationId: "app-1"},
+		Item: &client.StorageItem{Key: "k", Value: "1"},
 	}); err == nil {
 		t.Error("Set accepted a write with no namespace")
 	}
@@ -316,7 +242,7 @@ func TestStorageService_RequiresNamespace(t *testing.T) {
 
 func TestStorageService_CompareAndSet(t *testing.T) {
 	address := func(value string) *client.StorageItem {
-		return &client.StorageItem{Key: "count", Value: value, ApplicationId: "app-1", Namespace: "woofx3"}
+		return &client.StorageItem{Key: "count", Value: value, Namespace: "woofx3"}
 	}
 
 	t.Run("creates a value only when the key is empty", func(t *testing.T) {
@@ -381,7 +307,7 @@ func TestStorageService_CompareAndSet(t *testing.T) {
 		for range writers {
 			go func() {
 				for {
-					current, err := svc.Get(ctx, &client.GetRequest{Key: "count", ApplicationId: "app-1", Namespace: "woofx3"})
+					current, err := svc.Get(ctx, &client.GetRequest{Key: "count", Namespace: "woofx3"})
 					if err != nil {
 						done <- err
 						return
@@ -409,7 +335,7 @@ func TestStorageService_CompareAndSet(t *testing.T) {
 			}
 		}
 
-		final, _ := svc.Get(ctx, &client.GetRequest{Key: "count", ApplicationId: "app-1", Namespace: "woofx3"})
+		final, _ := svc.Get(ctx, &client.GetRequest{Key: "count", Namespace: "woofx3"})
 		if final.Item.GetValue() != fmt.Sprint(writers) {
 			t.Errorf("final = %s, want %d: an increment was lost", final.Item.GetValue(), writers)
 		}
@@ -422,12 +348,12 @@ func TestStorageService_ClearSessionScoped_ReportsWhatItCleared(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := svc.Set(ctx, &client.SetRequest{
-		Item: &client.StorageItem{Key: "state:woofx3:counter:deaths", Value: "3", ApplicationId: "app-1", Namespace: "woofx3", ClearOnSessionEnd: true},
+		Item: &client.StorageItem{Key: "state:woofx3:counter:deaths", Value: "3", Namespace: "woofx3", ClearOnSessionEnd: true},
 	}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
-	resp, err := svc.ClearSessionScoped(ctx, &client.ClearSessionScopedRequest{ApplicationId: "app-1"})
+	resp, err := svc.ClearSessionScoped(ctx, &client.ClearSessionScopedRequest{})
 	if err != nil {
 		t.Fatalf("ClearSessionScoped: %v", err)
 	}

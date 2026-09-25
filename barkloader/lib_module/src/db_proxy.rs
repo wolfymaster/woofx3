@@ -1848,8 +1848,8 @@ pub async fn list_resource_instances_by_module(
 // Module storage (`ctx.storage.*`).
 //
 // Backs the CtxStorage sandbox host surface: a persistent KV store addressed
-// by (application_id, namespace, key), where the namespace is the owning
-// module's manifest id, so two modules using one key never share a value.
+// by (namespace, key), where the namespace is the owning module's manifest id,
+// so two modules using one key never share a value.
 // `value` here is always the JSON-encoded form of whatever the module stored;
 // encoding/decoding to/from serde_json::Value happens in the
 // HttpStorageClient bridge, not here.
@@ -1871,7 +1871,6 @@ struct GetStorageResponseJson {
 
 /// Where a stored value lives, and how it is kept.
 pub struct StorageAddress<'a> {
-    pub application_id: &'a str,
     pub namespace: &'a str,
     pub key: &'a str,
 }
@@ -1903,7 +1902,6 @@ pub async fn storage_get(
     let body = serde_json::json!({
         "key": address.key,
         "namespace": address.namespace,
-        "application_id": address.application_id,
     });
     let parsed: GetStorageResponseJson = post_storage(db_proxy_url, "Get", body)
         .await?
@@ -1925,7 +1923,6 @@ pub async fn storage_set(
             "key": address.key,
             "namespace": address.namespace,
             "value": value,
-            "application_id": address.application_id,
             "clear_on_session_end": clear_on_session_end,
         }
     });
@@ -1957,7 +1954,6 @@ pub async fn storage_compare_and_set(
             "key": address.key,
             "namespace": address.namespace,
             "value": value,
-            "application_id": address.application_id,
             "clear_on_session_end": clear_on_session_end,
         },
         "expected_value": expected.unwrap_or_default(),

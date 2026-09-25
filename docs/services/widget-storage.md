@@ -29,7 +29,7 @@ subscribe:  db-proxy ← module writes                        (module.storage.<m
    `GET /scene/{sceneId}/widget/{instanceId}/storage?key={key}`.
    Addressed by **placement**, not by module; see "Which module" below.
 3. sceneManager finds the placement on the scene, reads
-   `Storage.Get(applicationId, namespace = its module, key)`, and answers
+   `Storage.Get(namespace = its module, key)`, and answers
    `{ value }`. From then on it pushes every change to that key to the scene.
 4. The page keeps the value (`public/scene-manager/module-state.ts`) and sends
    it to every widget subscribed to the key through the bridge's
@@ -106,9 +106,6 @@ placement's module. So:
 - sceneManager reads through the placement, and takes the module from the scene
   it loaded, never from the request.
 
-Storage stays scoped by application too: the application comes from the
-overlay's own session, never from the request.
-
 ## Widgets do not write
 
 The protocol has no `storage.set`. A widget is a display; changing a value is an
@@ -122,9 +119,6 @@ something reports a widget event, which is the existing channel for that
 - **Alert layout widgets.** A widget playing in an alert is not a placement, so
   it has nothing to read through: `storage.get` answers `null` and subscriptions
   never fire (`alert-widget.ts`).
-- **More than one application per engine.** `module.storage.changed` carries no
-  application, because one barkloader serves one application. A change is
-  pushed to every connected scene that asked for the key.
 
 ## What this rules out
 

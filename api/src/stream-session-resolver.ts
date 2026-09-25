@@ -211,7 +211,7 @@ export class StreamSessionResolver {
    */
   private async clearSessionScopedStorage(endedSessionId: string): Promise<void> {
     try {
-      const cleared = await this.db.clearSessionScoped({ applicationId: this.applicationId });
+      const cleared = await this.db.clearSessionScoped({});
       this.logger.info("Cleared session-scoped module storage", { endedSessionId, cleared: cleared.length });
       await this.announceCleared(cleared);
     } catch (err) {

@@ -469,8 +469,8 @@ export class DbClient {
   }
 
   /** One module's stored value, decoded, or `undefined` when the key holds nothing. */
-  async getModuleStorageValue(applicationId: string, namespace: string, key: string): Promise<unknown> {
-    const response = await storage.Get({ applicationId, namespace, key }, this.config);
+  async getModuleStorageValue(namespace: string, key: string): Promise<unknown> {
+    const response = await storage.Get({ namespace, key }, this.config);
     // The generated decoder fills an absent `item` with an empty StorageItem,
     // so absence shows as a blank key rather than a missing field.
     if (!response.item || response.item.key === "") {
