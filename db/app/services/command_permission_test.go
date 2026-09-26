@@ -38,6 +38,7 @@ func newCommandPermFixture(t *testing.T) *commandPermFixture {
 			permissionRepo,
 			groupRepo,
 			enforcer,
+			nil,
 		),
 		groupSvc:  NewGroupService(groupRepo, permissionRepo, enforcer),
 		enforcer:  enforcer,

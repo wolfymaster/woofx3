@@ -44,6 +44,15 @@ func (r *CommandRepository) GetByCommand(command string) (*models.Command, error
 	return &cmd, err
 }
 
+// GetByOrigin retrieves the command a given creator registered under a name.
+func (r *CommandRepository) GetByOrigin(createdByType, createdByRef, command string) (*models.Command, error) {
+	var cmd models.Command
+	err := r.db.
+		Where("created_by_type = ? AND created_by_ref = ? AND command = ?", createdByType, createdByRef, command).
+		First(&cmd).Error
+	return &cmd, err
+}
+
 // GetAll retrieves all Commands
 func (r *CommandRepository) GetAll() ([]*models.Command, error) {
 	var cmds []*models.Command

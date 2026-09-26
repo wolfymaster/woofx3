@@ -51,6 +51,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { initModuleHandlers },
       { initOverlayTokenHandlers },
       { initSceneHandlers },
+      { initCommandHandlers },
       { StorageChangeEmitter },
       { StreamEventBroadcaster },
       { StreamSessionResolver },
@@ -74,6 +75,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./module-event-handlers"),
       import("./overlay-token-handlers"),
       import("./scene-event-handlers"),
+      import("./command-event-handlers"),
       import("./storage-change-emitter"),
       import("./stream-event-broadcaster"),
       import("./stream-session-resolver"),
@@ -189,6 +191,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       await initModuleHandlers(natsClient, webhookClient, logger);
       await initWorkflowHandlers(natsClient, webhookClient, logger);
       await initSceneHandlers(natsClient, webhookClient, logger);
+      await initCommandHandlers(natsClient, webhookClient, logger);
       await initAlertLogHandlers(natsClient, webhookClient, logger);
       await initWidgetStatusHandlers(natsClient, webhookClient, logger);
       // Run history, projected from the db-proxy outbox. Distinct from

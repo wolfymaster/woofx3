@@ -172,7 +172,7 @@ export function rebuildWorkflowDefinition(wf: {
  * that cannot say what it runs runs nothing, which is visible in the UI,
  * rather than failing the whole listing it appears in.
  */
-function parseActions(actionsJson: string | undefined): ActionStep[] {
+export function parseActions(actionsJson: string | undefined): ActionStep[] {
   if (!actionsJson) {
     return [];
   }

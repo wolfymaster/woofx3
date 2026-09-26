@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -10,10 +11,12 @@ import (
 	"github.com/google/uuid"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	refsvc "github.com/wolfymaster/woofx3/db/app/services/resource_reference"
+	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"gorm.io/gorm"
 )
 
 const (
@@ -28,6 +31,7 @@ type commandService struct {
 	casbinRepo *repo.PermissionRepository
 	groupRepo  *repo.GroupRepository
 	enforcer   *casbin.Enforcer
+	publisher  *workers.EventPublisher
 }
 
 func NewCommandService(
@@ -37,6 +41,7 @@ func NewCommandService(
 	casbinRepo *repo.PermissionRepository,
 	groupRepo *repo.GroupRepository,
 	enforcer *casbin.Enforcer,
+	publisher *workers.EventPublisher,
 ) *commandService {
 	return &commandService{
 		repo:       cmdRepo,
@@ -45,6 +50,7 @@ func NewCommandService(
 		casbinRepo: casbinRepo,
 		groupRepo:  groupRepo,
 		enforcer:   enforcer,
+		publisher:  publisher,
 	}
 }
 
@@ -191,6 +197,40 @@ func (s *commandService) toProtoCommand(cmd *models.Command) (*client.Command, e
 	}, nil
 }
 
+// publishChange announces a command row change on the outbox. The api
+// projects it onto the UI's command webhooks, which is the only way the UI
+// hears about commands written by something other than the api's own command
+// routes -- barkloader registering a module's commands, for one.
+func (s *commandService) publishChange(cmd *client.Command, op string) {
+	if s.publisher == nil {
+		return
+	}
+	s.publisher.Publish(workers.PublishOptions{
+		EntityType:      "command",
+		EntityID:        cmd.Id,
+		Operation:       op,
+		Data:            buildCommandChangeData(cmd),
+		AutoAcknowledge: true,
+	})
+}
+
+func buildCommandChangeData(cmd *client.Command) map[string]any {
+	return map[string]any{
+		"id":               cmd.Id,
+		"command":          cmd.Command,
+		"actions_json":     cmd.ActionsJson,
+		"cooldown":         cmd.Cooldown,
+		"priority":         cmd.Priority,
+		"enabled":          cmd.Enabled,
+		"visibility":       cmd.Visibility,
+		"group_ids":        cmd.GroupIds,
+		"usernames":        cmd.Usernames,
+		"argument_pattern": cmd.ArgumentPattern,
+		"created_by_type":  cmd.CreatedByType,
+		"created_by_ref":   cmd.CreatedByRef,
+	}
+}
+
 func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCommandRequest) (*client.CommandResponse, error) {
 	createdByType := cmd.CreatedByType
 	if createdByType == "" {
@@ -199,6 +239,31 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 	visibility := cmd.Visibility
 	if visibility == "" {
 		visibility = commandVisibilityRestricted
+	}
+
+	// A module declares its commands in its manifest and registers them on
+	// every install, but once one exists it belongs to the streamer: they
+	// edit its actions, cooldown and permissions. Re-registering must leave
+	// that row alone, id included, or an upgrade silently discards their
+	// edits and orphans every reference to the old id.
+	if createdByType == "MODULE" {
+		existing, err := s.repo.GetByOrigin(createdByType, cmd.CreatedByRef, cmd.Command)
+		if err == nil {
+			protoCmd, err := s.toProtoCommand(existing)
+			if err != nil {
+				return nil, err
+			}
+			return &client.CommandResponse{
+				Status: &client.ResponseStatus{
+					Code:    client.ResponseStatus_OK,
+					Message: "Command already registered",
+				},
+				Command: protoCmd,
+			}, nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
 	}
 
 	// Assign the id here rather than leaning on the column default: that
@@ -231,6 +296,7 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 	if err != nil {
 		return nil, err
 	}
+	s.publishChange(protoCmd, "created")
 
 	return &client.CommandResponse{
 		Status: &client.ResponseStatus{
@@ -333,6 +399,7 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 	if err != nil {
 		return nil, err
 	}
+	s.publishChange(protoCmd, "updated")
 
 	return &client.CommandResponse{
 		Status: &client.ResponseStatus{
@@ -373,6 +440,16 @@ func (s *commandService) DeleteCommand(ctx context.Context, req *client.DeleteCo
 	}
 	if err := s.enforcer.LoadPolicy(); err != nil {
 		log.Printf("command_service: enforcer.LoadPolicy failed after deleting command %s: %v", m.ID, err)
+	}
+
+	if s.publisher != nil {
+		s.publisher.Publish(workers.PublishOptions{
+			EntityType:      "command",
+			EntityID:        m.ID.String(),
+			Operation:       "deleted",
+			Data:            map[string]any{"id": m.ID.String(), "command": m.Command},
+			AutoAcknowledge: true,
+		})
 	}
 
 	res := &client.ResponseStatus{
