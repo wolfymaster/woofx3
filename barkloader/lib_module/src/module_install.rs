@@ -20,6 +20,12 @@ use super::module_manifest::{
 /// `module_key` is the composite `{id}:{version}:{hash}` being replaced;
 /// it never participates in matching and is carried only so the
 /// deregistration events name the exact version that went away.
+///
+/// Commands are deliberately left in place. A module's command is the
+/// streamer's to edit once it exists, so reinstalling re-registers it onto
+/// the same row (the db service keeps an existing module command rather than
+/// inserting a second) and `prune_removed_commands` drops only the commands
+/// the new manifest no longer declares.
 pub async fn cleanup_old_version(
     module_name: &str,
     module_key: &str,
@@ -50,10 +56,78 @@ pub async fn cleanup_old_version(
     proxy.delete_workflows_by_module(module_name).await?;
     info!("Deleted workflows for module {}", module_name);
 
-    proxy.delete_commands_by_module(module_name).await?;
-    info!("Deleted commands for module {}", module_name);
-
     Ok(())
+}
+
+/// Deletes the module's commands that `manifest` no longer declares. Runs
+/// after a successful install, so an upgrade converges on exactly the new
+/// manifest's commands while keeping the rows (and edits) of every command
+/// it still declares. Best-effort, like `prune_removed_resources`: a
+/// leftover command is harmless next to a failed install.
+async fn prune_removed_commands(
+    db_proxy: &dyn ModuleDbProxy,
+    module_name: &str,
+    manifest: &ModuleManifest,
+) {
+    let declared: std::collections::HashSet<&str> =
+        manifest.commands.iter().map(|c| c.command_name()).collect();
+    let existing = match db_proxy.list_commands_by_module(module_name).await {
+        Ok(rows) => rows,
+        Err(e) => {
+            warn!(
+                "prune_removed_commands: listing commands for {} failed: {}",
+                module_name, e
+            );
+            return;
+        }
+    };
+    for row in existing
+        .iter()
+        .filter(|row| !declared.contains(row.command.as_str()))
+    {
+        match db_proxy.delete_command(&row.id).await {
+            Ok(()) => info!(
+                "Removed command '{}' from module {} (dropped from manifest)",
+                row.command, module_name
+            ),
+            Err(e) => warn!(
+                "prune_removed_commands: failed to delete command {} for {}: {}",
+                row.command, module_name, e
+            ),
+        }
+    }
+}
+
+/// Deletes the module's commands that were not there before this install
+/// began: the ones it created. Commands an earlier install left behind stay,
+/// because they may carry the streamer's edits and a failed upgrade must
+/// not cost them those.
+async fn delete_commands_created_by_install(
+    db_proxy: &dyn ModuleDbProxy,
+    module_name: &str,
+    preexisting_command_ids: &std::collections::HashSet<String>,
+) {
+    let existing = match db_proxy.list_commands_by_module(module_name).await {
+        Ok(rows) => rows,
+        Err(e) => {
+            warn!(
+                "rollback: listing commands for {} failed: {}",
+                module_name, e
+            );
+            return;
+        }
+    };
+    for row in existing
+        .iter()
+        .filter(|row| !preexisting_command_ids.contains(&row.id))
+    {
+        if let Err(e) = db_proxy.delete_command(&row.id).await {
+            warn!(
+                "rollback: failed to delete command {} for {}: {}",
+                row.command, module_name, e
+            );
+        }
+    }
 }
 
 /// Compensating cleanup for a half-completed install. Called when any db-side
@@ -66,6 +140,7 @@ async fn rollback_db_install(
     manifest_module_key: &str,
     composite_module_key: &str,
     module_name: &str,
+    preexisting_command_ids: &std::collections::HashSet<String>,
 ) {
     if let Err(e) =
         cleanup_old_version(manifest_module_key, composite_module_key, Some(db_proxy)).await
@@ -75,6 +150,8 @@ async fn rollback_db_install(
             manifest_module_key, e
         );
     }
+    delete_commands_created_by_install(db_proxy, manifest_module_key, preexisting_command_ids)
+        .await;
     if let Err(e) = db_proxy.delete_module(module_name).await {
         warn!("rollback: delete_module({}) failed: {}", module_name, e);
     } else {
@@ -751,65 +828,13 @@ impl<'a, R: Repository> SagaState<'a, R> {
             }
         };
 
-        // Build per-step context. Each step references an action
-        // by canonical id. Same-module actions resolve via the
-        // local manifest's resolved actions table. Cross-module
-        // actions get a db lookup to recover the action's `call`
-        // (a canonical function id) so the workflow step's
-        // `function` field can be baked in.
-        //
-        // We can't async-map a Vec inline, so collect step
-        // contexts in a sequential loop.
-        let mut resolved_steps_ctx: Vec<ResolvedWorkflowStep> =
-            Vec::with_capacity(resolved_wf.step_actions.len());
-        for (si, action_canonical) in resolved_wf.step_actions.iter().enumerate() {
-            // (engine_action, function_call) — engine_action is
-            // the workflow handler name (function / alert / …);
-            // function_call is set only when engine_action is
-            // "function" (the canonical fn id to invoke).
-            let (engine_action, function_call): (String, Option<String>) = if action_canonical
-                .module_id()
-                == self.resolved.module_id
-            {
-                let resolved_action = self
-                        .resolved
-                        .actions
-                        .iter()
-                        .find(|a| a.canonical_id.resource_id() == action_canonical.resource_id())
-                        .ok_or_else(|| anyhow!(
-                            "internal: bundled workflow {} step #{} references action {} not found in resolved actions",
-                            wf.id,
-                            si,
-                            action_canonical,
-                        ))?;
-                match &resolved_action.implementation {
-                    ResolvedActionImpl::Function {
-                        canonical_function_id: cid,
-                    } => ("function".to_string(), Some(cid.to_string())),
-                    // The step dispatches straight through the engine
-                    // handler; there is no function for it to name.
-                    ResolvedActionImpl::Native { handler } => (handler.clone(), None),
-                }
-            } else {
-                let canonical = action_canonical.to_string();
-                let resolved_ref = db_proxy
-                        .get_action_ref_by_canonical_id(&canonical)
-                        .await
-                        .map_err(|e| anyhow!(
-                            "bundled workflow {} step #{} references action {} but the action could not be resolved (is the owning module installed?): {}",
-                            wf.id,
-                            si,
-                            canonical,
-                            e,
-                        ))?;
-                (resolved_ref.action_type, resolved_ref.function_call)
-            };
-            resolved_steps_ctx.push(ResolvedWorkflowStep {
-                action_ref: action_canonical.to_string(),
-                engine_action,
-                function_call,
-            });
-        }
+        let resolved_steps_ctx = self
+            .resolve_steps(
+                &format!("bundled workflow {}", wf.id),
+                &resolved_wf.step_actions,
+                db_proxy,
+            )
+            .await?;
 
         wf.register(
             self.module_key,
@@ -836,6 +861,74 @@ impl<'a, R: Repository> SagaState<'a, R> {
         Ok(())
     }
 
+    /// Resolves each step's action to what the engine dispatches, for a
+    /// workflow's steps or a command's actions. Same-module actions resolve
+    /// via the local manifest's resolved actions table. Cross-module actions
+    /// get a db lookup to recover the action's `call` (a canonical function
+    /// id) so the step's `function` field can be baked in. `owner` names the
+    /// workflow or command in errors.
+    async fn resolve_steps(
+        &self,
+        owner: &str,
+        step_actions: &[CanonicalId],
+        db_proxy: &dyn ModuleDbProxy,
+    ) -> Result<Vec<ResolvedWorkflowStep>> {
+        let mut resolved_steps: Vec<ResolvedWorkflowStep> = Vec::with_capacity(step_actions.len());
+        for (si, action_canonical) in step_actions.iter().enumerate() {
+            // (engine_action, function_call) — engine_action is
+            // the workflow handler name (function / alert / …);
+            // function_call is set only when engine_action is
+            // "function" (the canonical fn id to invoke).
+            let (engine_action, function_call): (String, Option<String>) = if action_canonical
+                .module_id()
+                == self.resolved.module_id
+            {
+                let resolved_action = self
+                    .resolved
+                    .actions
+                    .iter()
+                    .find(|a| a.canonical_id.resource_id() == action_canonical.resource_id())
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "internal: {} step #{} references action {} not found in resolved actions",
+                            owner,
+                            si,
+                            action_canonical,
+                        )
+                    })?;
+                match &resolved_action.implementation {
+                    ResolvedActionImpl::Function {
+                        canonical_function_id: cid,
+                    } => ("function".to_string(), Some(cid.to_string())),
+                    // The step dispatches straight through the engine
+                    // handler; there is no function for it to name.
+                    ResolvedActionImpl::Native { handler } => (handler.clone(), None),
+                }
+            } else {
+                let canonical = action_canonical.to_string();
+                let resolved_ref = db_proxy
+                    .get_action_ref_by_canonical_id(&canonical)
+                    .await
+                    .map_err(|e| {
+                        anyhow!(
+                            "{} step #{} references action {} but the action could not be resolved (is the owning module installed?): {}",
+                            owner,
+                            si,
+                            canonical,
+                            e,
+                        )
+                    })?;
+                (resolved_ref.action_type, resolved_ref.function_call)
+            };
+            resolved_steps.push(ResolvedWorkflowStep {
+                action_ref: action_canonical.to_string(),
+                engine_action,
+                function_call,
+            });
+        }
+        Ok(resolved_steps)
+    }
+
     async fn execute_register_command(
         &mut self,
         canonical_id: &CanonicalId,
@@ -855,8 +948,21 @@ impl<'a, R: Repository> SagaState<'a, R> {
         let cmd = &self.manifest.commands[i];
         let resolved_cmd = &self.resolved.commands[i];
         let resolved_workflow = resolved_cmd.workflow.as_ref().map(|c| c.to_string());
-        cmd.register(self.module_key, db_proxy, resolved_workflow.as_deref())
+        let resolved_steps = self
+            .resolve_steps(
+                &format!("command {}", cmd.id),
+                &resolved_cmd.step_actions,
+                db_proxy,
+            )
             .await?;
+        cmd.register(
+            self.module_key,
+            db_proxy,
+            resolved_workflow.as_deref(),
+            &resolved_steps,
+            &self.asset_repo_keys,
+        )
+        .await?;
 
         // Resolved lazily and cached: today's code looks this up once,
         // unconditionally, before the (possibly empty) commands loop;
@@ -1021,6 +1127,15 @@ pub async fn run_install_with_provenance<R: Repository>(
     if let Some(proxy) = db_proxy {
         let plan = plan.expect("plan was built above whenever db_proxy is Some");
 
+        // Taken before any db write so a rollback can tell the commands this
+        // install created from the ones an earlier install left behind.
+        let preexisting_command_ids: std::collections::HashSet<String> = proxy
+            .list_commands_by_module(module_key)
+            .await?
+            .into_iter()
+            .map(|row| row.id)
+            .collect();
+
         if cleanup_old {
             cleanup_old_version(module_key, composite_module_key, Some(proxy)).await?;
         }
@@ -1042,9 +1157,18 @@ pub async fn run_install_with_provenance<R: Repository>(
                 "install failed for module {} ({}): rolling back db state: {}",
                 manifest.name, composite_module_key, e
             );
-            rollback_db_install(proxy, module_key, composite_module_key, &manifest.name).await;
+            rollback_db_install(
+                proxy,
+                module_key,
+                composite_module_key,
+                &manifest.name,
+                &preexisting_command_ids,
+            )
+            .await;
             return Err(e);
         }
+
+        prune_removed_commands(proxy, module_key, manifest).await;
     } else {
         warn!(
             "databaseProxyUrl not set in .woofx3.json; skipping CreateModule, trigger, workflow, action, and command registration"
@@ -1062,6 +1186,7 @@ pub async fn run_install_with_provenance<R: Repository>(
 
 #[cfg(test)]
 mod tests {
+    use super::super::db_proxy::ModuleCommandRow;
     use super::super::db_proxy_client::FakeDbProxyClient;
     use super::*;
 
@@ -1403,7 +1528,7 @@ mod tests {
                 "delete_widgets_by_module_id",
                 "delete_background_tasks_by_module_id",
                 "delete_workflows_by_module",
-                "delete_commands_by_module",
+                "list_commands_by_module",
                 "delete_module",
             ]
         );
@@ -1463,10 +1588,222 @@ mod tests {
                 "delete_widgets_by_module_id",
                 "delete_background_tasks_by_module_id",
                 "delete_workflows_by_module",
-                "delete_commands_by_module",
+                "list_commands_by_module",
                 "delete_module",
             ],
             "rollback_db_install's exact compensating sequence must run after any post-CreateModule failure"
+        );
+    }
+
+    fn two_command_manifest(id: &str) -> (ModuleManifest, Vec<u8>) {
+        let manifest_json = format!(
+            r#"{{
+                "id": "{id}",
+                "name": "Test Mod",
+                "version": "1.0.0",
+                "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus" }}],
+                "functions": [{{ "id": "f1", "name": "F1", "runtime": "lua", "path": "functions/f1.lua" }}],
+                "actions": [{{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }}],
+                "workflows": [{{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [{{ "action": "a1" }}] }}],
+                "commands": [
+                    {{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix", "workflow": "w1" }},
+                    {{ "id": "c2", "name": "C2", "pattern": "!c2", "type": "prefix", "workflow": "w1" }}
+                ]
+            }}"#
+        )
+        .into_bytes();
+        let manifest: ModuleManifest = serde_json::from_slice(&manifest_json).expect("manifest");
+        (manifest, manifest_json)
+    }
+
+    fn workflow_test_files(manifest_json: &[u8]) -> Vec<ModuleFile> {
+        vec![
+            ModuleFile::new(
+                "module.json".into(),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                manifest_json.to_vec(),
+            ),
+            ModuleFile::new(
+                "functions/f1.lua".into(),
+                ModuleFileKind::PROGRAM(ModuleValidProgramKind::LUA),
+                b"return 1".to_vec(),
+            ),
+        ]
+    }
+
+    fn existing_command(id: &str, command: &str) -> ModuleCommandRow {
+        ModuleCommandRow {
+            id: id.to_string(),
+            command: command.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn reinstall_keeps_declared_commands_and_prunes_dropped_ones() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = fault_test_manifest_with_workflow("cmd-mod-1");
+        let files = workflow_test_files(&manifest_json);
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        let db_proxy = FakeDbProxyClient::new().with_commands([
+            existing_command("edited-c1", "c1"),
+            existing_command("stale", "dropped"),
+        ]);
+        run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/cmd-mod-1.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy),
+            true,
+            &mid,
+            "",
+        )
+        .await
+        .expect("reinstall should succeed");
+
+        assert_eq!(
+            db_proxy.commands(),
+            vec![existing_command("edited-c1", "c1")]
+        );
+        assert!(
+            !db_proxy
+                .calls()
+                .contains(&"delete_commands_by_module".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_upgrade_keeps_commands_an_earlier_install_left() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = two_command_manifest("cmd-mod-2");
+        let files = workflow_test_files(&manifest_json);
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        // c2 fails after c1 is registered, so the rollback has a command of
+        // its own to remove next to the one it must keep.
+        let db_proxy = FakeDbProxyClient::failing_on_command("c2")
+            .with_commands([existing_command("edited-c1", "c1")]);
+        let _ = run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/cmd-mod-2.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy),
+            false,
+            &mid,
+            "",
+        )
+        .await;
+
+        assert_eq!(
+            db_proxy.commands(),
+            vec![existing_command("edited-c1", "c1")]
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_fresh_install_removes_the_commands_it_created() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+
+        let (manifest, manifest_json) = two_command_manifest("cmd-mod-3");
+        let files = workflow_test_files(&manifest_json);
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        let db_proxy = FakeDbProxyClient::failing_on_command("c2");
+        let _ = run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/cmd-mod-3.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy),
+            false,
+            &mid,
+            "",
+        )
+        .await;
+
+        let registrations = db_proxy
+            .calls()
+            .iter()
+            .filter(|c| *c == "register_command")
+            .count();
+        assert_eq!(
+            registrations, 2,
+            "c1 must be registered before c2 fails for this test to mean anything"
+        );
+        assert_eq!(db_proxy.commands(), vec![]);
+    }
+
+    #[tokio::test]
+    async fn command_actions_are_registered_as_declared() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+
+        let manifest_json = br#"{
+            "id": "cmd-actions",
+            "name": "Test Mod",
+            "version": "1.0.0",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus" }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "functions/f1.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [{ "action": "a1" }] }],
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix",
+                "actions": [{ "id": "queue", "action": "a1", "parameters": { "deviceId": "" } }] }]
+        }"#
+        .to_vec();
+        let manifest: ModuleManifest = serde_json::from_slice(&manifest_json).expect("manifest");
+        let files = workflow_test_files(&manifest_json);
+        let mid = manifest.compute_module_key(&manifest_json);
+
+        let db_proxy = FakeDbProxyClient::new();
+        run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/cmd-actions.zip",
+            Some(&db_proxy as &dyn ModuleDbProxy),
+            false,
+            &mid,
+            "",
+        )
+        .await
+        .expect("install should succeed");
+
+        let registered = db_proxy.registered_commands();
+        assert_eq!(registered.len(), 1);
+        assert_eq!(registered[0].0, "c1");
+        let actions: serde_json::Value =
+            serde_json::from_str(&registered[0].1).expect("actions_json is JSON");
+        // The command runs the action it declared, not the module's workflow
+        // that happens to run the same action.
+        assert_eq!(
+            actions,
+            serde_json::json!([{
+                "id": "queue",
+                "type": "action",
+                "action": "function",
+                "function": "cmd-actions:function:f1",
+                "parameters": { "deviceId": "" },
+                "$ref": "cmd-actions:action:a1",
+            }])
         );
     }
 

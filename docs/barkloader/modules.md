@@ -164,6 +164,7 @@ Several manifest fields reference other resources in the same manifest. Authors 
 | `actions[].function: "play_alert"` (when `actions[].type` is `"function"`) | a function in the same manifest | `twitch_platform:function:play_alert` |
 | `workflows[].trigger: "channel_subscribe"` | a trigger in the same manifest | `twitch_platform:trigger:channel_subscribe` |
 | `workflows[].steps[].action: "play_alert"` | an action in the same manifest | `twitch_platform:action:play_alert` |
+| `commands[].actions[].action: "play_alert"` | an action in the same manifest | `twitch_platform:action:play_alert` |
 | `commands[].workflow: "on_subscription"` | a workflow in the same manifest | `twitch_platform:workflow:on_subscription` |
 
 If a reference can't be resolved (no resource of the expected kind has the referenced id), install fails.
@@ -187,7 +188,7 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `triggers` | array | no | Event sources; see below. |
 | `actions` | array | no | Module-contributed actions — implementations of the workflow engine's `action` step type. Each carries a `type` matching a workflow action handler (`function` is the only one today) and the handler-specific config (e.g. `function` for the canonical function id). See [Module actions vs. action handlers](#module-actions-vs-action-handlers). |
 | `functions` | array | no | Callable assets (`runtime`, `path` relative to ZIP root). |
-| `commands` | array | no | Chat/bot commands (`pattern`, `type`: `prefix` \| `exact` \| `regex`, optional `workflow`, `requiredRole`). |
+| `commands` | array | no | Chat/bot commands (`pattern`, `type`: `prefix` \| `exact` \| `regex`, optional `actions` or `workflow`, `requiredRole`). See [Command entry](#command-entry-commands). |
 | `workflows` | array | no | Bundled workflows (`trigger` reference + `steps`). |
 | `widgets` | array | no | Scene and alert widgets (`entry`, optional `assets` directory, `settingsSchema`, `surfaces`). |
 | `resources` | array | no | Runtime-instance kind declarations — the K8s CRD analog. Each entry says "this module is the controller for instances of kind `X`". See [Resource entry](#resource-entry-resources) and [Runtime resource instances](#runtime-resource-instances). |
@@ -614,8 +615,31 @@ A module's `actions[]` list is not "things modules add to the engine." It's "con
 | `name` | string | yes | Display name. Presentation only. |
 | `pattern` | string | yes | The matching pattern (e.g. `!clip`). |
 | `type` | string | yes | One of `prefix`, `exact`, `regex`. |
-| `workflow` | string | no | Reference to a workflow in the same manifest (use the workflow's `id`; resolved to its canonical id at install). |
+| `actions` | array | no | The actions the command runs, in order. Each entry has the same shape as a workflow step (`id`, `action`, `parameters`, `dependsOn`); `action` names an action in the same manifest by `id`, or another module's by canonical id. Stored as the command's actions exactly as declared. Mutually exclusive with `workflow`. |
+| `workflow` | string | no | Reference to a workflow the command runs as its one action (use the workflow's `id`; resolved to its canonical id at install). Mutually exclusive with `actions`. |
 | `requiredRole` | string | no | Minimum role required to invoke (e.g. `public`, `subscriber`, `mod`). |
+
+A command declaring neither `actions` nor `workflow` runs nothing itself; it
+still matches and still publishes `chat.command.<slug>` for workflows listening
+to it.
+
+A command is registered once. Reinstalling or upgrading the module keeps an
+existing command row, id and all, because the streamer may have edited it; only
+a command the new manifest no longer declares is removed. Changing a command's
+`actions` in a new module version therefore reaches new installs, not existing
+ones.
+
+```json
+"commands": [
+  {
+    "id": "sr",
+    "name": "Song Request",
+    "pattern": "!sr",
+    "type": "prefix",
+    "actions": [{ "id": "queue_song", "action": "song_request" }]
+  }
+]
+```
 
 #### `ctx.event` for a chat-command-triggered function
 
