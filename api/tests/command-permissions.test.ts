@@ -17,11 +17,14 @@ function fakeLogger() {
  */
 function recordingNats() {
   const published: string[] = [];
+  const payloads: Array<{ subject: string; data: any }> = [];
   return {
     published,
+    payloads,
     client: {
-      publish: mock((subject: string) => {
+      publish: mock((subject: string, payload?: Uint8Array) => {
         published.push(subject);
+        payloads.push({ subject, data: payload ? JSON.parse(new TextDecoder().decode(payload)).data : undefined });
       }),
     },
   };
@@ -72,7 +75,7 @@ describe("executeCommand permission enforcement", () => {
     const result = await api.executeCommand("song", "randomchatter");
 
     expect(result.success).toBe(true);
-    expect(nats.published).toContain("command.execute");
+    expect(nats.published).toContain("chat.command.song");
     // The invoking username must be forwarded so db-proxy can make the call.
     expect(getCommand.mock.calls[0][0]).toMatchObject({
       command: "song",
@@ -90,10 +93,47 @@ describe("executeCommand permission enforcement", () => {
     const result = await api.executeCommand("vanish", "trustedmod");
 
     expect(result.success).toBe(true);
-    expect(nats.published).toContain("command.execute");
+    expect(nats.published).toContain("chat.command.vanish");
   });
 
-  it("refuses to publish command.execute when db-proxy denies the user", async () => {
+  it("dispatches the command's actions with its argument pattern resolved from the text", async () => {
+    const actions = [{ action: "chat.reply", parameters: { message: "queued" } }];
+    const { api, nats } = makeApi({
+      getCommand: mock(async () =>
+        commandRow({ command: "sr", argumentPattern: "{songTitle}", actionsJson: JSON.stringify(actions) })
+      ),
+    });
+
+    await api.executeCommand("sr", "wolfy", "  life is a highway ");
+
+    const announced = nats.payloads.find((p) => p.subject === "chat.command.sr");
+    expect(announced?.data).toMatchObject({
+      command: "sr",
+      args: ["life", "is", "a", "highway"],
+      text: "life is a highway",
+      rawMessage: "!sr life is a highway",
+      variables: { songTitle: "life is a highway" },
+      chatter: "wolfy",
+    });
+
+    const dispatched = nats.payloads.find((p) => p.subject === "action.execute");
+    expect(dispatched?.data.label).toBe("command:sr");
+    expect(dispatched?.data.actions).toEqual(actions);
+    expect(dispatched?.data.event.type).toBe("chat.command.sr");
+    expect(dispatched?.data.event.data.variables).toEqual({ songTitle: "life is a highway" });
+  });
+
+  it("only announces a command that has no actions", async () => {
+    const { api, nats } = makeApi({
+      getCommand: mock(async () => commandRow({ command: "raid", actionsJson: "[]" })),
+    });
+
+    await api.executeCommand("raid", "wolfy");
+
+    expect(nats.published).toEqual(["chat.command.raid"]);
+  });
+
+  it("publishes nothing when db-proxy denies the user", async () => {
     const { api, nats } = makeApi({
       getCommand: mock(async () => {
         // The denial is data now, not a message template a test has to
@@ -103,7 +143,7 @@ describe("executeCommand permission enforcement", () => {
     });
 
     await expect(api.executeCommand("vanish", "randomchatter")).rejects.toThrow(/do not have permission/i);
-    expect(nats.published).not.toContain("command.execute");
+    expect(nats.published).toEqual([]);
   });
 
   it("surfaces a transport failure as itself rather than as a denial", async () => {
@@ -114,7 +154,7 @@ describe("executeCommand permission enforcement", () => {
     });
 
     await expect(api.executeCommand("song", "randomchatter")).rejects.toThrow(/connection refused/);
-    expect(nats.published).not.toContain("command.execute");
+    expect(nats.published).toEqual([]);
   });
 
   it("does not publish for a disabled command", async () => {
@@ -123,7 +163,7 @@ describe("executeCommand permission enforcement", () => {
     });
 
     await expect(api.executeCommand("song", "randomchatter")).rejects.toThrow(/disabled/i);
-    expect(nats.published).not.toContain("command.execute");
+    expect(nats.published).toEqual([]);
   });
 });
 
