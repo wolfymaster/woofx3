@@ -214,6 +214,8 @@ jobs:
       - name: Download archives
         uses: actions/download-artifact@v4
         with:
+          # Only the archives: the image job's Docker build record is also a run artifact, and it is not a zip.
+          pattern: "*-amd64"
           path: dist
           merge-multiple: true
 
