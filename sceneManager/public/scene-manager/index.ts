@@ -18,6 +18,7 @@ import { SceneEventSource, type DeliveryFrame } from "./event-source";
 import { ModuleStateCache } from "./module-state";
 import { ConnectionStatus } from "./connection-status";
 import { createReconnectCoordinator } from "./reconnect-coordinator";
+import { applyPreviewLayout, parsePreviewLayout } from "./preview-layout";
 
 interface WidgetInstanceConfig {
   id: string;
@@ -93,6 +94,8 @@ function main(): void {
   const sceneBase = `/scene/${encodeURIComponent(sceneId)}`;
 
   const bridges = new Set<WidgetBridge>();
+  // Every placed element by widget instance id, for the editor's live layout.
+  const widgetElements = new Map<string, HTMLElement>();
   const queueManager = new EventQueueManager();
   const deliveredBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/delivered`);
   const completedBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/completed`);
@@ -127,6 +130,7 @@ function main(): void {
     element.className = "alert-widget";
     placeAt(element, instance.position);
     container.appendChild(element);
+    widgetElements.set(instance.id, element);
 
     // The page plays alerts itself, so it registers the queue a framed
     // widget would register on subscribe: one alert at a time.
@@ -216,6 +220,7 @@ function main(): void {
 
     bridges.add(bridge);
     container.appendChild(iframe);
+    widgetElements.set(instance.id, iframe);
     bridge.attach(iframe);
   }
 
@@ -224,6 +229,21 @@ function main(): void {
       bridge.handleMessage(event);
     }
   });
+
+  // Only a page that frames this overlay can move its widgets, and it can
+  // only move them on its own screen: nothing here is saved or sent on. OBS
+  // loads the overlay top-level, where `window.parent` is the window itself.
+  if (window.parent !== window) {
+    window.addEventListener("message", (event) => {
+      if (event.source !== window.parent) {
+        return;
+      }
+      const layout = parsePreviewLayout(event.data);
+      if (layout) {
+        applyPreviewLayout(widgetElements, layout);
+      }
+    });
+  }
 
   // One owner for the banner. Both reachability signals below report
   // into it rather than toggling the DOM themselves, so they can no
@@ -271,6 +291,9 @@ function main(): void {
     },
     onModuleState: (frame) => moduleState.apply(frame.moduleId, frame.key, frame.value),
     onConnectionChange: (connected) => status.set("stream", connected),
+    // The scene was saved. Only this scene's streams receive the frame, so
+    // unlike a restart there is no sibling overlay to tell.
+    onSceneUpdated: () => location.reload(),
     onHello: (bootId) => {
       if (serverBootId !== null && serverBootId !== bootId) {
         reloadOverlay();
