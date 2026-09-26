@@ -1020,6 +1020,9 @@ function parseSseChunk(rawEvent) {
   if (eventName === "hello") {
     return typeof parsed.bootId === "string" && parsed.bootId.length > 0 ? { kind: "hello", bootId: parsed.bootId } : null;
   }
+  if (eventName === "scene-updated") {
+    return { kind: "scene-updated" };
+  }
   if (eventName === "module-state") {
     return typeof parsed.moduleId === "string" && typeof parsed.key === "string" ? { kind: "module-state", frame: { moduleId: parsed.moduleId, key: parsed.key, value: parsed.value ?? null } } : null;
   }
@@ -1141,6 +1144,8 @@ class SceneEventSource {
             this.sink?.onHello?.(parsed.bootId);
           } else if (parsed.kind === "module-state") {
             this.sink?.onModuleState?.(parsed.frame);
+          } else if (parsed.kind === "scene-updated") {
+            this.sink?.onSceneUpdated?.();
           } else {
             this.sink?.onFrame(parsed.frame);
           }
@@ -1300,6 +1305,57 @@ class ConnectionStatus {
   }
 }
 
+// public/scene-manager/preview-layout.ts
+var PREVIEW_LAYOUT_MESSAGE = "woofx3.scene-preview.layout";
+function isFiniteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+function parseWidget(raw) {
+  if (typeof raw !== "object" || raw === null) {
+    return null;
+  }
+  const w = raw;
+  if (typeof w.id !== "string" || w.id.length === 0) {
+    return null;
+  }
+  if (!isFiniteNumber(w.x) || !isFiniteNumber(w.y) || !isFiniteNumber(w.width) || !isFiniteNumber(w.height)) {
+    return null;
+  }
+  return { id: w.id, x: w.x, y: w.y, width: w.width, height: w.height };
+}
+function parsePreviewLayout(data) {
+  if (typeof data !== "object" || data === null) {
+    return null;
+  }
+  const message = data;
+  if (message.type !== PREVIEW_LAYOUT_MESSAGE || !Array.isArray(message.widgets)) {
+    return null;
+  }
+  const widgets = [];
+  for (const raw of message.widgets) {
+    const widget = parseWidget(raw);
+    if (widget) {
+      widgets.push(widget);
+    }
+  }
+  return widgets;
+}
+function applyPreviewLayout(elements, layout) {
+  const byId = new Map(layout.map((widget) => [widget.id, widget]));
+  for (const [id, element] of elements) {
+    const widget = byId.get(id);
+    if (!widget) {
+      element.style.display = "none";
+      continue;
+    }
+    element.style.display = "";
+    element.style.left = `${widget.x}px`;
+    element.style.top = `${widget.y}px`;
+    element.style.width = `${widget.width}px`;
+    element.style.height = `${widget.height}px`;
+  }
+}
+
 // public/scene-manager/index.ts
 var REFRESH_INTERVAL_MS = 50000;
 function generateNonce() {
@@ -1329,6 +1385,7 @@ function main() {
   const sceneId = sceneData.id;
   const sceneBase = `/scene/${encodeURIComponent(sceneId)}`;
   const bridges = new Set;
+  const widgetElements = new Map;
   const queueManager = new EventQueueManager;
   const deliveredBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/delivered`);
   const completedBatcher = new AckBatcher((eventId) => `${sceneBase}/events/${encodeURIComponent(eventId)}/completed`);
@@ -1360,6 +1417,7 @@ function main() {
     element.className = "alert-widget";
     placeAt(element, instance.position);
     container.appendChild(element);
+    widgetElements.set(instance.id, element);
     const subId = `alert:${instance.id}`;
     const alertWidget = new AlertWidget({
       element,
@@ -1420,6 +1478,7 @@ function main() {
     iframe.src = `${instance.frameUrl}?nonce=${encodeURIComponent(nonce)}`;
     bridges.add(bridge);
     container.appendChild(iframe);
+    widgetElements.set(instance.id, iframe);
     bridge.attach(iframe);
   }
   window.addEventListener("message", (event) => {
@@ -1427,6 +1486,17 @@ function main() {
       bridge.handleMessage(event);
     }
   });
+  if (window.parent !== window) {
+    window.addEventListener("message", (event) => {
+      if (event.source !== window.parent) {
+        return;
+      }
+      const layout = parsePreviewLayout(event.data);
+      if (layout) {
+        applyPreviewLayout(widgetElements, layout);
+      }
+    });
+  }
   const status = new ConnectionStatus(renderConnected);
   let serverBootId = null;
   const coordinator = createReconnectCoordinator();
@@ -1453,6 +1523,7 @@ function main() {
     },
     onModuleState: (frame) => moduleState.apply(frame.moduleId, frame.key, frame.value),
     onConnectionChange: (connected) => status.set("stream", connected),
+    onSceneUpdated: () => location.reload(),
     onHello: (bootId) => {
       if (serverBootId !== null && serverBootId !== bootId) {
         reloadOverlay();

@@ -33,6 +33,10 @@ describe("parseSseChunk", () => {
     });
   });
 
+  it("parses a scene-updated frame", () => {
+    expect(parseSseChunk('event: scene-updated\ndata: {"sceneId":"s1"}')).toEqual({ kind: "scene-updated" });
+  });
+
   it("returns null for a module-state frame with no key", () => {
     expect(parseSseChunk('event: module-state\ndata: {"moduleId":"woofx3","value":1}')).toBeNull();
   });

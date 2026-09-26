@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { reportAlertNotPlayed } from "../src/nats-subscriptions";
+import { notifySceneUpdated, reportAlertNotPlayed, SCENE_UPDATED_EVENT } from "../src/nats-subscriptions";
 
 function fakeLogger() {
   return { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any;
@@ -72,5 +72,36 @@ describe("reportAlertNotPlayed", () => {
 
     expect(calls[0]?.error).toBe('no alert widget named "sidebar" on a running scene');
     expect(calls[0]?.status).toBe("failed");
+  });
+});
+
+describe("notifySceneUpdated", () => {
+  function broadcaster() {
+    const calls: Array<{ sceneId: string; event: string; data: unknown }> = [];
+    return {
+      calls,
+      scenes: {
+        broadcast: (sceneId: string, event: string, data: unknown) => {
+          calls.push({ sceneId, event, data });
+        },
+      },
+    };
+  }
+
+  it("pushes scene-updated to the scene the db event names", () => {
+    const { calls, scenes } = broadcaster();
+
+    expect(notifySceneUpdated(scenes, { data: { id: "scene-1" } })).toBe("scene-1");
+
+    expect(calls).toEqual([{ sceneId: "scene-1", event: SCENE_UPDATED_EVENT, data: { sceneId: "scene-1" } }]);
+  });
+
+  it("pushes nothing for an event without a scene id", () => {
+    const { calls, scenes } = broadcaster();
+
+    expect(notifySceneUpdated(scenes, { data: {} })).toBeNull();
+    expect(notifySceneUpdated(scenes, {})).toBeNull();
+
+    expect(calls).toEqual([]);
   });
 });

@@ -37,13 +37,15 @@ export interface ModuleStateFrame {
   value: unknown;
 }
 
-/** The stream carries three frame kinds: per-event deliveries, module
- *  storage changes, and the `hello` control frame the server opens
- *  every stream with. */
+/** The stream carries four frame kinds: per-event deliveries, module
+ *  storage changes, the `hello` control frame the server opens every
+ *  stream with, and `scene-updated` when the scene's saved config
+ *  changes. */
 export type SceneFrame =
   | { kind: "delivery"; frame: DeliveryFrame }
   | { kind: "module-state"; frame: ModuleStateFrame }
-  | { kind: "hello"; bootId: string };
+  | { kind: "hello"; bootId: string }
+  | { kind: "scene-updated" };
 
 export interface SceneEventSink {
   onFrame(frame: DeliveryFrame): void;
@@ -52,6 +54,8 @@ export interface SceneEventSink {
   /** Server boot identity for the stream just opened. Changes across a
    *  sceneManager restart; see index.ts for what that triggers. */
   onHello?(bootId: string): void;
+  /** The scene's saved config changed; the one baked into this page is stale. */
+  onSceneUpdated?(): void;
   /** The server rejected our session cookie. Unlike every other
    *  failure here, retrying cannot fix this -- see the note on
    *  SESSION_REJECTED_STATUSES. */
@@ -103,6 +107,10 @@ export function parseSseChunk(rawEvent: string): SceneFrame | null {
     return typeof parsed.bootId === "string" && parsed.bootId.length > 0
       ? { kind: "hello", bootId: parsed.bootId }
       : null;
+  }
+
+  if (eventName === "scene-updated") {
+    return { kind: "scene-updated" };
   }
 
   if (eventName === "module-state") {
@@ -261,6 +269,8 @@ export class SceneEventSource {
             this.sink?.onHello?.(parsed.bootId);
           } else if (parsed.kind === "module-state") {
             this.sink?.onModuleState?.(parsed.frame);
+          } else if (parsed.kind === "scene-updated") {
+            this.sink?.onSceneUpdated?.();
           } else {
             this.sink?.onFrame(parsed.frame);
           }
