@@ -21,8 +21,8 @@ use super::manifest_validate::InstallProvenance;
 
 use super::db_proxy::{
     self, ActionInputJson, AssetInputJson, BackgroundTaskInputJson, CreateModuleFunctionJson,
-    ModuleRecord, RequestContext, ResolvedActionRef, ResourceInstanceJson, ResourceUsage,
-    SettingInputJson, TriggerInputJson, WidgetInputJson,
+    ModuleCommandRow, ModuleRecord, RequestContext, ResolvedActionRef, ResourceInstanceJson,
+    ResourceUsage, SettingInputJson, TriggerInputJson, WidgetInputJson,
 };
 
 #[async_trait]
@@ -102,6 +102,8 @@ pub trait ModuleDbProxy: Send + Sync {
     ) -> Result<()>;
     async fn delete_workflows_by_module(&self, module_name: &str) -> Result<()>;
     async fn delete_commands_by_module(&self, module_name: &str) -> Result<()>;
+    async fn list_commands_by_module(&self, module_name: &str) -> Result<Vec<ModuleCommandRow>>;
+    async fn delete_command(&self, id: &str) -> Result<()>;
 
     // resource ledger
     async fn create_module_resource(
@@ -370,6 +372,14 @@ impl ModuleDbProxy for HttpDbProxyClient {
         db_proxy::delete_commands_by_module(&self.base_url, module_name).await
     }
 
+    async fn list_commands_by_module(&self, module_name: &str) -> Result<Vec<ModuleCommandRow>> {
+        db_proxy::list_commands_by_module(&self.base_url, module_name).await
+    }
+
+    async fn delete_command(&self, id: &str) -> Result<()> {
+        db_proxy::delete_command(&self.base_url, id).await
+    }
+
     async fn create_module_resource(
         &self,
         module_id: &str,
@@ -549,6 +559,13 @@ mod test_support {
         /// Provenance the last `create_module` was called with, so tests can
         /// assert what the module row would be stamped with.
         provenance: Mutex<Option<InstallProvenance>>,
+        /// The module's commands as the db would hold them.
+        commands: Mutex<Vec<ModuleCommandRow>>,
+        /// A command whose `register_command` fails, for failing an install
+        /// after some of its commands are already registered.
+        failing_command: Option<&'static str>,
+        /// `(command, actions_json)` for every `register_command`, in order.
+        registered_commands: Mutex<Vec<(String, String)>>,
     }
 
     impl FakeDbProxyClient {
@@ -561,7 +578,40 @@ mod test_support {
                 calls: Mutex::new(Vec::new()),
                 fail_on: methods.into_iter().collect(),
                 provenance: Mutex::new(None),
+                commands: Mutex::new(Vec::new()),
+                failing_command: None,
+                registered_commands: Mutex::new(Vec::new()),
             }
+        }
+
+        pub fn failing_on_command(command: &'static str) -> Self {
+            Self {
+                failing_command: Some(command),
+                ..Self::default()
+            }
+        }
+
+        /// Seeds the commands an earlier install of the module left behind.
+        pub fn with_commands(self, rows: impl IntoIterator<Item = ModuleCommandRow>) -> Self {
+            self.commands
+                .lock()
+                .expect("commands mutex poisoned")
+                .extend(rows);
+            self
+        }
+
+        pub fn registered_commands(&self) -> Vec<(String, String)> {
+            self.registered_commands
+                .lock()
+                .expect("registered_commands mutex poisoned")
+                .clone()
+        }
+
+        pub fn commands(&self) -> Vec<ModuleCommandRow> {
+            self.commands
+                .lock()
+                .expect("commands mutex poisoned")
+                .clone()
         }
 
         pub fn calls(&self) -> Vec<String> {
@@ -723,6 +773,27 @@ mod test_support {
             self.record("delete_commands_by_module")
         }
 
+        async fn list_commands_by_module(
+            &self,
+            _module_name: &str,
+        ) -> Result<Vec<ModuleCommandRow>> {
+            self.record("list_commands_by_module")?;
+            Ok(self
+                .commands
+                .lock()
+                .expect("commands mutex poisoned")
+                .clone())
+        }
+
+        async fn delete_command(&self, id: &str) -> Result<()> {
+            self.record("delete_command")?;
+            self.commands
+                .lock()
+                .expect("commands mutex poisoned")
+                .retain(|row| row.id != id);
+            Ok(())
+        }
+
         async fn create_module_resource(
             &self,
             _module_id: &str,
@@ -810,11 +881,31 @@ mod test_support {
 
         async fn register_command(
             &self,
-            _command: &str,
-            _actions_json: &str,
+            command: &str,
+            actions_json: &str,
             _module_name: &str,
         ) -> Result<()> {
-            self.record("register_command")
+            self.record("register_command")?;
+            self.registered_commands
+                .lock()
+                .expect("registered_commands mutex poisoned")
+                .push((command.to_string(), actions_json.to_string()));
+            if self.failing_command == Some(command) {
+                return Err(anyhow!(
+                    "FakeDbProxyClient: injected failure registering command {}",
+                    command
+                ));
+            }
+            // Mirrors the db service: a module command that already exists is
+            // kept, id and all.
+            let mut commands = self.commands.lock().expect("commands mutex poisoned");
+            if !commands.iter().any(|row| row.command == command) {
+                commands.push(ModuleCommandRow {
+                    id: format!("new-{}", command),
+                    command: command.to_string(),
+                });
+            }
+            Ok(())
         }
 
         async fn complete_module_install(

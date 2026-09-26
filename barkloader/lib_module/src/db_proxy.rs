@@ -620,16 +620,25 @@ pub async fn create_command(
     Ok(())
 }
 
-/// Twirp JSON for finding commands by module and deleting them via pattern match.
-/// Module commands are instance-global; matches on `(created_by_type, created_by_ref)`.
-pub async fn delete_commands_by_module(db_proxy_url: &str, module_name: &str) -> Result<()> {
+/// One command a module registered, as far as install bookkeeping needs it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModuleCommandRow {
+    pub id: String,
+    pub command: String,
+}
+
+/// Every command registered by `module_name`. Module commands are
+/// instance-global; they are matched on `(created_by_type, created_by_ref)`.
+pub async fn list_commands_by_module(
+    db_proxy_url: &str,
+    module_name: &str,
+) -> Result<Vec<ModuleCommandRow>> {
     let list_url = format!("{}/twirp/command.CommandService/ListCommands", db_proxy_url);
     let body = serde_json::json!({
         "include_disabled": true
     });
 
-    let client = HTTP_CLIENT.clone();
-    let response = client
+    let response = HTTP_CLIENT
         .post(&list_url)
         .header("Content-Type", "application/json")
         .json(&body)
@@ -638,61 +647,69 @@ pub async fn delete_commands_by_module(db_proxy_url: &str, module_name: &str) ->
         .map_err(|e| anyhow!("ListCommands request failed: {}", e))?;
 
     if !response.status().is_success() {
-        return Ok(());
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("ListCommands failed {}: {}", status, text));
     }
 
     let text = response.text().await.unwrap_or_default();
-    let value: serde_json::Value = match serde_json::from_str(&text) {
-        Ok(v) => v,
-        Err(_) => return Ok(()),
-    };
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| anyhow!("parse ListCommands response: {}", e))?;
 
-    let commands = value.get("commands").and_then(|c| c.as_array());
+    let rows = value
+        .get("commands")
+        .and_then(|c| c.as_array())
+        .map(|cmds| {
+            cmds.iter()
+                .filter(|cmd| {
+                    cmd.get("created_by_type").and_then(|v| v.as_str()) == Some("MODULE")
+                        && cmd.get("created_by_ref").and_then(|v| v.as_str()) == Some(module_name)
+                })
+                .filter_map(|cmd| {
+                    Some(ModuleCommandRow {
+                        id: cmd.get("id")?.as_str()?.to_string(),
+                        command: cmd.get("command")?.as_str()?.to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
-    if let Some(cmds) = commands {
-        for cmd in cmds {
-            let created_by_type = cmd
-                .get("created_by_type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let created_by_ref = cmd
-                .get("created_by_ref")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if created_by_type != "MODULE" || created_by_ref != module_name {
-                continue;
-            }
-            let id = match cmd.get("id").and_then(|v| v.as_str()) {
-                Some(id) => id,
-                None => continue,
-            };
+    Ok(rows)
+}
 
-            let delete_url = format!(
-                "{}/twirp/command.CommandService/DeleteCommand",
-                db_proxy_url
-            );
-            let delete_body = serde_json::json!({ "id": id });
-            let delete_response = client
-                .post(&delete_url)
-                .header("Content-Type", "application/json")
-                .json(&delete_body)
-                .send()
-                .await
-                .map_err(|e| anyhow!("DeleteCommand request failed for {}: {}", id, e))?;
+/// Twirp JSON for `command.CommandService/DeleteCommand`.
+pub async fn delete_command(db_proxy_url: &str, id: &str) -> Result<()> {
+    let delete_url = format!(
+        "{}/twirp/command.CommandService/DeleteCommand",
+        db_proxy_url
+    );
+    let response = HTTP_CLIENT
+        .post(&delete_url)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({ "id": id }))
+        .send()
+        .await
+        .map_err(|e| anyhow!("DeleteCommand request failed for {}: {}", id, e))?;
 
-            if !delete_response.status().is_success() {
-                let status = delete_response.status();
-                let text = delete_response.text().await.unwrap_or_default();
-                return Err(anyhow!(
-                    "DeleteCommand failed for {} {}: {}",
-                    id,
-                    status,
-                    text
-                ));
-            }
-        }
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "DeleteCommand failed for {} {}: {}",
+            id,
+            status,
+            text
+        ));
     }
+    Ok(())
+}
 
+/// Deletes every command registered by `module_name`.
+pub async fn delete_commands_by_module(db_proxy_url: &str, module_name: &str) -> Result<()> {
+    for row in list_commands_by_module(db_proxy_url, module_name).await? {
+        delete_command(db_proxy_url, &row.id).await?;
+    }
     Ok(())
 }
 

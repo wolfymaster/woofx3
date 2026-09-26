@@ -366,8 +366,15 @@ pub struct ManifestCommand {
     pub pattern: String,
     #[serde(rename = "type")]
     pub pattern_type: String,
+    /// A workflow the command runs as its one action. Mutually exclusive with
+    /// `actions`.
     #[serde(default)]
     pub workflow: Option<String>,
+    /// The actions the command runs, in order, stored as the command's
+    /// actions exactly as declared. Same shape as a workflow's steps.
+    /// Mutually exclusive with `workflow`.
+    #[serde(default)]
+    pub actions: Vec<ManifestWorkflowStep>,
     #[serde(default)]
     pub required_role: Option<String>,
 }
@@ -1231,28 +1238,61 @@ impl ManifestAction {
 }
 
 impl ManifestCommand {
-    /// `resolved_workflow` is the canonical id of the workflow this command
-    /// invokes (when the manifest declared one). When `None`, the command
-    /// is treated as a text command per the existing semantics.
+    /// The name the command is stored and matched under: its pattern without
+    /// the leading `!`.
+    pub fn command_name(&self) -> &str {
+        self.pattern.strip_prefix('!').unwrap_or(&self.pattern)
+    }
+
+    /// Registers the command with the actions the manifest declared for it.
+    ///
+    /// `resolved_workflow` is the canonical id of the workflow the command
+    /// runs, when it declared `workflow`. `resolved_steps` holds the resolution
+    /// of each of its `actions`, index for index. A command declaring neither
+    /// runs nothing: it still matches and still announces itself on
+    /// `chat.command.<slug>` for workflows listening to it.
     pub async fn register(
         &self,
         module_name: &str,
         db_proxy: &dyn super::db_proxy_client::ModuleDbProxy,
         resolved_workflow: Option<&str>,
+        resolved_steps: &[ResolvedWorkflowStep],
+        asset_repo_keys: &HashMap<String, String>,
     ) -> Result<()> {
-        let command_name = self.pattern.strip_prefix('!').unwrap_or(&self.pattern);
+        if resolved_steps.len() != self.actions.len() {
+            return Err(anyhow!(
+                "command {} register: resolved_steps ({}) does not match actions ({})",
+                self.id,
+                resolved_steps.len(),
+                self.actions.len(),
+            ));
+        }
+        let command_name = self.command_name();
 
-        // A declared workflow becomes a workflow step, which is what the engine
-        // runs it as. Without one the command has nothing to run: it still
-        // matches and still announces itself on `chat.command.<slug>`, which is
-        // what a module command with no workflow has always amounted to.
         let actions = match resolved_workflow {
             Some(workflow) => serde_json::json!([{
                 "id": "action-1",
                 "type": "workflow",
                 "workflow": { "workflowId": workflow, "waitUntilCompletion": false },
             }]),
-            None => serde_json::json!([]),
+            None => {
+                let step_id_prefix = format!("{}-{}-", module_name, self.id);
+                let tasks = self
+                    .actions
+                    .iter()
+                    .enumerate()
+                    .map(|(i, step)| {
+                        step_to_task_json(
+                            &step_id_prefix,
+                            i,
+                            step,
+                            &resolved_steps[i],
+                            asset_repo_keys,
+                        )
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                serde_json::Value::Array(tasks)
+            }
         };
         let actions_json = serde_json::to_string(&actions)?;
 
@@ -2283,6 +2323,15 @@ mod tests {
         assert_eq!(m.settings[1].id, "clientId");
         assert_eq!(m.settings[1].setting_type, "text");
         assert!(m.settings[1].action.is_null());
+        assert_eq!(m.commands[0].actions[0].action, "song_request");
+        assert!(m.commands[0].workflow.is_none());
+
+        let resolved =
+            super::super::manifest_validate::validate(&m).expect("validate spotify fixture");
+        assert_eq!(
+            resolved.commands[0].step_actions[0].to_string(),
+            "woofx3_spotify:action:song_request"
+        );
 
         let reserialized = serde_json::to_string(&m).expect("serialize");
         let reparsed: ModuleManifest = serde_json::from_str(&reserialized).expect("reparse");

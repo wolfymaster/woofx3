@@ -11,7 +11,8 @@
 //!
 //! Pass 2 resolves intra-manifest references — the `function` field of
 //! `function`-typed actions, `workflows[].trigger`,
-//! `workflows[].steps[].action`, `commands[].workflow` — to canonical
+//! `workflows[].steps[].action`, `commands[].workflow`,
+//! `commands[].actions[].action` — to canonical
 //! ids, either via the local symbol tables or by accepting an
 //! already-canonical id verbatim
 //! (cross-module references).
@@ -67,6 +68,8 @@ pub struct ResolvedFunction {
 pub struct ResolvedCommand {
     pub canonical_id: CanonicalId,
     pub workflow: Option<CanonicalId>,
+    /// The action each of the command's `actions` names, index for index.
+    pub step_actions: Vec<CanonicalId>,
 }
 
 /// What a workflow binds to, and therefore whether it creates a dependency.
@@ -293,7 +296,12 @@ pub fn validate_with_provenance(
         canonical_id: e.canonical_id.clone(),
     });
     let actions = resolve_actions(&manifest.actions, &actions_table, &functions_table)?;
-    let commands = resolve_commands(&manifest.commands, &commands_table, &workflows_table)?;
+    let commands = resolve_commands(
+        &manifest.commands,
+        &commands_table,
+        &workflows_table,
+        &actions_table,
+    )?;
     let workflows = resolve_workflows(
         &manifest.workflows,
         &workflows_table,
@@ -625,7 +633,9 @@ pub async fn build_install_plan(
 
     for (i, cmd) in resolved.commands.iter().enumerate() {
         let step = InstallStep::RegisterCommand(cmd.canonical_id.clone());
-        let mut deps = vec![InstallStep::CreateModule];
+        // `UploadAssets` builds the `asset_repo_keys` a command's actions
+        // resolve `${asset:...}` markers against, as a workflow's steps do.
+        let mut deps = vec![InstallStep::CreateModule, InstallStep::UploadAssets];
         // A command referencing a workflow declared in *this* manifest
         // must run after that workflow registers. A cross-module
         // workflow reference has no node in this plan — it was already
@@ -741,6 +751,26 @@ async fn validate_cross_module_refs(
                 missing.push(format!(
                     "workflow '{}' step #{} → action '{}' ({})",
                     wf.canonical_id.resource_id(),
+                    si,
+                    action_canonical,
+                    e
+                ));
+            }
+        }
+    }
+
+    for cmd in &resolved.commands {
+        for (si, action_canonical) in cmd.step_actions.iter().enumerate() {
+            if !is_external(action_canonical) || !checked.insert(action_canonical.to_string()) {
+                continue;
+            }
+            if let Err(e) = db_proxy
+                .get_action_ref_by_canonical_id(&action_canonical.to_string())
+                .await
+            {
+                missing.push(format!(
+                    "command '{}' action #{} → action '{}' ({})",
+                    cmd.canonical_id.resource_id(),
                     si,
                     action_canonical,
                     e
@@ -1395,6 +1425,7 @@ fn resolve_commands(
     items: &[ManifestCommand],
     commands_table: &KindTable,
     workflows_table: &KindTable,
+    actions_table: &KindTable,
 ) -> Result<Vec<ResolvedCommand>> {
     let mut out = Vec::with_capacity(items.len());
     for (i, command) in items.iter().enumerate() {
@@ -1411,9 +1442,25 @@ fn resolve_commands(
             )?),
             _ => None,
         };
+        if workflow.is_some() && !command.actions.is_empty() {
+            return Err(anyhow!(
+                "command #{i} ({}): declare either `workflow` or `actions`, not both",
+                command.id
+            ));
+        }
+        let mut step_actions = Vec::with_capacity(command.actions.len());
+        for (si, step) in command.actions.iter().enumerate() {
+            step_actions.push(resolve_local_or_canonical(
+                step.action.trim(),
+                ResourceKind::Action,
+                actions_table,
+                &format!("command #{i} ({}) action #{si}", command.id),
+            )?);
+        }
         out.push(ResolvedCommand {
             canonical_id: entry.canonical_id.clone(),
             workflow,
+            step_actions,
         });
     }
     Ok(out)
@@ -3071,6 +3118,53 @@ mod tests {
             "widgets": [{ "id": "wd1", "name": "Wd1", "acceptedEvents": [] }]"#,
         ))
         .expect("an empty list asks for nothing");
+    }
+
+    #[test]
+    fn resolves_command_actions() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "functions/f1.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix",
+                "actions": [{ "action": "a1" }, { "action": "other_mod:action:say" }] }]"#,
+        );
+        let r = validate(&m).expect("ok");
+        let actions: Vec<String> = r.commands[0]
+            .step_actions
+            .iter()
+            .map(|a| a.to_string())
+            .collect();
+        assert_eq!(actions, ["test_mod:action:a1", "other_mod:action:say"]);
+        assert!(r.commands[0].workflow.is_none());
+    }
+
+    #[test]
+    fn rejects_command_action_naming_no_local_action() {
+        let err = validate(&minimal(
+            r#",
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix",
+                "actions": [{ "action": "missing" }] }]"#,
+        ))
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("command #0 (c1) action #0"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_command_declaring_both_workflow_and_actions() {
+        let err = validate(&minimal(
+            r#",
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus" }],
+            "functions": [{ "id": "f1", "name": "F1", "runtime": "lua", "path": "functions/f1.lua" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
+            "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [] }],
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix",
+                "workflow": "w1", "actions": [{ "action": "a1" }] }]"#,
+        ))
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("either `workflow` or `actions`"), "got: {err}");
     }
 
     #[test]
