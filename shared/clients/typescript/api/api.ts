@@ -1270,14 +1270,13 @@ export interface Woofx3EngineApi {
   // engine actually offers -- `api-session.ts` now derives the exposed surface
   // from these keys, so an undeclared method is no longer callable.
 
-  /** Run a chat command as `username`. Authorization is enforced by db-proxy
-   *  when it resolves the command, so a caller without permission is refused
-   *  rather than silently ignored. */
-  executeCommand(
-    commandName: string,
-    username: string,
-    args?: Record<string, string>
-  ): Promise<{ success: boolean; message: string }>;
+  /** Run a chat command as though `username` typed `!<commandName> <text>`
+   *  in chat: `text` is parsed into args and `argumentPattern` variables the
+   *  same way, the command's actions run, and `chat.command.<slug>` fires for
+   *  workflows. Authorization is enforced by db-proxy when it resolves the
+   *  command, so a caller without permission is refused rather than silently
+   *  ignored. Cooldown is not applied. */
+  executeCommand(commandName: string, username: string, text?: string): Promise<{ success: boolean; message: string }>;
 
   /** Commands a caller may run. The username parameter is accepted but not
    *  yet used to filter the list. */
