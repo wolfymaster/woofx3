@@ -114,6 +114,24 @@ function unwrapVoid(op: string, response: { status?: { code?: string; message?: 
   }
 }
 
+/**
+ * Runs a read keyed by a stream session id and returns null when db-proxy has
+ * no such session. Session ids are opaque to callers, so an id db-proxy cannot
+ * parse (`invalid_argument`) is the same answer as one it cannot find; callers
+ * validate every other argument first, so that code means the id.
+ */
+async function nullWhenSessionMissing<T>(op: string, read: () => Promise<T>): Promise<T | null> {
+  try {
+    return await read();
+  } catch (err) {
+    const failure = toError(err, op);
+    if (failure instanceof DbError && (failure.code === "not_found" || failure.code === "invalid_argument")) {
+      return null;
+    }
+    throw failure;
+  }
+}
+
 export class DbClient {
   private config: ClientConfiguration;
 
@@ -582,11 +600,60 @@ export class DbClient {
     return response;
   }
 
-  /** A session's gauge samples, oldest first, resolved through its segments. */
-  async listStreamGaugeSamples(streamSessionId: string): Promise<stream_gauge.StreamGaugeSample[]> {
-    const response = await stream_gauge.ListStreamGaugeSamples({ streamSessionId }, this.config);
-    unwrapVoid("listStreamGaugeSamples", response);
+  /**
+   * A session's gauge samples, oldest first, resolved through its segments,
+   * or null when db-proxy has no session with that id.
+   */
+  async findStreamGaugeSamples(streamSessionId: string): Promise<stream_gauge.StreamGaugeSample[] | null> {
+    const response = await nullWhenSessionMissing("findStreamGaugeSamples", () =>
+      stream_gauge.ListStreamGaugeSamples({ streamSessionId }, this.config)
+    );
+    if (response === null) {
+      return null;
+    }
+    unwrapVoid("findStreamGaugeSamples", response);
     return response.samples ?? [];
+  }
+
+  /** Channel totals for the time a session owns, or null for an unknown session. */
+  async findStreamSessionEventTotals(streamSessionId: string): Promise<user_event.StreamSessionEventTotals | null> {
+    const response = await nullWhenSessionMissing("findStreamSessionEventTotals", () =>
+      user_event.GetStreamSessionEventTotals({ streamSessionId }, this.config)
+    );
+    if (response === null) {
+      return null;
+    }
+    return unwrap("findStreamSessionEventTotals", response, response.totals);
+  }
+
+  /**
+   * One viewer's totals for a session, or lifetime without one. Null only
+   * for an unknown session: a viewer with no events has zero totals.
+   */
+  async findViewerEventTotals(
+    req: user_event.GetViewerEventTotalsRequest
+  ): Promise<user_event.ViewerEventTotals | null> {
+    const response = await nullWhenSessionMissing("findViewerEventTotals", () =>
+      user_event.GetViewerEventTotals(req, this.config)
+    );
+    if (response === null) {
+      return null;
+    }
+    return unwrap("findViewerEventTotals", response, response.totals);
+  }
+
+  /** Viewers ranked by the metric, highest first, or null for an unknown session. */
+  async findViewerLeaderboard(
+    req: user_event.ListViewerLeaderboardRequest
+  ): Promise<user_event.LeaderboardEntry[] | null> {
+    const response = await nullWhenSessionMissing("findViewerLeaderboard", () =>
+      user_event.ListViewerLeaderboard(req, this.config)
+    );
+    if (response === null) {
+      return null;
+    }
+    unwrapVoid("findViewerLeaderboard", response);
+    return response.entries ?? [];
   }
 
   async upsertWidgetStatus(req: widget_status.UpsertWidgetStatusRequest): Promise<widget_status.WidgetStatusResponse> {

@@ -4,10 +4,12 @@
 **Built:** step 1 — every platform event is written to `user_events` as it
 enters the engine (see [The fact log](#the-fact-log)); step 3 — viewer,
 follower and subscriber levels are sampled once a minute while live (see
-[Gauge samples](#gauge-samples)).
+[Gauge samples](#gauge-samples)); step 4 — per-session totals, per-viewer
+totals, leaderboards and gauge series as engine RPCs (see [Reading the
+log](#reading-the-log)).
 
-**Not built:** everything that reads it. No code aggregates anything yet. This
-is the design [stream
+**Not built:** the summary to the UI and the backfill (steps 5 and 6). This is
+the design [stream
 sessions](/services/stream-sessions#analytics-is-a-separate-subsystem) defers
 to, written down so the first person to need a total does not invent a
 different one.
@@ -257,26 +259,80 @@ Twitch's `Ratelimit-Reset`, or with doubling waits when it names none, for up
 to 45 seconds into the minute. A metric still limited after that is left null
 in that minute's row, with a warning; the others are recorded.
 
+## Reading the log
+
+Four engine RPCs read the log and the samples
+(`api/src/routes/analytics.ts`), backed by `UserEventService`'s
+`GetStreamSessionEventTotals`, `GetViewerEventTotals` and
+`ListViewerLeaderboard` and by `StreamGaugeService.ListStreamGaugeSamples`:
+
+| RPC | Answers |
+|---|---|
+| `getStreamSessionTotals(sessionId)` | Bits, cheers, subs, gifted subs, follows, raids and raiders for a session, plus peak and average viewers from its samples. |
+| `getViewerTotals({ platform, platformUserId, sessionId? })` | Bits, cheers, subs gifted and gifts for one viewer, in a session or over their lifetime. |
+| `getLeaderboard({ metric, sessionId?, minTotal?, limit? })` | Top cheerers (`bits`) or gifters (`giftedSubs`), keeping viewers at or above `minTotal`. |
+| `getStreamSessionGauges(sessionId)` | Every sampled minute of a session, oldest first. |
+
+Each returns `null` for a session that does not exist.
+
+**A session owns a span of time, and its events are the ones in it.** A session
+runs from its start until the session that replaced it began, or to now while
+it is open. A split closes one session and opens the next at the same instant,
+so sessions tile time and every event lands in exactly one. The reads resolve
+the session to that window once, from the session record, and select events by
+`occurred_at` — a range scan on the index the fact log already has. The stamped
+`session_id` is not read at all.
+
+That is the "resolve once, not per row" the stamp requires, and it was chosen
+over a materialised canonical column because there is nothing to keep in step:
+a split or merge changes the session's bounds and the next read follows. It
+also counts events that were published unstamped (before the first
+`session.started` reached a process) and offline events between broadcasts,
+which belong to the session that was open, as sessions intend. Any future
+operation that moves time between sessions must keep their bounds describing
+the time each one owns.
+
+The gauge reads resolve through segments instead, because samples are only
+ever taken inside one and carry its id.
+
+**What counts as what.**
+
+- *Subs* are subscriptions viewers took out or renewed themselves: new subs
+  not paid for by a gift, plus resubs. *Gifted subs* are counted from the
+  gifter's side, the gift's `amount`. The gifted `Subscribe` rows are left out
+  of subs, so the two add up without counting a gift twice. Telling a gifted
+  sub from a paid one reads `isGift` out of the payload JSON; the extraction is
+  spelled per dialect and runs only on sub rows inside the window.
+- *Peak* and *average viewers* use the minutes that have a viewer count; an
+  unsampled minute or a failed read is left out, not counted as zero. Both are
+  `null` when no minute was sampled.
+- *Lifetime* is every event recorded, regardless of session, so merges and
+  splits cannot change it.
+
+**Anonymous events count for the channel and for nobody.** They carry no
+`platform_user_id`, so they are in session totals and never in a viewer's
+totals or on a leaderboard. A viewer is `(platform, platform_user_id)`; the
+name shown is the one on their most recent event, because names change.
+
 ## Two constraints to design against
 
 **The stamped session id is not a stable key.** Splits move segments between
-sessions retroactively, so a reader aggregating events must resolve the stamp
-through the session record to a canonical id — see [Splits are
+sessions retroactively, so a reader aggregating events must not group on the
+stamp — see [Splits are
 retroactive](/services/stream-sessions#splits-are-retroactive-and-events-are-immutable).
-Doing that per row will not scale. Resolve once per segment, or materialise a
-canonical id beside the stamped one.
+The reads above resolve the session to its time window once per query instead.
 
 **Per-viewer rows are personal data.** A leaderboard of who spent what is the
 first thing this system will hold that a viewer could reasonably ask to have
 deleted. Retention and deletion are a design input here, not an operational
-afterthought, and they are the reason step 4 sends summaries rather than
+afterthought, and they are the reason step 5 sends summaries rather than
 shipping every viewer's activity to a multi-tenant store.
 
 ## Gaps that block specific questions
 
 | Question | Blocked by |
 |---|---|
-| Users who gifted N subs | The UI drops `SubscriptionGift`: no `PlatformEventType` for it (`client/src/lib/platforms/engine-events.ts:5-8`, woofx3-ui). The engine already broadcasts it. |
+| Gifts in the UI's live feed | The UI drops `SubscriptionGift`: no `PlatformEventType` for it (`client/src/lib/platforms/engine-events.ts:5-8`, woofx3-ui). The engine already broadcasts it, and "users who gifted N subs" is answered from the log by `getLeaderboard`. |
 
 Two smaller things sit in the same area and will be mistaken for Analytics bugs
 once it exists: `getDashboardStats()` returns hardcoded values for
@@ -295,8 +351,9 @@ Each step is independently useful and safe to stop after:
    enumerate past streams and see when each was actually live.
 3. **Sample the gauges** — done. Viewer count per minute, Helix totals on the
    same tick, stored per segment in `stream_gauge_samples`.
-4. **Query the log** — per-session totals and per-viewer leaderboards as engine
-   RPCs, with canonical session resolution done once per segment.
+4. **Query the log** — done. Per-session totals, per-viewer totals,
+   leaderboards and gauge series as engine RPCs, resolving each session to
+   its time window once per query.
 5. **Summarise to the UI** — a `SESSION_SUMMARY` webhook on `session.ended`,
    and the Convex table behind it.
 6. **Backfill** what `workflow_executions.trigger_event` and `alerts.payload`
