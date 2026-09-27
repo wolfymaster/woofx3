@@ -236,7 +236,6 @@ shipping every viewer's activity to a multi-tenant store.
 | Question | Blocked by |
 |---|---|
 | Users who gifted N subs | The UI drops `SubscriptionGift`: no `PlatformEventType` for it (`client/src/lib/platforms/engine-events.ts:5-8`, woofx3-ui). The engine already broadcasts it. |
-| Anything per stream | No session RPC on the engine's public surface. `ListStreamSessions` and `GetStreamSession` exist in `db/proto/v1/stream_session.proto:33-34` but `api/` never exposes them, so the UI cannot enumerate past sessions. |
 | Viewers over time | Nothing records a viewer count. Every poll overwrites the last. |
 
 Two smaller things sit in the same area and will be mistaken for Analytics bugs
@@ -251,9 +250,9 @@ Each step is independently useful and safe to stop after:
 1. **Write the facts** — done. `user_events` carries the session and the
    time axis, and every platform event is written as it arrives. Nothing reads
    it yet; the corpus accumulates from the day it landed.
-2. **Expose sessions** — `ListStreamSessions` / `GetStreamSession` on the
-   `RPC_METHODS` allowlist (`api/src/api-session.ts:103-193`). Without this
-   there is no way to ask about a past stream.
+2. **Expose sessions** — done. `listStreamSessions` / `getStreamSession` on
+   the engine surface return sessions with their segments, so the UI can
+   enumerate past streams and see when each was actually live.
 3. **Sample the gauges** — viewer count per minute, Helix totals on the same
    tick.
 4. **Query the log** — per-session totals and per-viewer leaderboards as engine
