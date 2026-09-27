@@ -18,7 +18,7 @@ func newSceneSvc(t *testing.T) (client.SceneService, client.OverlayTokenService,
 	db := newOverlayTokenTestDB(t)
 	tokenRepo := repository.NewOverlayTokenRepository(db)
 	sceneRepo := repository.NewSceneRepository(db)
-	return NewSceneService(sceneRepo, tokenRepo, nil),
+	return NewSceneService(sceneRepo, tokenRepo, nil, nil),
 		NewOverlayTokenService(tokenRepo, sceneRepo, nil),
 		tokenRepo,
 		db
