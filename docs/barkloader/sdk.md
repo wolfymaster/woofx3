@@ -159,6 +159,38 @@ support:
 const host = window.widgetHost;
 ```
 
+### Themes
+
+A widget whose manifest declares a [theme contract](./modules.md#themes) is rendered with its theme already applied: each contract variable is set as `--theme-{id}` and each filled asset slot as `--theme-asset-{id}: url(...)` on `:root`, and the theme's stylesheet is linked after the widget's own. Styling with those properties is usually all a widget needs:
+
+```css
+#text { text-shadow: var(--theme-shadow, 0 2px 8px rgba(0, 0, 0, 0.7)); }
+#box  { background: var(--theme-asset-backdrop, none) center / cover; }
+```
+
+For anything CSS cannot reach, `widgetHost.theme` carries the same values:
+
+```ts
+interface WidgetTheme {
+  readonly id: string | null;                                   // theme canonical id, or null for the defaults
+  readonly contractVersion: number;
+  readonly variables: Readonly<Record<string, string>>;         // every contract variable
+  readonly assets: Readonly<Record<string, string | null>>;     // slot -> URL
+  readonly defaultAssets: Readonly<Record<string, string | null>>;
+  readonly fallback: "missing" | "incompatible" | null;
+}
+
+const sound = new Audio(host.theme?.assets.endSound ?? undefined);
+sound.addEventListener("error", () => {
+  const fallback = host.theme?.defaultAssets.endSound;
+  if (fallback) {
+    sound.src = fallback;
+  }
+});
+```
+
+`host.theme` is `null` for a widget without a contract. Widget code is the same for every theme: with no theme selected, or one that is missing or no longer fits, every value is the contract default. `createMockHost({ theme })` in the preview helper lets you try a theme offline.
+
 ### Playing in an alert
 
 A widget whose manifest `surfaces` include `"alert"` can be placed inside an alert
