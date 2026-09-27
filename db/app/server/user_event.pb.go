@@ -22,6 +22,57 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type LeaderboardMetric int32
+
+const (
+	LeaderboardMetric_LEADERBOARD_METRIC_UNSPECIFIED LeaderboardMetric = 0
+	// Bits cheered.
+	LeaderboardMetric_LEADERBOARD_METRIC_BITS LeaderboardMetric = 1
+	// Subs gifted.
+	LeaderboardMetric_LEADERBOARD_METRIC_GIFTED_SUBS LeaderboardMetric = 2
+)
+
+// Enum value maps for LeaderboardMetric.
+var (
+	LeaderboardMetric_name = map[int32]string{
+		0: "LEADERBOARD_METRIC_UNSPECIFIED",
+		1: "LEADERBOARD_METRIC_BITS",
+		2: "LEADERBOARD_METRIC_GIFTED_SUBS",
+	}
+	LeaderboardMetric_value = map[string]int32{
+		"LEADERBOARD_METRIC_UNSPECIFIED": 0,
+		"LEADERBOARD_METRIC_BITS":        1,
+		"LEADERBOARD_METRIC_GIFTED_SUBS": 2,
+	}
+)
+
+func (x LeaderboardMetric) Enum() *LeaderboardMetric {
+	p := new(LeaderboardMetric)
+	*p = x
+	return p
+}
+
+func (x LeaderboardMetric) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (LeaderboardMetric) Descriptor() protoreflect.EnumDescriptor {
+	return file_user_event_proto_enumTypes[0].Descriptor()
+}
+
+func (LeaderboardMetric) Type() protoreflect.EnumType {
+	return &file_user_event_proto_enumTypes[0]
+}
+
+func (x LeaderboardMetric) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use LeaderboardMetric.Descriptor instead.
+func (LeaderboardMetric) EnumDescriptor() ([]byte, []int) {
+	return file_user_event_proto_rawDescGZIP(), []int{0}
+}
+
 type UserEvent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -350,6 +401,612 @@ func (x *RecordUserEventResponse) GetCreated() bool {
 	return false
 }
 
+type GetStreamSessionEventTotalsRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	StreamSessionId string                 `protobuf:"bytes,1,opt,name=stream_session_id,json=streamSessionId,proto3" json:"stream_session_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *GetStreamSessionEventTotalsRequest) Reset() {
+	*x = GetStreamSessionEventTotalsRequest{}
+	mi := &file_user_event_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetStreamSessionEventTotalsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetStreamSessionEventTotalsRequest) ProtoMessage() {}
+
+func (x *GetStreamSessionEventTotalsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_user_event_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetStreamSessionEventTotalsRequest.ProtoReflect.Descriptor instead.
+func (*GetStreamSessionEventTotalsRequest) Descriptor() ([]byte, []int) {
+	return file_user_event_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *GetStreamSessionEventTotalsRequest) GetStreamSessionId() string {
+	if x != nil {
+		return x.StreamSessionId
+	}
+	return ""
+}
+
+type StreamSessionEventTotals struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Bits cheered, anonymous cheers included.
+	Bits   int64 `protobuf:"varint,1,opt,name=bits,proto3" json:"bits,omitempty"`
+	Cheers int64 `protobuf:"varint,2,opt,name=cheers,proto3" json:"cheers,omitempty"`
+	// Subscriptions viewers took out or renewed themselves: new subs that were
+	// not gifted, plus resubs. Gifted subs are in `gifted_subs` only, so the two
+	// add up without counting a gift twice.
+	Subs int64 `protobuf:"varint,3,opt,name=subs,proto3" json:"subs,omitempty"`
+	// Subs gifted, counted from the gifter's side (the gift's `amount`), not
+	// from each recipient's gifted sub.
+	GiftedSubs int64 `protobuf:"varint,4,opt,name=gifted_subs,json=giftedSubs,proto3" json:"gifted_subs,omitempty"`
+	Follows    int64 `protobuf:"varint,5,opt,name=follows,proto3" json:"follows,omitempty"`
+	Raids      int64 `protobuf:"varint,6,opt,name=raids,proto3" json:"raids,omitempty"`
+	// Viewers brought by those raids.
+	Raiders       int64 `protobuf:"varint,7,opt,name=raiders,proto3" json:"raiders,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamSessionEventTotals) Reset() {
+	*x = StreamSessionEventTotals{}
+	mi := &file_user_event_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamSessionEventTotals) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamSessionEventTotals) ProtoMessage() {}
+
+func (x *StreamSessionEventTotals) ProtoReflect() protoreflect.Message {
+	mi := &file_user_event_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamSessionEventTotals.ProtoReflect.Descriptor instead.
+func (*StreamSessionEventTotals) Descriptor() ([]byte, []int) {
+	return file_user_event_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *StreamSessionEventTotals) GetBits() int64 {
+	if x != nil {
+		return x.Bits
+	}
+	return 0
+}
+
+func (x *StreamSessionEventTotals) GetCheers() int64 {
+	if x != nil {
+		return x.Cheers
+	}
+	return 0
+}
+
+func (x *StreamSessionEventTotals) GetSubs() int64 {
+	if x != nil {
+		return x.Subs
+	}
+	return 0
+}
+
+func (x *StreamSessionEventTotals) GetGiftedSubs() int64 {
+	if x != nil {
+		return x.GiftedSubs
+	}
+	return 0
+}
+
+func (x *StreamSessionEventTotals) GetFollows() int64 {
+	if x != nil {
+		return x.Follows
+	}
+	return 0
+}
+
+func (x *StreamSessionEventTotals) GetRaids() int64 {
+	if x != nil {
+		return x.Raids
+	}
+	return 0
+}
+
+func (x *StreamSessionEventTotals) GetRaiders() int64 {
+	if x != nil {
+		return x.Raiders
+	}
+	return 0
+}
+
+type GetStreamSessionEventTotalsResponse struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Status        *ResponseStatus           `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Totals        *StreamSessionEventTotals `protobuf:"bytes,2,opt,name=totals,proto3" json:"totals,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetStreamSessionEventTotalsResponse) Reset() {
+	*x = GetStreamSessionEventTotalsResponse{}
+	mi := &file_user_event_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetStreamSessionEventTotalsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetStreamSessionEventTotalsResponse) ProtoMessage() {}
+
+func (x *GetStreamSessionEventTotalsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_user_event_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetStreamSessionEventTotalsResponse.ProtoReflect.Descriptor instead.
+func (*GetStreamSessionEventTotalsResponse) Descriptor() ([]byte, []int) {
+	return file_user_event_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GetStreamSessionEventTotalsResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *GetStreamSessionEventTotalsResponse) GetTotals() *StreamSessionEventTotals {
+	if x != nil {
+		return x.Totals
+	}
+	return nil
+}
+
+type GetViewerEventTotalsRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Platform       string                 `protobuf:"bytes,1,opt,name=platform,proto3" json:"platform,omitempty"`
+	PlatformUserId string                 `protobuf:"bytes,2,opt,name=platform_user_id,json=platformUserId,proto3" json:"platform_user_id,omitempty"`
+	// Absent for the viewer's lifetime totals.
+	StreamSessionId *string `protobuf:"bytes,3,opt,name=stream_session_id,json=streamSessionId,proto3,oneof" json:"stream_session_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *GetViewerEventTotalsRequest) Reset() {
+	*x = GetViewerEventTotalsRequest{}
+	mi := &file_user_event_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetViewerEventTotalsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetViewerEventTotalsRequest) ProtoMessage() {}
+
+func (x *GetViewerEventTotalsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_user_event_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetViewerEventTotalsRequest.ProtoReflect.Descriptor instead.
+func (*GetViewerEventTotalsRequest) Descriptor() ([]byte, []int) {
+	return file_user_event_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *GetViewerEventTotalsRequest) GetPlatform() string {
+	if x != nil {
+		return x.Platform
+	}
+	return ""
+}
+
+func (x *GetViewerEventTotalsRequest) GetPlatformUserId() string {
+	if x != nil {
+		return x.PlatformUserId
+	}
+	return ""
+}
+
+func (x *GetViewerEventTotalsRequest) GetStreamSessionId() string {
+	if x != nil && x.StreamSessionId != nil {
+		return *x.StreamSessionId
+	}
+	return ""
+}
+
+type ViewerEventTotals struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Platform       string                 `protobuf:"bytes,1,opt,name=platform,proto3" json:"platform,omitempty"`
+	PlatformUserId string                 `protobuf:"bytes,2,opt,name=platform_user_id,json=platformUserId,proto3" json:"platform_user_id,omitempty"`
+	// The name on the viewer's most recent event, absent when none carried one.
+	UserName *string `protobuf:"bytes,3,opt,name=user_name,json=userName,proto3,oneof" json:"user_name,omitempty"`
+	Bits     int64   `protobuf:"varint,4,opt,name=bits,proto3" json:"bits,omitempty"`
+	Cheers   int64   `protobuf:"varint,5,opt,name=cheers,proto3" json:"cheers,omitempty"`
+	// Subs the viewer gifted.
+	GiftedSubs int64 `protobuf:"varint,6,opt,name=gifted_subs,json=giftedSubs,proto3" json:"gifted_subs,omitempty"`
+	// Gift events: one community gift of five subs is one gift.
+	Gifts         int64 `protobuf:"varint,7,opt,name=gifts,proto3" json:"gifts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ViewerEventTotals) Reset() {
+	*x = ViewerEventTotals{}
+	mi := &file_user_event_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ViewerEventTotals) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ViewerEventTotals) ProtoMessage() {}
+
+func (x *ViewerEventTotals) ProtoReflect() protoreflect.Message {
+	mi := &file_user_event_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ViewerEventTotals.ProtoReflect.Descriptor instead.
+func (*ViewerEventTotals) Descriptor() ([]byte, []int) {
+	return file_user_event_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ViewerEventTotals) GetPlatform() string {
+	if x != nil {
+		return x.Platform
+	}
+	return ""
+}
+
+func (x *ViewerEventTotals) GetPlatformUserId() string {
+	if x != nil {
+		return x.PlatformUserId
+	}
+	return ""
+}
+
+func (x *ViewerEventTotals) GetUserName() string {
+	if x != nil && x.UserName != nil {
+		return *x.UserName
+	}
+	return ""
+}
+
+func (x *ViewerEventTotals) GetBits() int64 {
+	if x != nil {
+		return x.Bits
+	}
+	return 0
+}
+
+func (x *ViewerEventTotals) GetCheers() int64 {
+	if x != nil {
+		return x.Cheers
+	}
+	return 0
+}
+
+func (x *ViewerEventTotals) GetGiftedSubs() int64 {
+	if x != nil {
+		return x.GiftedSubs
+	}
+	return 0
+}
+
+func (x *ViewerEventTotals) GetGifts() int64 {
+	if x != nil {
+		return x.Gifts
+	}
+	return 0
+}
+
+type GetViewerEventTotalsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Totals        *ViewerEventTotals     `protobuf:"bytes,2,opt,name=totals,proto3" json:"totals,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetViewerEventTotalsResponse) Reset() {
+	*x = GetViewerEventTotalsResponse{}
+	mi := &file_user_event_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetViewerEventTotalsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetViewerEventTotalsResponse) ProtoMessage() {}
+
+func (x *GetViewerEventTotalsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_user_event_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetViewerEventTotalsResponse.ProtoReflect.Descriptor instead.
+func (*GetViewerEventTotalsResponse) Descriptor() ([]byte, []int) {
+	return file_user_event_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *GetViewerEventTotalsResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *GetViewerEventTotalsResponse) GetTotals() *ViewerEventTotals {
+	if x != nil {
+		return x.Totals
+	}
+	return nil
+}
+
+type ListViewerLeaderboardRequest struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Metric LeaderboardMetric      `protobuf:"varint,1,opt,name=metric,proto3,enum=user_event.LeaderboardMetric" json:"metric,omitempty"`
+	// Absent for a lifetime leaderboard.
+	StreamSessionId *string `protobuf:"bytes,2,opt,name=stream_session_id,json=streamSessionId,proto3,oneof" json:"stream_session_id,omitempty"`
+	// Keep viewers whose total is at least this. Defaults to 1; must be >= 1.
+	MinTotal *int64 `protobuf:"varint,3,opt,name=min_total,json=minTotal,proto3,oneof" json:"min_total,omitempty"`
+	// 1-100. Defaults to 10.
+	Limit         *int32 `protobuf:"varint,4,opt,name=limit,proto3,oneof" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListViewerLeaderboardRequest) Reset() {
+	*x = ListViewerLeaderboardRequest{}
+	mi := &file_user_event_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListViewerLeaderboardRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListViewerLeaderboardRequest) ProtoMessage() {}
+
+func (x *ListViewerLeaderboardRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_user_event_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListViewerLeaderboardRequest.ProtoReflect.Descriptor instead.
+func (*ListViewerLeaderboardRequest) Descriptor() ([]byte, []int) {
+	return file_user_event_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ListViewerLeaderboardRequest) GetMetric() LeaderboardMetric {
+	if x != nil {
+		return x.Metric
+	}
+	return LeaderboardMetric_LEADERBOARD_METRIC_UNSPECIFIED
+}
+
+func (x *ListViewerLeaderboardRequest) GetStreamSessionId() string {
+	if x != nil && x.StreamSessionId != nil {
+		return *x.StreamSessionId
+	}
+	return ""
+}
+
+func (x *ListViewerLeaderboardRequest) GetMinTotal() int64 {
+	if x != nil && x.MinTotal != nil {
+		return *x.MinTotal
+	}
+	return 0
+}
+
+func (x *ListViewerLeaderboardRequest) GetLimit() int32 {
+	if x != nil && x.Limit != nil {
+		return *x.Limit
+	}
+	return 0
+}
+
+type LeaderboardEntry struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Platform       string                 `protobuf:"bytes,1,opt,name=platform,proto3" json:"platform,omitempty"`
+	PlatformUserId string                 `protobuf:"bytes,2,opt,name=platform_user_id,json=platformUserId,proto3" json:"platform_user_id,omitempty"`
+	// The name on the viewer's most recent event, absent when none carried one.
+	UserName *string `protobuf:"bytes,3,opt,name=user_name,json=userName,proto3,oneof" json:"user_name,omitempty"`
+	// Bits, or subs gifted, depending on the metric.
+	Total int64 `protobuf:"varint,4,opt,name=total,proto3" json:"total,omitempty"`
+	// The events that make up `total`: cheers, or gifts.
+	Events        int64 `protobuf:"varint,5,opt,name=events,proto3" json:"events,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LeaderboardEntry) Reset() {
+	*x = LeaderboardEntry{}
+	mi := &file_user_event_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LeaderboardEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LeaderboardEntry) ProtoMessage() {}
+
+func (x *LeaderboardEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_user_event_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LeaderboardEntry.ProtoReflect.Descriptor instead.
+func (*LeaderboardEntry) Descriptor() ([]byte, []int) {
+	return file_user_event_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *LeaderboardEntry) GetPlatform() string {
+	if x != nil {
+		return x.Platform
+	}
+	return ""
+}
+
+func (x *LeaderboardEntry) GetPlatformUserId() string {
+	if x != nil {
+		return x.PlatformUserId
+	}
+	return ""
+}
+
+func (x *LeaderboardEntry) GetUserName() string {
+	if x != nil && x.UserName != nil {
+		return *x.UserName
+	}
+	return ""
+}
+
+func (x *LeaderboardEntry) GetTotal() int64 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *LeaderboardEntry) GetEvents() int64 {
+	if x != nil {
+		return x.Events
+	}
+	return 0
+}
+
+type ListViewerLeaderboardResponse struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Status *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	// Highest total first; ties by platform, then platform_user_id.
+	Entries       []*LeaderboardEntry `protobuf:"bytes,2,rep,name=entries,proto3" json:"entries,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListViewerLeaderboardResponse) Reset() {
+	*x = ListViewerLeaderboardResponse{}
+	mi := &file_user_event_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListViewerLeaderboardResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListViewerLeaderboardResponse) ProtoMessage() {}
+
+func (x *ListViewerLeaderboardResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_user_event_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListViewerLeaderboardResponse.ProtoReflect.Descriptor instead.
+func (*ListViewerLeaderboardResponse) Descriptor() ([]byte, []int) {
+	return file_user_event_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ListViewerLeaderboardResponse) GetStatus() *ResponseStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *ListViewerLeaderboardResponse) GetEntries() []*LeaderboardEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
 var File_user_event_proto protoreflect.FileDescriptor
 
 const file_user_event_proto_rawDesc = "" +
@@ -404,9 +1061,69 @@ const file_user_event_proto_rawDesc = "" +
 	"\x17RecordUserEventResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12+\n" +
 	"\x05event\x18\x02 \x01(\v2\x15.user_event.UserEventR\x05event\x12\x18\n" +
-	"\acreated\x18\x03 \x01(\bR\acreated2n\n" +
+	"\acreated\x18\x03 \x01(\bR\acreated\"P\n" +
+	"\"GetStreamSessionEventTotalsRequest\x12*\n" +
+	"\x11stream_session_id\x18\x01 \x01(\tR\x0fstreamSessionId\"\xc5\x01\n" +
+	"\x18StreamSessionEventTotals\x12\x12\n" +
+	"\x04bits\x18\x01 \x01(\x03R\x04bits\x12\x16\n" +
+	"\x06cheers\x18\x02 \x01(\x03R\x06cheers\x12\x12\n" +
+	"\x04subs\x18\x03 \x01(\x03R\x04subs\x12\x1f\n" +
+	"\vgifted_subs\x18\x04 \x01(\x03R\n" +
+	"giftedSubs\x12\x18\n" +
+	"\afollows\x18\x05 \x01(\x03R\afollows\x12\x14\n" +
+	"\x05raids\x18\x06 \x01(\x03R\x05raids\x12\x18\n" +
+	"\araiders\x18\a \x01(\x03R\araiders\"\x93\x01\n" +
+	"#GetStreamSessionEventTotalsResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12<\n" +
+	"\x06totals\x18\x02 \x01(\v2$.user_event.StreamSessionEventTotalsR\x06totals\"\xaa\x01\n" +
+	"\x1bGetViewerEventTotalsRequest\x12\x1a\n" +
+	"\bplatform\x18\x01 \x01(\tR\bplatform\x12(\n" +
+	"\x10platform_user_id\x18\x02 \x01(\tR\x0eplatformUserId\x12/\n" +
+	"\x11stream_session_id\x18\x03 \x01(\tH\x00R\x0fstreamSessionId\x88\x01\x01B\x14\n" +
+	"\x12_stream_session_id\"\xec\x01\n" +
+	"\x11ViewerEventTotals\x12\x1a\n" +
+	"\bplatform\x18\x01 \x01(\tR\bplatform\x12(\n" +
+	"\x10platform_user_id\x18\x02 \x01(\tR\x0eplatformUserId\x12 \n" +
+	"\tuser_name\x18\x03 \x01(\tH\x00R\buserName\x88\x01\x01\x12\x12\n" +
+	"\x04bits\x18\x04 \x01(\x03R\x04bits\x12\x16\n" +
+	"\x06cheers\x18\x05 \x01(\x03R\x06cheers\x12\x1f\n" +
+	"\vgifted_subs\x18\x06 \x01(\x03R\n" +
+	"giftedSubs\x12\x14\n" +
+	"\x05gifts\x18\a \x01(\x03R\x05giftsB\f\n" +
+	"\n" +
+	"_user_name\"\x85\x01\n" +
+	"\x1cGetViewerEventTotalsResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x125\n" +
+	"\x06totals\x18\x02 \x01(\v2\x1d.user_event.ViewerEventTotalsR\x06totals\"\xf1\x01\n" +
+	"\x1cListViewerLeaderboardRequest\x125\n" +
+	"\x06metric\x18\x01 \x01(\x0e2\x1d.user_event.LeaderboardMetricR\x06metric\x12/\n" +
+	"\x11stream_session_id\x18\x02 \x01(\tH\x00R\x0fstreamSessionId\x88\x01\x01\x12 \n" +
+	"\tmin_total\x18\x03 \x01(\x03H\x01R\bminTotal\x88\x01\x01\x12\x19\n" +
+	"\x05limit\x18\x04 \x01(\x05H\x02R\x05limit\x88\x01\x01B\x14\n" +
+	"\x12_stream_session_idB\f\n" +
+	"\n" +
+	"_min_totalB\b\n" +
+	"\x06_limit\"\xb6\x01\n" +
+	"\x10LeaderboardEntry\x12\x1a\n" +
+	"\bplatform\x18\x01 \x01(\tR\bplatform\x12(\n" +
+	"\x10platform_user_id\x18\x02 \x01(\tR\x0eplatformUserId\x12 \n" +
+	"\tuser_name\x18\x03 \x01(\tH\x00R\buserName\x88\x01\x01\x12\x14\n" +
+	"\x05total\x18\x04 \x01(\x03R\x05total\x12\x16\n" +
+	"\x06events\x18\x05 \x01(\x03R\x06eventsB\f\n" +
+	"\n" +
+	"_user_name\"\x87\x01\n" +
+	"\x1dListViewerLeaderboardResponse\x12.\n" +
+	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x126\n" +
+	"\aentries\x18\x02 \x03(\v2\x1c.user_event.LeaderboardEntryR\aentries*x\n" +
+	"\x11LeaderboardMetric\x12\"\n" +
+	"\x1eLEADERBOARD_METRIC_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17LEADERBOARD_METRIC_BITS\x10\x01\x12\"\n" +
+	"\x1eLEADERBOARD_METRIC_GIFTED_SUBS\x10\x022\xc7\x03\n" +
 	"\x10UserEventService\x12Z\n" +
-	"\x0fRecordUserEvent\x12\".user_event.RecordUserEventRequest\x1a#.user_event.RecordUserEventResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"\x0fRecordUserEvent\x12\".user_event.RecordUserEventRequest\x1a#.user_event.RecordUserEventResponse\x12~\n" +
+	"\x1bGetStreamSessionEventTotals\x12..user_event.GetStreamSessionEventTotalsRequest\x1a/.user_event.GetStreamSessionEventTotalsResponse\x12i\n" +
+	"\x14GetViewerEventTotals\x12'.user_event.GetViewerEventTotalsRequest\x1a(.user_event.GetViewerEventTotalsResponse\x12l\n" +
+	"\x15ListViewerLeaderboard\x12(.user_event.ListViewerLeaderboardRequest\x1a).user_event.ListViewerLeaderboardResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_user_event_proto_rawDescOnce sync.Once
@@ -420,27 +1137,51 @@ func file_user_event_proto_rawDescGZIP() []byte {
 	return file_user_event_proto_rawDescData
 }
 
-var file_user_event_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_user_event_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_user_event_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_user_event_proto_goTypes = []any{
-	(*UserEvent)(nil),               // 0: user_event.UserEvent
-	(*RecordUserEventRequest)(nil),  // 1: user_event.RecordUserEventRequest
-	(*RecordUserEventResponse)(nil), // 2: user_event.RecordUserEventResponse
-	(*timestamppb.Timestamp)(nil),   // 3: google.protobuf.Timestamp
-	(*ResponseStatus)(nil),          // 4: common.ResponseStatus
+	(LeaderboardMetric)(0),                      // 0: user_event.LeaderboardMetric
+	(*UserEvent)(nil),                           // 1: user_event.UserEvent
+	(*RecordUserEventRequest)(nil),              // 2: user_event.RecordUserEventRequest
+	(*RecordUserEventResponse)(nil),             // 3: user_event.RecordUserEventResponse
+	(*GetStreamSessionEventTotalsRequest)(nil),  // 4: user_event.GetStreamSessionEventTotalsRequest
+	(*StreamSessionEventTotals)(nil),            // 5: user_event.StreamSessionEventTotals
+	(*GetStreamSessionEventTotalsResponse)(nil), // 6: user_event.GetStreamSessionEventTotalsResponse
+	(*GetViewerEventTotalsRequest)(nil),         // 7: user_event.GetViewerEventTotalsRequest
+	(*ViewerEventTotals)(nil),                   // 8: user_event.ViewerEventTotals
+	(*GetViewerEventTotalsResponse)(nil),        // 9: user_event.GetViewerEventTotalsResponse
+	(*ListViewerLeaderboardRequest)(nil),        // 10: user_event.ListViewerLeaderboardRequest
+	(*LeaderboardEntry)(nil),                    // 11: user_event.LeaderboardEntry
+	(*ListViewerLeaderboardResponse)(nil),       // 12: user_event.ListViewerLeaderboardResponse
+	(*timestamppb.Timestamp)(nil),               // 13: google.protobuf.Timestamp
+	(*ResponseStatus)(nil),                      // 14: common.ResponseStatus
 }
 var file_user_event_proto_depIdxs = []int32{
-	3, // 0: user_event.UserEvent.occurred_at:type_name -> google.protobuf.Timestamp
-	3, // 1: user_event.UserEvent.created_at:type_name -> google.protobuf.Timestamp
-	3, // 2: user_event.RecordUserEventRequest.occurred_at:type_name -> google.protobuf.Timestamp
-	4, // 3: user_event.RecordUserEventResponse.status:type_name -> common.ResponseStatus
-	0, // 4: user_event.RecordUserEventResponse.event:type_name -> user_event.UserEvent
-	1, // 5: user_event.UserEventService.RecordUserEvent:input_type -> user_event.RecordUserEventRequest
-	2, // 6: user_event.UserEventService.RecordUserEvent:output_type -> user_event.RecordUserEventResponse
-	6, // [6:7] is the sub-list for method output_type
-	5, // [5:6] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	13, // 0: user_event.UserEvent.occurred_at:type_name -> google.protobuf.Timestamp
+	13, // 1: user_event.UserEvent.created_at:type_name -> google.protobuf.Timestamp
+	13, // 2: user_event.RecordUserEventRequest.occurred_at:type_name -> google.protobuf.Timestamp
+	14, // 3: user_event.RecordUserEventResponse.status:type_name -> common.ResponseStatus
+	1,  // 4: user_event.RecordUserEventResponse.event:type_name -> user_event.UserEvent
+	14, // 5: user_event.GetStreamSessionEventTotalsResponse.status:type_name -> common.ResponseStatus
+	5,  // 6: user_event.GetStreamSessionEventTotalsResponse.totals:type_name -> user_event.StreamSessionEventTotals
+	14, // 7: user_event.GetViewerEventTotalsResponse.status:type_name -> common.ResponseStatus
+	8,  // 8: user_event.GetViewerEventTotalsResponse.totals:type_name -> user_event.ViewerEventTotals
+	0,  // 9: user_event.ListViewerLeaderboardRequest.metric:type_name -> user_event.LeaderboardMetric
+	14, // 10: user_event.ListViewerLeaderboardResponse.status:type_name -> common.ResponseStatus
+	11, // 11: user_event.ListViewerLeaderboardResponse.entries:type_name -> user_event.LeaderboardEntry
+	2,  // 12: user_event.UserEventService.RecordUserEvent:input_type -> user_event.RecordUserEventRequest
+	4,  // 13: user_event.UserEventService.GetStreamSessionEventTotals:input_type -> user_event.GetStreamSessionEventTotalsRequest
+	7,  // 14: user_event.UserEventService.GetViewerEventTotals:input_type -> user_event.GetViewerEventTotalsRequest
+	10, // 15: user_event.UserEventService.ListViewerLeaderboard:input_type -> user_event.ListViewerLeaderboardRequest
+	3,  // 16: user_event.UserEventService.RecordUserEvent:output_type -> user_event.RecordUserEventResponse
+	6,  // 17: user_event.UserEventService.GetStreamSessionEventTotals:output_type -> user_event.GetStreamSessionEventTotalsResponse
+	9,  // 18: user_event.UserEventService.GetViewerEventTotals:output_type -> user_event.GetViewerEventTotalsResponse
+	12, // 19: user_event.UserEventService.ListViewerLeaderboard:output_type -> user_event.ListViewerLeaderboardResponse
+	16, // [16:20] is the sub-list for method output_type
+	12, // [12:16] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_user_event_proto_init() }
@@ -451,18 +1192,23 @@ func file_user_event_proto_init() {
 	file_common_proto_init()
 	file_user_event_proto_msgTypes[0].OneofWrappers = []any{}
 	file_user_event_proto_msgTypes[1].OneofWrappers = []any{}
+	file_user_event_proto_msgTypes[6].OneofWrappers = []any{}
+	file_user_event_proto_msgTypes[7].OneofWrappers = []any{}
+	file_user_event_proto_msgTypes[9].OneofWrappers = []any{}
+	file_user_event_proto_msgTypes[10].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_user_event_proto_rawDesc), len(file_user_event_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   3,
+			NumEnums:      1,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_user_event_proto_goTypes,
 		DependencyIndexes: file_user_event_proto_depIdxs,
+		EnumInfos:         file_user_event_proto_enumTypes,
 		MessageInfos:      file_user_event_proto_msgTypes,
 	}.Build()
 	File_user_event_proto = out.File
