@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v3"
-	"github.com/glebarez/sqlite"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/libtnb/sqlite"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
