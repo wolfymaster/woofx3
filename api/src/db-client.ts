@@ -16,6 +16,7 @@ import * as resource from "@woofx3/db/resource.pb";
 import * as scene from "@woofx3/db/scene.pb";
 import * as setting from "@woofx3/db/setting.pb";
 import * as storage from "@woofx3/db/storage.pb";
+import * as stream_gauge from "@woofx3/db/stream_gauge.pb";
 import * as stream_session from "@woofx3/db/stream_session.pb";
 import * as treat from "@woofx3/db/treat.pb";
 import * as user from "@woofx3/db/user.pb";
@@ -566,6 +567,26 @@ export class DbClient {
     const response = await user_event.RecordUserEvent(req, this.config);
     unwrapVoid("recordUserEvent", response);
     return response;
+  }
+
+  /**
+   * Records the gauge sample for one minute of the open segment. Rejects with
+   * `failed_precondition` when no segment is open, and returns the stored row
+   * with `created` false when the minute was already sampled.
+   */
+  async recordStreamGaugeSample(
+    req: stream_gauge.RecordStreamGaugeSampleRequest
+  ): Promise<stream_gauge.RecordStreamGaugeSampleResponse> {
+    const response = await stream_gauge.RecordStreamGaugeSample(req, this.config);
+    unwrapVoid("recordStreamGaugeSample", response);
+    return response;
+  }
+
+  /** A session's gauge samples, oldest first, resolved through its segments. */
+  async listStreamGaugeSamples(streamSessionId: string): Promise<stream_gauge.StreamGaugeSample[]> {
+    const response = await stream_gauge.ListStreamGaugeSamples({ streamSessionId }, this.config);
+    unwrapVoid("listStreamGaugeSamples", response);
+    return response.samples ?? [];
   }
 
   async upsertWidgetStatus(req: widget_status.UpsertWidgetStatusRequest): Promise<widget_status.WidgetStatusResponse> {
