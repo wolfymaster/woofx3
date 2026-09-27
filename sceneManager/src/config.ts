@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
+import { WIDGET_HOST_SHIM_FILE } from "./scene/frame-assembler";
 
 export const SceneManagerEnvSchema = z.object({
   woofx3SceneManagerPort: z.union([z.number(), z.string()]).default("9101"),
@@ -80,6 +81,13 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
     new URL(config.barkloaderUrl);
   } catch {
     throw new Error(`sceneManager: barkloaderUrl is not a valid URL: ${config.barkloaderUrl}`);
+  }
+  // The shim is a build output (`bun run build:shim`), not a tracked file, so
+  // a checkout or release that skipped that step would serve widget frames
+  // that 404 on it.
+  const shimPath = join(config.publicDir, WIDGET_HOST_SHIM_FILE);
+  if (!existsSync(shimPath)) {
+    throw new Error(`sceneManager: widget host shim not found at ${shimPath} -- run \`bun run build:shim\``);
   }
 }
 

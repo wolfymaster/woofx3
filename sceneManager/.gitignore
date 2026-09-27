@@ -1,0 +1,3 @@
+# Built from @woofx3/module-sdk's src/widget-host-shim.entry.ts by
+# `bun run build:shim`, which dev and build:client run first.
+public/widget-host-shim.js
