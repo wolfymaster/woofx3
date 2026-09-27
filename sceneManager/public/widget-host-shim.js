@@ -15,7 +15,20 @@
       return false;
     }
     const boot = value;
-    return boot.v === PROTOCOL_VERSION && typeof boot.nonce === "string" && boot.nonce.length > 0 && typeof boot.instanceId === "string" && boot.instanceId.length > 0 && typeof boot.moduleId === "string" && boot.moduleId.length > 0 && (boot.widgetCanonicalId === undefined || typeof boot.widgetCanonicalId === "string") && (boot.surface === "scene" || boot.surface === "alert") && typeof boot.settings === "object" && boot.settings !== null && Array.isArray(boot.capabilities) && typeof boot.resourceBaseUrl === "string" && boot.resourceBaseUrl.length > 0;
+    return boot.v === PROTOCOL_VERSION && typeof boot.nonce === "string" && boot.nonce.length > 0 && typeof boot.instanceId === "string" && boot.instanceId.length > 0 && typeof boot.moduleId === "string" && boot.moduleId.length > 0 && (boot.widgetCanonicalId === undefined || typeof boot.widgetCanonicalId === "string") && (boot.surface === "scene" || boot.surface === "alert") && typeof boot.settings === "object" && boot.settings !== null && Array.isArray(boot.capabilities) && typeof boot.resourceBaseUrl === "string" && boot.resourceBaseUrl.length > 0 && (boot.theme === undefined || boot.theme === null || isWidgetTheme(boot.theme));
+  }
+  function isStringRecord(value, allowNull) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return false;
+    }
+    return Object.values(value).every((v) => typeof v === "string" || allowNull && v === null);
+  }
+  function isWidgetTheme(value) {
+    if (typeof value !== "object" || value === null) {
+      return false;
+    }
+    const theme = value;
+    return (theme.id === null || typeof theme.id === "string") && typeof theme.contractVersion === "number" && isStringRecord(theme.variables, false) && isStringRecord(theme.assets, true) && isStringRecord(theme.defaultAssets, true) && (theme.fallback === null || theme.fallback === "missing" || theme.fallback === "incompatible");
   }
 
   // src/widget-host-shim.ts
@@ -233,6 +246,7 @@
     const host = {
       settings: Object.freeze({ ...boot.settings }),
       surface: boot.surface,
+      theme: freezeTheme(boot.theme ?? null),
       moduleId: boot.moduleId,
       instanceId: boot.instanceId,
       storage,
@@ -278,6 +292,19 @@
       }
     }, HELLO_RETRY_INTERVAL_MS);
     return host;
+  }
+  function freezeTheme(theme) {
+    if (theme === null) {
+      return null;
+    }
+    return Object.freeze({
+      id: theme.id,
+      contractVersion: theme.contractVersion,
+      variables: Object.freeze({ ...theme.variables }),
+      assets: Object.freeze({ ...theme.assets }),
+      defaultAssets: Object.freeze({ ...theme.defaultAssets }),
+      fallback: theme.fallback
+    });
   }
 
   // src/widget-host-shim.entry.ts
