@@ -14,22 +14,25 @@
       overflow: hidden;
     }
 
+    /* The --theme-* properties are this widget's theme contract (manifest
+       `theme`); each fallback is the contract default. */
     #box {
       box-sizing: border-box;
       display: flex;
       align-items: center;
       width: 100%;
       height: 100%;
-      padding: 8px;
+      padding: var(--theme-padding, 8px);
+      background: var(--theme-background, transparent) var(--theme-asset-backdrop, none) center / cover no-repeat;
     }
 
     #text {
       width: 100%;
-      font-weight: bold;
+      font-weight: var(--theme-fontWeight, bold);
       line-height: 1.2;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
-      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+      text-shadow: var(--theme-shadow, 0 2px 8px rgba(0, 0, 0, 0.7));
       font-variant-numeric: tabular-nums;
     }
   </style>

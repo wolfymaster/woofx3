@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -1969,7 +1969,40 @@
       ],
       "taxonomy": [
         "data.timer"
-      ]
+      ],
+      "theme": {
+        "contractVersion": 1,
+        "variables": [
+          {
+            "id": "shadow",
+            "type": "text",
+            "default": "0 2px 8px rgba(0, 0, 0, 0.7)"
+          },
+          {
+            "id": "fontWeight",
+            "type": "text",
+            "default": "bold"
+          },
+          {
+            "id": "background",
+            "type": "color",
+            "default": "transparent"
+          },
+          {
+            "id": "padding",
+            "type": "text",
+            "default": "8px"
+          }
+        ],
+        "assetSlots": [
+          {
+            "id": "backdrop",
+            "kinds": [
+              "image"
+            ]
+          }
+        ]
+      }
     }
   ],
   "backgroundTasks": [
