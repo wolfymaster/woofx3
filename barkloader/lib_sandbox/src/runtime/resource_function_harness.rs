@@ -12,6 +12,7 @@
 
 use crate::function_result::{ModuleEvent, resolve_function_result};
 use crate::host::noop::noop_host_context;
+use crate::host::recording::RecordingSchedule;
 use crate::host::{
     CompareAndSetOutcome, InvocationContext, ResourceClient, ResourceInstance, StorageClient,
     StorageSetOptions,
@@ -120,6 +121,8 @@ pub struct Harness {
     target: String,
     pub storage: Arc<MemoryStorage>,
     resources: Arc<OneInstance>,
+    /// Every `ctx.schedule` call the functions run so far made.
+    pub schedule: Arc<RecordingSchedule>,
     /// Every event the functions run so far asked to publish, in order.
     pub events: Mutex<Vec<ModuleEvent>>,
 }
@@ -142,6 +145,7 @@ impl Harness {
                 instance_id,
                 settings,
             })),
+            schedule: Arc::new(RecordingSchedule::default()),
             events: Mutex::new(Vec::new()),
         }
     }
@@ -150,6 +154,7 @@ impl Harness {
         let mut host = noop_host_context();
         host.storage = self.storage.clone();
         host.resources = self.resources.clone();
+        host.schedule = self.schedule.clone();
         let invocation = InvocationContext {
             event: json!({ "parameters": parameters }),
             user: Value::Null,
@@ -175,6 +180,13 @@ impl Harness {
             .drain(..)
             .map(|event| (event.event_type, event.data))
             .collect()
+    }
+
+    /// The `ctx.schedule` calls made so far, as the recording client formats
+    /// them, emptying the record.
+    pub fn take_schedule_calls(&self) -> Vec<String> {
+        self.schedule.params.lock().unwrap().clear();
+        self.schedule.calls.lock().unwrap().drain(..).collect()
     }
 
     /// The target's value, at the key every resource kind keeps it under.
