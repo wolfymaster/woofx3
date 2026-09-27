@@ -73,8 +73,16 @@ async fn setup() -> Result<AppContext> {
     // there is no readiness to report and nothing can be gating on us.
     let mut heartbeat: Option<services::heartbeat::HeartbeatHandle> = None;
 
+    // Built before the host context because it is the context's
+    // `ScheduleClient`; its loop starts once the sandbox that runs the
+    // scheduled functions exists.
+    let scheduler = Arc::new(services::scheduler::ModuleScheduler::new(Arc::new(
+        services::scheduler::SystemClock,
+    )));
+
     let host_ctx = {
         let mut ctx = noop_host_context();
+        ctx.schedule = scheduler.clone();
 
         let mut chat_sender: Arc<dyn ChatSender> = Arc::new(NoopChatSender);
 
@@ -154,8 +162,7 @@ async fn setup() -> Result<AppContext> {
 
     let sandbox = SandboxFactory::new(registry.clone(), host_ctx);
 
-    let scheduler =
-        Arc::new(services::background_scheduler::BackgroundTaskScheduler::new(sandbox.clone()));
+    scheduler.start(Arc::new(sandbox.clone()));
 
     // db-proxy is required: sandbox registry metadata comes from module_functions
     // rows, and the storage provider is resolved from the engine's settings table.
@@ -262,7 +269,7 @@ async fn boot_modules(
     registry: &Arc<ModuleRegistry>,
     repository: &RepositoryImpl,
     db_proxy_url: &str,
-    scheduler: &Arc<services::background_scheduler::BackgroundTaskScheduler>,
+    scheduler: &Arc<services::scheduler::ModuleScheduler>,
 ) -> Result<()> {
     lib_module::registry_loader::hydrate_registry_from_db(
         registry,

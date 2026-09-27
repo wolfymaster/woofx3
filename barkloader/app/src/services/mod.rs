@@ -1,4 +1,3 @@
-pub mod background_scheduler;
 pub mod bundled_reconciler;
 pub mod chat;
 pub mod env_reader;
@@ -12,6 +11,7 @@ pub mod module_settings_client;
 pub mod nats;
 pub mod public_url;
 pub mod sandbox_resources;
+pub mod scheduler;
 pub mod session;
 pub mod storage_settings;
 pub mod thumbnail;
