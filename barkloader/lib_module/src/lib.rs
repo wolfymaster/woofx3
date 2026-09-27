@@ -13,6 +13,7 @@ pub mod module_manifest;
 mod module_plan;
 mod module_service;
 pub mod registry_loader;
+pub mod theme;
 
 pub use manifest_validate::InstallProvenance;
 pub use module_file::ModuleFileKind;
