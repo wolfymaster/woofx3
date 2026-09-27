@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package user_event;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// The log of platform events viewers caused -- cheers, follows, subs, gifts,
+// raids, redemptions -- that Analytics aggregates. Append-only: a fact is never
+// rewritten, so every total derived from it can be recomputed.
+//
+// The engine records each event where it enters the engine, so a fact does not
+// depend on anything reacting to it. See docs/services/analytics.md.
+service UserEventService {
+  // Records one event. Idempotent on (source, event_id), the CloudEvent's
+  // identity: recording the same event again leaves the stored row untouched
+  // and returns it with `created` false.
+  rpc RecordUserEvent(RecordUserEventRequest) returns (RecordUserEventResponse);
+}
+
+message UserEvent {
+  string id = 1;
+  // The CloudEvent `id` and `source` the event was published with.
+  string event_id = 2;
+  string source = 3;
+  // The CloudEvent `type`, e.g. `channel.cheer`.
+  string event_type = 4;
+  // The CloudEvent `platform` extension, e.g. `twitch`.
+  string platform = 5;
+  // The viewer's id on `platform`. Absent when the event is not attributable
+  // to anyone -- an anonymous cheer or gift -- which keeps it out of every
+  // per-viewer total while it still counts toward channel totals.
+  optional string platform_user_id = 6;
+  // The viewer's display name when the event happened. Informational: names
+  // change, so per-viewer grouping uses platform_user_id.
+  optional string user_name = 7;
+  // The stream session the event was stamped with. Not a stable key: a later
+  // split can move its segment to another session, so readers resolve it
+  // through the session record. Absent when the publisher knew no session.
+  optional string session_id = 8;
+  // The quantity the event carries: bits for a cheer, subs for a gift, raiders
+  // for a raid, points for a redemption. Absent when the event carries none.
+  optional int64 amount = 9;
+  // The CloudEvent `data`, as JSON.
+  string event_value = 10;
+  // When the event happened (the CloudEvent `time`).
+  google.protobuf.Timestamp occurred_at = 11;
+  // When the row was written.
+  google.protobuf.Timestamp created_at = 12;
+}
+
+message RecordUserEventRequest {
+  string event_id = 1;
+  string source = 2;
+  string event_type = 3;
+  string platform = 4;
+  optional string platform_user_id = 5;
+  optional string user_name = 6;
+  optional string session_id = 7;
+  optional int64 amount = 8;
+  // JSON. Defaults to `{}` when empty.
+  string event_value = 9;
+  // Defaults to the time of the call when absent.
+  google.protobuf.Timestamp occurred_at = 10;
+}
+
+message RecordUserEventResponse {
+  common.ResponseStatus status = 1;
+  UserEvent event = 2;
+  // False when the event was already recorded; `event` is then the row that
+  // was stored the first time.
+  bool created = 3;
+}
