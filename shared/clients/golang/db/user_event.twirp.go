@@ -511,7 +511,7 @@ func (s *userEventServiceServer) serveRecordUserEventProtobuf(ctx context.Contex
 }
 
 func (s *userEventServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor17, 0
+	return twirpFileDescriptor18, 0
 }
 
 func (s *userEventServiceServer) ProtocGenTwirpVersion() string {
@@ -525,7 +525,7 @@ func (s *userEventServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "user_event", "UserEventService")
 }
 
-var twirpFileDescriptor17 = []byte{
+var twirpFileDescriptor18 = []byte{
 	// 548 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xa4, 0x94, 0xc1, 0x6e, 0xd3, 0x40,
 	0x10, 0x86, 0x71, 0xdc, 0x38, 0xf6, 0x38, 0x94, 0xb0, 0x88, 0xb0, 0x04, 0xa1, 0x46, 0xe1, 0x40,

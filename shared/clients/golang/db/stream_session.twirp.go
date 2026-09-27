@@ -1916,7 +1916,7 @@ func (s *streamSessionServiceServer) serveListStreamSessionsProtobuf(ctx context
 }
 
 func (s *streamSessionServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor14, 0
+	return twirpFileDescriptor15, 0
 }
 
 func (s *streamSessionServiceServer) ProtocGenTwirpVersion() string {
@@ -1930,7 +1930,7 @@ func (s *streamSessionServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "stream_session", "StreamSessionService")
 }
 
-var twirpFileDescriptor14 = []byte{
+var twirpFileDescriptor15 = []byte{
 	// 792 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe4, 0x55, 0x4d, 0x6f, 0xd3, 0x4a,
 	0x14, 0x95, 0x9d, 0x26, 0x4d, 0x6f, 0x5f, 0x3f, 0xde, 0xa8, 0xed, 0x4b, 0xad, 0xf7, 0xd4, 0xbe,
