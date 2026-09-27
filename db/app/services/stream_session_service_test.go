@@ -89,3 +89,80 @@ func TestStreamSessionsReadBackOnSQLite(t *testing.T) {
 		t.Fatalf("listed sessions = %v, want only %s", listed.Sessions, sessionID)
 	}
 }
+
+func TestStreamSessionReadsCarryTheirSegments(t *testing.T) {
+	ctx := context.Background()
+	svc := newStreamSessionSvc(t)
+
+	state, err := svc.EnsureCurrentStreamSession(ctx, &client.EnsureCurrentStreamSessionRequest{})
+	if err != nil {
+		t.Fatalf("EnsureCurrentStreamSession: %v", err)
+	}
+	wasLive := state.Session.Id
+	wentLive := time.Date(2026, 9, 27, 20, 0, 0, 0, time.UTC)
+	for i := 0; i < 2; i++ {
+		start := wentLive.Add(time.Duration(i) * time.Hour)
+		if _, err := svc.OpenStreamSessionSegment(ctx, &client.OpenStreamSessionSegmentRequest{
+			StreamSessionId: wasLive,
+			StartedAt:       timestamppb.New(start),
+		}); err != nil {
+			t.Fatalf("OpenStreamSessionSegment: %v", err)
+		}
+		if _, err := svc.CloseStreamSessionSegment(ctx, &client.CloseStreamSessionSegmentRequest{
+			EndedAt: timestamppb.New(start.Add(30 * time.Minute)),
+		}); err != nil {
+			t.Fatalf("CloseStreamSessionSegment: %v", err)
+		}
+	}
+	split, err := svc.SplitStreamSession(ctx, &client.SplitStreamSessionRequest{
+		At: timestamppb.New(wentLive.Add(3 * time.Hour)),
+	})
+	if err != nil {
+		t.Fatalf("SplitStreamSession: %v", err)
+	}
+	neverLive := split.Started.Id
+
+	got, err := svc.GetStreamSession(ctx, &client.GetStreamSessionRequest{Id: wasLive})
+	if err != nil {
+		t.Fatalf("GetStreamSession: %v", err)
+	}
+	if len(got.Segments) != 2 {
+		t.Fatalf("segments = %d, want 2", len(got.Segments))
+	}
+	if !got.Segments[0].StartedAt.AsTime().Equal(wentLive) {
+		t.Fatalf("first segment started_at = %v, want the oldest, %v", got.Segments[0].StartedAt.AsTime(), wentLive)
+	}
+
+	empty, err := svc.GetStreamSession(ctx, &client.GetStreamSessionRequest{Id: neverLive})
+	if err != nil {
+		t.Fatalf("GetStreamSession: %v", err)
+	}
+	if len(empty.Segments) != 0 {
+		t.Fatalf("never-live session has %d segments, want 0", len(empty.Segments))
+	}
+
+	listed, err := svc.ListStreamSessions(ctx, &client.ListStreamSessionsRequest{})
+	if err != nil {
+		t.Fatalf("ListStreamSessions: %v", err)
+	}
+	if len(listed.Sessions) != 2 || listed.Sessions[0].Id != neverLive {
+		t.Fatalf("listed sessions = %v, want the new session first", listed.Sessions)
+	}
+	if len(listed.Segments) != 2 {
+		t.Fatalf("listed segments = %d, want 2", len(listed.Segments))
+	}
+	for _, segment := range listed.Segments {
+		if segment.StreamSessionId != wasLive {
+			t.Fatalf("segment %s belongs to %s, want %s", segment.Id, segment.StreamSessionId, wasLive)
+		}
+	}
+
+	paged, err := svc.ListStreamSessions(ctx, &client.ListStreamSessionsRequest{Limit: 1})
+	if err != nil {
+		t.Fatalf("ListStreamSessions: %v", err)
+	}
+	if len(paged.Sessions) != 1 || len(paged.Segments) != 0 {
+		t.Fatalf("first page = %d sessions and %d segments, want the never-live session alone",
+			len(paged.Sessions), len(paged.Segments))
+	}
+}

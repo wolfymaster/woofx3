@@ -144,6 +144,20 @@ func (r *StreamSessionRepository) CountSessions() (int64, error) {
 	return n, err
 }
 
+// ListSegmentsForSessions returns every segment of the given sessions, oldest
+// first. A session absent from the result has never been live.
+func (r *StreamSessionRepository) ListSegmentsForSessions(streamSessionIDs []uuid.UUID) ([]*models.StreamSessionSegment, error) {
+	segments := []*models.StreamSessionSegment{}
+	if len(streamSessionIDs) == 0 {
+		return segments, nil
+	}
+	err := r.db.
+		Where("stream_session_id IN ?", streamSessionIDs).
+		Order("started_at ASC").
+		Find(&segments).Error
+	return segments, err
+}
+
 // GetOpenSegment returns the open segment (the stream is live),
 // or gorm.ErrRecordNotFound when it is not.
 func (r *StreamSessionRepository) GetOpenSegment() (*models.StreamSessionSegment, error) {
