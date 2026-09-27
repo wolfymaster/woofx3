@@ -14,7 +14,7 @@
 //! and marshal the `Value` result back out.
 //!
 //! Deliberately does *not* wrap every namespace method: `storage.get`,
-//! `http.request`, `env.get`, `resources.delete`, and
+//! `http.request`, `env.get`, and
 //! `module.setSetting` are pure 1:1 passthroughs to a `HostContext` trait
 //! method with no logic of their own — wrapping those here would just add
 //! a layer, not close a gap. Adapters call `invocation.host.*` directly
@@ -124,6 +124,15 @@ pub fn resources_create(
     serde_json::to_value(&inst).map_err(|e| e.to_string())
 }
 
+/// `ctx.resources.delete(canonicalId)`: delete the instance, then drop any
+/// scheduled entry keyed by its canonical id. A deadline armed for an
+/// instance that no longer exists has nothing left to act on.
+pub fn resources_delete(host: &HostContext, canonical_id: &str) -> Result<(), String> {
+    host.resources.delete(canonical_id)?;
+    host.schedule.cancel_key(canonical_id);
+    Ok(())
+}
+
 /// `ctx.resources.get(canonicalId)`: the instance, settings included, or null.
 pub fn resources_get(host: &HostContext, canonical_id: &str) -> Result<Value, String> {
     match host.resources.get(canonical_id)? {
@@ -137,6 +146,82 @@ pub fn resources_get(host: &HostContext, canonical_id: &str) -> Result<Value, St
 pub fn resources_list(host: &HostContext, kind: &str) -> Result<Value, String> {
     let items = host.resources.list_by_kind(kind)?;
     serde_json::to_value(&items).map_err(|e| e.to_string())
+}
+
+/// Largest `params` a scheduled entry may carry, serialized. Entries live in
+/// memory until they fire, so their size is bounded like their count.
+pub const SCHEDULE_PARAMS_MAX_BYTES: usize = 4 * 1024;
+
+/// Longest `key` a scheduled entry may have, in bytes. Room for any canonical
+/// id, which is what modules key entries by.
+pub const SCHEDULE_KEY_MAX_BYTES: usize = 512;
+
+/// `ctx.schedule.at(deadlineId, key, whenMs, params?)`: check what the call
+/// itself says, then hand it to the scheduler, which checks it against the
+/// module's declarations (declared deadline, horizon, `maxPending`).
+///
+/// Every refusal is an error the module sees as a throw: a schedule that
+/// silently did not happen is a timer that never ends.
+pub fn schedule_at(
+    host: &HostContext,
+    module_id: &str,
+    deadline_id: &str,
+    key: &str,
+    when_ms: f64,
+    params: Option<Value>,
+) -> Result<(), String> {
+    require_schedule_identity(module_id, deadline_id, key)?;
+    if !when_ms.is_finite() {
+        return Err(format!(
+            "schedule.at: whenMs must be a finite number of epoch milliseconds, got {when_ms}"
+        ));
+    }
+    let params = match params {
+        None | Some(Value::Null) => Value::Object(Default::default()),
+        Some(value) => value,
+    };
+    let size = serde_json::to_vec(&params)
+        .map_err(|e| format!("schedule.at: params cannot be serialized: {e}"))?
+        .len();
+    if size > SCHEDULE_PARAMS_MAX_BYTES {
+        return Err(format!(
+            "schedule.at: params are {size} bytes serialized, over the {SCHEDULE_PARAMS_MAX_BYTES} byte limit"
+        ));
+    }
+    // Saturating: a time past the i64 range is refused by the scheduler's
+    // horizon, one before it simply fires now.
+    host.schedule
+        .at(module_id, deadline_id, key, when_ms as i64, params)
+}
+
+/// `ctx.schedule.cancel(deadlineId, key)`: drop the entry if there is one.
+pub fn schedule_cancel(
+    host: &HostContext,
+    module_id: &str,
+    deadline_id: &str,
+    key: &str,
+) -> Result<(), String> {
+    require_schedule_identity(module_id, deadline_id, key)?;
+    host.schedule.cancel(module_id, deadline_id, key)
+}
+
+fn require_schedule_identity(module_id: &str, deadline_id: &str, key: &str) -> Result<(), String> {
+    if module_id.is_empty() {
+        return Err("schedule: only a module function can schedule".to_string());
+    }
+    if deadline_id.is_empty() {
+        return Err("schedule: deadlineId is required".to_string());
+    }
+    if key.is_empty() {
+        return Err("schedule: key is required".to_string());
+    }
+    if key.len() > SCHEDULE_KEY_MAX_BYTES {
+        return Err(format!(
+            "schedule: key is {} bytes, over the {SCHEDULE_KEY_MAX_BYTES} byte limit",
+            key.len()
+        ));
+    }
+    Ok(())
 }
 
 /// `ctx.module.settings`: one fetch, defaulting to an empty map on
@@ -511,6 +596,69 @@ mod tests {
         )
         .expect_err("an array is not settings");
         assert!(err.contains("settings must be an object"), "{err}");
+    }
+
+    fn scheduling_host() -> (HostContext, Arc<crate::host::recording::RecordingSchedule>) {
+        let schedule = Arc::new(crate::host::recording::RecordingSchedule::default());
+        let mut host = noop_host_context();
+        host.schedule = schedule.clone();
+        host.resources = Arc::new(StaticResourceClient);
+        (host, schedule)
+    }
+
+    #[test]
+    fn schedule_at_passes_a_valid_call_to_the_scheduler_under_the_invoking_module() {
+        let (host, schedule) = scheduling_host();
+        schedule_at(&host, "woofx3", "timer_end", "t1", 1_500.7, None).unwrap();
+        schedule_cancel(&host, "woofx3", "timer_end", "t1").unwrap();
+        assert_eq!(
+            *schedule.calls.lock().unwrap(),
+            vec!["at woofx3/timer_end/t1@1500", "cancel woofx3/timer_end/t1"]
+        );
+        assert_eq!(
+            schedule.params.lock().unwrap()[0],
+            serde_json::json!({}),
+            "absent params read as an empty object"
+        );
+    }
+
+    #[test]
+    fn schedule_at_refuses_a_time_that_is_not_a_number() {
+        let (host, schedule) = scheduling_host();
+        for when in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let err = schedule_at(&host, "woofx3", "timer_end", "t1", when, None).unwrap_err();
+            assert!(err.contains("finite"), "{err}");
+        }
+        assert!(schedule.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn schedule_at_refuses_params_over_the_size_limit() {
+        let (host, schedule) = scheduling_host();
+        let big = Value::String("x".repeat(SCHEDULE_PARAMS_MAX_BYTES));
+        let err = schedule_at(&host, "woofx3", "timer_end", "t1", 0.0, Some(big)).unwrap_err();
+        assert!(err.contains("byte limit"), "{err}");
+        assert!(schedule.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn schedule_refuses_a_missing_identity() {
+        let (host, _) = scheduling_host();
+        assert!(schedule_at(&host, "", "timer_end", "t1", 0.0, None).is_err());
+        assert!(schedule_at(&host, "woofx3", "", "t1", 0.0, None).is_err());
+        assert!(schedule_cancel(&host, "woofx3", "timer_end", "").is_err());
+        let long_key = "k".repeat(SCHEDULE_KEY_MAX_BYTES + 1);
+        assert!(schedule_cancel(&host, "woofx3", "timer_end", &long_key).is_err());
+    }
+
+    #[test]
+    fn deleting_a_resource_cancels_entries_keyed_by_its_canonical_id() {
+        let (host, schedule) = scheduling_host();
+        resources_delete(&host, "woofx3:timer:t1").unwrap();
+        assert_eq!(
+            *schedule.calls.lock().unwrap(),
+            vec!["cancel_key woofx3:timer:t1"]
+        );
     }
 
     #[test]
