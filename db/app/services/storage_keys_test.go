@@ -1,12 +1,10 @@
 package services
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
 	"github.com/dgraph-io/badger/v3"
-	client "github.com/wolfymaster/woofx3/clients/db"
 )
 
 const (
@@ -16,7 +14,7 @@ const (
 
 func putLegacy(t *testing.T, db *badger.DB, applicationID, namespace, key, value string, createdAt int64) {
 	t.Helper()
-	encoded, err := json.Marshal(storedItem{Value: value, CreatedAt: createdAt, Namespace: namespace})
+	encoded, err := json.Marshal(badgerItem{Value: value, CreatedAt: createdAt, Namespace: namespace})
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
@@ -24,6 +22,38 @@ func putLegacy(t *testing.T, db *badger.DB, applicationID, namespace, key, value
 	if err := db.Update(func(txn *badger.Txn) error { return txn.Set(raw, encoded) }); err != nil {
 		t.Fatalf("put legacy key: %v", err)
 	}
+}
+
+func putCurrent(t *testing.T, db *badger.DB, namespace, key, value string) {
+	t.Helper()
+	encoded, err := json.Marshal(badgerItem{Value: value, Namespace: namespace})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if err := db.Update(func(txn *badger.Txn) error { return txn.Set(storageKey(namespace, key), encoded) }); err != nil {
+		t.Fatalf("put key: %v", err)
+	}
+}
+
+// badgerValue is the value stored at a current-layout address, or "" when
+// there is none.
+func badgerValue(t *testing.T, db *badger.DB, namespace, key string) string {
+	t.Helper()
+	var item badgerItem
+	err := db.View(func(txn *badger.Txn) error {
+		entry, err := txn.Get(storageKey(namespace, key))
+		if err != nil {
+			return err
+		}
+		return entry.Value(func(val []byte) error { return json.Unmarshal(val, &item) })
+	})
+	if err == badger.ErrKeyNotFound {
+		return ""
+	}
+	if err != nil {
+		t.Fatalf("read %s/%s: %v", namespace, key, err)
+	}
+	return item.Value
 }
 
 func openStorageTestDB(t *testing.T) *badger.DB {
@@ -62,15 +92,8 @@ func TestMigrateStorageKeys_MovesLegacyKeysToNamespaceAndKey(t *testing.T) {
 		t.Errorf("moved = %d, want 1", moved)
 	}
 
-	resp, err := NewStorageService(db).Get(context.Background(), &client.GetRequest{
-		Namespace: "woofx3",
-		Key:       "state:woofx3:counter:deaths",
-	})
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if resp.Item.GetValue() != `{"value":4}` {
-		t.Errorf("value = %q, want the legacy value", resp.Item.GetValue())
+	if value := badgerValue(t, db, "woofx3", "state:woofx3:counter:deaths"); value != `{"value":4}` {
+		t.Errorf("value = %q, want the legacy value", value)
 	}
 	if countKeys(t, db) != 1 {
 		t.Errorf("legacy key left behind: %d keys stored, want 1", countKeys(t, db))
@@ -86,9 +109,8 @@ func TestMigrateStorageKeys_LastWriteWinsWhenApplicationsCollide(t *testing.T) {
 		t.Fatalf("MigrateStorageKeys: %v", err)
 	}
 
-	resp, _ := NewStorageService(db).Get(context.Background(), &client.GetRequest{Namespace: "woofx3", Key: "state:x"})
-	if resp.Item.GetValue() != `{"value":9}` {
-		t.Errorf("value = %q, want the later write", resp.Item.GetValue())
+	if value := badgerValue(t, db, "woofx3", "state:x"); value != `{"value":9}` {
+		t.Errorf("value = %q, want the later write", value)
 	}
 	if countKeys(t, db) != 1 {
 		t.Errorf("%d keys stored, want 1", countKeys(t, db))
@@ -97,15 +119,9 @@ func TestMigrateStorageKeys_LastWriteWinsWhenApplicationsCollide(t *testing.T) {
 
 func TestMigrateStorageKeys_LeavesCurrentKeysAlone(t *testing.T) {
 	db := openStorageTestDB(t)
-	svc := NewStorageService(db)
-	ctx := context.Background()
 	// A key may itself contain the separator; only a leading uuid marks a
 	// legacy key.
-	if _, err := svc.Set(ctx, &client.SetRequest{
-		Item: &client.StorageItem{Namespace: "woofx3", Key: "a\x00b", Value: "1"},
-	}); err != nil {
-		t.Fatalf("Set: %v", err)
-	}
+	putCurrent(t, db, "woofx3", "a\x00b", "1")
 
 	moved, err := MigrateStorageKeys(db)
 	if err != nil {
@@ -114,8 +130,7 @@ func TestMigrateStorageKeys_LeavesCurrentKeysAlone(t *testing.T) {
 	if moved != 0 {
 		t.Errorf("moved = %d, want 0", moved)
 	}
-	resp, _ := svc.Get(ctx, &client.GetRequest{Namespace: "woofx3", Key: "a\x00b"})
-	if resp.Item.GetValue() != "1" {
-		t.Errorf("current key changed: %+v", resp.Item)
+	if value := badgerValue(t, db, "woofx3", "a\x00b"); value != "1" {
+		t.Errorf("current key changed: %q", value)
 	}
 }

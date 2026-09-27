@@ -4,6 +4,7 @@
   "barkloaderUrl": "http://127.0.0.1:9653",
   "barkloaderKey": "CHANGE_ME",
   "badgerPath": "./data/badger",
+  "storagePath": "./data/module-storage.db",
   "databaseProxyUrl": "http://127.0.0.1:5555",
   "databaseProxyPort": "5555",
   "databaseUrl": "sqlite://./data/woofx3.db",

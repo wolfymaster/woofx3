@@ -10,7 +10,7 @@ import (
 func requiredEnv() map[string]string {
 	return map[string]string{
 		"WOOFX3_DATABASE_URL":   "sqlite://./data/test.db",
-		"WOOFX3_BADGER_PATH":    "./data/badger",
+		"WOOFX3_STORAGE_PATH":   "./data/module-storage.db",
 		"WOOFX3_SECRETS_KEY":    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
 		"WOOFX3_MESSAGEBUS_URL": "ws://127.0.0.1:4225",
 	}
