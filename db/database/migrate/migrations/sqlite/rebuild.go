@@ -12,16 +12,23 @@ import (
 
 // tableRebuild describes a column change SQLite's ALTER TABLE cannot make in
 // place: dropping a column that carries a FOREIGN KEY or sits in a table-level
-// UNIQUE constraint, or relaxing a NOT NULL. Both need the table recreated.
+// UNIQUE constraint, relaxing a NOT NULL, or changing a declared type. Each
+// needs the table recreated.
 type tableRebuild struct {
-	table      string
+	table string
+	// dropColumn, when set, is removed by the rebuild.
 	dropColumn string
-	// nullable lists columns whose NOT NULL is removed by the rebuild.
+	// nullable lists columns whose NOT NULL is removed along with dropColumn.
 	nullable []string
+	// datetime lists TEXT columns the rebuild re-declares as DATETIME.
+	datetime []string
 }
 
 var (
 	notNullRE = regexp.MustCompile(`(?i)\s+NOT\s+NULL\b`)
+	// textTypeRE matches a column definition whose declared type is TEXT,
+	// capturing the name and the whitespace before the type.
+	textTypeRE = regexp.MustCompile(`(?i)^(\S+\s+)TEXT\b`)
 	// tableConstraintRE matches the keyword a table-level constraint starts
 	// with, as opposed to a column definition, which starts with its name.
 	tableConstraintRE = regexp.MustCompile(`(?i)^(CONSTRAINT|PRIMARY|UNIQUE|CHECK|FOREIGN)\b`)
@@ -104,8 +111,8 @@ func assertForeignKeysHold(tx *gorm.DB) error {
 	return rows.Err()
 }
 
-// rebuildTable recreates r.table without r.dropColumn and with r.nullable
-// relaxed, following SQLite's documented procedure: create the new shape,
+// rebuildTable recreates r.table without r.dropColumn, with r.nullable
+// relaxed and with r.datetime declared DATETIME, following SQLite's documented procedure: create the new shape,
 // copy the rows, drop the original, rename, and recreate its indexes.
 //
 // The new definition is derived from the table's own CREATE statement in
@@ -114,14 +121,14 @@ func assertForeignKeysHold(tx *gorm.DB) error {
 // the rebuild refuses rather than guessing what they should become.
 //
 // Must run inside a transaction on a connection with foreign keys disabled
-// (see withForeignKeysDisabled). A table without r.dropColumn is left alone,
-// so the migration can be re-run.
+// (see withForeignKeysDisabled). Changes the table already has are skipped,
+// and a table that needs none is left alone, so the migration can be re-run.
 func rebuildTable(tx *gorm.DB, r tableRebuild) error {
-	hasColumn, err := columnExists(tx, r.table, r.dropColumn)
+	r, err := pendingRebuild(tx, r)
 	if err != nil {
 		return err
 	}
-	if !hasColumn {
+	if r.dropColumn == "" && len(r.datetime) == 0 {
 		return nil
 	}
 
@@ -147,7 +154,7 @@ func rebuildTable(tx *gorm.DB, r tableRebuild) error {
 		return err
 	}
 	for _, stmt := range indexSQL {
-		if referencesIdentifier(stmt, r.dropColumn) {
+		if r.dropColumn != "" && referencesIdentifier(stmt, r.dropColumn) {
 			return fmt.Errorf("cannot rebuild %s: index still references %s: %s", r.table, r.dropColumn, stmt)
 		}
 	}
@@ -206,6 +213,49 @@ func rebuildTable(tx *gorm.DB, r tableRebuild) error {
 	return nil
 }
 
+// pendingRebuild returns r without the changes the table already has: a
+// dropColumn that is gone (with the nullable changes that go with it), and
+// datetime columns already declared DATETIME. A datetime column that is
+// missing, or declared as anything but TEXT or DATETIME, is an error rather
+// than something to guess about.
+func pendingRebuild(tx *gorm.DB, r tableRebuild) (tableRebuild, error) {
+	if r.dropColumn != "" {
+		hasColumn, err := columnExists(tx, r.table, r.dropColumn)
+		if err != nil {
+			return r, err
+		}
+		if !hasColumn {
+			r.dropColumn = ""
+			r.nullable = nil
+		}
+	}
+
+	if len(r.datetime) == 0 {
+		return r, nil
+	}
+	declared, err := columnTypes(tx, r.table)
+	if err != nil {
+		return r, err
+	}
+	pending := make([]string, 0, len(r.datetime))
+	for _, column := range r.datetime {
+		columnType, ok := declared[column]
+		if !ok {
+			return r, fmt.Errorf("cannot rebuild %s: no column %s to declare DATETIME", r.table, column)
+		}
+		switch strings.ToUpper(columnType) {
+		case "DATETIME":
+			continue
+		case "TEXT":
+			pending = append(pending, column)
+		default:
+			return r, fmt.Errorf("cannot rebuild %s: column %s is declared %s, not TEXT", r.table, column, columnType)
+		}
+	}
+	r.datetime = pending
+	return r, nil
+}
+
 // rewriteTableItems applies r to the column definitions and table constraints
 // of a CREATE TABLE body.
 func rewriteTableItems(r tableRebuild, items []string) ([]string, error) {
@@ -213,12 +263,16 @@ func rewriteTableItems(r tableRebuild, items []string) ([]string, error) {
 	for _, column := range r.nullable {
 		pendingNullable[column] = true
 	}
+	pendingDatetime := make(map[string]bool, len(r.datetime))
+	for _, column := range r.datetime {
+		pendingDatetime[column] = true
+	}
 	droppedColumn := false
 
 	kept := make([]string, 0, len(items))
 	for _, item := range items {
 		if tableConstraintRE.MatchString(item) {
-			if !referencesIdentifier(item, r.dropColumn) {
+			if r.dropColumn == "" || !referencesIdentifier(item, r.dropColumn) {
 				kept = append(kept, item)
 				continue
 			}
@@ -230,12 +284,21 @@ func rewriteTableItems(r tableRebuild, items []string) ([]string, error) {
 		}
 
 		name := columnDefinitionName(item)
-		if name == r.dropColumn {
-			droppedColumn = true
-			continue
+		if r.dropColumn != "" {
+			if name == r.dropColumn {
+				droppedColumn = true
+				continue
+			}
+			if referencesIdentifier(item, r.dropColumn) {
+				return nil, fmt.Errorf("cannot rebuild %s: column %s references %s: %s", r.table, name, r.dropColumn, item)
+			}
 		}
-		if referencesIdentifier(item, r.dropColumn) {
-			return nil, fmt.Errorf("cannot rebuild %s: column %s references %s: %s", r.table, name, r.dropColumn, item)
+		if pendingDatetime[name] {
+			if !textTypeRE.MatchString(item) {
+				return nil, fmt.Errorf("cannot rebuild %s: column %s is not declared TEXT: %s", r.table, name, item)
+			}
+			item = textTypeRE.ReplaceAllString(item, "${1}DATETIME")
+			delete(pendingDatetime, name)
 		}
 		if pendingNullable[name] {
 			if !notNullRE.MatchString(item) {
@@ -247,10 +310,13 @@ func rewriteTableItems(r tableRebuild, items []string) ([]string, error) {
 		kept = append(kept, item)
 	}
 
-	if !droppedColumn {
+	if r.dropColumn != "" && !droppedColumn {
 		return nil, fmt.Errorf("cannot rebuild %s: no column definition for %s", r.table, r.dropColumn)
 	}
 	for column := range pendingNullable {
+		return nil, fmt.Errorf("cannot rebuild %s: no column definition for %s", r.table, column)
+	}
+	for column := range pendingDatetime {
 		return nil, fmt.Errorf("cannot rebuild %s: no column definition for %s", r.table, column)
 	}
 	return kept, nil
@@ -376,6 +442,25 @@ func tableIndexSQL(tx *gorm.DB, table string) ([]string, error) {
 		return nil, err
 	}
 	return statements, nil
+}
+
+// columnTypes maps each column of table to its declared type.
+func columnTypes(tx *gorm.DB, table string) (map[string]string, error) {
+	var columns []struct {
+		Name string
+		Type string
+	}
+	if err := tx.Raw(`SELECT name, type FROM pragma_table_info(?)`, table).Scan(&columns).Error; err != nil {
+		return nil, err
+	}
+	if len(columns) == 0 {
+		return nil, fmt.Errorf("table %s does not exist", table)
+	}
+	types := make(map[string]string, len(columns))
+	for _, column := range columns {
+		types[column.Name] = column.Type
+	}
+	return types, nil
 }
 
 func tableColumns(tx *gorm.DB, table string) ([]string, error) {
