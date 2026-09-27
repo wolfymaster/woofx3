@@ -49,7 +49,7 @@ function setup() {
 
 describe("Alert mappers", () => {
   it("maps follow", () => {
-    expect(mapFollow({ userName: "alice" })).toEqual({ type: "follow", user: "alice" });
+    expect(mapFollow({ userId: "1001", userName: "alice" })).toEqual({ type: "follow", user: "alice" });
   });
 
   it("maps cheer with anonymous fallback", () => {
