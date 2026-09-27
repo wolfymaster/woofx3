@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { GetStreamSessionEventTotalsResponse, ListViewerLeaderboardResponse } from "@woofx3/db/user_event.pb";
+import {
+  GetStreamSessionEventTotalsResponse,
+  ListRecentUserEventsResponse,
+  ListViewerLeaderboardResponse,
+} from "@woofx3/db/user_event.pb";
 import { DbClient, DbError } from "../src/db-client";
 
 function twirpError(status: number, code: string): Response {
@@ -70,6 +74,35 @@ describe("DbClient analytics reads", () => {
     const entries = await db().findViewerLeaderboard({ metric: "LEADERBOARD_METRIC_BITS" });
 
     expect(entries?.map((e) => e.platformUserId)).toEqual(["1001"]);
+  });
+
+  test("returns recent events with the span's total", async () => {
+    respondWith(() =>
+      protobuf(
+        ListRecentUserEventsResponse.encode({
+          status: { code: "OK", message: "" },
+          events: [
+            {
+              id: "ue-1",
+              eventId: "ce-1",
+              source: "twitch",
+              eventType: "channel.cheer",
+              platform: "twitch",
+              amount: 100n,
+              eventValue: "{}",
+              occurredAt: { seconds: 1n, nanos: 0 },
+              createdAt: { seconds: 1n, nanos: 0 },
+            },
+          ],
+          total: 42n,
+        })
+      )
+    );
+
+    const recent = await db().listRecentUserEvents({ since: { seconds: 0n, nanos: 0 }, limit: 1 });
+
+    expect(recent.total).toBe(42n);
+    expect(recent.events.map((e) => e.eventType)).toEqual(["channel.cheer"]);
   });
 
   test("every session-keyed read is null for a session db-proxy does not have", async () => {

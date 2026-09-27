@@ -656,6 +656,15 @@ export class DbClient {
     return response.entries ?? [];
   }
 
+  /** The latest events at or after `since`, newest first, and how many fell in that span. */
+  async listRecentUserEvents(
+    req: user_event.ListRecentUserEventsRequest
+  ): Promise<{ events: user_event.UserEvent[]; total: bigint }> {
+    const response = await user_event.ListRecentUserEvents(req, this.config);
+    unwrapVoid("listRecentUserEvents", response);
+    return { events: response.events ?? [], total: response.total };
+  }
+
   async upsertWidgetStatus(req: widget_status.UpsertWidgetStatusRequest): Promise<widget_status.WidgetStatusResponse> {
     return widget_status.UpsertWidgetStatus(req, this.config);
   }
