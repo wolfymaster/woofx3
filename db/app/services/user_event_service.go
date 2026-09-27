@@ -50,6 +50,8 @@ func NewUserEventService(
 const (
 	leaderboardDefaultLimit = 10
 	leaderboardMaxLimit     = 100
+	recentDefaultLimit      = 20
+	recentMaxLimit          = 100
 )
 
 func (s *userEventService) RecordUserEvent(ctx context.Context, req *client.RecordUserEventRequest) (*client.RecordUserEventResponse, error) {
@@ -207,6 +209,39 @@ func (s *userEventService) ListViewerLeaderboard(ctx context.Context, req *clien
 			Message: "Leaderboard retrieved successfully",
 		},
 		Entries: out,
+	}, nil
+}
+
+func (s *userEventService) ListRecentUserEvents(ctx context.Context, req *client.ListRecentUserEventsRequest) (*client.ListRecentUserEventsResponse, error) {
+	if req.Since == nil {
+		return nil, twirp.RequiredArgumentError("since")
+	}
+	if err := req.Since.CheckValid(); err != nil {
+		return nil, twirp.InvalidArgumentError("since", err.Error())
+	}
+	limit := recentDefaultLimit
+	if req.Limit != nil {
+		if *req.Limit < 1 || *req.Limit > recentMaxLimit {
+			return nil, twirp.InvalidArgumentError("limit", fmt.Sprintf("must be from 1 to %d", recentMaxLimit))
+		}
+		limit = int(*req.Limit)
+	}
+
+	events, total, err := s.repo.Recent(req.Since.AsTime(), limit)
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list recent user events: %w", err))
+	}
+	out := make([]*client.UserEvent, 0, len(events))
+	for _, event := range events {
+		out = append(out, userEventToProto(event))
+	}
+	return &client.ListRecentUserEventsResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Recent user events retrieved successfully",
+		},
+		Events: out,
+		Total:  total,
 	}, nil
 }
 

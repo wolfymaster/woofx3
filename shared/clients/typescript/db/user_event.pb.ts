@@ -209,6 +209,29 @@ export interface ListViewerLeaderboardResponse {
   entries: LeaderboardEntry[];
 }
 
+export interface ListRecentUserEventsRequest {
+  /**
+   * Start of the span, inclusive. Required.
+   */
+  since: protoscript.Timestamp;
+  /**
+   * 1-100. Defaults to 20.
+   */
+  limit?: number | null | undefined;
+}
+
+export interface ListRecentUserEventsResponse {
+  status: common.ResponseStatus;
+  /**
+   * Newest first by occurred_at, at most `limit` of them.
+   */
+  events: UserEvent[];
+  /**
+   * Every event in the span, not only those returned.
+   */
+  total: bigint;
+}
+
 //========================================//
 //    UserEventService Protobuf Client    //
 //========================================//
@@ -279,6 +302,22 @@ export async function ListViewerLeaderboard(
     config,
   );
   return ListViewerLeaderboardResponse.decode(response);
+}
+
+/**
+ * The latest events that occurred at or after `since`, newest first, and how
+ * many occurred in that span. Reads the log by time alone, not by session.
+ */
+export async function ListRecentUserEvents(
+  listRecentUserEventsRequest: ListRecentUserEventsRequest,
+  config?: ClientConfiguration,
+): Promise<ListRecentUserEventsResponse> {
+  const response = await PBrequest(
+    "/user_event.UserEventService/ListRecentUserEvents",
+    ListRecentUserEventsRequest.encode(listRecentUserEventsRequest),
+    config,
+  );
+  return ListRecentUserEventsResponse.decode(response);
 }
 
 //========================================//
@@ -353,6 +392,22 @@ export async function ListViewerLeaderboardJSON(
   return ListViewerLeaderboardResponseJSON.decode(response);
 }
 
+/**
+ * The latest events that occurred at or after `since`, newest first, and how
+ * many occurred in that span. Reads the log by time alone, not by session.
+ */
+export async function ListRecentUserEventsJSON(
+  listRecentUserEventsRequest: ListRecentUserEventsRequest,
+  config?: ClientConfiguration,
+): Promise<ListRecentUserEventsResponse> {
+  const response = await JSONrequest(
+    "/user_event.UserEventService/ListRecentUserEvents",
+    ListRecentUserEventsRequestJSON.encode(listRecentUserEventsRequest),
+    config,
+  );
+  return ListRecentUserEventsResponseJSON.decode(response);
+}
+
 //========================================//
 //            UserEventService            //
 //========================================//
@@ -402,6 +457,14 @@ export interface UserEventService<Context = unknown> {
     listViewerLeaderboardRequest: ListViewerLeaderboardRequest,
     context: Context,
   ) => Promise<ListViewerLeaderboardResponse> | ListViewerLeaderboardResponse;
+  /**
+   * The latest events that occurred at or after `since`, newest first, and how
+   * many occurred in that span. Reads the log by time alone, not by session.
+   */
+  ListRecentUserEvents: (
+    listRecentUserEventsRequest: ListRecentUserEventsRequest,
+    context: Context,
+  ) => Promise<ListRecentUserEventsResponse> | ListRecentUserEventsResponse;
 }
 
 export function createUserEventService<Context>(
@@ -456,6 +519,18 @@ export function createUserEventService<Context>(
         output: {
           protobuf: ListViewerLeaderboardResponse,
           json: ListViewerLeaderboardResponseJSON,
+        },
+      },
+      ListRecentUserEvents: {
+        name: "ListRecentUserEvents",
+        handler: service.ListRecentUserEvents,
+        input: {
+          protobuf: ListRecentUserEventsRequest,
+          json: ListRecentUserEventsRequestJSON,
+        },
+        output: {
+          protobuf: ListRecentUserEventsResponse,
+          json: ListRecentUserEventsResponseJSON,
         },
       },
     },
@@ -1758,6 +1833,178 @@ export const ListViewerLeaderboardResponse = {
   },
 };
 
+export const ListRecentUserEventsRequest = {
+  /**
+   * Serializes ListRecentUserEventsRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<ListRecentUserEventsRequest>): Uint8Array {
+    return ListRecentUserEventsRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ListRecentUserEventsRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): ListRecentUserEventsRequest {
+    return ListRecentUserEventsRequest._readMessage(
+      ListRecentUserEventsRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ListRecentUserEventsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListRecentUserEventsRequest>,
+  ): ListRecentUserEventsRequest {
+    return {
+      since: protoscript.Timestamp.initialize(),
+      limit: undefined,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListRecentUserEventsRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.since) {
+      writer.writeMessage(1, msg.since, protoscript.Timestamp._writeMessage);
+    }
+    if (msg.limit != undefined) {
+      writer.writeInt32(2, msg.limit);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListRecentUserEventsRequest,
+    reader: protoscript.BinaryReader,
+  ): ListRecentUserEventsRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.since, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 2: {
+          msg.limit = reader.readInt32();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ListRecentUserEventsResponse = {
+  /**
+   * Serializes ListRecentUserEventsResponse to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<ListRecentUserEventsResponse>,
+  ): Uint8Array {
+    return ListRecentUserEventsResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ListRecentUserEventsResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): ListRecentUserEventsResponse {
+    return ListRecentUserEventsResponse._readMessage(
+      ListRecentUserEventsResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ListRecentUserEventsResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListRecentUserEventsResponse>,
+  ): ListRecentUserEventsResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      events: [],
+      total: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListRecentUserEventsResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.events?.length) {
+      writer.writeRepeatedMessage(
+        2,
+        msg.events as any,
+        UserEvent._writeMessage,
+      );
+    }
+    if (msg.total) {
+      writer.writeInt64String(3, msg.total.toString() as any);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListRecentUserEventsResponse,
+    reader: protoscript.BinaryReader,
+  ): ListRecentUserEventsResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          const m = UserEvent.initialize();
+          reader.readMessage(m, UserEvent._readMessage);
+          msg.events.push(m);
+          break;
+        }
+        case 3: {
+          msg.total = BigInt(reader.readInt64String());
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -2897,6 +3144,153 @@ export const ListViewerLeaderboardResponseJSON = {
         LeaderboardEntryJSON._readMessage(m, item);
         msg.entries.push(m);
       }
+    }
+    return msg;
+  },
+};
+
+export const ListRecentUserEventsRequestJSON = {
+  /**
+   * Serializes ListRecentUserEventsRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<ListRecentUserEventsRequest>): string {
+    return JSON.stringify(ListRecentUserEventsRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ListRecentUserEventsRequest from JSON.
+   */
+  decode: function (json: string): ListRecentUserEventsRequest {
+    return ListRecentUserEventsRequestJSON._readMessage(
+      ListRecentUserEventsRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ListRecentUserEventsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListRecentUserEventsRequest>,
+  ): ListRecentUserEventsRequest {
+    return {
+      since: protoscript.TimestampJSON.initialize(),
+      limit: undefined,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListRecentUserEventsRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.since && (msg.since.seconds || msg.since.nanos)) {
+      json["since"] = protoscript.serializeTimestamp(msg.since);
+    }
+    if (msg.limit != undefined) {
+      json["limit"] = msg.limit;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListRecentUserEventsRequest,
+    json: any,
+  ): ListRecentUserEventsRequest {
+    const _since_ = json["since"];
+    if (_since_) {
+      msg.since = protoscript.parseTimestamp(_since_);
+    }
+    const _limit_ = json["limit"];
+    if (_limit_) {
+      msg.limit = protoscript.parseNumber(_limit_);
+    }
+    return msg;
+  },
+};
+
+export const ListRecentUserEventsResponseJSON = {
+  /**
+   * Serializes ListRecentUserEventsResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<ListRecentUserEventsResponse>): string {
+    return JSON.stringify(ListRecentUserEventsResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ListRecentUserEventsResponse from JSON.
+   */
+  decode: function (json: string): ListRecentUserEventsResponse {
+    return ListRecentUserEventsResponseJSON._readMessage(
+      ListRecentUserEventsResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ListRecentUserEventsResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListRecentUserEventsResponse>,
+  ): ListRecentUserEventsResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      events: [],
+      total: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListRecentUserEventsResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.events?.length) {
+      json["events"] = msg.events.map(UserEventJSON._writeMessage);
+    }
+    if (msg.total) {
+      json["total"] = String(msg.total);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListRecentUserEventsResponse,
+    json: any,
+  ): ListRecentUserEventsResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _events_ = json["events"];
+    if (_events_) {
+      for (const item of _events_) {
+        const m = UserEventJSON.initialize();
+        UserEventJSON._readMessage(m, item);
+        msg.events.push(m);
+      }
+    }
+    const _total_ = json["total"];
+    if (_total_) {
+      msg.total = BigInt(_total_);
     }
     return msg;
   },

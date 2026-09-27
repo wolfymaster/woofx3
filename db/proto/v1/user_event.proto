@@ -39,6 +39,10 @@ service UserEventService {
   // keeping only those whose total reaches `min_total`. `not_found` for an
   // unknown session.
   rpc ListViewerLeaderboard(ListViewerLeaderboardRequest) returns (ListViewerLeaderboardResponse);
+
+  // The latest events that occurred at or after `since`, newest first, and how
+  // many occurred in that span. Reads the log by time alone, not by session.
+  rpc ListRecentUserEvents(ListRecentUserEventsRequest) returns (ListRecentUserEventsResponse);
 }
 
 message UserEvent {
@@ -179,4 +183,19 @@ message ListViewerLeaderboardResponse {
   common.ResponseStatus status = 1;
   // Highest total first; ties by platform, then platform_user_id.
   repeated LeaderboardEntry entries = 2;
+}
+
+message ListRecentUserEventsRequest {
+  // Start of the span, inclusive. Required.
+  google.protobuf.Timestamp since = 1;
+  // 1-100. Defaults to 20.
+  optional int32 limit = 2;
+}
+
+message ListRecentUserEventsResponse {
+  common.ResponseStatus status = 1;
+  // Newest first by occurred_at, at most `limit` of them.
+  repeated UserEvent events = 2;
+  // Every event in the span, not only those returned.
+  int64 total = 3;
 }

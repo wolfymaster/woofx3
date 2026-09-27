@@ -369,6 +369,66 @@ func TestLeaderboardTiesAreOrderedByViewer(t *testing.T) {
 	})
 }
 
+func TestRecentEventsAreTheNewestInTheSpan(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		f := newAggregateFixture(t, db)
+		f.seedTwoSessions(t)
+		ctx := context.Background()
+
+		limit := int32(2)
+		resp, err := f.svc.ListRecentUserEvents(ctx, &client.ListRecentUserEventsRequest{
+			Since: timestamppb.New(f.split),
+			Limit: &limit,
+		})
+		if err != nil {
+			t.Fatalf("ListRecentUserEvents: %v", err)
+		}
+		// At the split and an hour after it; the cheer a millisecond before
+		// the split is outside the span.
+		if resp.Total != 2 {
+			t.Fatalf("total = %d, want 2", resp.Total)
+		}
+		got := make([]string, 0, len(resp.Events))
+		for _, event := range resp.Events {
+			got = append(got, fmt.Sprintf("%s:%d", event.EventType, *event.Amount))
+		}
+		want := []string{models.UserEventTypeSubscriptionGift + ":10", models.UserEventTypeCheer + ":1000"}
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Fatalf("events = %v, want %v", got, want)
+		}
+
+		limit = 1
+		resp, err = f.svc.ListRecentUserEvents(ctx, &client.ListRecentUserEventsRequest{
+			Since: timestamppb.New(f.started.Add(-2 * time.Hour)),
+			Limit: &limit,
+		})
+		if err != nil {
+			t.Fatalf("ListRecentUserEvents: %v", err)
+		}
+		if resp.Total != 17 || len(resp.Events) != 1 {
+			t.Fatalf("total = %d with %d events, want 17 with 1", resp.Total, len(resp.Events))
+		}
+	})
+}
+
+func TestRecentEventsRejectBadRequests(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		f := newAggregateFixture(t, db)
+		ctx := context.Background()
+		zero := int32(0)
+		requests := map[string]*client.ListRecentUserEventsRequest{
+			"no since":   {},
+			"zero limit": {Since: timestamppb.New(f.started), Limit: &zero},
+		}
+		for name, req := range requests {
+			t.Run(name, func(t *testing.T) {
+				_, err := f.svc.ListRecentUserEvents(ctx, req)
+				wantTwirpCode(t, err, twirp.InvalidArgument)
+			})
+		}
+	})
+}
+
 // assertBoard compares entries as "id:name:total:events".
 func assertBoard(t *testing.T, entries []*client.LeaderboardEntry, want []string) {
 	t.Helper()
