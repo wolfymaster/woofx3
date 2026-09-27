@@ -4,6 +4,7 @@ import type {
   ModuleSettingsResponse,
   ModuleResourceUsage,
   ResourceInstanceDefinition,
+  WidgetThemes,
 } from "@woofx3/api";
 import { type EngineModule, listEngineModules } from "../engine-modules";
 import { routeModule } from "./context";
@@ -395,6 +396,14 @@ export const modulesRoutes = routeModule({
     } catch {
       return null;
     }
+  },
+
+  async listWidgetThemes(widgetCanonicalId: string): Promise<WidgetThemes> {
+    if (typeof widgetCanonicalId !== "string" || widgetCanonicalId.split(":")[1] !== "widget") {
+      throw new Error("listWidgetThemes: widgetCanonicalId must be `{moduleId}:widget:{id}`");
+    }
+    const response = await this.barkloaderRequest(`/themes?widget=${encodeURIComponent(widgetCanonicalId)}`);
+    return (await response.json()) as WidgetThemes;
   },
 
   /**
