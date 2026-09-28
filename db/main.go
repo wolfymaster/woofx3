@@ -49,7 +49,6 @@ func main() {
 			appCtx := application.Context()
 			cfg := runtime.GetConfig[*config.DatabaseEnvConfig](appCtx)
 			databaseURL := cfg.DatabaseURL
-			badgerPath := cfg.BadgerPath
 			httpHost := cfg.DatabaseProxyHost
 			httpPort := cfg.DatabaseProxyPort
 
@@ -69,8 +68,14 @@ func main() {
 				return err
 			}
 
-			badgerSvc := services.NewBadgerService(badgerPath, logger)
-			if err := application.Register("badger", badgerSvc); err != nil {
+			storageSvc := services.NewModuleStorageService(services.ModuleStorageConfig{
+				Path:            cfg.StoragePath,
+				ReplicaURL:      cfg.StorageReplicaURL,
+				AccessKeyID:     cfg.StorageReplicaAccessKeyID,
+				SecretAccessKey: cfg.StorageReplicaSecretAccessKey,
+				BadgerPath:      cfg.BadgerPath,
+			}, logger)
+			if err := application.Register(services.ModuleStorageServiceName, storageSvc); err != nil {
 				return err
 			}
 
