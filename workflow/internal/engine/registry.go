@@ -14,6 +14,9 @@ type WorkflowRegistry struct {
 	workflows map[string]*types.WorkflowDefinition
 	registrar triggers.Registrar
 	logger    logger
+	// validate refuses a definition before it replaces anything, so a
+	// rejected update leaves the previous version registered. Nil accepts all.
+	validate func(def *types.WorkflowDefinition) error
 }
 
 // logger is the minimal interface the registry needs; engine.Engine passes its own.
@@ -57,6 +60,11 @@ func (r *WorkflowRegistry) Register(def *types.WorkflowDefinition) error {
 	}
 	if len(def.Tasks) == 0 {
 		return fmt.Errorf("workflow must have at least one task")
+	}
+	if r.validate != nil {
+		if err := r.validate(def); err != nil {
+			return fmt.Errorf("workflow %s: %w", def.ID, err)
+		}
 	}
 
 	r.mu.Lock()

@@ -119,6 +119,7 @@ func New[TServices any](logger tasks.Logger) *Engine[TServices] {
 	}
 
 	engine.registerBuiltInTasks()
+	engine.workflowRegistry.validate = engine.validateActionParams
 
 	return engine
 }
@@ -151,6 +152,28 @@ func (e *Engine[TServices]) GetWorkflow(id string) (*types.WorkflowDefinition, e
 
 func (e *Engine[TServices]) RegisterAction(name string, action tasks.ActionFunc[TServices]) error {
 	return e.actionRegistry.Register(name, action)
+}
+
+// RegisterValidatedAction registers an action whose step parameters are
+// checked when a workflow, or an action run, that uses it is accepted.
+func (e *Engine[TServices]) RegisterValidatedAction(name string, action tasks.ActionFunc[TServices], validate tasks.ParamsValidator) error {
+	return e.actionRegistry.RegisterValidated(name, action, validate)
+}
+
+// validateActionParams checks every enabled action step against its action's
+// validator. A disabled step is skipped: it never runs, and disabling a broken
+// step is how an author gets the rest of the workflow running again.
+func (e *Engine[TServices]) validateActionParams(def *types.WorkflowDefinition) error {
+	for i := range def.Tasks {
+		task := &def.Tasks[i]
+		if task.Type != "action" || task.Disabled {
+			continue
+		}
+		if err := e.actionRegistry.ValidateParams(task.Action, task.Parameters); err != nil {
+			return fmt.Errorf("step %s (%s): %w", task.ID, task.Action, err)
+		}
+	}
+	return nil
 }
 
 func (e *Engine[TServices]) SetPublisher(publisher EventPublisher) {
