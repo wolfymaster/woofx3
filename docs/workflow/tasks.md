@@ -252,7 +252,7 @@ The condition task itself always succeeds (unless evaluation throws an error). I
 
 ## wait
 
-Pauses workflow execution until a matching event arrives or a timeout expires. Supports both single-event and aggregation modes.
+Pauses workflow execution until a matching event arrives or a timeout expires, or for a fixed time. Supports single-event, aggregation and delay modes.
 
 ### Single Event Wait
 
@@ -264,7 +264,7 @@ Waits for one matching event:
   "type": "wait",
   "wait": {
     "type": "event",
-    "eventType": "channel.follow",
+    "event": "channel.follow",
     "conditions": [
       { "field": "${trigger.data.userId}", "operator": "eq", "value": "${trigger.data.userId}" }
     ],
@@ -284,7 +284,7 @@ Collects multiple events and checks a threshold:
   "type": "wait",
   "wait": {
     "type": "aggregation",
-    "eventType": "channel.cheer",
+    "event": "channel.cheer",
     "aggregation": {
       "strategy": "sum",
       "field": "data.amount",
@@ -296,6 +296,29 @@ Collects multiple events and checks a threshold:
   }
 }
 ```
+
+### Delay
+
+Pauses for a fixed time, then continues. "On raid, wait 10 seconds, then shout out" is a delay between the trigger and the shoutout:
+
+```json
+{
+  "id": "settle",
+  "type": "wait",
+  "wait": {
+    "type": "delay",
+    "durationMs": 10000
+  }
+}
+```
+
+`durationMs` is required and must be a whole number from `1` to `86400000` (24 hours). A delay takes no `event`, `conditions`, `aggregation`, `timeout` or `onTimeout`; a workflow that sets any of them on a delay is refused when it is saved, as is one whose `durationMs` is out of range. A delay always succeeds, and events arriving while it runs do not end it early.
+
+### Timeouts
+
+An event or aggregation wait ends at its `timeout` (5 minutes when unset) even if no event ever arrives: the engine arms a timer when the run pauses and cancels it when the wait is satisfied. What happens next follows `onTimeout`: `"fail"` (the default) fails the task and the run; `"continue"` marks the task successful with `timedOut: true` and runs the next task. If an event and the timeout land at the same moment, exactly one of them settles the wait.
+
+Paused waits and delays live in the engine's memory. A run paused when the engine stops is not resumed when it starts again.
 
 ### Aggregation Strategies
 
@@ -309,9 +332,13 @@ Wait tasks export aggregation results for downstream tasks:
 
 | Export | Type | Description |
 |--------|------|-------------|
-| `eventCount` | `number` | Total events received |
-| `sum` | `number` | Running sum (for sum strategy) |
+| `satisfied` | `boolean` | Whether the wait's event (or aggregation threshold) arrived. `true` for a delay that ran its course |
+| `timedOut` | `boolean` | Whether the wait ended at its timeout |
+| `count` | `number` | Events counted (aggregation waits) |
+| `sum` | `number` | Running sum (aggregation waits) |
 | `events` | `Event[]` | All received events |
+| `lastEvent` | `Event` | The most recent received event, when there is one |
+| `data` | `object` | `lastEvent`'s data, when there is one |
 
 ---
 

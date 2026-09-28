@@ -158,7 +158,7 @@ Numeric comparisons use type coercion -- string representations of numbers are c
 
 ## WaitConfig
 
-Configuration for `wait` type tasks. Pauses workflow execution until a matching event arrives or a timeout expires.
+Configuration for `wait` type tasks. Pauses workflow execution until a matching event arrives or a timeout expires, or, for a `delay`, for a fixed time.
 
 ```json
 {
@@ -180,12 +180,19 @@ Configuration for `wait` type tasks. Pauses workflow execution until a matching 
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `type` | `string` | Yes | Wait type. `"event"` waits for a single matching event. `"aggregation"` collects multiple events and checks an aggregation threshold. |
-| `event` | `string` | Yes | NATS subject to listen for while waiting. |
+| `type` | `string` | Yes | Wait type. `"event"` waits for a single matching event. `"aggregation"` collects multiple events and checks an aggregation threshold. `"delay"` pauses for `durationMs` and then continues. |
+| `event` | `string` | Yes, except for `delay` | NATS subject to listen for while waiting. |
 | `conditions` | [ConditionConfig[]](#conditionconfig) | No | Conditions that incoming events must match to be counted. |
 | `aggregation` | [AggregationConfig](#aggregationconfig) | No | Required when `type` is `"aggregation"`. Defines the aggregation strategy. |
 | `timeout` | [Duration](#duration) | No | Maximum time to wait. If exceeded, behavior is determined by `onTimeout`. |
 | `onTimeout` | `string` | No | What happens when the timeout expires. `"continue"` marks the task as successful and proceeds. `"fail"` (default) fails the task and the workflow. |
+| `durationMs` | `integer` | Only for `delay` | How long a delay pauses, in milliseconds, from `1` to `86400000` (24 hours). |
+
+A `delay` takes only `type` and `durationMs`; setting `event`, `conditions`, `aggregation`, `timeout` or `onTimeout` on one is refused:
+
+```json
+{ "type": "delay", "durationMs": 10000 }
+```
 
 ---
 
