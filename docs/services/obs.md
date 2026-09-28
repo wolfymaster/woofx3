@@ -46,6 +46,15 @@ playing.
 While not connected, every `obs.*` step fails with `OBS is not connected
 (retrying)`, and `listObsScenes()` reports that as its reason.
 
+A wrong or missing password is logged separately, as `OBS refused the
+connection: check the OBS WebSocket password (WOOFX3_OBS_RPC_TOKEN)`, once
+each time the reason for failing changes.
+
+A command OBS has not answered within 3.5 seconds fails with `OBS did not
+answer within 3.5s; reconnecting to it`, and the scene manager drops that
+session and reconnects: a socket that stays open while OBS has stopped
+answering would otherwise fail every command until OBS was restarted.
+
 Names are OBS's own: a step names a scene, source or audio input exactly as it
 appears in OBS, case included. Renaming a scene in OBS breaks the steps that
 name it, and they fail saying which scene is missing.
@@ -59,9 +68,12 @@ A NATS request/reply subject. The request is a CloudEvent of type
 | `command` | Fields | OBS requests |
 |---|---|---|
 | `switch_scene` | `sceneName` | `SetCurrentProgramScene` |
-| `set_source_visibility` | `sourceName`, `visible`, `sceneName?` (current program scene when absent) | `GetCurrentProgramScene`, `GetSceneItemId`, `SetSceneItemEnabled` |
+| `set_source_visibility` | `sourceName`, `visible`, `sceneName?` (current program scene when absent) | `GetCurrentProgramScene`, `GetSceneItemList`, `GetGroupSceneItemList` per group when the source is not at the top level, `SetSceneItemEnabled` (on the group, for a source inside one) |
 | `set_input_mute` | `inputName`, `muted` | `SetInputMute` |
-| `list_scenes` | none | `GetSceneList`, `GetSceneItemList` per scene |
+| `list_scenes` | none | `GetSceneList`, then `GetSceneItemList` per scene and `GetGroupSceneItemList` per group, in parallel |
+
+`switch_scene` sets the program scene, so it changes what is live even in
+studio mode.
 
 The reply is `{ "ok": true }` (with `scenes` for `list_scenes`) or
 `{ "ok": false, "error": "<reason>" }`. The scene manager answers every
@@ -69,20 +81,25 @@ request, a malformed one included, so a requester only ever times out when no
 scene manager is running or OBS stops answering it.
 
 Only the engine sends these: the workflow actions and the api's
-`listObsScenes()`. Module code does not get a way to reach this subject (see
-[Engine integrity](./engine-integrity.md)); a module that wants OBS changed
-returns a value, and a workflow step does the changing.
+`listObsScenes()`. Both send requests, so the scene manager ignores a message
+on this subject that has no reply subject, before anything reaches OBS. An
+uploaded module cannot declare `engine.` (or any other engine command subject)
+as an eventbus trigger event, which is the one way module code could otherwise
+get a message published here (see [Engine integrity](./engine-integrity.md)).
+A module that wants OBS changed returns a value, and a workflow step does the
+changing.
 
 ## Listing scenes
 
 `listObsScenes()` on the engine API sends `list_scenes` and returns
 
 ```ts
-{ available: true, scenes: { name, sources: { name, sceneItemId, inputKind, enabled }[] }[] }
+{ available: true, scenes: { name, sources: { name, sceneItemId, inputKind, enabled, group }[] }[] }
 | { available: false, reason: string }
 ```
 
-scenes ordered as OBS's scene list shows them, top first. It asks OBS on every
+scenes ordered as OBS's scene list shows them, top first. A group's sources
+follow the group, with `group` set to its name (`null` at the top level). It asks OBS on every
 call, so a scene added a moment ago is listed. A UI offering scene and source
 names should fall back to a text box when the listing is unavailable.
 

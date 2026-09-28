@@ -61,6 +61,21 @@ export function obsRetryDelay(attempt: number, backoff: ObsBackoff, random: numb
   return Math.round(ceiling / 2 + (ceiling / 2) * random);
 }
 
+/** obs-websocket v5 WebSocketCloseCode.AuthenticationFailed. */
+const OBS_AUTHENTICATION_FAILED = 4009;
+
+type ObsFailureKind = "authentication" | "unreachable";
+
+/**
+ * A wrong or missing password closes the socket with 4009, which obs-websocket-js
+ * surfaces as the connect error's `code`. Everything else a streamer can act on
+ * is "OBS is not running or not listening there".
+ */
+export function obsFailureKind(err: unknown): ObsFailureKind {
+  const code = typeof err === "object" && err !== null && "code" in err ? (err as { code: unknown }).code : undefined;
+  return code === OBS_AUTHENTICATION_FAILED ? "authentication" : "unreachable";
+}
+
 export class ObsConnection<TClient> {
   private state: ObsConnectionState = "connecting";
   private session: ObsSession<TClient> | null = null;
@@ -70,6 +85,8 @@ export class ObsConnection<TClient> {
   private started = false;
   /** Bumped per session so a late close from an old socket is ignored. */
   private generation = 0;
+  /** Why the last attempt failed; null until one has, and after a success. */
+  private lastFailureKind: ObsFailureKind | null = null;
 
   private readonly backoff: ObsBackoff;
   private readonly random: () => number;
@@ -108,6 +125,20 @@ export class ObsConnection<TClient> {
     if (session) {
       await session.close().catch(() => undefined);
     }
+  }
+
+  /**
+   * Abandon the open session and reconnect, for a session that is open but
+   * no longer answering: a socket that never closes would otherwise hold
+   * every request hostage until OBS itself is restarted.
+   */
+  recycle(reason: string): void {
+    if (this.isStopped() || !this.session) {
+      return;
+    }
+    const session = this.session;
+    this.dropSession(`OBS session abandoned (${reason}); reconnecting in the background`);
+    void session.close().catch(() => undefined);
   }
 
   /** The open session's client, or null while not connected. */
@@ -154,15 +185,13 @@ export class ObsConnection<TClient> {
     this.hasConnected = true;
     logger.info(first ? "Connected to OBS" : "Reconnected to OBS", { afterFailedAttempts: this.failures });
     this.failures = 0;
+    this.lastFailureKind = null;
 
     session.onClose(() => {
       if (generation !== this.generation || this.isStopped()) {
         return;
       }
-      this.session = null;
-      this.state = "retrying";
-      logger.warn("OBS connection lost; reconnecting in the background");
-      this.schedule();
+      this.dropSession("OBS connection lost; reconnecting in the background");
     });
 
     const hook = this.options.onConnected;
@@ -177,15 +206,37 @@ export class ObsConnection<TClient> {
     }
   }
 
+  /** Forget the open session, whatever became of it, and schedule a reconnect. */
+  private dropSession(message: string): void {
+    this.generation += 1;
+    this.session = null;
+    this.state = "retrying";
+    // The loss was just reported; failures that follow are the expected
+    // "OBS is not back yet" and stay quiet unless their kind changes.
+    this.lastFailureKind = "unreachable";
+    this.options.logger.warn(message);
+    this.schedule();
+  }
+
   private onAttemptFailed(err: unknown): void {
     if (this.isStopped()) {
       return;
     }
     const error = err instanceof Error ? err.message : String(err);
-    // One line per transition into "not connected", then quiet. A lost
-    // connection already logged its own line in the close listener.
-    if (this.state === "connecting") {
-      this.options.logger.warn("OBS not reachable; retrying in the background", { error });
+    const kind = obsFailureKind(err);
+    // One line per change in why OBS cannot be reached, then quiet: an
+    // evening with OBS closed is one line, but a wrong password after OBS
+    // starts is a different problem and is said once too.
+    if (kind !== this.lastFailureKind) {
+      this.lastFailureKind = kind;
+      if (kind === "authentication") {
+        this.options.logger.warn(
+          "OBS refused the connection: check the OBS WebSocket password (WOOFX3_OBS_RPC_TOKEN); retrying in the background",
+          { error }
+        );
+      } else {
+        this.options.logger.warn("OBS not reachable; retrying in the background", { error });
+      }
     } else {
       this.options.logger.debug("OBS connect attempt failed", { error, failures: this.failures + 1 });
     }

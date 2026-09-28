@@ -219,6 +219,62 @@ describe("ObsConnection", () => {
     expect(log.loud().map((l) => l.message)).toContain("OBS post-connect work failed");
   });
 
+  it("recycle() abandons a hung session and reconnects", async () => {
+    const obs = fakeObs(0);
+    const { conn, timers, log } = connection(obs);
+    conn.start();
+    await settle();
+
+    conn.recycle("an OBS request timed out");
+    expect(conn.status()).toBe("retrying");
+    expect(conn.current()).toBeNull();
+    await settle();
+    expect(obs.closed).toEqual([1]);
+
+    // The abandoned socket's own close arriving later must not schedule a second retry.
+    obs.dropLatest();
+    expect(timers.count()).toBe(1);
+
+    await timers.fire();
+    expect(conn.status()).toBe("connected");
+    expect(obs.opened()).toBe(2);
+    expect(log.loud().map((l) => l.message)).toEqual([
+      "Connected to OBS",
+      "OBS session abandoned (an OBS request timed out); reconnecting in the background",
+      "Reconnected to OBS",
+    ]);
+  });
+
+  it("names a wrong password once, and again only when the reason changes", async () => {
+    const authFailure = Object.assign(new Error("Authentication failed."), { code: 4009 });
+    const errors = [authFailure, authFailure, new Error("ECONNREFUSED"), authFailure];
+    const timers = manualTimers();
+    const log = recordingLogger();
+    const conn = new ObsConnection<ObsControlClient>({
+      open: async () => {
+        throw errors.shift() ?? new Error("ECONNREFUSED");
+      },
+      logger: log.logger,
+      random: () => 1,
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    });
+    conn.start();
+    await settle();
+    for (let i = 0; i < 4; i++) {
+      await timers.fire();
+    }
+    await conn.stop();
+
+    expect(log.loud().map((l) => l.message.split(":")[0])).toEqual([
+      "OBS refused the connection",
+      "OBS not reachable; retrying in the background",
+      "OBS refused the connection",
+      "OBS not reachable; retrying in the background",
+    ]);
+    expect(log.loud()[0].message).toContain("check the OBS WebSocket password");
+  });
+
   it("refuses to start twice", () => {
     const { conn } = connection(fakeObs(0));
     conn.start();

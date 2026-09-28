@@ -15,6 +15,8 @@ export interface ObsSceneSource {
   inputKind: string | null;
   /** Whether the source is currently shown in the scene. */
   enabled: boolean;
+  /** The group this source sits in, listed after the group itself; null at the scene's top level. */
+  group: string | null;
 }
 
 /**

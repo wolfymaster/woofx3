@@ -66,89 +66,215 @@ export function parseObsControlCommand(data: unknown): ParsedObsCommand {
 }
 
 /**
+ * How long one command may take in OBS. Under the engine's 5s request timeout
+ * on purpose, so the step fails with this service's reason rather than a bare
+ * "no answer". OBS answers a local request in milliseconds; one that has not
+ * answered in this long is hung, and the session is recycled.
+ */
+export const OBS_COMMAND_TIMEOUT_MS = 3_500;
+
+export interface ObsControlOptions {
+  timeoutMs?: number;
+  /** Called when OBS did not answer in time; the caller drops the session. */
+  onTimeout?: () => void;
+}
+
+/** A refusal already worded for the streamer, passed through as is. */
+class ObsControlError extends Error {}
+
+class ObsTimeoutError extends Error {}
+
+function isNotFound(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code: unknown }).code === OBS_RESOURCE_NOT_FOUND
+  );
+}
+
+function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new ObsTimeoutError(`timeout after ${ms}ms`)), ms);
+  });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+}
+
+/**
  * Carry one command to OBS. `obs` is null while no OBS connection is open,
  * which is answered, not thrown: "OBS is not connected" is the most common
  * reason a step fails and the one a streamer most needs to be told.
  */
 export async function executeObsControlCommand(
   obs: ObsControlClient | null,
-  command: ObsControlCommand
+  command: ObsControlCommand,
+  options: ObsControlOptions = {}
 ): Promise<ObsControlReply> {
   if (!obs) {
     return { ok: false, error: OBS_NOT_CONNECTED };
   }
+  const timeoutMs = options.timeoutMs ?? OBS_COMMAND_TIMEOUT_MS;
   try {
-    switch (command.command) {
-      case "switch_scene": {
-        await obs.request("SetCurrentProgramScene", { sceneName: command.sceneName });
-        return { ok: true };
-      }
-      case "set_source_visibility": {
-        const sceneName = command.sceneName || (await obs.request("GetCurrentProgramScene")).currentProgramSceneName;
-        const { sceneItemId } = await obs.request("GetSceneItemId", {
-          sceneName,
-          sourceName: command.sourceName,
-        });
-        await obs.request("SetSceneItemEnabled", {
-          sceneName,
-          sceneItemId,
-          sceneItemEnabled: command.visible,
-        });
-        return { ok: true };
-      }
-      case "set_input_mute": {
-        await obs.request("SetInputMute", { inputName: command.inputName, inputMuted: command.muted });
-        return { ok: true };
-      }
-      case "list_scenes": {
-        return { ok: true, scenes: await listScenes(obs) };
-      }
-    }
+    return await withDeadline(runCommand(obs, command), timeoutMs);
   } catch (err) {
+    if (err instanceof ObsTimeoutError) {
+      options.onTimeout?.();
+      return {
+        ok: false,
+        error: `OBS did not answer within ${timeoutMs / 1000}s; reconnecting to it`,
+      };
+    }
     return { ok: false, error: describeObsError(command, err) };
   }
+}
+
+async function runCommand(obs: ObsControlClient, command: ObsControlCommand): Promise<ObsControlReply> {
+  switch (command.command) {
+    case "switch_scene": {
+      // SetCurrentProgramScene changes what is live even in studio mode,
+      // where OBS's own scene list only changes the preview.
+      await obs.request("SetCurrentProgramScene", { sceneName: command.sceneName });
+      return { ok: true };
+    }
+    case "set_source_visibility": {
+      const sceneName = command.sceneName || (await obs.request("GetCurrentProgramScene")).currentProgramSceneName;
+      const item = await findSceneItem(obs, sceneName, command.sourceName, !command.sceneName);
+      await obs.request("SetSceneItemEnabled", {
+        sceneName: item.sceneName,
+        sceneItemId: item.sceneItemId,
+        sceneItemEnabled: command.visible,
+      });
+      return { ok: true };
+    }
+    case "set_input_mute": {
+      await obs.request("SetInputMute", { inputName: command.inputName, inputMuted: command.muted });
+      return { ok: true };
+    }
+    case "list_scenes": {
+      return { ok: true, scenes: await listScenes(obs) };
+    }
+  }
+}
+
+/**
+ * Where a source sits: directly in the scene, or inside one of the scene's
+ * groups. A source in a group is not an item of the scene itself, so looking
+ * only at the scene would report a source the streamer can see as missing.
+ * Its item belongs to the group, and is toggled with the group as the scene.
+ */
+async function findSceneItem(
+  obs: ObsControlClient,
+  sceneName: string,
+  sourceName: string,
+  isCurrentScene: boolean
+): Promise<{ sceneName: string; sceneItemId: number }> {
+  let sceneItems: Record<string, unknown>[];
+  try {
+    ({ sceneItems } = await obs.request("GetSceneItemList", { sceneName }));
+  } catch (err) {
+    if (isNotFound(err)) {
+      throw new ObsControlError(`scene ${JSON.stringify(sceneName)} does not exist in OBS`);
+    }
+    throw err;
+  }
+  const direct = sceneItems.find((item) => item.sourceName === sourceName);
+  if (direct) {
+    return { sceneName, sceneItemId: Number(direct.sceneItemId) };
+  }
+
+  const groups = sceneItems.filter((item) => item.isGroup === true).map((item) => String(item.sourceName));
+  const groupItems = await Promise.all(groups.map((group) => groupSceneItems(obs, group)));
+  for (let i = 0; i < groups.length; i++) {
+    const nested = groupItems[i].find((item) => item.sourceName === sourceName);
+    if (nested) {
+      return { sceneName: groups[i], sceneItemId: Number(nested.sceneItemId) };
+    }
+  }
+
+  const where = isCurrentScene
+    ? `the current scene (${JSON.stringify(sceneName)})`
+    : `scene ${JSON.stringify(sceneName)}`;
+  throw new ObsControlError(`source ${JSON.stringify(sourceName)} is not in ${where} or any group in it`);
+}
+
+/** A group's items, or none when the group vanished since it was listed. */
+async function groupSceneItems(obs: ObsControlClient, group: string): Promise<Record<string, unknown>[]> {
+  try {
+    return (await obs.request("GetGroupSceneItemList", { sceneName: group })).sceneItems;
+  } catch (err) {
+    if (isNotFound(err)) {
+      return [];
+    }
+    throw err;
+  }
+}
+
+function toSource(item: Record<string, unknown>, group: string | null): ObsSceneSource {
+  return {
+    name: String(item.sourceName),
+    sceneItemId: Number(item.sceneItemId),
+    inputKind: typeof item.inputKind === "string" ? item.inputKind : null,
+    enabled: item.sceneItemEnabled === true,
+    group,
+  };
 }
 
 /**
  * Scenes in the order OBS's own scene list shows them, top first. OBS numbers
  * scenes from the bottom of that list, so the highest `sceneIndex` is the top.
+ * A group's sources follow the group, marked with its name.
+ *
+ * A scene or group removed between the listing and the read of its items is
+ * left out rather than failing the whole listing.
  */
 async function listScenes(obs: ObsControlClient): Promise<ObsSceneSummary[]> {
   const { scenes } = await obs.request("GetSceneList");
   const ordered = [...scenes].sort((a, b) => Number(b.sceneIndex) - Number(a.sceneIndex));
-  const summaries: ObsSceneSummary[] = [];
-  for (const scene of ordered) {
-    const name = String(scene.sceneName);
-    const { sceneItems } = await obs.request("GetSceneItemList", { sceneName: name });
-    const sources: ObsSceneSource[] = sceneItems.map((item) => ({
-      name: String(item.sourceName),
-      sceneItemId: Number(item.sceneItemId),
-      inputKind: typeof item.inputKind === "string" ? item.inputKind : null,
-      enabled: item.sceneItemEnabled === true,
-    }));
-    summaries.push({ name, sources });
-  }
-  return summaries;
+  const summaries = await Promise.all(
+    ordered.map(async (scene): Promise<ObsSceneSummary | null> => {
+      const name = String(scene.sceneName);
+      let sceneItems: Record<string, unknown>[];
+      try {
+        ({ sceneItems } = await obs.request("GetSceneItemList", { sceneName: name }));
+      } catch (err) {
+        if (isNotFound(err)) {
+          return null;
+        }
+        throw err;
+      }
+      const expanded = await Promise.all(
+        sceneItems.map(async (item) => {
+          const own = toSource(item, null);
+          if (item.isGroup !== true) {
+            return [own];
+          }
+          const children = await groupSceneItems(obs, own.name);
+          return [own, ...children.map((child) => toSource(child, own.name))];
+        })
+      );
+      return { name, sources: expanded.flat() };
+    })
+  );
+  return summaries.filter((summary): summary is ObsSceneSummary => summary !== null);
 }
 
 /**
  * OBS's own not-found text names only the thing it could not find, and in
- * OBS's vocabulary. Said again here in the workflow's terms, naming the
- * scene the source was looked for in, which OBS leaves out.
+ * OBS's vocabulary. Said again here in the workflow's terms.
  */
 function describeObsError(command: ObsControlCommand, err: unknown): string {
+  if (err instanceof ObsControlError) {
+    return err.message;
+  }
   const message = err instanceof Error ? err.message : String(err);
-  const code = typeof err === "object" && err !== null && "code" in err ? (err as { code: unknown }).code : undefined;
-  if (code === OBS_RESOURCE_NOT_FOUND) {
+  if (isNotFound(err)) {
     switch (command.command) {
       case "switch_scene":
         return `scene ${JSON.stringify(command.sceneName)} does not exist in OBS`;
-      case "set_source_visibility":
-        return command.sceneName
-          ? `source ${JSON.stringify(command.sourceName)} is not in scene ${JSON.stringify(command.sceneName)} (or that scene does not exist)`
-          : `source ${JSON.stringify(command.sourceName)} is not in the current scene`;
       case "set_input_mute":
         return `input ${JSON.stringify(command.inputName)} does not exist in OBS`;
+      case "set_source_visibility":
       case "list_scenes":
         break;
     }
@@ -164,7 +290,8 @@ function describeObsError(command: ObsControlCommand, err: unknown): string {
 export async function handleObsControlRequest(
   obs: ObsControlClient | null,
   raw: Uint8Array,
-  logger: Logger
+  logger: Logger,
+  options: ObsControlOptions = {}
 ): Promise<ObsControlReply> {
   let envelope: { data?: unknown };
   try {
@@ -180,7 +307,7 @@ export async function handleObsControlRequest(
     logger.warn("engine.obs.command: refused", { error: parsed.error });
     return parsed;
   }
-  const reply = await executeObsControlCommand(obs, parsed.command);
+  const reply = await executeObsControlCommand(obs, parsed.command, options);
   if (reply.ok) {
     // A scene listing is a read the UI may repeat; only changes to OBS are worth a line at info.
     const log = parsed.command.command === "list_scenes" ? logger.debug : logger.info;
@@ -189,4 +316,45 @@ export async function handleObsControlRequest(
     logger.warn("engine.obs.command: failed", { command: parsed.command.command, error: reply.error });
   }
   return reply;
+}
+
+/** The slice of a NATS message `answerObsCommand` needs. */
+export interface ObsCommandMessage {
+  reply?: string;
+  data: Uint8Array;
+  respond(data: Uint8Array): boolean;
+}
+
+/** The slice of `obs/connection.ts` `answerObsCommand` needs. */
+export interface ObsSessionSource {
+  current(): ObsControlClient | null;
+  recycle(reason: string): void;
+}
+
+/**
+ * Answer one `engine.obs.command` message.
+ *
+ * A message with no reply subject is refused before anything reaches OBS.
+ * Every legitimate sender -- the engine's `obs.*` actions and the api's scene
+ * listing -- sends a request and waits for the answer, so a bare publish on
+ * this subject comes from something that is not the engine, and OBS control
+ * is not something anything else on the bus may drive.
+ */
+export async function answerObsCommand(obs: ObsSessionSource, msg: ObsCommandMessage, logger: Logger): Promise<void> {
+  if (!msg.reply) {
+    logger.warn("engine.obs.command: refused a message with no reply subject; OBS control is request/reply only");
+    return;
+  }
+  try {
+    const reply = await handleObsControlRequest(obs.current(), msg.data, logger, {
+      onTimeout: () => obs.recycle("an OBS request timed out"),
+    });
+    msg.respond(new TextEncoder().encode(JSON.stringify(reply)));
+  } catch (err) {
+    // handleObsControlRequest answers every failure it knows of; this is the
+    // one it does not, and the requester is still owed an answer.
+    const error = err instanceof Error ? err.message : String(err);
+    logger.error("engine.obs.command: handler failed", { error });
+    msg.respond(new TextEncoder().encode(JSON.stringify({ ok: false, error: `scene manager error: ${error}` })));
+  }
 }

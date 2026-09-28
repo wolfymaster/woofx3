@@ -4,7 +4,7 @@ import type { DbClient } from "./db";
 import type { DeliveryStore } from "./events/delivery-store";
 import { handleStatusReport } from "./events/handlers";
 import { handleLegacySlobsCommand } from "./obs/commands";
-import { handleObsControlRequest } from "./obs/control";
+import { answerObsCommand } from "./obs/control";
 import type Manager from "./obs/manager";
 import {
   ALERT_EVENT_TYPE,
@@ -20,7 +20,7 @@ import type { OverlayTokenResolver } from "./scene/token-resolver";
 interface InitArgs {
   nats: NATSClient | null;
   /** The live OBS session, re-read per message: it comes and goes as OBS does. */
-  obs: { current(): Manager | null };
+  obs: { current(): Manager | null; recycle(reason: string): void };
   db: DbClient;
   host: OverlayHost;
   deliveryStore: DeliveryStore;
@@ -255,12 +255,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
 
   // Engine OBS control, request/reply: the workflow `obs.*` actions and the
   // api's scene listing wait on this answer to succeed or fail.
-  await nats.subscribe("engine.obs.command", async (msg) => {
-    const reply = await handleObsControlRequest(obs.current(), msg.data, logger);
-    if (!msg.respond(new TextEncoder().encode(JSON.stringify(reply)))) {
-      logger.warn("engine.obs.command: received without a reply subject; the result reached nobody");
-    }
-  });
+  await nats.subscribe("engine.obs.command", (msg) => answerObsCommand(obs, msg, logger));
   logger.info("Subscribed to engine.obs.command");
 
   await nats.subscribe("db.scene.updated.*", (msg) => {

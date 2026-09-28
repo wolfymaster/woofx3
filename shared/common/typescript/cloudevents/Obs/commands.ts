@@ -56,6 +56,8 @@ export interface ObsSceneSource {
   /** OBS input kind (e.g. `browser_source`); null for a nested scene or group. */
   inputKind: string | null;
   enabled: boolean;
+  /** The group this source sits in, listed after the group itself; null at the scene's top level. */
+  group: string | null;
 }
 
 export interface ObsSceneSummary {

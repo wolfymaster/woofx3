@@ -1,5 +1,5 @@
-import OBSWebSocket, { type OBSRequestTypes, type OBSResponseTypes } from "obs-websocket-js";
 import type { Logger } from "@woofx3/common/runtime";
+import OBSWebSocket, { type OBSRequestTypes, type OBSResponseTypes } from "obs-websocket-js";
 import type { ObsSession } from "./connection";
 import Scene, { type SceneArgs } from "./scene";
 import Source from "./source";
@@ -67,6 +67,15 @@ export async function openObsSession(
   logger: Logger
 ): Promise<ObsSession<Manager>> {
   const ws = new OBSWebSocket();
+  // Listened for from the start and latched: the socket can close while the
+  // scenes are still loading, before the caller has registered anything, and
+  // a close nobody heard would leave a dead session looking connected.
+  let closed = false;
+  let closeListener: (() => void) | null = null;
+  ws.once("ConnectionClosed", () => {
+    closed = true;
+    closeListener?.();
+  });
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
@@ -83,7 +92,11 @@ export async function openObsSession(
     return {
       client: manager,
       onClose: (listener) => {
-        ws.once("ConnectionClosed", () => listener());
+        if (closed) {
+          queueMicrotask(listener);
+          return;
+        }
+        closeListener = listener;
       },
       close: () => ws.disconnect(),
     };
