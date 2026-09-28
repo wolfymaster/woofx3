@@ -42,3 +42,15 @@ type UserEvent struct {
 func (UserEvent) TableName() string {
 	return "user_events"
 }
+
+// The CloudEvent types the aggregate reads count. They must match `EventType`
+// in shared/common/typescript/cloudevents/Twitch/events.ts, which is what the
+// recorder stores as event_type.
+const (
+	UserEventTypeCheer            = "channel.cheer"
+	UserEventTypeFollow           = "channel.follow"
+	UserEventTypeRaid             = "channel.raid"
+	UserEventTypeSubscribe        = "channel.subscribe"
+	UserEventTypeSubscriptionGift = "channel.subscriptionGift"
+	UserEventTypeResub            = "channel.resub"
+)

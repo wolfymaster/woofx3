@@ -16,6 +16,11 @@ import * as common from "./common.pb";
 //                 Types                  //
 //========================================//
 
+export type LeaderboardMetric =
+  | "LEADERBOARD_METRIC_UNSPECIFIED"
+  | "LEADERBOARD_METRIC_BITS"
+  | "LEADERBOARD_METRIC_GIFTED_SUBS";
+
 export interface UserEvent {
   id: string;
   /**
@@ -96,6 +101,114 @@ export interface RecordUserEventResponse {
   created: boolean;
 }
 
+export interface GetStreamSessionEventTotalsRequest {
+  streamSessionId: string;
+}
+
+export interface StreamSessionEventTotals {
+  /**
+   * Bits cheered, anonymous cheers included.
+   */
+  bits: bigint;
+  cheers: bigint;
+  /**
+   * Subscriptions viewers took out or renewed themselves: new subs that were
+   * not gifted, plus resubs. Gifted subs are in `gifted_subs` only, so the two
+   * add up without counting a gift twice.
+   */
+  subs: bigint;
+  /**
+   * Subs gifted, counted from the gifter's side (the gift's `amount`), not
+   * from each recipient's gifted sub.
+   */
+  giftedSubs: bigint;
+  follows: bigint;
+  raids: bigint;
+  /**
+   * Viewers brought by those raids.
+   */
+  raiders: bigint;
+}
+
+export interface GetStreamSessionEventTotalsResponse {
+  status: common.ResponseStatus;
+  totals: StreamSessionEventTotals;
+}
+
+export interface GetViewerEventTotalsRequest {
+  platform: string;
+  platformUserId: string;
+  /**
+   * Absent for the viewer's lifetime totals.
+   */
+  streamSessionId?: string | null | undefined;
+}
+
+export interface ViewerEventTotals {
+  platform: string;
+  platformUserId: string;
+  /**
+   * The name on the viewer's most recent event, absent when none carried one.
+   */
+  userName?: string | null | undefined;
+  bits: bigint;
+  cheers: bigint;
+  /**
+   * Subs the viewer gifted.
+   */
+  giftedSubs: bigint;
+  /**
+   * Gift events: one community gift of five subs is one gift.
+   */
+  gifts: bigint;
+}
+
+export interface GetViewerEventTotalsResponse {
+  status: common.ResponseStatus;
+  totals: ViewerEventTotals;
+}
+
+export interface ListViewerLeaderboardRequest {
+  metric: LeaderboardMetric;
+  /**
+   * Absent for a lifetime leaderboard.
+   */
+  streamSessionId?: string | null | undefined;
+  /**
+   * Keep viewers whose total is at least this. Defaults to 1; must be >= 1.
+   */
+  minTotal?: bigint | null | undefined;
+  /**
+   * 1-100. Defaults to 10.
+   */
+  limit?: number | null | undefined;
+}
+
+export interface LeaderboardEntry {
+  platform: string;
+  platformUserId: string;
+  /**
+   * The name on the viewer's most recent event, absent when none carried one.
+   */
+  userName?: string | null | undefined;
+  /**
+   * Bits, or subs gifted, depending on the metric.
+   */
+  total: bigint;
+  /**
+   * The events that make up `total`: cheers, or gifts.
+   */
+  events: bigint;
+}
+
+export interface ListViewerLeaderboardResponse {
+  status: common.ResponseStatus;
+  /**
+   * Highest total first; ties by platform, then platform_user_id.
+   */
+  entries: LeaderboardEntry[];
+}
+
 //========================================//
 //    UserEventService Protobuf Client    //
 //========================================//
@@ -117,6 +230,57 @@ export async function RecordUserEvent(
   return RecordUserEventResponse.decode(response);
 }
 
+/**
+ * Channel totals for one session. `not_found` for an unknown session.
+ */
+export async function GetStreamSessionEventTotals(
+  getStreamSessionEventTotalsRequest: GetStreamSessionEventTotalsRequest,
+  config?: ClientConfiguration,
+): Promise<GetStreamSessionEventTotalsResponse> {
+  const response = await PBrequest(
+    "/user_event.UserEventService/GetStreamSessionEventTotals",
+    GetStreamSessionEventTotalsRequest.encode(
+      getStreamSessionEventTotalsRequest,
+    ),
+    config,
+  );
+  return GetStreamSessionEventTotalsResponse.decode(response);
+}
+
+/**
+ * One viewer's totals, for a session or, without one, over every event
+ * recorded. `not_found` for an unknown session; a viewer with no events has
+ * zero totals.
+ */
+export async function GetViewerEventTotals(
+  getViewerEventTotalsRequest: GetViewerEventTotalsRequest,
+  config?: ClientConfiguration,
+): Promise<GetViewerEventTotalsResponse> {
+  const response = await PBrequest(
+    "/user_event.UserEventService/GetViewerEventTotals",
+    GetViewerEventTotalsRequest.encode(getViewerEventTotalsRequest),
+    config,
+  );
+  return GetViewerEventTotalsResponse.decode(response);
+}
+
+/**
+ * Viewers ranked by bits cheered or subs gifted, for a session or lifetime,
+ * keeping only those whose total reaches `min_total`. `not_found` for an
+ * unknown session.
+ */
+export async function ListViewerLeaderboard(
+  listViewerLeaderboardRequest: ListViewerLeaderboardRequest,
+  config?: ClientConfiguration,
+): Promise<ListViewerLeaderboardResponse> {
+  const response = await PBrequest(
+    "/user_event.UserEventService/ListViewerLeaderboard",
+    ListViewerLeaderboardRequest.encode(listViewerLeaderboardRequest),
+    config,
+  );
+  return ListViewerLeaderboardResponse.decode(response);
+}
+
 //========================================//
 //      UserEventService JSON Client      //
 //========================================//
@@ -136,6 +300,57 @@ export async function RecordUserEventJSON(
     config,
   );
   return RecordUserEventResponseJSON.decode(response);
+}
+
+/**
+ * Channel totals for one session. `not_found` for an unknown session.
+ */
+export async function GetStreamSessionEventTotalsJSON(
+  getStreamSessionEventTotalsRequest: GetStreamSessionEventTotalsRequest,
+  config?: ClientConfiguration,
+): Promise<GetStreamSessionEventTotalsResponse> {
+  const response = await JSONrequest(
+    "/user_event.UserEventService/GetStreamSessionEventTotals",
+    GetStreamSessionEventTotalsRequestJSON.encode(
+      getStreamSessionEventTotalsRequest,
+    ),
+    config,
+  );
+  return GetStreamSessionEventTotalsResponseJSON.decode(response);
+}
+
+/**
+ * One viewer's totals, for a session or, without one, over every event
+ * recorded. `not_found` for an unknown session; a viewer with no events has
+ * zero totals.
+ */
+export async function GetViewerEventTotalsJSON(
+  getViewerEventTotalsRequest: GetViewerEventTotalsRequest,
+  config?: ClientConfiguration,
+): Promise<GetViewerEventTotalsResponse> {
+  const response = await JSONrequest(
+    "/user_event.UserEventService/GetViewerEventTotals",
+    GetViewerEventTotalsRequestJSON.encode(getViewerEventTotalsRequest),
+    config,
+  );
+  return GetViewerEventTotalsResponseJSON.decode(response);
+}
+
+/**
+ * Viewers ranked by bits cheered or subs gifted, for a session or lifetime,
+ * keeping only those whose total reaches `min_total`. `not_found` for an
+ * unknown session.
+ */
+export async function ListViewerLeaderboardJSON(
+  listViewerLeaderboardRequest: ListViewerLeaderboardRequest,
+  config?: ClientConfiguration,
+): Promise<ListViewerLeaderboardResponse> {
+  const response = await JSONrequest(
+    "/user_event.UserEventService/ListViewerLeaderboard",
+    ListViewerLeaderboardRequestJSON.encode(listViewerLeaderboardRequest),
+    config,
+  );
+  return ListViewerLeaderboardResponseJSON.decode(response);
 }
 
 //========================================//
@@ -160,6 +375,33 @@ export interface UserEventService<Context = unknown> {
     recordUserEventRequest: RecordUserEventRequest,
     context: Context,
   ) => Promise<RecordUserEventResponse> | RecordUserEventResponse;
+  /**
+   * Channel totals for one session. `not_found` for an unknown session.
+   */
+  GetStreamSessionEventTotals: (
+    getStreamSessionEventTotalsRequest: GetStreamSessionEventTotalsRequest,
+    context: Context,
+  ) =>
+    | Promise<GetStreamSessionEventTotalsResponse>
+    | GetStreamSessionEventTotalsResponse;
+  /**
+   * One viewer's totals, for a session or, without one, over every event
+   * recorded. `not_found` for an unknown session; a viewer with no events has
+   * zero totals.
+   */
+  GetViewerEventTotals: (
+    getViewerEventTotalsRequest: GetViewerEventTotalsRequest,
+    context: Context,
+  ) => Promise<GetViewerEventTotalsResponse> | GetViewerEventTotalsResponse;
+  /**
+   * Viewers ranked by bits cheered or subs gifted, for a session or lifetime,
+   * keeping only those whose total reaches `min_total`. `not_found` for an
+   * unknown session.
+   */
+  ListViewerLeaderboard: (
+    listViewerLeaderboardRequest: ListViewerLeaderboardRequest,
+    context: Context,
+  ) => Promise<ListViewerLeaderboardResponse> | ListViewerLeaderboardResponse;
 }
 
 export function createUserEventService<Context>(
@@ -180,6 +422,42 @@ export function createUserEventService<Context>(
           json: RecordUserEventResponseJSON,
         },
       },
+      GetStreamSessionEventTotals: {
+        name: "GetStreamSessionEventTotals",
+        handler: service.GetStreamSessionEventTotals,
+        input: {
+          protobuf: GetStreamSessionEventTotalsRequest,
+          json: GetStreamSessionEventTotalsRequestJSON,
+        },
+        output: {
+          protobuf: GetStreamSessionEventTotalsResponse,
+          json: GetStreamSessionEventTotalsResponseJSON,
+        },
+      },
+      GetViewerEventTotals: {
+        name: "GetViewerEventTotals",
+        handler: service.GetViewerEventTotals,
+        input: {
+          protobuf: GetViewerEventTotalsRequest,
+          json: GetViewerEventTotalsRequestJSON,
+        },
+        output: {
+          protobuf: GetViewerEventTotalsResponse,
+          json: GetViewerEventTotalsResponseJSON,
+        },
+      },
+      ListViewerLeaderboard: {
+        name: "ListViewerLeaderboard",
+        handler: service.ListViewerLeaderboard,
+        input: {
+          protobuf: ListViewerLeaderboardRequest,
+          json: ListViewerLeaderboardRequestJSON,
+        },
+        output: {
+          protobuf: ListViewerLeaderboardResponse,
+          json: ListViewerLeaderboardResponseJSON,
+        },
+      },
     },
   } as const;
 }
@@ -187,6 +465,58 @@ export function createUserEventService<Context>(
 //========================================//
 //        Protobuf Encode / Decode        //
 //========================================//
+
+export const LeaderboardMetric = {
+  LEADERBOARD_METRIC_UNSPECIFIED: "LEADERBOARD_METRIC_UNSPECIFIED",
+  /**
+   * Bits cheered.
+   */
+  LEADERBOARD_METRIC_BITS: "LEADERBOARD_METRIC_BITS",
+  /**
+   * Subs gifted.
+   */
+  LEADERBOARD_METRIC_GIFTED_SUBS: "LEADERBOARD_METRIC_GIFTED_SUBS",
+  /**
+   * @private
+   */
+  _fromInt: function (i: number): LeaderboardMetric {
+    switch (i) {
+      case 0: {
+        return "LEADERBOARD_METRIC_UNSPECIFIED";
+      }
+      case 1: {
+        return "LEADERBOARD_METRIC_BITS";
+      }
+      case 2: {
+        return "LEADERBOARD_METRIC_GIFTED_SUBS";
+      }
+      // unknown values are preserved as numbers. this occurs when new enum values are introduced and the generated code is out of date.
+      default: {
+        return i as unknown as LeaderboardMetric;
+      }
+    }
+  },
+  /**
+   * @private
+   */
+  _toInt: function (i: LeaderboardMetric): number {
+    switch (i) {
+      case "LEADERBOARD_METRIC_UNSPECIFIED": {
+        return 0;
+      }
+      case "LEADERBOARD_METRIC_BITS": {
+        return 1;
+      }
+      case "LEADERBOARD_METRIC_GIFTED_SUBS": {
+        return 2;
+      }
+      // unknown values are preserved as numbers. this occurs when new enum values are introduced and the generated code is out of date.
+      default: {
+        return i as unknown as number;
+      }
+    }
+  },
+} as const;
 
 export const UserEvent = {
   /**
@@ -590,9 +920,899 @@ export const RecordUserEventResponse = {
   },
 };
 
+export const GetStreamSessionEventTotalsRequest = {
+  /**
+   * Serializes GetStreamSessionEventTotalsRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<GetStreamSessionEventTotalsRequest>,
+  ): Uint8Array {
+    return GetStreamSessionEventTotalsRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes GetStreamSessionEventTotalsRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): GetStreamSessionEventTotalsRequest {
+    return GetStreamSessionEventTotalsRequest._readMessage(
+      GetStreamSessionEventTotalsRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes GetStreamSessionEventTotalsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetStreamSessionEventTotalsRequest>,
+  ): GetStreamSessionEventTotalsRequest {
+    return {
+      streamSessionId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetStreamSessionEventTotalsRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.streamSessionId) {
+      writer.writeString(1, msg.streamSessionId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetStreamSessionEventTotalsRequest,
+    reader: protoscript.BinaryReader,
+  ): GetStreamSessionEventTotalsRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.streamSessionId = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const StreamSessionEventTotals = {
+  /**
+   * Serializes StreamSessionEventTotals to protobuf.
+   */
+  encode: function (msg: PartialDeep<StreamSessionEventTotals>): Uint8Array {
+    return StreamSessionEventTotals._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes StreamSessionEventTotals from protobuf.
+   */
+  decode: function (bytes: ByteSource): StreamSessionEventTotals {
+    return StreamSessionEventTotals._readMessage(
+      StreamSessionEventTotals.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes StreamSessionEventTotals with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<StreamSessionEventTotals>,
+  ): StreamSessionEventTotals {
+    return {
+      bits: 0n,
+      cheers: 0n,
+      subs: 0n,
+      giftedSubs: 0n,
+      follows: 0n,
+      raids: 0n,
+      raiders: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<StreamSessionEventTotals>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.bits) {
+      writer.writeInt64String(1, msg.bits.toString() as any);
+    }
+    if (msg.cheers) {
+      writer.writeInt64String(2, msg.cheers.toString() as any);
+    }
+    if (msg.subs) {
+      writer.writeInt64String(3, msg.subs.toString() as any);
+    }
+    if (msg.giftedSubs) {
+      writer.writeInt64String(4, msg.giftedSubs.toString() as any);
+    }
+    if (msg.follows) {
+      writer.writeInt64String(5, msg.follows.toString() as any);
+    }
+    if (msg.raids) {
+      writer.writeInt64String(6, msg.raids.toString() as any);
+    }
+    if (msg.raiders) {
+      writer.writeInt64String(7, msg.raiders.toString() as any);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: StreamSessionEventTotals,
+    reader: protoscript.BinaryReader,
+  ): StreamSessionEventTotals {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.bits = BigInt(reader.readInt64String());
+          break;
+        }
+        case 2: {
+          msg.cheers = BigInt(reader.readInt64String());
+          break;
+        }
+        case 3: {
+          msg.subs = BigInt(reader.readInt64String());
+          break;
+        }
+        case 4: {
+          msg.giftedSubs = BigInt(reader.readInt64String());
+          break;
+        }
+        case 5: {
+          msg.follows = BigInt(reader.readInt64String());
+          break;
+        }
+        case 6: {
+          msg.raids = BigInt(reader.readInt64String());
+          break;
+        }
+        case 7: {
+          msg.raiders = BigInt(reader.readInt64String());
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const GetStreamSessionEventTotalsResponse = {
+  /**
+   * Serializes GetStreamSessionEventTotalsResponse to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<GetStreamSessionEventTotalsResponse>,
+  ): Uint8Array {
+    return GetStreamSessionEventTotalsResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes GetStreamSessionEventTotalsResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): GetStreamSessionEventTotalsResponse {
+    return GetStreamSessionEventTotalsResponse._readMessage(
+      GetStreamSessionEventTotalsResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes GetStreamSessionEventTotalsResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetStreamSessionEventTotalsResponse>,
+  ): GetStreamSessionEventTotalsResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      totals: StreamSessionEventTotals.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetStreamSessionEventTotalsResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.totals) {
+      writer.writeMessage(
+        2,
+        msg.totals,
+        StreamSessionEventTotals._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetStreamSessionEventTotalsResponse,
+    reader: protoscript.BinaryReader,
+  ): GetStreamSessionEventTotalsResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          reader.readMessage(msg.totals, StreamSessionEventTotals._readMessage);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const GetViewerEventTotalsRequest = {
+  /**
+   * Serializes GetViewerEventTotalsRequest to protobuf.
+   */
+  encode: function (msg: PartialDeep<GetViewerEventTotalsRequest>): Uint8Array {
+    return GetViewerEventTotalsRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes GetViewerEventTotalsRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): GetViewerEventTotalsRequest {
+    return GetViewerEventTotalsRequest._readMessage(
+      GetViewerEventTotalsRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes GetViewerEventTotalsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetViewerEventTotalsRequest>,
+  ): GetViewerEventTotalsRequest {
+    return {
+      platform: "",
+      platformUserId: "",
+      streamSessionId: undefined,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetViewerEventTotalsRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.platform) {
+      writer.writeString(1, msg.platform);
+    }
+    if (msg.platformUserId) {
+      writer.writeString(2, msg.platformUserId);
+    }
+    if (msg.streamSessionId != undefined) {
+      writer.writeString(3, msg.streamSessionId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetViewerEventTotalsRequest,
+    reader: protoscript.BinaryReader,
+  ): GetViewerEventTotalsRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.platform = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.platformUserId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.streamSessionId = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ViewerEventTotals = {
+  /**
+   * Serializes ViewerEventTotals to protobuf.
+   */
+  encode: function (msg: PartialDeep<ViewerEventTotals>): Uint8Array {
+    return ViewerEventTotals._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ViewerEventTotals from protobuf.
+   */
+  decode: function (bytes: ByteSource): ViewerEventTotals {
+    return ViewerEventTotals._readMessage(
+      ViewerEventTotals.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ViewerEventTotals with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<ViewerEventTotals>): ViewerEventTotals {
+    return {
+      platform: "",
+      platformUserId: "",
+      userName: undefined,
+      bits: 0n,
+      cheers: 0n,
+      giftedSubs: 0n,
+      gifts: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ViewerEventTotals>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.platform) {
+      writer.writeString(1, msg.platform);
+    }
+    if (msg.platformUserId) {
+      writer.writeString(2, msg.platformUserId);
+    }
+    if (msg.userName != undefined) {
+      writer.writeString(3, msg.userName);
+    }
+    if (msg.bits) {
+      writer.writeInt64String(4, msg.bits.toString() as any);
+    }
+    if (msg.cheers) {
+      writer.writeInt64String(5, msg.cheers.toString() as any);
+    }
+    if (msg.giftedSubs) {
+      writer.writeInt64String(6, msg.giftedSubs.toString() as any);
+    }
+    if (msg.gifts) {
+      writer.writeInt64String(7, msg.gifts.toString() as any);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ViewerEventTotals,
+    reader: protoscript.BinaryReader,
+  ): ViewerEventTotals {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.platform = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.platformUserId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.userName = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.bits = BigInt(reader.readInt64String());
+          break;
+        }
+        case 5: {
+          msg.cheers = BigInt(reader.readInt64String());
+          break;
+        }
+        case 6: {
+          msg.giftedSubs = BigInt(reader.readInt64String());
+          break;
+        }
+        case 7: {
+          msg.gifts = BigInt(reader.readInt64String());
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const GetViewerEventTotalsResponse = {
+  /**
+   * Serializes GetViewerEventTotalsResponse to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<GetViewerEventTotalsResponse>,
+  ): Uint8Array {
+    return GetViewerEventTotalsResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes GetViewerEventTotalsResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): GetViewerEventTotalsResponse {
+    return GetViewerEventTotalsResponse._readMessage(
+      GetViewerEventTotalsResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes GetViewerEventTotalsResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetViewerEventTotalsResponse>,
+  ): GetViewerEventTotalsResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      totals: ViewerEventTotals.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetViewerEventTotalsResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.totals) {
+      writer.writeMessage(2, msg.totals, ViewerEventTotals._writeMessage);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetViewerEventTotalsResponse,
+    reader: protoscript.BinaryReader,
+  ): GetViewerEventTotalsResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          reader.readMessage(msg.totals, ViewerEventTotals._readMessage);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ListViewerLeaderboardRequest = {
+  /**
+   * Serializes ListViewerLeaderboardRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<ListViewerLeaderboardRequest>,
+  ): Uint8Array {
+    return ListViewerLeaderboardRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ListViewerLeaderboardRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): ListViewerLeaderboardRequest {
+    return ListViewerLeaderboardRequest._readMessage(
+      ListViewerLeaderboardRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ListViewerLeaderboardRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListViewerLeaderboardRequest>,
+  ): ListViewerLeaderboardRequest {
+    return {
+      metric: LeaderboardMetric._fromInt(0),
+      streamSessionId: undefined,
+      minTotal: undefined,
+      limit: undefined,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListViewerLeaderboardRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.metric && LeaderboardMetric._toInt(msg.metric)) {
+      writer.writeEnum(1, LeaderboardMetric._toInt(msg.metric));
+    }
+    if (msg.streamSessionId != undefined) {
+      writer.writeString(2, msg.streamSessionId);
+    }
+    if (msg.minTotal != undefined) {
+      writer.writeInt64String(3, msg.minTotal.toString() as any);
+    }
+    if (msg.limit != undefined) {
+      writer.writeInt32(4, msg.limit);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListViewerLeaderboardRequest,
+    reader: protoscript.BinaryReader,
+  ): ListViewerLeaderboardRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.metric = LeaderboardMetric._fromInt(reader.readEnum());
+          break;
+        }
+        case 2: {
+          msg.streamSessionId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.minTotal = BigInt(reader.readInt64String());
+          break;
+        }
+        case 4: {
+          msg.limit = reader.readInt32();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const LeaderboardEntry = {
+  /**
+   * Serializes LeaderboardEntry to protobuf.
+   */
+  encode: function (msg: PartialDeep<LeaderboardEntry>): Uint8Array {
+    return LeaderboardEntry._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes LeaderboardEntry from protobuf.
+   */
+  decode: function (bytes: ByteSource): LeaderboardEntry {
+    return LeaderboardEntry._readMessage(
+      LeaderboardEntry.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes LeaderboardEntry with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<LeaderboardEntry>): LeaderboardEntry {
+    return {
+      platform: "",
+      platformUserId: "",
+      userName: undefined,
+      total: 0n,
+      events: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<LeaderboardEntry>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.platform) {
+      writer.writeString(1, msg.platform);
+    }
+    if (msg.platformUserId) {
+      writer.writeString(2, msg.platformUserId);
+    }
+    if (msg.userName != undefined) {
+      writer.writeString(3, msg.userName);
+    }
+    if (msg.total) {
+      writer.writeInt64String(4, msg.total.toString() as any);
+    }
+    if (msg.events) {
+      writer.writeInt64String(5, msg.events.toString() as any);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: LeaderboardEntry,
+    reader: protoscript.BinaryReader,
+  ): LeaderboardEntry {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.platform = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.platformUserId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.userName = reader.readString();
+          break;
+        }
+        case 4: {
+          msg.total = BigInt(reader.readInt64String());
+          break;
+        }
+        case 5: {
+          msg.events = BigInt(reader.readInt64String());
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const ListViewerLeaderboardResponse = {
+  /**
+   * Serializes ListViewerLeaderboardResponse to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<ListViewerLeaderboardResponse>,
+  ): Uint8Array {
+    return ListViewerLeaderboardResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes ListViewerLeaderboardResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): ListViewerLeaderboardResponse {
+    return ListViewerLeaderboardResponse._readMessage(
+      ListViewerLeaderboardResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes ListViewerLeaderboardResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListViewerLeaderboardResponse>,
+  ): ListViewerLeaderboardResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      entries: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListViewerLeaderboardResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.entries?.length) {
+      writer.writeRepeatedMessage(
+        2,
+        msg.entries as any,
+        LeaderboardEntry._writeMessage,
+      );
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListViewerLeaderboardResponse,
+    reader: protoscript.BinaryReader,
+  ): ListViewerLeaderboardResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          const m = LeaderboardEntry.initialize();
+          reader.readMessage(m, LeaderboardEntry._readMessage);
+          msg.entries.push(m);
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
+
+export const LeaderboardMetricJSON = {
+  LEADERBOARD_METRIC_UNSPECIFIED: "LEADERBOARD_METRIC_UNSPECIFIED",
+  /**
+   * Bits cheered.
+   */
+  LEADERBOARD_METRIC_BITS: "LEADERBOARD_METRIC_BITS",
+  /**
+   * Subs gifted.
+   */
+  LEADERBOARD_METRIC_GIFTED_SUBS: "LEADERBOARD_METRIC_GIFTED_SUBS",
+  /**
+   * @private
+   */
+  _fromInt: function (i: number): LeaderboardMetric {
+    switch (i) {
+      case 0: {
+        return "LEADERBOARD_METRIC_UNSPECIFIED";
+      }
+      case 1: {
+        return "LEADERBOARD_METRIC_BITS";
+      }
+      case 2: {
+        return "LEADERBOARD_METRIC_GIFTED_SUBS";
+      }
+      // unknown values are preserved as numbers. this occurs when new enum values are introduced and the generated code is out of date.
+      default: {
+        return i as unknown as LeaderboardMetric;
+      }
+    }
+  },
+  /**
+   * @private
+   */
+  _toInt: function (i: LeaderboardMetric): number {
+    switch (i) {
+      case "LEADERBOARD_METRIC_UNSPECIFIED": {
+        return 0;
+      }
+      case "LEADERBOARD_METRIC_BITS": {
+        return 1;
+      }
+      case "LEADERBOARD_METRIC_GIFTED_SUBS": {
+        return 2;
+      }
+      // unknown values are preserved as numbers. this occurs when new enum values are introduced and the generated code is out of date.
+      default: {
+        return i as unknown as number;
+      }
+    }
+  },
+} as const;
 
 export const UserEventJSON = {
   /**
@@ -940,6 +2160,743 @@ export const RecordUserEventResponseJSON = {
     const _created_ = json["created"];
     if (_created_) {
       msg.created = _created_;
+    }
+    return msg;
+  },
+};
+
+export const GetStreamSessionEventTotalsRequestJSON = {
+  /**
+   * Serializes GetStreamSessionEventTotalsRequest to JSON.
+   */
+  encode: function (
+    msg: PartialDeep<GetStreamSessionEventTotalsRequest>,
+  ): string {
+    return JSON.stringify(
+      GetStreamSessionEventTotalsRequestJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes GetStreamSessionEventTotalsRequest from JSON.
+   */
+  decode: function (json: string): GetStreamSessionEventTotalsRequest {
+    return GetStreamSessionEventTotalsRequestJSON._readMessage(
+      GetStreamSessionEventTotalsRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes GetStreamSessionEventTotalsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetStreamSessionEventTotalsRequest>,
+  ): GetStreamSessionEventTotalsRequest {
+    return {
+      streamSessionId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetStreamSessionEventTotalsRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.streamSessionId) {
+      json["streamSessionId"] = msg.streamSessionId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetStreamSessionEventTotalsRequest,
+    json: any,
+  ): GetStreamSessionEventTotalsRequest {
+    const _streamSessionId_ =
+      json["streamSessionId"] ?? json["stream_session_id"];
+    if (_streamSessionId_) {
+      msg.streamSessionId = _streamSessionId_;
+    }
+    return msg;
+  },
+};
+
+export const StreamSessionEventTotalsJSON = {
+  /**
+   * Serializes StreamSessionEventTotals to JSON.
+   */
+  encode: function (msg: PartialDeep<StreamSessionEventTotals>): string {
+    return JSON.stringify(StreamSessionEventTotalsJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes StreamSessionEventTotals from JSON.
+   */
+  decode: function (json: string): StreamSessionEventTotals {
+    return StreamSessionEventTotalsJSON._readMessage(
+      StreamSessionEventTotalsJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes StreamSessionEventTotals with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<StreamSessionEventTotals>,
+  ): StreamSessionEventTotals {
+    return {
+      bits: 0n,
+      cheers: 0n,
+      subs: 0n,
+      giftedSubs: 0n,
+      follows: 0n,
+      raids: 0n,
+      raiders: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<StreamSessionEventTotals>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.bits) {
+      json["bits"] = String(msg.bits);
+    }
+    if (msg.cheers) {
+      json["cheers"] = String(msg.cheers);
+    }
+    if (msg.subs) {
+      json["subs"] = String(msg.subs);
+    }
+    if (msg.giftedSubs) {
+      json["giftedSubs"] = String(msg.giftedSubs);
+    }
+    if (msg.follows) {
+      json["follows"] = String(msg.follows);
+    }
+    if (msg.raids) {
+      json["raids"] = String(msg.raids);
+    }
+    if (msg.raiders) {
+      json["raiders"] = String(msg.raiders);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: StreamSessionEventTotals,
+    json: any,
+  ): StreamSessionEventTotals {
+    const _bits_ = json["bits"];
+    if (_bits_) {
+      msg.bits = BigInt(_bits_);
+    }
+    const _cheers_ = json["cheers"];
+    if (_cheers_) {
+      msg.cheers = BigInt(_cheers_);
+    }
+    const _subs_ = json["subs"];
+    if (_subs_) {
+      msg.subs = BigInt(_subs_);
+    }
+    const _giftedSubs_ = json["giftedSubs"] ?? json["gifted_subs"];
+    if (_giftedSubs_) {
+      msg.giftedSubs = BigInt(_giftedSubs_);
+    }
+    const _follows_ = json["follows"];
+    if (_follows_) {
+      msg.follows = BigInt(_follows_);
+    }
+    const _raids_ = json["raids"];
+    if (_raids_) {
+      msg.raids = BigInt(_raids_);
+    }
+    const _raiders_ = json["raiders"];
+    if (_raiders_) {
+      msg.raiders = BigInt(_raiders_);
+    }
+    return msg;
+  },
+};
+
+export const GetStreamSessionEventTotalsResponseJSON = {
+  /**
+   * Serializes GetStreamSessionEventTotalsResponse to JSON.
+   */
+  encode: function (
+    msg: PartialDeep<GetStreamSessionEventTotalsResponse>,
+  ): string {
+    return JSON.stringify(
+      GetStreamSessionEventTotalsResponseJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes GetStreamSessionEventTotalsResponse from JSON.
+   */
+  decode: function (json: string): GetStreamSessionEventTotalsResponse {
+    return GetStreamSessionEventTotalsResponseJSON._readMessage(
+      GetStreamSessionEventTotalsResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes GetStreamSessionEventTotalsResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetStreamSessionEventTotalsResponse>,
+  ): GetStreamSessionEventTotalsResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      totals: StreamSessionEventTotalsJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetStreamSessionEventTotalsResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.totals) {
+      const _totals_ = StreamSessionEventTotalsJSON._writeMessage(msg.totals);
+      if (Object.keys(_totals_).length > 0) {
+        json["totals"] = _totals_;
+      }
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetStreamSessionEventTotalsResponse,
+    json: any,
+  ): GetStreamSessionEventTotalsResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _totals_ = json["totals"];
+    if (_totals_) {
+      StreamSessionEventTotalsJSON._readMessage(msg.totals, _totals_);
+    }
+    return msg;
+  },
+};
+
+export const GetViewerEventTotalsRequestJSON = {
+  /**
+   * Serializes GetViewerEventTotalsRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<GetViewerEventTotalsRequest>): string {
+    return JSON.stringify(GetViewerEventTotalsRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes GetViewerEventTotalsRequest from JSON.
+   */
+  decode: function (json: string): GetViewerEventTotalsRequest {
+    return GetViewerEventTotalsRequestJSON._readMessage(
+      GetViewerEventTotalsRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes GetViewerEventTotalsRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetViewerEventTotalsRequest>,
+  ): GetViewerEventTotalsRequest {
+    return {
+      platform: "",
+      platformUserId: "",
+      streamSessionId: undefined,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetViewerEventTotalsRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.platform) {
+      json["platform"] = msg.platform;
+    }
+    if (msg.platformUserId) {
+      json["platformUserId"] = msg.platformUserId;
+    }
+    if (msg.streamSessionId != undefined) {
+      json["streamSessionId"] = msg.streamSessionId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetViewerEventTotalsRequest,
+    json: any,
+  ): GetViewerEventTotalsRequest {
+    const _platform_ = json["platform"];
+    if (_platform_) {
+      msg.platform = _platform_;
+    }
+    const _platformUserId_ = json["platformUserId"] ?? json["platform_user_id"];
+    if (_platformUserId_) {
+      msg.platformUserId = _platformUserId_;
+    }
+    const _streamSessionId_ =
+      json["streamSessionId"] ?? json["stream_session_id"];
+    if (_streamSessionId_) {
+      msg.streamSessionId = _streamSessionId_;
+    }
+    return msg;
+  },
+};
+
+export const ViewerEventTotalsJSON = {
+  /**
+   * Serializes ViewerEventTotals to JSON.
+   */
+  encode: function (msg: PartialDeep<ViewerEventTotals>): string {
+    return JSON.stringify(ViewerEventTotalsJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ViewerEventTotals from JSON.
+   */
+  decode: function (json: string): ViewerEventTotals {
+    return ViewerEventTotalsJSON._readMessage(
+      ViewerEventTotalsJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ViewerEventTotals with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<ViewerEventTotals>): ViewerEventTotals {
+    return {
+      platform: "",
+      platformUserId: "",
+      userName: undefined,
+      bits: 0n,
+      cheers: 0n,
+      giftedSubs: 0n,
+      gifts: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ViewerEventTotals>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.platform) {
+      json["platform"] = msg.platform;
+    }
+    if (msg.platformUserId) {
+      json["platformUserId"] = msg.platformUserId;
+    }
+    if (msg.userName != undefined) {
+      json["userName"] = msg.userName;
+    }
+    if (msg.bits) {
+      json["bits"] = String(msg.bits);
+    }
+    if (msg.cheers) {
+      json["cheers"] = String(msg.cheers);
+    }
+    if (msg.giftedSubs) {
+      json["giftedSubs"] = String(msg.giftedSubs);
+    }
+    if (msg.gifts) {
+      json["gifts"] = String(msg.gifts);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ViewerEventTotals,
+    json: any,
+  ): ViewerEventTotals {
+    const _platform_ = json["platform"];
+    if (_platform_) {
+      msg.platform = _platform_;
+    }
+    const _platformUserId_ = json["platformUserId"] ?? json["platform_user_id"];
+    if (_platformUserId_) {
+      msg.platformUserId = _platformUserId_;
+    }
+    const _userName_ = json["userName"] ?? json["user_name"];
+    if (_userName_) {
+      msg.userName = _userName_;
+    }
+    const _bits_ = json["bits"];
+    if (_bits_) {
+      msg.bits = BigInt(_bits_);
+    }
+    const _cheers_ = json["cheers"];
+    if (_cheers_) {
+      msg.cheers = BigInt(_cheers_);
+    }
+    const _giftedSubs_ = json["giftedSubs"] ?? json["gifted_subs"];
+    if (_giftedSubs_) {
+      msg.giftedSubs = BigInt(_giftedSubs_);
+    }
+    const _gifts_ = json["gifts"];
+    if (_gifts_) {
+      msg.gifts = BigInt(_gifts_);
+    }
+    return msg;
+  },
+};
+
+export const GetViewerEventTotalsResponseJSON = {
+  /**
+   * Serializes GetViewerEventTotalsResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<GetViewerEventTotalsResponse>): string {
+    return JSON.stringify(GetViewerEventTotalsResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes GetViewerEventTotalsResponse from JSON.
+   */
+  decode: function (json: string): GetViewerEventTotalsResponse {
+    return GetViewerEventTotalsResponseJSON._readMessage(
+      GetViewerEventTotalsResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes GetViewerEventTotalsResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<GetViewerEventTotalsResponse>,
+  ): GetViewerEventTotalsResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      totals: ViewerEventTotalsJSON.initialize(),
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetViewerEventTotalsResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.totals) {
+      const _totals_ = ViewerEventTotalsJSON._writeMessage(msg.totals);
+      if (Object.keys(_totals_).length > 0) {
+        json["totals"] = _totals_;
+      }
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetViewerEventTotalsResponse,
+    json: any,
+  ): GetViewerEventTotalsResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _totals_ = json["totals"];
+    if (_totals_) {
+      ViewerEventTotalsJSON._readMessage(msg.totals, _totals_);
+    }
+    return msg;
+  },
+};
+
+export const ListViewerLeaderboardRequestJSON = {
+  /**
+   * Serializes ListViewerLeaderboardRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<ListViewerLeaderboardRequest>): string {
+    return JSON.stringify(ListViewerLeaderboardRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ListViewerLeaderboardRequest from JSON.
+   */
+  decode: function (json: string): ListViewerLeaderboardRequest {
+    return ListViewerLeaderboardRequestJSON._readMessage(
+      ListViewerLeaderboardRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ListViewerLeaderboardRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListViewerLeaderboardRequest>,
+  ): ListViewerLeaderboardRequest {
+    return {
+      metric: LeaderboardMetric._fromInt(0),
+      streamSessionId: undefined,
+      minTotal: undefined,
+      limit: undefined,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListViewerLeaderboardRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.metric && LeaderboardMetricJSON._toInt(msg.metric)) {
+      json["metric"] = msg.metric;
+    }
+    if (msg.streamSessionId != undefined) {
+      json["streamSessionId"] = msg.streamSessionId;
+    }
+    if (msg.minTotal != undefined) {
+      json["minTotal"] = String(msg.minTotal);
+    }
+    if (msg.limit != undefined) {
+      json["limit"] = msg.limit;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListViewerLeaderboardRequest,
+    json: any,
+  ): ListViewerLeaderboardRequest {
+    const _metric_ = json["metric"];
+    if (_metric_) {
+      msg.metric = LeaderboardMetric._fromInt(_metric_);
+    }
+    const _streamSessionId_ =
+      json["streamSessionId"] ?? json["stream_session_id"];
+    if (_streamSessionId_) {
+      msg.streamSessionId = _streamSessionId_;
+    }
+    const _minTotal_ = json["minTotal"] ?? json["min_total"];
+    if (_minTotal_) {
+      msg.minTotal = BigInt(_minTotal_);
+    }
+    const _limit_ = json["limit"];
+    if (_limit_) {
+      msg.limit = protoscript.parseNumber(_limit_);
+    }
+    return msg;
+  },
+};
+
+export const LeaderboardEntryJSON = {
+  /**
+   * Serializes LeaderboardEntry to JSON.
+   */
+  encode: function (msg: PartialDeep<LeaderboardEntry>): string {
+    return JSON.stringify(LeaderboardEntryJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes LeaderboardEntry from JSON.
+   */
+  decode: function (json: string): LeaderboardEntry {
+    return LeaderboardEntryJSON._readMessage(
+      LeaderboardEntryJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes LeaderboardEntry with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<LeaderboardEntry>): LeaderboardEntry {
+    return {
+      platform: "",
+      platformUserId: "",
+      userName: undefined,
+      total: 0n,
+      events: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<LeaderboardEntry>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.platform) {
+      json["platform"] = msg.platform;
+    }
+    if (msg.platformUserId) {
+      json["platformUserId"] = msg.platformUserId;
+    }
+    if (msg.userName != undefined) {
+      json["userName"] = msg.userName;
+    }
+    if (msg.total) {
+      json["total"] = String(msg.total);
+    }
+    if (msg.events) {
+      json["events"] = String(msg.events);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (msg: LeaderboardEntry, json: any): LeaderboardEntry {
+    const _platform_ = json["platform"];
+    if (_platform_) {
+      msg.platform = _platform_;
+    }
+    const _platformUserId_ = json["platformUserId"] ?? json["platform_user_id"];
+    if (_platformUserId_) {
+      msg.platformUserId = _platformUserId_;
+    }
+    const _userName_ = json["userName"] ?? json["user_name"];
+    if (_userName_) {
+      msg.userName = _userName_;
+    }
+    const _total_ = json["total"];
+    if (_total_) {
+      msg.total = BigInt(_total_);
+    }
+    const _events_ = json["events"];
+    if (_events_) {
+      msg.events = BigInt(_events_);
+    }
+    return msg;
+  },
+};
+
+export const ListViewerLeaderboardResponseJSON = {
+  /**
+   * Serializes ListViewerLeaderboardResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<ListViewerLeaderboardResponse>): string {
+    return JSON.stringify(ListViewerLeaderboardResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes ListViewerLeaderboardResponse from JSON.
+   */
+  decode: function (json: string): ListViewerLeaderboardResponse {
+    return ListViewerLeaderboardResponseJSON._readMessage(
+      ListViewerLeaderboardResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes ListViewerLeaderboardResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<ListViewerLeaderboardResponse>,
+  ): ListViewerLeaderboardResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      entries: [],
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<ListViewerLeaderboardResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.entries?.length) {
+      json["entries"] = msg.entries.map(LeaderboardEntryJSON._writeMessage);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: ListViewerLeaderboardResponse,
+    json: any,
+  ): ListViewerLeaderboardResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _entries_ = json["entries"];
+    if (_entries_) {
+      for (const item of _entries_) {
+        const m = LeaderboardEntryJSON.initialize();
+        LeaderboardEntryJSON._readMessage(m, item);
+        msg.entries.push(m);
+      }
     }
     return msg;
   },

@@ -319,13 +319,11 @@ from an accidental one. Building sessions first means events are correctly
 attributed from the day the stamp lands, and Analytics inherits a corpus it can
 group rather than one it must guess at.
 
-One property to design against when that work starts: the id on an event is not
-a stable key (see [Splits are retroactive](#splits-are-retroactive-and-events-are-immutable)),
-so aggregation resolves it to a canonical session. Doing that per row does not
-scale to the volumes Analytics will read. The likely shapes are resolving once
-per segment rather than per event, or materialising a canonical id alongside the
-stamped one — either is cheap to add later, and neither is worth building before
-there is something counting.
+The id on an event is not a stable key (see [Splits are
+retroactive](#splits-are-retroactive-and-events-are-immutable)), so Analytics
+does not group on it. It attributes an event to the session that owns the time
+the event occurred in, read from the session record once per query — see
+[Analytics](/services/analytics#reading-the-log).
 
 **The rules engine is unaffected.** `treats/` contains a README and no
 implementation, so there are no facts to retract at a session boundary. If facts

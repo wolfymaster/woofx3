@@ -79,6 +79,148 @@ pub struct RecordUserEventResponse {
     #[prost(bool, tag="3")]
     pub created: bool,
 }
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetStreamSessionEventTotalsRequest {
+    #[prost(string, tag="1")]
+    pub stream_session_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct StreamSessionEventTotals {
+    /// Bits cheered, anonymous cheers included.
+    #[prost(int64, tag="1")]
+    pub bits: i64,
+    #[prost(int64, tag="2")]
+    pub cheers: i64,
+    /// Subscriptions viewers took out or renewed themselves: new subs that were
+    /// not gifted, plus resubs. Gifted subs are in `gifted_subs` only, so the two
+    /// add up without counting a gift twice.
+    #[prost(int64, tag="3")]
+    pub subs: i64,
+    /// Subs gifted, counted from the gifter's side (the gift's `amount`), not
+    /// from each recipient's gifted sub.
+    #[prost(int64, tag="4")]
+    pub gifted_subs: i64,
+    #[prost(int64, tag="5")]
+    pub follows: i64,
+    #[prost(int64, tag="6")]
+    pub raids: i64,
+    /// Viewers brought by those raids.
+    #[prost(int64, tag="7")]
+    pub raiders: i64,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetStreamSessionEventTotalsResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, optional, tag="2")]
+    pub totals: ::core::option::Option<StreamSessionEventTotals>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetViewerEventTotalsRequest {
+    #[prost(string, tag="1")]
+    pub platform: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub platform_user_id: ::prost::alloc::string::String,
+    /// Absent for the viewer's lifetime totals.
+    #[prost(string, optional, tag="3")]
+    pub stream_session_id: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ViewerEventTotals {
+    #[prost(string, tag="1")]
+    pub platform: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub platform_user_id: ::prost::alloc::string::String,
+    /// The name on the viewer's most recent event, absent when none carried one.
+    #[prost(string, optional, tag="3")]
+    pub user_name: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(int64, tag="4")]
+    pub bits: i64,
+    #[prost(int64, tag="5")]
+    pub cheers: i64,
+    /// Subs the viewer gifted.
+    #[prost(int64, tag="6")]
+    pub gifted_subs: i64,
+    /// Gift events: one community gift of five subs is one gift.
+    #[prost(int64, tag="7")]
+    pub gifts: i64,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetViewerEventTotalsResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, optional, tag="2")]
+    pub totals: ::core::option::Option<ViewerEventTotals>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListViewerLeaderboardRequest {
+    #[prost(enumeration="LeaderboardMetric", tag="1")]
+    pub metric: i32,
+    /// Absent for a lifetime leaderboard.
+    #[prost(string, optional, tag="2")]
+    pub stream_session_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// Keep viewers whose total is at least this. Defaults to 1; must be >= 1.
+    #[prost(int64, optional, tag="3")]
+    pub min_total: ::core::option::Option<i64>,
+    /// 1-100. Defaults to 10.
+    #[prost(int32, optional, tag="4")]
+    pub limit: ::core::option::Option<i32>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct LeaderboardEntry {
+    #[prost(string, tag="1")]
+    pub platform: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub platform_user_id: ::prost::alloc::string::String,
+    /// The name on the viewer's most recent event, absent when none carried one.
+    #[prost(string, optional, tag="3")]
+    pub user_name: ::core::option::Option<::prost::alloc::string::String>,
+    /// Bits, or subs gifted, depending on the metric.
+    #[prost(int64, tag="4")]
+    pub total: i64,
+    /// The events that make up `total`: cheers, or gifts.
+    #[prost(int64, tag="5")]
+    pub events: i64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListViewerLeaderboardResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    /// Highest total first; ties by platform, then platform_user_id.
+    #[prost(message, repeated, tag="2")]
+    pub entries: ::prost::alloc::vec::Vec<LeaderboardEntry>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum LeaderboardMetric {
+    Unspecified = 0,
+    /// Bits cheered.
+    Bits = 1,
+    /// Subs gifted.
+    GiftedSubs = 2,
+}
+impl LeaderboardMetric {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "LEADERBOARD_METRIC_UNSPECIFIED",
+            Self::Bits => "LEADERBOARD_METRIC_BITS",
+            Self::GiftedSubs => "LEADERBOARD_METRIC_GIFTED_SUBS",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "LEADERBOARD_METRIC_UNSPECIFIED" => Some(Self::Unspecified),
+            "LEADERBOARD_METRIC_BITS" => Some(Self::Bits),
+            "LEADERBOARD_METRIC_GIFTED_SUBS" => Some(Self::GiftedSubs),
+            _ => None,
+        }
+    }
+}
 include!("user_event.serde.rs");
 include!("user_event.tonic.rs");
 // @@protoc_insertion_point(module)

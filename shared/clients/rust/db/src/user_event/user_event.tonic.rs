@@ -116,6 +116,93 @@ pub mod user_event_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn get_stream_session_event_totals(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetStreamSessionEventTotalsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetStreamSessionEventTotalsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/user_event.UserEventService/GetStreamSessionEventTotals",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "user_event.UserEventService",
+                        "GetStreamSessionEventTotals",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_viewer_event_totals(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetViewerEventTotalsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetViewerEventTotalsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/user_event.UserEventService/GetViewerEventTotals",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "user_event.UserEventService",
+                        "GetViewerEventTotals",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn list_viewer_leaderboard(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListViewerLeaderboardRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListViewerLeaderboardResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/user_event.UserEventService/ListViewerLeaderboard",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "user_event.UserEventService",
+                        "ListViewerLeaderboard",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -136,6 +223,27 @@ pub mod user_event_service_server {
             request: tonic::Request<super::RecordUserEventRequest>,
         ) -> std::result::Result<
             tonic::Response<super::RecordUserEventResponse>,
+            tonic::Status,
+        >;
+        async fn get_stream_session_event_totals(
+            &self,
+            request: tonic::Request<super::GetStreamSessionEventTotalsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetStreamSessionEventTotalsResponse>,
+            tonic::Status,
+        >;
+        async fn get_viewer_event_totals(
+            &self,
+            request: tonic::Request<super::GetViewerEventTotalsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetViewerEventTotalsResponse>,
+            tonic::Status,
+        >;
+        async fn list_viewer_leaderboard(
+            &self,
+            request: tonic::Request<super::ListViewerLeaderboardRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListViewerLeaderboardResponse>,
             tonic::Status,
         >;
     }
@@ -246,6 +354,158 @@ pub mod user_event_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = RecordUserEventSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/user_event.UserEventService/GetStreamSessionEventTotals" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetStreamSessionEventTotalsSvc<T: UserEventService>(
+                        pub Arc<T>,
+                    );
+                    impl<
+                        T: UserEventService,
+                    > tonic::server::UnaryService<
+                        super::GetStreamSessionEventTotalsRequest,
+                    > for GetStreamSessionEventTotalsSvc<T> {
+                        type Response = super::GetStreamSessionEventTotalsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::GetStreamSessionEventTotalsRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as UserEventService>::get_stream_session_event_totals(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetStreamSessionEventTotalsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/user_event.UserEventService/GetViewerEventTotals" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetViewerEventTotalsSvc<T: UserEventService>(pub Arc<T>);
+                    impl<
+                        T: UserEventService,
+                    > tonic::server::UnaryService<super::GetViewerEventTotalsRequest>
+                    for GetViewerEventTotalsSvc<T> {
+                        type Response = super::GetViewerEventTotalsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetViewerEventTotalsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as UserEventService>::get_viewer_event_totals(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetViewerEventTotalsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/user_event.UserEventService/ListViewerLeaderboard" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListViewerLeaderboardSvc<T: UserEventService>(pub Arc<T>);
+                    impl<
+                        T: UserEventService,
+                    > tonic::server::UnaryService<super::ListViewerLeaderboardRequest>
+                    for ListViewerLeaderboardSvc<T> {
+                        type Response = super::ListViewerLeaderboardResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListViewerLeaderboardRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as UserEventService>::list_viewer_leaderboard(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListViewerLeaderboardSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
