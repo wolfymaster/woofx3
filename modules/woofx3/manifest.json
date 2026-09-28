@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -320,6 +320,116 @@
       "taxonomy": [
         "system.workflow",
         "alert.renderer"
+      ]
+    },
+    {
+      "id": "obs.switch_scene",
+      "name": "Switch OBS scene",
+      "description": "Make a scene the live program scene in OBS. The step fails, with the reason, when OBS is not connected or has no scene by that name.",
+      "type": "native",
+      "handler": "obs.switch_scene",
+      "schema": [
+        {
+          "id": "sceneName",
+          "label": "Scene",
+          "type": "text",
+          "required": true,
+          "placeholder": "BRB",
+          "description": "The scene's name exactly as OBS shows it."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "ok",
+            "type": "boolean",
+            "description": "True once OBS has applied the change. A step OBS refused fails instead, with the reason."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.obs"
+      ]
+    },
+    {
+      "id": "obs.set_source_visibility",
+      "name": "Show or hide OBS source",
+      "description": "Show or hide a source in an OBS scene. The step fails, with the reason, when OBS is not connected or the source is not in that scene.",
+      "type": "native",
+      "handler": "obs.set_source_visibility",
+      "schema": [
+        {
+          "id": "sourceName",
+          "label": "Source",
+          "type": "text",
+          "required": true,
+          "placeholder": "Confetti",
+          "description": "The source's name exactly as OBS shows it."
+        },
+        {
+          "id": "visible",
+          "label": "Visible",
+          "type": "toggle",
+          "required": true,
+          "defaultValue": true,
+          "description": "On shows the source; off hides it."
+        },
+        {
+          "id": "sceneName",
+          "label": "Scene",
+          "type": "text",
+          "placeholder": "Current scene",
+          "description": "The scene the source is in. Leave blank for whichever scene is live when the step runs."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "ok",
+            "type": "boolean",
+            "description": "True once OBS has applied the change. A step OBS refused fails instead, with the reason."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.obs"
+      ]
+    },
+    {
+      "id": "obs.set_input_mute",
+      "name": "Mute or unmute OBS audio",
+      "description": "Mute or unmute an audio input in OBS, such as a microphone or desktop audio. The step fails, with the reason, when OBS is not connected or has no input by that name.",
+      "type": "native",
+      "handler": "obs.set_input_mute",
+      "schema": [
+        {
+          "id": "inputName",
+          "label": "Audio input",
+          "type": "text",
+          "required": true,
+          "placeholder": "Mic/Aux",
+          "description": "The input's name exactly as OBS's audio mixer shows it."
+        },
+        {
+          "id": "muted",
+          "label": "Muted",
+          "type": "toggle",
+          "required": true,
+          "defaultValue": true,
+          "description": "On mutes the input; off unmutes it."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "ok",
+            "type": "boolean",
+            "description": "True once OBS has applied the change. A step OBS refused fails instead, with the reason."
+          }
+        ]
+      },
+      "taxonomy": [
+        "system.obs"
       ]
     },
     {
