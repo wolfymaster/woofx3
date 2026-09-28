@@ -455,6 +455,16 @@ With `triggerData` the call waits for the engine's answer (see
 The call throws for an unknown or disabled workflow, invalid options, an engine
 refusal, or no answer from the engine within 5 seconds.
 
+`triggerData`, `platform` and `skipConditions` are privileged. They let the
+caller choose the event a workflow runs from and bypass its trigger
+conditions. For that reason they are only accepted from engine API clients:
+the dashboard backend and other authenticated RPC sessions. They are never
+accepted from module code, which cannot start workflows at all.
+
+A run whose origin (`triggeredBy` / `origin`) is exactly `"dashboard"` is not
+written to the run history. Its outcome only reaches the caller watching its
+`triggerId`. Use `"test"` for a test run that should appear in the history.
+
 #### getWorkflowStatus
 
 Returns detailed execution status including per-step progress and a progress percentage.

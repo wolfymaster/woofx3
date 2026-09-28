@@ -189,7 +189,10 @@ cancelling it:
 - **Claims a pending wait.** A run paused at a `wait` task, or waiting on a
   sub-workflow, is removed from the waiting set under the same lock an arriving
   event uses. Whichever gets there first owns the resume, so a cancelled wait
-  never resumes. A sub-workflow the run was waiting on is cancelled too.
+  never resumes. A sub-workflow the run was waiting on is cancelled too. A
+  sub-workflow started without `waitUntilCompletion` (fire-and-forget) is
+  independent of its parent. It keeps running when the parent is cancelled;
+  cancel it by its own execution id.
 - **Settles the run `cancelled`** through the same path as every other outcome.
   The run recorder writes the status to db-proxy, whose `db.workflow_execution.updated`
   outbox event reaches the dashboard as the `workflow.run.updated` webhook. The

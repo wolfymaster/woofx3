@@ -62,11 +62,15 @@ type AssetURLResolver interface {
 }
 
 type Engine[TServices any] struct {
-	workflowRegistry     *WorkflowRegistry
-	taskRegistry         *tasks.TaskRegistry
-	actionRegistry       *tasks.ActionRegistry[TServices]
-	executions           map[string]*types.WorkflowExecution
-	controls             map[string]*runControl // execution id -> cancellation state; guarded by executionsMu
+	workflowRegistry *WorkflowRegistry
+	taskRegistry     *tasks.TaskRegistry
+	actionRegistry   *tasks.ActionRegistry[TServices]
+	executions       map[string]*types.WorkflowExecution
+	// controls holds each run's cancellation state, keyed like executions and
+	// guarded by executionsMu. An entry must live exactly as long as the
+	// run's entry in executions; neither map is pruned today, so a pruning
+	// pass added later has to delete from both.
+	controls             map[string]*runControl
 	executionsMu         sync.RWMutex
 	waitingExecutions    map[string][]*WaitingExecution // eventType -> waiting executions
 	waitingMu            sync.RWMutex
