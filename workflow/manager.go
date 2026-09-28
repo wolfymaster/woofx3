@@ -23,6 +23,7 @@ type WorkflowManager struct {
 	logger   tasks.Logger
 	registry WorkflowRegistry
 	dbClient dbv1.WorkflowService
+	health   *WorkflowHealthTracker
 }
 
 func (m *WorkflowManager) SetDbClient(client dbv1.WorkflowService) {
@@ -35,7 +36,28 @@ func NewWorkflowManager(logger tasks.Logger, registry WorkflowRegistry, dbClient
 		logger:   logger,
 		registry: registry,
 		dbClient: dbClient,
+		health:   NewWorkflowHealthTracker(logger),
 	}
+}
+
+// Health reports whether each enabled workflow could be loaded.
+func (m *WorkflowManager) Health() *WorkflowHealthTracker {
+	return m.health
+}
+
+// load converts and registers one stored workflow, recording the outcome as
+// the workflow's health. Every path that loads a stored workflow goes through
+// here, so a refusal always reaches the health record rather than only a log.
+func (m *WorkflowManager) load(dbWorkflow *dbv1.Workflow) (*types.WorkflowDefinition, error) {
+	workflowDef, err := convertDBWorkflowToEngineWorkflow(dbWorkflow)
+	if err == nil && m.registry != nil {
+		err = m.registry.RegisterWorkflow(workflowDef)
+	}
+	m.health.Record(dbWorkflow.GetId(), err)
+	if err != nil {
+		return nil, err
+	}
+	return workflowDef, nil
 }
 
 // LoadWorkflowsFromDB loads all enabled workflows from the database
@@ -66,17 +88,9 @@ func (m *WorkflowManager) LoadWorkflowsFromDB(ctx context.Context) error {
 			continue
 		}
 
-		workflowDef, err := convertDBWorkflowToEngineWorkflow(dbWorkflow)
+		workflowDef, err := m.load(dbWorkflow)
 		if err != nil {
-			m.logger.Error("Failed to convert workflow", "workflow_id", dbWorkflow.GetId(), "error", err)
 			continue
-		}
-
-		if m.registry != nil {
-			if err := m.registry.RegisterWorkflow(workflowDef); err != nil {
-				m.logger.Error("Failed to register workflow", "workflow_id", workflowDef.ID, "error", err)
-				continue
-			}
 		}
 
 		loadedCount++
@@ -134,23 +148,15 @@ func (m *WorkflowManager) HandleWorkflowCreateOrUpdate(evt *cloudevents.Workflow
 				m.logger.Warn("Failed to unregister disabled workflow", "error", err, "workflow_id", changeData.WorkflowID)
 			}
 		}
+		m.health.Forget(changeData.WorkflowID)
 		return
 	}
 
-	workflowDef, err := convertDBWorkflowToEngineWorkflow(resp.Workflow)
+	workflowDef, err := m.load(resp.Workflow)
 	if err != nil {
-		m.logger.Error("Failed to convert workflow", "error", err, "workflow_id", changeData.WorkflowID)
 		return
 	}
-
-	// Register the workflow (this will overwrite if it already exists)
-	if m.registry != nil {
-		if err := m.registry.RegisterWorkflow(workflowDef); err != nil {
-			m.logger.Error("Failed to register workflow", "error", err, "workflow_id", workflowDef.ID)
-			return
-		}
-		m.logger.Info("Workflow registered from event", "workflow_id", workflowDef.ID, "name", workflowDef.Name)
-	}
+	m.logger.Info("Workflow registered from event", "workflow_id", workflowDef.ID, "name", workflowDef.Name)
 }
 
 // HandleWorkflowDelete notifies the WorkflowApp to remove a workflow
@@ -159,6 +165,7 @@ func (m *WorkflowManager) HandleWorkflowDelete(entityID string) {
 		m.logger.Error("Missing entity_id for workflow delete")
 		return
 	}
+	m.health.Forget(entityID)
 
 	if m.registry != nil {
 		if err := m.registry.UnregisterWorkflow(entityID); err != nil {

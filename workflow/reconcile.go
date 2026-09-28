@@ -30,6 +30,9 @@ type reconcilerRegistry interface {
 
 // newReconciler wires a reconciler. An interval of zero defaults to 5 minutes.
 func newReconciler(manager *WorkflowManager, registry reconcilerRegistry, dbClient dbv1.WorkflowService, logger tasks.Logger, interval time.Duration) *Reconciler {
+	if manager == nil {
+		panic("reconciler requires a workflow manager: it records every load outcome as workflow health")
+	}
 	if interval == 0 {
 		interval = 5 * time.Minute
 	}
@@ -71,14 +74,17 @@ func (r *Reconciler) reconcileOnce(ctx context.Context) {
 		return
 	}
 
+	health := r.manager.Health()
 	desired := make(map[string]*types.WorkflowDefinition, len(resp.Workflows))
+	enabled := make(map[string]struct{}, len(resp.Workflows))
 	for _, dbwf := range resp.Workflows {
 		if !dbwf.GetEnabled() {
 			continue
 		}
+		enabled[dbwf.GetId()] = struct{}{}
 		def, err := convertDBWorkflowToEngineWorkflow(dbwf)
 		if err != nil {
-			r.logger.Error("reconcile: convert failed", "workflow_id", dbwf.GetId(), "error", err)
+			health.Record(dbwf.GetId(), err)
 			continue
 		}
 		desired[def.ID] = def
@@ -91,9 +97,15 @@ func (r *Reconciler) reconcileOnce(ctx context.Context) {
 	}
 
 	toAdd, toRemove := reconcileDiff(inMem, desired)
+	// A workflow that failed to load is absent from the registry, so it lands
+	// in toAdd again on every pass. The health tracker logs only a change, so
+	// the retry stays quiet until the outcome differs.
+	added := 0
 	for _, def := range toAdd {
-		if err := r.registry.Register(def); err != nil {
-			r.logger.Error("reconcile: register failed", "workflow_id", def.ID, "error", err)
+		err := r.registry.Register(def)
+		health.Record(def.ID, err)
+		if err == nil {
+			added++
 		}
 	}
 	for _, id := range toRemove {
@@ -101,8 +113,9 @@ func (r *Reconciler) reconcileOnce(ctx context.Context) {
 			r.logger.Error("reconcile: remove failed", "workflow_id", id, "error", err)
 		}
 	}
-	if len(toAdd) > 0 || len(toRemove) > 0 {
-		r.logger.Info("reconcile applied", "added", len(toAdd), "removed", len(toRemove))
+	health.Retain(enabled)
+	if added > 0 || len(toRemove) > 0 {
+		r.logger.Info("reconcile applied", "added", added, "removed", len(toRemove))
 	}
 }
 

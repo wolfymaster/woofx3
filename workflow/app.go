@@ -154,6 +154,16 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	a.engine.Registry().SetRegistrar(composite)
 	a.engine.Registry().SetLogger(a.logger)
 
+	// Attached before the first load, so a workflow that fails to load at
+	// start-up is announced like one that fails later.
+	publisher := NewNATSEventPublisher(natsClient, a.logger)
+	a.manager.Health().SetPublisher(publisher)
+	if _, err := natsClient.SubscribeWithReply(string(cloudevents.SubjectWorkflowHealthGet), func(natsclient.Msg) []byte {
+		return a.manager.Health().HandleHealthRequest()
+	}); err != nil {
+		a.logger.Error("Failed to subscribe to workflow health requests", "error", err)
+	}
+
 	// Load workflows from DB now that the registrar is attached. Loading
 	// earlier (in Init) would register them against the default
 	// NoopRegistrar, leaving cold-start workflows without trigger
@@ -169,7 +179,6 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	go reconciler.Run(ctx)
 	a.logger.Info("Reconciler started", "interval", reconciler.interval)
 
-	publisher := NewNATSEventPublisher(natsClient, a.logger)
 	a.engine.SetPublisher(publisher)
 	a.logger.Info("Event publisher configured with NATS")
 

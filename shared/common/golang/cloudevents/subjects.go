@@ -64,6 +64,17 @@ const (
 	SubjectWorkflowRunCompleted Subject = "workflow.run.completed"
 	SubjectWorkflowRunFailed    Subject = "workflow.run.failed"
 
+	// Whether the engine could load a stored workflow. Published by the
+	// workflow service only when a workflow's health changes, never on every
+	// reconcile pass, so a consumer can treat each message as news. Data:
+	//   { workflowId, status: "ok" | "error", reason?, since }
+	SubjectWorkflowHealthChanged Subject = "workflow.health.changed"
+
+	// Request/reply: the workflow service answers with the health of every
+	// workflow it has tried to load, as { workflows: [...] } in the same
+	// entry shape as SubjectWorkflowHealthChanged's data.
+	SubjectWorkflowHealthGet Subject = "workflow.health.get"
+
 	// Unified widget event channel (R2 of the widget refactor).
 	// Single inbound subject for everything an overlay reports about a
 	// widget — alert lifecycle acks, counter increments, timer state,
