@@ -37,8 +37,8 @@ describe("listObsScenes", () => {
   });
 
   test("passes on the scene manager's reason when OBS is not connected", async () => {
-    const { list } = setup(() => ({ ok: false, error: "OBS is not connected to the scene manager" }));
-    expect(await list()).toEqual({ available: false, reason: "OBS is not connected to the scene manager" });
+    const { list } = setup(() => ({ ok: false, error: "OBS is not connected (retrying)" }));
+    expect(await list()).toEqual({ available: false, reason: "OBS is not connected (retrying)" });
   });
 
   test("reports unavailable instead of throwing when nobody answers", async () => {

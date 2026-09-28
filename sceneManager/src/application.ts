@@ -1,4 +1,4 @@
-import type { ApplicationContext, Application as RuntimeApplication, IApplication } from "@woofx3/common/runtime";
+import type { ApplicationContext, IApplication, Application as RuntimeApplication } from "@woofx3/common/runtime";
 import type { SceneManagerRuntimeConfig } from "./config";
 import type DatabaseService from "./services/db";
 
@@ -26,6 +26,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
   readonly __finalContextType!: SceneManagerContext;
   private server: ReturnType<typeof Bun.serve> | null = null;
   private deliveryStore: import("./events/delivery-store").DeliveryStore | null = null;
+  private obs: import("./obs/connection").ObsConnection<import("./obs/manager").default> | null = null;
 
   constructor(runtimeConfig: SceneManagerRuntimeConfig) {
     this.context = { runtimeConfig };
@@ -40,7 +41,8 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const { DeliveryStore } = await import("./events/delivery-store");
     const { ModuleStateWatch } = await import("./scene/module-state");
     const { createMessageBus } = await import("@woofx3/nats");
-    const { connectObs } = await import("./obs/manager");
+    const { openObsSession } = await import("./obs/manager");
+    const { ObsConnection } = await import("./obs/connection");
     const { initSubscriptions } = await import("./nats-subscriptions");
     const { refreshOverlayBrowserSources } = await import("./obs/refresh-overlays");
 
@@ -80,7 +82,23 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       });
       nats = null;
     }
-    const obs = await connectObs(ctx.runtimeConfig.obs, ctx.logger);
+    // Started only once the server is listening (below), so the first
+    // session's overlay refresh can never land before /scene is served.
+    const obs = new ObsConnection({
+      open: () => openObsSession(ctx.runtimeConfig.obs, ctx.logger),
+      // Refresh overlays on the first session only. It exists to recover
+      // overlays after *this process* restarted; after a mere reconnect their
+      // streams are intact, and a refresh would cut off whatever is playing.
+      // The scene cache the legacy slobs bridge reads is rebuilt by
+      // openObsSession on every session.
+      onConnected: async (client, { first }) => {
+        if (first) {
+          await refreshOverlayBrowserSources(client, ctx.runtimeConfig.port, ctx.logger);
+        }
+      },
+      logger: ctx.logger,
+    });
+    this.obs = obs;
 
     await initSubscriptions({ nats, obs, db, host, deliveryStore, moduleState, resolver, logger: ctx.logger });
 
@@ -91,13 +109,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       bootId,
     });
 
-    // Strictly after the server is listening: a refresh that lands
-    // before we can serve /scene would just bounce the overlay into the
-    // same disconnected state it was already in. Not awaited for
-    // correctness -- overlays recover on their own regardless -- but
-    // awaited here so a failure is logged before we block for the
-    // process lifetime.
-    await refreshOverlayBrowserSources(obs, ctx.runtimeConfig.port, ctx.logger);
+    obs.start();
     // Block for the process lifetime — Bun.serve doesn't return a
     // promise that resolves on its own; hold the runtime here until
     // terminate() stops the server.
@@ -109,6 +121,8 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     this.deliveryStore = null;
     this.server?.stop();
     this.server = null;
+    await this.obs?.stop();
+    this.obs = null;
     ctx.logger.info("sceneManager stopped");
   }
 }

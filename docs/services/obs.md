@@ -28,11 +28,23 @@ v5).
 | `WOOFX3_OBS_PORT` | `4455` | OBS WebSocket server port |
 | `WOOFX3_OBS_RPC_TOKEN` | none | OBS WebSocket server password |
 
-The scene manager connects once, at startup, and carries on without OBS if the
-connection fails, logging `OBS connection failed; continuing without OBS
-control`. Start OBS before the scene manager, or restart the scene manager
-after starting OBS. Until it is connected, every `obs.*` step fails with `OBS
-is not connected to the scene manager`.
+The scene manager keeps itself connected. If OBS is not running when it
+starts, or the connection drops (OBS closed or restarted), it retries in the
+background: after 1s, then doubling up to every 30s, each delay jittered down by
+up to half. OBS can be started in any order. It logs only the changes
+(`OBS not reachable; retrying in the background`, `OBS connection lost;
+reconnecting in the background`, `Connected to OBS`, `Reconnected to OBS`), so
+an evening with OBS closed is one line, not one per retry.
+
+Each new session reloads the scene list the legacy `slobs` bridge uses. OBS
+browser sources pointing at the scene manager are refreshed on the first
+session after the scene manager starts, to recover overlays after a restart
+of the scene manager itself. They are not refreshed after a reconnect, because
+their event streams are still open and a refresh would cut off whatever is
+playing.
+
+While not connected, every `obs.*` step fails with `OBS is not connected
+(retrying)`, and `listObsScenes()` reports that as its reason.
 
 Names are OBS's own: a step names a scene, source or audio input exactly as it
 appears in OBS, case included. Renaming a scene in OBS breaks the steps that

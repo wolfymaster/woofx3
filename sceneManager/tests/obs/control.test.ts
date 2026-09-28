@@ -138,7 +138,7 @@ describe("parseObsControlCommand", () => {
 describe("executeObsControlCommand", () => {
   it("answers not connected when there is no OBS connection", async () => {
     const reply = await executeObsControlCommand(null, { command: "switch_scene", sceneName: "Raid" });
-    expect(reply).toEqual({ ok: false, error: "OBS is not connected to the scene manager" });
+    expect(reply).toEqual({ ok: false, error: "OBS is not connected (retrying)" });
   });
 
   it("switches the program scene", async () => {

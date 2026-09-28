@@ -19,7 +19,8 @@ import type { OverlayTokenResolver } from "./scene/token-resolver";
 
 interface InitArgs {
   nats: NATSClient | null;
-  obs: Manager | null;
+  /** The live OBS session, re-read per message: it comes and goes as OBS does. */
+  obs: { current(): Manager | null };
   db: DbClient;
   host: OverlayHost;
   deliveryStore: DeliveryStore;
@@ -243,7 +244,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       });
       return;
     }
-    handleLegacySlobsCommand(obs, body, logger).catch((err) => {
+    handleLegacySlobsCommand(obs.current(), body, logger).catch((err) => {
       logger.error("Legacy slobs command failed", {
         command: body.command,
         error: err instanceof Error ? err.message : String(err),
@@ -255,7 +256,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   // Engine OBS control, request/reply: the workflow `obs.*` actions and the
   // api's scene listing wait on this answer to succeed or fail.
   await nats.subscribe("engine.obs.command", async (msg) => {
-    const reply = await handleObsControlRequest(obs, msg.data, logger);
+    const reply = await handleObsControlRequest(obs.current(), msg.data, logger);
     if (!msg.respond(new TextEncoder().encode(JSON.stringify(reply)))) {
       logger.warn("engine.obs.command: received without a reply subject; the result reached nobody");
     }

@@ -22,6 +22,12 @@ export interface ObsControlClient {
   request<T extends keyof OBSRequestTypes>(cmd: T, args?: OBSRequestTypes[T]): Promise<OBSResponseTypes[T]>;
 }
 
+/**
+ * The answer while no OBS session is open. "Retrying" is always true while
+ * this service runs: `obs/connection.ts` keeps trying until it is stopped.
+ */
+export const OBS_NOT_CONNECTED = "OBS is not connected (retrying)";
+
 /** obs-websocket v5 RequestStatus.ResourceNotFound. */
 const OBS_RESOURCE_NOT_FOUND = 600;
 
@@ -69,7 +75,7 @@ export async function executeObsControlCommand(
   command: ObsControlCommand
 ): Promise<ObsControlReply> {
   if (!obs) {
-    return { ok: false, error: "OBS is not connected to the scene manager" };
+    return { ok: false, error: OBS_NOT_CONNECTED };
   }
   try {
     switch (command.command) {
