@@ -20,6 +20,9 @@ const BROADCAST_SUBJECTS: readonly EventType[] = [
   EventType.Raid,
   EventType.StreamOnline,
   EventType.StreamOffline,
+  EventType.AdBreakUpcoming,
+  EventType.AdBreakBegin,
+  EventType.AdBreakEnd,
 ];
 
 /** capnweb stubs carry this; the contract types the argument as a plain object. */

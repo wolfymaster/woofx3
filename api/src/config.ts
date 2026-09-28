@@ -36,6 +36,12 @@ export interface ApiConfig {
   streamwareUrl: string;
   sceneManagerUrl: string;
   apiUrl: string;
+  /**
+   * Seconds before a scheduled Twitch ad at which `channel.ad_break.upcoming`
+   * is published (`WOOFX3_AD_BREAK_LEAD_SECONDS`, comma-separated, e.g.
+   * "120,60"). Defaults to [60].
+   */
+  adBreakLeadSeconds: number[];
   nats: {
     url: string;
     name: string;
@@ -73,6 +79,7 @@ export const ApiEnvSchema = z
     woofx3MessagebusNkey: z.string().optional(),
     messagebusNkey: z.string().optional(),
     woofx3RootPath: z.string().optional(),
+    woofx3AdBreakLeadSeconds: z.union([z.number(), z.string()]).optional(),
   })
   .passthrough();
 
@@ -92,6 +99,28 @@ function assertValidHttpUrl(label: string, value: string): void {
       `Config error: ${label} is not a valid http(s) URL: ${value} — ${err instanceof Error ? err.message : String(err)}`
     );
   }
+}
+
+/**
+ * Parses the ad-break lead times. Fails fast on anything that is not a list
+ * of positive whole seconds: a typo here would otherwise silently disable
+ * the heads-up a streamer configured.
+ */
+export function parseAdBreakLeadSeconds(raw: unknown): number[] {
+  if (raw === undefined || raw === null || String(raw).trim() === "") {
+    return [60];
+  }
+  const leads = String(raw)
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part !== "")
+    .map(Number);
+  if (leads.length === 0 || leads.some((lead) => !Number.isInteger(lead) || lead <= 0)) {
+    throw new Error(
+      `Config error: adBreakLeadSeconds (WOOFX3_AD_BREAK_LEAD_SECONDS) must be positive whole seconds, got "${raw}"`
+    );
+  }
+  return leads;
 }
 
 export function loadConfig(): ApiConfig {
@@ -134,6 +163,8 @@ export function loadConfig(): ApiConfig {
   assertValidHttpUrl("sceneManagerUrl (WOOFX3_SCENE_MANAGER_URL)", sceneManagerUrl);
   assertValidHttpUrl("apiUrl (WOOFX3_API_URL)", apiUrl);
 
+  const adBreakLeadSeconds = parseAdBreakLeadSeconds(config.woofx3AdBreakLeadSeconds);
+
   const messageBusUrl = String(config.woofx3MessagebusUrl ?? config.messagebusUrl ?? "nats://localhost:4222");
   const messageBusJwt =
     config.woofx3MessagebusJwt != null
@@ -161,6 +192,7 @@ export function loadConfig(): ApiConfig {
     sceneManagerUrl,
     apiUrl,
     rootDir,
+    adBreakLeadSeconds,
     nats: {
       url: messageBusUrl,
       name: "woofx3-api",
