@@ -2,8 +2,8 @@
 
 The twitch service (`twitch/`) is the one place the engine talks to Twitch's
 Helix API on the streamer's behalf. Every other surface — the UI through the
-engine API, the chatbot's built-in commands, a workflow action, a module's
-`ctx.twitch` — asks it to act by sending a command on the `twitchapi` NATS
+engine API, the chatbot's built-in commands, a workflow action, and, for a
+few commands, a module's `ctx.twitch` — asks it to act by sending a command on the `twitchapi` NATS
 subject. It validates the request against Twitch's rules, performs it with the
 linked account's token, and answers with the result or an error.
 
@@ -42,9 +42,10 @@ A request that breaks one of these fails with a message naming the rule, and
 nothing is sent to Twitch. `updateStream` checks every field before sending,
 so a bad tag never lets the title through on its own.
 
-- **Title:** not blank, at most 140 characters.
+- **Title:** a string, not blank, at most 140 characters. Lengths here are
+  counted in characters, so an emoji counts once.
 - **Tags:** at most 10; each 1 to 25 characters of letters and numbers (any
-  script), no spaces or punctuation; no tag twice, ignoring case. An empty list
+  script, combining marks included), no spaces or punctuation; no tag twice, ignoring case. An empty list
   removes every tag.
 - **Category:** `category` is free text, resolved through Twitch's category
   search: the result whose name matches exactly, ignoring case, else the most
@@ -55,7 +56,8 @@ so a bad tag never lets the title through on its own.
   on a live stream; while offline the request fails with
   `the channel is not live`.
 - **Timeout:** `durationSeconds` is a whole number from 1 to 1209600 (two
-  weeks). The broadcaster cannot be timed out.
+  weeks). `reason` is at most 500 characters. The broadcaster cannot be timed
+  out.
 - **Category search:** `query` is required; `first` is 1 to 100, default 10.
 
 ## Engine API
@@ -80,19 +82,39 @@ that apply whether or not it is live.
 ## Chatbot built-ins
 
 woofwoofwoof registers these commands itself. Each waits for the twitch
-service's answer and says the outcome in chat.
+service's answer and says the outcome in chat. When nothing answers in time
+the reply says the outcome is unknown, not that it failed: the change may
+still land.
 
 | Command | Does |
 |---|---|
 | `!title <text>` | Sets the stream title. |
 | `!category <name>` | Sets the category, resolved as above: `!category just chatting`. |
 | `!marker [description]` | Places a stream marker and says where it landed (`h:mm:ss`). |
-| `!vanish` | Times the chatter who sent it out for up to 10 minutes. |
+| `!vanish` | Times the chatter who sent it out, by their Twitch id, for up to 10 minutes. The broadcaster and moderators, whom Twitch will not time out, get a reply instead. |
 
 `!title`, `!category` and `!marker` are open to the **broadcaster and the
 channel's moderators**, read from the membership Twitch reports on the chat
-message, so they work on a fresh engine with no grants configured. Anyone else
+message, so they work on a fresh engine with no grants configured. That is
+wider than Twitch's own rule, which lets the broadcaster and channel
+editors change the title and category: editor status is not on a chat
+message, so moderators are the closest trusted role chat can see, and the
+change is made with the broadcaster's token. A message relayed from a partner
+channel during shared chat never counts as the broadcaster or a moderator
+here, whatever its badges say in that channel. Anyone else
 goes through the command permission model like any restricted command: a grant
 on `command/title` (or `command/*`) lets that chatter in too. See
 [Chat commands & groups](./commands-ui.md). `!vanish` has no role exemption and
 is only ever reached through a grant.
+
+## Modules
+
+A module's `ctx.twitch` reaches only `clip`, `shoutout` and `createMarker`
+(`barkloader/lib_sandbox/src/extensions/twitch.rs`). Module code is end-user
+code that runs with no per-module grant, so it gets only actions that are
+visible, reversible and leave the channel's settings and its chatters alone.
+Timing chatters out, editing the title, category or tags, and promoting
+moderators are for the streamer, through the chat built-ins, the engine API
+and workflow actions. Opening one of them to modules would take a capability
+the manifest declares and the streamer approves, not a new entry in the
+extension's table. See [Engine integrity](./engine-integrity.md).

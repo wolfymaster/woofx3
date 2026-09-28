@@ -231,11 +231,11 @@ interface TimeoutArgs {
   userId?: string;          // or userName
   userName?: string;
   durationSeconds: number;  // 1 to 1209600
-  reason?: string;
+  reason?: string;          // at most 500 characters
 }
 
 interface UpdateStreamArgs {
-  title?: string;           // at most 140 characters
+  title?: string;           // at most 140 characters (not UTF-16 units)
   category?: string;        // free text, resolved through Twitch's category search
   categoryId?: string;      // used as given; "" clears the category
   tags?: string[];          // at most 10, each at most 25 letters or numbers
