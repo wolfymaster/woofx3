@@ -21,6 +21,13 @@ class FakeClock implements SchedulerClock {
     return timer;
   }
 
+  /** Cancels every timer set so far. */
+  cancelAll(): void {
+    for (const timer of this.timers) {
+      timer.cleared = true;
+    }
+  }
+
   clearTimeout(handle: unknown): void {
     (handle as { cleared: boolean }).cleared = true;
   }
@@ -87,6 +94,10 @@ function harness(opts: { leadSeconds?: number[]; live?: boolean } = {}) {
     leadSeconds: opts.leadSeconds,
     clock,
   });
+  // Started so it is live, with its own poll loop cancelled: the tests drive
+  // polls through pollOnce.
+  scheduler.start();
+  clock.cancelAll();
   return { clock, published, warnings, state, scheduler };
 }
 
@@ -198,6 +209,17 @@ describe("AdBreakScheduler", () => {
     clock.advance(60_000);
     await scheduler.pollOnce();
     expect(state.fetches).toBe(4);
+  });
+
+  test("a stopped scheduler announces nothing, even from a poll already in flight", async () => {
+    const { clock, published, scheduler } = harness();
+
+    await scheduler.pollOnce();
+    scheduler.stop();
+    await scheduler.pollOnce();
+    clock.advance(10 * 60_000);
+
+    expect(published).toEqual([]);
   });
 
   test("rejects lead times that are not positive whole seconds", () => {

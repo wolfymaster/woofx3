@@ -15,7 +15,7 @@ function harness() {
   const published: Published[] = [];
   const ctx = {
     broadcaster: { id: "broadcaster-1" } as HelixUser,
-    logger: {} as Context["logger"],
+    logger: { warn: mock(() => {}) } as unknown as Context["logger"],
     messageBus: {
       publish: mock((topic: string, bytes: Uint8Array) => {
         const event = JSON.parse(new TextDecoder().decode(bytes));
@@ -94,5 +94,44 @@ describe("AdBreakAnnouncer", () => {
       "channel.ad_break.begin",
     ]);
     expect(published[1]?.data.startedAt).toBe("2026-09-28T18:00:00.000Z");
+  });
+
+  test("coerces Twitch's raw values", () => {
+    const { announcer, published } = harness();
+
+    announcer.begin({ durationSeconds: "60", isAutomatic: "true", startDate: START });
+
+    expect(published[0]?.data).toMatchObject({ durationSeconds: 60, isAutomatic: true });
+  });
+
+  test("an unreadable start time falls back to now", () => {
+    const { announcer, published } = harness();
+    const before = Date.now();
+
+    announcer.begin({ durationSeconds: 30, isAutomatic: false, startDate: new Date("garbage") });
+
+    const startedAt = Date.parse(String(published[0]?.data.startedAt));
+    expect(startedAt).toBeGreaterThanOrEqual(before);
+  });
+
+  test("a redelivered begin for the pending break is ignored", () => {
+    const { announcer, published, scheduled } = harness();
+
+    announcer.begin({ durationSeconds: 90, isAutomatic: true, startDate: START });
+    announcer.begin({ durationSeconds: 90, isAutomatic: true, startDate: new Date(START.getTime()) });
+
+    expect(published.map((p) => p.type)).toEqual(["channel.ad_break.begin"]);
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0]?.cleared).toBe(false);
+  });
+
+  test("dispose drops the pending end without publishing it", () => {
+    const { announcer, published, scheduled } = harness();
+
+    announcer.begin({ durationSeconds: 90, isAutomatic: true, startDate: START });
+    announcer.dispose();
+
+    expect(scheduled[0]?.cleared).toBe(true);
+    expect(published.map((p) => p.type)).toEqual(["channel.ad_break.begin"]);
   });
 });

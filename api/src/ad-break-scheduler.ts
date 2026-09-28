@@ -59,6 +59,10 @@ export interface AdBreakSchedulerDeps {
  * late. Every read re-arms from scratch, so a snooze (which moves
  * `nextAdAt`) cancels the old announcement and schedules a new one: an
  * announcement is keyed by the ad's time, and a moved ad is a new ad.
+ *
+ * Assumes one api instance per engine, as the engine is deployed today. The
+ * "announced" set lives in memory, so two instances would each announce
+ * every ad, and a restart inside a lead window announces that ad again.
  */
 export class AdBreakScheduler {
   private readonly leadSeconds: readonly number[];
@@ -160,6 +164,9 @@ export class AdBreakScheduler {
 
   private arm(schedule: AdSchedule): void {
     this.clearLeadTimers();
+    if (this.stopped) {
+      return;
+    }
     if (schedule.nextAdAt === null) {
       this.announced.clear();
       return;
@@ -212,6 +219,9 @@ export class AdBreakScheduler {
   }
 
   private announce(nextAdAt: string, nextAdAtMs: number, durationSeconds: number): void {
+    if (this.stopped) {
+      return;
+    }
     const secondsUntil = Math.max(0, Math.round((nextAdAtMs - this.clock.now()) / 1000));
     this.deps.publishUpcoming({ nextAdAt, secondsUntil, durationSeconds });
   }

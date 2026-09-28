@@ -12,8 +12,16 @@ const REAL_TIMERS: AdBreakTimers = {
   clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
 
-/** The fields of Twurple's begin event this service reads. */
-export type AdBreakBeginInput = Pick<EventSubChannelAdBreakBeginEvent, "durationSeconds" | "isAutomatic" | "startDate">;
+/**
+ * The fields of Twurple's begin event this service reads. Twurple passes
+ * Twitch's raw values through its getters, so they are typed loosely here
+ * and coerced in `begin`.
+ */
+export interface AdBreakBeginInput {
+  durationSeconds: unknown;
+  isAutomatic: unknown;
+  startDate: Date;
+}
 
 /**
  * Publishes `channel.ad_break.begin` when a break starts, and
@@ -25,9 +33,12 @@ export type AdBreakBeginInput = Pick<EventSubChannelAdBreakBeginEvent, "duration
  * source for it. Only one break can run at a time, so a begin that arrives
  * while an end is still pending publishes that end at once rather than
  * dropping it.
+ *
+ * EventSub delivers at least once, so a begin with the same start time as
+ * the pending break is a redelivery and is ignored.
  */
 export class AdBreakAnnouncer {
-  private pending: { handle: unknown; publishEnd: () => void } | null = null;
+  private pending: { handle: unknown; publishEnd: () => void; startedAt: string } | null = null;
 
   constructor(
     private ctx: Context,
@@ -35,16 +46,23 @@ export class AdBreakAnnouncer {
   ) {}
 
   begin(event: AdBreakBeginInput): void {
+    const durationSeconds = Math.max(0, Math.trunc(Number(event.durationSeconds) || 0));
+    const isAutomatic = event.isAutomatic === true || event.isAutomatic === "true";
+    let startedAtMs = event.startDate.getTime();
+    if (Number.isNaN(startedAtMs)) {
+      startedAtMs = Date.now();
+      this.ctx.logger.warn("twitch: ad break begin had an unreadable started_at; using the time it arrived");
+    }
+    const startedAt = new Date(startedAtMs).toISOString();
+    if (this.pending?.startedAt === startedAt) {
+      return;
+    }
     this.flushPendingEnd();
-
-    const durationSeconds = event.durationSeconds;
-    const startedAtMs = event.startDate.getTime();
-    const startedAt = event.startDate.toISOString();
     const endedAt = new Date(startedAtMs + durationSeconds * 1000).toISOString();
 
     const [topic, data] = this.ctx.events.Twitch().adBreakBegin({
       durationSeconds,
-      isAutomatic: event.isAutomatic,
+      isAutomatic,
       startedAt,
       endsAt: endedAt,
     });
@@ -54,14 +72,25 @@ export class AdBreakAnnouncer {
       this.pending = null;
       const [endTopic, endData] = this.ctx.events.Twitch().adBreakEnd({
         durationSeconds,
-        isAutomatic: event.isAutomatic,
+        isAutomatic,
         startedAt,
         endedAt,
       });
       this.ctx.messageBus.publish(endTopic, endData);
     };
     const handle = this.timers.setTimeout(publishEnd, Math.max(0, durationSeconds * 1000));
-    this.pending = { handle, publishEnd };
+    this.pending = { handle, publishEnd, startedAt };
+  }
+
+  /**
+   * Drop a pending end without publishing it, for when the service is
+   * disconnecting and its bus is going away with it.
+   */
+  dispose(): void {
+    if (this.pending !== null) {
+      this.timers.clearTimeout(this.pending.handle);
+      this.pending = null;
+    }
   }
 
   private flushPendingEnd(): void {
@@ -74,8 +103,11 @@ export class AdBreakAnnouncer {
   }
 }
 
-export default function onChannelAdBreakBegin(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
-  const announcer = new AdBreakAnnouncer(ctx);
+export default function onChannelAdBreakBegin(
+  ctx: Context,
+  listener: EventSubWsListener,
+  announcer: AdBreakAnnouncer
+): EventSubSubscription {
   return listener.onChannelAdBreakBegin(ctx.broadcaster.id, (event: EventSubChannelAdBreakBeginEvent) => {
     announcer.begin(event);
   });
