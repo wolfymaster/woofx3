@@ -21,14 +21,16 @@ var modelsWithTables = []any{
 	&models.ModuleResourceInstance{}, &models.ModuleSetting{}, &models.OverlayToken{},
 	&models.Permission{}, &models.Resource{}, &models.ResourceReference{}, &models.Scene{},
 	&models.SceneEvent{}, &models.SceneEventDelivery{}, &models.SceneEventLogEntry{},
-	&models.Setting{}, &models.StreamSession{}, &models.StreamSessionSegment{}, &models.Trigger{},
-	&models.User{}, &models.UserEvent{}, &models.UserGroup{}, &models.UserMeta{},
+	&models.Setting{}, &models.StreamGaugeSample{}, &models.StreamSession{},
+	&models.StreamSessionSegment{}, &models.Trigger{}, &models.User{}, &models.UserEvent{},
+	&models.UserGroup{}, &models.UserMeta{},
 	&models.Widget{}, &models.WidgetSetting{}, &models.WidgetStatus{}, &models.WorkerEvent{},
 	&models.WorkflowDefinition{}, &models.WorkflowExecution{}, &models.WorkflowExecutionStep{},
 }
 
 func TestEveryModelTimestampIsDeclaredDatetime(t *testing.T) {
-	db := openMigratedTo(t, "0049_datetime_columns")
+	chain := All()
+	db := openMigratedTo(t, chain[len(chain)-1].ID)
 	timeType := reflect.TypeOf(time.Time{})
 
 	for _, model := range modelsWithTables {

@@ -2,6 +2,7 @@ import type { ApplicationContext, Application as RuntimeApplication, IApplicatio
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { ApiConfig } from "./config";
 import type DbService from "./db-service";
+import type { StreamGaugeSampler } from "./stream-gauge-sampler";
 import type { Msg } from "@woofx3/nats/src/types";
 
 export type ApiServices = {
@@ -33,6 +34,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   readonly context: ApiRuntimeContext;
   readonly __finalContextType!: ApiRuntimeContext;
   private server: ReturnType<typeof Bun.serve> | null = null;
+  private gaugeSampler: StreamGaugeSampler | null = null;
 
   constructor(runtimeConfig: ApiConfig) {
     this.context = { runtimeConfig };
@@ -55,6 +57,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { StorageChangeEmitter },
       { StreamEventBroadcaster },
       { StreamSessionResolver },
+      { StreamGaugeSampler },
+      { TwitchHelixGauges },
       { UserEventRecorder },
       { WebhookClient },
       { initWidgetStatusHandlers },
@@ -80,6 +84,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./storage-change-emitter"),
       import("./stream-event-broadcaster"),
       import("./stream-session-resolver"),
+      import("./stream-gauge-sampler"),
+      import("./twitch-helix-gauges"),
       import("./user-event-recorder"),
       import("./webhook-client"),
       import("./widget-status-handlers"),
@@ -188,6 +194,11 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       const userEventRecorder = new UserEventRecorder(natsClient, db, logger);
       await userEventRecorder.start();
 
+      // Inside the bus block because segments open and close only through the
+      // resolver above; without a bus, "is a segment open" would go stale.
+      this.gaugeSampler = new StreamGaugeSampler(db, new TwitchHelixGauges(db), logger);
+      this.gaugeSampler.start();
+
       const streamEventBroadcaster = new StreamEventBroadcaster(natsClient, logger);
       await streamEventBroadcaster.start();
       api.setStreamEventBroadcaster(streamEventBroadcaster);
@@ -243,6 +254,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   }
 
   async terminate(): Promise<void> {
+    this.gaugeSampler?.stop();
+    this.gaugeSampler = null;
     this.server?.stop();
     this.server = null;
   }

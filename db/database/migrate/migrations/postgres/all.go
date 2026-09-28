@@ -62,5 +62,6 @@ func All() []*gormigrate.Migration {
 		DropApplications(),
 		RebuildUserEventsAsFactLog(),
 		DeclareDatetimeColumns(),
+		AddStreamGaugeSamples(),
 	}
 }

@@ -2,7 +2,9 @@
 
 ::: warning Partly built
 **Built:** step 1 — every platform event is written to `user_events` as it
-enters the engine (see [The fact log](#the-fact-log)).
+enters the engine (see [The fact log](#the-fact-log)); step 3 — viewer,
+follower and subscriber levels are sampled once a minute while live (see
+[Gauge samples](#gauge-samples)).
 
 **Not built:** everything that reads it. No code aggregates anything yet. This
 is the design [stream
@@ -98,6 +100,7 @@ someone starts from nothing.
 | Every platform event reaching the engine | **Built** | `twitch/src/lib/twitchEventBus.ts`, 10 EventSub subscriptions |
 | Fan-out including gift subs | **Built** | `api/src/stream-event-broadcaster.ts` |
 | A per-viewer event table | **Built** | `user_events`, written by `UserEventRecorder` through `UserEventService` |
+| Per-minute gauge samples | **Built** | `stream_gauge_samples`, written by `StreamGaugeSampler` through `StreamGaugeService` |
 | A per-viewer rollup precedent | **Scaffolded, dead** | `treats` / `treats_summary` view; Twirp generated, no service mounted |
 
 `treats_summary` is a **view** over `treats`, with `TotalPoints` and a
@@ -216,6 +219,44 @@ when the event is published, so it dedupes the recorder retrying a write. A
 Twitch redelivery arrives with a new CloudEvent id; Twurple drops those by
 EventSub message id within one process, which does not survive a restart.
 
+## Gauge samples
+
+`stream_gauge_samples` holds one row per sampled minute of a live segment
+(`db/database/migrate/migrations/*/0050_stream_gauge_samples.go`).
+
+| Column | Meaning |
+|---|---|
+| `segment_id` | The segment the sample was taken in. The stable key: a session's samples are the samples of the segments it owns now. |
+| `session_id` | The session that owned the segment when the sample was recorded. Informational, like the stamp on `user_events`. |
+| `sampled_at` | The minute the sample stands for, truncated to the minute in UTC. Unique within a segment. |
+| `viewer_count` | `GET /helix/streams`. |
+| `follower_total` | `GET /helix/channels/followers`, `total`. |
+| `subscriber_total`, `subscriber_points` | `GET /helix/subscriptions`, `total` and `points`. |
+
+**A missing row is a minute nobody sampled, never zero.** Each metric is null
+on its own when its Helix read failed, and a row with every metric null is
+refused, so "we looked and could not tell" never reads as "there were none".
+
+**Sampled in the engine, not by a module.** `StreamGaugeSampler`
+(`api/src/stream-gauge-sampler.ts`) ticks five seconds into every minute. It
+calls Helix with the broadcaster's token and writes a system table, neither of
+which module code may do ([engine integrity](./engine-integrity.md)), so
+it is not a module background task the way `timer_expiry` is. It sits in the
+api next to `getStreamStatus` and the session resolver, which already hold the
+token setting and open and close segments.
+
+**Only while live.** A tick does nothing unless a segment is open, so an
+offline session gets no rows rather than a flat line of zeroes, and
+`RecordStreamGaugeSample` itself refuses a sample when no segment is open or
+the sample predates the open one. A tick also skips the minute when Helix
+says the stream is not live, which it does for a minute or two after
+`stream.online` arrives: those minutes are left unsampled rather than guessed.
+
+**A 429 is waited out, not dropped.** A rate-limited read is retried after
+Twitch's `Ratelimit-Reset`, or with doubling waits when it names none, for up
+to 45 seconds into the minute. A metric still limited after that is left null
+in that minute's row, with a warning; the others are recorded.
+
 ## Two constraints to design against
 
 **The stamped session id is not a stable key.** Splits move segments between
@@ -236,7 +277,6 @@ shipping every viewer's activity to a multi-tenant store.
 | Question | Blocked by |
 |---|---|
 | Users who gifted N subs | The UI drops `SubscriptionGift`: no `PlatformEventType` for it (`client/src/lib/platforms/engine-events.ts:5-8`, woofx3-ui). The engine already broadcasts it. |
-| Viewers over time | Nothing records a viewer count. Every poll overwrites the last. |
 
 Two smaller things sit in the same area and will be mistaken for Analytics bugs
 once it exists: `getDashboardStats()` returns hardcoded values for
@@ -253,8 +293,8 @@ Each step is independently useful and safe to stop after:
 2. **Expose sessions** — done. `listStreamSessions` / `getStreamSession` on
    the engine surface return sessions with their segments, so the UI can
    enumerate past streams and see when each was actually live.
-3. **Sample the gauges** — viewer count per minute, Helix totals on the same
-   tick.
+3. **Sample the gauges** — done. Viewer count per minute, Helix totals on the
+   same tick, stored per segment in `stream_gauge_samples`.
 4. **Query the log** — per-session totals and per-viewer leaderboards as engine
    RPCs, with canonical session resolution done once per segment.
 5. **Summarise to the UI** — a `SESSION_SUMMARY` webhook on `session.ended`,

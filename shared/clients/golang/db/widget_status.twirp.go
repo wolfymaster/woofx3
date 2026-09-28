@@ -1353,7 +1353,7 @@ func (s *widgetStatusServiceServer) serveDeleteWidgetStatusProtobuf(ctx context.
 }
 
 func (s *widgetStatusServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor18, 0
+	return twirpFileDescriptor19, 0
 }
 
 func (s *widgetStatusServiceServer) ProtocGenTwirpVersion() string {
@@ -1367,7 +1367,7 @@ func (s *widgetStatusServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "widget_status", "WidgetStatusService")
 }
 
-var twirpFileDescriptor18 = []byte{
+var twirpFileDescriptor19 = []byte{
 	// 621 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x54, 0xcd, 0x6e, 0xd3, 0x40,
 	0x10, 0x96, 0xed, 0x38, 0x24, 0x93, 0x52, 0xc2, 0xb6, 0x2a, 0xae, 0x7b, 0x68, 0x15, 0x04, 0x2d,
