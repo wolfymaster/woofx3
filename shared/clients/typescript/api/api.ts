@@ -1461,7 +1461,9 @@ export interface Woofx3EngineApi {
   /**
    * Play a recorded alert again. Re-dispatches the stored envelope under a
    * fresh envelope id, recorded as a new alert-log row, and marks the original
-   * row `replayed`.
+   * row `replayed`. Asking again for the same row while that replay is under
+   * way, or within 30 s of it succeeding, returns the same result and plays
+   * nothing, so a retry after a timeout cannot play the alert twice.
    */
   replayAlert(id: string): Promise<AlertReplayResult>;
 

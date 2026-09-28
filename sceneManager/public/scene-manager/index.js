@@ -1452,6 +1452,14 @@ function main() {
       })
     }).catch(() => {});
   }
+  function postAlertAck(kind, eventId, instanceId) {
+    fetch(`${sceneBase}/events/${encodeURIComponent(eventId)}/${kind}`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instanceIds: [instanceId] })
+    }).catch(() => {});
+  }
   const mountAlertWidget = (instance) => {
     const element = document.createElement("div");
     element.className = "alert-widget";
@@ -1467,10 +1475,13 @@ function main() {
       postStatus,
       onFinished: (eventId) => {
         queueManager.complete(subId, eventId);
-        completedBatcher.add(eventId, instance.id);
+        postAlertAck("completed", eventId, instance.id);
       }
     });
-    queueManager.register(subId, instance.id, { maxInFlight: 1 }, (item) => alertWidget.play(item), () => {}, (eventId) => alertWidget.stop(eventId));
+    queueManager.register(subId, instance.id, { maxInFlight: 1 }, (item) => {
+      postAlertAck("started", item.eventId, instance.id);
+      return alertWidget.play(item);
+    }, () => {}, (eventId) => alertWidget.stop(eventId));
   };
   for (const instance of sceneData.widgets) {
     if (instance.hostsSurface === "alert") {

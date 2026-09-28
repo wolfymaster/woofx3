@@ -126,6 +126,7 @@ describe("alert queue control subjects", () => {
     let reply: unknown = null;
     await handlers.get(subject)!({
       subject,
+      reply: "_INBOX.test",
       json: () => body,
       respond: (data: Uint8Array) => {
         reply = JSON.parse(new TextDecoder().decode(data));
@@ -177,6 +178,32 @@ describe("alert queue control subjects", () => {
     });
 
     expect(await request(handlers, "widget.queue.skip", {})).toEqual({ ok: false, reason: "store unavailable" });
+  });
+
+  // Workflows can publish to arbitrary subjects; a plain publish must not be
+  // able to skip, clear or replay anything.
+  it("ignores a publish that is not a request", async () => {
+    let touched = false;
+    const handlers = await wire({
+      connectedSceneIds: () => {
+        touched = true;
+        return ["scene-1"];
+      },
+    });
+    let responded = false;
+    for (const subject of ["widget.queue.skip", "widget.queue.clear", "widget.queue.replay"]) {
+      await handlers.get(subject)!({
+        subject,
+        json: () => ({ id: "row-1" }),
+        respond: () => {
+          responded = true;
+          return false;
+        },
+      });
+    }
+
+    expect(touched).toBe(false);
+    expect(responded).toBe(false);
   });
 
   it("refuses a replay without an id", async () => {

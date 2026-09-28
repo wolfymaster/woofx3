@@ -47,6 +47,8 @@ describe("alert queue controls", () => {
 
     expect(await call(nats, "replayAlert", "row-1")).toEqual({ ok: true, replayEnvelopeId: "env-2" });
     expect(requests.map((r) => [r.subject, r.body])).toEqual([["widget.queue.replay", { id: "row-1" }]]);
+    // Must stay below the scene manager's 30 s replay dedupe window.
+    expect(requests[0]!.timeout).toBeLessThan(30_000);
   });
 
   test("replayAlert rejects an empty id without asking", async () => {

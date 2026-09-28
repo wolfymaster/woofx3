@@ -1,8 +1,9 @@
 import type { AlertClearResult, AlertReplayResult, AlertSkipResult } from "@woofx3/api";
 import type { Logger } from "@woofx3/common/runtime";
-import { ALERT_EVENT_TYPE } from "../scene/alert-layout";
+import { ALERT_EVENT_TYPE, ALERT_SURFACE } from "../scene/alert-layout";
+import type { OverlayHost } from "../scene/scene-host";
 import { type AlertDispatchDeps, type AlertEnvelope, type AlertLifecycleWriter, dispatchAlert } from "./alert-dispatch";
-import type { DeliveryStore } from "./delivery-store";
+import type { DeliveryStore, OpenDeliveryRef } from "./delivery-store";
 
 /** Operator requests the api forwards; request/reply, answered by this service. */
 export const ALERT_SKIP_SUBJECT = "widget.queue.skip";
@@ -13,6 +14,7 @@ export const NO_OVERLAY_OPEN = "no overlay is open";
 
 export interface AlertQueueDeps {
   db: AlertLifecycleWriter;
+  host: Pick<OverlayHost, "loadSceneById">;
   deliveryStore: Pick<DeliveryStore, "connectedSceneIds" | "openDeliveriesByInstance" | "cancel">;
   logger: Logger;
 }
@@ -24,22 +26,44 @@ interface Cancellation {
   alertIds: string[];
 }
 
+/** Chooses, from one alert widget's open deliveries (oldest first), which to cancel. */
+type Chooser = (open: OpenDeliveryRef[]) => OpenDeliveryRef[];
+
+/**
+ * The alert on screen is the one a page most recently reported starting. An
+ * earlier started delivery still open has finished on the page but its
+ * completion ack has not landed yet, so it is not the one to skip.
+ */
+const playing: Chooser = (open) => {
+  let latest: OpenDeliveryRef | null = null;
+  let latestAt = Number.NEGATIVE_INFINITY;
+  for (const delivery of open) {
+    if (delivery.startedAt !== null && delivery.startedAt >= latestAt) {
+      latest = delivery;
+      latestAt = delivery.startedAt;
+    }
+  }
+  return latest ? [latest] : [];
+};
+
+/** Waiting alerts: delivered to a page's queue but not reported started by any page. */
+const waiting: Chooser = (open) => open.filter((delivery) => delivery.startedAt === null);
+
 /**
  * End the alert each alert widget on an open overlay is playing, and let the
  * next one start.
  *
- * An alert widget plays its deliveries one at a time in the order they were
- * recorded, so the oldest one still open is the one on screen. The page's
- * completion ack is batched for a quarter second, so a skip that lands in
- * that window after an alert ends names the alert that just ended, and the
- * next one keeps playing.
+ * "Playing" is what the pages last reported: a page reports each alert when
+ * it starts it and again when it finishes it, both unbatched. An alert
+ * started so recently that its start report is still on the wire is not yet
+ * seen as playing, and a skip in that moment ends nothing on that widget.
  */
 export async function skipCurrentAlerts(deps: AlertQueueDeps): Promise<AlertSkipResult> {
-  const plan = planCancellations(deps.deliveryStore, (open) => open.slice(0, 1));
-  if (!plan) {
+  const alertWidgets = await loadAlertWidgets(deps);
+  if (!alertWidgets) {
     return { ok: false, skipped: 0, reason: NO_OVERLAY_OPEN };
   }
-  const skipped = await executeCancellations(plan, deps);
+  const skipped = await cancelAlerts(alertWidgets, playing, deps);
   deps.logger.info("alert queue: skipped the playing alert", { skipped });
   return { ok: true, skipped };
 }
@@ -50,62 +74,86 @@ export async function skipCurrentAlerts(deps: AlertQueueDeps): Promise<AlertSkip
  * the alert the viewers are watching.
  */
 export async function clearQueuedAlerts(deps: AlertQueueDeps): Promise<AlertClearResult> {
-  const plan = planCancellations(deps.deliveryStore, (open) => open.slice(1));
-  if (!plan) {
+  const alertWidgets = await loadAlertWidgets(deps);
+  if (!alertWidgets) {
     return { ok: false, cleared: 0, reason: NO_OVERLAY_OPEN };
   }
-  const cleared = await executeCancellations(plan, deps);
+  const cleared = await cancelAlerts(alertWidgets, waiting, deps);
   deps.logger.info("alert queue: cleared waiting alerts", { cleared });
   return { ok: true, cleared };
 }
 
 /**
- * Decide what to cancel before cancelling anything, so the answer describes
- * one consistent moment rather than a queue that moved while it was being
- * walked. Null when no overlay is open.
+ * The alert widgets each open scene has now, by scene id; null when no
+ * overlay is open.
+ *
+ * A delivery addressed to an instance the scene no longer has (removed in an
+ * edit after it was recorded) waits for a widget no page registers, so it is
+ * neither playing nor queued and is left out of both the cancel and the count.
  */
-function planCancellations(
-  store: AlertQueueDeps["deliveryStore"],
-  pick: (open: Array<{ eventId: string; key: string }>) => Array<{ eventId: string; key: string }>
-): Cancellation[] | null {
-  const sceneIds = store.connectedSceneIds();
+async function loadAlertWidgets(deps: AlertQueueDeps): Promise<Map<string, Set<string>> | null> {
+  const sceneIds = deps.deliveryStore.connectedSceneIds();
   if (sceneIds.length === 0) {
     return null;
   }
-  const plan: Cancellation[] = [];
+  const alertWidgets = new Map<string, Set<string>>();
   for (const sceneId of sceneIds) {
-    for (const [instanceId, open] of store.openDeliveriesByInstance(sceneId, ALERT_EVENT_TYPE)) {
-      const chosen = pick(open);
-      if (chosen.length === 0) {
-        continue;
-      }
-      plan.push({
-        sceneId,
-        instanceId,
-        eventIds: chosen.map((delivery) => delivery.eventId),
-        alertIds: chosen.map((delivery) => delivery.key),
-      });
-    }
+    const state = await deps.host.loadSceneById(sceneId);
+    const ids = (state?.instances ?? [])
+      .filter((instance) => instance.hostsSurface === ALERT_SURFACE)
+      .map((instance) => instance.id);
+    alertWidgets.set(sceneId, new Set(ids));
   }
-  return plan;
+  return alertWidgets;
 }
 
 /**
- * Cancel the planned deliveries and mark each alert `skipped`. Returns how
- * many distinct alerts that was: one alert plays on every alert widget of its
- * target name, and the operator asked about alerts, not widgets.
+ * Plan and apply the cancellations in one synchronous pass, then record them.
+ *
+ * NATS handlers run concurrently, so an operator pressing Skip twice sends two
+ * requests that overlap. Nothing awaits between reading the open deliveries
+ * and closing them, so the second request sees the first one's result and
+ * never a queue that is half cancelled. The db writes then run together.
+ *
+ * Returns how many distinct alerts were cancelled: one alert plays on every
+ * alert widget of its target name, and the operator asked about alerts, not
+ * widgets.
  */
-async function executeCancellations(plan: Cancellation[], deps: AlertQueueDeps): Promise<number> {
+async function cancelAlerts(
+  alertWidgets: Map<string, Set<string>>,
+  choose: Chooser,
+  deps: AlertQueueDeps
+): Promise<number> {
+  const plan: Cancellation[] = [];
+  for (const [sceneId, instanceIds] of alertWidgets) {
+    for (const [instanceId, open] of deps.deliveryStore.openDeliveriesByInstance(sceneId, ALERT_EVENT_TYPE)) {
+      if (!instanceIds.has(instanceId)) {
+        continue;
+      }
+      const chosen = choose(open);
+      if (chosen.length > 0) {
+        plan.push({
+          sceneId,
+          instanceId,
+          eventIds: chosen.map((delivery) => delivery.eventId),
+          alertIds: chosen.map((delivery) => delivery.key),
+        });
+      }
+    }
+  }
+
+  const writes: Promise<void>[] = [];
   const alertIds = new Set<string>();
   for (const cancellation of plan) {
-    await deps.deliveryStore.cancel(cancellation.sceneId, cancellation.instanceId, cancellation.eventIds);
+    writes.push(deps.deliveryStore.cancel(cancellation.sceneId, cancellation.instanceId, cancellation.eventIds));
     for (const alertId of cancellation.alertIds) {
       alertIds.add(alertId);
     }
   }
   for (const alertId of alertIds) {
-    await reportAlertSkipped(deps.db, deps.logger, alertId);
+    writes.push(reportAlertSkipped(deps.db, deps.logger, alertId));
   }
+  await Promise.all(writes);
   return alertIds.size;
 }
 
@@ -141,6 +189,62 @@ export interface AlertLogClient extends AlertLifecycleWriter {
 export interface AlertReplayDeps extends Omit<AlertDispatchDeps, "db"> {
   db: AlertLogClient;
   newEnvelopeId?: () => string;
+}
+
+/**
+ * How long a successful replay of one alert answers a repeat request with its
+ * own result. Longer than the api's replay timeout, so a caller that timed out
+ * and asked again gets the replay already under way rather than a second one.
+ * The cost: replaying the same alert twice on purpose needs this long between.
+ */
+export const REPLAY_DEDUPE_MS = 30_000;
+
+interface ReplayEntry {
+  result: Promise<AlertReplayResult>;
+  settledAt: number | null;
+}
+
+/**
+ * Replays, deduplicated per alert row. A request for a row with a replay in
+ * flight, or one that succeeded within `REPLAY_DEDUPE_MS`, gets that replay's
+ * answer and plays nothing. A refused replay is not remembered, so asking
+ * again once an overlay is open works.
+ */
+export class AlertReplays {
+  private readonly recent = new Map<string, ReplayEntry>();
+
+  constructor(
+    private readonly deps: AlertReplayDeps,
+    private readonly now: () => number = Date.now
+  ) {}
+
+  replay(alertRowId: string): Promise<AlertReplayResult> {
+    const now = this.now();
+    for (const [id, entry] of this.recent) {
+      if (entry.settledAt !== null && now - entry.settledAt >= REPLAY_DEDUPE_MS) {
+        this.recent.delete(id);
+      }
+    }
+    const existing = this.recent.get(alertRowId);
+    if (existing) {
+      return existing.result;
+    }
+    const entry: ReplayEntry = { result: replayAlert(alertRowId, this.deps), settledAt: null };
+    this.recent.set(alertRowId, entry);
+    entry.result.then(
+      (result) => {
+        if (result.ok) {
+          entry.settledAt = this.now();
+        } else {
+          this.recent.delete(alertRowId);
+        }
+      },
+      () => {
+        this.recent.delete(alertRowId);
+      }
+    );
+    return entry.result;
+  }
 }
 
 /**

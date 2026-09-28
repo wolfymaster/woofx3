@@ -1,5 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { clearQueuedAlerts, NO_OVERLAY_OPEN, replayAlert, skipCurrentAlerts } from "../../src/events/alert-controls";
+import {
+  AlertReplays,
+  clearQueuedAlerts,
+  NO_OVERLAY_OPEN,
+  REPLAY_DEDUPE_MS,
+  replayAlert,
+  skipCurrentAlerts,
+} from "../../src/events/alert-controls";
 import { CANCEL_EVENT, DeliveryStore } from "../../src/events/delivery-store";
 import type { OverlayWidgetInstance } from "../../src/scene/scene-host";
 
@@ -136,6 +143,25 @@ function envelope(target = "default") {
   });
 }
 
+/** Every scene's alert widgets, as the scene host would load them. */
+const sceneWidgets: Record<string, OverlayWidgetInstance[]> = {
+  "scene-1": [alertInstance("left", "default"), alertInstance("right", "default"), alertInstance("inst-1", "default")],
+  "scene-2": [alertInstance("inst-2", "default")],
+};
+
+function queueDeps(db: ReturnType<typeof fakeDb>["db"], store: DeliveryStore) {
+  return { db, host: fakeHost(sceneWidgets) as any, deliveryStore: store, logger: fakeLogger() };
+}
+
+/** What each alert widget still has open, by instance, as event ids. */
+function openIds(store: DeliveryStore, sceneId: string) {
+  const out: Record<string, string[]> = {};
+  for (const [instanceId, open] of store.openDeliveriesByInstance(sceneId, "alert")) {
+    out[instanceId] = open.map((delivery) => delivery.eventId);
+  }
+  return out;
+}
+
 describe("skipCurrentAlerts", () => {
   it("ends the playing alert on every alert widget and marks it skipped", async () => {
     const { db, writes } = fakeDb();
@@ -143,8 +169,9 @@ describe("skipCurrentAlerts", () => {
     const obs = fakeOverlay(store, "scene-1");
     await queueAlert(store, "scene-1", "alert-a", ["left", "right"]);
     await queueAlert(store, "scene-1", "alert-b", ["left", "right"]);
+    store.markStarted("scene-1", "evt-1", ["left", "right"]);
 
-    const result = await skipCurrentAlerts({ db, deliveryStore: store, logger: fakeLogger() });
+    const result = await skipCurrentAlerts(queueDeps(db, store));
 
     expect(result).toEqual({ ok: true, skipped: 1 });
     expect(obs.cancels()).toEqual([
@@ -156,10 +183,50 @@ describe("skipCurrentAlerts", () => {
       { sceneEventId: "evt-1", instanceId: "right" },
     ]);
     expect(writes.lifecycle).toEqual([{ envelopeId: "alert-a", status: "skipped", error: "" }]);
-    // The next alert is now the one playing.
-    expect([...store.openDeliveriesByInstance("scene-1", "alert").get("left")!]).toEqual([
-      { eventId: "evt-2", key: "alert-b" },
+    expect(openIds(store, "scene-1")).toEqual({ left: ["evt-2"], right: ["evt-2"] });
+  });
+
+  // The page acks an alert's end separately from the next one's start, so for
+  // a moment both are open and started.
+  it("skips the alert started last, not one that finished but is not acked yet", async () => {
+    const { db } = fakeDb();
+    const store = new DeliveryStore(db as any, fakeLogger());
+    const obs = fakeOverlay(store, "scene-1");
+    await queueAlert(store, "scene-1", "alert-a", ["inst-1"]);
+    await queueAlert(store, "scene-1", "alert-b", ["inst-1"]);
+    store.markStarted("scene-1", "evt-1", ["inst-1"], 1_000);
+    store.markStarted("scene-1", "evt-2", ["inst-1"], 6_000);
+
+    expect(await skipCurrentAlerts(queueDeps(db, store))).toEqual({ ok: true, skipped: 1 });
+    expect(obs.cancels()).toEqual([{ instanceId: "inst-1", eventIds: ["evt-2"] }]);
+  });
+
+  // A double-clicked Skip arrives as two overlapping requests. Each must see
+  // the other's effect whole, or the two widgets end different alerts.
+  it("keeps alert widgets in step when two skips overlap", async () => {
+    const { db } = fakeDb();
+    const recordCompletion = db.recordSceneEventCompletion;
+    db.recordSceneEventCompletion = async (req) => {
+      await Bun.sleep(5);
+      return recordCompletion(req);
+    };
+    const store = new DeliveryStore(db as any, fakeLogger());
+    const obs = fakeOverlay(store, "scene-1");
+    await queueAlert(store, "scene-1", "alert-a", ["left", "right"]);
+    await queueAlert(store, "scene-1", "alert-b", ["left", "right"]);
+    store.markStarted("scene-1", "evt-1", ["left", "right"]);
+
+    const [first, second] = await Promise.all([
+      skipCurrentAlerts(queueDeps(db, store)),
+      skipCurrentAlerts(queueDeps(db, store)),
     ]);
+
+    expect([first.skipped, second.skipped].sort()).toEqual([0, 1]);
+    expect(obs.cancels()).toEqual([
+      { instanceId: "left", eventIds: ["evt-1"] },
+      { instanceId: "right", eventIds: ["evt-1"] },
+    ]);
+    expect(openIds(store, "scene-1")).toEqual({ left: ["evt-2"], right: ["evt-2"] });
   });
 
   it("acts on every open scene", async () => {
@@ -169,12 +236,22 @@ describe("skipCurrentAlerts", () => {
     const second = fakeOverlay(store, "scene-2");
     await queueAlert(store, "scene-1", "alert-a", ["inst-1"]);
     await queueAlert(store, "scene-2", "alert-b", ["inst-2"]);
+    store.markStarted("scene-1", "evt-1", ["inst-1"]);
+    store.markStarted("scene-2", "evt-2", ["inst-2"]);
 
-    const result = await skipCurrentAlerts({ db, deliveryStore: store, logger: fakeLogger() });
-
-    expect(result).toEqual({ ok: true, skipped: 2 });
+    expect(await skipCurrentAlerts(queueDeps(db, store))).toEqual({ ok: true, skipped: 2 });
     expect(first.cancels()).toEqual([{ instanceId: "inst-1", eventIds: ["evt-1"] }]);
     expect(second.cancels()).toEqual([{ instanceId: "inst-2", eventIds: ["evt-2"] }]);
+  });
+
+  it("skips nothing when no page has started an alert", async () => {
+    const { db } = fakeDb();
+    const store = new DeliveryStore(db as any, fakeLogger());
+    const obs = fakeOverlay(store, "scene-1");
+    await queueAlert(store, "scene-1", "alert-a", ["inst-1"]);
+
+    expect(await skipCurrentAlerts(queueDeps(db, store))).toEqual({ ok: true, skipped: 0 });
+    expect(obs.cancels()).toEqual([]);
   });
 
   it("leaves deliveries that are not alerts alone", async () => {
@@ -188,33 +265,17 @@ describe("skipCurrentAlerts", () => {
       value: 1,
       targetInstanceIds: ["c"],
     });
+    store.markStarted("scene-1", "evt-1", ["c"]);
 
-    const result = await skipCurrentAlerts({ db, deliveryStore: store, logger: fakeLogger() });
-
-    expect(result).toEqual({ ok: true, skipped: 0 });
+    expect(await skipCurrentAlerts(queueDeps(db, store))).toEqual({ ok: true, skipped: 0 });
     expect(obs.cancels()).toEqual([]);
-  });
-
-  it("reports nothing playing as zero skipped", async () => {
-    const { db } = fakeDb();
-    const store = new DeliveryStore(db as any, fakeLogger());
-    fakeOverlay(store, "scene-1");
-
-    expect(await skipCurrentAlerts({ db, deliveryStore: store, logger: fakeLogger() })).toEqual({
-      ok: true,
-      skipped: 0,
-    });
   });
 
   it("refuses when no overlay is open", async () => {
     const { db, writes } = fakeDb();
     const store = new DeliveryStore(db as any, fakeLogger());
 
-    expect(await skipCurrentAlerts({ db, deliveryStore: store, logger: fakeLogger() })).toEqual({
-      ok: false,
-      skipped: 0,
-      reason: NO_OVERLAY_OPEN,
-    });
+    expect(await skipCurrentAlerts(queueDeps(db, store))).toEqual({ ok: false, skipped: 0, reason: NO_OVERLAY_OPEN });
     expect(writes.lifecycle).toEqual([]);
   });
 
@@ -226,11 +287,9 @@ describe("skipCurrentAlerts", () => {
     const store = new DeliveryStore(db as any, fakeLogger());
     fakeOverlay(store, "scene-1");
     await queueAlert(store, "scene-1", "alert-a", ["inst-1"]);
+    store.markStarted("scene-1", "evt-1", ["inst-1"]);
 
-    expect(await skipCurrentAlerts({ db, deliveryStore: store, logger: fakeLogger() })).toEqual({
-      ok: true,
-      skipped: 1,
-    });
+    expect(await skipCurrentAlerts(queueDeps(db, store))).toEqual({ ok: true, skipped: 1 });
   });
 });
 
@@ -242,16 +301,25 @@ describe("clearQueuedAlerts", () => {
     await queueAlert(store, "scene-1", "alert-a", ["inst-1"]);
     await queueAlert(store, "scene-1", "alert-b", ["inst-1"]);
     await queueAlert(store, "scene-1", "alert-c", ["inst-1"]);
+    store.markStarted("scene-1", "evt-1", ["inst-1"]);
 
-    const result = await clearQueuedAlerts({ db, deliveryStore: store, logger: fakeLogger() });
+    const result = await clearQueuedAlerts(queueDeps(db, store));
 
     expect(result).toEqual({ ok: true, cleared: 2 });
     expect(obs.cancels()).toEqual([{ instanceId: "inst-1", eventIds: ["evt-2", "evt-3"] }]);
     expect(writes.lifecycle.map((write) => write.envelopeId)).toEqual(["alert-b", "alert-c"]);
     expect(writes.lifecycle.every((write) => write.status === "skipped")).toBe(true);
-    expect([...store.openDeliveriesByInstance("scene-1", "alert").get("inst-1")!]).toEqual([
-      { eventId: "evt-1", key: "alert-a" },
-    ]);
+    expect(openIds(store, "scene-1")).toEqual({ "inst-1": ["evt-1"] });
+  });
+
+  it("neither cancels nor counts deliveries to a widget the scene no longer has", async () => {
+    const { db } = fakeDb();
+    const store = new DeliveryStore(db as any, fakeLogger());
+    const obs = fakeOverlay(store, "scene-1");
+    await queueAlert(store, "scene-1", "alert-a", ["removed"]);
+
+    expect(await clearQueuedAlerts(queueDeps(db, store))).toEqual({ ok: true, cleared: 0 });
+    expect(obs.cancels()).toEqual([]);
   });
 
   it("closed deliveries are not replayed to an overlay that reconnects", async () => {
@@ -260,7 +328,8 @@ describe("clearQueuedAlerts", () => {
     fakeOverlay(store, "scene-1");
     await queueAlert(store, "scene-1", "alert-a", ["inst-1"]);
     await queueAlert(store, "scene-1", "alert-b", ["inst-1"]);
-    await clearQueuedAlerts({ db, deliveryStore: store, logger: fakeLogger() });
+    store.markStarted("scene-1", "evt-1", ["inst-1"]);
+    await clearQueuedAlerts(queueDeps(db, store));
 
     const reconnected = fakeOverlay(store, "scene-1");
 
@@ -271,11 +340,33 @@ describe("clearQueuedAlerts", () => {
     const { db } = fakeDb();
     const store = new DeliveryStore(db as any, fakeLogger());
 
-    expect(await clearQueuedAlerts({ db, deliveryStore: store, logger: fakeLogger() })).toEqual({
-      ok: false,
-      cleared: 0,
-      reason: NO_OVERLAY_OPEN,
-    });
+    expect(await clearQueuedAlerts(queueDeps(db, store))).toEqual({ ok: false, cleared: 0, reason: NO_OVERLAY_OPEN });
+  });
+});
+
+describe("DeliveryStore bookkeeping", () => {
+  it("forgets a scene once its last open delivery closes", async () => {
+    const { db } = fakeDb();
+    const store = new DeliveryStore(db as any, fakeLogger());
+    fakeOverlay(store, "scene-1");
+    await queueAlert(store, "scene-1", "alert-a", ["left", "right"]);
+    await queueAlert(store, "scene-1", "alert-b", ["left"]);
+
+    await store.cancel("scene-1", "left", ["evt-1", "evt-2"]);
+    expect(store.scenesWithOpenDeliveries()).toEqual(["scene-1"]);
+    await store.ackCompleted("scene-1", "evt-1", ["right"]);
+
+    expect(store.scenesWithOpenDeliveries()).toEqual([]);
+  });
+
+  it("reports only the first start of each delivery", async () => {
+    const { db } = fakeDb();
+    const store = new DeliveryStore(db as any, fakeLogger());
+    await queueAlert(store, "scene-1", "alert-a", ["left", "right"]);
+
+    expect(store.markStarted("scene-1", "evt-1", ["left"], 5).map((d) => d.key)).toEqual(["alert-a"]);
+    expect(store.markStarted("scene-1", "evt-1", ["left"], 6)).toEqual([]);
+    expect(store.markStarted("scene-1", "evt-unknown", ["left"], 7)).toEqual([]);
   });
 });
 
@@ -351,5 +442,67 @@ describe("replayAlert", () => {
       { envelopeId: "env-replay", status: "failed", error: 'no alert widget named "sidebar" on a running scene' },
     ]);
     expect(writes.statuses).toEqual([]);
+  });
+});
+
+describe("AlertReplays", () => {
+  function counting(result: { ok: boolean; replayEnvelopeId?: string; reason?: string }) {
+    let calls = 0;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { db } = fakeDb({ "row-1": { payload: envelope() } });
+    const store = new DeliveryStore(db as any, fakeLogger());
+    fakeOverlay(store, "scene-1");
+    db.getAlert = async (req) => {
+      calls += 1;
+      await gate;
+      if (!result.ok) {
+        throw new Error(result.reason);
+      }
+      return { alert: { id: req.id, payload: envelope(), workflowId: "", sourceEventId: "" } };
+    };
+    const deps = {
+      db,
+      host: fakeHost({ "scene-1": [alertInstance("inst-1", "default")] }) as any,
+      deliveryStore: store,
+      logger: fakeLogger(),
+      newEnvelopeId: () => `env-${calls}`,
+    };
+    return { deps, calls: () => calls, release };
+  }
+
+  // The api gives up on a slow replay and the operator presses Replay again.
+  it("answers a repeat request with the replay already under way", async () => {
+    const { deps, calls, release } = counting({ ok: true });
+    let now = 0;
+    const replays = new AlertReplays(deps, () => now);
+
+    const first = replays.replay("row-1");
+    const second = replays.replay("row-1");
+    release();
+
+    expect(await second).toEqual(await first);
+    expect(calls()).toBe(1);
+
+    now = REPLAY_DEDUPE_MS - 1;
+    expect(await replays.replay("row-1")).toEqual(await first);
+    expect(calls()).toBe(1);
+
+    now = REPLAY_DEDUPE_MS * 2;
+    await replays.replay("row-1");
+    expect(calls()).toBe(2);
+  });
+
+  it("does not remember a refused replay", async () => {
+    const { deps, calls, release } = counting({ ok: false, reason: "db down" });
+    const replays = new AlertReplays(deps, () => 0);
+    release();
+
+    expect((await replays.replay("row-1")).ok).toBe(false);
+    await replays.replay("row-1");
+
+    expect(calls()).toBe(2);
   });
 });

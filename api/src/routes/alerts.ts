@@ -4,10 +4,18 @@ import type NATSClient from "@woofx3/nats/src/client";
 import { routeModule } from "./context";
 
 /**
- * Long enough for a replay's db round trips, short enough that an operator
- * pressing Skip mid-raid hears back while the raid is still on.
+ * Short enough that an operator pressing Skip mid-raid hears back while the
+ * raid is still on.
  */
-const ALERT_CONTROL_TIMEOUT_MS = 5_000;
+const ALERT_QUEUE_TIMEOUT_MS = 5_000;
+
+/**
+ * A replay makes several db round trips before it answers. The scene manager
+ * answers a repeated replay of the same alert within 30 s with the first one's
+ * result (REPLAY_DEDUPE_MS in sceneManager/src/events/alert-controls.ts), and
+ * this must stay below that so a retry after a timeout cannot play it twice.
+ */
+const ALERT_REPLAY_TIMEOUT_MS = 15_000;
 
 /**
  * Carry one alert queue control to the scene manager and return its answer.
@@ -21,7 +29,8 @@ async function requestAlertControl<T extends { ok: boolean; reason?: string }>(
   logger: SharedLogger,
   subject: string,
   body: Record<string, unknown>,
-  unanswered: T
+  unanswered: T,
+  timeout: number
 ): Promise<T> {
   if (!nats) {
     throw new Error("NATS client not available");
@@ -29,7 +38,7 @@ async function requestAlertControl<T extends { ok: boolean; reason?: string }>(
   let data: Uint8Array;
   try {
     const reply = await nats.request(subject, new TextEncoder().encode(JSON.stringify(body)), {
-      timeout: ALERT_CONTROL_TIMEOUT_MS,
+      timeout,
     });
     data = reply.data;
   } catch (err) {
@@ -50,7 +59,8 @@ export const alertsRoutes = routeModule({
       this.logger,
       "widget.queue.replay",
       { id },
-      { ok: false }
+      { ok: false },
+      ALERT_REPLAY_TIMEOUT_MS
     );
     if (!result.ok) {
       this.logger.warn("Replay refused", { id, reason: result.reason });
@@ -66,10 +76,8 @@ export const alertsRoutes = routeModule({
       this.logger,
       "widget.queue.skip",
       {},
-      {
-        ok: false,
-        skipped: 0,
-      }
+      { ok: false, skipped: 0 },
+      ALERT_QUEUE_TIMEOUT_MS
     );
     this.logger.info("skipCurrentAlert", { ok: result.ok, skipped: result.skipped, reason: result.reason });
     return result;
@@ -81,10 +89,8 @@ export const alertsRoutes = routeModule({
       this.logger,
       "widget.queue.clear",
       {},
-      {
-        ok: false,
-        cleared: 0,
-      }
+      { ok: false, cleared: 0 },
+      ALERT_QUEUE_TIMEOUT_MS
     );
     this.logger.info("clearAlertQueue", { ok: result.ok, cleared: result.cleared, reason: result.reason });
     return result;

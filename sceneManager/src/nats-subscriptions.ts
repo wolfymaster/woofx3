@@ -5,8 +5,8 @@ import {
   ALERT_CLEAR_SUBJECT,
   ALERT_REPLAY_SUBJECT,
   ALERT_SKIP_SUBJECT,
+  AlertReplays,
   clearQueuedAlerts,
-  replayAlert,
   skipCurrentAlerts,
 } from "./events/alert-controls";
 import { type AlertEnvelope, dispatchAlert } from "./events/alert-dispatch";
@@ -121,8 +121,15 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   });
   logger.info("Subscribed to ui.notify.alert");
 
+  // Only the api's requests are acted on. A plain publish has no one to
+  // answer and is not how the api asks, so it is dropped: workflows can
+  // publish events, and none of them gets to skip, clear or replay alerts.
   const answer = (subject: string, run: (body: Record<string, unknown>) => Promise<unknown>) =>
     nats.subscribe(subject, async (msg) => {
+      if (!msg.reply) {
+        logger.warn(`${subject}: not a request; ignored`);
+        return;
+      }
       let body: Record<string, unknown> = {};
       try {
         const parsed = msg.json<unknown>();
@@ -144,11 +151,10 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       msg.respond(new TextEncoder().encode(JSON.stringify(reply)));
     });
 
-  await answer(ALERT_SKIP_SUBJECT, () => skipCurrentAlerts({ db, deliveryStore, logger }));
-  await answer(ALERT_CLEAR_SUBJECT, () => clearQueuedAlerts({ db, deliveryStore, logger }));
-  await answer(ALERT_REPLAY_SUBJECT, (body) =>
-    replayAlert(typeof body.id === "string" ? body.id : "", { db, host, deliveryStore, logger })
-  );
+  const replays = new AlertReplays({ db, host, deliveryStore, logger });
+  await answer(ALERT_SKIP_SUBJECT, () => skipCurrentAlerts({ db, host, deliveryStore, logger }));
+  await answer(ALERT_CLEAR_SUBJECT, () => clearQueuedAlerts({ db, host, deliveryStore, logger }));
+  await answer(ALERT_REPLAY_SUBJECT, (body) => replays.replay(typeof body.id === "string" ? body.id : ""));
   logger.info("Answering widget.queue.{skip,clear,replay}");
 
   await nats.subscribe("widget.event", async (msg) => {
