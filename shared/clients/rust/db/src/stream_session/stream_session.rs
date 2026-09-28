@@ -100,12 +100,16 @@ pub struct GetStreamSessionRequest {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StreamSessionResponse {
     #[prost(message, optional, tag="1")]
     pub status: ::core::option::Option<super::common::ResponseStatus>,
     #[prost(message, optional, tag="2")]
     pub session: ::core::option::Option<StreamSession>,
+    /// The session's segments, oldest first. Empty means the session has never
+    /// been live.
+    #[prost(message, repeated, tag="3")]
+    pub segments: ::prost::alloc::vec::Vec<StreamSessionSegment>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StreamSessionSegmentResponse {
@@ -133,6 +137,10 @@ pub struct ListStreamSessionsResponse {
     pub limit: i32,
     #[prost(int32, tag="5")]
     pub offset: i32,
+    /// Every segment of the sessions in `sessions`, oldest first; group them by
+    /// `stream_session_id`. A session with none has never been live.
+    #[prost(message, repeated, tag="6")]
+    pub segments: ::prost::alloc::vec::Vec<StreamSessionSegment>,
 }
 include!("stream_session.serde.rs");
 include!("stream_session.tonic.rs");

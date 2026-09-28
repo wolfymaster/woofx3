@@ -659,6 +659,61 @@ export interface StreamStatus {
   twitchUserId?: string;
 }
 
+/**
+ * One online span within a stream session: the stream went live at
+ * `startedAt` and went down at `endedAt`. Offline is the gap between
+ * segments, not a segment of its own.
+ */
+export interface StreamSessionSegment {
+  id: string;
+  /** ISO 8601. When the stream went live. */
+  startedAt: string;
+  /** ISO 8601. When the stream went down; null while it is still live. */
+  endedAt: string | null;
+}
+
+/**
+ * The logical span a broadcast belongs to. A session can cover several
+ * online/offline cycles, and can be entirely offline, so whether and when the
+ * stream was live is read from `segments`, not from the session's own times.
+ *
+ * Splits and merges move segments between sessions, so an id cached from an
+ * earlier read may no longer exist.
+ */
+export interface StreamSession {
+  id: string;
+  /** `open` for the session events are being stamped with; at most one is. */
+  status: "open" | "closed";
+  /** ISO 8601. When the session began, which may predate its first segment. */
+  startedAt: string;
+  /** ISO 8601. When a later session replaced this one; null while open. */
+  endedAt: string | null;
+  /**
+   * Oldest first. Empty means the session has never been live, which is a
+   * different fact from "went offline long ago".
+   */
+  segments: StreamSessionSegment[];
+}
+
+export interface StreamSessionsQuery {
+  /** Page size, 1-200. Defaults to 50. */
+  limit?: number;
+  /** Sessions to skip, newest first. Defaults to 0. */
+  offset?: number;
+}
+
+/**
+ * A page of sessions, newest first. The list is not append-only (a split
+ * inserts a session and a merge removes one), so offset paging can skip or
+ * repeat a session that changed between pages.
+ */
+export interface PaginatedStreamSessions {
+  sessions: StreamSession[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface TriggerWorkflowResponse {
   /**
    * Empty. A run is started asynchronously by the engine, which mints the
@@ -1115,6 +1170,12 @@ export interface Woofx3EngineApi {
    *  this takes no scope -- the parameter it used to accept was documented
    *  as unused and ignored. */
   getStreamStatus(): Promise<StreamStatus>;
+
+  // Stream sessions
+  /** Past and current stream sessions with their segments, newest first. */
+  listStreamSessions(query?: StreamSessionsQuery): Promise<PaginatedStreamSessions>;
+  /** One session with its segments, or null when no session has that id. */
+  getStreamSession(id: string): Promise<StreamSession | null>;
 
   /**
    * Publish a CloudEvent on the engine's NATS bus. The `eventType` becomes
