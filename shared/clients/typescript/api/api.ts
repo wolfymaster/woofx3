@@ -5,6 +5,30 @@ import type { StreamEventSubscriber } from "./stream-events";
 import type { ActionDefinition, ModuleResourceUsage, ResourceInstanceDefinition, TriggerDefinition } from "./webhooks";
 import type { WorkflowDefinition } from "./workflow-definition";
 
+// ==================== OBS ====================
+
+/** A source placed in an OBS scene. */
+export interface ObsSceneSource {
+  name: string;
+  sceneItemId: number;
+  /** OBS input kind (e.g. `browser_source`); null for a nested scene or group. */
+  inputKind: string | null;
+  /** Whether the source is currently shown in the scene. */
+  enabled: boolean;
+}
+
+/**
+ * One OBS scene. Must match `ObsSceneSummary` in
+ * shared/common/typescript/cloudevents/Obs/commands.ts, which the scene
+ * manager answers with.
+ */
+export interface ObsScene {
+  name: string;
+  sources: ObsSceneSource[];
+}
+
+export type ObsSceneListing = { available: true; scenes: ObsScene[] } | { available: false; reason: string };
+
 // ==================== Modules ====================
 
 /**
@@ -1443,6 +1467,17 @@ export interface Woofx3EngineApi {
    * for a full clear. Returns the number of pending alerts dropped.
    */
   clearAlertQueue(): Promise<{ cleared: number }>;
+
+  // OBS
+
+  /**
+   * The scenes in the streamer's OBS, top of OBS's scene list first, each
+   * with the sources placed in it. For offering names to the `obs.*` workflow
+   * actions. Asked of OBS on every call, so a scene added a moment ago is
+   * there. Unavailable, with a reason, when the scene manager is not running
+   * or holds no OBS connection.
+   */
+  listObsScenes(): Promise<ObsSceneListing>;
 
   // Overlay Tokens
   //

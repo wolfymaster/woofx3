@@ -180,6 +180,7 @@ export const RPC_METHODS = [
   "replayAlert",
   "skipCurrentAlert",
   "clearAlertQueue",
+  "listObsScenes",
   "mintOverlayToken",
   "revokeOverlayToken",
   "rotateOverlayToken",
