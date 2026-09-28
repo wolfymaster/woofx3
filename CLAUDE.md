@@ -139,19 +139,6 @@ unaffected — this rule is about authorship lines, not vocabulary.
 Fixing an existing violation is worth a history rewrite: amend the commit and
 force-push with `--force-with-lease` while the branch is still unmerged.
 
-## Branches and releases
-
-- **Branch from `unstable` and open pull requests against `unstable`**, never
-  `master`, unless told otherwise. Every push to `unstable` that carries a
-  `feat`, `fix`, `perf` or breaking commit cuts a pre-release
-  (`v0.3.0-unstable.1`).
-- **`master` only receives releases.** A release is cut when explicitly asked
-  for, by merging `unstable` into `master` with a merge commit (never a squash),
-  then fast-forwarding `unstable` to `master`. Never merge into `master` on your
-  own initiative.
-
-See `docs/operations/releases.md`.
-
 # Code style and programming principles
 
 Write for senior engineers: **homogeneous** patterns, naming, and formatting across the repo. **Do not use emojis in comments** (they can break tooling).

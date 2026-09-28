@@ -20,7 +20,7 @@ name: rust checks
 
 on:
   push:
-    branches: [main, master, unstable, release]
+    branches: [main, master, release]
     paths:
       - "barkloader/**"
       - "shared/common/rust/**"
