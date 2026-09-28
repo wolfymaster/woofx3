@@ -18,7 +18,7 @@ import type { Application, IApplication } from "@woofx3/common/runtime/applicati
 import type { Command } from "@woofx3/db/command.pb";
 import type { Msg } from "@woofx3/nats/src/types";
 import chalk from "chalk";
-import { Commands } from "./commands";
+import { type ChatRole, Commands } from "./commands";
 import type BarkloaderClientService from "./services/barkloader";
 import type DatabaseService from "./services/database";
 import type MessageBusService from "./services/messageBus";
@@ -27,6 +27,41 @@ import { DerivedGroupSync } from "./derivedGroupSync";
 import { canUse, parseTime } from "./util";
 
 type Context = ApplicationContext<WoofWoofWoofContext, WoofWoofWoofServices>;
+
+/**
+ * Who can run the built-in commands that change the channel (!title,
+ * !category, !marker) without a grant. Anyone else needs a permission grant
+ * on `command/<name>`, the same as any restricted command.
+ */
+const CHANNEL_EDITOR_ROLES: ChatRole[] = ["broadcaster", "moderator"];
+
+/** How long a built-in command waits on the twitch service before giving up. */
+const TWITCH_REQUEST_TIMEOUT_MS = 10_000;
+
+/** The reply type the twitch service answers a refused request with; see twitch/src/application.ts. */
+const TWITCH_ERROR_TYPE = "twitchapi.error";
+
+/** The fields of the twitch service's replies the built-in commands read. */
+interface UpdateStreamResult {
+  title?: string;
+  categoryName?: string;
+}
+
+interface StreamMarkerResult {
+  positionSeconds: number;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** `positionSeconds` into the broadcast as h:mm:ss. */
+export function formatStreamPosition(positionSeconds: number): string {
+  const hours = Math.floor(positionSeconds / 3600);
+  const minutes = Math.floor((positionSeconds % 3600) / 60);
+  const seconds = Math.floor(positionSeconds % 60);
+  return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
 
 export type WoofWoofWoofServices = {
   barkloader: BarkloaderClientService;
@@ -117,7 +152,11 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
           if (payload.data.membership) {
             await derivedGroupSync.reconcile(payload.data.chatterName, payload.data.membership);
           }
-          const [message, matched] = await commander.process(payload.data.message, payload.data.chatterName);
+          const [message, matched] = await commander.process(
+            payload.data.message,
+            payload.data.chatterName,
+            payload.data.membership
+          );
           if (matched && message) {
             await commander.send(message);
           }
@@ -284,8 +323,8 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
 
     ctx.commander.add("vanish", async (_text: string, user?: string) => {
       const [topic, data] = ctx.events.TwitchApi().timeout({
-        user,
-        duration: Math.floor(Math.random() * 600),
+        userName: user,
+        durationSeconds: 1 + Math.floor(Math.random() * 600),
       });
       ctx.services.messageBus.client.publish(topic, data);
       return `/me *poof* @${user} is gone`;
@@ -298,46 +337,59 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       return "";
     });
 
-    // UPDATE STREAM CATEGORY
-    ctx.commander.add("category", async (text: string) => {
-      const twitchApi = ctx.events.TwitchApi();
-      switch (text) {
-        case "sgd": {
-          const [t1, d1] = twitchApi.updateStream({ category: "software and game development" });
-          ctx.services.messageBus.client.publish(t1, d1);
-          return "Updating stream category to Software and Game Development";
+    ctx.commander.add(
+      "category",
+      async (text: string) => {
+        if (!text) {
+          return "Usage: !category <category name>";
         }
-        case "jc": {
-          const [t2, d2] = twitchApi.updateStream({ category: "just chatting" });
-          ctx.services.messageBus.client.publish(t2, d2);
-          return "Updating stream category to Just Chatting";
+        try {
+          const result = await this.requestTwitch<UpdateStreamResult>(
+            ctx,
+            ctx.events.TwitchApi().updateStream({ category: text })
+          );
+          return `Stream category set to ${result.categoryName ?? text}`;
+        } catch (err) {
+          return `Could not change the category: ${errorMessage(err)}`;
         }
-        case "irl": {
-          const [t3, d3] = twitchApi.updateStream({ category: "irl" });
-          ctx.services.messageBus.client.publish(t3, d3);
-          return "Updating stream category to IRL";
-        }
-        case "apex": {
-          const [t4, d4] = twitchApi.updateStream({ category: "apex legends" });
-          ctx.services.messageBus.client.publish(t4, d4);
-          return "Updating stream category to Apex";
-        }
-        default:
-          console.error("INVALID TWITCH CATEGORY");
-      }
+      },
+      { allowRoles: CHANNEL_EDITOR_ROLES }
+    );
 
-      return "";
-    });
+    ctx.commander.add(
+      "title",
+      async (text: string) => {
+        if (!text) {
+          return "Usage: !title <new stream title>";
+        }
+        try {
+          const result = await this.requestTwitch<UpdateStreamResult>(
+            ctx,
+            ctx.events.TwitchApi().updateStream({ title: text })
+          );
+          return `Stream title updated to: ${result.title ?? text}`;
+        } catch (err) {
+          return `Could not change the title: ${errorMessage(err)}`;
+        }
+      },
+      { allowRoles: CHANNEL_EDITOR_ROLES }
+    );
 
-    // UPDATE STREAM TITLE
-    ctx.commander.add("title", async (text: string, user?: string) => {
-      if (!user || user.toLowerCase() !== "wolfymaster") {
-        return "Sorry, @cyburdial ruined this for everyone.";
-      }
-      const [topic, data] = ctx.events.TwitchApi().updateStream({ title: text });
-      ctx.services.messageBus.client.publish(topic, data);
-      return `Stream title updated to: ${text}`;
-    });
+    ctx.commander.add(
+      "marker",
+      async (text: string) => {
+        try {
+          const marker = await this.requestTwitch<StreamMarkerResult>(
+            ctx,
+            ctx.events.TwitchApi().createMarker({ description: text || undefined })
+          );
+          return `Stream marker placed at ${formatStreamPosition(marker.positionSeconds)}`;
+        } catch (err) {
+          return `Could not place a marker: ${errorMessage(err)}`;
+        }
+      },
+      { allowRoles: CHANNEL_EDITOR_ROLES }
+    );
 
     ctx.commander.add("sc", async (text: string) => {
       let sceneName = "";
@@ -404,6 +456,21 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
   }
 
   async terminate(_ctx: Context) {}
+
+  /**
+   * Ask the twitch service to run a command and wait for its answer, so a
+   * built-in command can tell the chatter whether it worked. Rejects with
+   * the service's own error when it refused.
+   */
+  private async requestTwitch<T>(ctx: Context, [subject, data]: [string, Uint8Array]): Promise<T> {
+    const reply = await ctx.services.messageBus.client.request(subject, data, { timeout: TWITCH_REQUEST_TIMEOUT_MS });
+    const envelope = JSON.parse(new TextDecoder().decode(reply.data)) as { type?: string; data?: unknown };
+    if (envelope.type === TWITCH_ERROR_TYPE) {
+      const error = (envelope.data as { error?: unknown } | undefined)?.error;
+      throw new Error(typeof error === "string" ? error : "the Twitch service refused the request");
+    }
+    return envelope.data as T;
+  }
 
   // Register or replace a command on the commander, and remember it under
   // its engine id so a later `command.deleted` (id-only) can resolve back
