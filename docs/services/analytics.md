@@ -6,9 +6,12 @@ enters the engine (see [The fact log](#the-fact-log)); step 3 — viewer,
 follower and subscriber levels are sampled once a minute while live (see
 [Gauge samples](#gauge-samples)); step 4 — per-session totals, per-viewer
 totals, leaderboards and gauge series as engine RPCs (see [Reading the
-log](#reading-the-log)).
+log](#reading-the-log)); the engine side of step 5 — a `SESSION_SUMMARY`
+webhook for every session that ends (see [Summaries to the
+UI](#summaries-to-the-ui)).
 
-**Not built:** the summary to the UI and the backfill (steps 5 and 6). This is
+**Not built:** the Convex table that stores summaries, and the backfill
+(step 6). This is
 the design [stream
 sessions](/services/stream-sessions#analytics-is-a-separate-subsystem) defers
 to, written down so the first person to need a total does not invent a
@@ -314,6 +317,87 @@ ever taken inside one and carry its id.
 totals or on a leaderboard. A viewer is `(platform, platform_user_id)`; the
 name shown is the one on their most recent event, because names change.
 
+## Summaries to the UI
+
+When a session ends, `SessionSummaryEmitter` (`api/src/session-summary-emitter.ts`)
+reads it back and sends one `SESSION_SUMMARY` webhook
+(`EngineEventType.SESSION_SUMMARY`, `"session.summary"`) over the same
+channel as every other engine callback. It subscribes to `session.ended` on
+the bus like any other consumer; the resolver does not call it, so a slow read
+cannot hold up the next session being adopted.
+
+The payload is `SessionSummaryEvent` in `shared/clients/typescript/api/webhooks.ts`:
+
+```ts
+interface SessionSummaryEvent {
+  type: "session.summary";
+  sessionId: string;          // the stable key; equals session.id
+  schemaVersion: number;      // SESSION_SUMMARY_SCHEMA_VERSION, currently 1
+  generatedAt: string;        // ISO 8601; when the engine computed this snapshot
+  session: StreamSession;     // closed, with its segments oldest first
+  totals: SessionSummaryTotals;
+}
+
+// StreamSessionTotals without its sessionId.
+type SessionSummaryTotals = {
+  bits: number;
+  cheers: number;
+  subs: number;               // self-paid new subs + resubs; excludes gifted
+  giftedSubs: number;         // counted from the gifter's side
+  follows: number;
+  raids: number;
+  raiders: number;
+  peakViewers: number | null; // null when no minute was sampled
+  averageViewers: number | null;
+  viewerSampleMinutes: number;
+};
+
+interface StreamSession {
+  id: string;
+  status: "open" | "closed";  // always "closed" in a summary sent on session.ended
+  startedAt: string;          // ISO 8601
+  endedAt: string | null;     // ISO 8601; set in a summary sent on session.ended
+  segments: { id: string; startedAt: string; endedAt: string | null }[];
+}
+```
+
+`session` and `totals` are exactly what `getStreamSession(sessionId)` and
+`getStreamSessionTotals(sessionId)` return at the moment of sending — the
+emitter calls the same functions — so every figure means what [What counts as
+what](#reading-the-log) says it means.
+
+**Summaries only.** Nothing in the payload names a viewer. This is the copy of
+a stream's history that leaves the streamer's machine for a multi-tenant
+store, which is the reason the [PII constraint](#two-constraints-to-design-against)
+gives for sending summaries at all. Leaderboards and per-viewer totals stay in
+the engine, read over RPC while the engine has them.
+
+**Every delivery is a whole snapshot, and repeats are expected.** A receiver
+stores the summary keyed on `sessionId`, replaces a stored one whose
+`generatedAt` is older, and ignores one whose `generatedAt` is newer. That
+makes a redelivery harmless and lets the engine re-summarise a session whose
+bounds moved — a merge, or a late correction — by sending it again:
+`SessionSummaryEmitter.summarise(sessionId)` is safe to call for any session at
+any time. A receiver that sees a `schemaVersion` it does not know should keep
+the row but not interpret fields it does not understand.
+
+**When it arrives.** A session ends on a split, at the next `stream.online`
+past the grace window, so a summary can arrive hours or days after the
+stream it describes, and a broadcast that ends with a short dropout is never
+summarised until the next real one begins. The session currently open has no
+summary; "this stream so far" is a live read, not a stored one.
+
+**A session that was never live** still ends and is still summarised: no
+segments, every count zero, `peakViewers` and `averageViewers` null,
+`viewerSampleMinutes` zero. That is a real answer, not a missing one.
+
+**What can be missed.** The webhook is best-effort, like every engine
+callback: a UI that is not registered or not reachable when the session ends
+does not get that summary, and nothing retries it. Sessions ended before the
+UI started storing summaries have none either. Both are recoverable from the
+engine while its database lasts — `listStreamSessions` plus
+`getStreamSessionTotals` yield the same two halves the webhook carries.
+
 ## Two constraints to design against
 
 **The stamped session id is not a stable key.** Splits move segments between
@@ -354,8 +438,9 @@ Each step is independently useful and safe to stop after:
 4. **Query the log** — done. Per-session totals, per-viewer totals,
    leaderboards and gauge series as engine RPCs, resolving each session to
    its time window once per query.
-5. **Summarise to the UI** — a `SESSION_SUMMARY` webhook on `session.ended`,
-   and the Convex table behind it.
+5. **Summarise to the UI** — the engine half is done: a `SESSION_SUMMARY`
+   webhook on `session.ended`, one whole snapshot per session. The Convex
+   table behind it lives in the UI repository.
 6. **Backfill** what `workflow_executions.trigger_event` and `alerts.payload`
    can supply, once there is something to backfill into.
 

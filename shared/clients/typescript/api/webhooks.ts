@@ -12,6 +12,7 @@
 // shared/common/golang/cloudevents/subjects.go — keep them in sync when
 // adding or renaming event types.
 
+import type { StreamSession, StreamSessionTotals } from "./api";
 import type { WorkflowDefinition } from "./workflow-definition";
 
 /**
@@ -67,6 +68,7 @@ export const EngineEventType = {
   STREAM_ONLINE: "stream.online",
   STREAM_OFFLINE: "stream.offline",
   SESSION_STARTED: "session.started",
+  SESSION_SUMMARY: "session.summary",
   OVERLAY_TOKEN_MINTED: "overlay.token.minted",
   OVERLAY_TOKEN_REVOKED: "overlay.token.revoked",
   COMMAND_CREATED: "command.created",
@@ -1247,13 +1249,52 @@ export interface StreamOfflineEvent {
  *
  * A session *ending* is not delivered here. `instanceLiveState` is a
  * latest-value row, so a reader can see the session change but never that one
- * ended; anything that must react to an ending needs the bus event.
+ * ended; an ending arrives as `SessionSummaryEvent`.
  */
 export interface SessionStartedEvent {
   type: typeof EngineEventType.SESSION_STARTED;
   sessionId: string;
   /** ISO-8601. When the session began, which may predate the current stream. */
   startedAt: string;
+}
+
+/** What a session added up to: `StreamSessionTotals` without its id. */
+export type SessionSummaryTotals = Omit<StreamSessionTotals, "sessionId">;
+
+/** Bumped when a field of `SessionSummaryEvent` changes meaning or shape. */
+export const SESSION_SUMMARY_SCHEMA_VERSION = 1;
+
+/**
+ * A finished session and what it added up to, sent when the session ends.
+ *
+ * Summaries, never per-viewer detail: this is the copy of a stream's history
+ * that leaves the streamer's machine, so it carries channel figures only. Who
+ * gave what stays in the engine, readable over `getLeaderboard` and
+ * `getViewerTotals`.
+ *
+ * A session ends when the next broadcast past the grace window starts, not
+ * when its own stream goes offline, so this can arrive hours after the stream
+ * it describes. A session that was never live still ends; its summary has no
+ * segments, all-zero counts and null viewer figures, and that is a real
+ * answer.
+ *
+ * Every delivery is a whole snapshot, never a delta. Store it keyed on
+ * `sessionId`, replacing a stored summary whose `generatedAt` is older and
+ * ignoring one that is newer. The engine may send the same session more than
+ * once -- a redelivery, or a re-summary after its bounds moved -- and that
+ * rule makes every repeat harmless.
+ */
+export interface SessionSummaryEvent {
+  type: typeof EngineEventType.SESSION_SUMMARY;
+  /** The stable key. Equal to `session.id`. */
+  sessionId: string;
+  /** `SESSION_SUMMARY_SCHEMA_VERSION` at the time the engine built it. */
+  schemaVersion: number;
+  /** ISO 8601. When the engine computed this snapshot; orders repeats. */
+  generatedAt: string;
+  /** The session, closed, with its segments oldest first. */
+  session: StreamSession;
+  totals: SessionSummaryTotals;
 }
 
 /**
@@ -1303,6 +1344,7 @@ export type CallbackEvent =
   | StreamOnlineEvent
   | StreamOfflineEvent
   | SessionStartedEvent
+  | SessionSummaryEvent
   | OverlayTokenMintedEvent
   | OverlayTokenRevokedEvent
   | CommandCreatedEvent
@@ -1360,6 +1402,7 @@ export type CallbackEventByType = {
   [EngineEventType.STREAM_ONLINE]: StreamOnlineEvent;
   [EngineEventType.STREAM_OFFLINE]: StreamOfflineEvent;
   [EngineEventType.SESSION_STARTED]: SessionStartedEvent;
+  [EngineEventType.SESSION_SUMMARY]: SessionSummaryEvent;
   [EngineEventType.OVERLAY_TOKEN_MINTED]: OverlayTokenMintedEvent;
   [EngineEventType.OVERLAY_TOKEN_REVOKED]: OverlayTokenRevokedEvent;
   [EngineEventType.COMMAND_CREATED]: CommandCreatedEvent;
