@@ -1,6 +1,7 @@
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { Context } from "src/types";
+import onChannelAdBreakBegin from "./subscriptions/onChannelAdBreakBegin";
 import onChannelBan from "./subscriptions/onChannelBan";
 import onChannelChatmessage from "./subscriptions/onChannelChatMessage";
 import onChannelChatNotification from "./subscriptions/onChannelChatNotification";
@@ -30,6 +31,25 @@ const SUBSCRIPTION_FACTORIES = [
   onStreamOffline,
 ] as const;
 
+type SubscriptionFactory = (ctx: Context, listener: EventSubWsListener) => EventSubSubscription;
+
+interface OptionalSubscription {
+  name: string;
+  scope: string;
+  factory: SubscriptionFactory;
+}
+
+/**
+ * Subscriptions that need a scope the streamer may not have granted. They
+ * are attempted, but a refusal only costs the events they carry, so they are
+ * left out of readiness: a service that reports unready over a missing
+ * optional scope would be restarted forever for something only a reconnect
+ * in the UI can fix.
+ */
+const OPTIONAL_SUBSCRIPTIONS: readonly OptionalSubscription[] = [
+  { name: "channel.ad_break.begin", scope: "channel:read:ads", factory: onChannelAdBreakBegin },
+];
+
 /**
  * How long boot waits for Twitch to confirm the subscriptions before
  * giving up and reporting what it has. Confirmations only start arriving
@@ -46,6 +66,8 @@ export default class TwitchEventBus {
   private subscriptions: EventSubSubscription[];
   private readonly established = new Set<string>();
   private readonly failures = new Map<string, string>();
+  private readonly optionalById = new Map<string, OptionalSubscription>();
+  private readonly optionalWarned = new Set<string>();
   private bindings: { unbind(): void }[] = [];
 
   constructor(
@@ -68,17 +90,17 @@ export default class TwitchEventBus {
    * retries land, with no restart needed.
    */
   isReady(): boolean {
-    return this.failures.size === 0 && this.established.size === SUBSCRIPTION_FACTORIES.length;
+    return this.failedSubscriptions().length === 0 && this.establishedCount() === SUBSCRIPTION_FACTORIES.length;
   }
 
-  /** Subscriptions Twitch has refused, for logging and diagnostics. */
+  /** Required subscriptions Twitch has refused, for logging and diagnostics. */
   failedSubscriptions(): SubscriptionFailure[] {
-    return [...this.failures].map(([id, reason]) => ({ id, reason }));
+    return [...this.failures].filter(([id]) => !this.optionalById.has(id)).map(([id, reason]) => ({ id, reason }));
   }
 
-  /** Count of subscriptions Twitch has confirmed, out of the expected total. */
+  /** Count of required subscriptions Twitch has confirmed, out of the expected total. */
   establishedCount(): number {
-    return this.established.size;
+    return [...this.established].filter((id) => !this.optionalById.has(id)).length;
   }
 
   /** Total subscriptions this bus expects to establish. */
@@ -94,6 +116,7 @@ export default class TwitchEventBus {
   async start(timeoutMs: number = SUBSCRIPTION_SETTLE_TIMEOUT_MS): Promise<void> {
     this.established.clear();
     this.failures.clear();
+    this.optionalWarned.clear();
     // Bind before creating anything: a confirmation that arrives while
     // no handler is attached is lost, and readiness would never settle.
     const settled = this.trackSubscriptionOutcomes(timeoutMs);
@@ -120,10 +143,14 @@ export default class TwitchEventBus {
         resolve();
       };
       const timer = setTimeout(finish, timeoutMs);
-      const settledCount = () => this.established.size + this.failures.size;
+      // Optional subscriptions are recorded like any other and filtered out
+      // when read: an outcome can arrive before the factory that created the
+      // subscription has returned, so its id may not be known as optional yet.
+      const settledCount = () => this.establishedCount() + this.failedSubscriptions().length;
 
       this.bindings.push(
         this.listener.onSubscriptionCreateSuccess((subscription) => {
+          this.optionalWarned.delete(subscription.id);
           this.failures.delete(subscription.id);
           this.established.add(subscription.id);
           if (settledCount() >= expected) {
@@ -135,12 +162,33 @@ export default class TwitchEventBus {
         this.listener.onSubscriptionCreateFailure((subscription, error) => {
           this.established.delete(subscription.id);
           this.failures.set(subscription.id, error.message);
+          const optional = this.optionalById.get(subscription.id);
+          if (optional) {
+            this.warnOptionalRefused(subscription.id, optional, error);
+            return;
+          }
           if (settledCount() >= expected) {
             finish();
           }
         })
       );
     });
+  }
+
+  /**
+   * Twurple retries a refused subscription, and a missing scope is refused
+   * on every retry, so this warns once per subscription per start rather
+   * than once per attempt.
+   */
+  private warnOptionalRefused(id: string, optional: OptionalSubscription, error: Error): void {
+    if (this.optionalWarned.has(id)) {
+      return;
+    }
+    this.optionalWarned.add(id);
+    this.ctx.logger.warn(
+      `twitch: optional subscription ${optional.name} refused; its events will not be published. If the reason is a missing scope, reconnect Twitch to grant ${optional.scope}.`,
+      { subscription: optional.name, scope: optional.scope, reason: error.message }
+    );
   }
 
   disconnect(): void {
@@ -160,6 +208,11 @@ export default class TwitchEventBus {
     for (const f of SUBSCRIPTION_FACTORIES) {
       this.subscriptions.push(f(this.ctx, this.listener));
     }
+    for (const optional of OPTIONAL_SUBSCRIPTIONS) {
+      const subscription = optional.factory(this.ctx, this.listener);
+      this.optionalById.set(subscription.id, optional);
+      this.subscriptions.push(subscription);
+    }
   }
 
   private clearSubscriptions(): void {
@@ -167,6 +220,7 @@ export default class TwitchEventBus {
       sub.stop();
     }
     this.subscriptions = [];
+    this.optionalById.clear();
   }
 
   /** Re-activate subscriptions after a manual stop(). Not used during initial boot. */

@@ -8,7 +8,7 @@ import type { Msg } from "@woofx3/nats/src/types";
 import TwitchClient from "@woofx3/twitch";
 import chalk from "chalk";
 import type TwitchApiClient from "./lib/twitch";
-import TwitchApiClientImpl from "./lib/twitch";
+import TwitchApiClientImpl, { TwitchApiError, type TwitchApiErrorCode } from "./lib/twitch";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import TwitchEventBus from "./lib/twitchEventBus";
 import type DbProxyService from "./services/dbProxy";
@@ -256,7 +256,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       const message = err instanceof Error ? err.message : String(err);
       ctx.logger.error("twitchapi: handler failed", { command: request.command, err: message });
       if (isRequest) {
-        this.respondError(msg, message);
+        this.respondError(msg, message, err instanceof TwitchApiError ? err.code : undefined);
       }
     }
   }
@@ -272,13 +272,18 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     msg.respond(new TextEncoder().encode(JSON.stringify(envelope)));
   }
 
-  private respondError(msg: Msg, error: string) {
+  /**
+   * `code` is set when the failure is one a caller can act on differently
+   * (e.g. `missing_scope` means relink Twitch, `rate_limited` means wait);
+   * absent for everything else.
+   */
+  private respondError(msg: Msg, error: string, code?: TwitchApiErrorCode) {
     const envelope = {
       id: crypto.randomUUID(),
       type: "twitchapi.error",
       source: "twitchapi",
       time: new Date().toISOString(),
-      data: { error },
+      data: code === undefined ? { error } : { error, code },
     };
     msg.respond(new TextEncoder().encode(JSON.stringify(envelope)));
   }

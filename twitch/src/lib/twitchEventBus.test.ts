@@ -37,6 +37,7 @@ function createMockListener() {
     }),
     emitSuccess: (sub: EventSubSubscription) => successHandlers.forEach((h) => h(sub)),
     emitFailure: (sub: EventSubSubscription, err: Error) => failureHandlers.forEach((h) => h(sub, err)),
+    onChannelAdBreakBegin: mock(() => subscriptionStub()),
     onChannelBan: mock(() => subscriptionStub()),
     onChannelChatMessage: mock(() => subscriptionStub()),
     onChannelChatNotification: mock(() => subscriptionStub()),
@@ -50,7 +51,7 @@ function createMockListener() {
   };
 }
 
-/** Every subscription stub the listener returned, in registration order. */
+/** Every required subscription stub the listener returned, in registration order. */
 function allStubs(listener: ReturnType<typeof createMockListener>): EventSubSubscription[] {
   const mocks = [
     listener.onChannelBan,
@@ -217,6 +218,44 @@ describe("TwitchEventBus", () => {
 
     listener.emitSuccess(flaky);
     expect(bus.isReady()).toBe(true);
+  });
+
+  test("the optional ad-break subscription is attempted but left out of readiness", async () => {
+    const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
+    const started = bus.start(50);
+    const [adBreak] = listener.onChannelAdBreakBegin.mock.results.map((r) => r.value as EventSubSubscription);
+    expect(adBreak).toBeDefined();
+    for (const sub of allStubs(listener)) {
+      listener.emitSuccess(sub);
+    }
+    const missingScope = new Error(
+      "This token does not have any of the requested scopes (channel:read:ads) and can not be upgraded."
+    );
+    listener.emitFailure(adBreak!, missingScope);
+    listener.emitFailure(adBreak!, missingScope);
+    await started;
+
+    expect(bus.isReady()).toBe(true);
+    expect(bus.establishedCount()).toBe(TwitchEventBus.expectedSubscriptionCount);
+    expect(bus.failedSubscriptions()).toEqual([]);
+    const warn = ctx.logger.warn as ReturnType<typeof mock>;
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain("channel:read:ads");
+  });
+
+  test("a confirmed optional subscription does not count toward the required total", async () => {
+    const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
+    const started = bus.start(50);
+    const [adBreak] = listener.onChannelAdBreakBegin.mock.results.map((r) => r.value as EventSubSubscription);
+    listener.emitSuccess(adBreak!);
+    const required = allStubs(listener);
+    for (const sub of required.slice(0, required.length - 1)) {
+      listener.emitSuccess(sub);
+    }
+    await started;
+
+    expect(bus.isReady()).toBe(false);
+    expect(bus.establishedCount()).toBe(TwitchEventBus.expectedSubscriptionCount - 1);
   });
 
   test("disconnect unbinds the outcome handlers and clears readiness", async () => {

@@ -37,6 +37,9 @@ export enum EventType {
   SharedPrimePaidUpgrade = "channel.sharedPrimePaidUpgrade",
   SharedPayItForward = "channel.sharedPayItForward",
   SharedAnnouncement = "channel.sharedAnnouncement",
+  AdBreakUpcoming = "channel.ad_break.upcoming",
+  AdBreakBegin = "channel.ad_break.begin",
+  AdBreakEnd = "channel.ad_break.end",
 }
 
 export interface ChatMessage {
@@ -89,6 +92,40 @@ export interface Redeem {
 // and carries a start timestamp; everything else (title, game, viewer
 // count) requires a follow-up Helix lookup. Subscribers that just need
 // the on/off transition can ignore the optional fields.
+/**
+ * An ad break is scheduled soon. Not a Twitch event: the api reads the ad
+ * schedule while the stream is live and publishes this once per scheduled
+ * break, `secondsUntil` ahead of it (docs/services/twitch-channel.md).
+ */
+export interface AdBreakUpcoming {
+  /** ISO-8601 time Twitch has the next ad break scheduled for. */
+  nextAdAt: string;
+  secondsUntil: number;
+  durationSeconds: number;
+}
+
+/** An ad break started (EventSub channel.ad_break.begin). */
+export interface AdBreakBegin {
+  durationSeconds: number;
+  /** False when the broadcaster or an editor ran the ad by hand. */
+  isAutomatic: boolean;
+  startedAt: string;
+  /** `startedAt` plus `durationSeconds`: when the break is expected to end. */
+  endsAt: string;
+}
+
+/**
+ * An ad break ended. Twitch sends no end event: the twitch service
+ * publishes this `durationSeconds` after the begin event, so `endedAt` is
+ * when the break was due to end, not an observation that it did.
+ */
+export interface AdBreakEnd {
+  durationSeconds: number;
+  isAutomatic: boolean;
+  startedAt: string;
+  endedAt: string;
+}
+
 export interface StreamOnline {
   broadcasterUserId: string;
   broadcasterUserName: string;
