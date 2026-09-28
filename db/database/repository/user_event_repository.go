@@ -127,6 +127,27 @@ func (r *UserEventRepository) Totals(window EventWindow) (*SessionEventTotals, e
 	return &totals, nil
 }
 
+// Recent returns the latest `limit` events that occurred at or after `since`,
+// newest first, and how many occurred in that span. Events at the same instant
+// are ordered by id, so a read is stable across calls.
+func (r *UserEventRepository) Recent(since time.Time, limit int) ([]*models.UserEvent, int64, error) {
+	span := r.db.Model(&models.UserEvent{}).Where("occurred_at >= ?", since.UTC())
+
+	var total int64
+	if err := span.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var events []*models.UserEvent
+	if err := span.Session(&gorm.Session{}).
+		Order("occurred_at DESC").
+		Order("id DESC").
+		Limit(limit).
+		Find(&events).Error; err != nil {
+		return nil, 0, err
+	}
+	return events, total, nil
+}
+
 // ViewerTotals adds up what one viewer cheered and gifted. A nil window covers
 // every event recorded.
 func (r *UserEventRepository) ViewerTotals(platform, platformUserID string, window *EventWindow) (*ViewerEventTotals, error) {
