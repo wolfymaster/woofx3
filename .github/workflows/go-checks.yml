@@ -11,7 +11,7 @@ name: go checks
 
 on:
   push:
-    branches: [main, master, unstable, release]
+    branches: [main, master, release]
     paths:
       - "**.go"
       - "**/go.mod"
