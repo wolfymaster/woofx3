@@ -430,17 +430,37 @@ async fn validate_theme_dependencies(
     Ok(())
 }
 
-/// Event prefixes no bus-fired trigger may claim: the webhook placeholder
-/// and the outbox.
+/// Event prefixes no bus-fired trigger may claim: the webhook placeholder,
+/// and for uploads, every subject the engine or a service treats as a command.
+///
+/// A webhook handler may publish any event type its module declares as an
+/// eventbus trigger, verbatim, so declaring one of these would let an upload
+/// drive the engine directly: forge outbox events (`db.`), change OBS
+/// (`engine.obs.command`, `slobs`), call the Twitch API (`twitchapi`), speak in
+/// chat (`message.send`), play or skip alerts (`ui.notify.`, `ui.alert.`,
+/// `widget.queue.`), or run workflows and actions (`workflow.execute`,
+/// `workflow.replay`, `action.execute`). See docs/services/engine-integrity.md.
 ///
 /// The outbox stays open to the system module, which owns the `db.workflow.*`
-/// triggers and declares no handlers. It is closed to uploads because a
-/// webhook handler may publish any event type its module declares as an
-/// eventbus trigger, so a `db.` trigger would let an upload forge outbox
-/// events.
+/// triggers and declares no handlers.
+const USER_RESERVED_EVENT_PREFIXES: [&str; 12] = [
+    WEBHOOK_EVENT_PREFIX,
+    "db.",
+    "engine.",
+    "slobs",
+    "twitchapi",
+    "message.send",
+    "ui.notify.",
+    "ui.alert.",
+    "widget.queue.",
+    "workflow.execute",
+    "workflow.replay",
+    "action.execute",
+];
+
 fn reserved_event_prefixes(provenance: InstallProvenance) -> &'static [&'static str] {
     match provenance {
-        InstallProvenance::User => &[WEBHOOK_EVENT_PREFIX, "db."],
+        InstallProvenance::User => &USER_RESERVED_EVENT_PREFIXES,
         InstallProvenance::System => &[WEBHOOK_EVENT_PREFIX],
     }
 }
@@ -2012,7 +2032,20 @@ mod tests {
 
     #[test]
     fn rejects_reserved_prefixes_on_bus_triggers() {
-        for event in ["webhook.other_mod.orders", "db.module.trigger.registered"] {
+        for event in [
+            "webhook.other_mod.orders",
+            "db.module.trigger.registered",
+            "engine.obs.command",
+            "slobs",
+            "twitchapi",
+            "message.send",
+            "ui.notify.alert",
+            "ui.alert.broadcast",
+            "widget.queue.skip",
+            "workflow.execute",
+            "workflow.replay",
+            "action.execute",
+        ] {
             let trigger = format!(
                 r#"{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "{event}" }}"#
             );
