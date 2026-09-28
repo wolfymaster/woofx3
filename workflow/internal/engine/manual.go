@@ -90,7 +90,8 @@ func (e *Engine[TServices]) RunManual(req ManualRun) (ManualRunResult, error) {
 		}
 	}
 
-	execution := e.beginExecutionAs(def, event, req.DryRun)
+	// A request event stamped by a dry run stays dry, whatever was asked.
+	execution := e.beginExecutionAs(def, event, req.DryRun || event.DryRun)
 	go e.runExecution(def, execution, event)
 	return ManualRunResult{Outcome: ManualRunStarted, ExecutionID: execution.ID, EventType: event.Type}, nil
 }

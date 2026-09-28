@@ -43,9 +43,14 @@ func (e *Engine[TServices]) completeDryRunWait(
 }
 
 func describeWait(wait *types.WaitConfig) string {
-	sentence := fmt.Sprintf("would wait for a %s event", wait.Event)
-	if wait.Aggregation != nil {
+	var sentence string
+	switch {
+	case wait.Event == "":
+		sentence = "would wait"
+	case wait.Aggregation != nil:
 		sentence = fmt.Sprintf("would wait for %s events to add up", wait.Event)
+	default:
+		sentence = fmt.Sprintf("would wait for a %s event", wait.Event)
 	}
 	if wait.Timeout != nil {
 		sentence += fmt.Sprintf(" for up to %s", wait.Timeout.Duration)

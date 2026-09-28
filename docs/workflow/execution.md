@@ -200,10 +200,20 @@ never told about a dry run.
   (`would wait for a channel.follow event for up to 2m0s`). Their exports read
   `satisfied: true` with no events.
 - **Sub-workflows** started by a dry run are dry runs too.
+- **Workflows triggered by a dry run.** A dry run's `workflow.run.*`
+  lifecycle events carry the CloudEvents extension attribute `dryRun: true`,
+  and any workflow such an event triggers starts as a dry run too. A workflow
+  that reacts to "workflow A completed" therefore previews its reaction
+  instead of posting in chat for real. A stamped event also never resumes a
+  real run's wait. The attribute only ever removes side effects, so the
+  engine honours it from any producer.
 - **Recording.** The run is recorded with `dry_run = true`
   (`WorkflowRunSnapshot.dryRun` on the `workflow.run.recorded`/`updated`
   webhooks). The api records a dry run as origin `test` unless the caller
-  names one. Replaying a dry run makes another dry run.
+  names one.
+- **Replays stay dry, by design.** Replaying a dry run makes another dry run,
+  because replaying a preview should never be how its side effects first
+  happen. To run the workflow for real, trigger it normally.
 
 A later step that reads a skipped action's real output (`${say.messageId}`)
 has nothing to read, and fails to resolve. The error names the step.

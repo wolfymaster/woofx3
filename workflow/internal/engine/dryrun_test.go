@@ -243,3 +243,102 @@ func TestDryRunDoesNotPublish(t *testing.T) {
 		t.Errorf("p outputs = %v", p.Outputs)
 	}
 }
+
+// dryLoopback records events like runLog and hands each back to the engine,
+// as the bus would deliver the engine's own lifecycle to its subscriptions.
+type dryLoopback struct {
+	*runLog
+	engine *Engine[execSvcs]
+}
+
+func (p dryLoopback) Publish(event *types.Event) error {
+	_ = p.runLog.Publish(event)
+	return p.engine.HandleEvent(event)
+}
+
+// Workflow B runs when workflow A completes. A dry run of A must not make B
+// run for real: A's lifecycle is stamped, and B starts as a dry run.
+func TestADryRunsLifecycleStartsDependentWorkflowsAsDryRuns(t *testing.T) {
+	h := newDryRunHarness(t)
+	h.engine.SetPublisher(dryLoopback{runLog: h.log, engine: h.engine})
+	mustRegister(t, h.engine.RegisterWorkflow(&types.WorkflowDefinition{
+		ID:      "wf-b",
+		Name:    "after A",
+		Trigger: &types.TriggerConfig{Type: "event", Event: "workflow.run.completed"},
+		Tasks:   []types.TaskDefinition{{ID: "b-shout", Type: "action", Action: "shout", Parameters: map[string]any{"text": "A finished"}}},
+	}))
+
+	idA := h.run(t, &types.WorkflowDefinition{
+		ID:    "wf-a",
+		Name:  "A",
+		Tasks: []types.TaskDefinition{{ID: "a-pure", Type: "action", Action: "pure"}},
+	}, true)
+	h.log.awaitSettled(t, idA)
+
+	var idB string
+	waitUntil(t, func() bool {
+		h.engine.executionsMu.RLock()
+		defer h.engine.executionsMu.RUnlock()
+		for execID, execution := range h.engine.executions {
+			if execution.WorkflowID == "wf-b" {
+				idB = execID
+				return true
+			}
+		}
+		return false
+	})
+	h.log.awaitSettled(t, idB)
+
+	h.mu.Lock()
+	bDry := h.dryRun[idB]
+	h.mu.Unlock()
+	if !bDry {
+		t.Error("B was triggered by a dry run's completion but ran for real")
+	}
+	if h.callCount("shout") != 0 {
+		t.Error("B called a side-effecting action")
+	}
+	b, _ := h.log.step("b-shout")
+	if b.Outputs["wouldDo"] != "would shout A finished" {
+		t.Errorf("b-shout outputs = %v", b.Outputs)
+	}
+}
+
+func TestADryRunEventDoesNotResumeARealWait(t *testing.T) {
+	h := newDryRunHarness(t)
+	id := h.run(t, &types.WorkflowDefinition{
+		ID:   "wf-real-wait",
+		Name: "real wait",
+		Tasks: []types.TaskDefinition{
+			{ID: "hold", Type: "wait", Wait: &types.WaitConfig{Type: "event", Event: "workflow.run.completed"}},
+			{ID: "after", Type: "action", Action: "pure", DependsOn: []string{"hold"}},
+		},
+	}, false)
+	waitUntil(t, func() bool {
+		h.engine.waitingMu.RLock()
+		defer h.engine.waitingMu.RUnlock()
+		return len(h.engine.waitingExecutions["workflow.run.completed"]) == 1
+	})
+
+	if err := h.engine.HandleEvent(&types.Event{ID: "dry", Type: "workflow.run.completed", Time: time.Now(), DryRun: true}); err != nil {
+		t.Fatalf("HandleEvent: %v", err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	if h.callCount("pure") != 0 {
+		t.Fatal("a dry run's event resumed a real run")
+	}
+
+	if err := h.engine.HandleEvent(&types.Event{ID: "real", Type: "workflow.run.completed", Time: time.Now()}); err != nil {
+		t.Fatalf("HandleEvent: %v", err)
+	}
+	h.log.awaitSettled(t, id)
+	if h.callCount("pure") != 1 {
+		t.Error("the real event did not resume the wait")
+	}
+}
+
+func TestDryRunWaitWithoutAnEvent(t *testing.T) {
+	if got := describeWait(&types.WaitConfig{}); got != "would wait" {
+		t.Errorf("describeWait = %q", got)
+	}
+}

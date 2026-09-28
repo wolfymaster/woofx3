@@ -174,9 +174,15 @@ type Event struct {
 	//
 	// Empty for an event nothing in a workflow caused: a platform event, a
 	// dashboard request, a background task.
-	WorkflowChain string         `json:"workflowChain,omitempty"`
-	Data          map[string]any `json:"data"`
-	Subject       string         `json:"subject,omitempty"`
+	WorkflowChain string `json:"workflowChain,omitempty"`
+	// DryRun is the CloudEvents extension attribute marking an event a dry
+	// run caused: its `workflow.run.*` lifecycle. A workflow the event
+	// triggers runs as a dry run too, so a dry run cannot set off a real
+	// run of a workflow listening for it. The attribute only ever removes
+	// side effects, so it needs no trust in whoever set it.
+	DryRun  bool           `json:"dryRun,omitempty"`
+	Data    map[string]any `json:"data"`
+	Subject string         `json:"subject,omitempty"`
 }
 
 // Chain is WorkflowChain as a list, oldest first.

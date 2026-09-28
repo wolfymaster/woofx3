@@ -383,6 +383,13 @@ func (e *Engine[TServices]) processWaitingExecutions(event *types.Event) {
 			continue
 		}
 
+		// A dry run's events must not move a real run forward. Kept waiting,
+		// as for any event that does not satisfy the wait.
+		if event.DryRun && !execution.DryRun {
+			remaining = append(remaining, w)
+			continue
+		}
+
 		waitTask := &tasks.WaitTask{}
 		resolver := expression.NewResolver()
 
@@ -552,7 +559,7 @@ func (e *Engine[TServices]) beginExecutionAs(wf *types.WorkflowDefinition, event
 }
 
 func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event *types.Event) {
-	e.runExecution(wf, e.beginExecution(wf, event), event)
+	e.runExecution(wf, e.beginExecutionAs(wf, event, event.DryRun), event)
 }
 
 // runExecution runs a begun execution from its first task. Separate from
@@ -1262,6 +1269,7 @@ func (e *Engine[TServices]) emitRunLifecycle(execution *types.WorkflowExecution)
 		Source:        "workflow",
 		Time:          time.Now(),
 		WorkflowChain: execution.TriggerEvent.ChainThrough(execution.WorkflowID),
+		DryRun:        execution.DryRun,
 		Data:          data,
 	}
 	// Copied from the trigger unchanged. TriggerID is the only join back to the
