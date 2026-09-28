@@ -34,8 +34,23 @@ const SEARCH_CATEGORIES_DEFAULT = 10;
 /** How many search results are checked for an exact name match. */
 const CATEGORY_RESOLVE_CANDIDATES = 25;
 
-/** Twitch tags are letters and digits only, in any script. */
-const TAG_PATTERN = /^[\p{L}\p{N}]+$/u;
+/** Twitch rejects a ban or timeout reason longer than this. */
+export const TIMEOUT_REASON_MAX_LENGTH = 500;
+
+/**
+ * Twitch tags are letters and digits only, in any script. Combining marks
+ * are part of a letter in scripts such as Devanagari and Thai, so a tag
+ * written in one would otherwise be refused.
+ */
+const TAG_PATTERN = /^[\p{L}\p{M}\p{N}]+$/u;
+
+/**
+ * Length as Twitch counts it, in characters rather than UTF-16 units, so an
+ * emoji in a title counts once.
+ */
+function characterCount(text: string): number {
+  return [...text].length;
+}
 
 export interface TimeoutResult {
   ok: true;
@@ -79,13 +94,17 @@ export interface StreamInfo {
 }
 
 /** Throws unless `title` is a title Twitch will accept. */
-export function validateTitle(title: string): string {
+export function validateTitle(title: unknown): string {
+  if (typeof title !== "string") {
+    throw new Error("updateStream: title must be a string");
+  }
   const trimmed = title.trim();
   if (!trimmed) {
     throw new Error("updateStream: title cannot be empty");
   }
-  if (trimmed.length > TITLE_MAX_LENGTH) {
-    throw new Error(`updateStream: title is ${trimmed.length} characters; Twitch allows at most ${TITLE_MAX_LENGTH}`);
+  const length = characterCount(trimmed);
+  if (length > TITLE_MAX_LENGTH) {
+    throw new Error(`updateStream: title is ${length} characters; Twitch allows at most ${TITLE_MAX_LENGTH}`);
   }
   return trimmed;
 }
@@ -107,7 +126,7 @@ export function validateTags(tags: unknown): string[] {
     if (!trimmed) {
       throw new Error("updateStream: a tag cannot be empty");
     }
-    if (trimmed.length > TAG_MAX_LENGTH) {
+    if (characterCount(trimmed) > TAG_MAX_LENGTH) {
       throw new Error(`updateStream: tag "${trimmed}" is longer than ${TAG_MAX_LENGTH} characters`);
     }
     if (!TAG_PATTERN.test(trimmed)) {
@@ -227,7 +246,13 @@ export default class TwitchApi {
     if (userId === this.broadcaster.id) {
       throw new Error("timeout: the broadcaster cannot be timed out");
     }
+    if (args.reason !== undefined && typeof args.reason !== "string") {
+      throw new Error("timeout: reason must be a string");
+    }
     const reason = args.reason?.trim();
+    if (reason && characterCount(reason) > TIMEOUT_REASON_MAX_LENGTH) {
+      throw new Error(`timeout: reason is longer than ${TIMEOUT_REASON_MAX_LENGTH} characters`);
+    }
     await this.apiClient.moderation.banUser(this.broadcaster, {
       user: userId,
       duration: durationSeconds,
@@ -251,7 +276,7 @@ export default class TwitchApi {
 
     const result: UpdateStreamResult = { ok: true };
     if (input.title !== undefined) {
-      result.title = validateTitle(String(input.title));
+      result.title = validateTitle(input.title);
     }
     if (input.tags !== undefined) {
       result.tags = validateTags(input.tags);
@@ -284,9 +309,10 @@ export default class TwitchApi {
    */
   async createMarker(args: CreateMarkerArgs): Promise<StreamMarkerResult> {
     const description = args?.description?.trim() ?? "";
-    if (description.length > MARKER_DESCRIPTION_MAX_LENGTH) {
+    const length = characterCount(description);
+    if (length > MARKER_DESCRIPTION_MAX_LENGTH) {
       throw new Error(
-        `createMarker: description is ${description.length} characters; Twitch allows at most ${MARKER_DESCRIPTION_MAX_LENGTH}`
+        `createMarker: description is ${length} characters; Twitch allows at most ${MARKER_DESCRIPTION_MAX_LENGTH}`
       );
     }
     let marker: Awaited<ReturnType<ApiClient["streams"]["createStreamMarker"]>>;

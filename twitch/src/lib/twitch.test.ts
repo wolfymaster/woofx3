@@ -123,6 +123,16 @@ describe("timeout", () => {
     expect(banUser).not.toHaveBeenCalled();
   });
 
+  test("refuses a reason over 500 characters", async () => {
+    const banUser = mock(async (..._args: unknown[]) => []);
+    const api = new TwitchApi(helix({ banUser }), BROADCASTER);
+
+    await expect(api.timeout({ userId: "u", durationSeconds: 60, reason: "a".repeat(501) })).rejects.toThrow(
+      "longer than 500"
+    );
+    expect(banUser).not.toHaveBeenCalled();
+  });
+
   test("refuses to time out the broadcaster", async () => {
     const api = new TwitchApi(helix({}), BROADCASTER);
     await expect(api.timeout({ userId: BROADCASTER.id, durationSeconds: 60 })).rejects.toThrow("broadcaster cannot");
@@ -212,6 +222,14 @@ describe("validateTitle", () => {
     expect(() => validateTitle("a".repeat(141))).toThrow("at most 140");
   });
 
+  test("counts characters, not UTF-16 units", () => {
+    expect(validateTitle(`${"a".repeat(139)}🐺`)).toHaveLength(141);
+  });
+
+  test("refuses a title that is not text", () => {
+    expect(() => validateTitle(42)).toThrow("title must be a string");
+  });
+
   test("refuses a blank title", () => {
     expect(() => validateTitle("   ")).toThrow("cannot be empty");
   });
@@ -219,7 +237,7 @@ describe("validateTitle", () => {
 
 describe("validateTags", () => {
   test("accepts letters and numbers in any script", () => {
-    expect(validateTags(["English", "日本語", "Web3"])).toEqual(["English", "日本語", "Web3"]);
+    expect(validateTags(["English", "日本語", "Web3", "हिन्दी"])).toEqual(["English", "日本語", "Web3", "हिन्दी"]);
   });
 
   test("refuses more than ten tags", () => {
