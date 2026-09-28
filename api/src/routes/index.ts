@@ -23,6 +23,7 @@ import { resourcesRoutes } from "./resources";
 import { inboundWebhooksRoutes } from "./inbound-webhooks";
 import { streamSessionsRoutes } from "./stream-sessions";
 import { analyticsRoutes } from "./analytics";
+import { twitchRoutes } from "./twitch";
 import type { ApiRouteHost } from "./context";
 
 export type RegisteredApiRoutes = typeof engineRoutes &
@@ -48,7 +49,8 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof resourcesRoutes &
   typeof inboundWebhooksRoutes &
   typeof streamSessionsRoutes &
-  typeof analyticsRoutes;
+  typeof analyticsRoutes &
+  typeof twitchRoutes;
 
 type RouteMethod = (this: ApiRouteHost, ...args: unknown[]) => unknown;
 
@@ -102,6 +104,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(resourcesRoutes),
     instrumentRoutes(inboundWebhooksRoutes),
     instrumentRoutes(streamSessionsRoutes),
-    instrumentRoutes(analyticsRoutes)
+    instrumentRoutes(analyticsRoutes),
+    instrumentRoutes(twitchRoutes)
   );
 }
