@@ -8,20 +8,39 @@ import type { Msg } from "@woofx3/nats/src/types";
 import TwitchClient from "@woofx3/twitch";
 import chalk from "chalk";
 import type TwitchApiClient from "./lib/twitch";
-import TwitchApiClientImpl from "./lib/twitch";
+import TwitchApiClientImpl, { isTwitchApiCommand } from "./lib/twitch";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import TwitchEventBus from "./lib/twitchEventBus";
 import type DbProxyService from "./services/dbProxy";
 import type MessageBusService from "./services/messageBus";
 
 /**
- * Inbound request envelope on the `twitchapi` subject. Engine wraps the
- * caller's payload as a CloudEvent ({type, source, time, data: {...}}),
- * and the actual dispatch fields live under `data`.
+ * Inbound request on the `twitchapi` subject: `{ command, args? }`.
  */
 interface TwitchApiRequest {
   command: string;
   args?: Record<string, unknown>;
+}
+
+/**
+ * The request carried by a `twitchapi` message. Two senders shape it
+ * differently and both are served: the api wraps it in a CloudEvent
+ * (`{ type, source, time, data: { command, args } }`), while the sandbox's
+ * `ctx.twitch` and the chatbot's built-in commands publish the bare
+ * `{ command, args }`.
+ */
+export function parseTwitchApiRequest(body: unknown): TwitchApiRequest | null {
+  if (!body || typeof body !== "object") {
+    return null;
+  }
+  const record = body as { command?: unknown; data?: unknown };
+  if (typeof record.command === "string") {
+    return record as TwitchApiRequest;
+  }
+  if (record.data && typeof record.data === "object") {
+    return record.data as TwitchApiRequest;
+  }
+  return null;
 }
 
 /**
@@ -210,8 +229,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     const isRequest = !!msg.reply;
     let request: TwitchApiRequest | null = null;
     try {
-      const envelope = msg.json<{ data?: TwitchApiRequest }>();
-      request = envelope.data as TwitchApiRequest;
+      request = parseTwitchApiRequest(msg.json<unknown>());
     } catch (err) {
       ctx.logger.error("twitchapi: failed to parse request", { err });
       if (isRequest) {
@@ -234,7 +252,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       return;
     }
 
-    if (!(request.command in ctx.twitchApi)) {
+    if (!isTwitchApiCommand(request.command)) {
       ctx.logger.warn("twitchapi: unknown command", { command: request.command });
       if (isRequest) {
         this.respondError(msg, `Unknown command: ${request.command}`);
