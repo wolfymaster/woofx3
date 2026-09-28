@@ -421,6 +421,7 @@ Runs one workflow, matched by id first and then by case-insensitive name.
 | `platform` | string | The sample event's platform, for `${trigger.platform}` conditions. Requires `triggerData` |
 | `skipConditions` | boolean | Run even when the sample fails the trigger conditions. Default `false`. Requires `triggerData` |
 | `origin` | string | Same as `triggeredBy`. Giving both with different values is an error |
+| `dryRun` | boolean | Run without side effects; see [Dry Runs](./execution.md#dry-runs). Waits for the engine's answer like `triggerData`, and records the run as origin `test` unless one is given. The response carries `dryRun: true` |
 
 Without `triggerData` the request is published and the call returns at once:
 

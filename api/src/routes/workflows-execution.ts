@@ -35,6 +35,9 @@ interface CancelReply {
 
 const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
+/** The origin a dry run records when its caller names none. */
+const DRY_RUN_DEFAULT_ORIGIN = "test";
+
 /**
  * The origin a run records as `triggeredBy`. The positional argument and
  * `options.origin` name the same thing; two different values is a caller bug
@@ -165,6 +168,7 @@ export const workflowsExecutionRoutes = routeModule({
       triggerId,
       parametersCount: Object.keys(parameters).length,
       sampleData: options.triggerData !== undefined,
+      dryRun: options.dryRun === true,
     });
     const origin = resolveOrigin(triggeredBy, options.origin);
     const hasSample = options.triggerData !== undefined;
@@ -172,6 +176,10 @@ export const workflowsExecutionRoutes = routeModule({
       throw new Error("options.platform and options.skipConditions only apply with options.triggerData");
     }
     const triggerData = hasSample ? validateTriggerData(options.triggerData) : undefined;
+    const dryRun = options.dryRun === true;
+    // A dry run is worth its trace, and a run with no origin of its own is
+    // recorded; "test" says what it was, where nothing would say it at all.
+    const runOrigin = dryRun && !origin ? DRY_RUN_DEFAULT_ORIGIN : origin;
 
     // First, find the workflow by name
     const workflowsReq: workflow.ListWorkflowsRequest = {
@@ -200,7 +208,7 @@ export const workflowsExecutionRoutes = routeModule({
     const correlationId = triggerId || crypto.randomUUID();
     const request = { workflowId: foundWorkflow.id, inputs: parameters, startedBy: userId ?? "" };
 
-    if (!triggerData) {
+    if (!triggerData && !dryRun) {
       // Published for the engine to run, rather than written as a db-proxy
       // execution row. The row had no consumer -- nothing turned a pending row
       // into a run -- so it recorded an execution that never happened and left
@@ -233,26 +241,31 @@ export const workflowsExecutionRoutes = routeModule({
       "workflow.execute",
       {
         ...request,
-        triggerData,
+        ...(triggerData ? { triggerData } : {}),
         ...(options.platform ? { platform: options.platform } : {}),
         ...(options.skipConditions ? { skipConditions: true } : {}),
+        ...(dryRun ? { dryRun: true } : {}),
       },
-      { triggerId: correlationId, triggeredBy: origin }
+      { triggerId: correlationId, triggeredBy: runOrigin }
     );
 
     switch (reply.outcome) {
       case "started":
-        this.logger.info("Workflow run started with sample data", {
+        this.logger.info("Workflow run started on request", {
           workflowId: foundWorkflow.id,
           executionId: reply.executionId,
           triggerId: correlationId,
+          dryRun,
         });
         return {
           executionId: reply.executionId ?? "",
           status: "started",
-          message: `Started "${foundWorkflow.name}" with sample ${reply.eventType ?? "trigger"} data`,
+          message: triggerData
+            ? `Started ${dryRun ? "a dry run of " : ""}"${foundWorkflow.name}" with sample ${reply.eventType ?? "trigger"} data`
+            : `Started a dry run of "${foundWorkflow.name}"`,
           triggerId: correlationId,
           ...(reply.eventType ? { eventType: reply.eventType } : {}),
+          ...(dryRun ? { dryRun: true } : {}),
         };
       case "conditions_not_met": {
         const unmet = reply.unmet ?? [];
@@ -296,6 +309,9 @@ export const workflowsExecutionRoutes = routeModule({
         workflowId: run.workflowId,
         triggerEvent: run.triggerEventJson,
         fromTaskId: fromTaskId ?? "",
+        // A replay of a dry run is a dry run: replaying a preview should not
+        // be how its side effects first happen.
+        ...(run.dryRun ? { dryRun: true } : {}),
         steps: (run.steps ?? []).map((step) => ({
           taskId: step.stepId,
           status: step.status,

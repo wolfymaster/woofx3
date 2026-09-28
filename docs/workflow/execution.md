@@ -175,6 +175,39 @@ answer, as before; one that sends a request is told the outcome:
 { "outcome": "refused", "error": "workflow not found: wf-1" }
 ```
 
+## Dry Runs
+
+A manual run with `dryRun: true` runs the workflow without its side effects.
+The engine decides what that means. A module never does, and module code is
+never told about a dry run.
+
+- **Actions.** Each action is registered with an `ActionSpec`:
+  - `SideEffect: true` marks an action that changes something outside the run.
+    In a dry run the engine does not call it. Its step succeeds with
+    `{ "dryRun": true, "wouldDo": "<sentence>" }` as its output.
+  - The optional `DryRun(params)` hook writes that sentence, for example
+    `would send "welcome raiders" to twitch chat`. The default is
+    `would run <action> with <params>`. The hook may refuse parameters the real
+    action would refuse, as `alert` does for a broken layout, so a dry run fails
+    where the real run would.
+  - An action registered without a spec counts as side-effecting. A new
+    native action is therefore skipped by dry runs until it declares itself
+    safe.
+  - `function` actions run module code and are always skipped: `would call
+    module function <id>`. The same goes for `alert`, `chat.reply` and
+    `publish_event`. `print` and the `log` task run normally.
+- **Waits** complete at once, recording what they would have waited for
+  (`would wait for a channel.follow event for up to 2m0s`). Their exports read
+  `satisfied: true` with no events.
+- **Sub-workflows** started by a dry run are dry runs too.
+- **Recording.** The run is recorded with `dry_run = true`
+  (`WorkflowRunSnapshot.dryRun` on the `workflow.run.recorded`/`updated`
+  webhooks). The api records a dry run as origin `test` unless the caller
+  names one. Replaying a dry run makes another dry run.
+
+A later step that reads a skipped action's real output (`${say.messageId}`)
+has nothing to read, and fails to resolve. The error names the step.
+
 ## Cancelling a Run
 
 `workflow.cancel` is a request/reply subject carrying

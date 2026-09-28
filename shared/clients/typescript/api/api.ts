@@ -867,9 +867,9 @@ export interface StreamGaugeSample {
 /**
  * Optional behaviour for `triggerWorkflowByName`.
  *
- * Supplying any of `triggerData`, `platform` or `skipConditions` makes the call
- * wait for the engine to answer, so the response says whether the run started
- * and with which execution id.
+ * Supplying `triggerData` or `dryRun` makes the call wait for the engine to
+ * answer, so the response says whether the run started and with which
+ * execution id.
  */
 export interface TriggerWorkflowOptions {
   /**
@@ -896,6 +896,19 @@ export interface TriggerWorkflowOptions {
    * one or the other, or the same value in both.
    */
   origin?: string;
+  /**
+   * Run without side effects. The engine decides what that means, never the
+   * workflow's modules:
+   * - actions that change something (chat, alerts, published events, module
+   *   functions, and any action not declared side-effect free) are not called;
+   *   each step records `{ dryRun: true, wouldDo: "<sentence>" }` instead.
+   *   Parameters the real action would refuse still fail the step.
+   * - waits complete at once, recording what they would have waited for.
+   * The run is recorded with `dryRun: true` (see `WorkflowRunSnapshot`), and a
+   * replay of it is a dry run too. A later step that reads a skipped step's
+   * real output fails to resolve.
+   */
+  dryRun?: boolean;
 }
 
 /** Most bytes `TriggerWorkflowOptions.triggerData` may encode to as JSON. */
@@ -932,6 +945,8 @@ export interface TriggerWorkflowResponse {
   eventType?: string;
   /** Every condition the sample failed; set for `conditions_not_met`. */
   unmetConditions?: UnmetTriggerCondition[];
+  /** True when the run started is a dry run. */
+  dryRun?: boolean;
 }
 
 /** What `cancelWorkflow` did. */
