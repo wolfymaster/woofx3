@@ -55,5 +55,6 @@ func All() []*gormigrate.Migration {
 		AddWidgetTaxonomy(),
 		DropApplications(),
 		RebuildUserEventsAsFactLog(),
+		DeclareDatetimeColumns(),
 	}
 }
