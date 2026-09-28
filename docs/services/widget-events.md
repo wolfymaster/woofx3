@@ -143,6 +143,40 @@ holds the alert until it calls `complete()`; one that completes on handler retur
 none. Once every timed widget is done, or after 5 seconds when none is timed, the page
 removes the frames, acks the scene event, and plays the alert widget's next alert.
 
+#### Skip, clear and replay
+
+An operator can act on the alerts queued in open overlays through the api's
+`skipCurrentAlert`, `clearAlertQueue` and `replayAlert`. The api forwards each as a NATS
+request (`widget.queue.skip`, `widget.queue.clear`, `widget.queue.replay`) and the scene
+manager answers it, because the queues are the ones it streams to
+(`sceneManager/src/events/alert-controls.ts`). Every answer carries `ok`, and `reason`
+when `ok` is false.
+
+| Request | Reply | Effect |
+|---------|-------|--------|
+| `widget.queue.skip` `{}` | `{ ok, skipped, reason? }` | Ends the alert each alert widget on an open overlay is playing; the next one starts. |
+| `widget.queue.clear` `{}` | `{ ok, cleared, reason? }` | Drops every alert waiting behind the playing one; the playing one keeps playing. |
+| `widget.queue.replay` `{ id }` | `{ ok, replayEnvelopeId?, reason? }` | Plays the alert-log row `id` again. |
+
+`skipped` and `cleared` count distinct alerts: one alert playing on two alert widgets
+counts once. With no overlay open, every request answers
+`{ ok: false, reason: "no overlay is open" }`; an api that gets no answer at all returns
+`ok: false` with `the scene manager did not answer: ...`.
+
+Skip and clear act on the scene manager's open deliveries. An alert widget plays its
+deliveries one at a time in the order they were recorded, so the oldest one still open
+is the one on screen and the rest are waiting. The scene manager closes the chosen
+deliveries, pushes a `cancel` frame (`{ instanceId, eventIds }`) to every page of the
+scene, and marks each alert `skipped`. The page drops those deliveries from the widget's
+queue, takes an alert on screen down at once, and ignores a cancelled delivery that
+arrives later. The page batches its completion acks for 250 ms, so a skip in that window
+after an alert ends names the alert that just ended and the next one keeps playing.
+
+Replay reads the row, gives its stored envelope a fresh id, records that as a new row,
+and dispatches it exactly as `ui.notify.alert` would, so a layout or target that no
+longer matches anything is refused with the same reason. The original row is marked
+`replayed` only once the replay was queued on at least one scene.
+
 ## End-to-end flow
 
 ```
