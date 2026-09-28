@@ -1,7 +1,7 @@
 import type { ConditionConfig, ConditionOperator, TaskDefinition, WorkflowDefinition } from "@woofx3/api";
 // The module itself rather than the package index: the index also loads the
 // RPC client and its dependencies, which a value import would pull in.
-import { WAIT_DELAY_MAX_MS, WAIT_DELAY_MIN_MS } from "@woofx3/api/workflow-definition";
+import { WAIT_DELAY_MAX_MS, WAIT_DELAY_MIN_MS, WAIT_TIMEOUT_MIN_MS } from "@woofx3/api/workflow-definition";
 
 export interface ValidationError {
   path: string;
@@ -56,16 +56,77 @@ function validateConditions(cs: ConditionConfig[] | undefined, prefix: string, e
   });
 }
 
+const GO_DURATION_UNIT_MS: Record<string, number> = {
+  ns: 1e-6,
+  us: 1e-3,
+  "\u00b5s": 1e-3,
+  "\u03bcs": 1e-3,
+  ms: 1,
+  s: 1000,
+  m: 60_000,
+  h: 3_600_000,
+};
+const GO_DURATION_RE = /^[-+]?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h))+$/;
+const GO_DURATION_PART_RE = /(\d+(?:\.\d*)?|\.\d+)(ns|us|\u00b5s|\u03bcs|ms|s|m|h)/g;
+
+// Parses a duration in the grammar of Go's time.ParseDuration, which is what
+// the engine decodes a string duration with, and returns it in milliseconds.
+// Null when the engine would refuse to decode it.
+export function parseGoDurationMs(value: string): number | null {
+  if (value === "0" || value === "+0" || value === "-0") {
+    return 0;
+  }
+  if (!GO_DURATION_RE.test(value)) {
+    return null;
+  }
+  let total = 0;
+  for (const [, amount, unit] of value.matchAll(GO_DURATION_PART_RE)) {
+    total += Number(amount) * GO_DURATION_UNIT_MS[unit];
+  }
+  return value.startsWith("-") ? -total : total;
+}
+
+// Empty values count as absent, as they do in the engine, so a field an editor
+// cleared rather than removed is not refused.
+function isEmpty(value: unknown): boolean {
+  return (
+    value === undefined || value === null || value === "" || value === 0 || (Array.isArray(value) && value.length === 0)
+  );
+}
+
+// Returns the timeout in milliseconds, 0 when the wait names none, or null
+// after recording why it is refused.
+function validateTimeout(timeout: unknown, path: string, errors: ValidationError[]): number | null {
+  if (timeout === undefined || timeout === null) {
+    return 0;
+  }
+  if (typeof timeout !== "string") {
+    errors.push({ path, message: 'must be a duration string such as "30s"; a number is read as nanoseconds' });
+    return null;
+  }
+  const ms = parseGoDurationMs(timeout);
+  if (ms === null) {
+    errors.push({ path, message: 'must be a duration such as "30s", "2m" or "1h30m"' });
+    return null;
+  }
+  if (ms !== 0 && ms < WAIT_TIMEOUT_MIN_MS) {
+    errors.push({ path, message: `must be at least ${WAIT_TIMEOUT_MIN_MS / 1000}s` });
+    return null;
+  }
+  return ms;
+}
+
 // Mirrors ValidateWaitConfig in workflow/internal/tasks/wait.go, so a wait the
 // engine would refuse to register is refused here with a path the editor can
-// point at. A missing `type` reads as "event", as it does in the engine.
+// point at. A missing or empty `type` reads as "event", as it does in the
+// engine.
 function validateWait(wait: unknown, prefix: string, errors: ValidationError[]): void {
   if (!wait || typeof wait !== "object") {
     errors.push({ path: prefix, message: "required object for wait tasks" });
     return;
   }
   const w = wait as Record<string, unknown>;
-  const type = w.type ?? "event";
+  const type = isEmpty(w.type) ? "event" : w.type;
 
   if (type === "delay") {
     const ms = w.durationMs;
@@ -75,10 +136,14 @@ function validateWait(wait: unknown, prefix: string, errors: ValidationError[]):
         message: `required integer between ${WAIT_DELAY_MIN_MS} and ${WAIT_DELAY_MAX_MS}`,
       });
     }
-    for (const field of ["event", "conditions", "aggregation", "timeout", "onTimeout"]) {
-      if (w[field] !== undefined) {
+    for (const field of ["event", "conditions", "aggregation", "onTimeout"]) {
+      if (!isEmpty(w[field])) {
         errors.push({ path: `${prefix}.${field}`, message: "not allowed on a delay wait" });
       }
+    }
+    const timeoutMs = validateTimeout(w.timeout, `${prefix}.timeout`, errors);
+    if (timeoutMs !== null && timeoutMs !== 0) {
+      errors.push({ path: `${prefix}.timeout`, message: "not allowed on a delay wait" });
     }
     return;
   }
@@ -93,10 +158,11 @@ function validateWait(wait: unknown, prefix: string, errors: ValidationError[]):
   if (type === "aggregation" && (!w.aggregation || typeof w.aggregation !== "object")) {
     errors.push({ path: `${prefix}.aggregation`, message: "required object for aggregation waits" });
   }
-  if (w.durationMs !== undefined) {
+  if (!isEmpty(w.durationMs)) {
     errors.push({ path: `${prefix}.durationMs`, message: "only allowed on a delay wait" });
   }
-  if (w.onTimeout !== undefined && w.onTimeout !== "continue" && w.onTimeout !== "fail") {
+  validateTimeout(w.timeout, `${prefix}.timeout`, errors);
+  if (!isEmpty(w.onTimeout) && w.onTimeout !== "continue" && w.onTimeout !== "fail") {
     errors.push({ path: `${prefix}.onTimeout`, message: 'must be "continue" or "fail"' });
   }
   validateConditions(w.conditions as ConditionConfig[] | undefined, `${prefix}.conditions`, errors);

@@ -42,16 +42,27 @@ export interface AggregationConfig {
   timeWindow?: Duration;
 }
 
-/** Pauses the run until a matching event arrives, or until `timeout` passes. */
+/**
+ * Pauses the run until a matching event arrives. With a `timeout`, the wait
+ * ends when it passes and `onTimeout` decides what happens; without one it
+ * waits for the event however long that takes.
+ */
 export interface EventWaitConfig {
   type: "event" | "aggregation";
   event: string;
   conditions?: ConditionConfig[];
   aggregation?: AggregationConfig;
-  timeout?: Duration;
-  /** Defaults to "fail". */
+  /**
+   * A Go duration string such as "30s" or "2m", at least WAIT_TIMEOUT_MIN_MS.
+   * Not a number: the engine reads a bare number as nanoseconds.
+   */
+  timeout?: string;
+  /** Defaults to "fail". Only applies when `timeout` is set. */
   onTimeout?: "continue" | "fail";
 }
+
+/** Must match MinWaitTimeout in workflow/internal/tasks/wait.go. */
+export const WAIT_TIMEOUT_MIN_MS = 1000;
 
 /**
  * Bounds of `DelayWaitConfig.durationMs`, inclusive. Must match MinDelayMs and

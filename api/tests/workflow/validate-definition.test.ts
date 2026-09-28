@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { validateWorkflowDefinition } from "../../src/workflow/validate-definition";
+import { parseGoDurationMs, validateWorkflowDefinition } from "../../src/workflow/validate-definition";
 
 describe("validateWorkflowDefinition", () => {
   test("accepts a minimal valid definition", () => {
@@ -172,8 +172,51 @@ describe("schedule triggers", () => {
       expect(paths(withWait({ type: "event" }))).toEqual(["tasks[0].wait.event"]);
     });
 
+    test("treats cleared fields on a delay as absent", () => {
+      expect(
+        withWait({ type: "delay", durationMs: 500, event: "", conditions: [], timeout: null, onTimeout: "" }).ok
+      ).toBe(true);
+    });
+
+    test("reads an empty type as event and ignores a zero durationMs", () => {
+      expect(withWait({ type: "", event: "channel.follow", durationMs: 0 }).ok).toBe(true);
+    });
+
+    test("accepts an event wait with no timeout", () => {
+      expect(withWait({ type: "event", event: "stream.offline" }).ok).toBe(true);
+    });
+
+    test("refuses a numeric timeout, which the engine reads as nanoseconds", () => {
+      expect(paths(withWait({ type: "event", event: "e", timeout: 30000 }))).toEqual(["tasks[0].wait.timeout"]);
+    });
+
+    test("refuses timeouts the engine cannot parse or that are under a second", () => {
+      for (const timeout of ["", "30", "5 minutes", "500ms", "-1m"]) {
+        expect(paths(withWait({ type: "event", event: "e", timeout }))).toEqual(["tasks[0].wait.timeout"]);
+      }
+    });
+
+    test("accepts Go duration strings", () => {
+      for (const timeout of ["1s", "1.5s", "2m", "1h30m", "90s"]) {
+        expect(withWait({ type: "event", event: "e", timeout }).ok).toBe(true);
+      }
+    });
+
     test("rejects a wait task without a wait config", () => {
       expect(paths(withWait(undefined))).toEqual(["tasks[0].wait"]);
+    });
+  });
+
+  describe("parseGoDurationMs", () => {
+    test("follows time.ParseDuration", () => {
+      expect(parseGoDurationMs("0")).toBe(0);
+      expect(parseGoDurationMs("1h30m")).toBe(5_400_000);
+      expect(parseGoDurationMs("1.5s")).toBe(1500);
+      expect(parseGoDurationMs("250ms")).toBe(250);
+      expect(parseGoDurationMs("-2s")).toBe(-2000);
+      expect(parseGoDurationMs("10")).toBeNull();
+      expect(parseGoDurationMs("")).toBeNull();
+      expect(parseGoDurationMs("1d")).toBeNull();
     });
   });
 });
