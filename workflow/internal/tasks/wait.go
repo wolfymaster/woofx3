@@ -16,9 +16,12 @@ const (
 	OnTimeoutContinue = "continue"
 	OnTimeoutFail     = "fail"
 
-	// DefaultWaitTimeout bounds an event wait that names no timeout, so a wait
-	// for an event that never comes still ends.
-	DefaultWaitTimeout = 5 * time.Minute
+	// MinWaitTimeout is the shortest timeout an event wait accepts. A number in
+	// a definition's timeout is read as nanoseconds, so `30000` meant as thirty
+	// seconds is 30µs; refusing anything under a second turns that mistake into
+	// an error instead of a wait that can never be met. Mirrored by
+	// WAIT_TIMEOUT_MIN_MS in shared/clients/typescript/api/workflow-definition.ts.
+	MinWaitTimeout = time.Second
 
 	// MinDelayMs and MaxDelayMs bound a delay wait. A paused run holds its
 	// state in memory until it resumes, so a delay longer than a day is more
@@ -35,6 +38,9 @@ const (
 //
 // An empty type is read as "event": definitions written before the type was
 // checked left it out, and the engine has always treated them as event waits.
+// Empty values (an empty event, no conditions, a zero timeout or durationMs)
+// count as absent, so a field an editor cleared rather than removed is not
+// refused.
 func ValidateWaitConfig(cfg *types.WaitConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("wait task requires a wait config")
@@ -57,8 +63,8 @@ func ValidateWaitConfig(cfg *types.WaitConfig) error {
 	if cfg.DurationMs != 0 {
 		return fmt.Errorf("durationMs only applies to a delay wait")
 	}
-	if cfg.Timeout != nil && cfg.Timeout.Duration <= 0 {
-		return fmt.Errorf("wait timeout must be positive, got %s", cfg.Timeout.Duration)
+	if HasTimeout(cfg) && cfg.Timeout.Duration < MinWaitTimeout {
+		return fmt.Errorf("wait timeout must be at least %s, got %s", MinWaitTimeout, cfg.Timeout.Duration)
 	}
 	switch cfg.OnTimeout {
 	case "", OnTimeoutContinue, OnTimeoutFail:
@@ -78,7 +84,7 @@ func validateDelayConfig(cfg *types.WaitConfig) error {
 	if cfg.Event != "" || len(cfg.Conditions) > 0 || cfg.Aggregation != nil {
 		return fmt.Errorf("delay wait does not take an event, conditions or aggregation")
 	}
-	if cfg.Timeout != nil || cfg.OnTimeout != "" {
+	if HasTimeout(cfg) || cfg.OnTimeout != "" {
 		return fmt.Errorf("delay wait does not take a timeout or onTimeout")
 	}
 	return nil
@@ -89,6 +95,14 @@ func waitTypeName(cfg *types.WaitConfig) string {
 		return WaitTypeEvent
 	}
 	return cfg.Type
+}
+
+// HasTimeout reports whether an event wait names a timeout. Without one the
+// wait lasts until its event arrives, however long that takes: definitions
+// saved before timeouts were enforced rely on that, e.g. a run started by
+// stream.online that waits for stream.offline.
+func HasTimeout(cfg *types.WaitConfig) bool {
+	return cfg != nil && cfg.Timeout != nil && cfg.Timeout.Duration != 0
 }
 
 // IsDelay reports whether a wait resumes after a fixed time rather than on an
@@ -133,8 +147,9 @@ func (t *WaitTask) InitWaitState(taskDef *types.TaskDefinition, execution *types
 		}
 	}
 
-	timeout := time.Now().Add(DefaultWaitTimeout)
-	if waitConfig.Timeout != nil {
+	// The zero time means no deadline: the engine arms no timer for it.
+	var timeout time.Time
+	if HasTimeout(waitConfig) {
 		timeout = time.Now().Add(waitConfig.Timeout.Duration)
 	}
 
@@ -154,7 +169,7 @@ func (t *WaitTask) InitWaitState(taskDef *types.TaskDefinition, execution *types
 
 	if waitConfig.Aggregation != nil {
 		windowEnd := timeout
-		if waitConfig.Aggregation.TimeWindow != nil {
+		if waitConfig.Aggregation.TimeWindow != nil && waitConfig.Aggregation.TimeWindow.Duration > 0 {
 			windowEnd = time.Now().Add(waitConfig.Aggregation.TimeWindow.Duration)
 		}
 
@@ -223,7 +238,7 @@ func (t *WaitTask) matchesConditions(event *types.Event, conditions []types.Cond
 func (t *WaitTask) processAggregation(event *types.Event, waitState *types.WaitState) (bool, error) {
 	agg := waitState.Aggregation
 
-	if time.Now().After(agg.WindowEnd) {
+	if !agg.WindowEnd.IsZero() && time.Now().After(agg.WindowEnd) {
 		return false, nil
 	}
 

@@ -82,6 +82,10 @@ type Engine[TServices any] struct {
 	maxConcurrency int
 }
 
+// errEngineStopped fails a run that reaches a wait after Stop: the engine will
+// never settle a wait armed then, so pausing would leave the run waiting forever.
+var errEngineStopped = errors.New("engine stopped")
+
 type SubWorkflowWaiter struct {
 	ParentExecutionID string
 	ParentWorkflowID  string
@@ -375,8 +379,11 @@ func (e *Engine[TServices]) processWaitingExecutions(event *types.Event) {
 
 		satisfied, err := waitTask.ProcessEvent(event, taskExec.WaitState, resolver)
 		if err != nil {
+			// Kept waiting: one malformed event must not leave the wait deaf to
+			// the well-formed ones that follow.
 			e.logger.Error("Error processing event for waiting execution",
 				"execution", w.ExecutionID, "task", w.TaskID, "error", err)
+			remaining = append(remaining, w)
 			continue
 		}
 
@@ -401,7 +408,10 @@ func (e *Engine[TServices]) processWaitingExecutions(event *types.Event) {
 }
 
 // armWaitLocked registers a paused wait and starts the timer that ends it at
-// its deadline. Caller holds waitingMu.
+// its deadline; a zero deadline arms no timer, and the wait lasts until its
+// event arrives. Caller holds waitingMu. Returns false, arming nothing, once
+// the engine has stopped: Stop has already disarmed every wait, and one armed
+// after it would pause its run with nothing left to settle it.
 //
 // armedWaits holds every wait, event-driven or delay, whose outcome is still
 // undecided. Removing a wait from it under waitingMu is how an event, the
@@ -412,15 +422,21 @@ func (e *Engine[TServices]) processWaitingExecutions(event *types.Event) {
 // runtime already keeps timers in a heap, Stop cancels one without a goroutine
 // of its own, and the number of paused runs is small enough that a second
 // heap would only duplicate that bookkeeping.
-func (e *Engine[TServices]) armWaitLocked(w *WaitingExecution, deadline time.Time) {
+func (e *Engine[TServices]) armWaitLocked(w *WaitingExecution, deadline time.Time) bool {
+	if e.ctx.Err() != nil {
+		return false
+	}
 	e.armedWaits[w] = struct{}{}
 	if !tasks.IsDelay(w.TaskDef.Wait) {
 		event := w.TaskDef.Wait.Event
 		e.waitingExecutions[event] = append(e.waitingExecutions[event], w)
 	}
-	w.timer = time.AfterFunc(time.Until(deadline), func() {
-		e.expireWait(w)
-	})
+	if !deadline.IsZero() {
+		w.timer = time.AfterFunc(time.Until(deadline), func() {
+			e.expireWait(w)
+		})
+	}
+	return true
 }
 
 // disarmWaitLocked claims a wait: it stops the wait's timer and removes it
@@ -748,6 +764,16 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 		if taskDef.Type == "wait" && taskDef.Wait != nil {
 			waitResult := e.handleWaitTask(execution, taskDef, taskExec, executionOrder, i, taskExports, triggerEvent, skippedTasks)
 			if waitResult == "waiting" {
+				return
+			} else if waitResult == "stopped" {
+				taskExec.Status = types.TaskStatusFailed
+				taskExec.Error = errEngineStopped.Error()
+				now := time.Now()
+				taskExec.CompletedAt = &now
+				e.recordStep(execution, taskDef.ID, i, nil, taskExec)
+				e.setExecutionStatus(execution, types.ExecutionStatusFailed, errEngineStopped)
+				e.logger.Warn("Wait task refused: engine stopped", "workflow", execution.WorkflowID, "task", taskDef.ID)
+				e.checkSubWorkflowCompletion(execution.ID)
 				return
 			} else if waitResult == "timeout" {
 				// Read from the wait state, not the definition: the state holds
@@ -1301,8 +1327,11 @@ func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, t
 		}
 
 		e.waitingMu.Lock()
-		e.armWaitLocked(waitingExec, deadline)
+		armed := e.armWaitLocked(waitingExec, deadline)
 		e.waitingMu.Unlock()
+		if !armed {
+			return "stopped"
+		}
 		return "waiting"
 	}
 
@@ -1316,8 +1345,11 @@ func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, t
 	// A run only re-enters a wait once an event, its timer or its delay has
 	// settled it. Ending the run here, rather than pausing again with nothing
 	// left to wake it, keeps a broken invariant from becoming a silent hang.
+	// It fails rather than following onTimeout: nothing timed out, and a delay
+	// has no onTimeout to follow.
 	e.logger.Error("Wait task re-entered before it was settled", "workflow", execution.WorkflowID, "execution", execution.ID, "task", taskDef.ID)
 	taskExec.WaitState.TimedOut = true
+	taskExec.WaitState.OnTimeout = tasks.OnTimeoutFail
 	return "timeout"
 }
 

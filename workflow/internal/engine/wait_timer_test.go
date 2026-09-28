@@ -112,6 +112,9 @@ func (h *waitHarness) armedWaitCount() int {
 	return len(h.engine.armedWaits)
 }
 
+// fire starts a run of a wait followed by a `mark` step. It runs the
+// definition directly rather than through RegisterWorkflow, whose validation
+// refuses the sub-second timeouts these tests use to stay fast.
 func (h *waitHarness) fire(t *testing.T, wait *types.WaitConfig) {
 	t.Helper()
 	def := &types.WorkflowDefinition{
@@ -123,13 +126,8 @@ func (h *waitHarness) fire(t *testing.T, wait *types.WaitConfig) {
 			{ID: "after", Type: "action", Action: "mark", DependsOn: []string{"pause"}, Parameters: map[string]any{"id": "after"}},
 		},
 	}
-	if err := h.engine.RegisterWorkflow(def); err != nil {
-		t.Fatalf("RegisterWorkflow: %v", err)
-	}
 	trigger := &types.Event{ID: "raid-1", Type: "channel.raid", Source: "test", Time: time.Now(), Data: map[string]any{}}
-	if err := h.engine.FireByWorkflowID(def.ID, trigger); err != nil {
-		t.Fatalf("FireByWorkflowID: %v", err)
-	}
+	go h.engine.executeWorkflow(def, trigger)
 }
 
 func (h *waitHarness) awaitArmed(t *testing.T) {
@@ -305,6 +303,78 @@ func TestStopDisarmsPendingWaits(t *testing.T) {
 	h.recorder.expectNoMoreSettles(t, 100*time.Millisecond)
 	if h.timesMarked("after") != 0 {
 		t.Fatal("a delay resumed its run after Stop")
+	}
+}
+
+// A wait without a timeout lasts until its event arrives, as it did before
+// timeouts were enforced: no timer is armed, and an event arriving whenever it
+// does still resumes the run successfully.
+func TestWaitWithoutTimeoutWaitsForEvent(t *testing.T) {
+	h := newWaitHarness(t)
+	h.fire(t, &types.WaitConfig{Type: tasks.WaitTypeEvent, Event: "channel.follow"})
+	h.awaitArmed(t)
+
+	h.engine.waitingMu.RLock()
+	for w := range h.engine.armedWaits {
+		if w.timer != nil {
+			t.Error("a wait without a timeout armed a timer")
+		}
+	}
+	h.engine.waitingMu.RUnlock()
+	h.recorder.expectNoMoreSettles(t, 50*time.Millisecond)
+
+	follow := &types.Event{ID: "follow-1", Type: "channel.follow", Source: "test", Time: time.Now(), Data: map[string]any{}}
+	if err := h.engine.HandleEvent(follow); err != nil {
+		t.Fatalf("HandleEvent: %v", err)
+	}
+	execution := h.recorder.awaitSettled(t, 2*time.Second)
+	if execution.Status != types.ExecutionStatusCompleted {
+		t.Fatalf("status = %s, want completed", execution.Status)
+	}
+	if h.timesMarked("after") != 1 {
+		t.Fatalf("after ran %d times, want 1", h.timesMarked("after"))
+	}
+}
+
+// A run reaching a wait after Stop fails instead of pausing with nothing left
+// to settle it.
+func TestWaitAfterStopFailsRun(t *testing.T) {
+	h := newWaitHarness(t)
+	if err := h.engine.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	h.fire(t, &types.WaitConfig{Type: tasks.WaitTypeDelay, DurationMs: 60 * 60 * 1000})
+
+	execution := h.recorder.awaitSettled(t, 2*time.Second)
+	if execution.Status != types.ExecutionStatusFailed || execution.Error != "engine stopped" {
+		t.Fatalf("run = %s (%q), want failed with engine stopped", execution.Status, execution.Error)
+	}
+	if h.armedWaitCount() != 0 {
+		t.Fatal("a wait was armed after Stop")
+	}
+}
+
+// One event the wait cannot process must not stop it hearing the next.
+func TestWaitSurvivesUnprocessableEvent(t *testing.T) {
+	h := newWaitHarness(t)
+	h.fire(t, &types.WaitConfig{
+		Type:        tasks.WaitTypeAggregation,
+		Event:       "channel.cheer",
+		Aggregation: &types.AggregationConfig{Strategy: "threshold", Threshold: 100},
+	})
+	h.awaitArmed(t)
+
+	bad := &types.Event{ID: "c1", Type: "channel.cheer", Source: "test", Time: time.Now(), Data: map[string]any{"threshold": "lots"}}
+	if err := h.engine.HandleEvent(bad); err != nil {
+		t.Fatalf("HandleEvent: %v", err)
+	}
+	good := &types.Event{ID: "c2", Type: "channel.cheer", Source: "test", Time: time.Now(), Data: map[string]any{"threshold": 500}}
+	if err := h.engine.HandleEvent(good); err != nil {
+		t.Fatalf("HandleEvent: %v", err)
+	}
+	execution := h.recorder.awaitSettled(t, 2*time.Second)
+	if execution.Status != types.ExecutionStatusCompleted {
+		t.Fatalf("status = %s, want completed", execution.Status)
 	}
 }
 
