@@ -1,8 +1,11 @@
 # Analytics
 
-::: warning Not built
-Nothing in this document exists yet. No code aggregates anything today, and no
-table holds a stream event. This is the design [stream
+::: warning Partly built
+**Built:** step 1 — every platform event is written to `user_events` as it
+enters the engine (see [The fact log](#the-fact-log)).
+
+**Not built:** everything that reads it. No code aggregates anything yet. This
+is the design [stream
 sessions](/services/stream-sessions#analytics-is-a-separate-subsystem) defers
 to, written down so the first person to need a total does not invent a
 different one.
@@ -94,26 +97,19 @@ someone starts from nothing.
 | Session records and segments | **Built** | `stream_sessions`, `stream_session_segments`; `StreamSessionService` |
 | Every platform event reaching the engine | **Built** | `twitch/src/lib/twitchEventBus.ts`, 10 EventSub subscriptions |
 | Fan-out including gift subs | **Built** | `api/src/stream-event-broadcaster.ts` |
-| A per-viewer event table | **Scaffolded, dead** | `user_events` — model, both migration chains, zero writers |
+| A per-viewer event table | **Built** | `user_events`, written by `UserEventRecorder` through `UserEventService` |
 | A per-viewer rollup precedent | **Scaffolded, dead** | `treats` / `treats_summary` view; Twirp generated, no service mounted |
 
-Two of those deserve care. `user_events` is
-`{userid, eventtype, eventvalue jsonb, createdat}` with indexes
-on userid and eventtype (`db/database/models/user_event.go`). It has no
-`session_id` column and no index on `createdat`, so it cannot answer either
-half of "per stream, over time" as it stands. It is a good starting shape, not
-a ready one.
-
-And `treats_summary` is a **view** over `treats`, with `TotalPoints` and a
+`treats_summary` is a **view** over `treats`, with `TotalPoints` and a
 per-type distribution (`db/database/models/treat_summary.go:10-24`). Whatever
 happens to treats, that is the shape a leaderboard wants, computed rather than
 maintained.
 
-### What is not stored
+### What was not stored
 
-Follows, subs, cheers, raids and gift subs are published to NATS and discarded.
-`twitch/src/` contains no database call. The only places an event survives are
-incidental:
+Until the fact log existed, follows, subs, cheers, raids and gift subs were
+published to NATS and discarded. The only places an event from before then
+survives are incidental:
 
 - `workflow_executions.trigger_event` holds the originating CloudEvent verbatim
   (`db/database/models/workflow_execution.go:38-41`) — but only when a workflow
@@ -177,6 +173,49 @@ accounts for refunds, churn and expirations.
 Use Helix for standing totals. Use the fact log for what Helix will not give:
 attribution to a session, and the time axis.
 
+## The fact log
+
+`user_events` is the log, one row per platform event, never updated
+(`db/database/migrate/migrations/*/0048_user_events_fact_log.go`).
+
+| Column | Meaning |
+|---|---|
+| `event_id`, `source` | The CloudEvent identity. Unique together, so a redelivery is a conflict, not a second row. |
+| `event_type`, `platform` | The CloudEvent `type` and `platform` extension. |
+| `platform_user_id`, `user_name` | The viewer, as the platform names them. Null when the event is attributable to nobody. |
+| `session_id` | The session the event was stamped with. Not a foreign key and not a stable key; resolve it. |
+| `amount` | Bits, gifted subs, raiders or channel points. Null when the event carries no quantity. |
+| `event_value` | The CloudEvent `data`, whole. |
+| `occurred_at` | The CloudEvent `time`. The time axis every reader groups on. |
+
+**One writer, on the bus.** `UserEventRecorder` (`api/src/user-event-recorder.ts`)
+subscribes to the platform subjects and calls `UserEventService.RecordUserEvent`.
+It sits in the api rather than in each platform integration because the api
+already holds the db-proxy client and one subscriber serves every platform; it
+is on the ingestion path in the sense that matters — nothing has to react to an
+event for it to be recorded. A failed write is retried a few times, which is
+safe only because the write is idempotent.
+
+**What is recorded.** Cheer, follow, raid, redemption, sub, gift, resub, and
+the gift-paid, prime-paid and pay-it-forward upgrades. Chat is not: it is the
+one high-volume subject and no total is built from it. Neither are the
+`shared*` events, which happened in another channel during shared chat.
+Events the api publishes itself are dashboard simulations and are skipped.
+
+**Anonymous events count, but not for anybody.** An anonymous cheer or gift is
+stored with a null viewer, so channel totals include it and no per-viewer total
+can credit it to someone — including the account Twitch uses to stand in for
+anonymous gifters.
+
+**A gift arrives twice.** Twitch sends a community gift as one
+`SubscriptionGift` for the gifter and one gifted `Subscribe` per recipient, and
+both are recorded as sent. "Subs gained" counts one or the other, never both.
+
+**Idempotency covers our retries, not Twitch's.** The CloudEvent id is minted
+when the event is published, so it dedupes the recorder retrying a write. A
+Twitch redelivery arrives with a new CloudEvent id; Twurple drops those by
+EventSub message id within one process, which does not survive a restart.
+
 ## Two constraints to design against
 
 **The stamped session id is not a stable key.** Splits move segments between
@@ -209,10 +248,9 @@ and `getDashboard().recentActivity` is always `[]` (`routes/dashboard.ts:50`).
 
 Each step is independently useful and safe to stop after:
 
-1. **Write the facts** — `session_id` and a `createdat` index on `user_events`,
-   and a writer on the ingestion path. Nothing reads it yet; the corpus starts
-   accumulating from the day it lands, and cannot be recovered for any day
-   before.
+1. **Write the facts** — done. `user_events` carries the session and the
+   time axis, and every platform event is written as it arrives. Nothing reads
+   it yet; the corpus accumulates from the day it landed.
 2. **Expose sessions** — `ListStreamSessions` / `GetStreamSession` on the
    `RPC_METHODS` allowlist (`api/src/api-session.ts:103-193`). Without this
    there is no way to ask about a past stream.
@@ -225,5 +263,5 @@ Each step is independently useful and safe to stop after:
 6. **Backfill** what `workflow_executions.trigger_event` and `alerts.payload`
    can supply, once there is something to backfill into.
 
-Step 1 is the one with a deadline. Every day it is not done is a day of history
-that does not exist, and unlike the others it cannot be added retroactively.
+Step 1 came first because it is the only one that cannot be added
+retroactively: a day without it is a day of history that does not exist.

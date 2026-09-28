@@ -60,6 +60,7 @@ export interface Cheer {
 
 // a twitch follow event
 export interface Follow {
+  userId: string;
   userName: string;
 }
 
@@ -77,6 +78,8 @@ export interface Redeem {
   redeemId: string;
   rewardId: string;
   rewardTitle: string;
+  // Channel points the viewer spent on the reward.
+  rewardCost: number;
   userId: string;
   userName: string;
   message?: string;

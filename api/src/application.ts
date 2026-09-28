@@ -55,6 +55,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { StorageChangeEmitter },
       { StreamEventBroadcaster },
       { StreamSessionResolver },
+      { UserEventRecorder },
       { WebhookClient },
       { initWidgetStatusHandlers },
       { initWorkflowHandlers },
@@ -79,6 +80,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./storage-change-emitter"),
       import("./stream-event-broadcaster"),
       import("./stream-session-resolver"),
+      import("./user-event-recorder"),
       import("./webhook-client"),
       import("./widget-status-handlers"),
       import("./workflow-event-handlers"),
@@ -182,6 +184,9 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
 
       const streamSessionResolver = new StreamSessionResolver(natsClient, db, logger, webhookClient);
       await streamSessionResolver.start();
+
+      const userEventRecorder = new UserEventRecorder(natsClient, db, logger);
+      await userEventRecorder.start();
 
       const streamEventBroadcaster = new StreamEventBroadcaster(natsClient, logger);
       await streamEventBroadcaster.start();

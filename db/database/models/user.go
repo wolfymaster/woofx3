@@ -20,8 +20,7 @@ type User struct {
 	UpdatedAt      time.Time  `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;not null"`
 
 	// Relationships
-	UserEvents []UserEvent `gorm:"foreignKey:UserID;references:ID"`
-	UserMeta   []UserMeta  `gorm:"foreignKey:UserID;references:ID"`
+	UserMeta []UserMeta `gorm:"foreignKey:UserID;references:ID"`
 }
 
 func (u *User) BeforeUpdate(tx *gorm.DB) error {
@@ -88,12 +87,6 @@ func GetUsersByPlatform(db *gorm.DB, platform string) ([]User, error) {
 	var users []User
 	err := db.Where("platform = ?", platform).Find(&users).Error
 	return users, err
-}
-
-func GetUserWithEvents(db *gorm.DB, userID string) (*User, error) {
-	var user User
-	err := db.Preload("UserEvents").First(&user, "id = ?", userID).Error
-	return &user, err
 }
 
 func GetUserWithMeta(db *gorm.DB, userID string) (*User, error) {

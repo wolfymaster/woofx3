@@ -4,11 +4,12 @@ import type { Context } from "src/types";
 
 export default function onChannelRedemptionAdd(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onChannelRedemptionAdd(ctx.broadcaster.id, async (event: EventSubChannelRedemptionAddEvent) => {
-    const { id, userId, userDisplayName, input, rewardId, rewardTitle } = event;
+    const { id, userId, userDisplayName, input, rewardCost, rewardId, rewardTitle } = event;
     const [topic, data] = ctx.events.Twitch().redeem({
       redeemId: id,
       rewardId,
       rewardTitle,
+      rewardCost,
       userId,
       userName: userDisplayName,
       message: input || undefined,
