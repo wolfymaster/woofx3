@@ -33,6 +33,119 @@ export type PlannedStep =
 export interface PlannedImport {
   plan: ConfigImportPlan;
   steps: PlannedStep[];
+  applyMembers: boolean;
+}
+
+/**
+ * Where a bundle name ends up on this engine: the name to resolve it by, or
+ * why nothing will be there. Dependents compare and resolve through this, so
+ * a renamed group or workflow is followed to its new name, and a dependency
+ * that will not be imported blocks its dependents instead of letting them
+ * quietly bind to an unrelated item that happens to share the old name.
+ */
+export type Destination = { name: string } | { blocked: string };
+
+/**
+ * Actions that moderate chat, change the stream or drive OBS. Matched by id
+ * because the action rows carry no privilege flag; a shared bundle using one
+ * is worth a second look before it is imported.
+ */
+const PRIVILEGED_ACTIONS: ReadonlySet<string> = new Set(["twitch.timeout", "twitch.ban", "twitch.update_stream"]);
+const PRIVILEGED_ACTION_PREFIXES = ["obs."];
+
+function isPrivileged(action: string): boolean {
+  return PRIVILEGED_ACTIONS.has(action) || PRIVILEGED_ACTION_PREFIXES.some((prefix) => action.startsWith(prefix));
+}
+
+function privilegedReason(actions: string[]): ConfigImportReason[] {
+  const privileged = [...new Set(actions.filter(isPrivileged))].sort();
+  if (privileged.length === 0) {
+    return [];
+  }
+  return [
+    reason(
+      "privileged_action",
+      `Runs ${privileged.map((a) => `"${a}"`).join(", ")}, which can moderate chat, change the stream or control OBS.`,
+      false
+    ),
+  ];
+}
+
+/**
+ * A conflict that leaves the same-named item already on the engine standing
+ * in for the bundle's: the only thing stopping it is a name collision the
+ * `skip` policy chose to keep. Any other conflict means the item is simply
+ * not there.
+ */
+export function keepsExisting(item: ConfigImportPlanItem): boolean {
+  const blocking = item.reasons.filter((r) => r.blocking);
+  return item.action === "conflict" && blocking.length > 0 && blocking.every((r) => r.code === "name_collision");
+}
+
+function destinationOf(item: ConfigImportPlanItem): Destination {
+  if (item.action !== "conflict") {
+    return { name: item.targetName };
+  }
+  if (keepsExisting(item)) {
+    return { name: item.key };
+  }
+  const blocking = item.reasons.find((r) => r.blocking);
+  return { blocked: `"${item.key}" will not be imported${blocking ? `: ${blocking.message}` : ""}` };
+}
+
+/**
+ * Resolve a name a dependent uses. Bundle items planned so far answer through
+ * their destination; a bundle item not yet planned is part of a reference
+ * cycle; anything else must already exist on the engine.
+ */
+function resolveName(
+  name: string,
+  planned: ReadonlyMap<string, Destination>,
+  inBundle: ReadonlySet<string>,
+  onEngine: ReadonlySet<string>
+): Destination | undefined {
+  const destination = planned.get(name);
+  if (destination) {
+    return destination;
+  }
+  if (inBundle.has(name)) {
+    return { blocked: `"${name}" is part of a reference cycle` };
+  }
+  return onEngine.has(name) ? { name } : undefined;
+}
+
+function sortedDifference(wanted: readonly string[], present: readonly string[]): string[] {
+  const have = new Set(present);
+  return [...new Set(wanted.filter((u) => !have.has(u)))].sort();
+}
+
+/**
+ * Report what the item's usernames will do: with `applyMembers`, which
+ * usernames gain access; without it, that the bundle's usernames are left out.
+ */
+function accessReasons(
+  usernames: readonly string[] | undefined,
+  applyMembers: boolean,
+  decision: Decision<unknown>,
+  present: readonly string[],
+  what: string
+): ConfigImportReason[] {
+  if (!usernames || usernames.length === 0) {
+    return [];
+  }
+  if (!applyMembers) {
+    return [
+      reason("members_not_applied", `The bundle's ${what} are left out; import with applyMembers to add them.`, false),
+    ];
+  }
+  if (decision.action !== "create" && decision.action !== "update") {
+    return [];
+  }
+  const granted = sortedDifference(usernames, decision.action === "update" ? present : []);
+  if (granted.length === 0) {
+    return [];
+  }
+  return [reason("grants_access", `Grants access to ${granted.join(", ")}.`, false)];
 }
 
 /** Enough attempts for any real setup; past this, something is generating names. */
@@ -61,7 +174,7 @@ function reason(code: ConfigImportReason["code"], message: string, blocking: boo
  * The rule every kind shares: blocking problems win; then an identical item
  * is skipped; then the conflict policy decides a collision.
  *
- * `renamable` is false for resources, whose canonical id is what everything
+ * `renamed` is null for resources, whose canonical id is what everything
  * else references them by.
  */
 function decide<E>(
@@ -115,7 +228,7 @@ function decide<E>(
       existing: current.existing,
       reasons: [
         ...reasons,
-        reason("name_collision", `No free name found after ${MAX_RENAME_ATTEMPTS} attempts.`, true),
+        reason("rename_exhausted", `No free name found after ${MAX_RENAME_ATTEMPTS} attempts.`, true),
       ],
     };
   }
@@ -196,68 +309,65 @@ function planItem(
   };
 }
 
-function groupContent(group: ConfigBundleGroup, existing: EngineGroup): boolean {
-  if (group.description !== existing.description) {
-    return false;
-  }
-  if (!group.members) {
-    return true;
-  }
-  // Import only ever adds members, so an existing group that already has
-  // everyone the bundle lists is what import would leave anyway.
-  const present = new Set(existing.members ?? []);
-  return group.members.every((m) => present.has(m));
+interface PlanContext {
+  bundle: ConfigBundle;
+  state: EngineConfigState;
+  policy: ConfigConflictPolicy;
+  sections: ReadonlySet<ConfigSection>;
+  applyMembers: boolean;
+  versions: ReadonlyMap<string, string>;
+  groupDestinations: Map<string, Destination>;
+  workflowDestinations: Map<string, Destination>;
 }
 
-function planGroups(bundle: ConfigBundle, state: EngineConfigState, policy: ConfigConflictPolicy): PlannedStep[] {
+function planGroups(ctx: PlanContext): PlannedStep[] {
+  const { bundle, state, policy, applyMembers } = ctx;
   const byName = new Map(state.groups.map((g) => [g.name, g]));
   return bundle.groups.map((group) => {
     const builtIn = byName.get(group.name);
+    let decision: Decision<EngineGroup>;
     if (builtIn?.isBuiltIn) {
       // Every engine has its built-in groups; a bundle naming one just means
       // commands granted to it keep that grant here.
-      const decision: Decision<EngineGroup> = {
+      decision = {
         action: "skip",
         targetName: group.name,
         existing: builtIn,
         reasons: [reason("not_owned", `"${group.name}" is a built-in group on this engine.`, false)],
       };
-      return {
-        kind: "group",
-        item: group,
-        planItem: planItem("group", group.name, decision, builtIn.id),
-        existing: builtIn,
-      };
+    } else {
+      // Import only ever adds members, so an existing group that already has
+      // everyone the bundle lists is what import would leave anyway.
+      const wantedMembers = applyMembers ? (group.members ?? []) : [];
+      decision = decide<EngineGroup>(
+        group.name,
+        policy,
+        [],
+        (name) => {
+          const existing = byName.get(name) ?? null;
+          return {
+            existing,
+            owned: existing !== null && !existing.isBuiltIn,
+            identical:
+              existing !== null &&
+              existing.description === group.description &&
+              sortedDifference(wantedMembers, existing.members ?? []).length === 0,
+          };
+        },
+        (attempt) => (attempt === 1 ? `${group.name} (imported)` : `${group.name} (imported ${attempt})`)
+      );
+      decision.reasons.push(
+        ...accessReasons(group.members, applyMembers, decision, decision.existing?.members ?? [], "group members")
+      );
     }
-    const decision = decide<EngineGroup>(
-      group.name,
-      policy,
-      [],
-      (name) => {
-        const existing = byName.get(name) ?? null;
-        return {
-          existing,
-          owned: existing !== null && !existing.isBuiltIn,
-          identical: existing !== null && groupContent(group, existing),
-        };
-      },
-      (attempt) => (attempt === 1 ? `${group.name} (imported)` : `${group.name} (imported ${attempt})`)
-    );
-    return {
-      kind: "group",
-      item: group,
-      planItem: planItem("group", group.name, decision, decision.existing?.id),
-      existing: decision.existing,
-    };
+    const item = planItem("group", group.name, decision, decision.existing?.id);
+    ctx.groupDestinations.set(group.name, destinationOf(item));
+    return { kind: "group", item: group, planItem: item, existing: decision.existing };
   });
 }
 
-function planResources(
-  bundle: ConfigBundle,
-  state: EngineConfigState,
-  policy: ConfigConflictPolicy,
-  versions: ReadonlyMap<string, string>
-): PlannedStep[] {
+function planResources(ctx: PlanContext): PlannedStep[] {
+  const { bundle, state, policy, versions } = ctx;
   const byId = new Map(state.resources.map((r) => [r.canonicalId, r]));
   return bundle.resources.map((resource) => {
     const key = canonicalResourceId(resource);
@@ -305,9 +415,8 @@ function orderByReferences(workflows: ConfigBundleWorkflow[]): ConfigBundleWorkf
     if (visited.has(wf.name)) {
       return;
     }
-    // Marked before descending so a reference cycle terminates; the cycle's
-    // members keep their name order and the applier reports the unresolved
-    // reference.
+    // Marked before descending so a reference cycle terminates; resolveName
+    // then reports the cycle on whichever member is planned first.
     visited.add(wf.name);
     for (const target of Object.values(wf.workflowRefs).sort()) {
       const dependency = byName.get(target);
@@ -323,22 +432,21 @@ function orderByReferences(workflows: ConfigBundleWorkflow[]): ConfigBundleWorkf
   return ordered;
 }
 
-/** The parts of a bundled workflow that make it the same workflow under any name. */
-function workflowContent(wf: ConfigBundleWorkflow): unknown {
+/**
+ * The parts of a workflow that make it the same workflow under any name, with
+ * sub-workflow targets given as the names they have on this engine.
+ */
+function workflowContent(wf: ConfigBundleWorkflow, workflowRefs: Record<string, string>): unknown {
   const { name: _name, ...definition } = wf.definition;
-  return { enabled: wf.enabled, definition, workflowRefs: wf.workflowRefs };
+  return { enabled: wf.enabled, definition, workflowRefs };
 }
 
-function planWorkflows(
-  bundle: ConfigBundle,
-  state: EngineConfigState,
-  policy: ConfigConflictPolicy,
-  versions: ReadonlyMap<string, string>,
-  sections: ReadonlySet<ConfigSection>
-): PlannedStep[] {
+function planWorkflows(ctx: PlanContext): PlannedStep[] {
+  const { bundle, state, policy, versions, sections } = ctx;
   const byName = new Map(state.workflows.map((w) => [w.name, w]));
   const idToName = new Map(state.workflows.map((w) => [w.id, w.name]));
-  const bundled = new Set(sections.has("workflows") ? bundle.workflows.map((w) => w.name) : []);
+  const inBundle = new Set(sections.has("workflows") ? bundle.workflows.map((w) => w.name) : []);
+  const onEngine = new Set(byName.keys());
 
   return orderByReferences(bundle.workflows).map((wf) => {
     const reasons = moduleReasons(wf.requires, versions, state);
@@ -347,8 +455,13 @@ function planWorkflows(
     if (!validation.ok) {
       reasons.push(reason("invalid", validation.errors.map((e) => `${e.path}: ${e.message}`).join("; "), true));
     }
+    const actions: string[] = [];
     for (const task of wf.definition.tasks ?? []) {
-      if (task?.type === "action" && task.action && !state.actionNames.has(task.action)) {
+      if (task?.type !== "action" || !task.action) {
+        continue;
+      }
+      actions.push(task.action);
+      if (!state.actionNames.has(task.action)) {
         reasons.push(
           reason(
             "unknown_action",
@@ -358,8 +471,12 @@ function planWorkflows(
         );
       }
     }
+    reasons.push(...privilegedReason(actions));
+
+    const resolvedRefs: Record<string, string> = {};
     for (const [taskId, target] of Object.entries(wf.workflowRefs)) {
-      if (!bundled.has(target) && !byName.has(target)) {
+      const destination = resolveName(target, ctx.workflowDestinations, inBundle, onEngine);
+      if (!destination) {
         reasons.push(
           reason(
             "unknown_workflow",
@@ -367,54 +484,50 @@ function planWorkflows(
             true
           )
         );
+      } else if ("blocked" in destination) {
+        reasons.push(reason("dependency_blocked", `Step "${taskId}" starts ${destination.blocked}.`, true));
+      } else {
+        resolvedRefs[taskId] = destination.name;
       }
     }
 
-    const content = workflowContent(wf);
+    const content = workflowContent(wf, resolvedRefs);
     const decision = decide<EngineWorkflow>(
       wf.name,
       policy,
       reasons,
       (name) => {
         const existing = byName.get(name) ?? null;
+        if (existing === null || existing.trigger === null) {
+          return { existing, owned: existing?.userOwned ?? false, identical: false };
+        }
+        const current = workflowToBundle(existing, idToName, state);
         return {
           existing,
-          owned: existing?.userOwned ?? false,
-          identical:
-            existing !== null &&
-            existing.trigger !== null &&
-            sameJson(content, workflowContent(workflowToBundle(existing, idToName, state))),
+          owned: existing.userOwned,
+          identical: sameJson(content, workflowContent(current, current.workflowRefs)),
         };
       },
       (attempt) => (attempt === 1 ? `${wf.name} (imported)` : `${wf.name} (imported ${attempt})`)
     );
-    return {
-      kind: "workflow",
-      item: wf,
-      planItem: planItem("workflow", wf.name, decision, decision.existing?.id),
-      existing: decision.existing,
-    };
+    const item = planItem("workflow", wf.name, decision, decision.existing?.id);
+    ctx.workflowDestinations.set(wf.name, destinationOf(item));
+    return { kind: "workflow", item: wf, planItem: item, existing: decision.existing };
   });
 }
 
-function commandContent(cmd: ConfigBundleCommand): unknown {
-  const { command: _command, requires: _requires, ...content } = cmd;
-  return content;
+/** What makes two commands the same, apart from their word and who they grant by name. */
+function commandContent(cmd: ConfigBundleCommand, groups: string[]): unknown {
+  const { command: _command, requires: _requires, usernames: _usernames, ...content } = cmd;
+  return { ...content, groups: [...groups].sort() };
 }
 
-function planCommands(
-  bundle: ConfigBundle,
-  state: EngineConfigState,
-  policy: ConfigConflictPolicy,
-  versions: ReadonlyMap<string, string>,
-  sections: ReadonlySet<ConfigSection>
-): PlannedStep[] {
+function planCommands(ctx: PlanContext): PlannedStep[] {
+  const { bundle, state, policy, versions, sections, applyMembers } = ctx;
   const byWord = new Map(state.commands.map((c) => [c.command.toLowerCase(), c]));
   const groupNames = new Map(state.groups.map((g) => [g.id, g.name]));
-  const knownGroups = new Set([
-    ...state.groups.map((g) => g.name),
-    ...(sections.has("groups") ? bundle.groups.map((g) => g.name) : []),
-  ]);
+  const inBundle = new Set(sections.has("groups") ? bundle.groups.map((g) => g.name) : []);
+  const onEngine = new Set(state.groups.map((g) => g.name));
 
   return bundle.commands.map((cmd) => {
     const reasons = moduleReasons(cmd.requires, versions, state);
@@ -430,33 +543,46 @@ function planCommands(
     } catch (err) {
       reasons.push(reason("invalid", err instanceof Error ? err.message : String(err), true));
     }
+    reasons.push(...privilegedReason(cmd.actions.map((a) => a?.action).filter((a): a is string => !!a)));
+
+    const resolvedGroups: string[] = [];
     for (const group of cmd.groups) {
-      if (!knownGroups.has(group)) {
+      const destination = resolveName(group, ctx.groupDestinations, inBundle, onEngine);
+      if (!destination) {
         reasons.push(
           reason("unknown_group", `Granted to group "${group}", which is neither in the bundle nor here.`, true)
         );
+      } else if ("blocked" in destination) {
+        reasons.push(reason("dependency_blocked", `Granted to group ${destination.blocked}.`, true));
+      } else {
+        resolvedGroups.push(destination.name);
       }
     }
 
-    const content = commandContent(cmd);
+    const content = commandContent(cmd, resolvedGroups);
+    const wantedUsernames = applyMembers ? (cmd.usernames ?? []) : [];
     const decision = decide<EngineCommand>(
       cmd.command,
       policy,
       reasons,
       (word) => {
         const existing = byWord.get(word.toLowerCase()) ?? null;
+        if (existing === null) {
+          return { existing, owned: false, identical: false };
+        }
+        const current = commandToBundle(existing, groupNames, false, state);
         return {
           existing,
-          owned: existing?.userOwned ?? false,
+          owned: existing.userOwned,
           identical:
-            existing !== null &&
-            sameJson(
-              content,
-              commandContent(commandToBundle(existing, groupNames, cmd.usernames !== undefined, state))
-            ),
+            sameJson(content, commandContent(current, current.groups)) &&
+            sortedDifference(wantedUsernames, existing.usernames).length === 0,
         };
       },
       (attempt) => (attempt === 1 ? `${cmd.command}-imported` : `${cmd.command}-imported-${attempt}`)
+    );
+    decision.reasons.push(
+      ...accessReasons(cmd.usernames, applyMembers, decision, decision.existing?.usernames ?? [], "command usernames")
     );
     return {
       kind: "command",
@@ -476,16 +602,25 @@ function planCommands(
 export function planImport(
   bundle: ConfigBundle,
   state: EngineConfigState,
-  options: { policy: ConfigConflictPolicy; sections: ReadonlySet<ConfigSection> }
+  options: { policy: ConfigConflictPolicy; sections: ReadonlySet<ConfigSection>; applyMembers: boolean }
 ): PlannedImport {
-  const versions = new Map(bundle.requires.map((r) => [r.moduleId, r.version]));
-  const { policy, sections } = options;
+  const ctx: PlanContext = {
+    bundle,
+    state,
+    policy: options.policy,
+    sections: options.sections,
+    applyMembers: options.applyMembers,
+    versions: new Map(bundle.requires.map((r) => [r.moduleId, r.version])),
+    groupDestinations: new Map(),
+    workflowDestinations: new Map(),
+  };
+  const { sections } = options;
 
   const steps: PlannedStep[] = [
-    ...(sections.has("groups") ? planGroups(bundle, state, policy) : []),
-    ...(sections.has("resources") ? planResources(bundle, state, policy, versions) : []),
-    ...(sections.has("workflows") ? planWorkflows(bundle, state, policy, versions, sections) : []),
-    ...(sections.has("commands") ? planCommands(bundle, state, policy, versions, sections) : []),
+    ...(sections.has("groups") ? planGroups(ctx) : []),
+    ...(sections.has("resources") ? planResources(ctx) : []),
+    ...(sections.has("workflows") ? planWorkflows(ctx) : []),
+    ...(sections.has("commands") ? planCommands(ctx) : []),
   ];
 
   const summary = { create: 0, update: 0, skip: 0, conflict: 0 };
@@ -496,7 +631,14 @@ export function planImport(
   const missingModules: ConfigBundleRequirement[] = bundle.requires.filter((r) => !state.modules.has(r.moduleId));
 
   return {
-    plan: { onConflict: policy, items: steps.map((s) => s.planItem), summary, missingModules },
+    plan: {
+      onConflict: options.policy,
+      applyMembers: options.applyMembers,
+      items: steps.map((s) => s.planItem),
+      summary,
+      missingModules,
+    },
     steps,
+    applyMembers: options.applyMembers,
   };
 }

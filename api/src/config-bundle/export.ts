@@ -60,8 +60,9 @@ function sortedRequires(set: Set<string>): string[] {
  * put an existing workflow in the same form so the two can be compared.
  *
  * `workflowNames` maps workflow ids on the engine the workflow lives on to
- * their names. A sub-workflow step whose target is not in it keeps its id: it
- * was already dangling, and blanking it would hide that.
+ * their names. A sub-workflow step whose target is not in it was already
+ * dangling; its id is blanked all the same, since a raw id is meaningless on
+ * any other engine, and it gets no `workflowRefs` entry.
  */
 export function workflowToBundle(
   wf: EngineWorkflow,
@@ -79,11 +80,13 @@ export function workflowToBundle(
     }
     const targetId = task.workflow?.workflowId;
     const targetName = targetId ? workflowNames.get(targetId) : undefined;
-    if (task.workflow && targetName) {
-      workflowRefs[task.id] = targetName;
-      return { ...task, workflow: { ...task.workflow, workflowId: "" } };
+    if (!task.workflow) {
+      return task;
     }
-    return task;
+    if (targetName) {
+      workflowRefs[task.id] = targetName;
+    }
+    return { ...task, workflow: { ...task.workflow, workflowId: "" } };
   });
 
   if (wf.trigger?.type === "event") {
@@ -172,6 +175,26 @@ export function resourceToBundle(
 }
 
 /**
+ * A bundle addresses items by name, so two with the same name would make
+ * every reference to that name ambiguous and the second item unimportable.
+ * The creator has to rename one; the export says which.
+ */
+function refuseDuplicates(section: ConfigSection, names: string[]): void {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const name of names) {
+    if (seen.has(name)) {
+      duplicates.add(name);
+    }
+    seen.add(name);
+  }
+  if (duplicates.size > 0) {
+    const list = [...duplicates].map((name) => `"${name}"`).join(", ");
+    throw new Error(`Cannot export ${section}: more than one is named ${list}. Rename them so each name is unique.`);
+  }
+}
+
+/**
  * Build a bundle from the engine's configuration.
  *
  * Only what a creator authored is exported: module-registered workflows and
@@ -207,6 +230,19 @@ export function buildConfigBundle(
   const resources = options.sections.has("resources")
     ? state.resources.map((r) => resourceToBundle(r, state)).sort(byKey((r) => `${r.module}:${r.kind}:${r.instanceId}`))
     : [];
+
+  refuseDuplicates(
+    "workflows",
+    workflows.map((w) => w.name)
+  );
+  refuseDuplicates(
+    "commands",
+    commands.map((c) => c.command.toLowerCase())
+  );
+  refuseDuplicates(
+    "groups",
+    groups.map((g) => g.name)
+  );
 
   const required = new Set<string>();
   for (const item of [...workflows, ...commands, ...resources]) {

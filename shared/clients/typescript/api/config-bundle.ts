@@ -8,11 +8,14 @@
  * by a database id. Ids are minted per engine, so a bundle that carried them
  * would mean nothing anywhere but where it was made.
  *
- * What a bundle never carries: tokens, secrets, module settings (the only
- * place a `secret` value can live), overlay tokens, webhook endpoints, and the
- * live values of counters, timers and queues. Group members and per-user
- * command grants are usernames -- personal data -- and are left out unless the
- * export asks for them with `includeMembers`.
+ * What a bundle never carries: the engine's stored credentials (tokens, API
+ * clients, the webhook signing secret, overlay tokens), module settings (the
+ * only place a `secret` value can live), and the live values of counters,
+ * timers and queues. Step parameters, command actions and resource settings
+ * go verbatim, so anything a creator pasted into one goes too. Group members
+ * and per-user command grants are usernames -- personal data -- and are left
+ * out unless the export asks for them with `includeMembers`, and import adds
+ * them only with `applyMembers`.
  *
  * See docs/services/config-bundles.md.
  */
@@ -141,6 +144,13 @@ export interface ConfigImportOptions {
   onConflict?: ConfigConflictPolicy;
   /** Sections to import. Omitted imports every section in the bundle. */
   include?: ConfigSection[];
+  /**
+   * Add the bundle's group members and per-user command grants. Off by
+   * default: a bundle from someone else would otherwise hand their
+   * usernames access to commands here. The plan names every username that
+   * would be granted (`grants_access`) so the person can decide first.
+   */
+  applyMembers?: boolean;
 }
 
 export type ConfigItemKind = "workflow" | "command" | "group" | "resource";
@@ -160,6 +170,8 @@ export type ConfigImportReasonCode =
   | "identical"
   /** The name is taken by a different item. */
   | "name_collision"
+  /** Every rename candidate is taken by a different item. */
+  | "rename_exhausted"
   /** Imported under another name to avoid a collision. */
   | "renamed"
   /** The existing item will be replaced. */
@@ -178,6 +190,14 @@ export type ConfigImportReasonCode =
   | "unknown_group"
   /** A sub-workflow step names a workflow that neither the bundle nor this engine has. */
   | "unknown_workflow"
+  /** Something this item depends on (a group, a sub-workflow) will not be imported. */
+  | "dependency_blocked"
+  /** Applying the item grants these usernames access; see `applyMembers`. */
+  | "grants_access"
+  /** The bundle carries members or usernames that this import leaves out; see `applyMembers`. */
+  | "members_not_applied"
+  /** A step moderates chat, edits the stream or drives OBS. Worth reading before importing a shared bundle. */
+  | "privileged_action"
   /** The item fails the same validation a save through the API applies. */
   | "invalid";
 
@@ -209,6 +229,7 @@ export interface ConfigImportSummary {
 
 export interface ConfigImportPlan {
   onConflict: ConfigConflictPolicy;
+  applyMembers: boolean;
   /** Groups first, then resources, workflows and commands: the order import applies them. */
   items: ConfigImportPlanItem[];
   summary: ConfigImportSummary;
@@ -229,6 +250,11 @@ export interface ConfigImportResultItem {
   id?: string;
   /** Why a `failed` item failed, or the first blocking reason of a `conflict`. */
   error?: string;
+  /**
+   * Set when the item was written but not completely: a workflow created but
+   * not enabled, or a group created but missing members it should have.
+   */
+  warning?: string;
 }
 
 export interface ConfigImportResult {

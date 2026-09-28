@@ -33,6 +33,10 @@ function parseImportOptions(options: unknown): ConfigImportOptions {
   if (typeof options !== "object" || Array.isArray(options)) {
     throw new Error("options must be an object");
   }
+  const { applyMembers } = options as ConfigImportOptions;
+  if (applyMembers !== undefined && typeof applyMembers !== "boolean") {
+    throw new Error("applyMembers must be a boolean");
+  }
   return options as ConfigImportOptions;
 }
 
@@ -62,11 +66,11 @@ export const configBundlesRoutes = routeModule({
 
   async previewImport(bundle: unknown, options?: ConfigImportOptions): Promise<ConfigImportPlan> {
     const parsed = parseConfigBundle(bundle);
-    const { include, onConflict } = parseImportOptions(options);
+    const { include, onConflict, applyMembers } = parseImportOptions(options);
     const sections = parseSections(include);
     const policy = parseConflictPolicy(onConflict);
     const state = await readEngineConfig(this.db, { members: parsed.includeMembers });
-    return planImport(parsed, state, { policy, sections }).plan;
+    return planImport(parsed, state, { policy, sections, applyMembers: applyMembers === true }).plan;
   },
 
   /**
@@ -80,17 +84,20 @@ export const configBundlesRoutes = routeModule({
     context: { clientId: string }
   ): Promise<ConfigImportResult> {
     const parsed = parseConfigBundle(bundle);
-    const { include, onConflict } = parseImportOptions(options);
+    const { include, onConflict, applyMembers } = parseImportOptions(options);
     const sections = parseSections(include);
     const policy = parseConflictPolicy(onConflict);
     const state = await readEngineConfig(this.db, { members: parsed.includeMembers });
-    const { steps } = planImport(parsed, state, { policy, sections });
+    const planned = planImport(parsed, state, { policy, sections, applyMembers: applyMembers === true });
 
     // Route modules are typed against the host alone (see routeModule), but
     // at runtime `this` is the Api carrying every registered route; these are
     // the ones import writes through.
     const writer = this as unknown as ConfigWriter;
-    const result = await applyImport(steps, state, writer, context);
+    const result = await applyImport(planned.steps, state, writer, {
+      applyMembers: planned.applyMembers,
+      context,
+    });
     this.logger.info("Imported config bundle", { onConflict: policy, ...result.summary });
     return result;
   },

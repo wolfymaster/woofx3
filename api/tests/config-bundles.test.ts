@@ -2,7 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import type { ConfigBundle, Woofx3EngineApi } from "@woofx3/api";
 import { Api, type ApiOptions } from "../src/api";
 import { ApiSession } from "../src/api-session";
-import { MAX_CONFIG_BUNDLE_BYTES } from "../src/config-bundle/schema";
+import { MAX_CONFIG_BUNDLE_BYTES, MAX_CONFIG_SECTION_ITEMS } from "../src/config-bundle/schema";
 
 function fakeLogger() {
   return {
@@ -369,6 +369,16 @@ describe("exportConfig", () => {
     expect(JSON.stringify(withoutTimestamp(first))).toBe(JSON.stringify(withoutTimestamp(second)));
   });
 
+  it("refuses to export two workflows with the same name", async () => {
+    const db = populatedEngine();
+    workflowRow(db, { name: "Thank follower" });
+    const { api } = makeApi(db);
+
+    await expect(api.exportConfig()).rejects.toThrow(
+      /Cannot export workflows: more than one is named "Thank follower"/
+    );
+  });
+
   it("rejects an unknown section", async () => {
     const { api } = makeApi(populatedEngine());
 
@@ -393,7 +403,7 @@ describe("round trip into an empty engine", () => {
       "command:vanish:create",
     ]);
 
-    const result = await session.importConfig(bundle);
+    const result = await session.importConfig(bundle, { applyMembers: true });
 
     expect(result.summary).toEqual({ created: 5, updated: 0, skipped: 0, conflict: 0, failed: 0 });
     expect(published).toContain("command.created");
@@ -415,10 +425,10 @@ describe("round trip into an empty engine", () => {
     const bundle = await source.exportConfig({ includeMembers: true });
     const target = emptyEngine();
     const { session } = makeApi(target);
-    await session.importConfig(bundle);
+    await session.importConfig(bundle, { applyMembers: true });
     const rowsAfterFirst = JSON.stringify([target.workflows, target.commands, target.groups, target.instances]);
 
-    const second = await session.importConfig(bundle, { onConflict: "rename" });
+    const second = await session.importConfig(bundle, { onConflict: "rename", applyMembers: true });
 
     expect(second.summary).toEqual({ created: 0, updated: 0, skipped: 5, conflict: 0, failed: 0 });
     expect(JSON.stringify([target.workflows, target.commands, target.groups, target.instances])).toBe(rowsAfterFirst);
@@ -580,8 +590,136 @@ describe("conflicts", () => {
     expect(result.items.find((i) => i.key === "Thank follower")).toMatchObject({ outcome: "conflict" });
     expect(result.items.find((i) => i.key === "vanish")?.outcome).toBe("conflict");
     expect(result.items.find((i) => i.key === "VIPs")?.outcome).toBe("created");
-    // Follow hype starts Thank follower, which never got an id here.
-    expect(result.items.find((i) => i.key === "Follow hype")).toMatchObject({ outcome: "failed" });
+    // Follow hype starts Thank follower, which will not be imported.
+    const hype = result.items.find((i) => i.key === "Follow hype");
+    expect(hype).toMatchObject({ outcome: "conflict" });
+    expect(hype?.error).toContain('"Thank follower" will not be imported');
+  });
+
+  it("re-importing with rename after a rename import changes nothing", async () => {
+    const bundle = await makeApi(populatedEngine()).api.exportConfig();
+    const target = engineWithDifferentFollowHype();
+    target.workflows.push({
+      id: "t-wf-2",
+      name: "Thank follower",
+      description: "also mine",
+      enabled: true,
+      createdByType: "USER",
+      triggerJson: JSON.stringify({ type: "event", event: "channel.raid" }),
+      stepsJson: JSON.stringify([{ id: "x", type: "log" }]),
+    });
+    target.groups.push({ id: "t-g-vip", name: "VIPs", description: "someone else's", isBuiltIn: false });
+    const { session } = makeApi(target);
+
+    const first = await session.importConfig(bundle, { onConflict: "rename" });
+    expect(first.summary).toMatchObject({ created: 5, failed: 0, conflict: 0 });
+    const importedHype = target.workflows.find((w) => w.name === "Follow hype (imported)");
+    const importedThank = target.workflows.find((w) => w.name === "Thank follower (imported)");
+    expect(JSON.parse(importedHype.stepsJson)[1].workflow.workflowId).toBe(importedThank.id);
+    const importedVip = target.groups.find((g) => g.name === "VIPs (imported)");
+    expect(target.commands[0].groupIds).toContain(importedVip.id);
+    const rows = JSON.stringify([target.workflows, target.commands, target.groups, target.instances]);
+
+    const plan = await session.previewImport(bundle, { onConflict: "rename" });
+    expect(plan.summary).toEqual({ create: 0, update: 0, skip: 5, conflict: 0 });
+    const second = await session.importConfig(bundle, { onConflict: "rename" });
+
+    expect(second.summary).toMatchObject({ created: 0, skipped: 5 });
+    expect(JSON.stringify([target.workflows, target.commands, target.groups, target.instances])).toBe(rows);
+  });
+
+  it("fails dependents of a failed step instead of binding them to a same-named item", async () => {
+    const bundle = await makeApi(populatedEngine()).api.exportConfig();
+    const target = engineWithDifferentFollowHype();
+    target.workflows[0].name = "Thank follower";
+    target.groups.push({ id: "t-g-vip", name: "VIPs", description: "someone else's", isBuiltIn: false });
+    const create = target.createWorkflow.bind(target);
+    target.createWorkflow = async (req: any) => {
+      if (req.name === "Thank follower (imported)") {
+        throw new Error("db unavailable");
+      }
+      return create(req);
+    };
+    target.createGroup = async () => {
+      throw new Error("db unavailable");
+    };
+    const { session } = makeApi(target);
+
+    const result = await session.importConfig(bundle, { onConflict: "rename" });
+
+    expect(result.items.find((i) => i.key === "Thank follower")).toMatchObject({ outcome: "failed" });
+    const hype = result.items.find((i) => i.key === "Follow hype");
+    expect(hype?.outcome).toBe("failed");
+    expect(hype?.error).toContain('workflow "Thank follower", which failed: db unavailable');
+    const vanish = result.items.find((i) => i.key === "vanish");
+    expect(vanish?.outcome).toBe("failed");
+    expect(vanish?.error).toContain('group "VIPs", which failed');
+    expect(target.commands).toHaveLength(0);
+  });
+
+  it("reports a workflow saved but not enabled, rather than failing it", async () => {
+    const bundle = await makeApi(populatedEngine()).api.exportConfig();
+    const target = emptyEngine();
+    const { session, api } = makeApi(target);
+    (api as any).setWorkflowEnabled = async () => {
+      throw new Error("engine busy");
+    };
+
+    const result = await session.importConfig(bundle, { include: ["workflows"] });
+
+    const hype = result.items.find((i) => i.key === "Follow hype");
+    expect(hype).toMatchObject({ outcome: "created", warning: "Saved but left disabled: engine busy" });
+    expect(result.items.find((i) => i.key === "Thank follower")?.warning).toBeUndefined();
+  });
+
+  it("flags privileged actions without blocking them", async () => {
+    const bundle = await makeApi(populatedEngine()).api.exportConfig();
+    bundle.workflows[1].definition.tasks[0].action = "obs.set_scene";
+    const { session } = makeApi(emptyEngine());
+
+    const plan = await session.previewImport(bundle, { include: ["workflows"] });
+
+    const item = plan.items.find((i) => i.key === "Thank follower");
+    expect(item?.action).toBe("create");
+    expect(item?.reasons).toContainEqual(
+      expect.objectContaining({
+        code: "privileged_action",
+        blocking: false,
+        message: expect.stringContaining("obs.set_scene"),
+      })
+    );
+  });
+});
+
+describe("members and usernames", () => {
+  async function memberBundle() {
+    return makeApi(populatedEngine()).api.exportConfig({ includeMembers: true });
+  }
+
+  it("leaves them out unless applyMembers is set, and says so", async () => {
+    const target = emptyEngine();
+    const { session } = makeApi(target);
+
+    const plan = await session.previewImport(await memberBundle());
+    await session.importConfig(await memberBundle());
+
+    for (const key of ["VIPs", "vanish"]) {
+      expect(plan.items.find((i) => i.key === key)?.reasons.map((r) => r.code)).toContain("members_not_applied");
+    }
+    const vip = target.groups.find((g) => g.name === "VIPs");
+    expect(target.members.get(vip.id)).toBeUndefined();
+    expect(target.commands[0].usernames).toEqual([]);
+  });
+
+  it("names every username that would be granted access", async () => {
+    const { session } = makeApi(emptyEngine());
+
+    const plan = await session.previewImport(await memberBundle(), { applyMembers: true });
+
+    const vip = plan.items.find((i) => i.key === "VIPs")?.reasons.find((r) => r.code === "grants_access");
+    expect(vip?.message).toBe("Grants access to alice, bob.");
+    const vanish = plan.items.find((i) => i.key === "vanish")?.reasons.find((r) => r.code === "grants_access");
+    expect(vanish?.message).toBe("Grants access to carol.");
   });
 });
 
@@ -675,6 +813,26 @@ describe("bundle validation", () => {
     const text = `{"format":"woofx3.config","pad":"${"x".repeat(MAX_CONFIG_BUNDLE_BYTES)}"}`;
 
     await expect(session.previewImport(text as unknown as ConfigBundle)).rejects.toThrow(/exceeds the/);
+  });
+
+  it("refuses a sub-workflow step that carries a raw id", async () => {
+    const { session } = makeApi(emptyEngine());
+    const bundle = await validBundle();
+    const step = bundle.workflows[0].definition.tasks[1];
+    step.workflow = { ...step.workflow, workflowId: "src-wf-1" };
+
+    await expect(session.previewImport(bundle)).rejects.toThrow(/tasks\[1\]\.workflow\.workflowId: must be empty/);
+  });
+
+  it("refuses a section over the item cap", async () => {
+    const { session } = makeApi(emptyEngine());
+    const bundle = await validBundle();
+    bundle.groups = Array.from({ length: MAX_CONFIG_SECTION_ITEMS + 1 }, (_, i) => ({
+      name: `g${i}`,
+      description: "",
+    }));
+
+    await expect(session.previewImport(bundle)).rejects.toThrow(/groups: has 1001 items; the limit is 1000/);
   });
 
   it("refuses an unknown conflict policy", async () => {

@@ -22,6 +22,12 @@ export const MAX_CONFIG_BUNDLE_BYTES = 5 * 1024 * 1024;
 /** Stops a malformed bundle from producing an error message longer than the bundle. */
 const MAX_REPORTED_ERRORS = 20;
 
+/**
+ * Items per section. Far past any real setup, and low enough that a generated
+ * bundle cannot turn one import into tens of thousands of writes.
+ */
+export const MAX_CONFIG_SECTION_ITEMS = 1000;
+
 const CONFLICT_POLICIES: readonly ConfigConflictPolicy[] = ["skip", "rename", "overwrite"];
 const VISIBILITIES = ["public", "restricted"] as const;
 
@@ -121,6 +127,10 @@ function checkSection<T>(
     errors.add(section, "must be an array");
     return [];
   }
+  if (raw.length > MAX_CONFIG_SECTION_ITEMS) {
+    errors.add(section, `has ${raw.length} items; the limit is ${MAX_CONFIG_SECTION_ITEMS}`);
+    return [];
+  }
   const seen = new Set<string>();
   raw.forEach((item, index) => {
     const path = `${section}[${index}]`;
@@ -162,6 +172,31 @@ function checkWorkflow(item: Record<string, unknown>, path: string, errors: Shap
       checkString(name, `${path}.workflowRefs.${taskId}`, errors, { nonEmpty: true });
     }
   }
+  checkSubWorkflowIds(item, path, errors);
+}
+
+/**
+ * A sub-workflow step names its target through `workflowRefs`, never by a raw
+ * id: an id from another engine would point at whatever happens to hold it
+ * here, or at nothing.
+ */
+function checkSubWorkflowIds(item: Record<string, unknown>, path: string, errors: ShapeErrors): void {
+  const tasks = isPlainObject(item.definition) ? item.definition.tasks : undefined;
+  if (!Array.isArray(tasks)) {
+    return;
+  }
+  tasks.forEach((task, index) => {
+    if (!isPlainObject(task) || !isPlainObject(task.workflow)) {
+      return;
+    }
+    const workflowId = task.workflow.workflowId;
+    if (typeof workflowId === "string" && workflowId !== "") {
+      errors.add(
+        `${path}.definition.tasks[${index}].workflow.workflowId`,
+        "must be empty; name the target workflow in workflowRefs"
+      );
+    }
+  });
 }
 
 function checkCommand(item: Record<string, unknown>, path: string, errors: ShapeErrors): void {
