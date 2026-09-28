@@ -45,7 +45,7 @@ func (c *CompositeRegistrar) Register(workflowID string, trigger *types.TriggerC
 	}
 	r, ok := c.byType[trigger.Type]
 	if !ok {
-		return fmt.Errorf("triggers: no registrar for type %q", trigger.Type)
+		return fmt.Errorf("trigger type %q is not supported", trigger.Type)
 	}
 	return r.Register(workflowID, trigger)
 }

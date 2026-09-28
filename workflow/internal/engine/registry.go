@@ -40,8 +40,8 @@ func (r *WorkflowRegistry) SetRegistrar(reg triggers.Registrar) {
 	r.registrar = reg
 }
 
-// SetLogger wires a logger for recording registrar errors. Errors are non-fatal:
-// a failed subscribe should not unregister the workflow.
+// SetLogger wires a logger for registrar unregister failures, which are
+// non-fatal. Register failures are returned to the caller instead.
 func (r *WorkflowRegistry) SetLogger(l logger) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -74,9 +74,13 @@ func (r *WorkflowRegistry) Register(def *types.WorkflowDefinition) error {
 			logger.Error("triggers: unregister failed during update", "workflow_id", def.ID, "error", err)
 		}
 	}
+	// A trigger that cannot be registered leaves the workflow stored, so it
+	// can still be run by id, but it will never fire on its own. The error is
+	// returned rather than logged so the caller can report it as the
+	// workflow's health; it is the registrar's own readable reason.
 	if def.Trigger != nil {
-		if err := registrar.Register(def.ID, def.Trigger); err != nil && logger != nil {
-			logger.Error("triggers: register failed", "workflow_id", def.ID, "error", err)
+		if err := registrar.Register(def.ID, def.Trigger); err != nil {
+			return err
 		}
 	}
 	return nil

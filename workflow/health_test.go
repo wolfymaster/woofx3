@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/workflow/internal/engine"
+	"github.com/wolfymaster/woofx3/workflow/internal/triggers"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
@@ -320,5 +323,42 @@ func TestManager_DeleteForgetsHealth(t *testing.T) {
 
 	if got := manager.Health().Snapshot(); len(got) != 0 {
 		t.Errorf("snapshot = %+v", got)
+	}
+}
+
+func TestReconcile_UnregistrableTriggerIsReportedWithTheRegistrarsReason(t *testing.T) {
+	logger := &countingLogger{}
+	publisher := &capturingPublisher{}
+	manager := NewWorkflowManager(logger, nil, nil)
+	manager.Health().SetPublisher(publisher)
+
+	registry := engine.NewWorkflowRegistry()
+	composite := triggers.NewCompositeRegistrar()
+	composite.Set("schedule", triggers.NewScheduleTriggerRegistrar(nil))
+	registry.SetRegistrar(composite)
+
+	badCron := storedWorkflow("bad-cron")
+	badCron.TriggerJson = `{"type":"schedule","schedule":"* * *"}`
+	hourly := storedWorkflow("hourly")
+	hourly.TriggerJson = `{"type":"schedule","schedule":"0 * * * *"}`
+	db := &fakeWorkflowDB{workflows: []*dbv1.Workflow{badCron, hourly}}
+	reconciler := newReconciler(manager, registry, db, logger, time.Minute)
+
+	reconciler.reconcileOnce(context.Background())
+	reconciler.reconcileOnce(context.Background())
+
+	byID := map[string]WorkflowHealth{}
+	for _, entry := range manager.Health().Snapshot() {
+		byID[entry.WorkflowID] = entry
+	}
+	if got := byID["hourly"]; got.Status != WorkflowHealthOK {
+		t.Errorf("hourly = %+v, want ok", got)
+	}
+	got := byID["bad-cron"]
+	if got.Status != WorkflowHealthError || !strings.HasPrefix(got.Reason, `schedule "* * *" is not a valid cron expression`) {
+		t.Errorf("bad-cron = %+v", got)
+	}
+	if len(publisher.events) != 2 || len(logger.errors) != 1 {
+		t.Errorf("published = %d, error logs = %d; want 2 and 1", len(publisher.events), len(logger.errors))
 	}
 }

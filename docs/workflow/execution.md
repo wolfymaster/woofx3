@@ -195,9 +195,10 @@ loads any the engine is missing, which covers lifecycle events the service never
 
 ## Workflow Health
 
-The engine can refuse a stored workflow: its JSON may not parse, or registration may
-reject it. A refused workflow still appears in the workflow list, but nothing fires for
-it (or, when an update was refused, the previously loaded version keeps running). The
+The engine can refuse a stored workflow: its JSON may not parse, registration may reject
+it, or its trigger may not register (an invalid cron expression, an event trigger with no
+event, an unsupported trigger type, a subject the bus will not subscribe to). A refused
+workflow still appears in the workflow list, but it does not fire as saved. The
 `WorkflowHealthTracker` in `workflow/health.go` records the outcome of every load so the
 creator can see why.
 
@@ -207,10 +208,16 @@ create/update lifecycle event, and the reconciler.
 | Outcome | Health |
 |---------|--------|
 | Loaded | `{ status: "ok" }` |
-| Convert or register failed | `{ status: "error", reason: <the engine's error, verbatim> }` |
+| Convert, register, or trigger registration failed | `{ status: "error", reason: <the engine's error, verbatim> }` |
 | Disabled or deleted (including ones the reconciler finds gone) | Entry removed |
 
 Each entry carries `since`, when its current status and reason began.
+
+Trigger registration failures are returned by `WorkflowRegistry.Register` with the
+registrar's own wording, for example `schedule "* * *" is not a valid cron expression: ...`.
+The workflow stays in the registry, so it can still be run by id, but it never fires on its
+own. Because it is in the registry, the reconciler does not retry it; saving the workflow
+again re-registers it.
 
 **Changes only.** The reconciler retries a refused workflow on every pass, because it is
 absent from the registry. The tracker logs and publishes only when the status or reason

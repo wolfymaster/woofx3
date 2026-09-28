@@ -197,8 +197,9 @@ export interface WorkflowRunsQuery {
 
 /**
  * Whether the engine could load a stored workflow. `"error"` means the saved
- * definition is not what runs: a workflow the engine never loaded does not
- * fire, and one whose update was refused keeps running its previous version.
+ * definition is not running as saved: usually it never fires (unreadable,
+ * refused, or its trigger could not be registered), though a refused update
+ * can leave an earlier version running.
  */
 export type WorkflowHealthStatus = "ok" | "error";
 

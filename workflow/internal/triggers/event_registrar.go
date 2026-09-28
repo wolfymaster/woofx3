@@ -1,6 +1,7 @@
 package triggers
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
@@ -78,12 +79,10 @@ func (r *EventTriggerRegistrar) Register(workflowID string, trigger *types.Trigg
 		}
 		return nil
 	}
+	// Refused rather than skipped: a workflow on an event trigger with no
+	// event can never fire, and the error is how its owner finds out.
 	if trigger.Event == "" {
-		if r.logger != nil {
-			r.logger.Warn("triggers: skipping register, trigger.event is empty",
-				"workflow_id", workflowID)
-		}
-		return nil
+		return errors.New("event trigger names no event")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -112,7 +111,7 @@ func (r *EventTriggerRegistrar) Register(workflowID string, trigger *types.Trigg
 			}
 		})
 		if err != nil {
-			return fmt.Errorf("subscribe to %s: %w", trigger.Event, err)
+			return fmt.Errorf("cannot subscribe to event %q: %w", trigger.Event, err)
 		}
 		entry = &subjectEntry{sub: sub, refWorkflows: make(map[string]struct{})}
 		r.subjects[trigger.Event] = entry

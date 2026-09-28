@@ -23,9 +23,10 @@ const (
 
 // WorkflowHealth is whether the engine could load a stored workflow.
 //
-// "error" means the saved definition is not the one running: nothing runs for
-// a workflow the engine never loaded, and a failed update leaves the previously
-// loaded version in place. Since is when the current status and reason began.
+// "error" means the saved definition is not running as saved. Depending on
+// where loading stopped, nothing fires for it at all (unreadable, refused, or
+// its trigger could not be registered) or a previously loaded version is still
+// what runs. Since is when the current status and reason began.
 type WorkflowHealth struct {
 	WorkflowID string               `json:"workflowId"`
 	Status     WorkflowHealthStatus `json:"status"`

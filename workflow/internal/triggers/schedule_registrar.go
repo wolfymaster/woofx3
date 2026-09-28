@@ -1,6 +1,7 @@
 package triggers
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
@@ -39,8 +40,13 @@ func (r *ScheduleTriggerRegistrar) Stop() {
 }
 
 func (r *ScheduleTriggerRegistrar) Register(workflowID string, trigger *types.TriggerConfig) error {
-	if trigger == nil || trigger.Type != "schedule" || trigger.Schedule == "" {
+	if trigger == nil || trigger.Type != "schedule" {
 		return nil
+	}
+	// Refused rather than skipped: a schedule trigger with no schedule can
+	// never fire, and the error is how its owner finds out.
+	if trigger.Schedule == "" {
+		return errors.New("schedule trigger names no schedule")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -58,7 +64,7 @@ func (r *ScheduleTriggerRegistrar) Register(workflowID string, trigger *types.Tr
 		}
 	})
 	if err != nil {
-		return fmt.Errorf("cron.AddFunc(%q): %w", trigger.Schedule, err)
+		return fmt.Errorf("schedule %q is not a valid cron expression: %w", trigger.Schedule, err)
 	}
 	r.jobs[workflowID] = id
 	return nil
