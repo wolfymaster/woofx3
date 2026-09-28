@@ -74,6 +74,17 @@ describe("mapWorkflowRun", () => {
     );
   });
 
+  it("maps a cancellation, carrying the engine's reason", () => {
+    const event = mapWorkflowRun({
+      type: "workflow.run.cancelled",
+      triggerId: "corr-1",
+      data: { workflowId: "wf-1", executionId: "ex-1", error: "cancelled: from the dashboard" },
+    });
+    expect(event?.type).toBe(EngineEventType.WORKFLOW_RUN_CANCELLED);
+    expect(event && "reason" in event && event.reason).toBe("cancelled: from the dashboard");
+    expect(event?.triggerId).toBe("corr-1");
+  });
+
   // The contract makes `error` required on a failure. A run that failed
   // without the engine recording why is still a failure, so it maps rather
   // than being dropped.
@@ -113,14 +124,15 @@ describe("mapWorkflowRun", () => {
 });
 
 describe("WorkflowRunEmitter wiring", () => {
-  it("subscribes to all three lifecycle subjects", async () => {
+  it("subscribes to every lifecycle subject", async () => {
     const { emitter, nats } = setup();
     await emitter.start();
-    expect(nats.subscribe).toHaveBeenCalledTimes(3);
+    expect(nats.subscribe).toHaveBeenCalledTimes(4);
     expect(nats.subscribe.mock.calls.map((c: unknown[]) => c[0])).toEqual([
       "workflow.run.started",
       "workflow.run.completed",
       "workflow.run.failed",
+      "workflow.run.cancelled",
     ]);
   });
 

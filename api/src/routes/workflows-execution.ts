@@ -1,6 +1,80 @@
+import {
+  type CancelWorkflowResult,
+  MAX_TRIGGER_DATA_BYTES,
+  type TriggerWorkflowOptions,
+  type TriggerWorkflowResponse,
+  type UnmetTriggerCondition,
+} from "@woofx3/api";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import * as protoscript from "protoscript";
+import type { DbClient } from "../db-client";
 import { routeModule } from "./context";
+import { timestampFromDate } from "./helpers";
+
+/**
+ * The engine's answer to a `workflow.execute` request. Must match
+ * `executeReply` in workflow/app.go.
+ */
+interface ExecuteReply {
+  outcome: "started" | "conditions_not_met" | "refused";
+  executionId?: string;
+  eventType?: string;
+  unmet?: UnmetTriggerCondition[];
+  error?: string;
+}
+
+/**
+ * The engine's answer to a `workflow.cancel` request. Must match `cancelReply`
+ * in workflow/app.go.
+ */
+interface CancelReply {
+  outcome: "cancelled" | "already_finished" | "not_found" | "refused";
+  status?: string;
+  error?: string;
+}
+
+const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled"]);
+
+/**
+ * The origin a run records as `triggeredBy`. The positional argument and
+ * `options.origin` name the same thing; two different values is a caller bug
+ * rather than something to pick between silently.
+ */
+function resolveOrigin(triggeredBy: string | undefined, origin: string | undefined): string | undefined {
+  if (triggeredBy && origin && triggeredBy !== origin) {
+    throw new Error(`triggeredBy "${triggeredBy}" and options.origin "${origin}" disagree; give one`);
+  }
+  return origin || triggeredBy || undefined;
+}
+
+/**
+ * Check a sample payload before it goes on the bus. The engine enforces the
+ * same size bound (MaxTriggerDataBytes in workflow/internal/engine/manual.go);
+ * checking here too turns an oversized sample into an error the caller sees
+ * at once rather than a refusal from the engine.
+ */
+function validateTriggerData(triggerData: unknown): Record<string, unknown> {
+  if (typeof triggerData !== "object" || triggerData === null || Array.isArray(triggerData)) {
+    throw new Error("options.triggerData must be a JSON object");
+  }
+  let encoded: string;
+  try {
+    encoded = JSON.stringify(triggerData);
+  } catch (err) {
+    throw new Error(`options.triggerData is not JSON: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const bytes = new TextEncoder().encode(encoded).length;
+  if (bytes > MAX_TRIGGER_DATA_BYTES) {
+    throw new Error(`options.triggerData is ${bytes} bytes, over the ${MAX_TRIGGER_DATA_BYTES} byte limit`);
+  }
+  return triggerData as Record<string, unknown>;
+}
+
+function describeUnmet(unmet: UnmetTriggerCondition[]): string {
+  return unmet
+    .map((c) => `${c.field} ${c.operator} ${JSON.stringify(c.value)}${c.error ? ` (${c.error})` : ""}`)
+    .join("; ");
+}
 
 export const workflowsExecutionRoutes = routeModule({
   async getAvailableWorkflows(): Promise<{
@@ -70,27 +144,35 @@ export const workflowsExecutionRoutes = routeModule({
   },
 
   /**
-   * Trigger a workflow by name (user-friendly).
-   * The UI can call this with a workflow name and parameters.
+   * Trigger a workflow by id or name.
+   *
+   * Without sample trigger data the request is published and this returns at
+   * once with status `requested`. With `options.triggerData` it is sent as a
+   * request instead, and the engine answers with the run's execution id, or
+   * with the trigger conditions the sample failed.
    */
   async triggerWorkflowByName(
     workflowNameOrId: string,
     parameters: Record<string, string> = {},
     userId?: string,
     triggerId?: string,
-    triggeredBy?: string
-  ): Promise<{
-    executionId: string;
-    status: string;
-    message: string;
-    triggerId: string;
-  }> {
+    triggeredBy?: string,
+    options: TriggerWorkflowOptions = {}
+  ): Promise<TriggerWorkflowResponse> {
     this.logger.info("Triggering workflow", {
       workflowNameOrId,
       userId,
       triggerId,
       parametersCount: Object.keys(parameters).length,
+      sampleData: options.triggerData !== undefined,
     });
+    const origin = resolveOrigin(triggeredBy, options.origin);
+    const hasSample = options.triggerData !== undefined;
+    if (!hasSample && (options.platform !== undefined || options.skipConditions !== undefined)) {
+      throw new Error("options.platform and options.skipConditions only apply with options.triggerData");
+    }
+    const triggerData = hasSample ? validateTriggerData(options.triggerData) : undefined;
+
     // First, find the workflow by name
     const workflowsReq: workflow.ListWorkflowsRequest = {
       includeDisabled: false,
@@ -115,38 +197,77 @@ export const workflowsExecutionRoutes = routeModule({
       throw new Error(`Workflow "${workflowNameOrId}" is disabled`);
     }
 
-    // Published for the engine to run, rather than written as a db-proxy
-    // execution row. The row had no consumer -- nothing turned a pending row
-    // into a run -- so it recorded an execution that never happened and left
-    // the caller holding an id matching nothing. The engine owns execution and
-    // reports the run's lifecycle itself.
     const correlationId = triggerId || crypto.randomUUID();
-    await this.publishEvent(
+    const request = { workflowId: foundWorkflow.id, inputs: parameters, startedBy: userId ?? "" };
+
+    if (!triggerData) {
+      // Published for the engine to run, rather than written as a db-proxy
+      // execution row. The row had no consumer -- nothing turned a pending row
+      // into a run -- so it recorded an execution that never happened and left
+      // the caller holding an id matching nothing. The engine owns execution
+      // and reports the run's lifecycle itself.
+      await this.publishEvent("workflow.execute", request, undefined, undefined, "api", {
+        triggerId: correlationId,
+        triggeredBy: origin,
+      });
+
+      this.logger.info("Workflow run requested", {
+        workflowId: foundWorkflow.id,
+        workflowName: foundWorkflow.name,
+        triggerId: correlationId,
+      });
+
+      return {
+        // Deliberately empty. The engine mints an execution id when the run
+        // actually begins, asynchronously and out of this call's reach; a
+        // fabricated one here would match no run. `triggerId` is the handle
+        // that does resolve -- the run's lifecycle is reported against it.
+        executionId: "",
+        status: "requested",
+        message: `Requested a run of "${foundWorkflow.name}"`,
+        triggerId: correlationId,
+      };
+    }
+
+    const reply = await this.requestEvent<ExecuteReply>(
       "workflow.execute",
-      { workflowId: foundWorkflow.id, inputs: parameters, startedBy: userId ?? "" },
-      undefined,
-      undefined,
-      "api",
-      { triggerId: correlationId, triggeredBy }
+      {
+        ...request,
+        triggerData,
+        ...(options.platform ? { platform: options.platform } : {}),
+        ...(options.skipConditions ? { skipConditions: true } : {}),
+      },
+      { triggerId: correlationId, triggeredBy: origin }
     );
 
-    this.logger.info("Workflow run requested", {
-      workflowId: foundWorkflow.id,
-      workflowName: foundWorkflow.name,
-      triggerId: correlationId,
-    });
-
-    return {
-      // Deliberately empty. The engine mints an execution id when the run
-      // actually begins, asynchronously and out of this call's reach; a
-      // fabricated one here would match no run, which is what it used to do.
-      // `triggerId` is the handle that does resolve -- the run's lifecycle is
-      // reported against it.
-      executionId: "",
-      status: "requested",
-      message: `Requested a run of "${foundWorkflow.name}"`,
-      triggerId: correlationId,
-    };
+    switch (reply.outcome) {
+      case "started":
+        this.logger.info("Workflow run started with sample data", {
+          workflowId: foundWorkflow.id,
+          executionId: reply.executionId,
+          triggerId: correlationId,
+        });
+        return {
+          executionId: reply.executionId ?? "",
+          status: "started",
+          message: `Started "${foundWorkflow.name}" with sample ${reply.eventType ?? "trigger"} data`,
+          triggerId: correlationId,
+          ...(reply.eventType ? { eventType: reply.eventType } : {}),
+        };
+      case "conditions_not_met": {
+        const unmet = reply.unmet ?? [];
+        return {
+          executionId: "",
+          status: "conditions_not_met",
+          message: `The sample does not match the trigger conditions of "${foundWorkflow.name}": ${describeUnmet(unmet)}`,
+          triggerId: correlationId,
+          ...(reply.eventType ? { eventType: reply.eventType } : {}),
+          unmetConditions: unmet,
+        };
+      }
+      default:
+        throw new Error(`The engine refused to run "${foundWorkflow.name}": ${reply.error ?? "no reason given"}`);
+    }
   },
 
   /**
@@ -330,15 +451,95 @@ export const workflowsExecutionRoutes = routeModule({
   },
 
   /**
-   * Cancel a running workflow execution.
+   * Cancel a run.
+   *
+   * The engine is asked first, because only it can stop a run that is still
+   * going. A run it does not know -- one that was in flight when the engine
+   * restarted, which no process will ever finish -- is settled in the history
+   * instead, so it stops reading as running. Either way the run's row reaches
+   * `cancelled` through db-proxy's run status update, which is what relays the
+   * change to the dashboard.
    */
-  async cancelWorkflow(executionId: string, reason?: string): Promise<void> {
-    this.logger.info("Cancelling workflow", { executionId, reason });
-    const req: workflow.CancelWorkflowExecutionRequest = {
-      id: executionId,
-      reason: reason || "Cancelled by user",
-    };
-    await this.db.cancelWorkflowExecution(req);
-    this.logger.info("Workflow cancelled successfully", { executionId });
+  async cancelWorkflow(executionId: string, reason?: string): Promise<CancelWorkflowResult> {
+    if (!executionId) {
+      throw new Error("executionId is required");
+    }
+    const why = reason || "Cancelled by user";
+    this.logger.info("Cancelling workflow run", { executionId, reason: why });
+
+    const reply = await this.requestJson<CancelReply>("workflow.cancel", { executionId, reason: why });
+    switch (reply.outcome) {
+      case "cancelled":
+        return { executionId, outcome: "cancelled", status: "cancelled", message: "The run was cancelled" };
+      case "already_finished":
+        return {
+          executionId,
+          outcome: "already_finished",
+          status: reply.status ?? "",
+          message: `The run had already ${reply.status ?? "finished"}; nothing was changed`,
+        };
+      case "not_found":
+        return cancelRecordedRun(this.db, executionId, why);
+      default:
+        throw new Error(`The engine refused to cancel run ${executionId}: ${reply.error ?? "no reason given"}`);
+    }
   },
 });
+
+/**
+ * Settle a run the engine is not running, in the history alone.
+ *
+ * Nothing is executing it, so there is nothing to stop: only the row is
+ * wrong. A row already settled is left as it is and reported as such.
+ */
+async function cancelRecordedRun(
+  db: Pick<DbClient, "getWorkflowExecution" | "updateWorkflowRunStatus">,
+  executionId: string,
+  reason: string
+): Promise<CancelWorkflowResult> {
+  let run: workflow.WorkflowExecution;
+  try {
+    run = await db.getWorkflowExecution({ id: executionId });
+  } catch {
+    throw new Error(`Workflow run ${executionId} not found`);
+  }
+  if (TERMINAL_RUN_STATUSES.has(run.status)) {
+    return settledResult(executionId, run.status);
+  }
+
+  try {
+    await db.updateWorkflowRunStatus({
+      id: executionId,
+      status: "cancelled",
+      error: `cancelled: ${reason}`,
+      outputJson: "",
+      completedAt: timestampFromDate(new Date()),
+    });
+  } catch (err) {
+    // Refused because the row settled between the read and the write; the
+    // row now says how.
+    const current = await db.getWorkflowExecution({ id: executionId });
+    if (TERMINAL_RUN_STATUSES.has(current.status)) {
+      return settledResult(executionId, current.status);
+    }
+    throw err;
+  }
+  return {
+    executionId,
+    outcome: "cancelled",
+    status: "cancelled",
+    message: "The engine was not running this run, so only its history was marked cancelled",
+  };
+}
+
+function settledResult(executionId: string, status: string): CancelWorkflowResult {
+  if (status === "cancelled") {
+    return { executionId, outcome: "cancelled", status, message: "The run was already cancelled" };
+  }
+  return {
+    executionId,
+    outcome: "already_finished",
+    status,
+    message: `The run had already ${status}; nothing was changed`,
+  };
+}

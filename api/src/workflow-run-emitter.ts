@@ -1,5 +1,6 @@
 import {
   EngineEventType,
+  type WorkflowRunCancelledEvent,
   type WorkflowRunCompletedEvent,
   type WorkflowRunFailedEvent,
   type WorkflowRunStartedEvent,
@@ -15,8 +16,14 @@ import type { WebhookClient } from "./webhook-client";
 const SUBJECT_RUN_STARTED = "workflow.run.started";
 const SUBJECT_RUN_COMPLETED = "workflow.run.completed";
 const SUBJECT_RUN_FAILED = "workflow.run.failed";
+const SUBJECT_RUN_CANCELLED = "workflow.run.cancelled";
+const RUN_SUBJECTS = [SUBJECT_RUN_STARTED, SUBJECT_RUN_COMPLETED, SUBJECT_RUN_FAILED, SUBJECT_RUN_CANCELLED];
 
-export type WorkflowRunEvent = WorkflowRunStartedEvent | WorkflowRunCompletedEvent | WorkflowRunFailedEvent;
+export type WorkflowRunEvent =
+  | WorkflowRunStartedEvent
+  | WorkflowRunCompletedEvent
+  | WorkflowRunFailedEvent
+  | WorkflowRunCancelledEvent;
 
 interface RunEnvelope {
   type?: string;
@@ -36,7 +43,7 @@ interface RunEnvelope {
  *
  * Publishing an event is asynchronous: the call that triggers a workflow
  * returns as soon as the event reaches the bus, long before any workflow has
- * run. These three events are the only thing that closes that loop.
+ * run. These events are the only thing that closes that loop.
  *
  * Symmetric with `StorageChangeEmitter`, and routed through the same
  * Bearer-auth `WebhookClient` rather than the HMAC alert channel, because
@@ -50,13 +57,13 @@ export class WorkflowRunEmitter {
   ) {}
 
   async start(): Promise<void> {
-    for (const subject of [SUBJECT_RUN_STARTED, SUBJECT_RUN_COMPLETED, SUBJECT_RUN_FAILED]) {
+    for (const subject of RUN_SUBJECTS) {
       await this.nats.subscribe(subject, (msg: Msg) => {
         this.handle(msg);
       });
     }
     this.logger.info("WorkflowRunEmitter started", {
-      subjects: [SUBJECT_RUN_STARTED, SUBJECT_RUN_COMPLETED, SUBJECT_RUN_FAILED],
+      subjects: RUN_SUBJECTS,
     });
   }
 
@@ -134,6 +141,13 @@ export function mapWorkflowRun(ce: RunEnvelope): WorkflowRunEvent | null {
         type: EngineEventType.WORKFLOW_RUN_FAILED,
         ...common,
         error: typeof data.error === "string" ? data.error : "",
+      };
+    case SUBJECT_RUN_CANCELLED:
+      // The engine carries the reason in `error`, as for a failure.
+      return {
+        type: EngineEventType.WORKFLOW_RUN_CANCELLED,
+        ...common,
+        reason: typeof data.error === "string" ? data.error : "",
       };
     default:
       return null;

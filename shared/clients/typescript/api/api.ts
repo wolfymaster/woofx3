@@ -864,17 +864,88 @@ export interface StreamGaugeSample {
   subscriberPoints: number | null;
 }
 
+/**
+ * Optional behaviour for `triggerWorkflowByName`.
+ *
+ * Supplying any of `triggerData`, `platform` or `skipConditions` makes the call
+ * wait for the engine to answer, so the response says whether the run started
+ * and with which execution id.
+ */
+export interface TriggerWorkflowOptions {
+  /**
+   * Sample payload for the run's trigger. The run starts from an event of the
+   * workflow's own trigger type with this as its data, so `${trigger.data...}`
+   * resolves exactly as it would for a real event, and the trigger's
+   * conditions are evaluated against it. Only the named workflow runs: no
+   * other workflow listening for the same event sees it. At most
+   * `MAX_TRIGGER_DATA_BYTES` as JSON.
+   */
+  triggerData?: Record<string, unknown>;
+  /** The sample event's platform ("twitch", ...), for `${trigger.platform}` conditions. */
+  platform?: string;
+  /**
+   * Run even when `triggerData` does not satisfy the trigger conditions.
+   * Default false: an unmatched sample is answered with `conditions_not_met`
+   * and the unmet conditions, which is how a creator tests the "doesn't
+   * match" path.
+   */
+  skipConditions?: boolean;
+  /**
+   * What started the run ("test", "dashboard", ...), recorded as its
+   * `triggeredBy`. The same value the positional `triggeredBy` carries; give
+   * one or the other, or the same value in both.
+   */
+  origin?: string;
+}
+
+/** Most bytes `TriggerWorkflowOptions.triggerData` may encode to as JSON. */
+export const MAX_TRIGGER_DATA_BYTES = 16 * 1024;
+
+/** A trigger condition a sample payload did not satisfy. */
+export interface UnmetTriggerCondition {
+  field: string;
+  operator: string;
+  value: unknown;
+  /** Set when the condition could not be evaluated, e.g. an unknown operator. */
+  error?: string;
+}
+
 export interface TriggerWorkflowResponse {
   /**
-   * Empty. A run is started asynchronously by the engine, which mints the
-   * execution id when it begins -- after this call has returned. Correlate on
-   * `triggerId` instead; it is the id the run's lifecycle is reported against.
+   * The engine's id for the run, when the engine answered: set for `started`.
+   * Empty for `requested` -- a published request is started asynchronously
+   * after this call has returned, so correlate on `triggerId` instead; it is
+   * the id the run's lifecycle is reported against.
    */
   executionId: string;
-  status: string;
+  /**
+   * `requested`: published without waiting for the engine (no options given).
+   * `started`: the engine began the run.
+   * `conditions_not_met`: `triggerData` failed the trigger conditions and no
+   * run started; see `unmetConditions`.
+   */
+  status: "requested" | "started" | "conditions_not_met";
   message: string;
   /** Correlation handle for the requested run. See `executionId`. */
   triggerId: string;
+  /** The event type the run started from; set when the engine answered. */
+  eventType?: string;
+  /** Every condition the sample failed; set for `conditions_not_met`. */
+  unmetConditions?: UnmetTriggerCondition[];
+}
+
+/** What `cancelWorkflow` did. */
+export interface CancelWorkflowResult {
+  executionId: string;
+  /**
+   * `cancelled`: the run was stopped, or already had been by an earlier
+   * cancel. `already_finished`: it had completed or failed first, and is
+   * unchanged.
+   */
+  outcome: "cancelled" | "already_finished";
+  /** The run's status after the call: "cancelled", or the status it finished with. */
+  status: string;
+  message: string;
 }
 
 // ==================== API Interface ====================
@@ -1379,17 +1450,20 @@ export interface Woofx3EngineApi {
   /**
    * Ask the engine to run one workflow, matched by id or by name.
    *
-   * Returns once the request is on the bus, not once the run finishes. Supply
-   * `triggerId` to be told how that run ended: the engine echoes it onto the
-   * `workflow.run.*` events it emits. `userId` is recorded as provenance only
-   * and may be any string.
+   * Without `options` this returns once the request is on the bus, not once
+   * the run finishes. With them it waits for the engine to begin the run (or
+   * refuse it) and returns its execution id; see `TriggerWorkflowOptions`.
+   * Either way, supply `triggerId` to be told how that run ended: the engine
+   * echoes it onto the `workflow.run.*` events it emits. `userId` is recorded
+   * as provenance only and may be any string.
    */
   triggerWorkflowByName(
     workflowNameOrId: string,
     parameters?: Record<string, string>,
     userId?: string,
     triggerId?: string,
-    triggeredBy?: string
+    triggeredBy?: string,
+    options?: TriggerWorkflowOptions
   ): Promise<TriggerWorkflowResponse>;
 
   /**
@@ -1569,7 +1643,14 @@ export interface Woofx3EngineApi {
     }>;
   }>;
 
-  cancelWorkflow(executionId: string, reason?: string): Promise<void>;
+  /**
+   * Stop a run. The engine stops waiting for the step in flight (its effect,
+   * if already sent, stands), drops any pending wait, and settles the run
+   * `cancelled`, which reaches the history as a `workflow.run.updated`
+   * webhook and a caller watching its `triggerId` as `workflow.run.cancelled`.
+   * Idempotent. Throws for an id no run has.
+   */
+  cancelWorkflow(executionId: string, reason?: string): Promise<CancelWorkflowResult>;
 
   /** Push trigger-catalog changes to the caller. The callback is a capnweb
    *  stub, so it stays live for the duration of the session. */
