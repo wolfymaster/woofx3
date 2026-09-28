@@ -436,7 +436,7 @@ fn extension_test_module(
 #[test]
 fn test_quickjs_twitch_extension_publishes_canonical_command() {
     let code = r#"function moderate(ctx) {
-    ctx.twitch.addModerator({ userId: "u1" });
+    ctx.twitch.shoutout({ userId: "u1" });
     return { ok: true };
 }"#;
     let registry = extension_test_module("twitch_test", "moderate", code, "js");
@@ -464,7 +464,7 @@ fn test_quickjs_twitch_extension_publishes_canonical_command() {
     assert_eq!(
         published[0].1,
         serde_json::json!({
-            "command": "addChannelModerator",
+            "command": "shoutout",
             "args": { "userId": "u1" }
         })
     );
@@ -474,7 +474,7 @@ fn test_quickjs_twitch_extension_publishes_canonical_command() {
 fn test_lua_twitch_extension_publishes_canonical_command() {
     let code = r#"
 function moderate(ctx)
-    ctx.twitch.addModerator({ userId = "u1" })
+    ctx.twitch.shoutout({ userId = "u1" })
     return { ok = true }
 end
 "#;
@@ -503,7 +503,7 @@ end
     assert_eq!(
         published[0].1,
         serde_json::json!({
-            "command": "addChannelModerator",
+            "command": "shoutout",
             "args": { "userId": "u1" }
         })
     );

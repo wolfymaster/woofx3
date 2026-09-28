@@ -3,11 +3,18 @@ use crate::host::{HostExtension, HostFunction, NatsPublisher};
 use std::sync::Arc;
 
 const SUBJECT: &str = "twitchapi";
+
+/// The Twitch actions any installed module may take. Module code is
+/// end-user code running with no per-module grant, so this is limited to
+/// actions that are visible, reversible and cannot touch the channel's
+/// settings or its chatters: timing chatters out, editing the title,
+/// category or tags, and promoting moderators are deliberately absent. The
+/// streamer reaches those through the chat built-ins, the engine API and
+/// engine-native workflow actions, which the streamer authors. Opening one
+/// to modules needs a capability the manifest declares and the streamer
+/// approves, not a new row here.
 const COMMANDS: &[CommandEntry] = &[
     ("clip", "clip", false),
-    ("timeout", "timeout", true),
-    ("updateStream", "updateStream", true),
-    ("addModerator", "addChannelModerator", true),
     ("shoutout", "shoutout", true),
     ("createMarker", "createMarker", true),
 ];
@@ -52,23 +59,14 @@ mod tests {
     }
 
     // The wire command is the twitch service's method name; a mismatch
-    // there is answered with "Unknown command" and nothing happens.
+    // there is answered with "Unknown command" and nothing happens. The
+    // name list is the module capability boundary: see COMMANDS.
     #[test]
     fn each_function_publishes_the_twitch_service_method_it_names() {
         let nats = Arc::new(CapturingNats::default());
         let ext = TwitchExtension::new(nats.clone());
         let names: Vec<&str> = ext.functions().iter().map(|f| f.name.as_str()).collect();
-        assert_eq!(
-            names,
-            vec![
-                "clip",
-                "timeout",
-                "updateStream",
-                "addModerator",
-                "shoutout",
-                "createMarker"
-            ]
-        );
+        assert_eq!(names, vec!["clip", "shoutout", "createMarker"]);
 
         let marker = ext
             .functions()

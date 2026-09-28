@@ -173,10 +173,8 @@
 
 ---@class CtxTwitchExtension
 ---@field clip fun(args?: any): nil
----@field timeout fun(args: any): nil
----@field updateStream fun(args: any): nil
----@field addModerator fun(args: any): nil
 ---@field shoutout fun(args: any): nil
+---@field createMarker fun(args?: any): nil
 
 ---@class CtxChatExtension
 ---@field sendMessage fun(text: string): nil
