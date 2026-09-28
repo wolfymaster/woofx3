@@ -17,8 +17,12 @@ CloudEvent back:
 // success
 { "type": "twitchapi.<command>.result", "source": "twitchapi", "data": <result> }
 // refusal: invalid input, Twitch not linked, unknown command, or Twitch's own error
-{ "type": "twitchapi.error", "source": "twitchapi", "data": { "error": "<message>" } }
+{ "type": "twitchapi.error", "source": "twitchapi", "data": { "error": "<message>", "code"?: "<code>" } }
 ```
+
+`code` is present only on a refusal a caller may act on without reading the
+message. The one code is `rate_limited`: `shoutout` refused by Twitch's
+shoutout limit (one every 2 minutes, one per channel every 60 minutes).
 
 Only the commands below are served (`TWITCH_API_COMMANDS` in
 `twitch/src/lib/twitch.ts`); anything else is answered with
@@ -78,6 +82,13 @@ message; when the twitch service is not running it rejects with
 `getStreamStatus()` is separate: it reads whether the stream is live, its
 uptime and viewer count, where `getStreamInfo()` reads the channel settings
 that apply whether or not it is live.
+
+## Workflow actions
+
+The workflow engine sends `shoutout`, `clip`, `createMarker`, `updateStream`
+and `timeout` as the native actions `twitch.shoutout`, `twitch.clip`,
+`twitch.marker`, `twitch.update_stream` and `twitch.timeout`. See
+[Task types](../workflow/tasks.md#twitch-actions).
 
 ## Chatbot built-ins
 

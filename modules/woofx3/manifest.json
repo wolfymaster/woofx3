@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -988,6 +988,239 @@
       },
       "taxonomy": [
         "system.queue"
+      ]
+    },
+    {
+      "id": "twitch.shoutout",
+      "name": "Shout out on Twitch",
+      "description": "Send Twitch's own shoutout for another channel, which shows it to your viewers. Twitch allows one shoutout every 2 minutes, and one per channel every 60 minutes, and only while you are live. Needs the moderator:manage:shoutouts permission.",
+      "type": "native",
+      "handler": "twitch.shoutout",
+      "schema": [
+        {
+          "id": "userName",
+          "label": "Twitch user",
+          "type": "text",
+          "placeholder": "${trigger.data.fromBroadcasterUserLogin}",
+          "description": "Their login name, with or without the @. Leave blank when giving a user id instead."
+        },
+        {
+          "id": "userId",
+          "label": "Twitch user id",
+          "type": "text",
+          "description": "Their numeric Twitch id. Used instead of the name when both are set, since it needs no lookup."
+        },
+        {
+          "id": "skipIfRateLimited",
+          "label": "Skip when Twitch's limit is hit",
+          "type": "toggle",
+          "defaultValue": false,
+          "description": "On, a shoutout Twitch refuses for its rate limit is skipped and the workflow carries on. Off, the step fails."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "userId",
+            "type": "string",
+            "description": "The channel shouted out. Empty when skipped."
+          },
+          {
+            "path": "skipped",
+            "type": "boolean",
+            "description": "Whether the shoutout was skipped for Twitch's rate limit."
+          },
+          {
+            "path": "reason",
+            "type": "string",
+            "description": "Why it was skipped. Empty otherwise."
+          }
+        ]
+      },
+      "taxonomy": [
+        "platform.twitch"
+      ]
+    },
+    {
+      "id": "twitch.clip",
+      "name": "Create a clip",
+      "description": "Clip the last moments of the live stream. Twitch only clips a live stream. Needs the clips:edit permission.",
+      "type": "native",
+      "handler": "twitch.clip",
+      "schema": [],
+      "returns": {
+        "fields": [
+          {
+            "path": "id",
+            "type": "string",
+            "description": "The clip's id."
+          },
+          {
+            "path": "url",
+            "type": "string",
+            "description": "Where the clip can be watched and edited.",
+            "example": "https://clips.twitch.tv/AwkwardHelplessSalamanderSwiftRage"
+          }
+        ]
+      },
+      "taxonomy": [
+        "platform.twitch"
+      ]
+    },
+    {
+      "id": "twitch.marker",
+      "name": "Place a stream marker",
+      "description": "Mark this moment of the live stream so it is easy to find in the VOD afterwards. Twitch only places markers on a live stream. Needs the channel:manage:broadcast permission.",
+      "type": "native",
+      "handler": "twitch.marker",
+      "schema": [
+        {
+          "id": "description",
+          "label": "Description",
+          "type": "text",
+          "placeholder": "Hype train level 5",
+          "description": "Optional note shown with the marker. At most 140 characters."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "id",
+            "type": "string",
+            "description": "The marker's id."
+          },
+          {
+            "path": "positionSeconds",
+            "type": "number",
+            "description": "How far into the stream the marker is, in seconds."
+          },
+          {
+            "path": "createdAt",
+            "type": "string",
+            "description": "When it was placed, as an ISO 8601 time."
+          },
+          {
+            "path": "description",
+            "type": "string",
+            "description": "The note it was placed with."
+          }
+        ]
+      },
+      "taxonomy": [
+        "platform.twitch"
+      ]
+    },
+    {
+      "id": "twitch.update_stream",
+      "name": "Update stream info",
+      "description": "Change the stream's title, category or tags. Blank fields are left as they are; set at least one. Needs the channel:manage:broadcast permission.",
+      "type": "native",
+      "handler": "twitch.update_stream",
+      "schema": [
+        {
+          "id": "title",
+          "label": "Title",
+          "type": "text",
+          "placeholder": "Be right back!",
+          "description": "At most 140 characters."
+        },
+        {
+          "id": "category",
+          "label": "Category",
+          "type": "text",
+          "placeholder": "Just Chatting",
+          "description": "A category name. The exact match is used when there is one, otherwise Twitch's closest match."
+        },
+        {
+          "id": "tags",
+          "label": "Tags",
+          "type": "text",
+          "placeholder": "English, Chill",
+          "description": "Separated by commas, at most 10. Each is letters and numbers only, up to 25 characters. Replaces every current tag."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "title",
+            "type": "string",
+            "description": "The title set. Absent when the title was left as it was."
+          },
+          {
+            "path": "categoryId",
+            "type": "string",
+            "description": "The category set. Absent when the category was left as it was."
+          },
+          {
+            "path": "categoryName",
+            "type": "string",
+            "description": "The name of the category the given name resolved to."
+          },
+          {
+            "path": "tags",
+            "type": "array",
+            "description": "The tags set. Absent when the tags were left as they were."
+          }
+        ]
+      },
+      "taxonomy": [
+        "platform.twitch"
+      ]
+    },
+    {
+      "id": "twitch.timeout",
+      "name": "Time out a chatter",
+      "description": "Stop a chatter from chatting for a while. The broadcaster cannot be timed out. Needs the moderator:manage:banned_users permission.",
+      "type": "native",
+      "handler": "twitch.timeout",
+      "schema": [
+        {
+          "id": "userName",
+          "label": "Chatter",
+          "type": "text",
+          "placeholder": "${trigger.data.userName}",
+          "description": "Their login name, with or without the @. Leave blank when giving a user id instead."
+        },
+        {
+          "id": "userId",
+          "label": "Chatter's user id",
+          "type": "text",
+          "description": "Their numeric Twitch id. Used instead of the name when both are set, since it needs no lookup."
+        },
+        {
+          "id": "durationSeconds",
+          "label": "For",
+          "type": "number",
+          "unit": "seconds",
+          "required": true,
+          "min": 1,
+          "max": 1209600,
+          "defaultValue": 600,
+          "description": "From 1 second to two weeks."
+        },
+        {
+          "id": "reason",
+          "label": "Reason",
+          "type": "text",
+          "description": "Optional. Shown to the chatter and your moderators."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "userId",
+            "type": "string",
+            "description": "The chatter timed out."
+          },
+          {
+            "path": "durationSeconds",
+            "type": "number",
+            "description": "How long, in seconds."
+          }
+        ]
+      },
+      "taxonomy": [
+        "platform.twitch"
       ]
     }
   ],

@@ -200,6 +200,112 @@ Returns:
 | `eventType` | `string` | The event type |
 | `published` | `boolean` | Always `true` on success |
 
+### Twitch actions
+
+Each asks the twitch service to act, with one request on the `twitchapi` subject
+(see [Twitch channel controls](../services/twitch-channel.md)), and waits up to
+10 seconds for the answer. The step fails with the twitch service's message
+when it refuses (bad input, Twitch not linked, Twitch's own error), with
+`the twitch service is not running` when nothing serves the subject, and with
+`the twitch service did not answer within 10s` on a timeout.
+
+Parameters are checked twice. When the workflow is registered, a value that can
+never work (a 141-character title, an eleventh tag, a timeout of 0 seconds, no
+user named) refuses the whole workflow, and the engine keeps running the
+previous version if there was one. A `${…}` value is accepted there unseen, and
+checked again once the step runs and it has resolved. A disabled step is not
+checked.
+
+Text parameters are trimmed, and a blank one reads as not set. Each needs the
+Twitch permission named below on the linked account.
+
+#### `twitch.shoutout`
+
+Twitch's own shoutout, which shows another channel to your viewers. Twitch
+allows one every 2 minutes, one per channel every 60 minutes, and only while
+live. Needs `moderator:manage:shoutouts`.
+
+```json
+{
+  "id": "shout-raider",
+  "type": "action",
+  "action": "twitch.shoutout",
+  "parameters": { "userId": "${trigger.data.fromBroadcasterUserId}", "skipIfRateLimited": true }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `parameters.userName` | `string` | One of the two | Login name, with or without the `@`. |
+| `parameters.userId` | `string` | One of the two | Twitch user id. Wins over `userName` when both are set. |
+| `parameters.skipIfRateLimited` | `boolean` | No | When Twitch refuses for its rate limit, succeed with `skipped: true` instead of failing. Default `false`. |
+
+Returns `userId` (empty when skipped), `skipped` (`boolean`) and `reason` (why
+it was skipped, else empty).
+
+#### `twitch.clip`
+
+Clips the live stream. Takes no parameters. Needs `clips:edit`.
+
+Returns `id` and `url` (`https://clips.twitch.tv/<id>`).
+
+#### `twitch.marker`
+
+Places a stream marker at the current moment. Twitch only places markers on a
+live stream. Needs `channel:manage:broadcast`.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `parameters.description` | `string` | No | Note shown with the marker. At most 140 characters. |
+
+Returns `id`, `positionSeconds` (`number`), `createdAt` (ISO 8601) and
+`description`.
+
+#### `twitch.update_stream`
+
+Changes the title, category and tags in one update. Needs
+`channel:manage:broadcast`.
+
+```json
+{
+  "id": "brb-title",
+  "type": "action",
+  "action": "twitch.update_stream",
+  "parameters": { "title": "Be right back! ${trigger.data.argsText}", "tags": "English, Chill" }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `parameters.title` | `string` | At least one | At most 140 characters. |
+| `parameters.category` | `string` | At least one | Category name, resolved to the exact match or Twitch's closest one. |
+| `parameters.tags` | `string` or `string[]` | At least one | Comma-separated text or a list. At most 10; each 1 to 25 letters and numbers, no tag twice. Replaces every current tag. |
+
+A blank field is left as it is, so this action cannot clear the category or
+remove every tag. A step whose fields all resolve blank fails with `nothing to
+update`.
+
+Returns what was changed: `title`, `categoryId`, `categoryName`, `tags`. A
+field left as it was is absent.
+
+#### `twitch.timeout`
+
+Stops a chatter from chatting for a while. The broadcaster cannot be timed out.
+Needs `moderator:manage:banned_users`.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `parameters.userName` | `string` | One of the two | Login name, with or without the `@`. |
+| `parameters.userId` | `string` | One of the two | Twitch user id. Wins over `userName`. |
+| `parameters.durationSeconds` | `number` | Yes | Whole seconds, 1 to 1209600 (two weeks). Numeric text is accepted. |
+| `parameters.reason` | `string` | No | Shown to the chatter and moderators. |
+
+Returns `userId` and `durationSeconds`.
+
+There is no announcement action: Twitch's announcement endpoint needs the
+`moderator:manage:announcements` permission, which the engine does not ask
+for.
+
 ---
 
 ## log
