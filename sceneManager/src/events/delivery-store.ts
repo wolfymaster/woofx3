@@ -22,6 +22,15 @@ interface OpenDelivery {
   lastAttemptAt: number;
 }
 
+/** An open delivery as a caller outside the store needs to see it. */
+export interface OpenDeliveryRef {
+  eventId: string;
+  key: string;
+}
+
+/** SSE event name telling a scene's pages to drop deliveries the server closed. */
+export const CANCEL_EVENT = "cancel";
+
 type SseController = ReadableStreamDefaultController<Uint8Array>;
 
 const REDELIVER_AFTER_MS = 5_000;
@@ -269,6 +278,59 @@ export class DeliveryStore {
         this.connections.delete(sceneId);
       }
     };
+  }
+
+  /**
+   * A scene's open deliveries of one `type`, grouped by target instance,
+   * each group oldest first. Recording order is the order a widget's queue
+   * receives them in, so for a widget that plays one at a time the head of
+   * its group is the delivery it is playing and the rest are waiting.
+   */
+  openDeliveriesByInstance(sceneId: string, type: string): Map<string, OpenDeliveryRef[]> {
+    const byInstance = new Map<string, OpenDeliveryRef[]>();
+    for (const delivery of this.openDeliveriesFor(sceneId)) {
+      if (delivery.type !== type) {
+        continue;
+      }
+      let group = byInstance.get(delivery.instanceId);
+      if (!group) {
+        group = [];
+        byInstance.set(delivery.instanceId, group);
+      }
+      group.push({ eventId: delivery.eventId, key: delivery.key });
+    }
+    return byInstance;
+  }
+
+  /**
+   * Close deliveries to one instance without waiting for the browser to
+   * finish them, and tell every open page of the scene to drop them.
+   *
+   * Closed in memory and announced before the db write, so neither the
+   * sweep nor a reconnect replay can push them again while the write is in
+   * flight. Recorded as completed because that is what ends redelivery; the
+   * reason they ended is the caller's to record.
+   */
+  async cancel(sceneId: string, instanceId: string, eventIds: string[]): Promise<void> {
+    if (eventIds.length === 0) {
+      return;
+    }
+    for (const eventId of eventIds) {
+      this.deleteOpen(sceneId, eventId, instanceId);
+    }
+    this.broadcast(sceneId, CANCEL_EVENT, { instanceId, eventIds });
+    for (const eventId of eventIds) {
+      try {
+        await this.db.recordSceneEventCompletion({ sceneEventId: eventId, instanceId });
+      } catch (err) {
+        this.logger.warn("delivery-store: recording a cancelled delivery failed", {
+          sceneId,
+          eventId,
+          instanceId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
   }
 
   /** Every sceneId with at least one open SSE connection right now —

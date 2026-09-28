@@ -151,7 +151,8 @@ function main(): void {
       instance.id,
       { maxInFlight: 1 },
       (item) => alertWidget.play(item),
-      () => {}
+      () => {},
+      (eventId) => alertWidget.stop(eventId)
     );
   };
 
@@ -290,6 +291,7 @@ function main(): void {
       });
     },
     onModuleState: (frame) => moduleState.apply(frame.moduleId, frame.key, frame.value),
+    onCancel: (frame) => queueManager.cancel(frame.instanceId, frame.eventIds),
     onConnectionChange: (connected) => status.set("stream", connected),
     // The scene was saved. Only this scene's streams receive the frame, so
     // unlike a restart there is no sibling overlay to tell.

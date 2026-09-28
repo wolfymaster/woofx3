@@ -34,6 +34,9 @@ export type DeliverFn = (item: QueuedEvent) => boolean;
  *  (only when `retryTimeoutMs` is configured). */
 export type TimeoutFn = (eventId: string) => void;
 
+/** Called for a delivery cancelled while in flight, so its widget can stop it. */
+export type CancelFn = (eventId: string) => void;
+
 const DEFAULT_MAX_IN_FLIGHT = 1;
 
 /**
@@ -57,7 +60,8 @@ class InstanceQueue {
   constructor(
     private readonly config: EventQueueConfig,
     private readonly deliver: DeliverFn,
-    private readonly onTimeout: TimeoutFn
+    private readonly onTimeout: TimeoutFn,
+    private readonly onCancel: CancelFn
   ) {}
 
   enqueue(item: QueuedEvent): void {
@@ -95,6 +99,32 @@ class InstanceQueue {
       this.rememberFinished(eventId);
       this.pump();
     }
+  }
+
+  /**
+   * The server closed these deliveries: drop any still waiting, stop any in
+   * flight, and ignore any that arrive later. A late arrival is possible
+   * because the cancel and the delivery travel as separate frames.
+   */
+  cancel(eventIds: string[]): void {
+    const cancelled = new Set(eventIds);
+    for (let i = this.pending.length - 1; i >= 0; i -= 1) {
+      if (cancelled.has(this.pending[i]!.eventId)) {
+        this.pending.splice(i, 1);
+      }
+    }
+    for (const eventId of cancelled) {
+      if (this.inFlight.has(eventId)) {
+        const timer = this.inFlight.get(eventId);
+        if (timer) {
+          clearTimeout(timer);
+        }
+        this.inFlight.delete(eventId);
+        this.onCancel(eventId);
+      }
+      this.rememberFinished(eventId);
+    }
+    this.pump();
   }
 
   /** Number of items neither dispatched nor completed — diagnostic use. */
@@ -163,10 +193,11 @@ export class EventQueueManager {
     instanceId: string,
     config: EventQueueConfig | undefined,
     deliver: DeliverFn,
-    onTimeout: TimeoutFn
+    onTimeout: TimeoutFn,
+    onCancel: CancelFn = () => {}
   ): void {
     this.subToInstance.set(subId, instanceId);
-    this.queues.set(instanceId, new InstanceQueue(config ?? {}, deliver, onTimeout));
+    this.queues.set(instanceId, new InstanceQueue(config ?? {}, deliver, onTimeout, onCancel));
   }
 
   unregister(subId: string): void {
@@ -185,6 +216,11 @@ export class EventQueueManager {
     }
     queue.enqueue(item);
     return true;
+  }
+
+  /** Server-side cancellation of deliveries to one instance. */
+  cancel(instanceId: string, eventIds: string[]): void {
+    this.queues.get(instanceId)?.cancel(eventIds);
   }
 
   /** Widget completion, routed by the P1 subId the shim echoed back. */
