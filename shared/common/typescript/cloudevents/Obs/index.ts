@@ -9,7 +9,7 @@ type EventTuple = [string, Uint8Array];
 export default class ObsEvents {
   constructor(private source: string) {}
 
-  command(cmd: ObsCommand.OBSCommand): EventTuple {
+  command(cmd: ObsCommand.ObsControlCommand): EventTuple {
     return this.encodeEvent(ObsCommand.EventType.ObsCommand, cmd);
   }
 

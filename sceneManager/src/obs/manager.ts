@@ -47,7 +47,7 @@ export default class Manager {
     return this.scenes.find((s) => s.name === sceneName);
   }
 
-  request<T extends keyof OBSRequestTypes>(cmd: T, args: OBSRequestTypes[T]): Promise<OBSResponseTypes[T]> {
+  request<T extends keyof OBSRequestTypes>(cmd: T, args?: OBSRequestTypes[T]): Promise<OBSResponseTypes[T]> {
     return this.ws.call(cmd, args);
   }
 }
