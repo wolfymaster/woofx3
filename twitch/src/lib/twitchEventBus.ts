@@ -1,7 +1,7 @@
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { Context } from "src/types";
-import onChannelAdBreakBegin from "./subscriptions/onChannelAdBreakBegin";
+import onChannelAdBreakBegin, { AdBreakAnnouncer } from "./subscriptions/onChannelAdBreakBegin";
 import onChannelBan from "./subscriptions/onChannelBan";
 import onChannelChatmessage from "./subscriptions/onChannelChatMessage";
 import onChannelChatNotification from "./subscriptions/onChannelChatNotification";
@@ -31,12 +31,21 @@ const SUBSCRIPTION_FACTORIES = [
   onStreamOffline,
 ] as const;
 
-type SubscriptionFactory = (ctx: Context, listener: EventSubWsListener) => EventSubSubscription;
+/** State an optional subscription keeps across resubscribes. */
+interface OptionalSubscriptionDeps {
+  adBreaks: AdBreakAnnouncer;
+}
+
+type OptionalSubscriptionFactory = (
+  ctx: Context,
+  listener: EventSubWsListener,
+  deps: OptionalSubscriptionDeps
+) => EventSubSubscription;
 
 interface OptionalSubscription {
   name: string;
   scope: string;
-  factory: SubscriptionFactory;
+  factory: OptionalSubscriptionFactory;
 }
 
 /**
@@ -47,7 +56,11 @@ interface OptionalSubscription {
  * in the UI can fix.
  */
 const OPTIONAL_SUBSCRIPTIONS: readonly OptionalSubscription[] = [
-  { name: "channel.ad_break.begin", scope: "channel:read:ads", factory: onChannelAdBreakBegin },
+  {
+    name: "channel.ad_break.begin",
+    scope: "channel:read:ads",
+    factory: (ctx, listener, deps) => onChannelAdBreakBegin(ctx, listener, deps.adBreaks),
+  },
 ];
 
 /**
@@ -69,6 +82,7 @@ export default class TwitchEventBus {
   private readonly optionalById = new Map<string, OptionalSubscription>();
   private readonly optionalWarned = new Set<string>();
   private bindings: { unbind(): void }[] = [];
+  private readonly optionalDeps: OptionalSubscriptionDeps;
 
   constructor(
     private ctx: Context,
@@ -76,6 +90,7 @@ export default class TwitchEventBus {
   ) {
     this.subscriptions = [];
     this.listener = listener;
+    this.optionalDeps = { adBreaks: new AdBreakAnnouncer(ctx) };
   }
 
   /**
@@ -114,6 +129,7 @@ export default class TwitchEventBus {
    * subscription.start internally). Do not call subscription.start() during boot.
    */
   async start(timeoutMs: number = SUBSCRIPTION_SETTLE_TIMEOUT_MS): Promise<void> {
+    this.unbindOutcomes();
     this.established.clear();
     this.failures.clear();
     this.optionalWarned.clear();
@@ -123,6 +139,31 @@ export default class TwitchEventBus {
     this.listener.start();
     this.registerSubscriptions();
     await settled;
+  }
+
+  /**
+   * Recreate every subscription on the running listener, so each is
+   * requested again with whatever token the auth provider now holds. Used
+   * after the streamer relinks Twitch: a relink is how a scope gets granted,
+   * and an optional subscription refused for that scope is only retried by
+   * asking again. Readiness drops only for as long as Twitch takes to
+   * confirm the new batch.
+   */
+  async resubscribe(timeoutMs: number = SUBSCRIPTION_SETTLE_TIMEOUT_MS): Promise<void> {
+    this.unbindOutcomes();
+    this.established.clear();
+    this.failures.clear();
+    this.optionalWarned.clear();
+    const settled = this.trackSubscriptionOutcomes(timeoutMs);
+    this.registerSubscriptions();
+    await settled;
+  }
+
+  private unbindOutcomes(): void {
+    for (const binding of this.bindings) {
+      binding.unbind();
+    }
+    this.bindings = [];
   }
 
   /**
@@ -192,10 +233,8 @@ export default class TwitchEventBus {
   }
 
   disconnect(): void {
-    for (const binding of this.bindings) {
-      binding.unbind();
-    }
-    this.bindings = [];
+    this.unbindOutcomes();
+    this.optionalDeps.adBreaks.dispose();
     this.established.clear();
     this.failures.clear();
     this.clearSubscriptions();
@@ -209,7 +248,7 @@ export default class TwitchEventBus {
       this.subscriptions.push(f(this.ctx, this.listener));
     }
     for (const optional of OPTIONAL_SUBSCRIPTIONS) {
-      const subscription = optional.factory(this.ctx, this.listener);
+      const subscription = optional.factory(this.ctx, this.listener, this.optionalDeps);
       this.optionalById.set(subscription.id, optional);
       this.subscriptions.push(subscription);
     }

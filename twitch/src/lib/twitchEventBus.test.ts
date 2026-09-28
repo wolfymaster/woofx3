@@ -258,6 +258,31 @@ describe("TwitchEventBus", () => {
     expect(bus.establishedCount()).toBe(TwitchEventBus.expectedSubscriptionCount - 1);
   });
 
+  test("resubscribe requests every subscription again, retrying a refused optional one", async () => {
+    const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
+    const started = bus.start(50);
+    for (const sub of allStubs(listener)) {
+      listener.emitSuccess(sub);
+    }
+    const [firstAdBreak] = listener.onChannelAdBreakBegin.mock.results.map((r) => r.value as EventSubSubscription);
+    listener.emitFailure(firstAdBreak!, new Error("does not have any of the requested scopes"));
+    await started;
+    const requiredBefore = allStubs(listener);
+
+    const resubscribed = bus.resubscribe(50);
+    expect(listener.onChannelAdBreakBegin).toHaveBeenCalledTimes(2);
+    expect(listener.start).toHaveBeenCalledTimes(1);
+    for (const sub of requiredBefore) {
+      expect(sub.stop).toHaveBeenCalled();
+    }
+    for (const sub of allStubs(listener).slice(requiredBefore.length)) {
+      listener.emitSuccess(sub);
+    }
+    await resubscribed;
+
+    expect(bus.isReady()).toBe(true);
+  });
+
   test("disconnect unbinds the outcome handlers and clears readiness", async () => {
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
     const started = bus.start(50);

@@ -33,6 +33,27 @@ else:
   "reconnect Twitch to allow ad controls".
 - The heads-up scheduler backs off (below) and logs once.
 
+### Relinking to grant a scope
+
+"Reconnect Twitch" takes effect without a restart. The UI's relink writes the
+new token to the `twitch_token` setting and publishes
+`setting.integration.token.updated`. A connected twitch service then:
+
+1. hands the new token to its running auth provider (`TwitchClient.reloadToken`),
+   so Helix calls such as `snoozeNextAd` use the new scopes at once;
+2. requests every EventSub subscription again (`TwitchEventBus.resubscribe`),
+   which is the only retry an optional subscription refused for a missing
+   scope gets. Readiness drops only until Twitch confirms the new batch.
+
+If the relink is to a different Twitch account and no channel is configured,
+the broadcaster itself changes, so the service reconnects from scratch.
+
+The auth provider refreshes tokens in the background and writes each refresh
+back to `twitch_token`. It does not do so when the stored token has changed
+since it was loaded (different refresh token, or a later obtainment time):
+that is a relink the service has not applied yet, and writing a refresh of
+the old token over it would silently undo the relink and its scopes.
+
 ### Events
 
 All three carry `platform: "twitch"`, and all three are forwarded to browser
@@ -96,8 +117,10 @@ service publishes this `durationSeconds` after the begin event, so `endedAt`
 is when the break was due to end, not an observation that it did. A workflow
 that switches to an "ad" scene on begin can switch back on this. If a new
 break begins while an end is still pending, that end is published at once,
-before the new begin, so every begin is paired with exactly one end. A
-twitch service restart during a break loses the pending end.
+before the new begin, so every begin is paired with exactly one end. EventSub
+delivers at least once, so a begin with the same start time as the pending
+break is treated as a redelivery and ignored. A twitch service restart or
+disconnect during a break drops the pending end.
 
 ### RPCs
 
