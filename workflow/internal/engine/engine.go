@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -137,8 +138,48 @@ func (e *Engine[TServices]) Registry() *WorkflowRegistry {
 	return e.workflowRegistry
 }
 
+// RegisterWorkflow refuses a definition the engine would refuse to run, so the
+// author hears about it when the workflow is saved or loaded rather than the
+// first time it fires. A workflow already registered under the same id keeps
+// running unchanged when its replacement is refused.
 func (e *Engine[TServices]) RegisterWorkflow(def *types.WorkflowDefinition) error {
+	if err := validatePublishSteps(def); err != nil {
+		return fmt.Errorf("workflow %q: %w", def.ID, err)
+	}
 	return e.workflowRegistry.Register(def)
+}
+
+// validatePublishSteps checks every publish_event step whose eventType is
+// written out. One built from an expression can only be checked once it has
+// resolved, which the action does before it publishes.
+func validatePublishSteps(def *types.WorkflowDefinition) error {
+	for _, task := range def.Tasks {
+		if task.Type != "action" || task.Action != publishEventAction {
+			continue
+		}
+		eventType, ok := task.Parameters["eventType"].(string)
+		if !ok || strings.Contains(eventType, "${") {
+			continue
+		}
+		if err := validatePublishedEventType(eventType); err != nil {
+			return fmt.Errorf("task %q: %w", task.ID, err)
+		}
+	}
+	return nil
+}
+
+// validatePublishedEventType refuses an event type a workflow may not publish.
+// The event type is the NATS subject it goes out on, so a reserved one would
+// let any workflow — a creator's or one a module installed — command the
+// engine or forge the events it acts on (docs/services/engine-integrity.md).
+func validatePublishedEventType(eventType string) error {
+	if strings.ContainsAny(eventType, "*> \t\r\n") {
+		return fmt.Errorf("eventType %q cannot be published: wildcards and whitespace are not allowed in a subject", eventType)
+	}
+	if match, reserved := cloudevents.ReservedSubjectMatch(eventType); reserved {
+		return fmt.Errorf("eventType %q is reserved for the engine (prefix %q); choose a name outside it", eventType, match)
+	}
+	return nil
 }
 
 func (e *Engine[TServices]) UnregisterWorkflow(id string) error {
@@ -233,8 +274,10 @@ func (e *Engine[TServices]) SetAssetURLResolver(resolver AssetURLResolver) {
 	e.assetURLResolver = resolver
 }
 
+const publishEventAction = "publish_event"
+
 func (e *Engine[TServices]) registerPublishAction() {
-	e.actionRegistry.Register("publish_event", func(ctx tasks.ActionContext[TServices], params map[string]any) (map[string]any, error) {
+	e.actionRegistry.Register(publishEventAction, func(ctx tasks.ActionContext[TServices], params map[string]any) (map[string]any, error) {
 		if e.publisher == nil {
 			return nil, fmt.Errorf("no event publisher configured")
 		}
@@ -242,6 +285,9 @@ func (e *Engine[TServices]) registerPublishAction() {
 		eventType, ok := params["eventType"].(string)
 		if !ok || eventType == "" {
 			return nil, fmt.Errorf("eventType parameter is required")
+		}
+		if err := validatePublishedEventType(eventType); err != nil {
+			return nil, err
 		}
 
 		event := &types.Event{
