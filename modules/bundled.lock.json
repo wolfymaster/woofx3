@@ -2,8 +2,8 @@
   "modules": [
     {
       "id": "woofx3",
-      "len": 103806,
-      "sha256": "0037dcb0b79c59f7fad97519b95c9f2c98ad52d05293baae763ecb3d73d7c40d",
+      "len": 103818,
+      "sha256": "de636233d601bcb108d8c8ace57f697b1e032aba697bb7d6a203aaf2514ba3e8",
       "version": "0.19.0"
     }
   ]

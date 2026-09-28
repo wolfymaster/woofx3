@@ -154,6 +154,80 @@ pub enum InstallProvenance {
     System,
 }
 
+/// Canonical ids of the actions only a system module may put in a workflow or
+/// command: declared `systemOnly` by a bundled module.
+///
+/// Built from the bundled manifests rather than read back from the db, because
+/// only a system module may declare the flag (see `validate_with_provenance`),
+/// and every system module is embedded in the running binary.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SystemOnlyActions(HashSet<String>);
+
+impl SystemOnlyActions {
+    pub fn from_manifests<'a>(
+        manifests: impl IntoIterator<Item = &'a ModuleManifest>,
+    ) -> Result<Self> {
+        let mut ids = HashSet::new();
+        for manifest in manifests {
+            let module_id = require_module_id(manifest)?;
+            for action in manifest.actions.iter().filter(|a| a.system_only) {
+                ids.insert(
+                    CanonicalId::new(&module_id, ResourceKind::Action, &action.id)?.to_string(),
+                );
+            }
+        }
+        Ok(Self(ids))
+    }
+
+    pub fn contains(&self, canonical_id: &CanonicalId) -> bool {
+        self.0.contains(&canonical_id.to_string())
+    }
+}
+
+/// Refuse a module that is not a system module when one of its workflow steps
+/// or command actions names a `systemOnly` action.
+///
+/// Such an action does something the engine withholds from module code -- a
+/// timeout, a stream title change -- and a workflow a module ships runs with
+/// the module's say-so rather than the streamer's. See
+/// docs/services/engine-integrity.md.
+pub fn refuse_system_only_references(
+    resolved: &ResolvedManifest,
+    provenance: InstallProvenance,
+    system_only: &SystemOnlyActions,
+) -> Result<()> {
+    if provenance == InstallProvenance::System {
+        return Ok(());
+    }
+    let workflow_refs = resolved.workflows.iter().flat_map(|wf| {
+        wf.step_actions.iter().enumerate().map(move |(si, action)| {
+            (
+                format!("workflow '{}' step #{si}", wf.canonical_id.resource_id()),
+                action,
+            )
+        })
+    });
+    let command_refs = resolved.commands.iter().flat_map(|cmd| {
+        cmd.step_actions
+            .iter()
+            .enumerate()
+            .map(move |(si, action)| {
+                (
+                    format!("command '{}' action #{si}", cmd.canonical_id.resource_id()),
+                    action,
+                )
+            })
+    });
+    for (label, action) in workflow_refs.chain(command_refs) {
+        if system_only.contains(action) {
+            return Err(anyhow!(
+                "{label}: action '{action}' is reserved for system modules; an uploaded module cannot use it"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Validate a user-uploaded manifest and resolve all intra-manifest references.
 ///
 /// The provenance-free entry point, because every caller today is a user
@@ -188,6 +262,12 @@ pub fn validate_with_provenance(
             if let ManifestActionImpl::Native { .. } = action.implementation {
                 return Err(anyhow!(
                     "action #{i} ({}): `native` actions name an engine handler and may only be declared by a bundled system module",
+                    action.id
+                ));
+            }
+            if action.system_only {
+                return Err(anyhow!(
+                    "action #{i} ({}): `systemOnly` may only be declared by a bundled system module",
                     action.id
                 ));
             }
@@ -2886,6 +2966,122 @@ mod tests {
         let workflow_step =
             InstallStep::RegisterWorkflow(resolved.workflows[0].canonical_id.clone());
         assert!(plan.contains(&workflow_step));
+    }
+
+    // ---------------------------------------------------------------
+    // systemOnly: an action a system module reserves for itself.
+    // ---------------------------------------------------------------
+
+    fn reserved_twitch_actions() -> SystemOnlyActions {
+        let bundled = parse(
+            r#"{
+                "id": "woofx3", "name": "woofx3", "version": "1.0.0",
+                "actions": [
+                    { "id": "twitch.timeout", "name": "Timeout", "type": "native", "handler": "twitch.timeout", "systemOnly": true },
+                    { "id": "twitch.clip", "name": "Clip", "type": "native", "handler": "twitch.clip" }
+                ]
+            }"#,
+        );
+        SystemOnlyActions::from_manifests([&bundled]).expect("system-only set")
+    }
+
+    fn uploaded_using(action: &str) -> ResolvedManifest {
+        let m = minimal(&format!(
+            r#",
+            "workflows": [{{
+                "id": "w1", "name": "W1", "trigger": "t1",
+                "steps": [{{ "id": "s1", "action": "{action}" }}]
+            }}],
+            "commands": [{{ "id": "c1", "name": "C1", "pattern": "!x", "type": "prefix", "actions": [{{ "action": "woofx3:action:twitch.clip" }}] }}],
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }}]"#
+        ));
+        validate(&m).expect("validate ok")
+    }
+
+    #[test]
+    fn an_upload_cannot_reference_a_system_only_action() {
+        let resolved = uploaded_using("woofx3:action:twitch.timeout");
+        let err = refuse_system_only_references(
+            &resolved,
+            InstallProvenance::User,
+            &reserved_twitch_actions(),
+        )
+        .expect_err("a reserved action must be refused");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("woofx3:action:twitch.timeout")
+                && msg.contains("reserved for system modules"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn a_command_cannot_reference_a_system_only_action_either() {
+        let m = minimal(
+            r#",
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!x", "type": "prefix", "actions": [{ "action": "woofx3:action:twitch.timeout" }] }]"#,
+        );
+        let resolved = validate(&m).expect("validate ok");
+        let err = refuse_system_only_references(
+            &resolved,
+            InstallProvenance::User,
+            &reserved_twitch_actions(),
+        )
+        .expect_err("a reserved action must be refused");
+        assert!(err.to_string().contains("command 'c1'"), "got: {err}");
+    }
+
+    #[test]
+    fn an_upload_may_reference_an_action_that_is_not_system_only() {
+        let resolved = uploaded_using("woofx3:action:twitch.clip");
+        refuse_system_only_references(
+            &resolved,
+            InstallProvenance::User,
+            &reserved_twitch_actions(),
+        )
+        .expect("an open action installs");
+    }
+
+    #[test]
+    fn a_system_module_may_reference_a_system_only_action() {
+        let resolved = uploaded_using("woofx3:action:twitch.timeout");
+        refuse_system_only_references(
+            &resolved,
+            InstallProvenance::System,
+            &reserved_twitch_actions(),
+        )
+        .expect("system provenance is exempt");
+    }
+
+    #[test]
+    fn an_upload_cannot_declare_system_only() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "f", "name": "F", "runtime": "js", "path": "functions/f.js" }],
+            "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f", "systemOnly": true }]"#,
+        );
+        let err = validate(&m).expect_err("systemOnly is a system-module flag");
+        assert!(
+            err.to_string()
+                .contains("`systemOnly` may only be declared by a bundled system module"),
+            "got: {err}"
+        );
+    }
+
+    /// The real bundled manifest reserves exactly the Twitch actions module
+    /// code cannot request through `ctx.twitch`.
+    #[test]
+    fn the_bundled_manifest_reserves_timeout_and_stream_edits() {
+        let bundled: ModuleManifest =
+            serde_json::from_str(include_str!("../../../modules/woofx3/manifest.json"))
+                .expect("parse");
+        let reserved = SystemOnlyActions::from_manifests([&bundled]).expect("system-only set");
+        let id = |a: &str| CanonicalId::new("woofx3", ResourceKind::Action, a).expect("id");
+        assert!(reserved.contains(&id("twitch.timeout")));
+        assert!(reserved.contains(&id("twitch.update_stream")));
+        assert!(!reserved.contains(&id("twitch.shoutout")));
+        assert!(!reserved.contains(&id("twitch.clip")));
+        assert!(!reserved.contains(&id("twitch.marker")));
     }
 
     #[test]

@@ -1001,14 +1001,14 @@
           "id": "userName",
           "label": "Twitch user",
           "type": "text",
-          "placeholder": "${trigger.data.fromBroadcasterUserLogin}",
           "description": "Their login name, with or without the @. Leave blank when giving a user id instead."
         },
         {
           "id": "userId",
           "label": "Twitch user id",
           "type": "text",
-          "description": "Their numeric Twitch id. Used instead of the name when both are set, since it needs no lookup."
+          "description": "Their numeric Twitch id. Used instead of the name when both are set, since it needs no lookup.",
+          "placeholder": "${trigger.data.fromBroadcasterUserId}"
         },
         {
           "id": "skipIfRateLimited",
@@ -1165,7 +1165,8 @@
       },
       "taxonomy": [
         "platform.twitch"
-      ]
+      ],
+      "systemOnly": true
     },
     {
       "id": "twitch.timeout",
@@ -1178,14 +1179,14 @@
           "id": "userName",
           "label": "Chatter",
           "type": "text",
-          "placeholder": "${trigger.data.userName}",
           "description": "Their login name, with or without the @. Leave blank when giving a user id instead."
         },
         {
           "id": "userId",
           "label": "Chatter's user id",
           "type": "text",
-          "description": "Their numeric Twitch id. Used instead of the name when both are set, since it needs no lookup."
+          "description": "Their numeric Twitch id. Used instead of the name when both are set, since it needs no lookup.",
+          "placeholder": "${trigger.data.chatterId}"
         },
         {
           "id": "durationSeconds",
@@ -1221,7 +1222,8 @@
       },
       "taxonomy": [
         "platform.twitch"
-      ]
+      ],
+      "systemOnly": true
     }
   ],
   "triggers": [

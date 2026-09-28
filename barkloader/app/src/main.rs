@@ -203,6 +203,9 @@ async fn setup() -> Result<AppContext> {
     // id. A bundled module that will not install is fatal: the engine's core
     // actions and triggers come from it, and starting anyway is what produces
     // the silent, hard-to-diagnose failures this replaces.
+    // Before any upload can arrive: uploads are checked against these.
+    bundled_modules::system_only_actions()?;
+
     match services::bundled_reconciler::reconcile(&db_proxy_url, &*repository.current()).await {
         Ok(outcomes) => {
             for (id, outcome) in outcomes {
