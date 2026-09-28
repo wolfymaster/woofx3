@@ -73,7 +73,9 @@ export type ChatWatcherFunction = (msg: string, user?: string) => Promise<void>;
  * raw message and positional args that `msg` (the command-stripped
  * remainder) doesn't — needed by callers that forward a complete
  * `ChatCommandEventData`-shaped payload elsewhere (e.g. a direct barkloader
- * invoke). Every other handler can ignore it.
+ * invoke). It also carries the chatter's platform id and membership, for
+ * a handler that acts on the chatter rather than on the text. Every other
+ * handler can ignore it.
  */
 export type CommandResponse =
   | string
@@ -81,8 +83,16 @@ export type CommandResponse =
       msg: string,
       user?: string,
       vars?: Record<string, unknown>,
-      invocation?: { rawMessage: string; args: string[] }
+      invocation?: CommandInvocation
     ) => Promise<string>);
+
+export interface CommandInvocation {
+  rawMessage: string;
+  args: string[];
+  /** The platform's id for the chatter, when the message carried one. */
+  chatterId?: string;
+  membership?: ChatterMembership;
+}
 
 export type AuthorizationResponse = {
   granted: boolean;
@@ -189,7 +199,12 @@ export class Commands {
    * `membership` is what the platform reported about the chatter on this
    * message; without it no command is granted by role.
    */
-  async process(text: string, user: string, membership?: ChatterMembership): Promise<[string, boolean]> {
+  async process(
+    text: string,
+    user: string,
+    membership?: ChatterMembership,
+    chatterId?: string
+  ): Promise<[string, boolean]> {
     const chatMsg = text.trim();
 
     this.watchers.forEach((w) => this.try(() => w(chatMsg, user)));
@@ -253,7 +268,7 @@ export class Commands {
           return [typeof resolved === "string" ? resolved : String(resolved ?? ""), true];
         }
         if (typeof response === "function") {
-          const res = await response(msg.text, user.trim(), vars, { rawMessage: text, args });
+          const res = await response(msg.text, user.trim(), vars, { rawMessage: text, args, chatterId, membership });
           return [res, true];
         }
       }

@@ -18,7 +18,7 @@ import type { Application, IApplication } from "@woofx3/common/runtime/applicati
 import type { Command } from "@woofx3/db/command.pb";
 import type { Msg } from "@woofx3/nats/src/types";
 import chalk from "chalk";
-import { type ChatRole, Commands } from "./commands";
+import { type ChatRole, type CommandInvocation, Commands } from "./commands";
 import type BarkloaderClientService from "./services/barkloader";
 import type DatabaseService from "./services/database";
 import type MessageBusService from "./services/messageBus";
@@ -51,8 +51,34 @@ interface StreamMarkerResult {
   positionSeconds: number;
 }
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+/** No answer from the twitch service within the wait; it may still act. */
+class TwitchRequestTimeout extends Error {}
+
+/**
+ * The chat reply for a built-in command that did not get a success back.
+ * A timeout is reported as unknown rather than failed: the twitch service
+ * may have applied the change after the wait ran out, and a chatter told it
+ * failed would retry a change that already happened.
+ */
+export function failureReply(action: string, err: unknown): string {
+  if (err instanceof TwitchRequestTimeout) {
+    return `No answer from Twitch yet, so it is unknown whether I could ${action}; it may still apply`;
+  }
+  return `Could not ${action}: ${err instanceof Error ? err.message : String(err)}`;
+}
+
+/** The NATS client's request failures, told apart by name and message. */
+function toTwitchRequestError(err: unknown): Error {
+  const name = err instanceof Error ? err.name : "";
+  const message = err instanceof Error ? err.message : String(err);
+  const cause = err instanceof Error && err.cause instanceof Error ? err.cause.name : "";
+  if (name === "TimeoutError" || message === "timeout" || message === "TIMEOUT") {
+    return new TwitchRequestTimeout(message);
+  }
+  if (cause === "NoResponders" || message.includes("no responders") || message.includes("503")) {
+    return new Error("The Twitch service is not running");
+  }
+  return err instanceof Error ? err : new Error(message);
 }
 
 /** `positionSeconds` into the broadcast as h:mm:ss. */
@@ -155,7 +181,8 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
           const [message, matched] = await commander.process(
             payload.data.message,
             payload.data.chatterName,
-            payload.data.membership
+            payload.data.membership,
+            payload.data.chatterId
           );
           if (matched && message) {
             await commander.send(message);
@@ -321,13 +348,26 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       return "";
     });
 
-    ctx.commander.add("vanish", async (_text: string, user?: string) => {
-      const [topic, data] = ctx.events.TwitchApi().timeout({
-        userName: user,
-        durationSeconds: 1 + Math.floor(Math.random() * 600),
-      });
-      ctx.services.messageBus.client.publish(topic, data);
-      return `/me *poof* @${user} is gone`;
+    ctx.commander.add("vanish", async (_text: string, user?: string, _vars?: Record<string, unknown>, invocation?: CommandInvocation) => {
+      const membership = invocation?.membership;
+      if (membership?.isBroadcaster || membership?.isModerator) {
+        return `@${user} is too important to vanish`;
+      }
+      // The id, because the name a chat message carries is the display name,
+      // which is not always the login Twitch looks users up by.
+      const chatterId = invocation?.chatterId;
+      try {
+        await this.requestTwitch(
+          ctx,
+          ctx.events.TwitchApi().timeout({
+            ...(chatterId ? { userId: chatterId } : { userName: user }),
+            durationSeconds: 1 + Math.floor(Math.random() * 600),
+          })
+        );
+        return `/me *poof* @${user} is gone`;
+      } catch (err) {
+        return failureReply(`make @${user} vanish`, err);
+      }
     });
 
     ctx.commander.add("follow", async (text: string) => {
@@ -350,7 +390,7 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
           );
           return `Stream category set to ${result.categoryName ?? text}`;
         } catch (err) {
-          return `Could not change the category: ${errorMessage(err)}`;
+          return failureReply("change the category", err);
         }
       },
       { allowRoles: CHANNEL_EDITOR_ROLES }
@@ -369,7 +409,7 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
           );
           return `Stream title updated to: ${result.title ?? text}`;
         } catch (err) {
-          return `Could not change the title: ${errorMessage(err)}`;
+          return failureReply("change the title", err);
         }
       },
       { allowRoles: CHANNEL_EDITOR_ROLES }
@@ -385,7 +425,7 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
           );
           return `Stream marker placed at ${formatStreamPosition(marker.positionSeconds)}`;
         } catch (err) {
-          return `Could not place a marker: ${errorMessage(err)}`;
+          return failureReply("place a marker", err);
         }
       },
       { allowRoles: CHANNEL_EDITOR_ROLES }
@@ -462,8 +502,13 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
    * built-in command can tell the chatter whether it worked. Rejects with
    * the service's own error when it refused.
    */
-  private async requestTwitch<T>(ctx: Context, [subject, data]: [string, Uint8Array]): Promise<T> {
-    const reply = await ctx.services.messageBus.client.request(subject, data, { timeout: TWITCH_REQUEST_TIMEOUT_MS });
+  private async requestTwitch<T = unknown>(ctx: Context, [subject, data]: [string, Uint8Array]): Promise<T> {
+    let reply: { data: Uint8Array };
+    try {
+      reply = await ctx.services.messageBus.client.request(subject, data, { timeout: TWITCH_REQUEST_TIMEOUT_MS });
+    } catch (err) {
+      throw toTwitchRequestError(err);
+    }
     const envelope = JSON.parse(new TextDecoder().decode(reply.data)) as { type?: string; data?: unknown };
     if (envelope.type === TWITCH_ERROR_TYPE) {
       const error = (envelope.data as { error?: unknown } | undefined)?.error;
