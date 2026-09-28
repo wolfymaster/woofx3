@@ -209,15 +209,28 @@ when it refuses (bad input, Twitch not linked, Twitch's own error), with
 `the twitch service is not running` when nothing serves the subject, and with
 `the twitch service did not answer within 10s` on a timeout.
 
-Parameters are checked twice. When the workflow is registered, a value that can
-never work (a 141-character title, an eleventh tag, a timeout of 0 seconds, no
-user named) refuses the whole workflow, and the engine keeps running the
-previous version if there was one. A `${…}` value is accepted there unseen, and
-checked again once the step runs and it has resolved. A disabled step is not
-checked.
+Parameters are checked before the step can run. A value that can never work
+(a 141-character title, an eleventh tag, a timeout of 0 seconds, no user named)
+refuses the whole workflow. A `${…}` value is accepted there unseen, and checked
+again once the step runs and it has resolved. A disabled step is not checked.
+
+The API applies the same checks when a workflow is saved and refuses the save
+with the offending parameter's path. The engine checks again when it registers
+a workflow, for definitions that arrive another way. A definition it refuses is
+not registered: an update leaves the running version in place until the engine
+restarts, after which the stored, invalid version is refused at load and the
+workflow does not run at all.
+
+When the step runs, a parameter that still contains `${` after resolution (a
+reference to something the trigger or an earlier step did not provide) fails
+the step instead of reaching Twitch.
 
 Text parameters are trimmed, and a blank one reads as not set. Each needs the
 Twitch permission named below on the linked account.
+
+`twitch.timeout` and `twitch.update_stream` are **system-only**: an uploaded
+module's own workflows and commands cannot use them, as `ctx.twitch` cannot.
+See [Engine integrity](../services/engine-integrity.md#system-only-actions).
 
 #### `twitch.shoutout`
 
@@ -279,7 +292,7 @@ Changes the title, category and tags in one update. Needs
 |-------|------|----------|-------------|
 | `parameters.title` | `string` | At least one | At most 140 characters. |
 | `parameters.category` | `string` | At least one | Category name, resolved to the exact match or Twitch's closest one. |
-| `parameters.tags` | `string` or `string[]` | At least one | Comma-separated text or a list. At most 10; each 1 to 25 letters and numbers, no tag twice. Replaces every current tag. |
+| `parameters.tags` | `string` or `string[]` | At least one | Comma-separated text or a list. At most 10; each 1 to 25 letters, combining marks and numbers, no tag twice. Replaces every current tag. |
 
 A blank field is left as it is, so this action cannot clear the category or
 remove every tag. A step whose fields all resolve blank fails with `nothing to
@@ -298,7 +311,7 @@ Needs `moderator:manage:banned_users`.
 | `parameters.userName` | `string` | One of the two | Login name, with or without the `@`. |
 | `parameters.userId` | `string` | One of the two | Twitch user id. Wins over `userName`. |
 | `parameters.durationSeconds` | `number` | Yes | Whole seconds, 1 to 1209600 (two weeks). Numeric text is accepted. |
-| `parameters.reason` | `string` | No | Shown to the chatter and moderators. |
+| `parameters.reason` | `string` | No | Shown to the chatter and moderators. At most 500 characters. |
 
 Returns `userId` and `durationSeconds`.
 

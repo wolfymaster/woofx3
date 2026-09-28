@@ -38,7 +38,7 @@ func TestRegisterWorkflowRefusesInvalidActionParams(t *testing.T) {
 	registerStrictAction(t, e)
 
 	err := e.RegisterWorkflow(strictWorkflow("bad", false))
-	if err == nil || !strings.Contains(err.Error(), "step s1 (strict): value cannot be bad") {
+	if err == nil || !strings.Contains(err.Error(), `task "s1" (strict): value cannot be bad`) {
 		t.Fatalf("err = %v, want the step's validation error", err)
 	}
 	if _, err := e.GetWorkflow("wf-strict"); err == nil {

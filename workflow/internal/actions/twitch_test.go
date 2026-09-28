@@ -318,6 +318,11 @@ func TestDefinitionValidation(t *testing.T) {
 		{ActionTwitchUpdateStream, map[string]any{"tags": "a,b,c,d,e,f,g,h,i,j,k"}, "11 tags given"},
 		{ActionTwitchUpdateStream, map[string]any{"tags": "Chill,chill"}, "listed twice"},
 		{ActionTwitchUpdateStream, map[string]any{"tags": []any{"English", "Chill"}}, ""},
+		{ActionTwitchUpdateStream, map[string]any{"tags": []string{"English", "Chill"}}, ""},
+		{ActionTwitchUpdateStream, map[string]any{"tags": []string{"a b"}}, "may only contain letters and numbers"},
+		{ActionTwitchUpdateStream, map[string]any{"tags": "हिन्दी, English"}, ""},
+		{ActionTwitchTimeout, map[string]any{"userId": "7", "durationSeconds": 60.0, "reason": strings.Repeat("r", 500)}, ""},
+		{ActionTwitchTimeout, map[string]any{"userId": "7", "durationSeconds": 60.0, "reason": strings.Repeat("r", 501)}, "Twitch allows at most 500"},
 		{ActionTwitchUpdateStream, map[string]any{"tags": 5.0}, "tags must be text or a list"},
 		{ActionTwitchTimeout, map[string]any{"userName": "x", "durationSeconds": 600.0}, ""},
 		{ActionTwitchTimeout, map[string]any{"userName": "x", "durationSeconds": "${trigger.data.seconds}"}, ""},
@@ -352,5 +357,43 @@ func TestRunValidatesResolvedParams(t *testing.T) {
 	}
 	if twitch.calls != 0 {
 		t.Errorf("sent a request with an invalid duration")
+	}
+}
+
+// A reference the resolver could not follow is left in place as `${...}`; it
+// must fail the step rather than become a literal stream title.
+func TestRunRefusesUnresolvedTemplates(t *testing.T) {
+	twitch := &fakeTwitch{}
+	registrar := setup(t, twitch)
+	cases := []struct {
+		action string
+		params map[string]any
+	}{
+		{ActionTwitchUpdateStream, map[string]any{"title": "BRB ${trigger.data.missing}"}},
+		{ActionTwitchUpdateStream, map[string]any{"tags": []any{"${trigger.data.tag}"}}},
+		{ActionTwitchShoutout, map[string]any{"userName": "${trigger.data.missing}"}},
+	}
+	for _, tc := range cases {
+		_, err := run(t, registrar, tc.action, tc.params)
+		if err == nil || !strings.Contains(err.Error(), "did not resolve") {
+			t.Errorf("%s %v: err = %v, want an unresolved-template error", tc.action, tc.params, err)
+		}
+	}
+	if twitch.calls != 0 {
+		t.Errorf("sent %d requests carrying unresolved templates", twitch.calls)
+	}
+}
+
+// Devanagari vowel signs are combining marks; a tag written in it is valid.
+func TestUpdateStreamAcceptsCombiningMarks(t *testing.T) {
+	twitch := &fakeTwitch{reply: func(command string, _ map[string]any) map[string]any {
+		return result(command, map[string]any{"ok": true})
+	}}
+	if _, err := run(t, setup(t, twitch), ActionTwitchUpdateStream, map[string]any{"tags": "हिन्दी"}); err != nil {
+		t.Fatalf("update_stream: %v", err)
+	}
+	tags := twitch.request["args"].(map[string]any)["tags"].([]any)
+	if len(tags) != 1 || tags[0] != "हिन्दी" {
+		t.Errorf("tags = %v", tags)
 	}
 }

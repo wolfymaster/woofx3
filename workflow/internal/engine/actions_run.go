@@ -46,7 +46,7 @@ func (e *Engine[TServices]) RunActions(run ActionRun) (string, error) {
 		Tasks:     tasks,
 		Ephemeral: true,
 	}
-	if err := e.validateActionParams(def); err != nil {
+	if err := e.validateDefinition(def); err != nil {
 		return "", fmt.Errorf("RunActions: %w", err)
 	}
 

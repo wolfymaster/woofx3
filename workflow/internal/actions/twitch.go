@@ -44,6 +44,7 @@ const (
 	twitchTagsMaxCount         = 10
 	twitchTagMaxLength         = 25
 	twitchTimeoutMaxSeconds    = 1_209_600
+	twitchReasonMaxLength      = 500
 	twitchErrorCodeRateLimited = "rate_limited"
 )
 
@@ -121,6 +122,9 @@ func definitionValidator(action twitchAction) tasks.ParamsValidator {
 
 func twitchHandler[S any](client *twitchClient, action twitchAction) tasks.ActionFunc[S] {
 	return func(_ tasks.ActionContext[S], params map[string]any) (map[string]any, error) {
+		if err := refuseUnresolved(params); err != nil {
+			return nil, err
+		}
 		args, err := action.parse(params, true)
 		if err != nil {
 			return nil, err
@@ -130,6 +134,27 @@ func twitchHandler[S any](client *twitchClient, action twitchAction) tasks.Actio
 		}
 		return client.call(action.command, args)
 	}
+}
+
+// refuseUnresolved fails a step whose parameter still carries `${...}` after
+// resolution: the resolver leaves a reference it could not follow in place,
+// and sending it would put the literal template in a title or tag on Twitch.
+func refuseUnresolved(params map[string]any) error {
+	for key, value := range params {
+		values := []any{value}
+		switch v := value.(type) {
+		case []any:
+			values = v
+		case []string:
+			values = stringsToAny(v)
+		}
+		for _, item := range values {
+			if isTemplate(item) {
+				return fmt.Errorf("%s did not resolve: %q names something the trigger or an earlier step does not provide", key, item)
+			}
+		}
+	}
+	return nil
 }
 
 // sendShoutout succeeds with `skipped: true` instead of failing when Twitch's
@@ -252,6 +277,9 @@ func parseTimeout(params map[string]any, resolved bool) (map[string]any, error) 
 		return nil, err
 	}
 	if reason != "" {
+		if (resolved || !isTemplate(reason)) && len([]rune(reason)) > twitchReasonMaxLength {
+			return nil, fmt.Errorf("reason is %d characters; Twitch allows at most %d", len([]rune(reason)), twitchReasonMaxLength)
+		}
 		args["reason"] = reason
 	}
 	return args, nil
@@ -301,6 +329,8 @@ func tagsParam(params map[string]any, resolved bool) ([]string, bool, error) {
 				tags = append(tags, tag)
 			}
 		}
+	case []string:
+		return tagsParam(map[string]any{"tags": stringsToAny(v)}, resolved)
 	case []any:
 		for _, item := range v {
 			text, ok := item.(string)
@@ -325,6 +355,14 @@ func tagsParam(params map[string]any, resolved bool) ([]string, bool, error) {
 	return tags, true, nil
 }
 
+func stringsToAny(values []string) []any {
+	out := make([]any, len(values))
+	for i, v := range values {
+		out[i] = v
+	}
+	return out
+}
+
 func validateTags(tags []string) error {
 	if len(tags) > twitchTagsMaxCount {
 		return fmt.Errorf("%d tags given; Twitch allows at most %d", len(tags), twitchTagsMaxCount)
@@ -338,7 +376,9 @@ func validateTags(tags []string) error {
 			return fmt.Errorf("tag %q is longer than %d characters", tag, twitchTagMaxLength)
 		}
 		for _, r := range tag {
-			if !unicode.IsLetter(r) && !unicode.IsNumber(r) {
+			// Combining marks are part of a letter in scripts such as
+			// Devanagari and Thai.
+			if !unicode.IsLetter(r) && !unicode.IsNumber(r) && !unicode.Is(unicode.M, r) {
 				return fmt.Errorf("tag %q may only contain letters and numbers", tag)
 			}
 		}
