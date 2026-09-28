@@ -38,7 +38,9 @@ func TestStreamSessionsReadBackOnSQLite(t *testing.T) {
 	}
 	sessionID := state.Session.Id
 
-	wentLive := time.Date(2026, 9, 27, 20, 0, 0, 0, time.UTC)
+	// The session opened on the wall clock, so its segments and the split
+	// must come after now for the split session to list first.
+	wentLive := time.Now().UTC().Truncate(time.Hour).Add(time.Hour)
 	wentDown := wentLive.Add(90 * time.Minute)
 	if _, err := svc.OpenStreamSessionSegment(ctx, &client.OpenStreamSessionSegmentRequest{
 		StreamSessionId: sessionID,
@@ -99,7 +101,9 @@ func TestStreamSessionReadsCarryTheirSegments(t *testing.T) {
 		t.Fatalf("EnsureCurrentStreamSession: %v", err)
 	}
 	wasLive := state.Session.Id
-	wentLive := time.Date(2026, 9, 27, 20, 0, 0, 0, time.UTC)
+	// The session opened on the wall clock, so its segments and the split
+	// must come after now for the split session to list first.
+	wentLive := time.Now().UTC().Truncate(time.Hour).Add(time.Hour)
 	for i := 0; i < 2; i++ {
 		start := wentLive.Add(time.Duration(i) * time.Hour)
 		if _, err := svc.OpenStreamSessionSegment(ctx, &client.OpenStreamSessionSegmentRequest{
