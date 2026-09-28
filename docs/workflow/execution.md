@@ -113,8 +113,8 @@ Circular dependencies are detected at graph construction time and cause the work
 
 When a `wait` task is encountered:
 
-1. A `WaitState` is initialized with the event type, conditions, and deadline (the timeout, or the delay's `durationMs`)
-2. The wait is armed: recorded as unsettled, indexed in `waitingExecutions` by event type (delays are not indexed), and given a `time.AfterFunc` timer for its deadline
+1. A `WaitState` is initialized with the event type, conditions, and deadline (the timeout, the delay's `durationMs`, or none for an event wait without a timeout)
+2. The wait is armed: recorded as unsettled, indexed in `waitingExecutions` by event type (delays are not indexed), and given a `time.AfterFunc` timer for its deadline when it has one. After `Stop`, nothing is armed: the run fails with "engine stopped" instead of pausing
 3. The workflow pauses (returns from execution loop)
 
 When a matching event arrives:
@@ -125,7 +125,9 @@ When a matching event arrives:
 
 When the timer fires first, it claims the wait instead: a delay is marked satisfied, any other wait is marked timed out, and the run resumes.
 
-Claiming happens under one lock, so an event and a timer racing for the same wait settle it exactly once. A resumed run re-enters the wait task, which applies the outcome -- exports on success, `onTimeout` on a timeout -- and continues with the branches its earlier conditions skipped still skipped.
+Claiming happens under one lock, so an event and a timer racing for the same wait settle it exactly once. A resumed run re-enters the wait task, which applies the outcome -- exports on success, `onTimeout` on a timeout -- and continues with the branches its earlier conditions skipped still skipped. Because the run re-enters the wait task, the wait's own guard `condition` is evaluated again on resume.
+
+An event the wait cannot process (for example a non-numeric value for a `sum`) is logged and skipped; the wait keeps listening.
 
 Waits are held in memory only. `Stop` drops every armed wait, and nothing is persisted to re-arm on the next start: a run paused across a restart stays recorded as it was when it paused and does not resume.
 

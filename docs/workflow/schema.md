@@ -184,7 +184,7 @@ Configuration for `wait` type tasks. Pauses workflow execution until a matching 
 | `event` | `string` | Yes, except for `delay` | NATS subject to listen for while waiting. |
 | `conditions` | [ConditionConfig[]](#conditionconfig) | No | Conditions that incoming events must match to be counted. |
 | `aggregation` | [AggregationConfig](#aggregationconfig) | No | Required when `type` is `"aggregation"`. Defines the aggregation strategy. |
-| `timeout` | [Duration](#duration) | No | Maximum time to wait. If exceeded, behavior is determined by `onTimeout`. |
+| `timeout` | `string` | No | Maximum time to wait, as a duration string of at least `"1s"` (numbers are refused). If exceeded, behavior is determined by `onTimeout`. Without one, the wait lasts until its event arrives. |
 | `onTimeout` | `string` | No | What happens when the timeout expires. `"continue"` marks the task as successful and proceeds. `"fail"` (default) fails the task and the workflow. |
 | `durationMs` | `integer` | Only for `delay` | How long a delay pauses, in milliseconds, from `1` to `86400000` (24 hours). |
 

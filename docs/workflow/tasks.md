@@ -316,7 +316,15 @@ Pauses for a fixed time, then continues. "On raid, wait 10 seconds, then shout o
 
 ### Timeouts
 
-An event or aggregation wait ends at its `timeout` (5 minutes when unset) even if no event ever arrives: the engine arms a timer when the run pauses and cancels it when the wait is satisfied. What happens next follows `onTimeout`: `"fail"` (the default) fails the task and the run; `"continue"` marks the task successful with `timedOut: true` and runs the next task. If an event and the timeout land at the same moment, exactly one of them settles the wait.
+An event or aggregation wait without a `timeout` waits for its event however long that takes; a run started by `stream.online` can wait for `stream.offline`.
+
+With a `timeout`, the wait ends when it passes even if no event ever arrives: the engine arms a timer when the run pauses and cancels it when the wait is satisfied. What happens next follows `onTimeout`: `"fail"` (the default) fails the task and the run; `"continue"` marks the task successful with `timedOut: true` and runs the next task. If an event and the timeout land at the same moment, exactly one of them settles the wait.
+
+`timeout` is a duration string such as `"30s"`, `"2m"` or `"1h30m"`, at least one second. A number is refused: it would be read as nanoseconds.
+
+A `timeout` was accepted but not enforced by engines before this behaviour was introduced, so a workflow saved then that names one will now time out where it used to keep waiting.
+
+A wait's own guard `condition`, if it has one, is evaluated again when the run resumes at the wait.
 
 Paused waits and delays live in the engine's memory. A run paused when the engine stops is not resumed when it starts again.
 
