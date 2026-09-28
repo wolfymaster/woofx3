@@ -94,7 +94,7 @@ const KNOWN_DATA_FIELDS: Record<string, string[]> = {
 };
 
 const KNOWN_EXTENSIONS: Record<string, string[]> = {
-  twitch: ["clip", "timeout", "updateStream", "addModerator", "shoutout"],
+  twitch: ["clip", "timeout", "updateStream", "addModerator", "shoutout", "createMarker"],
   chat: ["sendMessage"],
   // platform.alerts and platform.chat — the dotted namespace is built
   // by `ensure_namespace_object` (quickjs.rs:209-229).

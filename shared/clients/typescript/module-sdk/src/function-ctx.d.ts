@@ -323,11 +323,16 @@ export interface CtxModule {
  *  methods publish a command envelope to NATS subject `twitchapi`. */
 export interface CtxTwitchExtension {
   clip(args?: unknown): null;
+  /** `{ userId | userName, durationSeconds, reason? }`; 1 to 1209600 seconds. */
   timeout(args: unknown): null;
+  /** `{ title?, category?, categoryId?, tags? }`. `category` is free text,
+   *  resolved through Twitch's category search. */
   updateStream(args: unknown): null;
   addModerator(args: unknown): null;
   /** Twitch's own shoutout. `{ userId }` or `{ userName }`. */
   shoutout(args: unknown): null;
+  /** `{ description? }`. Twitch only places a marker on a live stream. */
+  createMarker(args?: unknown): null;
 }
 
 /** `ctx.chat.*` — registered when `ChatExtension` is bound. */
