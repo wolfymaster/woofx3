@@ -143,3 +143,21 @@ export function validateWorkflowDefinition(input: unknown): ValidationResult {
   }
   return { ok: true, value: input as WorkflowDefinition };
 }
+
+/**
+ * Throws when the definition fails validation, with every error in the
+ * message as `path: message`. The message is all a capnweb caller receives,
+ * so it carries each reason rather than a count or the first failure.
+ *
+ * These rules are the ones the api can check on its own. Refusals that need
+ * the engine -- a step naming an action no installed module provides, say --
+ * reach the client as workflow health instead, once the engine tries to load
+ * the saved workflow.
+ */
+export function assertValidWorkflowDefinition(input: unknown): WorkflowDefinition {
+  const result = validateWorkflowDefinition(input);
+  if (!result.ok) {
+    throw new Error(`Invalid workflow definition: ${result.errors.map((e) => `${e.path}: ${e.message}`).join("; ")}`);
+  }
+  return result.value;
+}

@@ -365,6 +365,9 @@ const (
     SubjectWorkflowUpdate  Subject = "workflow.change.update"
     SubjectWorkflowDelete  Subject = "workflow.change.delete"
     SubjectWorkflowExecute Subject = "workflow.execute"
+
+    SubjectWorkflowHealthChanged Subject = "workflow.health.changed"
+    SubjectWorkflowHealthGet     Subject = "workflow.health.get"
 )
 ```
 
@@ -375,6 +378,32 @@ const (
 | `workflow.change.update` | An existing workflow was updated |
 | `workflow.change.delete` | A workflow was deleted |
 | `workflow.execute` | A workflow execution was triggered |
+| `workflow.health.changed` | The engine started or stopped being able to load a workflow |
+| `workflow.health.get` | Request/reply: the health of every workflow the engine has tried to load |
+
+### Workflow health
+
+Published by the workflow service with `source: "workflow"`, only when a
+workflow's health changes (see [Execution Model](../workflow/execution.md#workflow-health)).
+The CloudEvent `data`:
+
+```json
+{ "workflowId": "wf-1", "status": "error", "reason": "task \"t1\": unknown action \"gone\"", "since": "2026-09-28T12:00:00Z" }
+```
+
+`status` is `"ok"` or `"error"`; `reason` is present only on an error; `since`
+is RFC 3339 and marks when the current status and reason began.
+
+A request on `workflow.health.get` (any body) is answered with the same entry
+shape for every tracked workflow:
+
+```json
+{ "workflows": [ { "workflowId": "wf-1", "status": "error", "reason": "...", "since": "..." } ] }
+```
+
+The api forwards each change to registered clients as the
+`workflow.health.changed` webhook (`WorkflowHealthChangedEvent`, the entry
+plus `type`), and serves the request as the `getWorkflowHealth()` RPC.
 
 ---
 

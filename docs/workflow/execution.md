@@ -190,6 +190,52 @@ The service listens for CloudEvents on the workflow change subject. When a workf
 
 This allows workflows to be managed via the database without restarting the service.
 
+A periodic reconciler (every 5 minutes) lists enabled workflows from the DB proxy and
+loads any the engine is missing, which covers lifecycle events the service never received.
+
+## Workflow Health
+
+The engine can refuse a stored workflow: its JSON may not parse, or registration may
+reject it. A refused workflow still appears in the workflow list, but nothing fires for
+it (or, when an update was refused, the previously loaded version keeps running). The
+`WorkflowHealthTracker` in `workflow/health.go` records the outcome of every load so the
+creator can see why.
+
+Every path that loads a stored workflow records its outcome: the start-up load, the
+create/update lifecycle event, and the reconciler.
+
+| Outcome | Health |
+|---------|--------|
+| Loaded | `{ status: "ok" }` |
+| Convert or register failed | `{ status: "error", reason: <the engine's error, verbatim> }` |
+| Disabled or deleted (including ones the reconciler finds gone) | Entry removed |
+
+Each entry carries `since`, when its current status and reason began.
+
+**Changes only.** The reconciler retries a refused workflow on every pass, because it is
+absent from the registry. The tracker logs and publishes only when the status or reason
+differs from what it last recorded, so a workflow that stays broken produces one
+`workflow not running` log line and one event, not one per pass. A new reason for the
+same workflow counts as a change.
+
+**Published events.** Each change is published as `workflow.health.changed` (see
+[CloudEvents](../services/cloudevents.md#workflow-health)). Two cases publish `"ok"`
+beyond a plain recovery:
+
+- A workflow's first successful load after the service starts. Health is kept in memory
+  only, so this is how a client clears an error it was shown before a restart.
+- An errored workflow being disabled or deleted, so a client stops showing an error for a
+  workflow nobody expects to run.
+
+**Querying.** The service answers `workflow.health.get` with every tracked entry. The api
+serves it as the `getWorkflowHealth()` RPC, asking the workflow service each time rather
+than caching events, so the answer survives an api restart or a missed event.
+
+Save-time validation in the api (`assertValidWorkflowDefinition`) refuses what the api can
+check on its own and returns every reason in the error. Refusals that need the engine's
+knowledge, such as an action no installed module provides, arrive as workflow health once
+the engine tries to load the saved workflow.
+
 ## Error Handling
 
 Each task can specify `onError`:
