@@ -10,6 +10,7 @@ async-trait = "0.1"
 lib_repository = { path = "../lib_repository" }
 lib_sandbox = { path = "../lib_sandbox" }
 tracing = "0.1"
+semver = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

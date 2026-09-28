@@ -174,3 +174,64 @@ func TestExtractWorkflowEdges_KindFromCanonicalIDAcceptsAllKinds(t *testing.T) {
 		})
 	}
 }
+
+func newSceneSrc() SceneSource {
+	return SceneSource{ID: uuid.New(), Name: "Main", SourceCreatedByType: "USER"}
+}
+
+func TestExtractSceneEdges_SelectedThemeProducesThemeEdge(t *testing.T) {
+	widgets := `[
+		{"id": "a", "widgetCanonicalId": "timerpro:widget:countdown", "settings": {"theme": "neonpack:theme:neon"}},
+		{"id": "b", "widgetCanonicalId": "woofx3:widget:text", "settings": {"text": "hi"}}
+	]`
+
+	edges := ExtractSceneEdges(newSceneSrc(), widgets)
+
+	if len(edges) != 1 {
+		t.Fatalf("expected 1 edge, got %d: %+v", len(edges), edges)
+	}
+	if edges[0].SourceType != "scene" || edges[0].TargetType != TargetTypeTheme {
+		t.Errorf("edge = %s -> %s, want scene -> theme", edges[0].SourceType, edges[0].TargetType)
+	}
+	if edges[0].TargetName != "neonpack:theme:neon" {
+		t.Errorf("TargetName = %q", edges[0].TargetName)
+	}
+	if edges[0].Context != "widgets[0].settings.theme" {
+		t.Errorf("Context = %q", edges[0].Context)
+	}
+}
+
+func TestExtractSceneEdges_FindsThemesInNestedWidgets(t *testing.T) {
+	widgets := `[{"id": "alerts", "settings": {"layout": {"widgets": [
+		{"id": "t", "settings": {"theme": "neonpack:theme:neon"}}
+	]}}}]`
+
+	edges := ExtractSceneEdges(newSceneSrc(), widgets)
+
+	if len(edges) != 1 || edges[0].TargetName != "neonpack:theme:neon" {
+		t.Fatalf("expected the nested theme, got %+v", edges)
+	}
+}
+
+func TestExtractSceneEdges_IgnoresValuesThatAreNotThemeIds(t *testing.T) {
+	cases := []string{
+		`[{"settings": {"theme": "dark"}}]`,
+		`[{"settings": {"theme": "timerpro:widget:countdown"}}]`,
+		`[{"settings": {}}]`,
+		`not json`,
+		``,
+	}
+	for _, widgets := range cases {
+		if edges := ExtractSceneEdges(newSceneSrc(), widgets); len(edges) != 0 {
+			t.Errorf("widgets %q: expected no edges, got %+v", widgets, edges)
+		}
+	}
+}
+
+func TestExtractSceneEdges_OneEdgePerTheme(t *testing.T) {
+	widgets := `[{"settings": {"theme": "neonpack:theme:neon"}}, {"settings": {"theme": "neonpack:theme:neon"}}]`
+
+	if edges := ExtractSceneEdges(newSceneSrc(), widgets); len(edges) != 1 {
+		t.Fatalf("expected 1 edge, got %d", len(edges))
+	}
+}

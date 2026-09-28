@@ -9,7 +9,7 @@
 //! Two flavors of canonical id share this format:
 //!   - **Surface canonical ids** — `kind` is one of the engine-reserved
 //!     [`ResourceKind`] variants (trigger / action / function / command /
-//!     workflow / widget / overlay / asset). The engine knows the shape
+//!     workflow / widget / overlay / asset / theme). The engine knows the shape
 //!     and behavior of each. Used for module-installation registrations
 //!     and for cross-module references in workflow definitions.
 //!   - **Instance canonical ids** — `kind` is a free-form module-declared
@@ -47,6 +47,7 @@ pub enum ResourceKind {
     Widget,
     Overlay,
     Asset,
+    Theme,
 }
 
 impl ResourceKind {
@@ -60,6 +61,7 @@ impl ResourceKind {
             ResourceKind::Widget => "widget",
             ResourceKind::Overlay => "overlay",
             ResourceKind::Asset => "asset",
+            ResourceKind::Theme => "theme",
         }
     }
 }
@@ -260,7 +262,15 @@ pub fn looks_like_canonical_id(s: &str) -> bool {
     }
     matches!(
         parts[1],
-        "trigger" | "action" | "function" | "command" | "workflow" | "widget" | "overlay" | "asset"
+        "trigger"
+            | "action"
+            | "function"
+            | "command"
+            | "workflow"
+            | "widget"
+            | "overlay"
+            | "asset"
+            | "theme"
     )
 }
 

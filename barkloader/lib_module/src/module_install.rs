@@ -13,6 +13,7 @@ use super::manifest_validate::{
 use super::module_file::ModuleFile;
 use super::module_manifest::{
     ModuleManifest, ResolvedWorkflowStep, ResolvedWorkflowTrigger, WEBHOOK_EVENT_PREFIX,
+    resolve_zip_file,
 };
 
 /// `module_name` is the version-free manifest id — the value stored as
@@ -368,6 +369,8 @@ impl<'a, R: Repository> SagaState<'a, R> {
     }
 
     async fn upload_files(&mut self) -> Result<()> {
+        check_theme_files(self.manifest, self.files)?;
+
         for f in &self.manifest.functions {
             let file_key = f
                 .upload_to_repository(
@@ -418,6 +421,16 @@ impl<'a, R: Repository> SagaState<'a, R> {
                 .await?;
             self.asset_keys.push(repo_key);
         }
+        for t in &self.manifest.themes {
+            t.upload_files(
+                self.module_key,
+                self.version_dir,
+                self.files,
+                self.repository,
+            )
+            .await?;
+        }
+
         // Manifest-local asset id -> repository key, used to bake
         // `${asset:<id>}` markers in workflow step parameters into
         // `${woofx3_asset_url:<repositoryKey>}` at registration time (see
@@ -486,6 +499,25 @@ impl<'a, R: Repository> SagaState<'a, R> {
                 .await
             {
                 warn!("Failed to record widget resource {}: {}", canonical, e);
+            }
+        }
+
+        // A theme's ledger row is what a scene's reference edge to it joins
+        // on, so uninstalling a theme that is on screen is refused.
+        for (i, t) in self.manifest.themes.iter().enumerate() {
+            let canonical = self.resolved.themes[i].canonical_id.to_string();
+            if let Err(e) = db_proxy
+                .create_module_resource(
+                    &db_record_id,
+                    "theme",
+                    "",
+                    &t.id,
+                    &canonical,
+                    &self.manifest.version,
+                )
+                .await
+            {
+                warn!("Failed to record theme resource {}: {}", canonical, e);
             }
         }
 
@@ -1004,6 +1036,40 @@ impl<'a, R: Repository> SagaState<'a, R> {
         }
         Ok(())
     }
+}
+
+/// Fail the install, before anything is written, when a file a theme or a
+/// theme contract names is not in the archive.
+fn check_theme_files(manifest: &ModuleManifest, files: &[ModuleFile]) -> Result<()> {
+    for t in &manifest.themes {
+        for rel in t.files() {
+            if resolve_zip_file(files, rel).is_none() {
+                return Err(anyhow!(
+                    "theme {}: file '{}' not found in module archive",
+                    t.id,
+                    rel
+                ));
+            }
+        }
+    }
+    for w in &manifest.widgets {
+        let Some(contract) = &w.theme else {
+            continue;
+        };
+        for slot in &contract.asset_slots {
+            if let Some(default) = &slot.default
+                && resolve_zip_file(files, default).is_none()
+            {
+                return Err(anyhow!(
+                    "widget {}: `theme.assetSlots` {} default '{}' not found in module archive",
+                    w.id,
+                    slot.id,
+                    default
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The provenance-free entry point, because every caller but the bundled-module
@@ -2050,6 +2116,111 @@ mod tests {
             .await
             .expect("css");
         assert_eq!(css, b"body{}");
+    }
+
+    fn neon_pack_files(manifest_json: &[u8], with_css: bool) -> Vec<ModuleFile> {
+        let mut files = vec![
+            ModuleFile::new(
+                "module.json".into(),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::JSON),
+                manifest_json.to_vec(),
+            ),
+            ModuleFile::new(
+                "assets/grid.webm".into(),
+                ModuleFileKind::ASSET("webm".into()),
+                b"webm".to_vec(),
+            ),
+        ];
+        if with_css {
+            files.push(ModuleFile::new(
+                "themes/neon.css".into(),
+                ModuleFileKind::ASSET("css".into()),
+                b"#text{letter-spacing:2px}".to_vec(),
+            ));
+        }
+        files
+    }
+
+    const NEON_PACK: &[u8] = br#"{
+        "id": "neonpack",
+        "name": "Neon",
+        "version": "1.0.0",
+        "requires": { "timerpro": "^1.2.0" },
+        "themes": [{
+            "id": "neon",
+            "name": "Neon",
+            "target": "timerpro:widget:countdown",
+            "contractVersion": 1,
+            "assets": { "background": "assets/grid.webm" },
+            "stylesheet": "themes/neon.css"
+        }]
+    }"#;
+
+    #[tokio::test]
+    async fn install_stores_theme_files_under_the_theme_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+        let manifest: ModuleManifest = serde_json::from_slice(NEON_PACK).expect("manifest");
+        let mid = manifest.compute_module_key(NEON_PACK);
+
+        run_install(
+            &manifest,
+            &neon_pack_files(NEON_PACK, true),
+            &repo,
+            "archives/neonpack/1.0.0.zip",
+            None,
+            false,
+            &mid,
+            "",
+        )
+        .await
+        .expect("install");
+
+        let version_dir = version_dir_of(&mid);
+        let css = repo
+            .read_file(&format!(
+                "modules/neonpack/{version_dir}/themes/neon/themes/neon.css"
+            ))
+            .await
+            .expect("stylesheet stored");
+        assert_eq!(css, b"#text{letter-spacing:2px}");
+        repo.read_file(&format!(
+            "modules/neonpack/{version_dir}/themes/neon/assets/grid.webm"
+        ))
+        .await
+        .expect("slot asset stored");
+    }
+
+    #[tokio::test]
+    async fn install_fails_when_a_theme_file_is_missing_from_the_zip() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+        let manifest: ModuleManifest = serde_json::from_slice(NEON_PACK).expect("manifest");
+        let mid = manifest.compute_module_key(NEON_PACK);
+
+        let err = run_install(
+            &manifest,
+            &neon_pack_files(NEON_PACK, false),
+            &repo,
+            "archives/neonpack/1.0.0.zip",
+            None,
+            false,
+            &mid,
+            "",
+        )
+        .await
+        .expect_err("a missing stylesheet fails the install")
+        .to_string();
+        assert!(
+            err.contains("theme neon: file 'themes/neon.css' not found"),
+            "{err}"
+        );
     }
 
     #[tokio::test]

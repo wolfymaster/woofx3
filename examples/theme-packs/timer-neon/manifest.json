@@ -1,0 +1,30 @@
+{
+  "id": "timer_neon",
+  "name": "Neon Timer",
+  "version": "1.0.0",
+  "author": "woofx3",
+  "description": "A neon look for the built-in Timer widget.",
+  "requires": {
+    "woofx3": ">=0.17.0"
+  },
+  "themes": [
+    {
+      "id": "neon",
+      "name": "Neon",
+      "description": "Glowing magenta text on a dark grid.",
+      "target": "woofx3:widget:timer",
+      "contractVersion": 1,
+      "variables": {
+        "shadow": "0 0 6px #ff2bd6, 0 0 18px #ff2bd6",
+        "fontWeight": "900",
+        "background": "rgba(10, 0, 20, 0.6)",
+        "padding": "12px 20px"
+      },
+      "assets": {
+        "backdrop": "assets/grid.svg"
+      },
+      "stylesheet": "themes/neon.css",
+      "preview": "assets/preview.svg"
+    }
+  ]
+}

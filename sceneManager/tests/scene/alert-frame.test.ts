@@ -11,6 +11,7 @@ const barkloader: BarkloaderFrameClient = {
   fetchWidgetFrame: mock(async () => ({
     entryHtml: "<!doctype html><html><head></head><body></body></html>",
     resourceBaseUrl: "https://cdn.example.com/w/",
+    theme: null,
   })),
 };
 

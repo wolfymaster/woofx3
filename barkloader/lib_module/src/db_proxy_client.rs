@@ -183,6 +183,8 @@ pub trait ModuleDbProxy: Send + Sync {
     async fn fetch_module_by_name(&self, name: &str) -> Result<Option<ModuleRecord>>;
     async fn get_widget_entry(&self, module_id: &str, manifest_id: &str) -> Result<Option<String>>;
     async fn resolve_module_version_dir(&self, module_id: &str) -> Result<Option<String>>;
+    /// Every installed module, in any state, with its stored manifest.
+    async fn list_modules(&self) -> Result<Vec<ModuleRecord>>;
 }
 
 /// Real adapter: delegates to the existing free functions in `db_proxy`,
@@ -536,6 +538,10 @@ impl ModuleDbProxy for HttpDbProxyClient {
     async fn resolve_module_version_dir(&self, module_id: &str) -> Result<Option<String>> {
         db_proxy::resolve_module_version_dir(&self.base_url, module_id).await
     }
+
+    async fn list_modules(&self) -> Result<Vec<ModuleRecord>> {
+        db_proxy::list_modules(&self.base_url, None).await
+    }
 }
 
 #[cfg(test)]
@@ -566,6 +572,8 @@ mod test_support {
         failing_command: Option<&'static str>,
         /// `(command, actions_json)` for every `register_command`, in order.
         registered_commands: Mutex<Vec<(String, String)>>,
+        /// What `list_modules` answers: the modules already installed.
+        installed: Mutex<Vec<ModuleRecord>>,
     }
 
     impl FakeDbProxyClient {
@@ -581,6 +589,7 @@ mod test_support {
                 commands: Mutex::new(Vec::new()),
                 failing_command: None,
                 registered_commands: Mutex::new(Vec::new()),
+                installed: Mutex::new(Vec::new()),
             }
         }
 
@@ -597,6 +606,15 @@ mod test_support {
                 .lock()
                 .expect("commands mutex poisoned")
                 .extend(rows);
+            self
+        }
+
+        /// Seeds the modules `list_modules` reports as installed.
+        pub fn with_installed(self, modules: impl IntoIterator<Item = ModuleRecord>) -> Self {
+            self.installed
+                .lock()
+                .expect("installed mutex poisoned")
+                .extend(modules);
             self
         }
 
@@ -937,6 +955,15 @@ mod test_support {
         async fn resolve_module_version_dir(&self, _module_id: &str) -> Result<Option<String>> {
             self.record("resolve_module_version_dir")?;
             Ok(None)
+        }
+
+        async fn list_modules(&self) -> Result<Vec<ModuleRecord>> {
+            self.record("list_modules")?;
+            Ok(self
+                .installed
+                .lock()
+                .expect("installed mutex poisoned")
+                .clone())
         }
     }
 
